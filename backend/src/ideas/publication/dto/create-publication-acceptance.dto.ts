@@ -1,5 +1,4 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
-
 import {
   IsIn,
   IsOptional,
@@ -9,31 +8,12 @@ import {
   MaxLength,
 } from 'class-validator';
 
-/**
- * Request used by a NORMAL user to create a paid
- * publication-acceptance checkout.
- *
- * Responsibilities:
- * - Preserve a stable client-generated idempotency identifier.
- * - Validate the selected payment method.
- * - Validate checkout redirect URLs.
- * - Accept optional location information associated with the acceptance.
- *
- * @author Malak
- */
+import { PAYMENT_CURRENCY_CODES } from '../../../payments/constants/payment.constants';
+
 export class CreatePublicationAcceptanceDto {
-  /**
-   * Stable idempotency key generated once by the client
-   * for this acceptance action.
-   */
   @IsUUID('4')
   clientRequestId!: string;
 
-  /**
-   * Stripe card payment-method key.
-   *
-   * The value is normalized before validation and processing.
-   */
   @IsString()
   @IsIn(['card'])
   @MaxLength(30)
@@ -42,27 +22,26 @@ export class CreatePublicationAcceptanceDto {
   )
   paymentMethodKey!: string;
 
-  /**
-   * URL used by the payment provider after a successful checkout.
-   */
+  @IsOptional()
+  @IsString()
+  @IsIn([...PAYMENT_CURRENCY_CODES])
+  @Transform(({ value }: TransformFnParams): unknown =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  currency?: string;
+
   @IsUrl({
     require_tld: false,
     require_protocol: true,
   })
   successUrl!: string;
 
-  /**
-   * URL used by the payment provider when checkout is cancelled.
-   */
   @IsUrl({
     require_tld: false,
     require_protocol: true,
   })
   cancelUrl!: string;
 
-  /**
-   * Optional country associated with the publication acceptance.
-   */
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -71,9 +50,6 @@ export class CreatePublicationAcceptanceDto {
   )
   country?: string;
 
-  /**
-   * Optional city associated with the publication acceptance.
-   */
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -82,9 +58,6 @@ export class CreatePublicationAcceptanceDto {
   )
   city?: string;
 
-  /**
-   * Optional region associated with the publication acceptance.
-   */
   @IsOptional()
   @IsString()
   @MaxLength(100)

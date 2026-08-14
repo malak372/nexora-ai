@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
@@ -5,27 +6,9 @@ import 'package:dio/dio.dart';
 import '../../../core/network/api_config.dart';
 import '../../../core/storage/platform_key_value_store.dart';
 import '../../../core/storage/session_store.dart';
+import '../../admin/api/admin_api.dart';
 import '../session/auth_session_store.dart';
 
-/// Handles authentication-related communication with the backend API.
-///
-/// This service provides:
-/// - Login.
-/// - Registration.
-/// - Email verification.
-/// - Verification-code resend.
-/// - Password recovery.
-/// - Password reset.
-/// - Session refresh.
-/// - Logout.
-/// - Login-attempt warnings and temporary account-lock handling.
-///
-/// The application currently contains both the authentication session store
-/// used by the authentication flow and the shared core session store used by
-/// authenticated mobile user features. Both stores are synchronized here so
-/// all application areas see the same active session.
-///
-/// @author Eman
 class AuthApi {
   AuthApi._();
 
@@ -50,11 +33,6 @@ class AuthApi {
     ),
   );
 
-  /// Logs the user in using the backend authentication endpoint.
-  ///
-  /// The resulting authenticated session is stored in both session stores
-  /// because existing authentication screens use [AuthSessionStore], while
-  /// the authenticated user area uses [SessionStore].
   Future<Map<String, dynamic>> login({
     required String email,
     required String password,
@@ -82,17 +60,25 @@ class AuthApi {
         );
       }
 
-      await AuthSessionStore.instance.saveLoginSession(
-        data,
-        rememberMe: rememberMe,
-      );
-
-      await SessionStore.instance.saveSession(
+      final coreSessionWrite = SessionStore.instance.saveSession(
         accessToken: accessToken,
         refreshToken: refreshToken,
         user: user,
         rememberMe: rememberMe,
       );
+
+      final authSessionWrite = AuthSessionStore.instance.saveLoginSession(
+        data,
+        rememberMe: rememberMe,
+      );
+
+      final role = user['role']?.toString().trim().toUpperCase() ?? '';
+
+      if (role == 'ADMIN') {
+        unawaited(AdminApi.instance.getDashboard());
+      }
+
+      await Future.wait([coreSessionWrite, authSessionWrite]);
 
       return data;
     } on DioException catch (error) {
@@ -102,10 +88,6 @@ class AuthApi {
     }
   }
 
-  /// Registers a new account.
-  ///
-  /// If a guest session exists, its cookie is forwarded to the backend so
-  /// guest-generated ideas can be attached to the new account.
   Future<Map<String, dynamic>> register({
     required String fullName,
     required String email,
@@ -148,9 +130,6 @@ class AuthApi {
     }
   }
 
-  /// Verifies the user's email address.
-  ///
-  /// Only numeric verification-code characters are sent.
   Future<Map<String, dynamic>> verifyEmail({
     required String email,
     required String code,
@@ -173,7 +152,6 @@ class AuthApi {
     }
   }
 
-  /// Resends an email verification code.
   Future<Map<String, dynamic>> resendVerification(String email) async {
     try {
       final response = await _dio.post<dynamic>(
@@ -187,10 +165,6 @@ class AuthApi {
     }
   }
 
-  /// Sends a forgot-password request.
-  ///
-  /// Native mobile requests identify themselves to the backend so the
-  /// generated reset link can use the mobile deep-link scheme.
   Future<Map<String, dynamic>> requestPasswordReset(String email) async {
     try {
       final response = await _dio.post<dynamic>(
@@ -207,15 +181,10 @@ class AuthApi {
     }
   }
 
-  /// Compatibility alias for pages that still call `forgotPassword`.
   Future<void> forgotPassword(String email) async {
     await requestPasswordReset(email);
   }
 
-  /// Resets the password using the reset token sent to the user.
-  ///
-  /// Any existing local authentication session is cleared after a
-  /// successful password reset.
   Future<Map<String, dynamic>> resetPassword({
     required String token,
     required String newPassword,
@@ -234,11 +203,6 @@ class AuthApi {
     }
   }
 
-  /// Attempts to refresh the current authenticated session.
-  ///
-  /// Refresh is allowed while the application is running even when
-  /// "Remember me" was not selected. Remember-me only controls persistence
-  /// across application restarts.
   Future<bool> refreshSession() async {
     final refreshToken = await AuthSessionStore.instance.getRefreshToken();
 
@@ -294,7 +258,6 @@ class AuthApi {
     }
   }
 
-  /// Logs the user out from the backend and clears both local session stores.
   Future<void> logout() async {
     final refreshToken = await AuthSessionStore.instance.getRefreshToken();
 
@@ -305,20 +268,16 @@ class AuthApi {
           data: {'refreshToken': refreshToken.trim()},
         );
       }
-    } on DioException {
-      // Local logout must still succeed when the backend is unavailable.
     } finally {
       await _clearLocalSession();
     }
   }
 
-  /// Clears all locally stored authentication state.
   Future<void> _clearLocalSession() async {
     await AuthSessionStore.instance.clear();
     await SessionStore.instance.clear();
   }
 
-  /// Converts backend login errors into structured errors suitable for the UI.
   AuthException _buildLoginException(DioException error) {
     final response = error.response;
 
@@ -390,7 +349,6 @@ class AuthApi {
     );
   }
 
-  /// Calculates the remaining temporary-account-lock duration.
   int? _remainingSeconds(DioException error, Map<String, dynamic> body) {
     final lockedUntilText = body['lockedUntil']?.toString();
 
@@ -433,7 +391,6 @@ class AuthApi {
     return math.max(0, retryDate.difference(DateTime.now()).inSeconds + 1);
   }
 
-  /// Reads a registration-specific backend error.
   String _readRegisterMessage(DioException error) {
     final backendMessage = _messageFromResponse(error);
 
@@ -454,7 +411,6 @@ class AuthApi {
         'Please try again.';
   }
 
-  /// Reads an email-verification-specific backend error.
   String _readEmailVerificationMessage(DioException error) {
     final backendMessage = _messageFromResponse(error);
 
@@ -475,7 +431,6 @@ class AuthApi {
         'Please try again.';
   }
 
-  /// Extracts a readable backend message when one exists.
   String? _messageFromResponse(DioException error) {
     final data = error.response?.data;
 
@@ -502,14 +457,12 @@ class AuthApi {
     return null;
   }
 
-  /// Returns true when the request failed because of a timeout.
   bool _isTimeout(DioException error) {
     return error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.sendTimeout ||
         error.type == DioExceptionType.receiveTimeout;
   }
 
-  /// Reads password-recovery errors.
   String _readRecoveryMessage(DioException error) {
     final status = error.response?.statusCode;
 
@@ -526,7 +479,6 @@ class AuthApi {
     return _readMessage(error);
   }
 
-  /// Converts a generic Dio error into a user-readable message.
   String _readMessage(DioException error) {
     final backendMessage = _messageFromResponse(error);
 
@@ -546,7 +498,6 @@ class AuthApi {
         'Please try again.';
   }
 
-  /// Reads a message directly from a decoded backend response body.
   String? _backendMessage(Map<String, dynamic> body) {
     final message = body['message'];
 
@@ -567,7 +518,6 @@ class AuthApi {
     return null;
   }
 
-  /// Unwraps common `{ data: ... }` response envelopes.
   dynamic _unwrap(dynamic value) {
     dynamic current = value;
 
@@ -584,7 +534,6 @@ class AuthApi {
     return current;
   }
 
-  /// Converts an arbitrary map-like value to a typed Dart map.
   Map<String, dynamic> _asMap(dynamic value) {
     if (value is Map<String, dynamic>) {
       return value;
@@ -597,7 +546,6 @@ class AuthApi {
     return <String, dynamic>{};
   }
 
-  /// Safely converts backend numeric values to integers.
   int? _asInt(dynamic value) {
     if (value is int) {
       return value;
@@ -611,9 +559,6 @@ class AuthApi {
   }
 }
 
-/// Structured authentication exception used by the mobile authentication UI.
-///
-/// @author Eman
 class AuthException implements Exception {
   const AuthException({
     required this.message,

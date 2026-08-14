@@ -1,6 +1,107 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_config.dart';
 import '../../../core/theme/app_theme.dart';
+
+
+/// Displays an administrator or customer profile image when one is available
+/// and falls back to initials without changing the surrounding layout.
+///
+/// Relative media paths are resolved against the configured API base URL so
+/// avatars work on emulators, physical devices and Flutter Web.
+///
+/// @author Eman
+class AdminAvatar extends StatelessWidget {
+  const AdminAvatar({
+    super.key,
+    required this.name,
+    this.avatarUrl,
+    this.size = 44,
+    this.onTap,
+  });
+
+  final String name;
+  final String? avatarUrl;
+  final double size;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedUrl = _resolveAdminMediaUrl(avatarUrl ?? '');
+
+    Widget fallback() => Icon(
+      Icons.person_rounded,
+      color: AppColors.primaryDark,
+      size: size * .46,
+    );
+
+    final avatar = Semantics(
+      image: true,
+      label: '$name profile image',
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.primarySoft,
+          border: Border.all(color: AppColors.border),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryDark.withValues(alpha: .05),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: resolvedUrl.isEmpty
+            ? fallback()
+            : Image.network(
+                resolvedUrl,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.low,
+                cacheWidth: (size * 2.5).round(),
+                cacheHeight: (size * 2.5).round(),
+                gaplessPlayback: true,
+                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                  if (wasSynchronouslyLoaded || frame != null) return child;
+                  return fallback();
+                },
+                errorBuilder: (_, _, _) => fallback(),
+              ),
+      ),
+    );
+
+    if (onTap == null) return avatar;
+
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: avatar,
+      ),
+    );
+  }
+}
+
+String _resolveAdminMediaUrl(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+
+  if (trimmed.startsWith('//')) {
+    return 'https:$trimmed';
+  }
+
+  final uri = Uri.tryParse(trimmed);
+  if (uri != null && uri.hasScheme) return trimmed;
+
+  return '${ApiConfig.baseUrl}${trimmed.startsWith('/') ? '' : '/'}$trimmed';
+}
 
 /// Provides the shared background for administrative workspace pages.
 ///
@@ -80,6 +181,7 @@ class AdminPageHeader extends StatelessWidget {
     this.eyebrow,
     this.trailing,
     this.onBack,
+    this.accentColor = AppColors.primaryDark,
   });
 
   final String title;
@@ -93,6 +195,8 @@ class AdminPageHeader extends StatelessWidget {
   final Widget? trailing;
 
   final VoidCallback? onBack;
+
+  final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +214,7 @@ class AdminPageHeader extends StatelessWidget {
             icon: icon,
             size: 43,
             tone: AppColors.primarySoft,
-            iconColor: AppColors.primaryDark,
+            iconColor: accentColor,
           ),
           const SizedBox(width: 11),
         ],
@@ -122,8 +226,8 @@ class AdminPageHeader extends StatelessWidget {
               if (eyebrow != null) ...[
                 Text(
                   eyebrow!.toUpperCase(),
-                  style: const TextStyle(
-                    color: AppColors.primaryDark,
+                  style: TextStyle(
+                    color: accentColor,
                     fontSize: 8.6,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.2,

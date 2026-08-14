@@ -91,7 +91,10 @@ export class StripePaymentGateway implements PaymentGateway {
   async createPaymentSession(
     input: CreatePaymentSessionInput,
   ): Promise<PaymentSessionResult> {
-    const amountInMinorUnits = this.toMinorCurrencyUnits(input.amount);
+    const amountInMinorUnits = this.toMinorCurrencyUnits(
+      input.amount,
+      input.currency,
+    );
 
     try {
       const session = await this.stripe.checkout.sessions.create({
@@ -538,7 +541,11 @@ export class StripePaymentGateway implements PaymentGateway {
       );
     }
 
-    return (session.amount_total / 100).toFixed(2);
+    const currency = this.getSessionCurrency(session);
+    const fractionDigits = this.getCurrencyFractionDigits(currency);
+    const divisor = 10 ** fractionDigits;
+
+    return (session.amount_total / divisor).toFixed(fractionDigits);
   }
 
   /**
@@ -587,7 +594,7 @@ export class StripePaymentGateway implements PaymentGateway {
    *
    * Voxidence currently uses USD, which has two decimal places.
    */
-  private toMinorCurrencyUnits(amount: string): number {
+  private toMinorCurrencyUnits(amount: string, currency: string): number {
     const normalizedAmount = Number(amount);
 
     if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
@@ -597,12 +604,15 @@ export class StripePaymentGateway implements PaymentGateway {
         {
           details: {
             amount,
+            currency,
           },
         },
       );
     }
 
-    const minorUnits = Math.round(normalizedAmount * 100);
+    const fractionDigits = this.getCurrencyFractionDigits(currency);
+    const multiplier = 10 ** fractionDigits;
+    const minorUnits = Math.round(normalizedAmount * multiplier);
 
     if (!Number.isSafeInteger(minorUnits) || minorUnits <= 0) {
       throw new PaymentProcessingError(
@@ -611,12 +621,37 @@ export class StripePaymentGateway implements PaymentGateway {
         {
           details: {
             amount,
+            currency,
           },
         },
       );
     }
 
     return minorUnits;
+  }
+
+  private getCurrencyFractionDigits(currency: string): number {
+    const normalizedCurrency = currency.trim().toUpperCase();
+
+    try {
+      const maximumFractionDigits = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: normalizedCurrency,
+      }).resolvedOptions().maximumFractionDigits;
+
+      return maximumFractionDigits ?? 2;
+    } catch (error) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.UNSUPPORTED_PAYMENT_CURRENCY,
+        'Stripe could not normalize the selected payment currency.',
+        {
+          cause: error,
+          details: {
+            currency: normalizedCurrency,
+          },
+        },
+      );
+    }
   }
 
   /**

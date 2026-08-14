@@ -3,7 +3,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  ArrowUpRight,
   BadgeCheck,
   BellRing,
   CalendarDays,
@@ -286,11 +285,11 @@ export default function AdminIdeasPage() {
 
     const listPromise = activeFilter === 'published'
       ? (force
-          ? adminApi.ideas.publishedListFresh(queryParams)
-          : adminApi.ideas.publishedList(queryParams))
+        ? adminApi.ideas.publishedListFresh(queryParams)
+        : adminApi.ideas.publishedList(queryParams))
       : (force
-          ? adminApi.ideas.listFresh(queryParams)
-          : adminApi.ideas.list(queryParams));
+        ? adminApi.ideas.listFresh(queryParams)
+        : adminApi.ideas.list(queryParams));
 
     const summaryPromise = force
       ? adminApi.ideas.summaryFresh(summaryParams)
@@ -529,11 +528,11 @@ export default function AdminIdeasPage() {
         current.map((item) =>
           item.id === report.id
             ? {
-                ...item,
-                status: result?.report?.status || status,
-                adminNote: result?.report?.adminNote || reply,
-                reviewedAt: result?.report?.reviewedAt || new Date().toISOString(),
-              }
+              ...item,
+              status: result?.report?.status || status,
+              adminNote: result?.report?.adminNote || reply,
+              reviewedAt: result?.report?.reviewedAt || new Date().toISOString(),
+            }
             : item,
         ),
       );
@@ -598,8 +597,8 @@ export default function AdminIdeasPage() {
             <span className="admin-ideas-orbit__ring" />
             <span className="admin-ideas-orbit__ring admin-ideas-orbit__ring--two" />
             <div><Lightbulb size={24} /><strong>{fmt(totalIdeas)}</strong><small>ideas</small></div>
-            <i className="admin-ideas-orbit__node admin-ideas-orbit__node--one" />
-            <i className="admin-ideas-orbit__node admin-ideas-orbit__node--two" />
+            <span className="admin-ideas-orbit__track admin-ideas-orbit__track--one"><i className="admin-ideas-orbit__node" /></span>
+            <span className="admin-ideas-orbit__track admin-ideas-orbit__track--two"><i className="admin-ideas-orbit__node" /></span>
           </div>
         </div>
       </section>
@@ -738,8 +737,7 @@ export default function AdminIdeasPage() {
                             title="Open idea details"
                             aria-label={`Open ${idea.title || 'idea'} details`}
                           >
-                            <span><Eye size={15} /></span>
-                            <i><ArrowUpRight size={10} /></i>
+                            <Eye size={15} />
                           </button>
                         </div>
                       </td>

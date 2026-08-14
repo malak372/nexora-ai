@@ -131,6 +131,7 @@ export async function getMyAcceptance(publicationId, options = {}) {
 export async function acceptPublication(
   publicationId,
   paymentMethodKey = 'card',
+  currency = 'USD',
 ) {
   const origin = window.location.origin;
 
@@ -141,6 +142,7 @@ export async function acceptPublication(
         {
           clientRequestId: createUuidV4(),
           paymentMethodKey,
+          currency,
           successUrl: `${origin}/normal/payments/success`,
           cancelUrl: `${origin}/normal/discover/${publicationId}?cancelled=1`,
         },
@@ -165,6 +167,7 @@ export async function acceptPublication(
 export async function createPublicationAdvancedUnlockCheckout(
   publicationId,
   paymentMethodKey = 'card',
+  currency = 'USD',
 ) {
   const origin = window.location.origin;
 
@@ -175,6 +178,7 @@ export async function createPublicationAdvancedUnlockCheckout(
         {
           clientRequestId: createUuidV4(),
           paymentMethodKey,
+          currency,
           successUrl: `${origin}/normal/payments/success`,
           cancelUrl: `${origin}/normal/discover/${publicationId}?advancedCancelled=1`,
         },

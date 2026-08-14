@@ -42,7 +42,7 @@ export class PaymentCheckoutController {
   ) {}
 
   @Get('pricing')
-  getPricing(@CurrentUser() user:AuthenticatedUser,@Query() query:GetPaymentPricingQueryDto){ return this.paymentCheckoutService.getPaymentPricing(user.id,query.creditsQuantity??1); }
+  getPricing(@CurrentUser() user:AuthenticatedUser,@Query() query:GetPaymentPricingQueryDto){ return this.paymentCheckoutService.getPaymentPricing(user.id,query.creditsQuantity??1,query.currency); }
 
   @Get(':paymentId/status')
   getPaymentState(@CurrentUser() user:AuthenticatedUser,@Param('paymentId',new ParseUUIDPipe({version:'4'})) paymentId:string){ return this.paymentCheckoutService.getPaymentState(user.id,paymentId); }

@@ -12,7 +12,9 @@ import '../../../core/network/realtime_socket.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
+import '../models/payment_currency.dart';
 import '../widgets/user_ui.dart';
+import '../widgets/payment_currency_selector.dart';
 import '../widgets/workspace_navigation.dart';
 import 'business_model_page.dart';
 import 'mobile_checkout_page.dart';
@@ -30,6 +32,8 @@ class AcceptedIdeaWorkspacePage extends StatefulWidget {
 
 class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
   Map<String, dynamic>? _detail;
+  Map<String, dynamic> _pricing = const {};
+  String _currency = PaymentCurrencyPreference.current;
   Object? _error;
   bool _loading = true;
   bool _unlocking = false;
@@ -38,6 +42,7 @@ class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
   void initState() {
     super.initState();
     _load();
+    unawaited(_loadPricing());
   }
 
   Future<void> _load({bool force = false}) async {
@@ -61,11 +66,35 @@ class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
     }
   }
 
+  Future<void> _loadPricing({bool force = false}) async {
+    try {
+      final currency =
+          await UserApi.instance.getPaymentCurrencyPreference(force: force);
+      final pricing = await UserApi.instance.getPricing(
+        currency: currency,
+        force: force,
+      );
+      if (!mounted) return;
+      setState(() {
+        _currency = currency;
+        _pricing = pricing;
+      });
+    } catch (_) {}
+  }
+
   Future<void> _unlockAdvanced() async {
     if (_unlocking) return;
+
+    if (_pricing.isEmpty) {
+      await _loadPricing();
+      if (!mounted) return;
+    }
+
+    final premium = UserSessionController.instance.isPremium;
+
     setState(() => _unlocking = true);
     try {
-      if (UserSessionController.instance.isPremium) {
+      if (premium) {
         await UserApi.instance.unlockAcceptedAdvancedWithCredits(
           widget.publicationId,
         );
@@ -81,6 +110,7 @@ class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
 
       final result = await UserApi.instance.createAcceptedAdvancedCheckout(
         widget.publicationId,
+        currency: _currency,
       );
 
       final flow = await openVoxidenceCheckout(
@@ -129,6 +159,7 @@ class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
         ((detail['advancedOutputsCount'] as num?)?.toInt() ?? outputs.length) >
             0;
     final premium = UserSessionController.instance.isPremium;
+    final priceLabel = _advancedPriceLabel(premium);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -329,6 +360,63 @@ class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
+                        const SizedBox(height: 11),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface.withValues(alpha: .82),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: .12),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                premium
+                                    ? Icons.toll_rounded
+                                    : Icons.credit_card_outlined,
+                                size: 17,
+                                color: AppColors.primaryDark,
+                              ),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'One-time advanced unlock',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                priceLabel,
+                                style: const TextStyle(
+                                  color: AppColors.primaryDark,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (!premium) ...[
+                          const SizedBox(height: 10),
+                          PaymentCurrencyPreferenceCard(
+                            value: _currency,
+                            compact: true,
+                            returnTitle: 'Accepted workspace',
+                            returnRoute:
+                                '/normal/accepted/${widget.publicationId}/workspace',
+                            returnAfterSave: true,
+                            onReturn: () => _loadPricing(force: true),
+                          ),
+                        ],
                         const SizedBox(height: 13),
                         FilledButton.icon(
                           onPressed: _unlocking ? null : _unlockAdvanced,
@@ -341,8 +429,8 @@ class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
                             _unlocking
                                 ? 'Opening...'
                                 : premium
-                                ? 'Unlock with credits'
-                                : 'Open secure checkout',
+                                ? 'Unlock · $priceLabel'
+                                : 'Continue · $priceLabel',
                           ),
                         ),
                       ],
@@ -405,6 +493,24 @@ class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
       if (name != null && name.trim().isNotEmpty) 'Published by $name',
       if (dateText != null) 'Accepted $dateText',
     ].join(' · ');
+  }
+
+  String _advancedPriceLabel(bool premium) {
+    if (premium) {
+      final raw = _pricing['publicationAdvancedCreditCost'];
+      final parsed = int.tryParse(raw?.toString() ?? '');
+      return parsed == null || parsed <= 0
+          ? 'Loading cost…'
+          : '$parsed credits';
+    }
+
+    final raw = _pricing['normalPublicationAdvancedPrice'];
+    final amount = num.tryParse(raw?.toString() ?? '');
+    if (amount == null) return 'Loading price…';
+    final formatted = amount == amount.roundToDouble()
+        ? amount.toInt().toString()
+        : amount.toStringAsFixed(2);
+    return '$formatted ${_pricing['currency'] ?? _currency}';
   }
 
   static bool _hasContent(dynamic value) {

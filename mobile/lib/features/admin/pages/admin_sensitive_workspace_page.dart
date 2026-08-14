@@ -80,6 +80,9 @@ class _AdminSensitiveWorkspacePageState
   /// Current error message.
   String _error = '';
 
+  /// Administrator-selected base currency for commercial prices.
+  String _pricingCurrencyDraft = 'USD';
+
   @override
   void dispose() {
     _password.dispose();
@@ -127,6 +130,7 @@ class _AdminSensitiveWorkspacePageState
       setState(() {
         _accessToken = token;
         _data = data;
+        _pricingCurrencyDraft = _pricingCurrencyFrom(data);
         _password.clear();
       });
     } on ApiException catch (error) {
@@ -181,6 +185,7 @@ class _AdminSensitiveWorkspacePageState
 
       setState(() {
         _data = data;
+        _pricingCurrencyDraft = _pricingCurrencyFrom(data);
       });
     } on ApiException catch (error) {
       if (!mounted) {
@@ -208,6 +213,80 @@ class _AdminSensitiveWorkspacePageState
         setState(() {
           _busy = false;
         });
+      }
+    }
+  }
+
+  String _pricingCurrencyFrom(Map<String, dynamic> data) {
+    final nested = data['settings'];
+    final source = nested is Map ? Map<String, dynamic>.from(nested) : data;
+    final value = source['pricingCurrency']?.toString().trim().toUpperCase() ?? '';
+    const supported = {'USD', 'EUR', 'GBP', 'ILS', 'AED'};
+    return supported.contains(value) ? value : 'USD';
+  }
+
+  Future<void> _savePricingCurrency() async {
+    if (_busy || _accessToken.isEmpty || widget.scope != 'SYSTEM_SETTINGS') {
+      return;
+    }
+
+    final current = _data == null ? 'USD' : _pricingCurrencyFrom(_data!);
+    if (current == _pricingCurrencyDraft) return;
+
+    setState(() {
+      _busy = true;
+      _error = '';
+    });
+
+    try {
+      final result = await _api.patchSensitive(
+        widget.path,
+        {'pricingCurrency': _pricingCurrencyDraft},
+        _accessToken,
+      );
+
+      final rawSettings = result['settings'];
+      final settings = rawSettings is Map
+          ? Map<String, dynamic>.from(rawSettings)
+          : await _api.getSensitiveWorkspace(
+              widget.path,
+              _accessToken,
+              force: true,
+            );
+
+      if (!mounted) return;
+
+      setState(() {
+        _data = settings;
+        _pricingCurrencyDraft = _pricingCurrencyFrom(settings);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Base pricing currency updated to $_pricingCurrencyDraft.',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        if (error.statusCode == 401 || error.statusCode == 403) {
+          _accessToken = '';
+          _data = null;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not update the base pricing currency.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
       }
     }
   }
@@ -364,6 +443,16 @@ class _AdminSensitiveWorkspacePageState
                           busy: _busy,
                           onInvite: _openAdministratorInvite,
                         )
+                      else if (widget.scope == 'SYSTEM_SETTINGS')
+                        _SystemSettingsWorkspaceContent(
+                          data: _data ?? const {},
+                          pricingCurrency: _pricingCurrencyDraft,
+                          busy: _busy,
+                          onCurrencyChanged: (value) {
+                            setState(() => _pricingCurrencyDraft = value);
+                          },
+                          onSaveCurrency: _savePricingCurrency,
+                        )
                       /// Other protected workspaces continue
                       /// using the generic card renderer.
                       else
@@ -377,6 +466,209 @@ class _AdminSensitiveWorkspacePageState
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SystemSettingsWorkspaceContent extends StatelessWidget {
+  const _SystemSettingsWorkspaceContent({
+    required this.data,
+    required this.pricingCurrency,
+    required this.busy,
+    required this.onCurrencyChanged,
+    required this.onSaveCurrency,
+  });
+
+  final Map<String, dynamic> data;
+  final String pricingCurrency;
+  final bool busy;
+  final ValueChanged<String> onCurrencyChanged;
+  final VoidCallback onSaveCurrency;
+
+  static const _currencies = <String, String>{
+    'USD': 'US Dollar',
+    'EUR': 'Euro',
+    'GBP': 'British Pound',
+    'ILS': 'Israeli New Shekel',
+    'AED': 'UAE Dirham',
+  };
+
+  Map<String, dynamic> get _settings {
+    final nested = data['settings'];
+    return nested is Map ? Map<String, dynamic>.from(nested) : data;
+  }
+
+  String _number(String key) {
+    final value = _settings[key];
+    final parsed = value is num ? value.toDouble() : double.tryParse('$value');
+    return parsed == null ? '—' : parsed.toStringAsFixed(2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final savedCurrency =
+        _settings['pricingCurrency']?.toString().trim().toUpperCase() ?? 'USD';
+    final dirty = savedCurrency != pricingCurrency;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AdminGlassCard(
+          padding: const EdgeInsets.all(15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Base pricing currency',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                'All direct prices configured by the administrator are entered in this currency. Users can still choose another supported currency at checkout.',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 9.4,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 13),
+              DropdownButtonFormField<String>(
+                initialValue: pricingCurrency,
+                decoration: InputDecoration(
+                  labelText: 'Pricing currency',
+                  prefixIcon: const Icon(Icons.currency_exchange_rounded),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                items: _currencies.entries
+                    .map(
+                      (entry) => DropdownMenuItem<String>(
+                        value: entry.key,
+                        child: Text('${entry.key} · ${entry.value}'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: busy
+                    ? null
+                    : (value) {
+                        if (value != null) onCurrencyChanged(value);
+                      },
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: busy || !dirty ? null : onSaveCurrency,
+                  icon: busy
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save_outlined, size: 17),
+                  label: const Text('Save pricing currency'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        AdminGlassCard(
+          padding: const EdgeInsets.all(15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Configured direct prices',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _PricingSettingRow(
+                label: 'Credit price',
+                value: '${_number('creditPrice')} $savedCurrency',
+              ),
+              _PricingSettingRow(
+                label: 'Premium activation fee',
+                value: '${_number('premiumActivationFee')} $savedCurrency',
+              ),
+              _PricingSettingRow(
+                label: 'Direct idea unlock',
+                value: '${_number('directUnlockPrice')} $savedCurrency',
+              ),
+              _PricingSettingRow(
+                label: 'Normal acceptance',
+                value: '${_number('normalAcceptancePrice')} $savedCurrency',
+              ),
+              _PricingSettingRow(
+                label: 'Publication advanced',
+                value: '${_number('normalPublicationAdvancedPrice')} $savedCurrency',
+                divider: false,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PricingSettingRow extends StatelessWidget {
+  const _PricingSettingRow({
+    required this.label,
+    required this.value,
+    this.divider = true,
+  });
+
+  final String label;
+  final String value;
+  final bool divider;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: AppColors.primaryDeep,
+                  fontSize: 11.2,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (divider) const Divider(height: 1, color: AppColors.border),
+      ],
     );
   }
 }

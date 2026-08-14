@@ -1,54 +1,49 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/storage/platform_key_value_store.dart';
 import '../../../core/storage/session_store.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/admin_api.dart';
 
-/// Displays the main mobile administration dashboard.
-///
-/// The dashboard provides administrators with a complete operational overview
-/// of the platform, including today's activity, core metrics, user growth,
-/// monthly statistics, recent users, recent system activity, and system health.
-///
-/// The layout is optimized for mobile screens while preserving the same
-/// important information available in the administration web dashboard.
-///
-/// @author Eman
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key, required this.onOpen});
 
-  /// Opens another administration destination from the dashboard.
   final ValueChanged<String> onOpen;
 
   @override
   State<AdminDashboardPage> createState() => _AdminDashboardPageState();
 }
 
-/// Manages dashboard data, loading states, refreshing, and administrator
-/// identity.
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
+  static const _snapshotKeyBase = 'voxidence_admin_dashboard_snapshot_v3';
+  static const _snapshotMaxAge = Duration(minutes: 30);
+
   final AdminApi _api = AdminApi.instance;
+  final PlatformKeyValueStore _storage = PlatformKeyValueStore.instance;
 
   Map<String, dynamic>? _data;
 
   String _adminName = 'Admin';
   String _error = '';
+  String _overviewPeriod = 'week';
 
   bool _loading = true;
   bool _refreshing = false;
+  int _requestId = 0;
 
   @override
   void initState() {
     super.initState();
 
-    _loadIdentity();
-    _load();
+    unawaited(_loadIdentity());
+    unawaited(_bootstrapDashboard());
   }
 
-  /// Loads the current administrator's name from the stored session.
   Future<void> _loadIdentity() async {
     final user = await SessionStore.instance.readUser();
 
@@ -65,55 +60,185 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     });
   }
 
-  /// Loads dashboard statistics from the administration API.
-  ///
-  /// When [force] is enabled, the API layer can bypass cached information.
-  Future<void> _load({bool force = false}) async {
-    if (_data == null) {
+  Future<void> _bootstrapDashboard() async {
+    final requestId = ++_requestId;
+    final snapshotFuture = _readDashboardSnapshot(_overviewPeriod);
+    final requestFuture = _api.getDashboard(period: _overviewPeriod);
+
+    final snapshot = await snapshotFuture;
+    if (mounted && requestId == _requestId && snapshot != null) {
       setState(() {
-        _loading = true;
-        _error = '';
-      });
-    } else {
-      setState(() {
+        _data = snapshot;
+        _loading = false;
         _refreshing = true;
         _error = '';
       });
     }
 
     try {
-      final data = await _api.getDashboard(force: force);
-
-      if (!mounted) {
-        return;
-      }
+      final data = await requestFuture;
+      if (!mounted || requestId != _requestId) return;
 
       setState(() {
         _data = data;
+        _loading = false;
+        _refreshing = false;
+        _error = '';
       });
+      unawaited(_writeDashboardSnapshot(data, _overviewPeriod));
     } on ApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted || requestId != _requestId) return;
       setState(() {
         _error = error.message;
+        _loading = false;
+        _refreshing = false;
       });
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted || requestId != _requestId) return;
       setState(() {
         _error = 'Could not load the admin dashboard.';
+        _loading = false;
+        _refreshing = false;
       });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _refreshing = false;
-        });
+    }
+  }
+
+  Future<void> _load({bool force = false}) async {
+    final requestId = ++_requestId;
+    final hasData = _data != null;
+
+    setState(() {
+      _loading = !hasData;
+      _refreshing = hasData;
+      _error = '';
+    });
+
+    try {
+      final data = await _api.getDashboard(
+        force: force,
+        period: _overviewPeriod,
+      );
+      if (!mounted || requestId != _requestId) return;
+
+      setState(() {
+        _data = data;
+        _loading = false;
+        _refreshing = false;
+      });
+      unawaited(_writeDashboardSnapshot(data, _overviewPeriod));
+    } on ApiException catch (error) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = error.message;
+        _loading = false;
+        _refreshing = false;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = 'Could not load the admin dashboard.';
+        _loading = false;
+        _refreshing = false;
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>?> _readDashboardSnapshot(String period) async {
+    try {
+      final values = await Future.wait<dynamic>([
+        SessionStore.instance.readUser(),
+        _storage.read('$_snapshotKeyBase:$period'),
+      ]);
+      final user = values[0] is Map
+          ? Map<String, dynamic>.from(values[0] as Map)
+          : <String, dynamic>{};
+      final raw = values[1]?.toString() ?? '';
+      if (raw.isEmpty) return null;
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final envelope = Map<String, dynamic>.from(decoded);
+      final currentUserId = user['id']?.toString().trim() ?? '';
+      final savedUserId = envelope['userId']?.toString().trim() ?? '';
+      final savedAt = DateTime.tryParse(envelope['savedAt']?.toString() ?? '');
+      final payload = envelope['data'];
+
+      if (currentUserId.isEmpty || savedUserId != currentUserId) return null;
+      if (savedAt == null || DateTime.now().difference(savedAt) > _snapshotMaxAge) {
+        return null;
       }
+      if (payload is! Map) return null;
+      return Map<String, dynamic>.from(payload);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeDashboardSnapshot(
+    Map<String, dynamic> data,
+    String period,
+  ) async {
+    try {
+      final user = await SessionStore.instance.readUser();
+      final userId = user?['id']?.toString().trim() ?? '';
+      if (userId.isEmpty) return;
+      await _storage.write(
+        '$_snapshotKeyBase:$period',
+        jsonEncode({
+          'userId': userId,
+          'savedAt': DateTime.now().toIso8601String(),
+          'data': data,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _changeOverviewPeriod(String period) async {
+    if (period == _overviewPeriod || _loading) return;
+
+    final requestId = ++_requestId;
+
+    setState(() {
+      _overviewPeriod = period;
+      _refreshing = true;
+      _error = '';
+    });
+
+    final snapshot = await _readDashboardSnapshot(period);
+
+    if (mounted && requestId == _requestId && snapshot != null) {
+      setState(() {
+        _data = snapshot;
+        _loading = false;
+      });
+    }
+
+    try {
+      final data = await _api.getDashboard(period: period);
+      if (!mounted || requestId != _requestId) return;
+
+      setState(() {
+        _data = data;
+        _loading = false;
+        _refreshing = false;
+        _error = '';
+      });
+
+      unawaited(_writeDashboardSnapshot(data, period));
+    } on ApiException catch (error) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = error.message;
+        _loading = false;
+        _refreshing = false;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = 'Could not update the dashboard period.';
+        _loading = false;
+        _refreshing = false;
+      });
     }
   }
 
@@ -162,7 +287,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         ),
                       ],
                       const SizedBox(height: 28),
-                      const _OverviewHeader(),
+                      _OverviewHeader(
+                        period: _overviewPeriod,
+                        onChanged: _changeOverviewPeriod,
+                      ),
                       const SizedBox(height: 14),
                       _OverviewGrid(data: data, onOpen: widget.onOpen),
                       const SizedBox(height: 26),
@@ -194,7 +322,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 }
 
-/// Creates the soft background used behind the dashboard content.
 class _DashboardBackdrop extends StatelessWidget {
   const _DashboardBackdrop();
 
@@ -220,7 +347,6 @@ class _DashboardBackdrop extends StatelessWidget {
   }
 }
 
-/// Paints subtle decorative circles and lines behind the dashboard.
 class _BackdropPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -263,7 +389,6 @@ class _BackdropPainter extends CustomPainter {
   }
 }
 
-/// Displays the dashboard welcome area and refresh control.
 class _DashboardHeader extends StatelessWidget {
   const _DashboardHeader({
     required this.adminName,
@@ -275,7 +400,6 @@ class _DashboardHeader extends StatelessWidget {
   final bool refreshing;
   final VoidCallback onRefresh;
 
-  /// Formats the administrator's first name for display.
   String get _displayName {
     final value = adminName.trim();
 
@@ -540,7 +664,6 @@ class _DashboardHeader extends StatelessWidget {
   }
 }
 
-/// Displays a soft decorative circle in the dashboard header.
 class _HeaderGlow extends StatelessWidget {
   const _HeaderGlow({required this.size, required this.color});
 
@@ -560,7 +683,6 @@ class _HeaderGlow extends StatelessWidget {
   }
 }
 
-/// Displays the small live-status dot.
 class _HeaderStatusDot extends StatelessWidget {
   const _HeaderStatusDot();
 
@@ -584,7 +706,6 @@ class _HeaderStatusDot extends StatelessWidget {
   }
 }
 
-/// Paints decorative lines inside the dashboard header.
 class _HeaderLinesPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -617,7 +738,6 @@ class _HeaderLinesPainter extends CustomPainter {
   }
 }
 
-/// Displays today's new users, generated ideas, and revenue.
 class _TodayActivityCard extends StatelessWidget {
   const _TodayActivityCard({required this.data});
 
@@ -733,7 +853,6 @@ class _TodayActivityCard extends StatelessWidget {
   }
 }
 
-/// Places decorative waves behind today's statistics.
 class _ActivityCardPattern extends StatelessWidget {
   const _ActivityCardPattern();
 
@@ -745,7 +864,6 @@ class _ActivityCardPattern extends StatelessWidget {
   }
 }
 
-/// Paints the decorative wave lines used by the today activity card.
 class _ActivityPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -778,7 +896,6 @@ class _ActivityPatternPainter extends CustomPainter {
   }
 }
 
-/// Stores information for one today activity statistic.
 class _TodayMetric {
   const _TodayMetric({
     required this.icon,
@@ -791,7 +908,6 @@ class _TodayMetric {
   final String label;
 }
 
-/// Displays one centered statistic inside the today card.
 class _TodayMetricItem extends StatelessWidget {
   const _TodayMetricItem({required this.data});
 
@@ -861,9 +977,14 @@ class _TodayMetricItem extends StatelessWidget {
   }
 }
 
-/// Displays the heading for the core platform metrics.
 class _OverviewHeader extends StatelessWidget {
-  const _OverviewHeader();
+  const _OverviewHeader({
+    required this.period,
+    required this.onChanged,
+  });
+
+  final String period;
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -881,7 +1002,7 @@ class _OverviewHeader extends StatelessWidget {
           child: const Icon(
             Icons.spa_outlined,
             size: 20,
-            color: AppColors.primaryDark,
+            color: AppColors.primary,
           ),
         ),
         const SizedBox(width: 12),
@@ -911,31 +1032,74 @@ class _OverviewHeader extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: .88),
+        PopupMenuButton<String>(
+          initialValue: period,
+          tooltip: 'Change overview period',
+          color: AppColors.surface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 8,
+          position: PopupMenuPosition.under,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.border),
+            side: const BorderSide(color: AppColors.border),
           ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'This week',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
+          onSelected: onChanged,
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'day',
+              child: _OverviewPeriodMenuItem(
+                icon: Icons.today_outlined,
+                label: 'This day',
+              ),
+            ),
+            PopupMenuItem(
+              value: 'week',
+              child: _OverviewPeriodMenuItem(
+                icon: Icons.date_range_outlined,
+                label: 'This week',
+              ),
+            ),
+            PopupMenuItem(
+              value: 'month',
+              child: _OverviewPeriodMenuItem(
+                icon: Icons.calendar_month_outlined,
+                label: 'This month',
+              ),
+            ),
+            PopupMenuItem(
+              value: 'all',
+              child: _OverviewPeriodMenuItem(
+                icon: Icons.all_inclusive_rounded,
+                label: 'All time',
+              ),
+            ),
+          ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.surface.withValues(alpha: .92),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.borderStrong),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _overviewPeriodLabel(period),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-              SizedBox(width: 7),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 17,
-                color: AppColors.textMuted,
-              ),
-            ],
+                const SizedBox(width: 7),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 17,
+                  color: AppColors.primary,
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -943,10 +1107,52 @@ class _OverviewHeader extends StatelessWidget {
   }
 }
 
-/// Builds the complete set of administration overview metrics.
-///
-/// The grid displays users, ideas, revenue, AI health, credit activity,
-/// response performance, complaints, and generated outputs.
+class _OverviewPeriodMenuItem extends StatelessWidget {
+  const _OverviewPeriodMenuItem({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 15, color: AppColors.primary),
+        ),
+        const SizedBox(width: 9),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 11.2,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _overviewPeriodLabel(String value) {
+  return switch (value) {
+    'day' => 'This day',
+    'month' => 'This month',
+    'all' => 'All time',
+    _ => 'This week',
+  };
+}
+
 class _OverviewGrid extends StatelessWidget {
   const _OverviewGrid({required this.data, required this.onOpen});
 
@@ -1066,7 +1272,6 @@ class _OverviewGrid extends StatelessWidget {
   }
 }
 
-/// Stores content, colors, icon information, and navigation for one metric.
 class _OverviewMetricData {
   const _OverviewMetricData({
     required this.icon,
@@ -1092,13 +1297,6 @@ class _OverviewMetricData {
   final String destination;
 }
 
-/// Displays one core platform metric.
-///
-/// The card provides enough vertical space for the icon, title, value, and
-/// supporting information without creating excessive unused space.
-///
-/// A colored wave remains visible at the bottom to preserve the dashboard's
-/// visual identity.
 class _OverviewMetricCard extends StatelessWidget {
   const _OverviewMetricCard({required this.data, required this.onTap});
 
@@ -1217,7 +1415,6 @@ class _OverviewMetricCard extends StatelessWidget {
   }
 }
 
-/// Paints the colored wave displayed at the bottom of overview cards.
 class _MetricWavePainter extends CustomPainter {
   const _MetricWavePainter({required this.color});
 
@@ -1269,7 +1466,6 @@ class _MetricWavePainter extends CustomPainter {
   }
 }
 
-/// Provides the common container used by secondary dashboard sections.
 class _DashboardSectionCard extends StatelessWidget {
   const _DashboardSectionCard({
     required this.eyebrow,
@@ -1372,7 +1568,6 @@ class _DashboardSectionCard extends StatelessWidget {
   }
 }
 
-/// Displays recent user growth as a horizontal bar chart.
 class _UserGrowthCard extends StatelessWidget {
   const _UserGrowthCard({
     required this.data,
@@ -1528,9 +1723,6 @@ class _UserGrowthCard extends StatelessWidget {
   }
 }
 
-/// Displays statistics for the current month.
-///
-/// Today's statistics are displayed separately to avoid duplicated data.
 class _MonthlyPulseCard extends StatelessWidget {
   const _MonthlyPulseCard({required this.data});
 
@@ -1591,7 +1783,6 @@ class _MonthlyPulseCard extends StatelessWidget {
   }
 }
 
-/// Stores information for one monthly statistic.
 class _PulseMetricData {
   const _PulseMetricData({
     required this.label,
@@ -1610,7 +1801,6 @@ class _PulseMetricData {
   final bool accent;
 }
 
-/// Displays one centered metric inside the monthly statistics section.
 class _PulseMetricCard extends StatelessWidget {
   const _PulseMetricCard({required this.data});
 
@@ -1696,7 +1886,6 @@ class _PulseMetricCard extends StatelessWidget {
   }
 }
 
-/// Displays the newest registered platform users.
 class _RecentUsersCard extends StatelessWidget {
   const _RecentUsersCard({required this.data, required this.onOpen});
 
@@ -1747,7 +1936,6 @@ class _RecentUsersCard extends StatelessWidget {
   }
 }
 
-/// Displays recent payments, generated ideas, and complaints.
 class _RecentSystemActivityCard extends StatelessWidget {
   const _RecentSystemActivityCard({required this.data, required this.onOpen});
 
@@ -1760,20 +1948,40 @@ class _RecentSystemActivityCard extends StatelessWidget {
 
     final rows = <_RecentActivityData>[];
 
-    for (final raw in _list(activity['recentPayments']).take(2)) {
-      final item = _map(raw);
+    final recentPayments = _list(activity['recentPayments'])
+        .map(_map)
+        .toList();
+    final finalizedPaymentTargets = <String>{};
 
+    for (final item in recentPayments) {
+      final status = _safeText(item['status'], fallback: 'UNKNOWN').toUpperCase();
+      final key = _paymentActivityTargetKey(item);
+      if (key.isNotEmpty && status == 'SUCCEEDED') {
+        finalizedPaymentTargets.add(key);
+      }
+    }
+
+    final visiblePayments = recentPayments.where((item) {
+      final status = _safeText(item['status'], fallback: 'UNKNOWN').toUpperCase();
+      if (status != 'PENDING') return true;
+      final key = _paymentActivityTargetKey(item);
+      return key.isEmpty || !finalizedPaymentTargets.contains(key);
+    }).take(2);
+
+    for (final item in visiblePayments) {
       final user = _map(item['user']);
+      final currency = _safeText(item['currency'], fallback: 'USD');
+      final status = _safeText(item['status'], fallback: 'UNKNOWN');
 
       rows.add(
         _RecentActivityData(
           icon: Icons.payments_outlined,
           title:
-              '${_money(_double(item['amount']))} · '
+              '${_paymentMoney(_double(item['amount']), currency)} · '
               '${_safeText(item['paymentPurpose'], fallback: 'Payment')}',
           meta:
               '${_safeText(user['fullName'], fallback: _safeText(user['email'], fallback: 'User'))} · '
-              '${_safeText(item['status'], fallback: 'UNKNOWN')}',
+              '${status == 'SUCCEEDED' ? 'PAID' : status}',
           accent: AppColors.primary,
         ),
       );
@@ -1839,7 +2047,6 @@ class _RecentSystemActivityCard extends StatelessWidget {
   }
 }
 
-/// Stores information for one recent activity entry.
 class _RecentActivityData {
   const _RecentActivityData({
     required this.icon,
@@ -1854,7 +2061,6 @@ class _RecentActivityData {
   final Color accent;
 }
 
-/// Displays one recent user or system activity entry.
 class _ActivityRow extends StatelessWidget {
   const _ActivityRow({
     required this.icon,
@@ -1934,7 +2140,6 @@ class _ActivityRow extends StatelessWidget {
   }
 }
 
-/// Provides navigation from a dashboard section to another admin page.
 class _SectionArrowButton extends StatelessWidget {
   const _SectionArrowButton({required this.onTap});
 
@@ -1967,7 +2172,6 @@ class _SectionArrowButton extends StatelessWidget {
   }
 }
 
-/// Displays a reusable empty state inside a dashboard section.
 class _DashboardEmptyState extends StatelessWidget {
   const _DashboardEmptyState({required this.icon, required this.text});
 
@@ -2006,7 +2210,6 @@ class _DashboardEmptyState extends StatelessWidget {
   }
 }
 
-/// Displays AI performance and platform service health.
 class _SystemHealthCard extends StatelessWidget {
   const _SystemHealthCard({required this.data});
 
@@ -2151,7 +2354,6 @@ class _SystemHealthCard extends StatelessWidget {
   }
 }
 
-/// Displays the overall operational state of the platform.
 class _SystemStatusPill extends StatelessWidget {
   const _SystemStatusPill({required this.operational});
 
@@ -2195,7 +2397,6 @@ class _SystemStatusPill extends StatelessWidget {
   }
 }
 
-/// Displays the calculated overall platform performance.
 class _PerformanceGauge extends StatelessWidget {
   const _PerformanceGauge({required this.value});
 
@@ -2205,35 +2406,38 @@ class _PerformanceGauge extends StatelessWidget {
   Widget build(BuildContext context) {
     final normalized = value.clamp(0, 100).toDouble();
 
-    return SizedBox(
-      height: 105,
-      child: CustomPaint(
-        painter: _SemiGaugePainter(progress: normalized / 100),
-        child: Align(
-          alignment: const Alignment(0, .68),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${normalized.toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 28,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -.8,
+    return Center(
+      child: SizedBox(
+        width: 122,
+        height: 122,
+        child: CustomPaint(
+          painter: _HealthRingPainter(progress: normalized / 100),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${normalized.toStringAsFixed(0)}%',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 25,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.7,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 5),
-              const Text(
-                'Avg. performance',
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 5),
+                const Text(
+                  'Avg. performance',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 8.2,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -2241,54 +2445,46 @@ class _PerformanceGauge extends StatelessWidget {
   }
 }
 
-/// Paints the semicircular system performance gauge.
-class _SemiGaugePainter extends CustomPainter {
-  const _SemiGaugePainter({required this.progress});
+class _HealthRingPainter extends CustomPainter {
+  const _HealthRingPainter({required this.progress});
 
   final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final stroke = math.max(9.0, size.width * .075).toDouble();
-
-    final diameter = size.width - stroke - 4;
-
-    final radius = diameter / 2;
-
-    final center = Offset(size.width / 2, size.height - 8);
-
+    final stroke = math.max(8.0, size.width * .075).toDouble();
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (math.min(size.width, size.height) - stroke) / 2;
     final rect = Rect.fromCircle(center: center, radius: radius);
 
-    final backgroundPaint = Paint()
-      ..color = AppColors.mint.withValues(alpha: .72)
+    final track = Paint()
+      ..color = AppColors.mint.withValues(alpha: .78)
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round;
 
-    final progressPaint = Paint()
+    final valuePaint = Paint()
       ..color = AppColors.primary
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawArc(rect, math.pi, math.pi, false, backgroundPaint);
-
+    canvas.drawCircle(center, radius, track);
     canvas.drawArc(
       rect,
-      math.pi,
-      math.pi * progress.clamp(0, 1).toDouble(),
+      -math.pi / 2,
+      math.pi * 2 * progress.clamp(0, 1).toDouble(),
       false,
-      progressPaint,
+      valuePaint,
     );
   }
 
   @override
-  bool shouldRepaint(covariant _SemiGaugePainter oldDelegate) {
+  bool shouldRepaint(covariant _HealthRingPainter oldDelegate) {
     return oldDelegate.progress != progress;
   }
 }
 
-/// Displays the supporting system-health values.
 class _HealthStats extends StatelessWidget {
   const _HealthStats({
     required this.averageResponse,
@@ -2331,7 +2527,6 @@ class _HealthStats extends StatelessWidget {
   }
 }
 
-/// Displays one system-health statistic.
 class _HealthStatRow extends StatelessWidget {
   const _HealthStatRow({
     required this.dotColor,
@@ -2384,7 +2579,6 @@ class _HealthStatRow extends StatelessWidget {
   }
 }
 
-/// Displays a non-blocking dashboard loading error.
 class _InlineError extends StatelessWidget {
   const _InlineError({required this.message, required this.onRetry});
 
@@ -2437,7 +2631,6 @@ class _InlineError extends StatelessWidget {
   }
 }
 
-/// Displays the full error state when dashboard information is unavailable.
 class _DashboardUnavailable extends StatelessWidget {
   const _DashboardUnavailable({required this.message, required this.onRetry});
 
@@ -2506,7 +2699,6 @@ class _DashboardUnavailable extends StatelessWidget {
   }
 }
 
-/// Displays placeholder content while dashboard data is loading.
 class _DashboardSkeleton extends StatelessWidget {
   const _DashboardSkeleton();
 
@@ -2558,7 +2750,6 @@ class _DashboardSkeleton extends StatelessWidget {
   }
 }
 
-/// Displays a rectangular loading placeholder.
 class _SkeletonBlock extends StatelessWidget {
   const _SkeletonBlock({required this.height, required this.radius});
 
@@ -2578,7 +2769,6 @@ class _SkeletonBlock extends StatelessWidget {
   }
 }
 
-/// Displays a horizontal loading placeholder.
 class _SkeletonLine extends StatelessWidget {
   const _SkeletonLine({this.width, required this.height});
 
@@ -2598,7 +2788,6 @@ class _SkeletonLine extends StatelessWidget {
   }
 }
 
-/// Displays a circular loading placeholder.
 class _SkeletonCircle extends StatelessWidget {
   const _SkeletonCircle({required this.size});
 
@@ -2617,7 +2806,6 @@ class _SkeletonCircle extends StatelessWidget {
   }
 }
 
-/// Converts a dynamic value into a safe string-keyed map.
 Map<String, dynamic> _map(dynamic value) {
   if (value is Map<String, dynamic>) {
     return value;
@@ -2630,7 +2818,6 @@ Map<String, dynamic> _map(dynamic value) {
   return const {};
 }
 
-/// Converts a dynamic numeric value into an integer.
 int _int(dynamic value) {
   if (value is int) {
     return value;
@@ -2643,7 +2830,6 @@ int _int(dynamic value) {
   return int.tryParse(value?.toString() ?? '') ?? 0;
 }
 
-/// Converts a dynamic numeric value into a double.
 double _double(dynamic value) {
   if (value is num) {
     return value.toDouble();
@@ -2652,7 +2838,6 @@ double _double(dynamic value) {
   return double.tryParse(value?.toString() ?? '') ?? 0;
 }
 
-/// Returns a list value safely or an empty list when unavailable.
 List<dynamic> _list(dynamic value) {
   if (value is List) {
     return value;
@@ -2661,7 +2846,6 @@ List<dynamic> _list(dynamic value) {
   return const [];
 }
 
-/// Formats integer values with thousands separators.
 String _formatNumber(int value) {
   final negative = value < 0;
 
@@ -2680,7 +2864,6 @@ String _formatNumber(int value) {
   return negative ? '-$buffer' : buffer.toString();
 }
 
-/// Formats numeric values as US dollar currency.
 String _money(double value) {
   final rounded = value.toStringAsFixed(2);
 
@@ -2692,7 +2875,46 @@ String _money(double value) {
       '${parts.length > 1 ? parts[1] : '00'}';
 }
 
-/// Converts an ISO date value into a compact month and day label.
+String _paymentMoney(double value, String currency) {
+  final rounded = value.toStringAsFixed(2);
+  final parts = rounded.split('.');
+  final whole = _formatNumber(int.tryParse(parts.first) ?? 0);
+  final amount = '$whole.${parts.length > 1 ? parts[1] : '00'}';
+
+  switch (currency.trim().toUpperCase()) {
+    case 'EUR':
+      return '€$amount';
+    case 'GBP':
+      return '£$amount';
+    case 'ILS':
+      return '₪$amount';
+    case 'AED':
+      return 'AED $amount';
+    default:
+      return '\$$amount';
+  }
+}
+
+String _paymentActivityTargetKey(Map<String, dynamic> item) {
+  final purpose = _safeText(item['paymentPurpose'], fallback: '').toUpperCase();
+  if (purpose != 'DIRECT_UNLOCK' &&
+      purpose != 'ACCEPT_PUBLICATION' &&
+      purpose != 'UNLOCK_PUBLICATION_ADVANCED') {
+    return '';
+  }
+
+  final user = _map(item['user']);
+  final userId = _safeText(
+    item['userId'],
+    fallback: _safeText(user['id'], fallback: ''),
+  );
+  final ideaId = _safeText(item['ideaId'], fallback: '');
+  final publicationId = _safeText(item['publicationId'], fallback: '');
+  final targetId = ideaId.isNotEmpty ? ideaId : publicationId;
+  if (userId.isEmpty || targetId.isEmpty) return '';
+  return '$userId|$purpose|$targetId';
+}
+
 String _shortDate(dynamic value) {
   final text = value?.toString().trim() ?? '';
 
@@ -2725,7 +2947,6 @@ String _shortDate(dynamic value) {
       '${parsed.day}';
 }
 
-/// Returns trimmed text or [fallback] when no usable value is available.
 String _safeText(dynamic value, {required String fallback}) {
   final text = value?.toString().trim() ?? '';
 

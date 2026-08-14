@@ -1129,3 +1129,71 @@ button.unlock-pay {
 button.unlock-pay:hover:not(:disabled) {
   background: linear-gradient(135deg, #72c2bc 0%, #5cbdb9 48%, #459d98 100%) !important;
 }
+
+
+
+.unlock-currency-preference {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 14px;
+  padding: 10px 11px;
+  border: 1px solid rgba(62, 141, 133, .16);
+  border-radius: 15px;
+  background: linear-gradient(145deg, rgba(238, 249, 245, .82), rgba(255, 249, 250, .84));
+}
+
+.unlock-currency-preference > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(70, 167, 158, .10);
+  color: #3a8e87;
+}
+
+.unlock-currency-preference > div {
+  display: grid;
+  gap: 1px;
+}
+
+.unlock-currency-preference small {
+  color: #8b9794;
+  font-size: .57rem;
+}
+
+.unlock-currency-preference strong {
+  color: #31504b;
+  font-size: .77rem;
+  font-weight: 900;
+}
+
+.unlock-currency-preference p {
+  margin: 1px 0 0;
+  color: #84918d;
+  font-size: .56rem;
+}
+
+.unlock-currency-preference a {
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .76);
+  color: #3c8d85;
+  font-size: .56rem;
+  font-weight: 850;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .unlock-currency-preference {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .unlock-currency-preference a {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

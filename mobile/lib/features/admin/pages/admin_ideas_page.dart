@@ -564,7 +564,7 @@ class _IdeasHero extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFFFDFC), Color(0xFFF0F8F5), Color(0xFFFFF5F8)],
+          colors: [AppColors.surface, AppColors.primarySoft, AppColors.pinkSoft],
         ),
         borderRadius: BorderRadius.circular(25),
         border: Border.all(color: Colors.white.withValues(alpha: .95)),
@@ -640,19 +640,14 @@ class _IdeasHero extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        _HeroChip(
-                          icon: Icons.circle,
-                          label: 'Live directory',
-                          live: true,
-                        ),
                         _HeroChip(
                           icon: Icons.lightbulb_outline_rounded,
                           label: '$matching records',
                         ),
+                        const SizedBox(width: 6),
                         _HeroChip(
                           icon: Icons.public_rounded,
                           label: '$published published',
@@ -700,7 +695,7 @@ class _IdeasHero extends StatelessWidget {
 }
 
 class _HeroChip extends StatelessWidget {
-  const _HeroChip({required this.icon, required this.label, this.live = false});
+  const _HeroChip({required this.icon, required this.label}) : live = false;
 
   final IconData icon;
   final String label;
@@ -793,7 +788,7 @@ class _HeroOrbit extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFFFFFFFF), Color(0xFFE9F6F2)],
+                colors: [AppColors.surface, AppColors.primarySoft],
               ),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.white),
@@ -902,7 +897,7 @@ class _IdeasMetricsGrid extends StatelessWidget {
         published,
         'visible to community',
         Icons.public_rounded,
-        const Color(0xFFE8F8F6),
+        AppColors.primarySoft,
         AppColors.primaryDark,
       ),
       _MetricData(
@@ -918,8 +913,8 @@ class _IdeasMetricsGrid extends StatelessWidget {
         unlocked,
         'advanced access available',
         Icons.lock_open_rounded,
-        const Color(0xFFF0F4E9),
-        const Color(0xFF67765B),
+        AppColors.mint,
+        AppColors.textSecondary,
       ),
     ];
 
@@ -1549,7 +1544,7 @@ class _IdeaDirectoryCard extends StatelessWidget {
                                 : Icons.lock_outline_rounded,
                             label: unlocked ? 'Unlocked' : 'Locked',
                             tint: unlocked
-                                ? const Color(0xFFEAF5F2)
+                                ? AppColors.primarySoft
                                 : AppColors.surfaceRose,
                             color: unlocked
                                 ? AppColors.primaryDark
@@ -1561,7 +1556,7 @@ class _IdeaDirectoryCard extends StatelessWidget {
                                 : Icons.description_outlined,
                             label: published ? 'Published' : 'Not published',
                             tint: published
-                                ? const Color(0xFFE8F8F6)
+                                ? AppColors.primarySoft
                                 : AppColors.surfaceMuted,
                             color: published
                                 ? AppColors.primaryDark
@@ -1640,7 +1635,7 @@ class _OwnerAvatar extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFE8F7F4), Color(0xFFFFF0F4)],
+          colors: [AppColors.primarySoft, AppColors.pinkSoft],
         ),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.primaryDark.withValues(alpha: .05)),
@@ -1720,7 +1715,7 @@ class _StatusDot extends StatelessWidget {
       'RUNNING' ||
       'PREPARING' ||
       'PENDING' ||
-      'QUEUED' => const Color(0xFFC19A55),
+      'QUEUED' => AppColors.warning,
       _ => AppColors.sage,
     };
 
@@ -1932,13 +1927,18 @@ class _IdeasSortSheetState extends State<_IdeasSortSheet> {
     return SafeArea(
       child: Container(
         margin: const EdgeInsets.all(10),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .82,
+        ),
         padding: const EdgeInsets.fromLTRB(15, 10, 15, 16),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(26),
           border: Border.all(color: Colors.white),
         ),
-        child: Column(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1970,8 +1970,12 @@ class _IdeasSortSheetState extends State<_IdeasSortSheet> {
             ...widget.options.map(
               (option) => Padding(
                 padding: const EdgeInsets.only(bottom: 6),
-                child: ListTile(
-                  onTap: () => setState(() => _field = option.key),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    onTap: () => setState(() => _field = option.key),
                   dense: true,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -2001,13 +2005,14 @@ class _IdeasSortSheetState extends State<_IdeasSortSheet> {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  trailing: option.key == _field
-                      ? const Icon(
-                          Icons.check_circle_rounded,
-                          size: 18,
-                          color: AppColors.primaryDark,
-                        )
-                      : null,
+                    trailing: option.key == _field
+                        ? const Icon(
+                            Icons.check_circle_rounded,
+                            size: 18,
+                            color: AppColors.primaryDark,
+                          )
+                        : null,
+                  ),
                 ),
               ),
             ),
@@ -2050,7 +2055,8 @@ class _IdeasSortSheetState extends State<_IdeasSortSheet> {
                 label: const Text('Apply sorting'),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2129,7 +2135,7 @@ class _IdeaDetailSheetState extends State<_IdeaDetailSheet> {
     _loadDetail();
   }
 
-  Future<void> _loadDetail() async {
+  Future<void> _loadDetail({bool force = false}) async {
     final id = _text(_idea['id']);
     if (id.isEmpty) {
       setState(() => _loading = false);
@@ -2139,7 +2145,7 @@ class _IdeaDetailSheetState extends State<_IdeaDetailSheet> {
     try {
       final detail = await _api.getDetail(
         '/admin/ideas/$id/quick-detail',
-        force: true,
+        force: force,
       );
       if (!mounted) return;
       setState(() {
@@ -2172,7 +2178,7 @@ class _IdeaDetailSheetState extends State<_IdeaDetailSheet> {
 
     if (changed == true && mounted) {
       _changed = true;
-      await _loadDetail();
+      await _loadDetail(force: true);
     }
   }
 
@@ -2399,7 +2405,7 @@ class _IdeaIdentityCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFFFDFC), Color(0xFFF1F8F6)],
+          colors: [AppColors.surface, AppColors.primarySoft],
         ),
         borderRadius: BorderRadius.circular(19),
         border: Border.all(color: AppColors.primaryDark.withValues(alpha: .07)),
@@ -2462,7 +2468,7 @@ class _IdeaIdentityCard extends StatelessWidget {
                 icon: Icons.public_rounded,
                 label: published ? 'Published' : 'Not published',
                 tint: published
-                    ? const Color(0xFFE8F8F6)
+                    ? AppColors.primarySoft
                     : AppColors.surfaceMuted,
                 color: published ? AppColors.primaryDeep : AppColors.textMuted,
               ),
@@ -2517,7 +2523,7 @@ class _PublicationInsightsSheetState extends State<_PublicationInsightsSheet> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool force = false}) async {
     final ideaId = _text(_idea['id']);
     final publicationId = _text(_asMap(_idea['publication'])['id']);
 
@@ -2536,7 +2542,7 @@ class _PublicationInsightsSheetState extends State<_PublicationInsightsSheet> {
 
     final insightFuture = _api.getDetail(
       '/admin/ideas/$ideaId/publication-insights',
-      force: true,
+      force: force,
     );
     final reportsFuture = _api.getList(
       '/admin/publication-reports/publication/$publicationId',
@@ -2544,7 +2550,7 @@ class _PublicationInsightsSheetState extends State<_PublicationInsightsSheet> {
       limit: 20,
       sortBy: 'createdAt',
       sortOrder: 'desc',
-      force: true,
+      force: force,
     );
 
     final results = await Future.wait<(bool, dynamic)>([
@@ -2628,7 +2634,7 @@ class _PublicationInsightsSheetState extends State<_PublicationInsightsSheet> {
 
       _changed = true;
       _replyControllers[id]?.clear();
-      await _load();
+      await _load(force: true);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3431,29 +3437,35 @@ class _TagsOrText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // On Flutter Web a JSON array arrives as JSArray<dynamic>. Building the
+    // Wrap from dynamic.map(...).toList() leaves the runtime list typed as
+    // List<dynamic>, which cannot be assigned to Wrap.children (List<Widget>).
+    // A collection-for creates real Widget entries and works on web/mobile.
     if (value is List && value.isNotEmpty) {
       return Wrap(
         spacing: 6,
         runSpacing: 6,
-        children: value
-            .map(
-              (item) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  _text(item),
-                  style: const TextStyle(
-                    color: AppColors.primaryDeep,
-                    fontSize: 7.6,
-                    fontWeight: FontWeight.w800,
-                  ),
+        children: <Widget>[
+          for (final item in value)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: .10),
                 ),
               ),
-            )
-            .toList(),
+              child: Text(
+                _text(item),
+                style: const TextStyle(
+                  color: AppColors.primaryDeep,
+                  fontSize: 7.6,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+        ],
       );
     }
 

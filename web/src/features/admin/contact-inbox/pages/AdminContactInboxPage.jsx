@@ -395,7 +395,7 @@ export default function AdminContactInboxPage() {
   };
 
   return (
-    <div className="admin-page admin-support-page">
+    <div className="admin-page admin-support-page admin-support-page--contact">
       <section className="admin-support-hero admin-support-hero--contact">
         <div>
           <span><Mail size={16} /> Support operations</span>

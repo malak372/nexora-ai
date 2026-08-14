@@ -9,8 +9,9 @@ import 'core/navigation/app_navigator.dart';
 import 'core/storage/session_store.dart';
 import 'core/theme/app_theme.dart';
 
-import 'features/admin/models/admin_resource.dart';
-import 'features/admin/pages/admin_resource_page.dart';
+import 'features/admin/pages/admin_data_sources_page.dart';
+import 'features/admin/pages/admin_evidence_library_page.dart';
+import 'features/admin/pages/admin_ideas_page.dart';
 import 'features/admin/pages/admin_shell.dart';
 
 import 'features/auth/pages/forgot_password_page.dart';
@@ -31,7 +32,6 @@ import 'features/user/pages/billing_page.dart';
 import 'features/user/pages/business_model_page.dart';
 import 'features/user/pages/compliance_page.dart';
 import 'features/user/pages/credits_page.dart';
-import 'features/user/pages/direct_unlock_page.dart';
 import 'features/user/pages/generation_progress_page.dart';
 import 'features/user/pages/idea_workspace_page.dart';
 import 'features/user/pages/notifications_page.dart';
@@ -510,7 +510,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
         segments[0] == 'normal' &&
         segments[1] == 'ideas' &&
         segments[3] == 'unlock') {
-      page = DirectUnlockPage(ideaId: segments[2]);
+      page = IdeaWorkspacePage(ideaId: segments[2]);
     }
 
     
@@ -632,8 +632,11 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
         '/admin/publication-reports': (_) => const AdminShell(initialIndex: 2),
 
-        '/admin/ideas': (_) =>
-            const AdminResourcePage(resource: AdminResources.ideas),
+        '/admin/ideas': (_) => const AdminIdeasPage(),
+
+        '/admin/evidence': (_) => const AdminEvidenceLibraryPage(),
+
+        '/admin/data-sources': (_) => const AdminDataSourcesPage(),
 
         '/normal': (_) => const UserShell(initialIndex: 0),
 

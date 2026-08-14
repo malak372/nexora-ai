@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../../../core/network/api_client.dart';
+import '../models/payment_currency.dart';
 import '../models/user_models.dart';
 
 class PagedResult<T> {
@@ -298,13 +299,17 @@ class UserApi {
     );
   }
 
-  Future<Map<String, dynamic>> acceptDiscovery(String publicationId) async {
+  Future<Map<String, dynamic>> acceptDiscovery(
+    String publicationId, {
+    String currency = 'USD',
+  }) async {
     final result = _map(
       await _api.post(
         '/users/publications/$publicationId/accept',
         data: {
           'clientRequestId': _clientRequestId(),
           'paymentMethodKey': 'card',
+          'currency': currency,
           'successUrl': _paymentSuccessUrl,
           'cancelUrl': _paymentCancelUrl(
             '/normal/discover/$publicationId?cancelled=1',
@@ -348,14 +353,16 @@ class UserApi {
   }
 
   Future<Map<String, dynamic>> createAcceptedAdvancedCheckout(
-    String publicationId,
-  ) async {
+    String publicationId, {
+    String currency = 'USD',
+  }) async {
     return _map(
       await _api.post(
         '/users/publications/$publicationId/unlock-advanced/checkout',
         data: {
           'clientRequestId': _clientRequestId(),
           'paymentMethodKey': 'card',
+          'currency': currency,
           'successUrl': _paymentSuccessUrl,
           'cancelUrl': _paymentCancelUrl(
             '/normal/discover/$publicationId?advancedCancelled=1',
@@ -743,9 +750,27 @@ class UserApi {
     Map<String, dynamic> data,
   ) async {
     final result = _map(await _api.put('/users/preferences', data: data));
+
+    final savedCurrency = result['paymentCurrency']?.toString();
+    if (savedCurrency != null && savedCurrency.trim().isNotEmpty) {
+      PaymentCurrencyPreference.current = savedCurrency;
+    }
+
     _api.invalidate('/users/preferences');
     _api.invalidate('/preferences/options');
+    _api.invalidate('/users/payments/pricing');
     return result;
+  }
+
+  Future<String> getPaymentCurrencyPreference({bool force = false}) async {
+    final preferences = await getPreferences(force: force);
+    final currency = preferences['paymentCurrency']?.toString();
+
+    if (currency != null && currency.trim().isNotEmpty) {
+      PaymentCurrencyPreference.current = currency;
+    }
+
+    return PaymentCurrencyPreference.current;
   }
 
   Future<PagedResult<Map<String, dynamic>>> getInvoices({
@@ -1113,12 +1138,17 @@ class UserApi {
     return _list(raw).map(_map).toList();
   }
 
-  Future<Map<String, dynamic>> getPricing({int creditsQuantity = 15}) async {
+  Future<Map<String, dynamic>> getPricing({
+    int creditsQuantity = 15,
+    String currency = 'USD',
+    bool force = false,
+  }) async {
     return _map(
       await _api.get(
         '/users/payments/pricing',
-        query: {'creditsQuantity': creditsQuantity},
-        cacheFor: const Duration(minutes: 10),
+        query: {'creditsQuantity': creditsQuantity, 'currency': currency},
+        cacheFor: const Duration(minutes: 2),
+        force: force,
       ),
     );
   }
@@ -1147,13 +1177,17 @@ class UserApi {
     return result;
   }
 
-  Future<Map<String, dynamic>> createDirectUnlockCheckout(String ideaId) async {
+  Future<Map<String, dynamic>> createDirectUnlockCheckout(
+    String ideaId, {
+    String currency = 'USD',
+  }) async {
     return _map(
       await _api.post(
         '/users/payments/direct-unlock/checkout',
         data: {
           'ideaId': ideaId,
           'paymentMethodKey': 'card',
+          'currency': currency,
           'successUrl': _paymentSuccessUrl,
           'cancelUrl': _paymentCancelUrl(
             '/normal/ideas/$ideaId?payment=cancelled',
@@ -1165,6 +1199,7 @@ class UserApi {
 
   Future<Map<String, dynamic>> createCreditsCheckout({
     int quantity = 15,
+    String currency = 'USD',
   }) async {
     return _map(
       await _api.post(
@@ -1172,6 +1207,7 @@ class UserApi {
         data: {
           'creditsQuantity': quantity,
           'paymentMethodKey': 'card',
+          'currency': currency,
           'successUrl': _paymentSuccessUrl,
           'cancelUrl': _paymentCancelUrl('/normal/credits?payment=cancelled'),
         },

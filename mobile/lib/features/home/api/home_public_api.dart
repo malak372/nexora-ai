@@ -24,6 +24,10 @@ class HomePublicApi {
 
   static const String _cookieName = 'nexora_guest_session';
 
+  String? _guestCookieMemory;
+  bool _guestCookieHydrated = false;
+  Future<void>? _guestSessionFuture;
+
   late final Dio _dio = Dio(
     BaseOptions(
       baseUrl: ApiConfig.baseUrl,
@@ -94,7 +98,32 @@ class HomePublicApi {
     }
   }
 
-  Future<void> ensureGuestSession() async {
+  Future<void> ensureGuestSession({bool force = false}) async {
+    if (!force) {
+      final existingCookie = await _readGuestCookie();
+      if (existingCookie != null && existingCookie.isNotEmpty) {
+        return;
+      }
+
+      final inFlight = _guestSessionFuture;
+      if (inFlight != null) {
+        return inFlight;
+      }
+    }
+
+    final request = _createGuestSession();
+    _guestSessionFuture = request;
+
+    try {
+      await request;
+    } finally {
+      if (identical(_guestSessionFuture, request)) {
+        _guestSessionFuture = null;
+      }
+    }
+  }
+
+  Future<void> _createGuestSession() async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/auth/guest-session',
@@ -146,7 +175,10 @@ class HomePublicApi {
     );
   }
 
-  Future<Map<String, dynamic>> _guestGet(String path) async {
+  Future<Map<String, dynamic>> _guestGet(
+    String path, {
+    bool retrySession = true,
+  }) async {
     try {
       final response = await _dio.get<dynamic>(
         path,
@@ -161,15 +193,26 @@ class HomePublicApi {
 
       return <String, dynamic>{};
     } on DioException catch (error) {
-      if (error.response?.statusCode == 404) {
+      final status = error.response?.statusCode;
+
+      if (status == 404) {
         return <String, dynamic>{};
+      }
+
+      if (retrySession && (status == 401 || status == 403)) {
+        await _refreshGuestSession();
+        return _guestGet(path, retrySession: false);
       }
 
       throw _toException(error);
     }
   }
 
-  Future<void> _guestPut(String path, Map<String, dynamic> data) async {
+  Future<void> _guestPut(
+    String path,
+    Map<String, dynamic> data, {
+    bool retrySession = true,
+  }) async {
     try {
       await _dio.put<dynamic>(
         path,
@@ -177,18 +220,47 @@ class HomePublicApi {
         options: await _optionsWithGuestCookie(),
       );
     } on DioException catch (error) {
+      final status = error.response?.statusCode;
+
+      if (retrySession && (status == 401 || status == 403)) {
+        await _refreshGuestSession();
+        await _guestPut(path, data, retrySession: false);
+        return;
+      }
+
       throw _toException(error);
     }
   }
 
-  Future<Options> _optionsWithGuestCookie() async {
-    final cookie = await _storage.read(key: _cookieStorageKey);
+  Future<void> _refreshGuestSession() async {
+    _guestCookieMemory = null;
+    _guestCookieHydrated = true;
+    await _storage.delete(key: _cookieStorageKey);
+    await ensureGuestSession(force: true);
+  }
 
-    if (cookie == null || cookie.trim().isEmpty) {
+  Future<Options> _optionsWithGuestCookie() async {
+    final cookie = await _readGuestCookie();
+
+    if (cookie == null || cookie.isEmpty) {
       return Options();
     }
 
     return Options(headers: <String, dynamic>{'Cookie': cookie});
+  }
+
+  Future<String?> _readGuestCookie() async {
+    if (_guestCookieHydrated) {
+      return _guestCookieMemory;
+    }
+
+    final stored = await _storage.read(key: _cookieStorageKey);
+    final cookie = stored?.trim();
+
+    _guestCookieMemory = cookie == null || cookie.isEmpty ? null : cookie;
+    _guestCookieHydrated = true;
+
+    return _guestCookieMemory;
   }
 
   Future<void> _saveGuestCookie(Headers headers) async {
@@ -198,6 +270,8 @@ class HomePublicApi {
       final firstPart = rawCookie.split(';').first.trim();
 
       if (firstPart.startsWith('$_cookieName=')) {
+        _guestCookieMemory = firstPart;
+        _guestCookieHydrated = true;
         await _storage.write(key: _cookieStorageKey, value: firstPart);
 
         return;

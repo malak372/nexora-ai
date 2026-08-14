@@ -18,7 +18,7 @@ import {
   useReducedMotion,
 } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import {
   createDirectUnlockCheckout,
@@ -27,6 +27,10 @@ import {
 import { getPaymentPricing } from '../api/paymentFlowApi';
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import { storePaymentReturnReference } from '../utils/paymentReturn.storage';
+import {
+  getStoredPaymentCurrency,
+  loadPreferredPaymentCurrency,
+} from '../utils/paymentCurrency';
 import '../styles/direct-unlock.css';
 
 const PAYMENT_METHODS = [
@@ -56,13 +60,22 @@ export default function DirectUnlockPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pricing, setPricing] = useState(null);
+  const [currency, setCurrency] = useState(getStoredPaymentCurrency);
 
   useEffect(() => {
     let mounted = true;
 
-    getPaymentPricing()
+    loadPreferredPaymentCurrency({ force: true })
+      .then((preferredCurrency) => {
+        if (!mounted) return null;
+        setCurrency(preferredCurrency);
+        return getPaymentPricing(1, { currency: preferredCurrency });
+      })
       .then((data) => {
-        if (mounted) setPricing(data);
+        if (mounted && data) {
+          setPricing(data);
+          setError('');
+        }
       })
       .catch((e) => {
         if (mounted) setError(e.message);
@@ -99,6 +112,7 @@ export default function DirectUnlockPage() {
       const result = await createDirectUnlockCheckout({
         ideaId,
         paymentMethodKey: method,
+        currency,
         successUrl: `${origin}/normal/payments/success`,
         cancelUrl: `${origin}/normal/ideas/${ideaId}/unlock`,
       });
@@ -300,6 +314,26 @@ export default function DirectUnlockPage() {
               : "Choose a payment method. Voxidence sends you to the provider's secure checkout and unlocks access only after verified confirmation."}
           </p>
 
+          {!isPremium ? (
+            <div className="unlock-currency-preference">
+              <span><CreditCard size={16} /></span>
+              <div>
+                <small>Payment currency</small>
+                <strong>{currency}</strong>
+                <p>Saved once and used automatically for checkout.</p>
+              </div>
+              <Link
+                to="/normal/preferences"
+                state={{
+                  returnTo: `/normal/ideas/${ideaId}/unlock`,
+                  returnLabel: 'Back to direct unlock',
+                }}
+              >
+                Change in Preferences
+              </Link>
+            </div>
+          ) : null}
+
           {!isPremium ? <div className="unlock-methods">
             {PAYMENT_METHODS.map((paymentMethod) => {
               const Icon = paymentMethod.icon;
@@ -375,7 +409,7 @@ export default function DirectUnlockPage() {
           <motion.button
             className="unlock-pay"
             type="button"
-            disabled={busy || (isPremium && !hasCreditCost)}
+            disabled={busy || (!isPremium && !pricing) || (isPremium && !hasCreditCost)}
             onClick={checkout}
             whileHover={
               shouldReduceMotion || busy

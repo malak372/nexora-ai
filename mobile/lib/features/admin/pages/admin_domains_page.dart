@@ -1,0 +1,2097 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../../../core/network/api_client.dart';
+import '../../../core/theme/app_theme.dart';
+import '../api/admin_api.dart';
+import '../widgets/admin_ui.dart';
+
+const _domainLanguages = ['ANY', 'EN', 'AR', 'FR', 'ES', 'DE', 'TR'];
+
+const _domainSortOptions = <_DomainSortOption>[
+  _DomainSortOption('name', 'Domain name'),
+  _DomainSortOption('updatedAt', 'Last updated'),
+  _DomainSortOption('createdAt', 'Created date'),
+  _DomainSortOption('isActive', 'Status'),
+];
+
+class AdminDomainsPage extends StatefulWidget {
+  const AdminDomainsPage({super.key});
+
+  @override
+  State<AdminDomainsPage> createState() => _AdminDomainsPageState();
+}
+
+class _AdminDomainsPageState extends State<AdminDomainsPage> {
+  final _api = AdminApi.instance;
+  final _client = ApiClient.instance;
+  final _searchController = TextEditingController();
+
+  Timer? _debounce;
+  List<Map<String, dynamic>> _items = const [];
+  Map<String, dynamic> _summary = const {};
+  int _page = 1;
+  int _total = 0;
+  int _totalPages = 1;
+  String _search = '';
+  String _status = 'all';
+  String _sortBy = 'name';
+  String _sortOrder = 'asc';
+  bool _loading = true;
+  bool _refreshing = false;
+  String _error = '';
+  int _requestId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load({bool force = false, bool quiet = false}) async {
+    final requestId = ++_requestId;
+
+    if (quiet) {
+      setState(() {
+        _refreshing = true;
+        _error = '';
+      });
+    } else {
+      setState(() {
+        _loading = true;
+        _error = '';
+      });
+    }
+
+    unawaited(_hydrateSummary(requestId, force: force));
+
+    final extra = <String, dynamic>{};
+    if (_status == 'active') extra['isActive'] = 'true';
+    if (_status == 'inactive') extra['isActive'] = 'false';
+
+    try {
+      final payload = await _api.getList(
+        '/admin/domains',
+        page: _page,
+        limit: 20,
+        search: _search,
+        sortBy: _sortBy,
+        sortOrder: _sortOrder,
+        force: force,
+        extra: extra,
+      );
+
+      if (!mounted || requestId != _requestId) return;
+
+      final rows = (payload['items'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final meta = _map(payload['meta']);
+
+      setState(() {
+        _items = rows;
+        _total = _int(meta['total'], rows.length);
+        _totalPages = _int(meta['totalPages'], 1).clamp(1, 999999).toInt();
+      });
+    } on ApiException catch (error) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _error = error.message);
+    } catch (_) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _error = 'Unable to load domains.');
+    } finally {
+      if (mounted && requestId == _requestId) {
+        setState(() {
+          _loading = false;
+          _refreshing = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _hydrateSummary(int requestId, {required bool force}) async {
+    try {
+      final value = await _api.getSummary(
+        '/admin/domains/summary',
+        force: force,
+        query: {if (_search.isNotEmpty) 'search': _search},
+      );
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _summary = _map(value['data']).isNotEmpty ? _map(value['data']) : value);
+    } catch (_) {}
+  }
+
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      final next = value.trim();
+      if (next == _search) return;
+      setState(() {
+        _search = next;
+        _page = 1;
+      });
+      _load();
+    });
+  }
+
+  Future<void> _openFilters() async {
+    final selection = await showModalBottomSheet<_DomainFilterSelection>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: AppColors.primaryDeep.withValues(alpha: .16),
+      builder: (_) => _DomainFiltersSheet(
+        status: _status,
+        sortBy: _sortBy,
+        sortOrder: _sortOrder,
+      ),
+    );
+
+    if (!mounted || selection == null) return;
+    final changed = selection.status != _status ||
+        selection.sortBy != _sortBy ||
+        selection.sortOrder != _sortOrder;
+    if (!changed) return;
+
+    setState(() {
+      _status = selection.status;
+      _sortBy = selection.sortBy;
+      _sortOrder = selection.sortOrder;
+      _page = 1;
+    });
+    _load();
+  }
+
+  Future<void> _openEditor([Map<String, dynamic>? domain]) async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: AppColors.primaryDeep.withValues(alpha: .18),
+      builder: (_) => _DomainEditorSheet(
+        domain: domain,
+        onSave: (body) => _saveDomain(domain, body),
+      ),
+    );
+
+    if (!mounted || saved != true) return;
+    _showSnack(domain == null ? 'Domain created successfully.' : 'Domain updated successfully.');
+    await _load(force: true, quiet: true);
+  }
+
+  Future<void> _saveDomain(
+    Map<String, dynamic>? domain,
+    Map<String, dynamic> body,
+  ) async {
+    final id = _text(domain?['id']);
+    if (id.isEmpty) {
+      await _client.post('/admin/domains', data: body);
+    } else {
+      await _client.patch('/admin/domains/$id', data: body);
+    }
+    _client.invalidate('/admin/domains');
+    _client.invalidate('/admin/dashboard');
+  }
+
+  void _setStatus(String value) {
+    if (_status == value) return;
+    setState(() {
+      _status = value;
+      _page = 1;
+    });
+    _load();
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rawSummary = _summary;
+    final totalDomains = _metric(rawSummary, const ['totalDomains', 'total'], _total);
+    final activeDomains = _metric(rawSummary, const ['activeDomains', 'active']);
+    final inactiveDomains = _metric(rawSummary, const ['inactiveDomains', 'inactive']);
+    final domainsWithIdeas = _metric(rawSummary, const ['domainsWithIdeas', 'usedByIdeas']);
+    final visibleTotal = _total > 0 ? _total : totalDomains;
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: AdminWorkspaceBackground(
+        child: SafeArea(
+          child: RefreshIndicator(
+            color: AppColors.primaryDark,
+            backgroundColor: AppColors.surface,
+            onRefresh: () => _load(force: true, quiet: true),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 30),
+              children: [
+                AdminPageHeader(
+                  title: 'Domains',
+                  subtitle: 'Manage the domain catalog used by generation.',
+                  eyebrow: 'Data & evidence',
+                  icon: Icons.layers_outlined,
+                  onBack: () => Navigator.of(context).maybePop(),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _HeaderAction(
+                        icon: Icons.add_rounded,
+                        onTap: () => _openEditor(),
+                        emphasized: true,
+                      ),
+                      const SizedBox(width: 7),
+                      _HeaderAction(
+                        icon: Icons.refresh_rounded,
+                        busy: _refreshing,
+                        onTap: _refreshing ? null : () => _load(force: true, quiet: true),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _DomainOverviewCard(
+                  total: totalDomains,
+                  active: activeDomains,
+                  inactive: inactiveDomains,
+                  used: domainsWithIdeas,
+                ),
+                const SizedBox(height: 16),
+                _StatusTabs(
+                  value: _status,
+                  onChanged: _setStatus,
+                  total: totalDomains,
+                  active: activeDomains,
+                  inactive: inactiveDomains,
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 58,
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: _onSearchChanged,
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            hintText: 'Search domains...',
+                            prefixIcon: const Icon(Icons.search_rounded, size: 21),
+                            suffixIcon: _searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      _onSearchChanged('');
+                                      setState(() {});
+                                    },
+                                    icon: const Icon(Icons.close_rounded, size: 18),
+                                  ),
+                            filled: true,
+                            fillColor: AppColors.surface.withValues(alpha: .92),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: const BorderSide(color: AppColors.borderStrong),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: const BorderSide(color: AppColors.borderStrong),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: const BorderSide(color: AppColors.primary, width: 1.35),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _ToolbarFilterButton(
+                      onTap: _openFilters,
+                      active: _status != 'all' || _sortBy != 'name' || _sortOrder != 'asc',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Text(
+                      '$visibleTotal records',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (_totalPages > 1)
+                      Text(
+                        'Page $_page of $_totalPages',
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (_loading && _items.isEmpty)
+                  const _LoadingCards()
+                else if (_error.isNotEmpty && _items.isEmpty)
+                  _ErrorCard(message: _error, onRetry: () => _load(force: true))
+                else if (_items.isEmpty)
+                  const _EmptyCard(
+                    icon: Icons.layers_outlined,
+                    title: 'No domains found',
+                    message: 'Try another search or filter.',
+                  )
+                else ...[
+                  ..._items.map(
+                    (domain) => Padding(
+                      padding: const EdgeInsets.only(bottom: 11),
+                      child: _DomainCard(
+                        domain: domain,
+                        onTap: () => _openEditor(domain),
+                      ),
+                    ),
+                  ),
+                  if (_totalPages > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: _PaginationBar(
+                        page: _page,
+                        totalPages: _totalPages,
+                        onPrevious: _page <= 1
+                            ? null
+                            : () {
+                                setState(() => _page -= 1);
+                                _load();
+                              },
+                        onNext: _page >= _totalPages
+                            ? null
+                            : () {
+                                setState(() => _page += 1);
+                                _load();
+                              },
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DomainOverviewCard extends StatelessWidget {
+  const _DomainOverviewCard({
+    required this.total,
+    required this.active,
+    required this.inactive,
+    required this.used,
+  });
+
+  final int total;
+  final int active;
+  final int inactive;
+  final int used;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFDFC), Color(0xFFF1F9F6), Color(0xFFFFFAFB)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.borderStrong.withValues(alpha: .82)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: .035),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: const Icon(
+                  Icons.layers_outlined,
+                  size: 20,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Discovery domains',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Live configuration used by idea generation',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 8.7,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '$total',
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 28,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -.8,
+                ),
+              ),
+              const SizedBox(width: 7),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 2),
+                child: Text(
+                  'configured domains',
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 9.2,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              _DomainSummaryChip(
+                icon: Icons.check_circle_outline_rounded,
+                label: 'Active',
+                value: active,
+                emphasized: true,
+              ),
+              _DomainSummaryChip(
+                icon: Icons.hide_source_rounded,
+                label: 'Inactive',
+                value: inactive,
+              ),
+              _DomainSummaryChip(
+                icon: Icons.auto_awesome_rounded,
+                label: 'Used by ideas',
+                value: used,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DomainSummaryChip extends StatelessWidget {
+  const _DomainSummaryChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.emphasized = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final int value;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: emphasized
+            ? AppColors.primarySoft
+            : AppColors.surface.withValues(alpha: .86),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primaryDark),
+          const SizedBox(width: 6),
+          Text(
+            '$label $value',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 8.9,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusTabs extends StatelessWidget {
+  const _StatusTabs({
+    required this.value,
+    required this.onChanged,
+    required this.total,
+    required this.active,
+    required this.inactive,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+  final int total;
+  final int active;
+  final int inactive;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      ('all', 'All', total),
+      ('active', 'Active', active),
+      ('inactive', 'Inactive', inactive),
+    ];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: items.map((item) {
+          final selected = value == item.$1;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () => onChanged(item.$1),
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.primarySoft : AppColors.surface,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: selected ? AppColors.primary.withValues(alpha: .35) : AppColors.border,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      item.$2,
+                      style: TextStyle(
+                        color: selected ? AppColors.primaryDeep : AppColors.textSecondary,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      item.$3.toString(),
+                      style: TextStyle(
+                        color: selected ? AppColors.primaryDark : AppColors.textMuted,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _DomainCard extends StatelessWidget {
+  const _DomainCard({required this.domain, required this.onTap});
+
+  final Map<String, dynamic> domain;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = _bool(domain['isActive']);
+    final keywords = _domainKeywords(domain);
+    final ideas = _int(_map(domain['_count'])['ideas']);
+    final name = _text(domain['name']).isEmpty
+        ? 'Unnamed domain'
+        : _text(domain['name']);
+
+    return Material(
+      color: AppColors.surface.withValues(alpha: .96),
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: AppColors.primary.withValues(alpha: .08),
+        highlightColor: AppColors.primarySoft.withValues(alpha: .35),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: AppColors.borderStrong.withValues(alpha: .82),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFEAF5F2), Color(0xFFF6FBF9)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      name.substring(0, 1).toUpperCase(),
+                      style: const TextStyle(
+                        color: AppColors.primaryDark,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13.8,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.schedule_rounded,
+                              size: 12,
+                              color: AppColors.textMuted,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Updated ${_shortDate(domain['updatedAt'])}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 9.1,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  _StatusPill(active: active),
+                  const SizedBox(width: 5),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: AppColors.sage,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 11),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  _DomainFactChip(
+                    icon: Icons.auto_awesome_rounded,
+                    text: '$ideas idea${ideas == 1 ? '' : 's'}',
+                  ),
+                  _DomainFactChip(
+                    icon: Icons.tag_rounded,
+                    text: '${keywords.length} keyword${keywords.length == 1 ? '' : 's'}',
+                  ),
+                  _DomainFactChip(
+                    icon: active
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    text: active ? 'Available to users' : 'Hidden from generation',
+                  ),
+                ],
+              ),
+              if (keywords.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 5,
+                  runSpacing: 5,
+                  children: [
+                    ...keywords.take(3).map(
+                      (item) => _MiniKeyword(
+                        text: _text(item['keyword']),
+                        language: _text(item['language']).toUpperCase(),
+                      ),
+                    ),
+                    if (keywords.length > 3)
+                      _MiniKeyword(
+                        text: '+${keywords.length - 3}',
+                        language: '',
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DomainFactChip extends StatelessWidget {
+  const _DomainFactChip({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: .78),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border.withValues(alpha: .78)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.primaryDark),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 8.3,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFFE5F6EF) : AppColors.surfaceRose,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        active ? 'Active' : 'Inactive',
+        style: TextStyle(
+          color: active ? AppColors.success : AppColors.pinkDeep,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniKeyword extends StatelessWidget {
+  const _MiniKeyword({required this.text, required this.language});
+
+  final String text;
+  final String language;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            text,
+            style: const TextStyle(
+              color: AppColors.primaryDeep,
+              fontSize: 8.7,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (language.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            Text(
+              language,
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 7.7,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DomainFiltersSheet extends StatefulWidget {
+  const _DomainFiltersSheet({
+    required this.status,
+    required this.sortBy,
+    required this.sortOrder,
+  });
+
+  final String status;
+  final String sortBy;
+  final String sortOrder;
+
+  @override
+  State<_DomainFiltersSheet> createState() => _DomainFiltersSheetState();
+}
+
+class _DomainFiltersSheetState extends State<_DomainFiltersSheet> {
+  late String _status;
+  late String _sortBy;
+  late String _sortOrder;
+
+  @override
+  void initState() {
+    super.initState();
+    _status = widget.status;
+    _sortBy = widget.sortBy;
+    _sortOrder = widget.sortOrder;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .72),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(18, 10, 18, 18 + MediaQuery.paddingOf(context).bottom),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.sage.withValues(alpha: .45),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const Row(
+              children: [
+                Icon(Icons.tune_rounded, size: 19, color: AppColors.primaryDark),
+                SizedBox(width: 8),
+                Text(
+                  'Domain filters',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const _SheetLabel('Status'),
+            const SizedBox(height: 9),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _SheetChoice(label: 'All domains', selected: _status == 'all', onTap: () => setState(() => _status = 'all')),
+                _SheetChoice(label: 'Active', selected: _status == 'active', onTap: () => setState(() => _status = 'active')),
+                _SheetChoice(label: 'Inactive', selected: _status == 'inactive', onTap: () => setState(() => _status = 'inactive')),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const _SheetLabel('Sort by'),
+            const SizedBox(height: 9),
+            ..._domainSortOptions.map(
+              (option) => _RadioRow(
+                label: option.label,
+                selected: _sortBy == option.key,
+                onTap: () => setState(() => _sortBy = option.key),
+              ),
+            ),
+            const SizedBox(height: 17),
+            const _SheetLabel('Order'),
+            const SizedBox(height: 9),
+            Row(
+              children: [
+                Expanded(
+                  child: _OrderChoice(
+                    icon: Icons.arrow_upward_rounded,
+                    label: 'Ascending',
+                    selected: _sortOrder == 'asc',
+                    onTap: () => setState(() => _sortOrder = 'asc'),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: _OrderChoice(
+                    icon: Icons.arrow_downward_rounded,
+                    label: 'Descending',
+                    selected: _sortOrder == 'desc',
+                    onTap: () => setState(() => _sortOrder = 'desc'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _status = 'all';
+                        _sortBy = 'name';
+                        _sortOrder = 'asc';
+                      });
+                    },
+                    child: const Text('Reset'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(
+                      _DomainFilterSelection(
+                        status: _status,
+                        sortBy: _sortBy,
+                        sortOrder: _sortOrder,
+                      ),
+                    ),
+                    child: const Text('Apply filters'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DomainEditorSheet extends StatefulWidget {
+  const _DomainEditorSheet({required this.domain, required this.onSave});
+
+  final Map<String, dynamic>? domain;
+  final Future<void> Function(Map<String, dynamic> body) onSave;
+
+  @override
+  State<_DomainEditorSheet> createState() => _DomainEditorSheetState();
+}
+
+class _DomainEditorSheetState extends State<_DomainEditorSheet> {
+  late final TextEditingController _nameController;
+  late bool _active;
+  final List<_KeywordDraft> _keywords = [];
+  bool _saving = false;
+  String _error = '';
+
+  bool get _editing => _text(widget.domain?['id']).isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: _text(widget.domain?['name']));
+    _active = widget.domain == null ? true : _bool(widget.domain?['isActive']);
+    for (final item in _domainKeywords(widget.domain ?? const {})) {
+      _keywords.add(
+        _KeywordDraft(
+          keyword: _text(item['keyword']),
+          language: _domainLanguages.contains(_text(item['language']).toUpperCase())
+              ? _text(item['language']).toUpperCase()
+              : 'ANY',
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    for (final item in _keywords) {
+      item.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _nameController.text.trim();
+    if (name.length < 2) {
+      setState(() => _error = 'Domain name must contain at least 2 characters.');
+      return;
+    }
+
+    final keywords = _keywords
+        .map(
+          (item) => {
+            'keyword': item.controller.text.trim(),
+            'language': item.language,
+          },
+        )
+        .where((item) => _text(item['keyword']).isNotEmpty)
+        .toList();
+
+    if (keywords.any((item) => _text(item['keyword']).length < 2)) {
+      setState(() => _error = 'Every keyword must contain at least 2 characters.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = '';
+    });
+
+    try {
+      await widget.onSave({
+        'name': name,
+        'isActive': _active,
+        'keywords': keywords,
+      });
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Unable to save domain.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: .88,
+      minChildSize: .62,
+      maxChildSize: .96,
+      builder: (context, controller) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 10, 14, 10),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.sage.withValues(alpha: .45),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 13),
+                    Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySoft,
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                          child: Icon(
+                            _editing ? Icons.layers_outlined : Icons.add_rounded,
+                            size: 21,
+                            color: AppColors.primaryDark,
+                          ),
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _editing ? 'Manage domain' : 'Add domain',
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _editing
+                                    ? 'Update availability and discovery vocabulary.'
+                                    : 'Create a new discovery domain for generation.',
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 9.8,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+                          icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView(
+                  controller: controller,
+                  padding: EdgeInsets.fromLTRB(18, 18, 18, 22 + bottom),
+                  children: [
+                    const _SheetLabel('Domain name'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nameController,
+                      enabled: !_saving,
+                      maxLength: 100,
+                      decoration: const InputDecoration(
+                        hintText: 'e.g. Artificial Intelligence',
+                        prefixIcon: Icon(Icons.layers_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(13, 11, 10, 11),
+                      decoration: BoxDecoration(
+                        color: _active ? AppColors.primarySoft : AppColors.surfaceRose,
+                        borderRadius: BorderRadius.circular(17),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _active ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                            size: 20,
+                            color: _active ? AppColors.primaryDark : AppColors.pinkDeep,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _active ? 'Active' : 'Inactive',
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _active
+                                      ? 'Available for new idea generation.'
+                                      : 'Hidden from new generation flows.',
+                                  style: const TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontSize: 9.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch.adaptive(
+                            value: _active,
+                            activeTrackColor: AppColors.primary,
+                            onChanged: _saving ? null : (value) => setState(() => _active = value),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SheetLabel('Discovery keywords'),
+                              SizedBox(height: 3),
+                              Text(
+                                'Focused terms improve matching and evidence collection.',
+                                style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 9.2,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() => _keywords.add(_KeywordDraft(keyword: '', language: 'ANY'))),
+                          icon: const Icon(Icons.add_rounded, size: 17),
+                          label: const Text('Add'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    if (_keywords.isEmpty)
+                      const _EmptyKeywords()
+                    else
+                      ...List.generate(
+                        _keywords.length,
+                        (index) => Padding(
+                          padding: const EdgeInsets.only(bottom: 9),
+                          child: _KeywordEditorRow(
+                            index: index,
+                            draft: _keywords[index],
+                            enabled: !_saving,
+                            onLanguage: (value) => setState(() => _keywords[index].language = value),
+                            onRemove: () {
+                              final removed = _keywords.removeAt(index);
+                              removed.dispose();
+                              setState(() {});
+                            },
+                          ),
+                        ),
+                      ),
+                    if (_editing) ...[
+                      const SizedBox(height: 10),
+                      _DomainMeta(domain: widget.domain!),
+                    ],
+                    if (_error.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceRose,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppColors.pink.withValues(alpha: .2)),
+                        ),
+                        child: Text(
+                          _error,
+                          style: const TextStyle(
+                            color: AppColors.pinkDeep,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      onPressed: _saving ? null : _submit,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Icon(_editing ? Icons.check_rounded : Icons.add_rounded, size: 18),
+                      label: Text(_editing ? 'Save domain' : 'Create domain'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _KeywordEditorRow extends StatelessWidget {
+  const _KeywordEditorRow({
+    required this.index,
+    required this.draft,
+    required this.enabled,
+    required this.onLanguage,
+    required this.onRemove,
+  });
+
+  final int index;
+  final _KeywordDraft draft;
+  final bool enabled;
+  final ValueChanged<String> onLanguage;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 9, 8, 9),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${index + 1}',
+              style: const TextStyle(
+                color: AppColors.primaryDark,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: draft.controller,
+              enabled: enabled,
+              maxLength: 100,
+              decoration: const InputDecoration(
+                counterText: '',
+                hintText: 'Keyword or phrase',
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(horizontal: 11, vertical: 11),
+              ),
+            ),
+          ),
+          const SizedBox(width: 7),
+          PopupMenuButton<String>(
+            enabled: enabled,
+            color: AppColors.surface,
+            surfaceTintColor: Colors.transparent,
+            onSelected: onLanguage,
+            itemBuilder: (_) => _domainLanguages
+                .map(
+                  (language) => PopupMenuItem<String>(
+                    value: language,
+                    child: Text(
+                      language,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+            child: Container(
+              height: 39,
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.language_rounded, size: 14, color: AppColors.primaryDark),
+                  const SizedBox(width: 4),
+                  Text(
+                    draft.language,
+                    style: const TextStyle(
+                      color: AppColors.primaryDeep,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 3),
+          IconButton(
+            onPressed: enabled ? onRemove : null,
+            icon: const Icon(Icons.close_rounded, size: 18),
+            color: AppColors.pinkDeep,
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DomainMeta extends StatelessWidget {
+  const _DomainMeta({required this.domain});
+
+  final Map<String, dynamic> domain;
+
+  @override
+  Widget build(BuildContext context) {
+    final ideas = _int(_map(domain['_count'])['ideas']);
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft.withValues(alpha: .62),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          _MetaRow(label: 'Created', value: _date(domain['createdAt'])),
+          const SizedBox(height: 8),
+          _MetaRow(label: 'Updated', value: _date(domain['updatedAt'])),
+          const SizedBox(height: 8),
+          _MetaRow(label: 'Idea usage', value: '$ideas ideas'),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 9.3,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 9.7,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyKeywords extends StatelessWidget {
+  const _EmptyKeywords();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.sell_outlined, size: 19, color: AppColors.primaryDark),
+          SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              'No keywords yet. Add focused terms to improve domain matching.',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 9.6,
+                height: 1.4,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolbarFilterButton extends StatelessWidget {
+  const _ToolbarFilterButton({required this.onTap, required this.active});
+
+  final VoidCallback onTap;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 58,
+        height: 58,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? AppColors.primarySoft : AppColors.surfaceMuted,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: active ? AppColors.primary.withValues(alpha: .34) : AppColors.border.withValues(alpha: .75),
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Center(
+              child: Icon(Icons.tune_rounded, size: 22, color: AppColors.primaryDark),
+            ),
+            if (active)
+              Positioned(
+                right: -7,
+                top: -7,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.icon,
+    required this.onTap,
+    this.busy = false,
+    this.emphasized = false,
+  });
+
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool busy;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 43,
+        height: 43,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: emphasized ? AppColors.primary : AppColors.primarySoft,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: emphasized ? AppColors.primary : AppColors.border),
+        ),
+        child: busy
+            ? SizedBox(
+                width: 17,
+                height: 17,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: emphasized ? Colors.white : AppColors.primaryDark,
+                ),
+              )
+            : Icon(
+                icon,
+                size: 20,
+                color: emphasized ? Colors.white : AppColors.primaryDark,
+              ),
+      ),
+    );
+  }
+}
+
+class _PaginationBar extends StatelessWidget {
+  const _PaginationBar({
+    required this.page,
+    required this.totalPages,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final int page;
+  final int totalPages;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onPrevious,
+            icon: const Icon(Icons.chevron_left_rounded),
+            color: AppColors.primaryDark,
+          ),
+          Expanded(
+            child: Text(
+              'Page $page of $totalPages',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onNext,
+            icon: const Icon(Icons.chevron_right_rounded),
+            color: AppColors.primaryDark,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingCards extends StatelessWidget {
+  const _LoadingCards();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(
+        4,
+        (index) => Container(
+          height: 96,
+          margin: const EdgeInsets.only(bottom: 11),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: const Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return _StateCard(
+      icon: Icons.cloud_off_outlined,
+      title: 'Could not load domains',
+      message: message,
+      action: TextButton(onPressed: onRetry, child: const Text('Try again')),
+    );
+  }
+}
+
+class _EmptyCard extends StatelessWidget {
+  const _EmptyCard({required this.icon, required this.title, required this.message});
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return _StateCard(icon: icon, title: title, message: message);
+  }
+}
+
+class _StateCard extends StatelessWidget {
+  const _StateCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.action,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 30, color: AppColors.primaryDark),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 10,
+              height: 1.4,
+            ),
+          ),
+          if (action != null) ...[const SizedBox(height: 8), action!],
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetLabel extends StatelessWidget {
+  const _SheetLabel(this.value);
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      value.toUpperCase(),
+      style: const TextStyle(
+        color: AppColors.primaryDark,
+        fontSize: 8.8,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1,
+      ),
+    );
+  }
+}
+
+class _SheetChoice extends StatelessWidget {
+  const _SheetChoice({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primarySoft : AppColors.background,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? AppColors.primary : AppColors.border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? AppColors.primaryDeep : AppColors.textSecondary,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RadioRow extends StatelessWidget {
+  const _RadioRow({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primarySoft : AppColors.background.withValues(alpha: .65),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? AppColors.primary.withValues(alpha: .35) : AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected ? AppColors.primaryDeep : AppColors.textSecondary,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Icon(
+              selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+              size: 18,
+              color: selected ? AppColors.primaryDark : AppColors.sage,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderChoice extends StatelessWidget {
+  const _OrderChoice({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primarySoft : AppColors.background,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? AppColors.primary : AppColors.border),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: selected ? AppColors.primaryDark : AppColors.textMuted),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppColors.primaryDeep : AppColors.textSecondary,
+                fontSize: 9.7,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _KeywordDraft {
+  _KeywordDraft({required String keyword, required this.language})
+      : controller = TextEditingController(text: keyword);
+
+  final TextEditingController controller;
+  String language;
+
+  void dispose() => controller.dispose();
+}
+
+class _DomainSortOption {
+  const _DomainSortOption(this.key, this.label);
+
+  final String key;
+  final String label;
+}
+
+class _DomainFilterSelection {
+  const _DomainFilterSelection({
+    required this.status,
+    required this.sortBy,
+    required this.sortOrder,
+  });
+
+  final String status;
+  final String sortBy;
+  final String sortOrder;
+}
+
+Map<String, dynamic> _map(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return <String, dynamic>{};
+}
+
+List<Map<String, dynamic>> _domainKeywords(Map<String, dynamic> domain) {
+  final value = domain['domainKeywords'] ?? domain['keywords'];
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList();
+}
+
+String _text(dynamic value) => value?.toString().trim() ?? '';
+
+bool _bool(dynamic value) {
+  if (value is bool) return value;
+  final text = _text(value).toLowerCase();
+  return text == 'true' || text == '1' || text == 'yes' || text == 'active';
+}
+
+int _int(dynamic value, [int fallback = 0]) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(_text(value)) ?? fallback;
+}
+
+int _metric(Map<String, dynamic> source, List<String> keys, [int fallback = 0]) {
+  for (final key in keys) {
+    if (source.containsKey(key)) return _int(source[key], fallback);
+  }
+  return fallback;
+}
+
+DateTime? _parsedDate(dynamic value) {
+  final raw = _text(value);
+  if (raw.isEmpty) return null;
+  return DateTime.tryParse(raw)?.toLocal();
+}
+
+String _shortDate(dynamic value) {
+  final date = _parsedDate(value);
+  if (date == null) return '—';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${months[date.month - 1]} ${date.day}, ${date.year}';
+}
+
+String _date(dynamic value) {
+  final date = _parsedDate(value);
+  if (date == null) return '—';
+  final minute = date.minute.toString().padLeft(2, '0');
+  return '${_shortDate(date.toIso8601String())} · ${date.hour.toString().padLeft(2, '0')}:$minute';
+}

@@ -1,22 +1,17 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/admin_api.dart';
+import '../api/ai_models_api.dart';
 import '../widgets/admin_ui.dart';
+import '../widgets/admin_selection_field.dart';
 
-/// Displays the complete mobile AI-monitoring workspace.
-///
-/// The screen mirrors the information exposed by the web administrator
-/// workspace while adapting the layout to a touch-first mobile experience.
-/// It includes request outcome metrics, retry/fallback signals, filters,
-/// sorting, provider/model context, request performance, and complete
-/// operation diagnostics for every selected request.
-///
-/// @author Eman
 class AdminAiMonitoringPage extends StatefulWidget {
   const AdminAiMonitoringPage({super.key});
 
@@ -24,19 +19,18 @@ class AdminAiMonitoringPage extends StatefulWidget {
   State<AdminAiMonitoringPage> createState() => _AdminAiMonitoringPageState();
 }
 
-/// Owns loading, filtering, sorting, pagination, and diagnostics navigation
-/// for [AdminAiMonitoringPage].
-///
-/// @author Eman
 class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
   static const int _pageSize = 20;
 
   final AdminApi _api = AdminApi.instance;
+  final AiModelsApi _modelsApi = AiModelsApi.instance;
   final TextEditingController _searchController = TextEditingController();
 
   Timer? _searchDebounce;
+  int _requestId = 0;
 
   List<Map<String, dynamic>> _rows = const [];
+  List<Map<String, dynamic>> _configuredProviders = const [];
   Map<String, dynamic> _summary = const {};
   Map<String, dynamic> _baseSummary = const {};
   Map<String, dynamic> _charts = const {};
@@ -58,15 +52,15 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
 
   bool _loading = true;
   bool _refreshing = false;
+  bool _exporting = false;
   String _error = '';
 
   @override
   void initState() {
     super.initState();
 
-    // Fetch fresh diagnostics on first entry so the administrator does not
-    // need to manually refresh before seeing the newest provider attempts.
-    _load(force: true);
+    unawaited(_loadProviderCatalog());
+    _load();
   }
 
   @override
@@ -77,12 +71,19 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
     super.dispose();
   }
 
-  /// Loads the request list and the same aggregate information used by the
-  /// web monitoring workspace.
+  Future<void> _loadProviderCatalog({bool force = false}) async {
+    try {
+      final providers = await _modelsApi.providers(force: force);
+      if (!mounted) return;
+      setState(() {
+        _configuredProviders = providers;
+      });
+    } catch (_) {}
+  }
+
   Future<void> _load({bool force = false, bool quiet = false}) async {
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
+    final requestId = ++_requestId;
 
     setState(() {
       if (quiet) {
@@ -90,7 +91,6 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
       } else {
         _loading = true;
       }
-
       _error = '';
     });
 
@@ -98,72 +98,81 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
     final activeQuery = _activeQuery();
     final listExtra = <String, dynamic>{...activeQuery}..remove('search');
 
-    try {
-      final result = await Future.wait<dynamic>([
-        _api.getList(
-          '/admin/ai-monitoring/logs',
-          page: _page,
-          limit: _pageSize,
-          search: _search,
-          sortBy: _sortBy,
-          sortOrder: _sortOrder,
-          force: force,
-          extra: listExtra,
-        ),
-        _api.getSummary(
-          '/admin/ai-monitoring/summary',
-          force: force,
-          query: activeQuery,
-        ),
-        _api.getSummary(
-          '/admin/ai-monitoring/summary',
-          force: force,
-          query: commonQuery,
-        ),
-        _api.getSummary(
-          '/admin/ai-monitoring/charts',
-          force: force,
-          query: _dateOnlyQuery(),
-        ),
-      ]);
+    unawaited(
+      _api
+          .getSummary(
+            '/admin/ai-monitoring/summary',
+            force: force,
+            query: activeQuery,
+          )
+          .then((value) {
+            if (!mounted || requestId != _requestId) return;
+            setState(() => _summary = value);
+          })
+          .catchError((_) {}),
+    );
 
-      final listPayload = _asMap(result[0]);
+    unawaited(
+      _api
+          .getSummary(
+            '/admin/ai-monitoring/summary',
+            force: force,
+            query: commonQuery,
+          )
+          .then((value) {
+            if (!mounted || requestId != _requestId) return;
+            setState(() => _baseSummary = value);
+          })
+          .catchError((_) {}),
+    );
+
+    unawaited(
+      _api
+          .getSummary(
+            '/admin/ai-monitoring/charts',
+            force: force,
+            query: _dateOnlyQuery(),
+          )
+          .then((value) {
+            if (!mounted || requestId != _requestId) return;
+            setState(() => _charts = value);
+          })
+          .catchError((_) {}),
+    );
+
+    try {
+      final listPayload = await _api.getList(
+        '/admin/ai-monitoring/logs',
+        page: _page,
+        limit: _pageSize,
+        search: _search,
+        sortBy: _sortBy,
+        sortOrder: _sortOrder,
+        force: force,
+        extra: listExtra,
+      );
+
+      if (!mounted || requestId != _requestId) return;
+
       final meta = _asMap(listPayload['meta']);
       final rows = (listPayload['items'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
 
-      if (!mounted) {
-        return;
-      }
-
       setState(() {
         _rows = rows;
-        _summary = _asMap(result[1]);
-        _baseSummary = _asMap(result[2]);
-        _charts = _asMap(result[3]);
         _total = _int(meta['total'] ?? rows.length);
         _totalPages = _int(meta['totalPages'] ?? 1).clamp(1, 999999).toInt();
       });
     } on ApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _error = error.message;
-      });
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _error = error.message);
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _error = 'Could not load AI monitoring requests.';
-      });
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _error = 'Could not load AI monitoring requests.');
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _requestId) {
         setState(() {
           _loading = false;
           _refreshing = false;
@@ -172,7 +181,6 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
     }
   }
 
-  /// Builds query parameters that apply regardless of request outcome.
   Map<String, dynamic> _commonQuery() {
     return {
       if (_search.isNotEmpty) 'search': _search,
@@ -183,7 +191,6 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
     };
   }
 
-  /// Builds active request filters, including success/retry/fallback state.
   Map<String, dynamic> _activeQuery() {
     final query = <String, dynamic>{..._commonQuery()};
 
@@ -203,8 +210,6 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
     return query;
   }
 
-  /// The web workspace keeps provider and request-type options scoped only
-  /// by date. The same behavior is preserved here.
   Map<String, dynamic> _dateOnlyQuery() {
     return {
       if (_fromDate != null) 'fromDate': _startOfDayIso(_fromDate!),
@@ -213,7 +218,6 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
   }
 
   void _onSearchChanged(String value) {
-    // Rebuild so AdminSearchField can immediately show/hide its clear icon.
     setState(() {});
 
     _searchDebounce?.cancel();
@@ -248,6 +252,67 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
     });
 
     _load();
+  }
+
+  Future<void> _exportCsv() async {
+    if (_exporting) return;
+
+    setState(() => _exporting = true);
+
+    try {
+      final bytes = await ApiClient.instance.getBytes(
+        '/admin/ai-monitoring/logs/export/csv',
+        query: {
+          ..._activeQuery(),
+          'sortBy': _sortBy,
+          'sortOrder': _sortOrder,
+        },
+      );
+
+      if (bytes.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No diagnostics were available to export.'),
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+
+      final box = context.findRenderObject() as RenderBox?;
+      final shareOrigin = box == null
+          ? null
+          : box.localToGlobal(Offset.zero) & box.size;
+
+      await SharePlus.instance.share(
+        ShareParams(
+          subject: 'AI monitoring diagnostics',
+          text: 'Voxidence AI monitoring diagnostics export',
+          files: [
+            XFile.fromData(
+              Uint8List.fromList(bytes),
+              mimeType: 'text/csv',
+              name: 'ai-monitoring-diagnostics.csv',
+            ),
+          ],
+          sharePositionOrigin: shareOrigin,
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not export AI diagnostics.')),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Future<void> _openFilters() async {
@@ -290,7 +355,7 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
                                 const Text(
                                   'REQUEST FILTERS',
                                   style: TextStyle(
-                                    color: AppColors.primaryDark,
+                                    color: AppColors.primary,
                                     fontSize: 8.8,
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: 1.1,
@@ -561,52 +626,90 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
   }
 
   List<_FilterOption> _providerOptions() {
-    final raw = _charts['requestsByProvider'];
-    final keys = <String>{};
+    final labels = <String, String>{};
 
-    if (raw is List) {
-      for (final item in raw.whereType<Map>()) {
+    void add(String rawKey, [String? rawLabel]) {
+      final key = rawKey.trim().toLowerCase();
+      if (key.isEmpty || key == 'all') return;
+      final label = (rawLabel ?? '').trim();
+      labels[key] = label.isEmpty ? _providerLabel(key) : label;
+    }
+
+    for (final provider in _configuredProviders) {
+      final key = _text(provider['key']);
+      final label = _text(provider['displayName'] ?? provider['name']);
+      add(key, label);
+    }
+
+    final rawProviders = _charts['requestsByProvider'];
+    if (rawProviders is List) {
+      for (final item in rawProviders.whereType<Map>()) {
         final map = Map<String, dynamic>.from(item);
-        final key = _text(map['label'] ?? map['providerKey']);
-
-        if (key.isNotEmpty) {
-          keys.add(key);
-        }
+        final key = _text(map['providerKey'] ?? map['key'] ?? map['label']);
+        add(key);
       }
     }
 
-    if (_providerKey != 'all') {
-      keys.add(_providerKey);
+    for (final row in _rows) {
+      add(_text(row['providerKey']));
     }
+
+    if (_providerKey != 'all') {
+      add(_providerKey);
+    }
+
+    if (labels.isEmpty) {
+      add('google', 'Google AI');
+      add('openrouter', 'OpenRouter');
+      add('ollama', 'Ollama');
+    }
+
+    final keys = labels.keys.toList()
+      ..sort((a, b) => labels[a]!.compareTo(labels[b]!));
 
     return [
       const _FilterOption('all', 'All providers'),
-      ...keys.map((key) => _FilterOption(key, _titleCase(key))),
+      ...keys.map((key) => _FilterOption(key, labels[key]!)),
     ];
   }
 
   List<_FilterOption> _requestTypeOptions() {
-    final raw = _charts['requestsByType'];
-    final keys = <String>{};
+    final keys = <String>{
+      'IDEA_GENERATION',
+      'NLP_ENHANCEMENT',
+      'AI_CHAT',
+      'COMMENT_ANALYSIS',
+      'DATA_COLLECTION',
+      'PAYMENT',
+      'OTHER',
+    };
 
-    if (raw is List) {
-      for (final item in raw.whereType<Map>()) {
+    final rawTypes = _charts['requestsByType'];
+    if (rawTypes is List) {
+      for (final item in rawTypes.whereType<Map>()) {
         final map = Map<String, dynamic>.from(item);
-        final key = _text(map['label'] ?? map['requestType']);
-
-        if (key.isNotEmpty) {
-          keys.add(key);
-        }
+        final key = _text(map['requestType'] ?? map['key'] ?? map['label'])
+            .trim()
+            .toUpperCase();
+        if (key.isNotEmpty) keys.add(key);
       }
     }
 
-    if (_requestType != 'all') {
-      keys.add(_requestType);
+    for (final row in _rows) {
+      final key = _text(row['requestType']).trim().toUpperCase();
+      if (key.isNotEmpty) keys.add(key);
     }
+
+    if (_requestType != 'all') {
+      keys.add(_requestType.toUpperCase());
+    }
+
+    final ordered = keys.toList()
+      ..sort((a, b) => _requestTypeLabel(a).compareTo(_requestTypeLabel(b)));
 
     return [
       const _FilterOption('all', 'All request types'),
-      ...keys.map((key) => _FilterOption(key, _requestTypeLabel(key))),
+      ...ordered.map((key) => _FilterOption(key, _requestTypeLabel(key))),
     ];
   }
 
@@ -652,43 +755,60 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
                   sliver: SliverList.list(
                     children: [
                       AdminPageHeader(
+                        accentColor: AppColors.primary,
                         title: 'AI monitoring',
                         subtitle:
                             'Inspect provider calls, retries, fallback paths, latency and execution results.',
                         eyebrow: 'Intelligence',
                         icon: Icons.monitor_heart_outlined,
                         onBack: () => Navigator.maybePop(context),
-                        trailing: _refreshing
-                            ? const SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 19,
-                                    height: 19,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: AppColors.primaryDark,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : IconButton(
-                                onPressed: () =>
-                                    _load(force: true, quiet: true),
-                                style: IconButton.styleFrom(
-                                  backgroundColor: AppColors.primarySoft,
-                                  foregroundColor: AppColors.primaryDark,
-                                  fixedSize: const Size(44, 44),
-                                  side: const BorderSide(
-                                    color: AppColors.border,
-                                  ),
-                                ),
-                                icon: const Icon(
-                                  Icons.refresh_rounded,
-                                  size: 20,
-                                ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Export diagnostics',
+                              onPressed: _exporting ? null : _exportCsv,
+                              style: IconButton.styleFrom(
+                                backgroundColor: AppColors.surface,
+                                foregroundColor: AppColors.primary,
+                                fixedSize: const Size(44, 44),
+                                side: const BorderSide(color: AppColors.border),
                               ),
+                              icon: _exporting
+                                  ? const SizedBox(
+                                      width: 17,
+                                      height: 17,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.primary,
+                                      ),
+                                    )
+                                  : const Icon(Icons.ios_share_rounded, size: 19),
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              onPressed: _refreshing
+                                  ? null
+                                  : () => _load(force: true, quiet: true),
+                              style: IconButton.styleFrom(
+                                backgroundColor: AppColors.primarySoft,
+                                foregroundColor: AppColors.primary,
+                                fixedSize: const Size(44, 44),
+                                side: const BorderSide(color: AppColors.border),
+                              ),
+                              icon: _refreshing
+                                  ? const SizedBox(
+                                      width: 17,
+                                      height: 17,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.primary,
+                                      ),
+                                    )
+                                  : const Icon(Icons.refresh_rounded, size: 20),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 12),
                       _MonitoringMetricGrid(
@@ -741,7 +861,7 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
                                     : AppColors.primarySoft,
                                 foregroundColor: _activeFilterCount > 0
                                     ? AppColors.pinkDeep
-                                    : AppColors.primaryDark,
+                                    : AppColors.primary,
                                 padding: EdgeInsets.zero,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(15),
@@ -898,9 +1018,6 @@ class _AdminAiMonitoringPageState extends State<AdminAiMonitoringPage> {
   }
 }
 
-/// Four primary monitoring metrics shown in a responsive 2×2 layout.
-///
-/// @author Eman
 class _MonitoringMetricGrid extends StatelessWidget {
   const _MonitoringMetricGrid({
     required this.totalRequests,
@@ -938,7 +1055,7 @@ class _MonitoringMetricGrid extends StatelessWidget {
                 hint: 'Matching provider attempts',
                 icon: Icons.monitor_heart_outlined,
                 tone: AppColors.primarySoft,
-                iconColor: AppColors.primaryDark,
+                iconColor: AppColors.primary,
               ),
             ),
             SizedBox(
@@ -1063,9 +1180,6 @@ class _MonitoringMetricCard extends StatelessWidget {
   }
 }
 
-/// Secondary operational signals shown on the web workspace.
-///
-/// @author Eman
 class _MonitoringSignalStrip extends StatelessWidget {
   const _MonitoringSignalStrip({
     required this.retryableFailures,
@@ -1136,7 +1250,7 @@ class _SignalChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: AppColors.primaryDark),
+          Icon(icon, size: 13, color: AppColors.primary),
           const SizedBox(width: 5),
           Text(
             value,
@@ -1161,9 +1275,6 @@ class _SignalChip extends StatelessWidget {
   }
 }
 
-/// Request status tabs with the same counts exposed by the web page.
-///
-/// @author Eman
 class _StatusTabs extends StatelessWidget {
   const _StatusTabs({
     required this.selected,
@@ -1250,7 +1361,7 @@ class _StatusTab extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected ? AppColors.primaryDeep : AppColors.textMuted,
+                  color: selected ? AppColors.primary : AppColors.textMuted,
                   fontSize: 9.3,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1262,7 +1373,7 @@ class _StatusTab extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: selected
-                      ? AppColors.primaryDark
+                      ? AppColors.primary
                       : AppColors.textSecondary,
                   fontSize: 8.3,
                   fontWeight: FontWeight.w800,
@@ -1276,9 +1387,6 @@ class _StatusTab extends StatelessWidget {
   }
 }
 
-/// Displays active non-status filters in compact mobile chips.
-///
-/// @author Eman
 class _ActiveFilterChips extends StatelessWidget {
   const _ActiveFilterChips({
     required this.providerKey,
@@ -1345,7 +1453,7 @@ class _ActiveFilterChips extends StatelessWidget {
               child: Text(
                 label,
                 style: const TextStyle(
-                  color: AppColors.primaryDeep,
+                  color: AppColors.primary,
                   fontSize: 8.8,
                   fontWeight: FontWeight.w800,
                 ),
@@ -1357,9 +1465,6 @@ class _ActiveFilterChips extends StatelessWidget {
   }
 }
 
-/// Mobile request card containing all columns presented by the web table.
-///
-/// @author Eman
 class _AiRequestCard extends StatelessWidget {
   const _AiRequestCard({required this.row, required this.onTap});
 
@@ -1500,7 +1605,7 @@ class _AiRequestCard extends StatelessWidget {
                     icon: Icons.account_tree_outlined,
                     label: 'Fallback path',
                     tone: AppColors.primarySoft,
-                    foreground: AppColors.primaryDark,
+                    foreground: AppColors.primary,
                   ),
                 if (!success && errorCode.isNotEmpty)
                   _MiniTag(
@@ -1565,7 +1670,7 @@ class _CardInfoRow extends StatelessWidget {
             color: AppColors.primarySoft,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, size: 15, color: AppColors.primaryDark),
+          child: Icon(icon, size: 15, color: AppColors.primary),
         ),
         const SizedBox(width: 9),
         Expanded(
@@ -1631,13 +1736,6 @@ class _CardInfoRow extends StatelessWidget {
   }
 }
 
-/// Full diagnostics sheet loaded after selecting a request attempt.
-///
-/// The detail request and operation timeline are fetched separately exactly
-/// like the web workspace, ensuring retries and fallback attempts are visible
-/// even when they are not part of the paginated list row.
-///
-/// @author Eman
 class _AiRequestDetailsSheet extends StatefulWidget {
   const _AiRequestDetailsSheet({required this.initialRow});
 
@@ -1726,8 +1824,6 @@ class _AiRequestDetailsSheetState extends State<_AiRequestDetailsSheet> {
         });
       }
     } catch (_) {
-      // Legacy records may not have a complete operation timeline. The sheet
-      // still shows the selected request details and technical references.
     } finally {
       if (mounted) {
         setState(() {
@@ -1806,7 +1902,7 @@ class _AiRequestDetailsSheetState extends State<_AiRequestDetailsSheet> {
                         const Text(
                           'AI REQUEST DIAGNOSTICS',
                           style: TextStyle(
-                            color: AppColors.primaryDark,
+                            color: AppColors.primary,
                             fontSize: 8.2,
                             fontWeight: FontWeight.w900,
                             letterSpacing: .9,
@@ -2041,7 +2137,7 @@ class _OutcomeCard extends StatelessWidget {
                   icon: Icons.account_tree_outlined,
                   label: 'Fallback',
                   tone: AppColors.primarySoft,
-                  foreground: AppColors.primaryDark,
+                  foreground: AppColors.primary,
                 ),
               ],
             ],
@@ -2146,7 +2242,7 @@ class _DetailItem extends StatelessWidget {
               color: AppColors.primarySoft,
               borderRadius: BorderRadius.circular(9),
             ),
-            child: Icon(icon, size: 14, color: AppColors.primaryDark),
+            child: Icon(icon, size: 14, color: AppColors.primary),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -2233,7 +2329,7 @@ class _ContextRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: AppColors.primaryDark),
+        Icon(icon, size: 16, color: AppColors.primary),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -2344,7 +2440,7 @@ class _SectionHeading extends StatelessWidget {
               Text(
                 eyebrow,
                 style: const TextStyle(
-                  color: AppColors.primaryDark,
+                  color: AppColors.primary,
                   fontSize: 8.2,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .8,
@@ -2382,7 +2478,7 @@ class _SectionHeading extends StatelessWidget {
             child: Text(
               trailing!,
               style: const TextStyle(
-                color: AppColors.primaryDark,
+                color: AppColors.primary,
                 fontSize: 8.5,
                 fontWeight: FontWeight.w900,
               ),
@@ -2595,14 +2691,14 @@ class _AttemptFact extends StatelessWidget {
           Icon(
             icon,
             size: 11,
-            color: emphasized ? AppColors.primaryDark : AppColors.textMuted,
+            color: emphasized ? AppColors.primary : AppColors.textMuted,
           ),
           const SizedBox(width: 4),
           Text(
             value,
             style: TextStyle(
               color: emphasized
-                  ? AppColors.primaryDark
+                  ? AppColors.primary
                   : AppColors.textSecondary,
               fontSize: 7.9,
               fontWeight: FontWeight.w800,
@@ -2678,7 +2774,7 @@ class _TimelineLoading extends StatelessWidget {
             height: 18,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: AppColors.primaryDark,
+              color: AppColors.primary,
             ),
           ),
           SizedBox(width: 10),
@@ -2713,7 +2809,7 @@ class _TimelineEmpty extends StatelessWidget {
           Icon(
             Icons.account_tree_outlined,
             size: 20,
-            color: AppColors.primaryDark,
+            color: AppColors.primary,
           ),
           SizedBox(width: 9),
           Expanded(
@@ -2823,31 +2919,21 @@ class _FilterSelect extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
+    return AdminSelectionField(
       key: ValueKey('$label-$value'),
-      initialValue: value,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, size: 18),
-      ),
-      items: options
+      label: label,
+      icon: icon,
+      value: value,
+      options: options
           .map(
-            (option) => DropdownMenuItem<String>(
+            (option) => AdminSelectionOption(
               value: option.value,
-              child: Text(
-                option.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              label: option.label,
+              icon: icon,
             ),
           )
           .toList(),
-      onChanged: (value) {
-        if (value != null) {
-          onChanged(value);
-        }
-      },
+      onChanged: onChanged,
     );
   }
 }
@@ -2889,7 +2975,7 @@ class _DateFilterButton extends StatelessWidget {
               const Icon(
                 Icons.calendar_month_outlined,
                 size: 17,
-                color: AppColors.primaryDark,
+                color: AppColors.primary,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -2964,7 +3050,7 @@ class _OrderChoice extends StatelessWidget {
               Icon(
                 icon,
                 size: 15,
-                color: selected ? AppColors.primaryDark : AppColors.textMuted,
+                color: selected ? AppColors.primary : AppColors.textMuted,
               ),
               const SizedBox(width: 6),
               Flexible(
@@ -2974,7 +3060,7 @@ class _OrderChoice extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: selected
-                        ? AppColors.primaryDark
+                        ? AppColors.primary
                         : AppColors.textSecondary,
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
@@ -2999,7 +3085,7 @@ class _SectionLabel extends StatelessWidget {
     return Text(
       label,
       style: const TextStyle(
-        color: AppColors.primaryDark,
+        color: AppColors.primary,
         fontSize: 8.3,
         fontWeight: FontWeight.w900,
         letterSpacing: .8,
@@ -3190,6 +3276,15 @@ String _titleCase(String value) {
         return '${lower[0].toUpperCase()}${lower.substring(1)}';
       })
       .join(' ');
+}
+
+String _providerLabel(String value) {
+  return switch (value.trim().toLowerCase()) {
+    'google' => 'Google AI',
+    'openrouter' => 'OpenRouter',
+    'ollama' => 'Ollama',
+    _ => _titleCase(value),
+  };
 }
 
 String _requestTypeLabel(String value) {

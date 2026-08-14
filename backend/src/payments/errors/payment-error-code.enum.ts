@@ -46,6 +46,10 @@ export enum PaymentErrorCode {
    */
   PAYMENT_CURRENCY_MISMATCH = 'PAYMENT_CURRENCY_MISMATCH',
 
+  UNSUPPORTED_PAYMENT_CURRENCY = 'UNSUPPORTED_PAYMENT_CURRENCY',
+
+  CURRENCY_RATE_UNAVAILABLE = 'CURRENCY_RATE_UNAVAILABLE',
+
   /**
    * The requested payment purpose is not supported.
    */

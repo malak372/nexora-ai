@@ -98,7 +98,7 @@ abstract final class AdminResources {
     icon: Icons.groups_2_outlined,
     listPath: '/admin/users',
     summaryPath: '/admin/users/summary',
-    statuses: ['ACTIVE', 'INACTIVE'],
+    statuses: ['ACTIVE', 'INACTIVE', 'DELETED'],
   );
 
   /// Generated ideas administration resource.
@@ -140,7 +140,7 @@ abstract final class AdminResources {
     icon: Icons.hub_outlined,
     listPath: '/admin/data-sources',
     summaryPath: '/admin/data-sources/summary',
-    sortBy: 'name',
+    sortBy: 'displayName',
     sortOrder: 'asc',
     statuses: ['ACTIVE', 'INACTIVE'],
   );

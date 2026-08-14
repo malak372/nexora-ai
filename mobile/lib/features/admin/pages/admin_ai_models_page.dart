@@ -7,13 +7,8 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/ai_models_api.dart';
 import '../widgets/admin_ui.dart';
+import '../widgets/admin_selection_field.dart';
 
-/// Full mobile administration workspace for the AI-model registry.
-///
-/// The page mirrors the important web capabilities while adapting them to a
-/// touch-first layout.
-///
-/// @author Eman
 class AdminAiModelsPage extends StatefulWidget {
   const AdminAiModelsPage({super.key});
 
@@ -29,6 +24,7 @@ class _AdminAiModelsPageState extends State<AdminAiModelsPage> {
   final TextEditingController _searchController = TextEditingController();
 
   Timer? _searchDebounce;
+  int _requestId = 0;
 
   List<Map<String, dynamic>> _models = const [];
   List<Map<String, dynamic>> _providers = const [];
@@ -68,6 +64,8 @@ class _AdminAiModelsPageState extends State<AdminAiModelsPage> {
   }
 
   Future<void> _load({bool force = false, bool quiet = false}) async {
+    final requestId = ++_requestId;
+
     if (quiet) {
       setState(() {
         _refreshing = true;
@@ -80,100 +78,77 @@ class _AdminAiModelsPageState extends State<AdminAiModelsPage> {
       });
     }
 
+    bool? isActive;
+    bool? isDefault;
+
+    if (_status == 'active') isActive = true;
+    if (_status == 'inactive') isActive = false;
+    if (_status == 'default') isDefault = true;
+
+    unawaited(
+      _api.summary(force: force).then((summary) {
+        if (!mounted || requestId != _requestId) return;
+        setState(() => _summary = summary);
+      }).catchError((_) {}),
+    );
+
+    unawaited(
+      _api.providers(force: force).then((providers) {
+        if (!mounted || requestId != _requestId) return;
+        setState(() => _providers = providers);
+      }).catchError((_) {}),
+    );
+
     try {
-      bool? isActive;
-      bool? isDefault;
+      final list = await _api.list(
+        page: _page,
+        limit: _pageSize,
+        search: _search,
+        providerKey: _provider,
+        healthStatus: _health,
+        isActive: isActive,
+        isDefault: isDefault,
+        sortBy: _sortBy,
+        sortOrder: _sortOrder,
+        force: force,
+      );
 
-      if (_status == 'active') {
-        isActive = true;
-      }
-
-      if (_status == 'inactive') {
-        isActive = false;
-      }
-
-      if (_status == 'default') {
-        isDefault = true;
-      }
-
-      final result = await Future.wait<dynamic>([
-        _api.list(
-          page: _page,
-          limit: _pageSize,
-          search: _search,
-          providerKey: _provider,
-          healthStatus: _health,
-          isActive: isActive,
-          isDefault: isDefault,
-          sortBy: _sortBy,
-          sortOrder: _sortOrder,
-          force: force,
-        ),
-        _api.summary(force: force),
-        _api.providers(force: force),
-      ]);
-
-      final list = result[0] as Map<String, dynamic>;
-
-      final summary = result[1] as Map<String, dynamic>;
-
-      final providers = result[2] as List<Map<String, dynamic>>;
+      if (!mounted || requestId != _requestId) return;
 
       final rows = (list['items'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
-
       final meta = list['meta'] is Map
           ? Map<String, dynamic>.from(list['meta'] as Map)
           : <String, dynamic>{};
 
-      if (!mounted) {
-        return;
-      }
-
       setState(() {
         _models = rows;
-        _summary = summary;
-        _providers = providers;
-
         _total = _asInt(meta['total']);
-
         _page = _asInt(meta['page']).clamp(1, 999999).toInt();
-
         _totalPages = _asInt(meta['totalPages']).clamp(1, 999999).toInt();
-
-        _loading = false;
-        _refreshing = false;
       });
     } on ApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _error = error.message;
-        _loading = false;
-        _refreshing = false;
-      });
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _error = error.message);
     } catch (_) {
-      if (!mounted) {
-        return;
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _error = 'Could not load AI models. Please try again.');
+    } finally {
+      if (mounted && requestId == _requestId) {
+        setState(() {
+          _loading = false;
+          _refreshing = false;
+        });
       }
-
-      setState(() {
-        _error = 'Could not load AI models. Please try again.';
-
-        _loading = false;
-        _refreshing = false;
-      });
     }
   }
 
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
 
-    _searchDebounce = Timer(const Duration(milliseconds: 420), () {
+    _searchDebounce = Timer(const Duration(milliseconds: 280), () {
       final normalized = value.trim();
 
       if (normalized == _search || !mounted) {
@@ -352,6 +327,7 @@ class _AdminAiModelsPageState extends State<AdminAiModelsPage> {
                   sliver: SliverList.list(
                     children: [
                       AdminPageHeader(
+                        accentColor: AppColors.primary,
                         title: 'AI models',
                         subtitle:
                             'Manage providers, routing, health and model capabilities.',
@@ -481,7 +457,7 @@ class _HeaderActions extends StatelessWidget {
                   height: 17,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: AppColors.primaryDark,
+                    color: AppColors.primary,
                   ),
                 )
               : null,
@@ -518,7 +494,7 @@ class _RoundAction extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: filled ? AppColors.primaryDark : AppColors.primarySoft,
+        color: filled ? AppColors.primary : AppColors.primarySoft,
         borderRadius: BorderRadius.circular(15),
         child: InkWell(
           onTap: onTap,
@@ -530,7 +506,7 @@ class _RoundAction extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(15),
               border: Border.all(
-                color: filled ? AppColors.primaryDark : AppColors.border,
+                color: filled ? AppColors.primary : AppColors.border,
               ),
             ),
             child:
@@ -538,7 +514,7 @@ class _RoundAction extends StatelessWidget {
                 Icon(
                   icon,
                   size: 20,
-                  color: filled ? Colors.white : AppColors.primaryDark,
+                  color: filled ? Colors.white : AppColors.primary,
                 ),
           ),
         ),
@@ -564,7 +540,7 @@ class _SummaryStrip extends StatelessWidget {
         value: _asInt(summary['totalModels']),
         icon: Icons.psychology_alt_outlined,
         tone: AppColors.primarySoft,
-        iconColor: AppColors.primaryDark,
+        iconColor: AppColors.primary,
       ),
       _MetricData(
         label: 'Active',
@@ -623,7 +599,7 @@ class _SummaryStrip extends StatelessWidget {
               border: Border.all(color: AppColors.border),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primaryDark.withValues(alpha: .035),
+                  color: AppColors.primary.withValues(alpha: .035),
                   blurRadius: 14,
                   offset: const Offset(0, 6),
                 ),
@@ -728,7 +704,7 @@ class _SearchAndFilter extends StatelessWidget {
         const SizedBox(width: 9),
         Material(
           color: activeFilterCount > 0
-              ? AppColors.primaryDark
+              ? AppColors.primary
               : AppColors.primarySoft,
           borderRadius: BorderRadius.circular(16),
           child: InkWell(
@@ -742,7 +718,7 @@ class _SearchAndFilter extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: activeFilterCount > 0
-                      ? AppColors.primaryDark
+                      ? AppColors.primary
                       : AppColors.border,
                 ),
               ),
@@ -753,7 +729,7 @@ class _SearchAndFilter extends StatelessWidget {
                     Icons.tune_rounded,
                     color: activeFilterCount > 0
                         ? Colors.white
-                        : AppColors.primaryDark,
+                        : AppColors.primary,
                     size: 21,
                   ),
                   if (activeFilterCount > 0)
@@ -1048,7 +1024,7 @@ class _ProviderBadge extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(
-          color: AppColors.primaryDark,
+          color: AppColors.primary,
           fontSize: 17,
           fontWeight: FontWeight.w900,
         ),
@@ -1076,7 +1052,7 @@ class _CapabilityIcon extends StatelessWidget {
         Icon(
           icon,
           size: 13,
-          color: active ? AppColors.primaryDark : AppColors.silver,
+          color: active ? AppColors.primary : AppColors.silver,
         ),
         const SizedBox(width: 3),
         Text(
@@ -1097,7 +1073,7 @@ class _TinyPill extends StatelessWidget {
     required this.label,
     required this.icon,
     this.background = AppColors.primarySoft,
-    this.foreground = AppColors.primaryDark,
+    this.foreground = AppColors.primary,
   });
 
   final String label;
@@ -1345,7 +1321,7 @@ class _PaginationBar extends StatelessWidget {
           IconButton(
             onPressed: onPrevious,
             icon: const Icon(Icons.chevron_left_rounded),
-            color: AppColors.primaryDark,
+            color: AppColors.primary,
           ),
           Expanded(
             child: Text(
@@ -1361,7 +1337,7 @@ class _PaginationBar extends StatelessWidget {
           IconButton(
             onPressed: onNext,
             icon: const Icon(Icons.chevron_right_rounded),
-            color: AppColors.primaryDark,
+            color: AppColors.primary,
           ),
         ],
       ),
@@ -1511,76 +1487,76 @@ class _AiModelFiltersSheetState extends State<_AiModelFiltersSheet> {
                   ),
                   _ChoiceSection(
                     title: 'Provider',
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _provider,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.hub_outlined),
-                      ),
-                      items: [
-                        const DropdownMenuItem(
+                    child: AdminSelectionField(
+                      label: 'Provider',
+                      icon: Icons.hub_outlined,
+                      value: _provider,
+                      options: [
+                        const AdminSelectionOption(
                           value: '',
-                          child: Text('All providers'),
+                          label: 'All providers',
+                          icon: Icons.hub_outlined,
                         ),
                         ...widget.providers.map((provider) {
                           final key = _asString(provider['key']);
-
-                          final displayName = _asString(
-                            provider['displayName'],
-                          );
-
-                          return DropdownMenuItem(
+                          final displayName = _asString(provider['displayName']);
+                          return AdminSelectionOption(
                             value: key,
-                            child: Text(
-                              displayName.isNotEmpty
-                                  ? displayName
-                                  : _providerLabel(key),
-                            ),
+                            label: displayName.isNotEmpty
+                                ? displayName
+                                : _providerLabel(key),
+                            icon: Icons.hub_outlined,
                           );
                         }),
                       ],
                       onChanged: (value) {
                         setState(() {
-                          _provider = value ?? '';
+                          _provider = value;
                         });
                       },
                     ),
                   ),
                   _ChoiceSection(
                     title: 'Sort by',
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _sortBy,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.sort_rounded),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
+                    child: AdminSelectionField(
+                      label: 'Sort by',
+                      icon: Icons.sort_rounded,
+                      value: _sortBy,
+                      options: const [
+                        AdminSelectionOption(
                           value: 'priority',
-                          child: Text('Priority'),
+                          label: 'Priority',
+                          icon: Icons.low_priority_rounded,
                         ),
-                        DropdownMenuItem(
+                        AdminSelectionOption(
                           value: 'modelName',
-                          child: Text('Model name'),
+                          label: 'Model name',
+                          icon: Icons.sort_by_alpha_rounded,
                         ),
-                        DropdownMenuItem(
+                        AdminSelectionOption(
                           value: 'providerKey',
-                          child: Text('Provider'),
+                          label: 'Provider',
+                          icon: Icons.hub_outlined,
                         ),
-                        DropdownMenuItem(
+                        AdminSelectionOption(
                           value: 'healthStatus',
-                          child: Text('Health status'),
+                          label: 'Health status',
+                          icon: Icons.monitor_heart_outlined,
                         ),
-                        DropdownMenuItem(
+                        AdminSelectionOption(
                           value: 'updatedAt',
-                          child: Text('Last updated'),
+                          label: 'Last updated',
+                          icon: Icons.update_rounded,
                         ),
-                        DropdownMenuItem(
+                        AdminSelectionOption(
                           value: 'createdAt',
-                          child: Text('Created date'),
+                          label: 'Created date',
+                          icon: Icons.calendar_today_outlined,
                         ),
                       ],
                       onChanged: (value) {
                         setState(() {
-                          _sortBy = value ?? 'priority';
+                          _sortBy = value;
                         });
                       },
                     ),
@@ -1725,10 +1701,10 @@ class _ChoiceChip extends StatelessWidget {
         fontSize: 10,
         fontWeight: FontWeight.w800,
       ),
-      selectedColor: AppColors.primaryDark,
+      selectedColor: AppColors.primary,
       backgroundColor: AppColors.surface,
       side: BorderSide(
-        color: selected ? AppColors.primaryDark : AppColors.border,
+        color: selected ? AppColors.primary : AppColors.border,
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
     );
@@ -1767,7 +1743,7 @@ class _DirectionCard extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 16, color: AppColors.primaryDark),
+              Icon(icon, size: 16, color: AppColors.primary),
               const SizedBox(width: 6),
               Text(
                 title,
@@ -2302,7 +2278,7 @@ class _DetailSection extends StatelessWidget {
                   color: AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 16, color: AppColors.primaryDark),
+                child: Icon(icon, size: 16, color: AppColors.primary),
               ),
               const SizedBox(width: 9),
               Text(
@@ -2620,38 +2596,57 @@ class _AiModelEditorSheetState extends State<_AiModelEditorSheet> {
                       icon: Icons.hub_outlined,
                       title: 'Identity & provider',
                       children: [
-                        DropdownButtonFormField<String>(
-                          initialValue: _provider.isEmpty ? null : _provider,
-                          decoration: const InputDecoration(
-                            labelText: 'Provider',
-                          ),
-                          items: widget.providers.map((provider) {
-                            final key = _asString(provider['key']);
-
-                            final display = _asString(provider['displayName']);
-
-                            return DropdownMenuItem<String>(
-                              value: key,
-                              child: Text(
-                                display.isNotEmpty
-                                    ? display
-                                    : _providerLabel(key),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: _saving
-                              ? null
-                              : (value) {
-                                  setState(() {
-                                    _provider = value ?? '';
-                                  });
-                                },
+                        FormField<String>(
+                          initialValue: _provider,
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'Provider is required.';
                             }
-
                             return null;
+                          },
+                          builder: (field) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                AdminSelectionField(
+                                  label: 'Provider',
+                                  icon: Icons.hub_outlined,
+                                  value: field.value ?? '',
+                                  enabled: !_saving,
+                                  options: widget.providers.map((provider) {
+                                    final key = _asString(provider['key']);
+                                    final display = _asString(provider['displayName']);
+                                    return AdminSelectionOption(
+                                      value: key,
+                                      label: display.isNotEmpty
+                                          ? display
+                                          : _providerLabel(key),
+                                      icon: Icons.hub_outlined,
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    field.didChange(value);
+                                    setState(() {
+                                      _provider = value;
+                                    });
+                                  },
+                                ),
+                                if (field.hasError) ...[
+                                  const SizedBox(height: 6),
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 12),
+                                    child: Text(
+                                      field.errorText ?? '',
+                                      style: const TextStyle(
+                                        color: AppColors.danger,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            );
                           },
                         ),
                         const _FieldGap(),
@@ -2938,7 +2933,7 @@ class _FormSection extends StatelessWidget {
                   color: AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 16, color: AppColors.primaryDark),
+                child: Icon(icon, size: 16, color: AppColors.primary),
               ),
               const SizedBox(width: 9),
               Text(
@@ -3087,7 +3082,7 @@ class _SwitchTile extends StatelessWidget {
               color: value ? AppColors.surface : AppColors.primarySoft,
               borderRadius: BorderRadius.circular(11),
             ),
-            child: Icon(icon, size: 17, color: AppColors.primaryDark),
+            child: Icon(icon, size: 17, color: AppColors.primary),
           ),
           const SizedBox(width: 9),
           Expanded(
@@ -3117,7 +3112,7 @@ class _SwitchTile extends StatelessWidget {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeThumbColor: AppColors.primaryDark,
+            activeThumbColor: AppColors.primary,
             activeTrackColor: AppColors.primary.withValues(alpha: .35),
           ),
         ],
@@ -3203,7 +3198,7 @@ class _SheetHeader extends StatelessWidget {
                     Text(
                       eyebrow,
                       style: const TextStyle(
-                        color: AppColors.primaryDark,
+                        color: AppColors.primary,
                         fontSize: 8,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.05,

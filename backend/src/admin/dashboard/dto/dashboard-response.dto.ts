@@ -60,6 +60,9 @@ export class DashboardRecentUserDto {
 
 export class DashboardRecentPaymentDto {
   id!: string;
+  userId!: string;
+  ideaId!: string | null;
+  publicationId!: string | null;
   amount!: number;
   currency!: string;
   paymentMethodKey!: string;
@@ -68,6 +71,7 @@ export class DashboardRecentPaymentDto {
   status!: PaymentStatus;
   creditsAmount!: number;
   createdAt!: Date;
+  updatedAt!: Date;
   user!: { id: string; fullName: string; email: string };
 }
 

@@ -34,6 +34,22 @@ export type FeedbackActor = UserFeedbackActor | GuestFeedbackActor;
  */
 @Injectable()
 export class UserFeedbackService {
+  /**
+   * The default Prisma interactive-transaction timeout is 5 seconds.
+   *
+   * Rating/feedback mutations perform an actor upsert/delete, an aggregate
+   * query, and a publication counter update in the same transaction. With a
+   * remote pooled PostgreSQL connection this can occasionally exceed the
+   * default even when every individual query is healthy.
+   *
+   * Keep the transaction atomic, but give the remote database enough room for
+   * normal network/pool latency instead of failing with Prisma P2028.
+   */
+  private readonly transactionOptions = {
+    maxWait: 10_000,
+    timeout: 20_000,
+  };
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly publicationCache: PublicationCacheService,
@@ -134,14 +150,9 @@ export class UserFeedbackService {
         rating,
         publicationRating,
       };
-    });
+    }, this.transactionOptions);
 
-    // Cache invalidation must not extend the interaction response time.
-    // The database mutation and exact counters are already committed.
-    void this.publicationCache
-      .invalidateDiscovery(publicationId)
-      .catch(() => undefined);
-
+    await this.publicationCache.invalidateDiscovery(publicationId);
     return result;
   }
 
@@ -184,32 +195,7 @@ export class UserFeedbackService {
   async deleteRating(actor: FeedbackActor, publicationId: string) {
     await this.ensurePublicationAccessibleToActor(actor, publicationId);
 
-    // Avoid calling getMyRating() here because that method performs the same
-    // publication-access query again. One access check + one indexed lookup is
-    // enough for a delete action.
-    const existing = this.isUserActor(actor)
-      ? await this.prisma.ideaPublicationRating.findUnique({
-          where: {
-            publicationId_userId: {
-              publicationId,
-              userId: actor.userId,
-            },
-          },
-          select: {
-            id: true,
-          },
-        })
-      : await this.prisma.ideaPublicationRating.findUnique({
-          where: {
-            publicationId_guestSessionId: {
-              publicationId,
-              guestSessionId: actor.guestSessionId,
-            },
-          },
-          select: {
-            id: true,
-          },
-        });
+    const existing = await this.getMyRating(actor, publicationId);
 
     if (!existing) {
       throw new NotFoundException('Publication rating not found');
@@ -231,14 +217,9 @@ export class UserFeedbackService {
         message: 'Publication rating deleted successfully',
         publicationRating,
       };
-    });
+    }, this.transactionOptions);
 
-    // Cache invalidation must not extend the interaction response time.
-    // The database mutation and exact counters are already committed.
-    void this.publicationCache
-      .invalidateDiscovery(publicationId)
-      .catch(() => undefined);
-
+    await this.publicationCache.invalidateDiscovery(publicationId);
     return result;
   }
 
@@ -306,14 +287,9 @@ export class UserFeedbackService {
         feedback,
         feedbackCount,
       };
-    });
+    }, this.transactionOptions);
 
-    // Cache invalidation must not extend the interaction response time.
-    // The database mutation and exact counters are already committed.
-    void this.publicationCache
-      .invalidateDiscovery(publicationId)
-      .catch(() => undefined);
-
+    await this.publicationCache.invalidateDiscovery(publicationId);
     return result;
   }
 
@@ -356,30 +332,7 @@ export class UserFeedbackService {
   async deleteFeedback(actor: FeedbackActor, publicationId: string) {
     await this.ensurePublicationAccessibleToActor(actor, publicationId);
 
-    // Avoid a second access check through getMyFeedback().
-    const existing = this.isUserActor(actor)
-      ? await this.prisma.ideaPublicationFeedback.findUnique({
-          where: {
-            publicationId_userId: {
-              publicationId,
-              userId: actor.userId,
-            },
-          },
-          select: {
-            id: true,
-          },
-        })
-      : await this.prisma.ideaPublicationFeedback.findUnique({
-          where: {
-            publicationId_guestSessionId: {
-              publicationId,
-              guestSessionId: actor.guestSessionId,
-            },
-          },
-          select: {
-            id: true,
-          },
-        });
+    const existing = await this.getMyFeedback(actor, publicationId);
 
     if (!existing) {
       throw new NotFoundException('Publication feedback not found');
@@ -398,14 +351,9 @@ export class UserFeedbackService {
         message: 'Publication feedback deleted successfully',
         feedbackCount,
       };
-    });
+    }, this.transactionOptions);
 
-    // Cache invalidation must not extend the interaction response time.
-    // The database mutation and exact counters are already committed.
-    void this.publicationCache
-      .invalidateDiscovery(publicationId)
-      .catch(() => undefined);
-
+    await this.publicationCache.invalidateDiscovery(publicationId);
     return result;
   }
 

@@ -100,7 +100,6 @@ class _AdminPublicationReportsPageState
 
   Future<void> _load({bool force = false, bool quiet = false}) async {
     final requestId = ++_loadRequestId;
-
     final useQuietRefresh = quiet && _hasLoaded;
 
     if (mounted) {
@@ -110,57 +109,53 @@ class _AdminPublicationReportsPageState
         } else {
           _loading = true;
         }
-
         _error = '';
       });
     }
 
-    try {
-      final result = await Future.wait([
-        _api.getList(
-          '/admin/publication-reports',
-          page: _page,
-          limit: 20,
-          search: _search,
-          status: _status,
-          sortBy: _sortBy,
-          sortOrder: _sortOrder,
-          force: force,
-        ),
-        _api.getSummary('/admin/publication-reports/summary', force: force),
-      ]);
+    // Keep summary hydration independent from the report directory so a
+    // slower aggregate query never delays the records the admin needs first.
+    unawaited(
+      _api
+          .getSummary('/admin/publication-reports/summary', force: force)
+          .then((summary) {
+            if (!mounted || requestId != _loadRequestId) return;
+            setState(() => _summary = summary);
+          })
+          .catchError((_) {
+            // The report list remains fully usable without summary counters.
+          }),
+    );
 
-      final list = result[0];
+    try {
+      final list = await _api.getList(
+        '/admin/publication-reports',
+        page: _page,
+        limit: 20,
+        search: _search,
+        status: _status,
+        sortBy: _sortBy,
+        sortOrder: _sortOrder,
+        force: force,
+      );
 
       final items = (list['items'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
-
       final meta = _map(list['meta']);
 
-      if (!mounted || requestId != _loadRequestId) {
-        return;
-      }
+      if (!mounted || requestId != _loadRequestId) return;
 
       setState(() {
         _rows = items;
-        _summary = result[1];
-
         _total = _asInt(meta['total'] ?? items.length);
-
         _totalPages = _asInt(meta['totalPages'] ?? 1).clamp(1, 999999).toInt();
-
         _hasLoaded = true;
       });
     } on ApiException catch (error) {
-      if (!mounted || requestId != _loadRequestId) {
-        return;
-      }
-
-      setState(() {
-        _error = error.message;
-      });
+      if (!mounted || requestId != _loadRequestId) return;
+      setState(() => _error = error.message);
     } finally {
       if (mounted && requestId == _loadRequestId) {
         setState(() {
@@ -205,172 +200,28 @@ class _AdminPublicationReportsPageState
     _load();
   }
 
-  void _setSort(String value) {
-    if (_sortBy == value) {
-      return;
-    }
-
-    setState(() {
-      _sortBy = value;
-
-      _sortOrder = value == 'createdAt' || value == 'reviewedAt'
-          ? 'desc'
-          : 'asc';
-
-      _page = 1;
-    });
-
-    _load();
-  }
-
-  void _toggleSortOrder() {
-    setState(() {
-      _sortOrder = _sortOrder == 'asc' ? 'desc' : 'asc';
-
-      _page = 1;
-    });
-
-    _load();
-  }
-
   Future<void> _openSortSheet() async {
-    final selected = await showModalBottomSheet<String>(
+    final selected = await showModalBottomSheet<(String, String)>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.all(10),
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaryDeep.withValues(alpha: .08),
-                  blurRadius: 30,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.silver,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Row(
-                  children: [
-                    AdminIconBadge(
-                      icon: Icons.swap_vert_rounded,
-                      size: 40,
-                      tone: AppColors.primarySoft,
-                    ),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Sort reports',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Choose how the moderation queue is ordered.',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 9.6,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                ..._reportSortOptions.map(
-                  (option) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Material(
-                      color: option.key == _sortBy
-                          ? AppColors.primarySoft
-                          : const Color(0xFFFCFEFD),
-                      borderRadius: BorderRadius.circular(15),
-                      child: InkWell(
-                        onTap: () {
-                          Navigator.pop(context, option.key);
-                        },
-                        borderRadius: BorderRadius.circular(15),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 13,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(
-                              color: option.key == _sortBy
-                                  ? AppColors.borderStrong
-                                  : AppColors.border,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                option.icon,
-                                size: 18,
-                                color: AppColors.primaryDark,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  option.label,
-                                  style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 11.2,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                              if (option.key == _sortBy)
-                                const Icon(
-                                  Icons.check_circle_rounded,
-                                  color: AppColors.primaryDark,
-                                  size: 18,
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      useSafeArea: true,
+      builder: (_) => _ReportsSortSheet(
+        options: _reportSortOptions,
+        selected: _sortBy,
+        order: _sortOrder,
+      ),
     );
 
-    if (selected != null && mounted) {
-      _setSort(selected);
-    }
+    if (!mounted || selected == null) return;
+    if (selected.$1 == _sortBy && selected.$2 == _sortOrder) return;
+
+    setState(() {
+      _sortBy = selected.$1;
+      _sortOrder = selected.$2;
+      _page = 1;
+    });
+    _load();
   }
 
   Future<void> _openReport(
@@ -439,11 +290,12 @@ class _AdminPublicationReportsPageState
             sliver: SliverList.list(
               children: [
                 _ReportsPageHeader(
-                  onBack:
-                      widget.onBack ??
-                      (widget.embedded
-                          ? null
-                          : () => Navigator.maybePop(context)),
+                  // Reports opened from the primary Admin bottom navigation are
+                  // already inside the shell, so a second back control would
+                  // be misleading. Standalone report routes keep normal back.
+                  onBack: widget.embedded
+                      ? null
+                      : widget.onBack ?? () => Navigator.maybePop(context),
                   refreshing: _refreshing,
                   onRefresh: () => _load(force: true, quiet: true),
                 ),
@@ -465,7 +317,6 @@ class _AdminPublicationReportsPageState
                   sortLabel: _sortLabel(_sortBy),
                   sortOrder: _sortOrder,
                   onOpenSort: _openSortSheet,
-                  onToggleSort: _toggleSortOrder,
                 ),
                 const SizedBox(height: 13),
                 Row(
@@ -1053,7 +904,6 @@ class _QueueToolbar extends StatelessWidget {
     required this.sortLabel,
     required this.sortOrder,
     required this.onOpenSort,
-    required this.onToggleSort,
   });
 
   final TextEditingController searchController;
@@ -1068,7 +918,6 @@ class _QueueToolbar extends StatelessWidget {
   final String sortOrder;
 
   final VoidCallback onOpenSort;
-  final VoidCallback onToggleSort;
 
   @override
   Widget build(BuildContext context) {
@@ -1136,74 +985,68 @@ class _QueueToolbar extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Material(
-                  color: const Color(0xFFFAFCFB),
+          Material(
+            color: AppColors.background.withValues(alpha: .72),
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: onOpenSort,
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 11),
+                decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  child: InkWell(
-                    onTap: onOpenSort,
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      height: 44,
-                      padding: const EdgeInsets.symmetric(horizontal: 11),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Row(
+                  border: Border.all(
+                    color: AppColors.primaryDark.withValues(alpha: .06),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.tune_rounded,
+                      size: 17,
+                      color: AppColors.primaryDark,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(
-                            Icons.tune_rounded,
-                            size: 16,
-                            color: AppColors.primaryDark,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              sortLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w900,
-                              ),
+                          const Text(
+                            'SORT REPORTS',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 5.9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .65,
                             ),
                           ),
-                          const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 18,
-                            color: AppColors.textMuted,
+                          const SizedBox(height: 1),
+                          Text(
+                            sortLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 9.4,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 7),
-              Material(
-                color: AppColors.primarySoft,
-                borderRadius: BorderRadius.circular(14),
-                child: InkWell(
-                  onTap: onToggleSort,
-                  borderRadius: BorderRadius.circular(14),
-                  child: SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: Icon(
+                    Icon(
                       sortOrder == 'asc'
                           ? Icons.arrow_upward_rounded
                           : Icons.arrow_downward_rounded,
-                      size: 18,
+                      size: 15,
                       color: AppColors.primaryDark,
                     ),
-                  ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -2300,12 +2143,13 @@ class _ReportReviewSheetState extends State<_ReportReviewSheet> {
                 child: FilledButton(
                   onPressed: _busy ? null : _save,
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primaryDark,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: AppColors.primaryDark.withValues(
-                      alpha: .48,
+                    backgroundColor: AppColors.primarySoft,
+                    foregroundColor: AppColors.primaryDeep,
+                    disabledBackgroundColor: AppColors.surfaceMuted,
+                    disabledForegroundColor: AppColors.textMuted,
+                    side: BorderSide(
+                      color: AppColors.primary.withValues(alpha: .22),
                     ),
-                    disabledForegroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                     shape: RoundedRectangleBorder(
@@ -2321,8 +2165,11 @@ class _ReportReviewSheetState extends State<_ReportReviewSheet> {
                         height: 30,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: .15),
+                          color: AppColors.surface,
                           borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: .16),
+                          ),
                         ),
                         child: _busy
                             ? const SizedBox(
@@ -2330,13 +2177,13 @@ class _ReportReviewSheetState extends State<_ReportReviewSheet> {
                                 height: 14,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.white,
+                                  color: AppColors.primaryDark,
                                 ),
                               )
                             : const Icon(
                                 Icons.check_rounded,
                                 size: 18,
-                                color: Colors.white,
+                                color: AppColors.primaryDark,
                               ),
                       ),
 
@@ -3896,6 +3743,228 @@ class _SuccessNotice extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReportsSortSheet extends StatefulWidget {
+  const _ReportsSortSheet({
+    required this.options,
+    required this.selected,
+    required this.order,
+  });
+
+  final List<_SortOption> options;
+  final String selected;
+  final String order;
+
+  @override
+  State<_ReportsSortSheet> createState() => _ReportsSortSheetState();
+}
+
+class _ReportsSortSheetState extends State<_ReportsSortSheet> {
+  late String _field;
+  late String _order;
+
+  @override
+  void initState() {
+    super.initState();
+    _field = widget.selected;
+    _order = widget.order;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.all(10),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .82,
+        ),
+        padding: const EdgeInsets.fromLTRB(15, 10, 15, 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: Colors.white),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryDeep.withValues(alpha: .06),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.silver,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const SizedBox(height: 15),
+            const Text(
+              'Sort reports',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Sorting is applied by the server before pagination.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 9.3),
+            ),
+            const SizedBox(height: 12),
+            ...widget.options.map((option) {
+              final selected = option.key == _field;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    onTap: () => setState(() => _field = option.key),
+                  dense: true,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                      color: selected
+                          ? AppColors.primary.withValues(alpha: .18)
+                          : AppColors.primaryDark.withValues(alpha: .05),
+                    ),
+                  ),
+                  tileColor: selected
+                      ? AppColors.primarySoft
+                      : AppColors.background.withValues(alpha: .55),
+                  leading: Icon(
+                    option.icon,
+                    color: selected
+                        ? AppColors.primaryDeep
+                        : AppColors.textMuted,
+                    size: 18,
+                  ),
+                  title: Text(
+                    option.label,
+                    style: TextStyle(
+                      color: selected
+                          ? AppColors.primaryDeep
+                          : AppColors.textPrimary,
+                      fontSize: 10.2,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                    trailing: selected
+                        ? const Icon(
+                            Icons.check_circle_rounded,
+                            size: 18,
+                            color: AppColors.primaryDark,
+                          )
+                        : null,
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 5),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _ReportSortDirectionChoice(
+                      label: 'Ascending',
+                      icon: Icons.arrow_upward_rounded,
+                      selected: _order == 'asc',
+                      onTap: () => setState(() => _order = 'asc'),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _ReportSortDirectionChoice(
+                      label: 'Descending',
+                      icon: Icons.arrow_downward_rounded,
+                      selected: _order == 'desc',
+                      onTap: () => setState(() => _order = 'desc'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.pop(context, (_field, _order)),
+                icon: const Icon(Icons.check_rounded, size: 17),
+                label: const Text('Apply sorting'),
+              ),
+            ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportSortDirectionChoice extends StatelessWidget {
+  const _ReportSortDirectionChoice({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.surface : Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? AppColors.primaryDeep : AppColors.textMuted,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? AppColors.primaryDeep : AppColors.textMuted,
+                  fontSize: 8.4,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

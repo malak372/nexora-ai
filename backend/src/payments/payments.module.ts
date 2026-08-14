@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
 
 import { CreditsModule } from '../credits/credits.module';
 import { IdeaOutputsModule } from '../ideas/outputs/idea-outputs.module';
@@ -8,6 +9,7 @@ import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 import { PAYMENT_GATEWAYS } from './constants/payment-gateway.tokens';
+import { PaymentProcessingExceptionFilter } from './errors/payment-processing-exception.filter';
 
 import { AdminPaymentsController } from './controllers/admin-payments.controller';
 import { PaymentCheckoutController } from './controllers/payment-checkout.controller';
@@ -23,6 +25,7 @@ import { AdminPaymentsService } from './services/admin-payments.service';
 import { CreditPurchaseService } from './services/credit-purchase.service';
 import { DirectUnlockPaymentService } from './services/direct-unlock-payment.service';
 import { PaymentCheckoutService } from './services/payment-checkout.service';
+import { PaymentCurrencyService } from './services/payment-currency.service';
 import { PaymentNotificationService } from './services/payment-notification.service';
 import { PaymentProcessingService } from './services/payment-processing.service';
 import { PaymentWebhookService } from './services/payment-webhook.service';
@@ -72,6 +75,11 @@ import { InvoiceService } from './services/invoice.service';
   ],
 
   providers: [
+    {
+      provide: APP_FILTER,
+      useClass: PaymentProcessingExceptionFilter,
+    },
+
     UserPaymentsService,
     InvoiceService,
     AdminPaymentsService,
@@ -80,6 +88,7 @@ import { InvoiceService } from './services/invoice.service';
     DirectUnlockPaymentService,
 
     PaymentCheckoutService,
+    PaymentCurrencyService,
     PaymentNotificationService,
     PaymentProcessingService,
     PaymentWebhookService,
@@ -107,6 +116,7 @@ import { InvoiceService } from './services/invoice.service';
 
   exports: [
     PaymentCheckoutService,
+    PaymentCurrencyService,
     PaymentProcessingService,
     PaymentWebhookService,
     PaymentGatewayFactory,

@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/admin_api.dart';
 import '../models/admin_resource.dart';
 import '../widgets/admin_ui.dart';
+import '../widgets/admin_user_management_sheet.dart';
 
 /// Displays a generic administrative resource workspace.
 ///
@@ -91,6 +94,13 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
   /// An empty value means no status filter is active.
   String _status = '';
 
+  /// Active sorting configuration. Users can change this from the mobile
+  /// toolbar; other generic resources keep their configured defaults.
+  late String _sortBy;
+  late String _sortOrder;
+
+  bool _exporting = false;
+
   /// Indicates whether the primary resource list is loading.
   bool _loading = true;
 
@@ -100,11 +110,16 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
   /// Latest resource-loading error message.
   String _error = '';
 
+  /// Guards the UI from older list requests finishing after a newer search,
+  /// filter or page request.
+  int _loadRequestId = 0;
+
   /// Loads the initial resource data.
   @override
   void initState() {
     super.initState();
-
+    _sortBy = widget.resource.sortBy;
+    _sortOrder = widget.resource.sortOrder;
     _load();
   }
 
@@ -133,6 +148,8 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
   /// - [force]: Bypasses cached API responses when `true`.
   /// - [quiet]: Uses the refresh state instead of the full loading state.
   Future<void> _load({bool force = false, bool quiet = false}) async {
+    final requestId = ++_loadRequestId;
+
     if (!quiet) {
       setState(() {
         _loading = true;
@@ -145,66 +162,71 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
       });
     }
 
-    try {
-      String? serverStatus = _status.isEmpty ? null : _status;
+    String? serverStatus = _status.isEmpty ? null : _status;
+    final extraQuery = <String, dynamic>{...widget.resource.extraQuery};
 
-      final extraQuery = <String, dynamic>{...widget.resource.extraQuery};
-
-      if (_status.isNotEmpty) {
-        switch (widget.resource.id) {
-          case 'users':
-          case 'data-sources':
-          case 'domains':
-          case 'ai-models':
+    if (_status.isNotEmpty) {
+      switch (widget.resource.id) {
+        case 'users':
+          if (_status == 'DELETED') {
+            extraQuery['deletedOnly'] = 'true';
+          } else {
             extraQuery['isActive'] = _status == 'ACTIVE' ? 'true' : 'false';
-
-            serverStatus = null;
-
-            break;
-
-          case 'ai-monitoring':
-          case 'auth-audit':
-            extraQuery['isSuccess'] = _status == 'SUCCESS' ? 'true' : 'false';
-
-            serverStatus = null;
-
-            break;
-
-          case 'alerts':
-            extraQuery['isRead'] = _status == 'READ' ? 'true' : 'false';
-
-            serverStatus = null;
-
-            break;
-        }
+          }
+          serverStatus = null;
+          break;
+        case 'data-sources':
+        case 'domains':
+        case 'ai-models':
+          extraQuery['isActive'] = _status == 'ACTIVE' ? 'true' : 'false';
+          serverStatus = null;
+          break;
+        case 'ai-monitoring':
+        case 'auth-audit':
+          extraQuery['isSuccess'] = _status == 'SUCCESS' ? 'true' : 'false';
+          serverStatus = null;
+          break;
+        case 'alerts':
+          extraQuery['isRead'] = _status == 'READ' ? 'true' : 'false';
+          serverStatus = null;
+          break;
       }
+    }
 
-      final futures = <Future<dynamic>>[
-        _api.getList(
-          widget.resource.listPath,
-          page: _page,
-          limit: 20,
-          search: _search,
-          status: serverStatus,
-          sortBy: widget.resource.sortBy,
-          sortOrder: widget.resource.sortOrder,
-          force: force,
-          extra: extraQuery,
-        ),
+    // Paint the list as soon as it arrives. Summary cards hydrate separately
+    // so a slower aggregate endpoint never blocks the directory itself.
+    if (widget.resource.summaryPath != null) {
+      unawaited(
+        _api
+            .getSummary(
+              widget.resource.summaryPath!,
+              force: force,
+              query: widget.resource.id == 'users'
+                  ? {if (_search.isNotEmpty) 'search': _search, ...extraQuery}
+                  : const {},
+            )
+            .then((summary) {
+              if (!mounted || requestId != _loadRequestId) return;
+              setState(() => _summary = summary);
+            })
+            .catchError((_) {
+              // The resource list stays usable even when summary hydration fails.
+            }),
+      );
+    }
 
-        if (widget.resource.summaryPath != null)
-          _api.getSummary(
-            widget.resource.summaryPath!,
-            force: force,
-            query: widget.resource.id == 'users'
-                ? {if (_search.isNotEmpty) 'search': _search, ...extraQuery}
-                : const {},
-          ),
-      ];
-
-      final result = await Future.wait(futures);
-
-      final listPayload = result.first as Map<String, dynamic>;
+    try {
+      final listPayload = await _api.getList(
+        widget.resource.listPath,
+        page: _page,
+        limit: 20,
+        search: _search,
+        status: serverStatus,
+        sortBy: _sortBy,
+        sortOrder: _sortOrder,
+        force: force,
+        extra: extraQuery,
+      );
 
       final rows = (listPayload['items'] as List? ?? const [])
           .whereType<Map>()
@@ -215,41 +237,23 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
           ? Map<String, dynamic>.from(listPayload['meta'] as Map)
           : <String, dynamic>{};
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted || requestId != _loadRequestId) return;
 
       setState(() {
         _items = rows;
-
-        _summary = result.length > 1 && result[1] is Map
-            ? Map<String, dynamic>.from(result[1] as Map)
-            : const {};
-
         _total = _int(meta['total'] ?? rows.length);
-
         _totalPages = _int(meta['totalPages'] ?? 1).clamp(1, 999999).toInt();
       });
     } on ApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _error = error.message;
-      });
+      if (!mounted || requestId != _loadRequestId) return;
+      setState(() => _error = error.message);
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted || requestId != _loadRequestId) return;
       setState(() {
-        _error =
-            'Could not load '
-            '${widget.resource.title.toLowerCase()}.';
+        _error = 'Could not load ${widget.resource.title.toLowerCase()}.';
       });
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _loadRequestId) {
         setState(() {
           _loading = false;
           _refreshing = false;
@@ -285,6 +289,96 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
     });
   }
 
+  Future<void> _openUserSort() async {
+    if (widget.resource.id != 'users') return;
+
+    const options = <(String, String, IconData)>[
+      ('createdAt', 'Joined date', Icons.calendar_month_outlined),
+      ('fullName', 'Name', Icons.badge_outlined),
+      ('email', 'Email', Icons.alternate_email_rounded),
+      ('accountStatus', 'Plan', Icons.workspace_premium_outlined),
+      ('userType', 'User type', Icons.person_outline_rounded),
+      ('creditBalance', 'Credits', Icons.toll_outlined),
+      ('freeGenerationsUsed', 'Free usage', Icons.auto_awesome_outlined),
+      ('isActive', 'Active status', Icons.power_settings_new_rounded),
+      ('isVerified', 'Verification', Icons.verified_outlined),
+    ];
+
+    final selected = await showModalBottomSheet<(String, String)>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _UserSortSheet(
+        options: options,
+        selected: _sortBy,
+        order: _sortOrder,
+      ),
+    );
+
+    if (!mounted || selected == null) return;
+    if (selected.$1 == _sortBy && selected.$2 == _sortOrder) return;
+
+    setState(() {
+      _sortBy = selected.$1;
+      _sortOrder = selected.$2;
+      _page = 1;
+    });
+    _load();
+  }
+
+  Future<void> _exportUsersCsv() async {
+    if (_exporting || widget.resource.id != 'users') return;
+
+    final renderObject = context.findRenderObject();
+    final box = renderObject is RenderBox ? renderObject : null;
+
+    setState(() => _exporting = true);
+    try {
+      final bytes = await _api.exportUsersCsv(
+        search: _search,
+        sortBy: _sortBy,
+        sortOrder: _sortOrder,
+        isActive: _status == 'ACTIVE'
+            ? true
+            : _status == 'INACTIVE'
+                ? false
+                : null,
+        deletedOnly: _status == 'DELETED',
+      );
+
+      if (!mounted) return;
+      if (bytes.isEmpty) {
+        throw const ApiException('The Users CSV export was empty.');
+      }
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              Uint8List.fromList(bytes),
+              mimeType: 'text/csv',
+              name: 'admin-users.csv',
+            ),
+          ],
+          fileNameOverrides: const ['admin-users.csv'],
+          subject: 'Voxidence users export',
+          sharePositionOrigin:
+              box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+          downloadFallbackEnabled: true,
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   /// Opens the resource status-filter bottom sheet.
   ///
   /// Available filter options are defined by
@@ -292,76 +386,188 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
   ///
   /// Selecting a new status resets pagination and reloads the resource.
   Future<void> _openFilters() async {
+    String draftStatus = _status;
+
     final selected = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.all(10),
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.silver,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
+      barrierColor: AppColors.primaryDeep.withValues(alpha: .18),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final options = <String>['', ...widget.resource.statuses];
+
+            return Container(
+              margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: Colors.white),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryDeep.withValues(alpha: .14),
+                    blurRadius: 34,
+                    offset: const Offset(0, 14),
                   ),
-                ),
-
-                const SizedBox(height: 16),
-
-                Text(
-                  'Filter by status',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-
-                const SizedBox(height: 4),
-
-                const Text(
-                  'Choose one state or show everything.',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 11.5),
-                ),
-
-                const SizedBox(height: 14),
-
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _FilterChoice(
-                      label: 'All',
-                      selected: _status.isEmpty,
-                      onTap: () {
-                        Navigator.pop(context, '');
-                      },
-                    ),
-
-                    ...widget.resource.statuses.map(
-                      (status) => _FilterChoice(
-                        label: _readable(status),
-                        selected: _status == status,
-                        onTap: () {
-                          Navigator.pop(context, status);
-                        },
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.silver,
+                        borderRadius: BorderRadius.circular(99),
                       ),
                     ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const AdminIconBadge(
+                        icon: Icons.filter_alt_outlined,
+                        size: 43,
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Filter ${widget.resource.title.toLowerCase()}',
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 18.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -.35,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            const Text(
+                              'Choose one status, then apply when ready.',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 9.8,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Material(
+                        color: AppColors.surfaceMuted,
+                        borderRadius: BorderRadius.circular(13),
+                        child: InkWell(
+                          onTap: () => Navigator.pop(sheetContext),
+                          borderRadius: BorderRadius.circular(13),
+                          child: const SizedBox(
+                            width: 38,
+                            height: 38,
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 20,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceMuted.withValues(alpha: .72),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: AppColors.border.withValues(alpha: .8),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        for (var index = 0; index < options.length; index++) ...[
+                          _StatusFilterTile(
+                            label: options[index].isEmpty
+                                ? 'All ${widget.resource.title.toLowerCase()}'
+                                : _readable(options[index]),
+                            subtitle: _statusFilterSubtitle(options[index]),
+                            icon: _statusFilterIcon(options[index]),
+                            selected: draftStatus == options[index],
+                            onTap: () {
+                              setSheetState(() {
+                                draftStatus = options[index];
+                              });
+                            },
+                          ),
+                          if (index != options.length - 1)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 9),
+                              child: Divider(
+                                height: 1,
+                                color: AppColors.border.withValues(alpha: .48),
+                              ),
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            setSheetState(() => draftStatus = '');
+                          },
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(46),
+                            foregroundColor: AppColors.textSecondary,
+                            side: BorderSide(color: AppColors.border),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                          ),
+                          child: const Text('Reset'),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        flex: 2,
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            Navigator.pop(sheetContext, draftStatus);
+                          },
+                          icon: const Icon(Icons.check_rounded, size: 18),
+                          label: const Text('Apply filter'),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(46),
+                            backgroundColor: AppColors.surface,
+                            foregroundColor: AppColors.primaryDeep,
+                            disabledBackgroundColor: AppColors.surface,
+                            disabledForegroundColor: AppColors.textMuted,
+                            side: BorderSide(
+                              color: AppColors.primary.withValues(alpha: .34),
+                            ),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -378,6 +584,42 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
     _load();
   }
 
+  IconData _statusFilterIcon(String status) {
+    return switch (status.toUpperCase()) {
+      '' => Icons.view_list_rounded,
+      'ACTIVE' => Icons.check_circle_outline_rounded,
+      'INACTIVE' => Icons.pause_circle_outline_rounded,
+      'DELETED' => Icons.inventory_2_outlined,
+      'SUCCESS' => Icons.task_alt_rounded,
+      'FAILED' => Icons.error_outline_rounded,
+      'READ' => Icons.mark_email_read_outlined,
+      'UNREAD' => Icons.mark_email_unread_outlined,
+      'PENDING' => Icons.schedule_rounded,
+      'REVIEWING' => Icons.manage_search_rounded,
+      'RESOLVED' => Icons.verified_outlined,
+      'DISMISSED' => Icons.block_outlined,
+      _ => Icons.label_outline_rounded,
+    };
+  }
+
+  String _statusFilterSubtitle(String status) {
+    return switch (status.toUpperCase()) {
+      '' => 'No status restriction',
+      'ACTIVE' => 'Accounts currently allowed to use the platform',
+      'INACTIVE' => 'Accounts whose access is currently disabled',
+      'DELETED' => 'Soft-deleted accounts retained for audit and history',
+      'SUCCESS' => 'Successful records only',
+      'FAILED' => 'Failed records only',
+      'READ' => 'Items already reviewed or opened',
+      'UNREAD' => 'Items still waiting to be reviewed',
+      'PENDING' => 'Items waiting for action',
+      'REVIEWING' => 'Items currently under review',
+      'RESOLVED' => 'Items with a completed decision',
+      'DISMISSED' => 'Items closed without further action',
+      _ => 'Show only ${_readable(status).toLowerCase()} records',
+    };
+  }
+
   /// Opens the detail sheet for a selected resource record.
   ///
   /// If the resource provides a [AdminResourceDefinition.detailPathBuilder],
@@ -387,13 +629,39 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
   /// If detail retrieval fails, the existing list record is used as
   /// a fallback.
   Future<void> _openItem(Map<String, dynamic> item) async {
-    final id = _string(item['id']);
+    final id = _string(item['id'] ?? item['userId']);
+
+    // Users open immediately from the already-loaded row snapshot. The sheet
+    // refreshes full details in the background so tapping a user never waits
+    // on an extra HTTP round trip before showing feedback.
+    if (widget.resource.id == 'users') {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: AppColors.primaryDeep.withValues(alpha: .18),
+        builder: (context) => AdminUserManagementSheet(
+          user: item,
+          onChanged: () => _load(force: true, quiet: true),
+        ),
+      );
+      return;
+    }
 
     var detail = item;
+    String? detailPath;
 
     if (id.isNotEmpty && widget.resource.detailPathBuilder != null) {
+      detailPath = widget.resource.detailPathBuilder!(id);
+    }
+
+    if (detailPath != null) {
       try {
-        detail = await _api.getDetail(widget.resource.detailPathBuilder!(id));
+        final loaded = await _api.getDetail(detailPath);
+        if (loaded.isNotEmpty) {
+          detail = {...item, ...loaded};
+        }
       } catch (_) {
         detail = item;
       }
@@ -488,6 +756,21 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
         context,
       ).showSnackBar(SnackBar(content: Text(error.message)));
     }
+  }
+
+  String _userSortLabel(String value) {
+    return switch (value) {
+      'createdAt' => 'Joined date',
+      'fullName' => 'Name',
+      'email' => 'Email',
+      'accountStatus' => 'Plan',
+      'userType' => 'User type',
+      'creditBalance' => 'Credits',
+      'freeGenerationsUsed' => 'Free usage',
+      'isActive' => 'Active status',
+      'isVerified' => 'Verification',
+      _ => _readable(value),
+    };
   }
 
   /// Builds the generic administrative resource interface.
@@ -640,7 +923,96 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
                   ],
                 ),
 
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
+
+                if (widget.resource.id == 'users') ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Material(
+                          color: AppColors.background.withValues(alpha: .72),
+                          borderRadius: BorderRadius.circular(14),
+                          child: InkWell(
+                            onTap: _openUserSort,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              height: 46,
+                              padding: const EdgeInsets.symmetric(horizontal: 11),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: AppColors.primaryDark.withValues(alpha: .06),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.tune_rounded,
+                                    size: 17,
+                                    color: AppColors.primaryDark,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'SORT USERS',
+                                          style: TextStyle(
+                                            color: AppColors.textMuted,
+                                            fontSize: 5.9,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: .65,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 1),
+                                        Text(
+                                          _userSortLabel(_sortBy),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontSize: 9.4,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    _sortOrder == 'asc'
+                                        ? Icons.arrow_upward_rounded
+                                        : Icons.arrow_downward_rounded,
+                                    size: 15,
+                                    color: AppColors.primaryDark,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 46,
+                        child: OutlinedButton.icon(
+                          onPressed: _exporting ? null : _exportUsersCsv,
+                          icon: _exporting
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.download_rounded, size: 17),
+                          label: Text(_exporting ? 'Preparing…' : 'CSV'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ] else
+                  const SizedBox(height: 4),
 
                 if (_status.isNotEmpty) ...[
                   Align(
@@ -1411,7 +1783,9 @@ class _UserDirectoryCard extends StatelessWidget {
       _string(item['userType'] ?? item['type'], fallback: 'OTHER'),
     );
 
-    final isActive = item['isActive'] != false;
+    final isDeleted = _string(item['deletedAt']).isNotEmpty;
+
+    final isActive = !isDeleted && item['isActive'] != false;
 
     final isVerified =
         item['isVerified'] == true || item['emailVerified'] == true;
@@ -1435,25 +1809,15 @@ class _UserDirectoryCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: .14),
-                  ),
+              AdminAvatar(
+                name: name,
+                avatarUrl: _string(
+                  item['avatarUrl'] ??
+                      item['profileImageUrl'] ??
+                      item['profileImage'] ??
+                      item['avatar'],
                 ),
-                child: Text(
-                  _initial(name),
-                  style: const TextStyle(
-                    color: AppColors.primaryDark,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                size: 42,
               ),
 
               const SizedBox(width: 11),
@@ -1572,11 +1936,17 @@ class _UserDirectoryCard extends StatelessWidget {
             runSpacing: 7,
             children: [
               _UserInfoPill(
-                icon: isActive
-                    ? Icons.check_circle_rounded
-                    : Icons.cancel_rounded,
-                label: isActive ? 'Active' : 'Inactive',
-                tone: isActive ? AppColors.primaryDark : AppColors.pinkDeep,
+                icon: isDeleted
+                    ? Icons.inventory_2_outlined
+                    : isActive
+                        ? Icons.check_circle_rounded
+                        : Icons.pause_circle_rounded,
+                label: isDeleted ? 'Deleted' : isActive ? 'Active' : 'Inactive',
+                tone: isDeleted
+                    ? AppColors.textMuted
+                    : isActive
+                        ? AppColors.primaryDark
+                        : AppColors.pinkDeep,
               ),
 
               _UserInfoPill(
@@ -1650,16 +2020,6 @@ class _UserDirectoryCard extends StatelessWidget {
     }
 
     return int.tryParse(value?.toString() ?? '') ?? fallback;
-  }
-
-  String _initial(String value) {
-    final normalized = value.trim();
-
-    if (normalized.isEmpty) {
-      return 'U';
-    }
-
-    return normalized.substring(0, 1).toUpperCase();
   }
 
   String _readable(String value) {
@@ -2619,27 +2979,353 @@ class _ResourceDetailSheetState extends State<_ResourceDetailSheet> {
 /// Reusable filter option.
 ///
 /// @author Eman
-class _FilterChoice extends StatelessWidget {
-  const _FilterChoice({
+class _UserSortSheet extends StatefulWidget {
+  const _UserSortSheet({
+    required this.options,
+    required this.selected,
+    required this.order,
+  });
+
+  final List<(String, String, IconData)> options;
+  final String selected;
+  final String order;
+
+  @override
+  State<_UserSortSheet> createState() => _UserSortSheetState();
+}
+
+class _UserSortSheetState extends State<_UserSortSheet> {
+  late String _field;
+  late String _order;
+
+  @override
+  void initState() {
+    super.initState();
+    _field = widget.selected;
+    _order = widget.order;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.all(10),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .86,
+        ),
+        padding: const EdgeInsets.fromLTRB(15, 10, 15, 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: Colors.white),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryDeep.withValues(alpha: .06),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.silver,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const SizedBox(height: 15),
+            const Text(
+              'Sort users',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Sorting is applied by the server before pagination.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 9.3),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const BouncingScrollPhysics(),
+                itemCount: widget.options.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 6),
+                itemBuilder: (context, index) {
+                  final option = widget.options[index];
+                  final selected = option.$1 == _field;
+                  return Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
+                      onTap: () => setState(() => _field = option.$1),
+                    dense: true,
+                    visualDensity: const VisualDensity(vertical: -2),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(
+                        color: selected
+                            ? AppColors.primary.withValues(alpha: .18)
+                            : AppColors.primaryDark.withValues(alpha: .05),
+                      ),
+                    ),
+                    tileColor: selected
+                        ? AppColors.primarySoft
+                        : AppColors.background.withValues(alpha: .55),
+                    leading: Icon(
+                      option.$3,
+                      color: selected
+                          ? AppColors.primaryDeep
+                          : AppColors.textMuted,
+                      size: 18,
+                    ),
+                    title: Text(
+                      option.$2,
+                      style: TextStyle(
+                        color: selected
+                            ? AppColors.primaryDeep
+                            : AppColors.textPrimary,
+                        fontSize: 10.2,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                      trailing: selected
+                          ? const Icon(
+                              Icons.check_circle_rounded,
+                              size: 18,
+                              color: AppColors.primaryDark,
+                            )
+                          : null,
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _UserSortDirectionChoice(
+                      label: 'Ascending',
+                      icon: Icons.arrow_upward_rounded,
+                      selected: _order == 'asc',
+                      onTap: () => setState(() => _order = 'asc'),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _UserSortDirectionChoice(
+                      label: 'Descending',
+                      icon: Icons.arrow_downward_rounded,
+                      selected: _order == 'desc',
+                      onTap: () => setState(() => _order = 'desc'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.pop(context, (_field, _order)),
+                icon: const Icon(Icons.check_rounded, size: 17),
+                label: const Text('Apply sorting'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UserSortDirectionChoice extends StatelessWidget {
+  const _UserSortDirectionChoice({
     required this.label,
+    required this.icon,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
-
+  final IconData icon;
   final bool selected;
-
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) {
-        onTap();
-      },
+    return Material(
+      color: selected ? AppColors.surface : Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? AppColors.primaryDeep : AppColors.textMuted,
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected
+                        ? AppColors.primaryDeep
+                        : AppColors.textMuted,
+                    fontSize: 8.7,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusFilterTile extends StatelessWidget {
+  const _StatusFilterTile({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected
+          ? AppColors.primarySoft.withValues(alpha: .9)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(17),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(17),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(
+              color: selected
+                  ? AppColors.primary.withValues(alpha: .32)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? Colors.white.withValues(alpha: .82)
+                      : AppColors.surface,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: AppColors.border.withValues(alpha: .78),
+                  ),
+                ),
+                child: Icon(
+                  icon,
+                  size: 18,
+                  color: selected
+                      ? AppColors.primaryDark
+                      : AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: selected
+                            ? AppColors.primaryDeep
+                            : AppColors.textPrimary,
+                        fontSize: 11.4,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 8.8,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.primary : AppColors.surface,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected ? AppColors.primary : AppColors.border,
+                  ),
+                ),
+                child: selected
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 15,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

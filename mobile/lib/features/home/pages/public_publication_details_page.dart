@@ -113,27 +113,25 @@ class _PublicPublicationDetailsPageState
     try {
       await HomePublicApi.instance.ensureGuestSession();
 
-      var rating = 0;
-      var vote = '';
-      var feedback = '';
-
-      if (publication.allowRatings) {
-        rating = await HomePublicApi.instance.getGuestRating(publication.id);
-      }
-
-      if (publication.allowVoting) {
-        vote = await HomePublicApi.instance.getGuestVote(publication.id);
-      }
-
-      if (publication.allowFeedback) {
-        feedback = await HomePublicApi.instance.getGuestFeedback(
-          publication.id,
-        );
-      }
+      final results = await Future.wait<dynamic>([
+        publication.allowRatings
+            ? HomePublicApi.instance.getGuestRating(publication.id)
+            : Future<int>.value(0),
+        publication.allowVoting
+            ? HomePublicApi.instance.getGuestVote(publication.id)
+            : Future<String>.value(''),
+        publication.allowFeedback
+            ? HomePublicApi.instance.getGuestFeedback(publication.id)
+            : Future<String>.value(''),
+      ]);
 
       if (!mounted) {
         return;
       }
+
+      final rating = results[0] as int;
+      final vote = results[1] as String;
+      final feedback = results[2] as String;
 
       _feedbackController.text = feedback;
 
@@ -163,24 +161,22 @@ class _PublicPublicationDetailsPageState
       return;
     }
 
+    final previousRating = _guestRating;
+
     setState(() {
+      _guestRating = value;
       _isSubmittingRating = true;
     });
 
     try {
       await HomePublicApi.instance.ensureGuestSession();
-
       await HomePublicApi.instance.setGuestRating(publication.id, value);
 
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _guestRating = value;
-        _isSubmittingRating = false;
-      });
-
+      setState(() => _isSubmittingRating = false);
       _showMessage('Your rating was saved.');
     } catch (error) {
       if (!mounted) {
@@ -188,6 +184,7 @@ class _PublicPublicationDetailsPageState
       }
 
       setState(() {
+        _guestRating = previousRating;
         _isSubmittingRating = false;
       });
 
@@ -207,24 +204,22 @@ class _PublicPublicationDetailsPageState
       return;
     }
 
+    final previousVote = _guestVote;
+
     setState(() {
+      _guestVote = value;
       _isSubmittingVote = true;
     });
 
     try {
       await HomePublicApi.instance.ensureGuestSession();
-
       await HomePublicApi.instance.setGuestVote(publication.id, value);
 
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _guestVote = value;
-        _isSubmittingVote = false;
-      });
-
+      setState(() => _isSubmittingVote = false);
       _showMessage('Your vote was saved.');
     } catch (error) {
       if (!mounted) {
@@ -232,6 +227,7 @@ class _PublicPublicationDetailsPageState
       }
 
       setState(() {
+        _guestVote = previousVote;
         _isSubmittingVote = false;
       });
 
@@ -261,24 +257,22 @@ class _PublicPublicationDetailsPageState
       return;
     }
 
+    final previousFeedback = _savedFeedback;
+
     setState(() {
+      _savedFeedback = comment;
       _isSubmittingFeedback = true;
     });
 
     try {
       await HomePublicApi.instance.ensureGuestSession();
-
       await HomePublicApi.instance.setGuestFeedback(publication.id, comment);
 
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _savedFeedback = comment;
-        _isSubmittingFeedback = false;
-      });
-
+      setState(() => _isSubmittingFeedback = false);
       _showMessage('Your feedback was saved.');
     } catch (error) {
       if (!mounted) {
@@ -286,6 +280,7 @@ class _PublicPublicationDetailsPageState
       }
 
       setState(() {
+        _savedFeedback = previousFeedback;
         _isSubmittingFeedback = false;
       });
 

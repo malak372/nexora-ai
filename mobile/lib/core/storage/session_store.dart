@@ -1,11 +1,3 @@
-// Authentication session storage for Voxidence.
-//
-// Native builds keep tokens in FlutterSecureStorage, while an in-memory mirror
-// prevents every API request from reopening secure storage. This keeps page
-// navigation responsive without weakening persistence: secure storage remains
-// the source of truth across application launches.
-//
-// @author Eman
 
 import 'dart:convert';
 
@@ -102,7 +94,7 @@ class SessionStore {
       _storage.write(_accessTokenKey, accessToken),
       _storage.write(_refreshTokenKey, refreshToken),
       _storage.write(_userSnapshotKey, jsonEncode(user)),
-      _storage.write(_rememberMeKey, rememberMe ? '1' : '0'),
+      _storage.write(_rememberMeKey, rememberMe ? 'true' : 'false'),
     ]);
   }
 
@@ -177,7 +169,7 @@ class SessionStore {
     if (activeRead != null) return activeRead;
 
     final request = _storage.read(_rememberMeKey).then((value) {
-      _rememberMeMemory = value == '1';
+      _rememberMeMemory = value == '1' || value?.toLowerCase() == 'true';
       _rememberMeHydrated = true;
       return _rememberMeMemory!;
     }).whenComplete(() {

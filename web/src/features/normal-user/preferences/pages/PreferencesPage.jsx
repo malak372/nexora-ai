@@ -12,8 +12,10 @@
  */
 
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
+  CreditCard,
   Globe2,
   LoaderCircle,
   MapPin,
@@ -24,11 +26,16 @@ import {
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   getMyPreferences,
   getPreferenceCatalog,
   savePreferences,
 } from '../api/preferencesApi';
+import {
+  PAYMENT_CURRENCIES,
+  storePaymentCurrency,
+} from '../../payments/utils/paymentCurrency';
 import '../styles/preferences.css';
 
 const LANGUAGE_OPTIONS = ['EN', 'AR', 'FR', 'ES', 'DE', 'TR', 'ANY'];
@@ -70,6 +77,8 @@ const revealVariants = {
 
 export default function PreferencesPage() {
   const shouldReduceMotion = useReducedMotion();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [catalog, setCatalog] = useState([]);
   const [selected, setSelected] = useState(new Set());
@@ -78,10 +87,33 @@ export default function PreferencesPage() {
     preferredCountry: '',
     preferredCity: '',
     preferredRegion: '',
+    paymentCurrency: 'USD',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  const returnTo = typeof location.state?.returnTo === 'string'
+    ? location.state.returnTo
+    : '';
+
+  const returnLabel = typeof location.state?.returnLabel === 'string'
+    ? location.state.returnLabel
+    : 'Back';
+
+  const goBack = () => {
+    if (returnTo) {
+      navigate(returnTo);
+      return;
+    }
+
+    if ((window.history.state?.idx ?? 0) > 0) {
+      navigate(-1);
+      return;
+    }
+
+    navigate('/normal/dashboard');
+  };
 
   useEffect(() => {
     Promise.all([getPreferenceCatalog(), getMyPreferences()])
@@ -97,6 +129,7 @@ export default function PreferencesPage() {
           preferredCountry: preferences?.preferredCountry || '',
           preferredCity: preferences?.preferredCity || '',
           preferredRegion: preferences?.preferredRegion || '',
+          paymentCurrency: preferences?.paymentCurrency || 'USD',
         });
       })
       .catch((error) => {
@@ -148,11 +181,12 @@ export default function PreferencesPage() {
       setSaving(true);
       setMessage('');
 
-      await savePreferences({
+      const saved = await savePreferences({
         ...form,
         preferenceOptionIds: [...selected],
       });
 
+      storePaymentCurrency(saved?.paymentCurrency || form.paymentCurrency);
       setMessage('Preferences saved successfully.');
     } catch (error) {
       setMessage(error?.message || 'Unable to save preferences.');
@@ -172,6 +206,13 @@ export default function PreferencesPage() {
 
   return (
     <main className="preferences-page reveal-page">
+      <div className="preferences-backbar">
+        <button type="button" onClick={goBack}>
+          <ArrowLeft size={17} />
+          <span>{returnLabel}</span>
+        </button>
+      </div>
+
       <section className="preferences-hero">
         <div className="preferences-hero__ambient preferences-hero__ambient--pink" aria-hidden="true" />
         <div className="preferences-hero__ambient preferences-hero__ambient--mint" aria-hidden="true" />
@@ -316,12 +357,65 @@ export default function PreferencesPage() {
           </motion.section>
 
           <motion.section
-            className="preferences-section preferences-section--interests"
+            className="preferences-section preferences-section--payment"
             {...motionProps}
           >
             <div className="preferences-section__heading">
               <div>
                 <span>Step 02</span>
+                <h2>Choose your payment currency once</h2>
+                <p>
+                  Voxidence will remember this choice and use it automatically
+                  for credit purchases, direct unlocks, and paid publication access.
+                </p>
+              </div>
+
+              <div className="preferences-section__badge is-payment">
+                <CreditCard size={17} />
+                {form.paymentCurrency}
+              </div>
+            </div>
+
+            <div className="preferences-payment-currencies" role="radiogroup" aria-label="Preferred payment currency">
+              {PAYMENT_CURRENCIES.map((currency) => {
+                const active = form.paymentCurrency === currency.code;
+
+                return (
+                  <button
+                    type="button"
+                    key={currency.code}
+                    className={active ? 'is-selected' : ''}
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => updateField('paymentCurrency', currency.code)}
+                  >
+                    <span>{currency.symbol}</span>
+                    <div>
+                      <strong>{currency.code}</strong>
+                      <small>{currency.name}</small>
+                    </div>
+                    <i>{active ? <Check size={15} /> : null}</i>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="preferences-payment-note">
+              <CreditCard size={16} />
+              <span>
+                Prices are converted by the backend from the administrator's
+                base pricing currency into your saved payment currency.
+              </span>
+            </div>
+          </motion.section>
+
+          <motion.section
+            className="preferences-section preferences-section--interests"
+            {...motionProps}
+          >
+            <div className="preferences-section__heading">
+              <div>
+                <span>Step 03</span>
                 <h2>Choose what you care about</h2>
                 <p>
                   Select at least three interests. Voxidence uses them to tune

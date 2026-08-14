@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 
@@ -53,6 +53,10 @@ import {
 import { getStoredUser, updateStoredUser } from '../../../auth/shared/auth.storage';
 import { getPaymentPricing } from '../../payments/api/paymentFlowApi';
 import { storePaymentReturnReference } from '../../payments/utils/paymentReturn.storage';
+import {
+  getStoredPaymentCurrency,
+  loadPreferredPaymentCurrency,
+} from '../../payments/utils/paymentCurrency';
 import '../styles/publication-detail.css';
 
 function parseList(value) {
@@ -128,6 +132,9 @@ export default function PublicationDetailPage() {
   const [reportReason, setReportReason] = useState('MISLEADING');
   const [reportDetails, setReportDetails] = useState('');
   const [paymentPricing, setPaymentPricing] = useState(null);
+  const [paymentCurrency, setPaymentCurrency] = useState(
+    getStoredPaymentCurrency,
+  );
   const [feedbackSaved, setFeedbackSaved] = useState(false);
   const [creditUnlockReceipt, setCreditUnlockReceipt] = useState(null);
 
@@ -237,7 +244,24 @@ export default function PublicationDetailPage() {
   }, [publicationId, publicationSeed]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { getPaymentPricing().then(setPaymentPricing).catch(() => undefined); }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    loadPreferredPaymentCurrency({ force: true }).then((preferredCurrency) => {
+      if (active) setPaymentCurrency(preferredCurrency);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    getPaymentPricing(1, { currency: paymentCurrency })
+      .then(setPaymentPricing)
+      .catch(() => undefined);
+  }, [paymentCurrency]);
 
   useEffect(() => {
     const overlayOpen = paymentOpen || advancedPaymentOpen || reportOpen;
@@ -307,7 +331,11 @@ export default function PublicationDetailPage() {
     setNotice('');
 
     try {
-      const result = await acceptPublication(publicationId, paymentMethod);
+      const result = await acceptPublication(
+        publicationId,
+        paymentMethod,
+        paymentCurrency,
+      );
       const checkoutUrl = result?.checkoutUrl ?? result?.payment?.checkoutUrl;
 
       if (checkoutUrl) {
@@ -342,6 +370,7 @@ export default function PublicationDetailPage() {
       const result = await createPublicationAdvancedUnlockCheckout(
         publicationId,
         paymentMethod,
+        paymentCurrency,
       );
       const checkoutUrl = result?.checkoutUrl ?? result?.payment?.checkoutUrl;
       const payment = result?.payment ?? result;
@@ -974,6 +1003,30 @@ export default function PublicationDetailPage() {
                 <span><CheckCircle2 size={16} /> Target users</span>
                 <span><CheckCircle2 size={16} /> Accepted ideas library</span>
               </div>
+              <div className="publication-payment-modal__currency publication-payment-modal__currency--saved">
+                <div>
+                  <small>Saved payment currency</small>
+                  <strong>{paymentCurrency}</strong>
+                  <span>Used automatically from your Preferences.</span>
+                </div>
+                <div>
+                  <small>Acceptance price</small>
+                  <strong>
+                    {paymentPricing
+                      ? `${paymentPricing.publicationAcceptancePrice} ${paymentPricing.currency}`
+                      : 'Loading price…'}
+                  </strong>
+                  <Link
+                    to="/normal/preferences"
+                    state={{
+                      returnTo: `${location.pathname}${location.search}`,
+                      returnLabel: 'Back to publication',
+                    }}
+                  >
+                    Change in Preferences
+                  </Link>
+                </div>
+              </div>
               <div className="publication-payment-modal__methods">
                 <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
                   <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
@@ -1020,6 +1073,26 @@ export default function PublicationDetailPage() {
                 <span><CheckCircle2 size={16} /> Business and market outputs</span>
               </div>
 
+              <div className="publication-payment-modal__currency publication-payment-modal__currency--saved">
+                <div>
+                  <small>Saved payment currency</small>
+                  <strong>{paymentCurrency}</strong>
+                  <span>Used automatically from your Preferences.</span>
+                </div>
+                <div>
+                  <small>Advanced workspace price</small>
+                  <strong>{paymentPricing?.normalPublicationAdvancedPrice} {paymentPricing?.currency}</strong>
+                  <Link
+                    to="/normal/preferences"
+                    state={{
+                      returnTo: `${location.pathname}${location.search}`,
+                      returnLabel: 'Back to publication',
+                    }}
+                  >
+                    Change in Preferences
+                  </Link>
+                </div>
+              </div>
               <div className="publication-payment-modal__methods">
                 <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
                   <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>

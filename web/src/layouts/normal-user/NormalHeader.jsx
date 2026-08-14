@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
 import VoxidenceMark from '../../components/brand/VoxidenceMark';
 import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
@@ -51,6 +51,7 @@ function getInitials(name = '') {
 
 export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const profileMenuRef = useRef(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [user, setUser] = useState(() => getStoredUser() ?? {});
@@ -104,6 +105,17 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
 
   const navigateFromProfileMenu = (path) => {
     setProfileMenuOpen(false);
+
+    if (path === '/normal/preferences') {
+      navigate(path, {
+        state: {
+          returnTo: `${location.pathname}${location.search}`,
+          returnLabel: 'Back to previous page',
+        },
+      });
+      return;
+    }
+
     navigate(path);
   };
 

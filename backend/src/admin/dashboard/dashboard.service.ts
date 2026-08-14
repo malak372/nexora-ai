@@ -22,68 +22,60 @@ const AI_REQUEST_TYPES: ApiRequestType[] = [
   ApiRequestType.AI_CHAT,
 ];
 
-/**
- * Produces the administrative dashboard without flooding the database with
- * dozens of independent requests on every page load.
- *
- * The previous implementation launched more than 50 Prisma queries in one
- * Promise.all. On a hosted database or a small connection pool this can cause
- * queueing and make the HTTP request exceed the frontend 20s timeout.
- *
- * This version:
- * - Uses groupBy/aggregate queries to collapse related counters.
- * - Keeps a very short in-memory snapshot cache.
- * - Reuses one in-flight promise when the page is refreshed more than once.
- * - Still returns the same DashboardResponseDto shape expected by the frontend.
- *
- * @author Malak
- */
 @Injectable()
 export class DashboardService implements OnModuleInit {
-  private cache: { value: DashboardResponseDto; expiresAt: number } | null =
-    null;
+  private readonly cache = new Map<
+    string,
+    { value: DashboardResponseDto; expiresAt: number }
+  >();
 
-  private inFlight: Promise<DashboardResponseDto> | null = null;
+  private readonly inFlight = new Map<string, Promise<DashboardResponseDto>>();
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Warm the dashboard snapshot without blocking Nest startup. In normal use
-   * the administrator reaches the dashboard after authentication, so the
-   * expensive first aggregate is usually already complete.
-   */
   onModuleInit(): void {
-    void this.getDashboard().catch(() => undefined);
+    void this.getDashboard('all')
+      .then(
+        () =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, 1200);
+          }),
+      )
+      .then(() => this.getDashboard('week'))
+      .catch(() => undefined);
   }
 
-
-  /** Returns the consolidated administrative dashboard. */
-  async getDashboard(): Promise<DashboardResponseDto> {
+  async getDashboard(periodInput?: string): Promise<DashboardResponseDto> {
+    const period = this.normalizePeriod(periodInput);
     const now = Date.now();
+    const cached = this.cache.get(period);
 
-    if (this.cache && this.cache.expiresAt > now) {
-      return this.cache.value;
+    if (cached && cached.expiresAt > now) {
+      return cached.value;
     }
 
-    if (this.inFlight) {
-      return this.inFlight;
+    const current = this.inFlight.get(period);
+
+    if (current) {
+      return current;
     }
 
-    this.inFlight = this.buildDashboard();
+    const request = this.buildDashboard(period);
+    this.inFlight.set(period, request);
 
     try {
-      const value = await this.inFlight;
-      this.cache = {
+      const value = await request;
+      this.cache.set(period, {
         value,
         expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
-      };
+      });
       return value;
     } finally {
-      this.inFlight = null;
+      this.inFlight.delete(period);
     }
   }
 
-  private async buildDashboard(): Promise<DashboardResponseDto> {
+  private async buildDashboard(period: string): Promise<DashboardResponseDto> {
     const now = new Date();
     const startOfToday = new Date(
       now.getFullYear(),
@@ -91,6 +83,24 @@ export class DashboardService implements OnModuleInit {
       now.getDate(),
     );
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfWeek = new Date(startOfToday);
+    const weekday = startOfWeek.getDay();
+    const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
+    startOfWeek.setDate(startOfWeek.getDate() - daysFromMonday);
+
+    const periodStart =
+      period === 'day'
+        ? startOfToday
+        : period === 'week'
+          ? startOfWeek
+          : period === 'month'
+            ? startOfMonth
+            : null;
+
+    const createdAtFilter: { createdAt?: { gte: Date } } = periodStart
+      ? { createdAt: { gte: periodStart } }
+      : {};
+
     const chartStart = new Date(startOfToday);
     chartStart.setDate(chartStart.getDate() - (CHART_DAYS - 1));
 
@@ -119,14 +129,24 @@ export class DashboardService implements OnModuleInit {
     ] = await Promise.all([
       this.prisma.user.groupBy({
         by: ['accountStatus'],
-        where: { deletedAt: null, role: UserRole.USER },
+        where: { deletedAt: null, role: UserRole.USER, ...createdAtFilter },
         _count: { _all: true },
       }),
       this.prisma.user.count({
-        where: { deletedAt: null, role: UserRole.USER, isActive: true },
+        where: {
+          deletedAt: null,
+          role: UserRole.USER,
+          isActive: true,
+          ...createdAtFilter,
+        },
       }),
       this.prisma.user.count({
-        where: { deletedAt: null, role: UserRole.USER, isVerified: true },
+        where: {
+          deletedAt: null,
+          role: UserRole.USER,
+          isVerified: true,
+          ...createdAtFilter,
+        },
       }),
       this.prisma.user.findMany({
         where: {
@@ -144,36 +164,42 @@ export class DashboardService implements OnModuleInit {
 
       this.prisma.idea.groupBy({
         by: ['generationType'],
-        where: { deletedAt: null },
+        where: { deletedAt: null, ...createdAtFilter },
         _count: { _all: true },
       }),
       this.prisma.idea.count({
-        where: { deletedAt: null, isUnlocked: true },
+        where: { deletedAt: null, isUnlocked: true, ...createdAtFilter },
       }),
 
       this.prisma.payment.groupBy({
         by: ['status'],
+        where: createdAtFilter,
         _count: { _all: true },
         _sum: { amount: true },
       }),
       this.prisma.payment.groupBy({
         by: ['paymentPurpose'],
+        where: createdAtFilter,
         _count: { _all: true },
       }),
 
-      this.prisma.socialComment.count(),
+      this.prisma.socialComment.count({ where: createdAtFilter }),
       this.prisma.creditTransaction.aggregate({
         where: {
           type: {
             in: [CreditTransactionType.PURCHASE, CreditTransactionType.BONUS],
           },
+          ...createdAtFilter,
         },
         _sum: { amount: true },
       }),
 
       this.prisma.externalApiLog.groupBy({
         by: ['isSuccess'],
-        where: { requestType: { in: AI_REQUEST_TYPES } },
+        where: {
+          requestType: { in: AI_REQUEST_TYPES },
+          ...createdAtFilter,
+        },
         _count: { _all: true, responseTimeMs: true },
         _sum: { costEstimate: true },
         _avg: { responseTimeMs: true },
@@ -181,11 +207,11 @@ export class DashboardService implements OnModuleInit {
 
       this.prisma.complaint.groupBy({
         by: ['status'],
-        where: { deletedAt: null },
+        where: { deletedAt: null, ...createdAtFilter },
         _count: { _all: true },
       }),
 
-      this.prisma.generatedOutput.count(),
+      this.prisma.generatedOutput.count({ where: createdAtFilter }),
 
       this.prisma.idea.count({
         where: { deletedAt: null, createdAt: { gte: startOfToday } },
@@ -208,7 +234,7 @@ export class DashboardService implements OnModuleInit {
       }),
 
       this.prisma.user.findMany({
-        where: { deletedAt: null, role: UserRole.USER },
+        where: { deletedAt: null, role: UserRole.USER, ...createdAtFilter },
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: {
@@ -224,10 +250,14 @@ export class DashboardService implements OnModuleInit {
         },
       }),
       this.prisma.payment.findMany({
+        where: createdAtFilter,
         orderBy: { createdAt: 'desc' },
-        take: 5,
+        take: 15,
         select: {
           id: true,
+          userId: true,
+          ideaId: true,
+          publicationId: true,
           amount: true,
           currency: true,
           paymentMethodKey: true,
@@ -236,11 +266,12 @@ export class DashboardService implements OnModuleInit {
           status: true,
           creditsAmount: true,
           createdAt: true,
+          updatedAt: true,
           user: { select: { id: true, fullName: true, email: true } },
         },
       }),
       this.prisma.idea.findMany({
-        where: { deletedAt: null },
+        where: { deletedAt: null, ...createdAtFilter },
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: {
@@ -257,7 +288,7 @@ export class DashboardService implements OnModuleInit {
         },
       }),
       this.prisma.complaint.findMany({
-        where: { deletedAt: null },
+        where: { deletedAt: null, ...createdAtFilter },
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: {
@@ -270,6 +301,39 @@ export class DashboardService implements OnModuleInit {
         },
       }),
     ]);
+
+    const paymentTargetKey = (payment: (typeof recentPayments)[number]) => {
+      if (
+        payment.paymentPurpose !== PaymentPurpose.DIRECT_UNLOCK &&
+        payment.paymentPurpose !== PaymentPurpose.ACCEPT_PUBLICATION &&
+        payment.paymentPurpose !== PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED
+      ) {
+        return '';
+      }
+
+      const targetId = payment.ideaId ?? payment.publicationId;
+      return targetId
+        ? `${payment.userId}|${payment.paymentPurpose}|${targetId}`
+        : '';
+    };
+
+    const finalizedPaymentTargets = new Set(
+      recentPayments
+        .filter((payment) => payment.status === PaymentStatus.SUCCEEDED)
+        .map(paymentTargetKey)
+        .filter((key) => key.length > 0),
+    );
+
+    const dashboardRecentPayments = recentPayments
+      .filter((payment) => {
+        if (payment.status !== PaymentStatus.PENDING) {
+          return true;
+        }
+
+        const key = paymentTargetKey(payment);
+        return key.length === 0 || !finalizedPaymentTargets.has(key);
+      })
+      .slice(0, 5);
 
     const users = userStatusGroups.reduce(
       (sum, row) => sum + row._count._all,
@@ -449,9 +513,6 @@ export class DashboardService implements OnModuleInit {
       generatedOutputs,
       generatedOutputsByKey: [],
 
-      // Detailed domain/source/output breakdowns have dedicated admin pages.
-      // Keeping them out of this first-screen request prevents the dashboard
-      // from competing with those pages for database connections.
       domainsStatus: { active: 0, inactive: 0 },
       dataSourcesStatus: { active: 0, inactive: 0 },
 
@@ -479,7 +540,7 @@ export class DashboardService implements OnModuleInit {
 
       recentActivity: {
         recentUsers,
-        recentPayments: recentPayments.map((payment) => ({
+        recentPayments: dashboardRecentPayments.map((payment) => ({
           ...payment,
           amount: Number(payment.amount),
         })),
@@ -487,6 +548,20 @@ export class DashboardService implements OnModuleInit {
         recentComplaints,
       },
     };
+  }
+
+  private normalizePeriod(value?: string): string {
+    const normalized = value?.trim().toLowerCase();
+
+    if (
+      normalized === 'day' ||
+      normalized === 'week' ||
+      normalized === 'month'
+    ) {
+      return normalized;
+    }
+
+    return 'all';
   }
 
   private toDateKey(value: Date): string {

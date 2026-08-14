@@ -1,15 +1,22 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+
+import { PAYMENT_CURRENCY_CODES } from '../../../payments/constants/payment.constants';
 
 /**
  * Partial update for the single global system-settings record.
  *
- * Prices are stored in USD and are intentionally configurable so the web and
- * mobile clients never hard-code commercial rules.
+ * Direct prices are stored in the administrator-selected pricingCurrency.
+ * User checkout currency remains independently selectable and is converted at payment time.
  *
  * @author Malak
  */
 export class UpdateSystemSettingsDto {
+  /** Base currency used when administrators enter direct prices. */
+  @IsOptional()
+  @IsIn([...PAYMENT_CURRENCY_CODES])
+  pricingCurrency?: string;
+
   /** Price of one premium credit. */
   @IsOptional()
   @Type(() => Number)

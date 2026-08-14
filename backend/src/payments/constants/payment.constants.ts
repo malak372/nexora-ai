@@ -21,13 +21,29 @@
 export const GLOBAL_SYSTEM_SETTINGS_KEY = 'GLOBAL';
 
 /**
- * Default currency used for payment operations.
- *
- * The current payment model uses USD for:
- * - Credit purchases.
- * - Direct idea unlock payments.
+ * Safe fallback currency used only when a stored/admin-selected currency is
+ * unavailable. Live commercial prices use SystemSetting.pricingCurrency.
  */
 export const DEFAULT_PAYMENT_CURRENCY = 'USD';
+
+export const PAYMENT_CURRENCY_CODES = [
+  'USD',
+  'EUR',
+  'GBP',
+  'ILS',
+  'AED',
+] as const;
+
+export type SupportedPaymentCurrency =
+  (typeof PAYMENT_CURRENCY_CODES)[number];
+
+export const PAYMENT_CURRENCIES = [
+  { code: 'USD', name: 'US Dollar', symbol: '$' },
+  { code: 'EUR', name: 'Euro', symbol: '€' },
+  { code: 'GBP', name: 'British Pound', symbol: '£' },
+  { code: 'ILS', name: 'Israeli New Shekel', symbol: '₪' },
+  { code: 'AED', name: 'UAE Dirham', symbol: 'د.إ' },
+] as const;
 
 /**
  * Minimum number of credits allowed in a single purchase request.

@@ -33,6 +33,8 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
+import '../models/payment_currency.dart';
+import '../widgets/payment_currency_selector.dart';
 import '../widgets/user_ui.dart';
 import '../widgets/workspace_navigation.dart';
 import 'accepted_idea_workspace_page.dart';
@@ -57,6 +59,7 @@ class _PublicationPageState extends State<PublicationPage> {
   Map<String, dynamic>? _myVote;
   Map<String, dynamic>? _myFeedback;
   Map<String, dynamic>? _pricing;
+  String _paymentCurrency = PaymentCurrencyPreference.current;
 
   Object? _error;
 
@@ -253,12 +256,20 @@ class _PublicationPageState extends State<PublicationPage> {
     }
   }
 
-  Future<void> _loadPricing() async {
+  Future<void> _loadPricing({bool force = false}) async {
     try {
-      final pricing = await UserApi.instance.getPricing();
+      final preferredCurrency =
+          await UserApi.instance.getPaymentCurrencyPreference(force: force);
+      final pricing = await UserApi.instance.getPricing(
+        currency: preferredCurrency,
+        force: force,
+      );
 
       if (mounted) {
-        setState(() => _pricing = pricing);
+        setState(() {
+          _paymentCurrency = preferredCurrency;
+          _pricing = pricing;
+        });
       }
     } catch (_) {
       // Pricing improves labels only. Backend actions remain authoritative.
@@ -311,20 +322,17 @@ class _PublicationPageState extends State<PublicationPage> {
   Future<void> _accept() async {
     if (_busy) return;
 
-    final approved = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _ProtectedBriefSheet(priceLabel: _acceptancePriceLabel),
-    );
-
-    if (approved != true || !mounted) return;
+    if (!_session.isPremium && (_pricing == null || _pricing!.isEmpty)) {
+      await _loadPricing();
+      if (!mounted) return;
+    }
 
     setState(() => _busy = true);
 
     try {
       final result = await UserApi.instance.acceptDiscovery(
         widget.publicationId,
+        currency: _paymentCurrency,
       );
 
       final checkoutUrl = _checkoutUrl(result);
@@ -340,8 +348,7 @@ class _PublicationPageState extends State<PublicationPage> {
         _acceptance = acceptance;
       }
 
-      await _session.load(force: true);
-      await _load(force: true);
+      await Future.wait([_session.load(force: true), _load(force: true)]);
 
       if (mounted) {
         showAppSnackBar(
@@ -363,22 +370,15 @@ class _PublicationPageState extends State<PublicationPage> {
   Future<void> _unlockAdvanced() async {
     if (_busy) return;
 
-    if (_session.isPremium) {
-      final approved = await showModalBottomSheet<bool>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (_) => _AdvancedAccessSheet(
-          premium: true,
-          priceLabel: _advancedCreditsLabel,
-        ),
-      );
+    if (_pricing == null || _pricing!.isEmpty) {
+      await _loadPricing();
+      if (!mounted) return;
+    }
 
-      if (approved != true || !mounted) return;
+    setState(() => _busy = true);
 
-      setState(() => _busy = true);
-
-      try {
+    try {
+      if (_session.isPremium) {
         await UserApi.instance.unlockAcceptedAdvancedWithCredits(
           widget.publicationId,
         );
@@ -388,34 +388,12 @@ class _PublicationPageState extends State<PublicationPage> {
         if (mounted) {
           showAppSnackBar(context, 'Advanced workspace unlocked.');
         }
-      } on ApiException catch (error) {
-        if (mounted) {
-          showAppSnackBar(context, error.message, error: true);
-        }
-      } finally {
-        if (mounted) {
-          setState(() => _busy = false);
-        }
+        return;
       }
 
-      return;
-    }
-
-    final approved = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) =>
-          _AdvancedAccessSheet(premium: false, priceLabel: _advancedPriceLabel),
-    );
-
-    if (approved != true || !mounted) return;
-
-    setState(() => _busy = true);
-
-    try {
       final result = await UserApi.instance.createAcceptedAdvancedCheckout(
         widget.publicationId,
+        currency: _paymentCurrency,
       );
 
       final checkoutUrl = _checkoutUrl(result);
@@ -960,11 +938,27 @@ class _PublicationPageState extends State<PublicationPage> {
                 else if (!_accepted && adoptionEnabled)
                   _Reveal(
                     delay: 105,
-                    child: _ProtectedAccessCard(
-                      priceLabel: _acceptancePriceLabel,
-                      premium: _session.isPremium,
-                      busy: _busy,
-                      onAccept: _accept,
+                    child: Column(
+                      children: [
+                        if (!_session.isPremium) ...[
+                          PaymentCurrencyPreferenceCard(
+                            value: _paymentCurrency,
+                            compact: true,
+                            returnTitle: 'Discover',
+                            returnRoute:
+                                '/normal/discover/${widget.publicationId}',
+                            returnAfterSave: true,
+                            onReturn: () => _loadPricing(force: true),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        _ProtectedAccessCard(
+                          priceLabel: _acceptancePriceLabel,
+                          premium: _session.isPremium,
+                          busy: _busy,
+                          onAccept: _accept,
+                        ),
+                      ],
                     ),
                   )
                 else if (!_accepted)
@@ -985,6 +979,18 @@ class _PublicationPageState extends State<PublicationPage> {
 
                   if (advancedAvailable) ...[
                     const SizedBox(height: 14),
+                    if (!_advancedGranted && !_session.isPremium) ...[
+                      PaymentCurrencyPreferenceCard(
+                        value: _paymentCurrency,
+                        compact: true,
+                        returnTitle: 'Discover',
+                        returnRoute:
+                            '/normal/discover/${widget.publicationId}',
+                        returnAfterSave: true,
+                        onReturn: () => _loadPricing(force: true),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     _Reveal(
                       delay: 175,
                       child: _AdvancedWorkspaceCard(
@@ -3076,12 +3082,12 @@ class _AdvancedWorkspaceCard extends StatelessWidget {
               ),
               label: Text(
                 busy
-                    ? 'Opening...'
+                    ? 'Processing...'
                     : granted
                     ? 'Open accepted workspace'
                     : premium
-                    ? 'Unlock with credits'
-                    : 'Unlock advanced outputs',
+                    ? 'Unlock · $priceLabel'
+                    : 'Pay · $priceLabel',
               ),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(43),
@@ -3230,212 +3236,6 @@ class _AcceptancePausedCard extends StatelessWidget {
   }
 }
 
-class _ProtectedBriefSheet extends StatelessWidget {
-  const _ProtectedBriefSheet({required this.priceLabel});
-
-  final String priceLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return _ModalShell(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _ModalHeader(
-            icon: Icons.lock_outline_rounded,
-            eyebrow: 'PROTECTED ACCESS',
-            title: 'Unlock the complete opportunity brief',
-            message:
-                'Access is granted only after verified provider confirmation.',
-          ),
-
-          const SizedBox(height: 14),
-
-          const _ModalBenefitGrid(
-            items: [
-              'Problem statement',
-              'Objectives',
-              'Target users',
-              'Accepted ideas library',
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          _PaymentMethodCard(
-            title: 'Card checkout',
-            subtitle: 'Visa or Mastercard · secure provider flow',
-            badge: priceLabel,
-          ),
-
-          const SizedBox(height: 14),
-
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () => Navigator.of(context).pop(true),
-              icon: const Icon(Icons.lock_open_rounded, size: 15),
-              label: const Text('Continue securely'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(45),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AdvancedAccessSheet extends StatelessWidget {
-  const _AdvancedAccessSheet({required this.premium, required this.priceLabel});
-
-  final bool premium;
-  final String priceLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return _ModalShell(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _ModalHeader(
-            icon: premium ? Icons.bolt_rounded : Icons.lock_outline_rounded,
-            eyebrow: 'ADVANCED OPPORTUNITY ACCESS',
-            title: premium
-                ? 'Unlock with Premium credits'
-                : 'Open the complete idea workspace',
-            message: premium
-                ? 'The configured credit cost is deducted once only after the backend confirms access.'
-                : 'The backend determines the price and grants access only after verified payment.',
-          ),
-
-          const SizedBox(height: 14),
-
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primarySoft, AppColors.surfaceRose],
-              ),
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  premium ? Icons.toll_rounded : Icons.credit_card_outlined,
-                  size: 18,
-                  color: AppColors.primaryDark,
-                ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Advanced outputs · one-time unlock',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 8.3,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                Text(
-                  priceLabel,
-                  style: const TextStyle(
-                    color: AppColors.primaryDark,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          const _ModalBenefitGrid(
-            items: [
-              'Full abstract',
-              'Technology & architecture',
-              'Feasibility & implementation',
-              'Business & market outputs',
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () => Navigator.of(context).pop(true),
-              icon: Icon(
-                premium ? Icons.bolt_rounded : Icons.lock_open_rounded,
-                size: 15,
-              ),
-              label: Text(
-                premium ? 'Use Premium credits' : 'Continue to payment',
-              ),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(45),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModalShell extends StatelessWidget {
-  const _ModalShell({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.viewInsetsOf(context).bottom;
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 17),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(25),
-            border: Border.all(color: Colors.white),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primaryDeep.withValues(alpha: .14),
-                blurRadius: 34,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.silver,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-                const SizedBox(height: 13),
-                child,
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _ModalHeader extends StatelessWidget {
   const _ModalHeader({
     required this.icon,
@@ -3492,111 +3292,6 @@ class _ModalHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ModalBenefitGrid extends StatelessWidget {
-  const _ModalBenefitGrid({required this.items});
-
-  final List<String> items;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: items
-          .map(
-            (item) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-              decoration: BoxDecoration(
-                color: AppColors.primarySoft.withValues(alpha: .55),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.check_circle_outline_rounded,
-                    size: 11,
-                    color: AppColors.success,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    item,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 7.3,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-          .toList(),
-    );
-  }
-}
-
-class _PaymentMethodCard extends StatelessWidget {
-  const _PaymentMethodCard({
-    required this.title,
-    required this.subtitle,
-    required this.badge,
-  });
-
-  final String title;
-  final String subtitle;
-  final String badge;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: AppColors.primary.withValues(alpha: .18)),
-      ),
-      child: Row(
-        children: [
-          const SoftIconBadge(icon: Icons.credit_card_outlined, size: 38),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 9.6,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 7.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            badge,
-            style: const TextStyle(
-              color: AppColors.primaryDark,
-              fontSize: 8.4,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

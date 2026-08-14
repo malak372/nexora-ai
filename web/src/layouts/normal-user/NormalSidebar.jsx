@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
 import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
 import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
@@ -51,6 +51,7 @@ function getInitials(name = '') {
 
 export default function NormalSidebar({ isOpen, onClose }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState(() => getStoredUser() ?? {});
   const [avatarFailed, setAvatarFailed] = useState(false);
   const { isPremium, creditBalance } = useAccountAccess();
@@ -120,6 +121,14 @@ export default function NormalSidebar({ isOpen, onClose }) {
             <NavLink
               key={to}
               to={to}
+              state={
+                to === '/normal/preferences'
+                  ? {
+                    returnTo: `${location.pathname}${location.search}`,
+                    returnLabel: 'Back to previous page',
+                  }
+                  : undefined
+              }
               onMouseEnter={() => preloadRoute(to)}
               onFocus={() => preloadRoute(to)}
               onClick={onClose}

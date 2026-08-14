@@ -3303,5 +3303,16 @@
 }
 
 .ideas-state--published button {
-  background: linear-gradient(135deg, #2f806d, #4c9b87);
+  background: linear-gradient(135deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%);
+  box-shadow:
+    0 12px 26px rgba(92, 189, 185, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.ideas-state--published button:hover {
+  background: linear-gradient(135deg, #72c2bc 0%, #5cbdb9 48%, #459d98 100%);
+  box-shadow:
+    0 16px 34px rgba(47, 119, 116, 0.28),
+    0 0 0 4px rgba(243, 201, 211, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38);
 }

@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
+import '../models/payment_currency.dart';
 import '../widgets/user_ui.dart';
 
 class PreferencesPage extends StatefulWidget {
@@ -25,6 +26,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   final _region = TextEditingController();
 
   String _language = 'EN';
+  String _paymentCurrency = PaymentCurrencyPreference.current;
   List<Map<String, dynamic>> _groups = const [];
   final Set<String> _selectedIds = <String>{};
   final Map<String, String> _categoryById = <String, String>{};
@@ -127,6 +129,9 @@ class _PreferencesPageState extends State<PreferencesPage> {
         _country.text = '${current['preferredCountry'] ?? ''}';
         _city.text = '${current['preferredCity'] ?? ''}';
         _region.text = '${current['preferredRegion'] ?? ''}';
+        _paymentCurrency = '${current['paymentCurrency'] ?? 'USD'}';
+        PaymentCurrencyPreference.current = _paymentCurrency;
+        _paymentCurrency = PaymentCurrencyPreference.current;
         _groups = groups;
         _selectedIds
           ..clear()
@@ -175,6 +180,11 @@ class _PreferencesPageState extends State<PreferencesPage> {
     setState(() => _language = selected);
   }
 
+  bool get _returnAfterSave {
+    final arguments = ModalRoute.of(context)?.settings.arguments;
+    return arguments is Map && arguments['returnAfterSave'] == true;
+  }
+
   Future<void> _save() async {
     if (_saving) return;
 
@@ -207,6 +217,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
       await UserApi.instance.updatePreferences({
         'preferenceOptionIds': _selectedIds.toList(),
         'preferredLanguage': _language,
+        'paymentCurrency': _paymentCurrency,
         if (_country.text.trim().isNotEmpty)
           'preferredCountry': _country.text.trim(),
         if (_city.text.trim().isNotEmpty) 'preferredCity': _city.text.trim(),
@@ -214,8 +225,15 @@ class _PreferencesPageState extends State<PreferencesPage> {
           'preferredRegion': _region.text.trim(),
       });
 
+      PaymentCurrencyPreference.current = _paymentCurrency;
+
       if (mounted) {
         showAppSnackBar(context, 'Preferences saved.');
+        if (_returnAfterSave) {
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+          if (!mounted) return;
+          returnFromWorkspacePage(context);
+        }
       }
     } on ApiException catch (error) {
       if (mounted) {
@@ -276,6 +294,13 @@ class _PreferencesPageState extends State<PreferencesPage> {
                         cityController: _city,
                         regionController: _region,
                         onLanguageTap: _pickLanguage,
+                      ),
+                      const SizedBox(height: 14),
+                      _PaymentCurrencyCard(
+                        value: _paymentCurrency,
+                        onChanged: (currency) {
+                          setState(() => _paymentCurrency = currency);
+                        },
                       ),
                       const SizedBox(height: 18),
                       _InterestsHeading(
@@ -924,6 +949,159 @@ class _LanguageOption extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PaymentCurrencyCard extends StatelessWidget {
+  const _PaymentCurrencyCard({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: .12),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: .035),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft.withValues(alpha: .75),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 19,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Payment currency',
+                      style: TextStyle(
+                        color: AppColors.primaryDeep,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Choose once. Voxidence uses it automatically for every checkout.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 10,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: paymentCurrencyOptions.map((option) {
+              final selected = value == option.code;
+
+              return InkWell(
+                onTap: () => onChanged(option.code),
+                borderRadius: BorderRadius.circular(14),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.primarySoft.withValues(alpha: .82)
+                        : AppColors.surfaceMuted.withValues(alpha: .7),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.primary.withValues(alpha: .36)
+                          : AppColors.border,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        option.symbol,
+                        style: TextStyle(
+                          color: selected
+                              ? AppColors.primaryDark
+                              : AppColors.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        option.code,
+                        style: TextStyle(
+                          color: selected
+                              ? AppColors.primaryDeep
+                              : AppColors.textSecondary,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (selected) ...[
+                        const SizedBox(width: 5),
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          size: 14,
+                          color: AppColors.primaryDark,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'The backend converts the administrator\'s base prices into this currency at checkout.',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 9.4,
+              height: 1.4,
+            ),
+          ),
+        ],
       ),
     );
   }

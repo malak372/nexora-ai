@@ -68,8 +68,13 @@ export class GetUsersQueryDto extends ListQueryDto {
   @IsBooleanString()
   isActive?: string;
 
-  /** Includes soft-deleted users when explicitly requested by an admin. */
+  /** Includes soft-deleted users alongside normal users when explicitly requested. */
   @IsOptional()
   @IsBooleanString()
   includeDeleted?: string;
+
+  /** Returns only soft-deleted users. Used by the mobile Deleted users filter. */
+  @IsOptional()
+  @IsBooleanString()
+  deletedOnly?: string;
 }
