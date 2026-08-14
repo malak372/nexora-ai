@@ -473,6 +473,8 @@ class _HeaderActions extends StatelessWidget {
       children: [
         _RoundAction(
           icon: refreshing ? null : Icons.refresh_rounded,
+          onTap: refreshing ? null : onRefresh,
+          tooltip: 'Refresh models',
           child: refreshing
               ? const SizedBox(
                   width: 17,
@@ -483,8 +485,6 @@ class _HeaderActions extends StatelessWidget {
                   ),
                 )
               : null,
-          onTap: refreshing ? null : onRefresh,
-          tooltip: 'Refresh models',
         ),
         const SizedBox(width: 7),
         _RoundAction(
@@ -608,7 +608,7 @@ class _SummaryStrip extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: metrics.length,
-        separatorBuilder: (_, __) {
+        separatorBuilder: (_, _) {
           return const SizedBox(width: 9);
         },
         itemBuilder: (context, index) {
