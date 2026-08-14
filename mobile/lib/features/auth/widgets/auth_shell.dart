@@ -296,7 +296,7 @@ class AuthField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const validColor = Color(0xFF13835B);
+    const validColor = AppColors.primaryDark;
 
     final field = TextFormField(
       key: formFieldKey,
@@ -320,28 +320,28 @@ class AuthField extends StatelessWidget {
       ),
       decoration: InputDecoration(
         hintText: hint,
+
         prefixIcon: Icon(icon, size: 18),
-        suffixIcon:
-            suffixIcon ??
-            (validState
-                ? const Icon(
-                    Icons.check_circle_rounded,
-                    size: 18,
-                    color: validColor,
-                  )
-                : null),
+
+        // Only explicit suffix widgets are shown.
+        // Valid email state no longer adds
+        // a check icon inside the text field.
+        suffixIcon: suffixIcon,
+
         counterText: '',
         isDense: true,
+
         enabledBorder: validState
             ? OutlineInputBorder(
                 borderRadius: BorderRadius.circular(15),
-                borderSide: const BorderSide(color: validColor, width: 1.25),
+                borderSide: const BorderSide(color: validColor, width: 1.15),
               )
             : null,
+
         focusedBorder: validState
             ? OutlineInputBorder(
                 borderRadius: BorderRadius.circular(15),
-                borderSide: const BorderSide(color: validColor, width: 1.5),
+                borderSide: const BorderSide(color: validColor, width: 1.35),
               )
             : null,
       ),
@@ -362,14 +362,17 @@ class AuthField extends StatelessWidget {
                 ),
               ),
             ),
+
+            // Keep "Valid format" above
+            // the field with its subtle check.
             if (validState && validLabel != null) ...[
               const Icon(Icons.check_rounded, size: 13, color: validColor),
-              const SizedBox(width: 3),
+              const SizedBox(width: 4),
               Text(
                 validLabel!,
                 style: const TextStyle(
                   color: validColor,
-                  fontSize: 9.3,
+                  fontSize: 10,
                   fontWeight: FontWeight.w800,
                 ),
               ),
