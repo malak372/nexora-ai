@@ -1,35 +1,53 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_config.dart';
+import '../../../core/network/dio_browser_credentials.dart';
+import '../../../core/storage/platform_key_value_store.dart';
 
 /// Handles guest idea-generation API requests.
 ///
-/// Uses the same backend base URL used by authentication.
-/// Guest sessions are maintained using the guest session cookie.
+/// On Flutter Web, the browser manages the secure HttpOnly guest cookie.
+/// On native platforms, the cookie value is stored securely and forwarded
+/// manually with guest requests.
 ///
 /// @author Eman
 class GuestIdeaApi {
-  GuestIdeaApi._();
+  GuestIdeaApi._() {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        connectTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 30),
+        sendTimeout: const Duration(seconds: 20),
+        headers: const <String, dynamic>{
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    enableBrowserCredentials(_dio);
+  }
 
   static final GuestIdeaApi instance = GuestIdeaApi._();
 
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
+  static final PlatformKeyValueStore _storage = PlatformKeyValueStore.instance;
 
   static const String _cookieStorageKey = 'guest_session_cookie';
 
   static const String _cookieName = 'nexora_guest_session';
 
-  late final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: ApiConfig.baseUrl,
-      connectTimeout: const Duration(seconds: 12),
-      receiveTimeout: const Duration(seconds: 30),
-      headers: const {'Content-Type': 'application/json'},
-    ),
-  );
+  late final Dio _dio;
 
   /// Creates or restores the backend guest session.
+  ///
+  /// Web:
+  /// The browser receives and stores the HttpOnly cookie automatically.
+  ///
+  /// Native:
+  /// The Set-Cookie response header is read and the cookie is stored in
+  /// secure storage for later requests.
   Future<Map<String, dynamic>> ensureGuestSession() async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -68,19 +86,29 @@ class GuestIdeaApi {
   }
 
   /// Starts guest idea generation.
+  ///
+  /// If the backend reports that the guest session cookie is missing,
+  /// the API recreates/restores the guest session once and retries the
+  /// generation request.
   Future<Map<String, dynamic>> generateIdea(
     Map<String, dynamic> payload,
   ) async {
     try {
-      final response = await _dio.post<Map<String, dynamic>>(
-        '/guest/ideas/generate',
-        data: payload,
-        options: await _optionsWithGuestCookie(),
-      );
-
-      return response.data ?? <String, dynamic>{};
+      return await _postGenerateIdea(payload);
     } on DioException catch (error) {
-      throw _toException(error);
+      final firstException = _toException(error);
+
+      if (!firstException.isGuestSessionRequired) {
+        throw firstException;
+      }
+
+      await ensureGuestSession();
+
+      try {
+        return await _postGenerateIdea(payload);
+      } on DioException catch (retryError) {
+        throw _toException(retryError);
+      }
     }
   }
 
@@ -98,27 +126,60 @@ class GuestIdeaApi {
     }
   }
 
+  Future<Map<String, dynamic>> _postGenerateIdea(
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/guest/ideas/generate',
+      data: payload,
+      options: await _optionsWithGuestCookie(),
+    );
+
+    return response.data ?? <String, dynamic>{};
+  }
+
+  /// Creates guest-request options.
+  ///
+  /// Web browsers do not allow JavaScript/Dart code to manually set the
+  /// Cookie header. BrowserHttpClientAdapter handles that automatically
+  /// when withCredentials is enabled.
+  ///
+  /// Native applications can attach the stored cookie manually.
   Future<Options> _optionsWithGuestCookie() async {
-    final cookie = await _storage.read(key: _cookieStorageKey);
+    if (kIsWeb) {
+      return Options();
+    }
+
+    final cookie = await _storage.read(_cookieStorageKey);
 
     if (cookie == null || cookie.trim().isEmpty) {
       return Options();
     }
 
-    return Options(headers: {'Cookie': cookie});
+    return Options(headers: <String, dynamic>{'Cookie': cookie});
   }
 
+  /// Saves the guest cookie on native platforms.
+  ///
+  /// Web browsers intentionally hide HttpOnly cookies from frontend code,
+  /// so there is nothing to persist manually in Web builds.
   Future<void> _saveGuestCookie(Headers headers) async {
+    if (kIsWeb) {
+      return;
+    }
+
     final setCookies = headers.map['set-cookie'] ?? const <String>[];
 
     for (final rawCookie in setCookies) {
       final firstPart = rawCookie.split(';').first.trim();
 
-      if (firstPart.startsWith('$_cookieName=')) {
-        await _storage.write(key: _cookieStorageKey, value: firstPart);
-
-        return;
+      if (!firstPart.startsWith('$_cookieName=')) {
+        continue;
       }
+
+      await _storage.write(_cookieStorageKey, firstPart);
+
+      return;
     }
   }
 
@@ -145,7 +206,7 @@ class GuestIdeaApi {
     String? code;
     String? activeRunId;
 
-    String message = 'We could not complete this request. Please try again.';
+    var message = 'We could not complete this request. Please try again.';
 
     if (data is Map) {
       final map = Map<String, dynamic>.from(data);
@@ -157,7 +218,7 @@ class GuestIdeaApi {
       final rawMessage = map['message'];
 
       if (rawMessage is List) {
-        message = rawMessage.join(' ');
+        message = rawMessage.map((item) => item.toString()).join(' ');
       } else if (rawMessage is String && rawMessage.trim().isNotEmpty) {
         message = rawMessage.trim();
       }
@@ -168,6 +229,9 @@ class GuestIdeaApi {
       message =
           'Unable to reach the server. '
           'Check your connection and try again.';
+    } else if (error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout) {
+      message = 'The request took too long. Please try again.';
     }
 
     return GuestIdeaException(
@@ -197,6 +261,16 @@ class GuestIdeaException implements Exception {
   final String? code;
 
   final String? activeRunId;
+
+  bool get isGuestSessionRequired {
+    final normalizedCode = code?.trim().toUpperCase() ?? '';
+
+    final normalizedMessage = message.toLowerCase();
+
+    return normalizedCode == 'GUEST_SESSION_REQUIRED' ||
+        (statusCode == 401 &&
+            normalizedMessage.contains('valid guest session'));
+  }
 
   bool get isGenerationAlreadyRunning {
     final normalizedCode = code?.toUpperCase() ?? '';
