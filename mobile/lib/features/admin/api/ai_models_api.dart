@@ -34,8 +34,8 @@ class AiModelsApi {
         if (providerKey.trim().isNotEmpty) 'providerKey': providerKey.trim(),
         if (healthStatus.trim().isNotEmpty)
           'healthStatus': healthStatus.trim().toUpperCase(),
-        if (isActive != null) 'isActive': isActive,
-        if (isDefault != null) 'isDefault': isDefault,
+        'isActive': ?isActive,
+        'isDefault': ?isDefault,
         'sortBy': sortBy,
         'sortOrder': sortOrder,
       },

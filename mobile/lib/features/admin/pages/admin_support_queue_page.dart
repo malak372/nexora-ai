@@ -184,7 +184,7 @@ class _AdminSupportQueuePageState extends State<AdminSupportQueuePage> {
 
     final summaryFuture = _loadSummaryWithRetry(
       force: force,
-    ).then<Map<String, dynamic>?>((value) => value, onError: (_, __) => null);
+    ).then<Map<String, dynamic>?>((value) => value, onError: (_, _) => null);
 
     Map<String, dynamic>? list;
 
