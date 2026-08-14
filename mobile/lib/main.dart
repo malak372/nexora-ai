@@ -9,6 +9,10 @@ import 'core/navigation/app_navigator.dart';
 import 'core/storage/session_store.dart';
 import 'core/theme/app_theme.dart';
 
+import 'features/admin/models/admin_resource.dart';
+import 'features/admin/pages/admin_resource_page.dart';
+import 'features/admin/pages/admin_shell.dart';
+
 import 'features/auth/pages/forgot_password_page.dart';
 import 'features/auth/pages/legal_page.dart';
 import 'features/auth/pages/login_page.dart';
@@ -76,6 +80,7 @@ void main() {
   // Do not touch plugins, secure storage, .env, deep links, or platform
   // channels before runApp(). On slower Android devices those calls can delay
   // Flutter's very first frame and leave the Android starting window visible.
+
   runApp(const VoxidenceApp());
 }
 
@@ -137,9 +142,6 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
     });
   }
 
-  /// Configures deep links for both:
-  /// - Cold application launches.
-  /// - Links received while the app is already running.
   Future<void> _configureDeepLinks() async {
     /*
      * Listen first so a link received while the app is finishing its cold
@@ -161,10 +163,12 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
           if (!mounted) return;
           _handleIncomingLink(initialUri);
         });
+
       }
     } catch (_) {
       // The app can continue normally when no initial link exists.
     }
+
   }
 
   @override
@@ -202,6 +206,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
         },
       );
 
+
       _runWhenNavigatorReady(
         () => AppNavigator.navigatorKey.currentState!.pushNamed(
           target.toString(),
@@ -212,6 +217,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
     final isResetLink =
         uri.path == '/reset-password' || uri.host == 'reset-password';
+
 
     if (!isResetLink) return;
 
@@ -309,6 +315,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
   }
 
   /// Generates dynamic routes containing query parameters and resource IDs.
+
   Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
     final rawName = settings.name;
 
@@ -328,6 +335,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
     // Password reset
     // /reset-password?token=...
+
 
     if (uri.path == '/reset-password') {
       page = ResetPasswordPage(token: uri.queryParameters['token'] ?? '');
@@ -371,6 +379,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
         case 'profile':
           page = const UserShell(initialIndex: 4);
+
           break;
 
         case 'generate':
@@ -525,6 +534,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
             ? 'My ideas'
             : returnTitle,
       );
+
     }
 
     
@@ -593,7 +603,6 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       title: 'Voxidence',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-
       routes: {
         '/': (_) => const _AppBootstrap(),
 
@@ -615,6 +624,17 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
         '/workspace': (_) => const UserShell(),
 
+        '/admin': (_) => const AdminShell(),
+
+        '/admin/dashboard': (_) => const AdminShell(initialIndex: 0),
+
+        '/admin/users': (_) => const AdminShell(initialIndex: 1),
+
+        '/admin/publication-reports': (_) => const AdminShell(initialIndex: 2),
+
+        '/admin/ideas': (_) =>
+            const AdminResourcePage(resource: AdminResources.ideas),
+
         '/normal': (_) => const UserShell(initialIndex: 0),
 
         '/normal/dashboard': (_) => const UserShell(initialIndex: 0),
@@ -626,6 +646,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
         '/normal/ideas': (_) => const UserShell(initialIndex: 3),
 
         '/normal/profile': (_) => const UserShell(initialIndex: 4),
+
 
         '/normal/accepted': (_) =>
             const UserShell(initialIndex: 3, initialLibraryTab: 4),
@@ -683,6 +704,7 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
       onGenerateRoute: _onGenerateRoute,
 
+
       onUnknownRoute: (settings) => MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => const HomePage(),
@@ -693,8 +715,9 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
 /// Determines the correct first screen after application startup.
 ///
-/// Users with an existing authenticated mobile session are sent directly
-/// to the normal-user workspace. Guests are sent to the public home page.
+/// Authenticated sessions are routed by role: administrators open the
+/// mobile admin workspace, while regular users open the user workspace.
+/// Guests are sent to the public home page.
 ///
 /// @author Eman
 class _AppBootstrap extends StatefulWidget {
@@ -705,15 +728,16 @@ class _AppBootstrap extends StatefulWidget {
 }
 
 class _AppBootstrapState extends State<_AppBootstrap> {
-  final Completer<bool> _bootstrapCompleter = Completer<bool>();
+  final Completer<String> _bootstrapCompleter = Completer<String>();
+
   bool _bootstrapStarted = false;
 
   @override
   void initState() {
     super.initState();
 
-    // Critical startup rule: paint AppLaunchExperience once before any plugin
-    // call. Secure storage and asset/plugin work starts only after that frame.
+    // Paint the launch experience before touching secure storage, .env, or any
+    // plugin-backed platform channel. This keeps the Android first frame fast.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _startBootstrap();
@@ -722,44 +746,72 @@ class _AppBootstrapState extends State<_AppBootstrap> {
 
   void _startBootstrap() {
     if (_bootstrapStarted) return;
+
     _bootstrapStarted = true;
 
     unawaited(() async {
       try {
-        final authenticated = await _resolveBootstrap();
+        final target = await _resolveBootstrapTarget();
+
         if (!_bootstrapCompleter.isCompleted) {
-          _bootstrapCompleter.complete(authenticated);
+          _bootstrapCompleter.complete(target);
         }
       } catch (_) {
         if (!_bootstrapCompleter.isCompleted) {
-          _bootstrapCompleter.complete(false);
+          _bootstrapCompleter.complete('home');
         }
       }
     }());
   }
 
-  Future<bool> _resolveBootstrap() async {
-    // These two jobs run in parallel, but only after the first Flutter frame.
+  /// Resolves the first workspace only after the first Flutter frame.
+  ///
+  /// Environment loading and secure-storage token lookup run in parallel.
+  /// Authenticated administrators enter the mobile admin workspace, normal
+  /// users enter the user workspace, and guests return to the public home page.
+  Future<String> _resolveBootstrapTarget() async {
     final results = await Future.wait<dynamic>([
       _ensureAppEnvironmentLoaded(),
       SessionStore.instance.hasAccessToken(),
     ]);
 
-    return results[1] == true;
+    final hasToken = results[1] == true;
+
+    if (!hasToken) {
+      return 'home';
+    }
+
+    final user = await SessionStore.instance.readUser();
+    final role = user?['role']?.toString().trim().toUpperCase() ?? '';
+
+    return role == 'ADMIN' ? 'admin' : 'user';
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
+    return FutureBuilder<String>(
       future: _bootstrapCompleter.future,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const AppLaunchExperience();
         }
 
-        return snapshot.data == true
-            ? const UserShell(key: ValueKey('authenticated-workspace'))
-            : const HomePage(key: ValueKey('guest-home'));
+        switch (snapshot.data) {
+          case 'admin':
+            return const AdminShell(
+              key: ValueKey('authenticated-admin-workspace'),
+            );
+
+          case 'user':
+            return const UserShell(
+              key: ValueKey('authenticated-user-workspace'),
+            );
+
+          default:
+            return const HomePage(
+              key: ValueKey('guest-home'),
+            );
+        }
       },
     );
   }

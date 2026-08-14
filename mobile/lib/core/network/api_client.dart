@@ -61,13 +61,16 @@ class ApiClient {
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           final token = await SessionStore.instance.getAccessToken();
+
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
           }
+
           handler.next(options);
         },
         onError: (error, handler) async {
           final request = error.requestOptions;
+
           final unauthorized = error.response?.statusCode == 401;
           final alreadyRetried = request.extra['voxidence_retry'] == true;
           final isRefresh = request.path.contains('/auth/refresh');
@@ -79,14 +82,21 @@ class ApiClient {
 
           try {
             final accessToken = await _refreshAccessToken();
+
             request.extra['voxidence_retry'] = true;
+
             request.headers['Authorization'] = 'Bearer $accessToken';
+
             final response = await _dio.fetch<dynamic>(request);
+
             handler.resolve(response);
           } catch (_) {
             await SessionStore.instance.clear();
+
             clearCache();
+
             AppNavigator.goToLogin();
+
             handler.next(error);
           }
         },
@@ -99,10 +109,13 @@ class ApiClient {
   static String get baseUrl => ApiConfig.baseUrl;
 
   late final Dio _dio;
+
   late final Dio _refreshDio;
 
   final Map<String, _CacheEntry> _cache = {};
+
   final Map<String, Future<dynamic>> _inFlightGets = {};
+
   Future<String>? _refreshFuture;
 
   /// Removes ordinary HTTP/Nest response wrappers while preserving paginated
@@ -116,10 +129,12 @@ class ApiClient {
     dynamic current = value;
 
     for (var i = 0; i < 4; i++) {
-      if (current is! Map || !current.containsKey('data')) break;
+      if (current is! Map || !current.containsKey('data')) {
+        break;
+      }
 
       final map = Map<String, dynamic>.from(current);
-      final keys = map.keys.toSet();
+      final keys = map.keys.map((key) => key.toString()).toSet();
       const wrapperKeys = {
         'data',
         'success',
@@ -132,12 +147,13 @@ class ApiClient {
 
       final looksLikeEnvelope =
           map.length == 1 || keys.every(wrapperKeys.contains);
-      if (!looksLikeEnvelope) break;
+
+      if (!looksLikeEnvelope) {
+        break;
+      }
 
       final data = map['data'];
-      final hasPagination =
-          map['meta'] is Map ||
-          map['pagination'] is Map;
+      final hasPagination = map['meta'] is Map || map['pagination'] is Map;
 
       // Preserve paginated list envelopes. UserApi._paged() understands both
       // `meta` and `pagination` and needs those fields to expose all pages.
@@ -159,8 +175,11 @@ class ApiClient {
     Map<String, dynamic>? query,
     Duration cacheFor = Duration.zero,
     bool force = false,
+    Options? options,
+    bool unwrapResponse = true,
   }) async {
-    final cacheKey = _requestKey(path, query);
+    final cacheKey = '${_requestKey(path, query)}|unwrap:$unwrapResponse';
+
     final cached = _cache[cacheKey];
 
     if (!force && cached != null && cached.expiresAt.isAfter(DateTime.now())) {
@@ -168,15 +187,25 @@ class ApiClient {
     }
 
     final existing = _inFlightGets[cacheKey];
-    if (!force && existing != null) return existing;
+
+    if (!force && existing != null) {
+      return existing;
+    }
 
     final request = () async {
       try {
-        final response = await _dio.get<dynamic>(path, queryParameters: query);
-        final value = unwrap(response.data);
+        final response = await _dio.get<dynamic>(
+          path,
+          queryParameters: query,
+          options: options,
+        );
+
+        final value = unwrapResponse ? unwrap(response.data) : response.data;
+
         if (cacheFor > Duration.zero) {
           _cache[cacheKey] = _CacheEntry(value, DateTime.now().add(cacheFor));
         }
+
         return value;
       } on DioException catch (error) {
         throw _toException(error);
@@ -186,6 +215,7 @@ class ApiClient {
     }();
 
     _inFlightGets[cacheKey] = request;
+
     return request;
   }
 
@@ -196,6 +226,7 @@ class ApiClient {
         queryParameters: query,
         options: Options(responseType: ResponseType.bytes),
       );
+
       return response.data ?? const <int>[];
     } on DioException catch (error) {
       throw _toException(error);
@@ -212,6 +243,7 @@ class ApiClient {
           headers: const {'Accept': 'text/html,text/plain,*/*'},
         ),
       );
+
       return response.data ?? '';
     } on DioException catch (error) {
       throw _toException(error);
@@ -228,11 +260,13 @@ class ApiClient {
       final form = FormData.fromMap({
         fieldName: MultipartFile.fromBytes(bytes, filename: fileName),
       });
+
       final response = await _dio.patch<dynamic>(
         path,
         data: form,
         options: Options(contentType: 'multipart/form-data'),
       );
+
       return unwrap(response.data);
     } on DioException catch (error) {
       throw _toException(error);
@@ -243,15 +277,23 @@ class ApiClient {
     String path, {
     dynamic data,
     Duration? receiveTimeout,
+    Options? options,
   }) async {
     try {
+      final requestOptions = options ?? Options();
+
+      if (receiveTimeout != null) {
+        requestOptions.receiveTimeout = receiveTimeout;
+      }
+
       final response = await _dio.post<dynamic>(
         path,
         data: data,
-        options: receiveTimeout == null
+        options: options == null && receiveTimeout == null
             ? null
-            : Options(receiveTimeout: receiveTimeout),
+            : requestOptions,
       );
+
       return unwrap(response.data);
     } on DioException catch (error) {
       throw _toException(error);
@@ -261,6 +303,7 @@ class ApiClient {
   Future<dynamic> put(String path, {dynamic data}) async {
     try {
       final response = await _dio.put<dynamic>(path, data: data);
+
       return unwrap(response.data);
     } on DioException catch (error) {
       throw _toException(error);
@@ -274,6 +317,7 @@ class ApiClient {
         data: data,
         options: options,
       );
+
       return unwrap(response.data);
     } on DioException catch (error) {
       throw _toException(error);
@@ -283,6 +327,7 @@ class ApiClient {
   Future<dynamic> delete(String path, {dynamic data}) async {
     try {
       final response = await _dio.delete<dynamic>(path, data: data);
+
       return unwrap(response.data);
     } on DioException catch (error) {
       throw _toException(error);
@@ -295,15 +340,20 @@ class ApiClient {
 
   void clearCache() {
     _cache.clear();
+
     _inFlightGets.clear();
   }
 
   Future<String> _refreshAccessToken() {
     final existing = _refreshFuture;
-    if (existing != null) return existing;
+
+    if (existing != null) {
+      return existing;
+    }
 
     final request = () async {
       final refreshToken = await SessionStore.instance.getRefreshToken();
+
       if (refreshToken == null || refreshToken.isEmpty) {
         throw const ApiException('Your session has expired.', statusCode: 401);
       }
@@ -313,13 +363,17 @@ class ApiClient {
           '/auth/refresh',
           data: {'refreshToken': refreshToken},
         );
+
         final payload = unwrap(response.data);
+
         if (payload is! Map) {
           throw const ApiException('Invalid refresh response.');
         }
 
         final access = payload['accessToken']?.toString() ?? '';
+
         final refresh = payload['refreshToken']?.toString() ?? '';
+
         if (access.isEmpty || refresh.isEmpty) {
           throw const ApiException('Invalid refresh response.');
         }
@@ -328,6 +382,7 @@ class ApiClient {
           accessToken: access,
           refreshToken: refresh,
         );
+
         return access;
       } on DioException catch (error) {
         throw _toException(error);
@@ -335,17 +390,25 @@ class ApiClient {
     }();
 
     _refreshFuture = request.whenComplete(() => _refreshFuture = null);
+
     return _refreshFuture!;
   }
 
   String _requestKey(String path, Map<String, dynamic>? query) {
     final normalized = <String, dynamic>{};
+
     final keys = <String>[...?query?.keys];
+
     keys.sort();
+
     for (final key in keys) {
       final value = query![key];
-      if (value != null) normalized[key] = value;
+
+      if (value != null) {
+        normalized[key] = value;
+      }
     }
+
     return '$path?${jsonEncode(normalized)}';
   }
 
@@ -372,24 +435,35 @@ class ApiClient {
     for (var i = 0; i < 4; i++) {
       if (current is Map) {
         final raw = current['message'];
+
         if (raw is List) {
           final text = raw.join(' ').trim();
-          if (text.isNotEmpty) return text;
+
+          if (text.isNotEmpty) {
+            return text;
+          }
         }
-        if (raw is String && raw.trim().isNotEmpty) return raw.trim();
+
+        if (raw is String && raw.trim().isNotEmpty) {
+          return raw.trim();
+        }
+
         if (raw is Map) {
           current = raw;
           continue;
         }
+
         if (current['error'] is String &&
             current['error'].toString().trim().isNotEmpty) {
           return current['error'].toString().trim();
         }
+
         if (current.containsKey('data')) {
           current = current['data'];
           continue;
         }
       }
+
       break;
     }
 

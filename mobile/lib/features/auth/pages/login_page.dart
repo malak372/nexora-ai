@@ -1,7 +1,7 @@
 // Voxidence mobile login screen.
 //
 // Connected directly to POST /auth/login and the authenticated
-// mobile user workspace.
+// role-aware mobile workspace.
 //
 // Includes:
 // - Email and password validation.
@@ -10,7 +10,7 @@
 // - Temporary account-lock countdown.
 // - Password visibility toggle.
 // - Forgot-password navigation.
-// - Direct authenticated-user workspace navigation.
+// - Role-aware navigation for administrators and users.
 //
 // @author Eman
 
@@ -19,6 +19,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../admin/pages/admin_shell.dart';
 import '../../user/pages/user_shell.dart';
 import '../api/auth_api.dart';
 import '../validation/auth_validators.dart';
@@ -138,25 +139,11 @@ class _LoginPageState extends State<LoginPage> {
 
       final role = user['role']?.toString().trim().toUpperCase() ?? '';
 
-      if (role == 'ADMIN') {
-        await AuthApi.instance.logout();
-
-        if (!mounted) {
-          return;
-        }
-
-        setState(() {
-          _error =
-              'Admin accounts should use the web administration workspace.';
-          _errorTitle = 'Admin account';
-          _errorType = 'warning';
-        });
-
-        return;
-      }
-
       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-        MaterialPageRoute<void>(builder: (_) => const UserShell()),
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              role == 'ADMIN' ? const AdminShell() : const UserShell(),
+        ),
         (route) => false,
       );
     } on AuthException catch (error) {
@@ -290,9 +277,7 @@ class _LoginPageState extends State<LoginPage> {
     final minutes = (safe % 3600) ~/ 60;
     final seconds = safe % 60;
 
-    String two(int value) {
-      return value.toString().padLeft(2, '0');
-    }
+    String two(int value) => value.toString().padLeft(2, '0');
 
     return '${two(hours)}:${two(minutes)}:${two(seconds)}';
   }
@@ -601,8 +586,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   AuthPrimaryButton(
                     label: _locked
-                        ? 'Locked · '
-                              '${_formatCountdown(_remainingLockSeconds ?? 0)}'
+                        ? 'Locked · ${_formatCountdown(_remainingLockSeconds ?? 0)}'
                         : 'Sign in to Voxidence',
                     loading: _submitting,
                     onPressed: _submitting || _locked ? null : _submit,

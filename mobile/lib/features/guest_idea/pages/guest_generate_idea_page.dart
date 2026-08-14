@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -6,6 +7,12 @@ import '../../../core/theme/app_theme.dart';
 import '../../home/widgets/common.dart';
 import '../api/guest_idea_api.dart';
 
+/// Guest idea generation experience.
+///
+/// Guides the guest through signal, domain, location, and review steps
+/// before starting the evidence-led idea generation pipeline.
+///
+/// @author Eman
 class GuestGenerateIdeaPage extends StatefulWidget {
   const GuestGenerateIdeaPage({super.key});
 
@@ -22,8 +29,11 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
   static const _terminalStatuses = <String>{'COMPLETED', 'FAILED', 'CANCELLED'};
 
   final _descriptionController = TextEditingController();
+
   final _countryController = TextEditingController(text: 'Palestine');
+
   final _cityController = TextEditingController();
+
   final _regionController = TextEditingController();
 
   int _step = 0;
@@ -37,6 +47,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
   String _error = '';
 
   List<Map<String, dynamic>> _domains = const [];
+
   List<Map<String, dynamic>> _languages = const [];
 
   Map<String, dynamic>? _run;
@@ -138,12 +149,9 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
   bool get _canContinue {
     switch (_step) {
       case 0:
-        // The user can always move to the domain step,
-        // unless the written description is too long.
         return !_descriptionTooLong;
 
       case 1:
-        // A domain is required only when fewer than 4 words were written.
         return _descriptionValid || _selectedDomainId.isNotEmpty;
 
       case 2:
@@ -160,6 +168,26 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
     }
 
     return 'Continue';
+  }
+
+  List<Map<String, dynamic>> get _languageItems {
+    final items = <Map<String, dynamic>>[];
+
+    final hasAutoDetect = _languages.any(
+      (language) => language['code']?.toString().toUpperCase() == 'ANY',
+    );
+
+    if (!hasAutoDetect) {
+      items.add(const {'code': 'ANY', 'name': 'Auto detect'});
+    }
+
+    items.addAll(_languages);
+
+    if (items.isEmpty) {
+      items.add(const {'code': 'ANY', 'name': 'Auto detect'});
+    }
+
+    return items;
   }
 
   Map<String, dynamic>? get _selectedDomain {
@@ -181,13 +209,51 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
   }
 
   String get _selectedLanguageName {
-    for (final language in _languages) {
+    for (final language in _languageItems) {
       if (language['code']?.toString() == _language) {
-        return language['name']?.toString() ?? _language;
+        return _languageDisplayName(language);
       }
     }
 
-    return _language;
+    return _language == 'ANY' ? 'Auto detect' : _language;
+  }
+
+  String _languageDisplayName(Map<String, dynamic> language) {
+    final code = language['code']?.toString() ?? 'ANY';
+
+    if (code.toUpperCase() == 'ANY') {
+      return 'Auto detect';
+    }
+
+    return language['name']?.toString() ??
+        language['displayName']?.toString() ??
+        code;
+  }
+
+  Future<void> _openLanguagePicker() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    final selectedLanguage = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: AppColors.primaryDeep.withValues(alpha: 0.18),
+      builder: (sheetContext) {
+        return _LanguagePickerSheet(
+          languages: _languageItems,
+          selectedCode: _language,
+        );
+      },
+    );
+
+    if (!mounted || selectedLanguage == null) {
+      return;
+    }
+
+    setState(() {
+      _language = selectedLanguage;
+    });
   }
 
   void _previous() {
@@ -233,6 +299,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
         setState(() {
           _error =
               'Keep the description within $_maxDescriptionWords words before continuing.';
+
           _step = 0;
         });
 
@@ -263,6 +330,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
     if (_descriptionTooLong) {
       setState(() {
         _error = 'Description must not exceed $_maxDescriptionWords words.';
+
         _step = 0;
       });
 
@@ -273,6 +341,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
       setState(() {
         _error =
             'Choose a domain or write at least $_minDescriptionWords words.';
+
         _step = 1;
       });
 
@@ -285,7 +354,9 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
     });
 
     final description = _descriptionController.text.trim();
+
     final city = _cityController.text.trim();
+
     final region = _regionController.text.trim();
 
     final payload = <String, dynamic>{
@@ -388,10 +459,12 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
 
   Future<void> _refreshRun() async {
     final runId = _run?['id']?.toString();
+
     final status = _run?['status']?.toString().toUpperCase();
 
     if (runId == null || runId.isEmpty || _terminalStatuses.contains(status)) {
       _pollTimer?.cancel();
+
       return;
     }
 
@@ -546,7 +619,6 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
           subtitle: 'Four words are enough to begin.',
         ),
         const SizedBox(height: 15),
-
         Stack(
           children: [
             TextField(
@@ -595,9 +667,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
             ),
           ],
         ),
-
         const SizedBox(height: 8),
-
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -624,22 +694,19 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-
                         Material(
                           color: Colors.transparent,
                           child: InkWell(
                             onTap: _chooseDomainInstead,
                             borderRadius: BorderRadius.circular(6),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(
                                 horizontal: 2,
                                 vertical: 3,
                               ),
                               child: Text(
-                                _descriptionValid
-                                    ? 'choose a domain (optional)'
-                                    : 'choose a domain',
-                                style: const TextStyle(
+                                'choose a domain instead',
+                                style: TextStyle(
                                   color: AppColors.primaryDark,
                                   fontSize: 10.8,
                                   fontWeight: FontWeight.w900,
@@ -651,7 +718,6 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                             ),
                           ),
                         ),
-
                         const Text(
                           '.',
                           style: TextStyle(
@@ -663,9 +729,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                       ],
                     ),
             ),
-
             const SizedBox(width: 10),
-
             Text(
               '$_wordCount/$_maxDescriptionWords words',
               style: TextStyle(
@@ -693,9 +757,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
               ? 'Optional — choose one, or continue and let Voxidence infer the best fit.'
               : 'Required — choose a domain because the signal has fewer than $_minDescriptionWords words.',
         ),
-
         const SizedBox(height: 15),
-
         if (_descriptionValid) ...[
           _DomainTile(
             title: 'Auto-detect the best domain',
@@ -712,7 +774,6 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
           ),
           const SizedBox(height: 9),
         ],
-
         if (_domains.isEmpty)
           _SoftNotice(
             icon: Icons.grid_view_rounded,
@@ -747,6 +808,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                           onTap: () {
                             setState(() {
                               _error = '';
+
                               _selectedDomainId = id;
                             });
                           },
@@ -770,9 +832,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
           title: 'Add local context',
           subtitle: 'Location helps shape relevance and realistic assumptions.',
         ),
-
         const SizedBox(height: 15),
-
         _LabeledField(
           label: 'Country',
           controller: _countryController,
@@ -782,9 +842,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
             setState(() {});
           },
         ),
-
         const SizedBox(height: 11),
-
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -807,58 +865,110 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
             ),
           ],
         ),
-
-        const SizedBox(height: 11),
-
-        Text(
+        const SizedBox(height: 13),
+        const Text(
           'Language',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: 11.5,
             fontWeight: FontWeight.w900,
           ),
         ),
-
         const SizedBox(height: 6),
-
-        DropdownButtonFormField<String>(
-          initialValue: _language,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.translate_rounded, size: 18),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          ),
-          items:
-              (_languages.isEmpty
-                      ? const <Map<String, dynamic>>[
-                          {'code': 'ANY', 'name': 'Any language'},
-                        ]
-                      : _languages)
-                  .map((language) {
-                    return DropdownMenuItem<String>(
-                      value: language['code']?.toString() ?? 'ANY',
-                      child: Text(
-                        language['name']?.toString() ??
-                            language['code']?.toString() ??
-                            'Any language',
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                        ),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _openLanguagePicker,
+            borderRadius: BorderRadius.circular(16),
+            child: Ink(
+              padding: const EdgeInsets.fromLTRB(9, 8, 10, 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFCFEFD),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.borderStrong),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryDeep.withValues(alpha: 0.025),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 37,
+                    height: 37,
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: AppColors.borderStrong.withValues(alpha: 0.72),
                       ),
-                    );
-                  })
-                  .toList(growable: false),
-          onChanged: (value) {
-            if (value != null) {
-              setState(() {
-                _language = value;
-              });
-            }
-          },
+                    ),
+                    child: const Icon(
+                      Icons.translate_rounded,
+                      size: 17,
+                      color: AppColors.primaryDark,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _selectedLanguageName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Tap to choose',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 9.2,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.primaryDark,
+                      size: 19,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 7),
+        const Padding(
+          padding: EdgeInsets.only(left: 2),
+          child: Text(
+            'Choose the language used to interpret your discovery context.',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 9.7,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ],
     );
@@ -879,9 +989,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
           title: 'Final discovery brief',
           subtitle: 'Everything Voxidence will start from.',
         ),
-
         const SizedBox(height: 15),
-
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -901,9 +1009,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                   letterSpacing: 1,
                 ),
               ),
-
               const SizedBox(height: 7),
-
               Text(
                 _descriptionController.text.trim().isEmpty
                     ? 'No written signal — generation will use the selected domain.'
@@ -918,9 +1024,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
             ],
           ),
         ),
-
         const SizedBox(height: 9),
-
         Row(
           children: [
             Expanded(
@@ -935,13 +1039,9 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
             ),
           ],
         ),
-
         const SizedBox(height: 9),
-
         _ReviewTile(label: 'Location', value: location),
-
         const SizedBox(height: 10),
-
         const _ReadyBanner(),
       ],
     );
@@ -981,9 +1081,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _TopBar(onBack: () => Navigator.pop(context)),
-
               const SizedBox(height: 28),
-
               Container(
                 padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
                 decoration: BoxDecoration(
@@ -1000,10 +1098,8 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                 ),
                 child: Column(
                   children: [
-                    const _GenerationOrb(),
-
+                    const _BootstrapLogoOrbit(),
                     const SizedBox(height: 24),
-
                     const Text(
                       'Turning evidence into direction',
                       textAlign: TextAlign.center,
@@ -1015,9 +1111,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         letterSpacing: -0.5,
                       ),
                     ),
-
                     const SizedBox(height: 9),
-
                     Text(
                       _progressMessage(progress),
                       textAlign: TextAlign.center,
@@ -1028,9 +1122,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-
                     const SizedBox(height: 24),
-
                     ClipRRect(
                       borderRadius: BorderRadius.circular(999),
                       child: LinearProgressIndicator(
@@ -1042,9 +1134,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 9),
-
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1066,7 +1156,6 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         ),
                       ],
                     ),
-
                     if (_error.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       _ErrorBanner(message: _error),
@@ -1097,9 +1186,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _TopBar(onBack: () => Navigator.pop(context)),
-
               const SizedBox(height: 20),
-
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -1118,9 +1205,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const _SuccessBadge(),
-
                     const SizedBox(height: 16),
-
                     Text(
                       idea['title']?.toString() ?? 'Your idea is ready',
                       style: const TextStyle(
@@ -1131,9 +1216,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         letterSpacing: -0.55,
                       ),
                     ),
-
                     const SizedBox(height: 10),
-
                     Text(
                       idea['limitedAbstract']?.toString() ??
                           'Your evidence-backed software idea is ready.',
@@ -1144,7 +1227,6 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-
                     if ((idea['problemStatement']?.toString() ?? '')
                         .isNotEmpty) ...[
                       const SizedBox(height: 18),
@@ -1153,19 +1235,15 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         text: idea['problemStatement'].toString(),
                       ),
                     ],
-
                     if (objectives.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       _ResultList(title: 'Objectives', items: objectives),
                     ],
-
                     if (targetUsers.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       _ResultList(title: 'Target users', items: targetUsers),
                     ],
-
                     const SizedBox(height: 20),
-
                     Container(
                       padding: const EdgeInsets.all(13),
                       decoration: BoxDecoration(
@@ -1196,9 +1274,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         ],
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
@@ -1215,9 +1291,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 8),
-
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton(
@@ -1276,9 +1350,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                     color: AppColors.pinkDeep,
                   ),
                 ),
-
                 const SizedBox(height: 15),
-
                 Text(
                   status == 'CANCELLED'
                       ? 'Generation was cancelled'
@@ -1290,9 +1362,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-
                 const SizedBox(height: 8),
-
                 Text(
                   _run?['errorMessage']?.toString() ??
                       'Your input is still available, so you can review it and try again.',
@@ -1303,9 +1373,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                     height: 1.5,
                   ),
                 ),
-
                 const SizedBox(height: 18),
-
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -1341,9 +1409,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _TopBar(onBack: () => Navigator.pop(context)),
-
               const SizedBox(height: 24),
-
               Container(
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
@@ -1362,9 +1428,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const _LimitBadge(),
-
                     const SizedBox(height: 18),
-
                     const Text(
                       'Your free discovery is complete.',
                       style: TextStyle(
@@ -1375,9 +1439,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         letterSpacing: -0.55,
                       ),
                     ),
-
                     const SizedBox(height: 10),
-
                     const Text(
                       'Your guest idea has already been used. Create a free Voxidence account to generate more ideas and save your discoveries.',
                       style: TextStyle(
@@ -1387,30 +1449,22 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-
                     const SizedBox(height: 18),
-
                     const _BenefitTile(
                       icon: Icons.auto_awesome_rounded,
                       text: 'More idea attempts',
                     ),
-
                     const SizedBox(height: 8),
-
                     const _BenefitTile(
                       icon: Icons.bookmark_border_rounded,
                       text: 'Saved discoveries',
                     ),
-
                     const SizedBox(height: 8),
-
                     const _BenefitTile(
                       icon: Icons.dashboard_customize_outlined,
                       text: 'Your own workspace',
                     ),
-
                     const SizedBox(height: 18),
-
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
@@ -1427,9 +1481,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 8),
-
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -1559,13 +1611,9 @@ class _TopBar extends StatelessWidget {
             ),
           ),
         ),
-
         const SizedBox(width: 10),
-
         const BrandMark(size: 34),
-
         const SizedBox(width: 7),
-
         const Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1590,7 +1638,6 @@ class _TopBar extends StatelessWidget {
             ],
           ),
         ),
-
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
@@ -1682,9 +1729,7 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 9),
-
           Text(
             _titles[step],
             style: const TextStyle(
@@ -1695,9 +1740,7 @@ class _Header extends StatelessWidget {
               letterSpacing: -0.65,
             ),
           ),
-
           const SizedBox(height: 8),
-
           Text(
             _descriptions[step],
             style: const TextStyle(
@@ -1725,6 +1768,7 @@ class _ProgressStrip extends StatelessWidget {
         index,
       ) {
         final active = index == step;
+
         final done = index < step;
 
         return Expanded(
@@ -1779,9 +1823,7 @@ class _ProgressStrip extends StatelessWidget {
                                 ),
                         ),
                       ),
-
                       const SizedBox(height: 5),
-
                       Text(
                         _GuestGenerateIdeaPageState._steps[index],
                         maxLines: 1,
@@ -1798,7 +1840,6 @@ class _ProgressStrip extends StatelessWidget {
                   ),
                 ),
               ),
-
               if (index < _GuestGenerateIdeaPageState._steps.length - 1)
                 Container(
                   width: 5,
@@ -1876,9 +1917,7 @@ class _EvidenceFlow extends StatelessWidget {
                               : AppColors.textMuted,
                         ),
                       ),
-
                       const SizedBox(height: 4),
-
                       Text(
                         _labels[index],
                         style: TextStyle(
@@ -1892,7 +1931,6 @@ class _EvidenceFlow extends StatelessWidget {
                     ],
                   ),
                 ),
-
                 if (index < _labels.length - 1)
                   Icon(
                     Icons.arrow_forward_rounded,
@@ -1945,9 +1983,7 @@ class _SectionTitle extends StatelessWidget {
             ),
           ),
         ),
-
         const SizedBox(width: 10),
-
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1960,9 +1996,7 @@ class _SectionTitle extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-
               const SizedBox(height: 2),
-
               Text(
                 subtitle,
                 style: const TextStyle(
@@ -2024,7 +2058,7 @@ class _DomainTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(15),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          constraints: BoxConstraints(minHeight: emphasized ? 64.0 : 58.0),
+          constraints: BoxConstraints(minHeight: emphasized ? 64 : 58),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: selected ? AppColors.primarySoft : Colors.white,
@@ -2061,9 +2095,7 @@ class _DomainTile extends StatelessWidget {
                   color: emphasized ? Colors.white : AppColors.primaryDark,
                 ),
               ),
-
               const SizedBox(width: 9),
-
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -2080,7 +2112,6 @@ class _DomainTile extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-
                     if (subtitle != null) ...[
                       const SizedBox(height: 2),
                       Text(
@@ -2097,7 +2128,6 @@ class _DomainTile extends StatelessWidget {
                   ],
                 ),
               ),
-
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 160),
                 opacity: selected ? 1 : 0,
@@ -2125,9 +2155,13 @@ class _LabeledField extends StatelessWidget {
   });
 
   final String label;
+
   final TextEditingController controller;
+
   final IconData icon;
+
   final String hintText;
+
   final ValueChanged<String>? onChanged;
 
   @override
@@ -2143,9 +2177,7 @@ class _LabeledField extends StatelessWidget {
             fontWeight: FontWeight.w900,
           ),
         ),
-
         const SizedBox(height: 6),
-
         TextField(
           controller: controller,
           onChanged: onChanged,
@@ -2194,9 +2226,7 @@ class _ReviewTile extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
-
           const SizedBox(height: 3),
-
           Text(
             value.isEmpty ? '—' : value,
             maxLines: 2,
@@ -2274,9 +2304,12 @@ class _ActionBar extends StatelessWidget {
 
   final int step;
   final int stepCount;
+
   final String primaryLabel;
+
   final bool canContinue;
   final bool submitting;
+
   final VoidCallback onPrevious;
   final VoidCallback onContinue;
 
@@ -2311,9 +2344,7 @@ class _ActionBar extends StatelessWidget {
               ),
             ),
           ),
-
           const SizedBox(width: 8),
-
           Expanded(
             child: Text(
               '${step + 1} of $stepCount',
@@ -2326,9 +2357,7 @@ class _ActionBar extends StatelessWidget {
               ),
             ),
           ),
-
           const SizedBox(width: 8),
-
           FilledButton.icon(
             onPressed: canContinue && !submitting ? onContinue : null,
             icon: submitting
@@ -2387,9 +2416,7 @@ class _ErrorBanner extends StatelessWidget {
             color: AppColors.pinkDeep,
             size: 17,
           ),
-
           const SizedBox(width: 8),
-
           Expanded(
             child: Text(
               message,
@@ -2431,9 +2458,7 @@ class _SoftNotice extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 18, color: AppColors.primaryDark),
-
           const SizedBox(width: 9),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2446,9 +2471,7 @@ class _SoftNotice extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-
                 const SizedBox(height: 2),
-
                 Text(
                   text,
                   style: const TextStyle(
@@ -2467,105 +2490,290 @@ class _SoftNotice extends StatelessWidget {
   }
 }
 
-class _BootstrapView extends StatelessWidget {
-  const _BootstrapView({super.key});
+/// Refined mobile language selector.
+///
+/// Presented as a rounded bottom sheet instead of the default dropdown popup.
+///
+/// @author Eman
+class _LanguagePickerSheet extends StatelessWidget {
+  const _LanguagePickerSheet({
+    required this.languages,
+    required this.selectedCode,
+  });
+
+  final List<Map<String, dynamic>> languages;
+
+  final String selectedCode;
+
+  String _displayName(Map<String, dynamic> language) {
+    final code = language['code']?.toString() ?? 'ANY';
+
+    if (code.toUpperCase() == 'ANY') {
+      return 'Auto detect';
+    }
+
+    return language['name']?.toString() ??
+        language['displayName']?.toString() ??
+        code;
+  }
+
+  String _subtitle(String code) {
+    switch (code.toUpperCase()) {
+      case 'ANY':
+        return 'Let Voxidence choose automatically';
+
+      case 'EN':
+      case 'ENGLISH':
+        return 'English';
+
+      case 'AR':
+      case 'ARABIC':
+        return 'العربية';
+
+      case 'FR':
+      case 'FRENCH':
+        return 'Français';
+
+      case 'ES':
+      case 'SPANISH':
+        return 'Español';
+
+      case 'DE':
+      case 'GERMAN':
+        return 'Deutsch';
+
+      case 'TR':
+      case 'TURKISH':
+        return 'Türkçe';
+
+      default:
+        return 'Discovery language';
+    }
+  }
+
+  IconData _icon(String code) {
+    if (code.toUpperCase() == 'ANY') {
+      return Icons.auto_awesome_rounded;
+    }
+
+    return Icons.language_rounded;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
+    final height = MediaQuery.sizeOf(context).height;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: height * 0.74),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFFDFC),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SafeArea(
+        top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.22),
+            const SizedBox(height: 10),
+            Container(
+              width: 39,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.borderStrong.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 17, 12, 13),
+              child: Row(
+                children: [
+                  Container(
+                    width: 43,
+                    height: 43,
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.borderStrong),
+                    ),
+                    child: const Icon(
+                      Icons.translate_rounded,
+                      color: AppColors.primaryDark,
+                      size: 19,
                     ),
                   ),
-                ),
-                Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.borderStrong),
+                  const SizedBox(width: 11),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Choose language',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.25,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Select how Voxidence should interpret the context.',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 10.2,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.2),
-                        blurRadius: 22,
-                        offset: const Offset(0, 10),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFF4F8F6),
+                      foregroundColor: AppColors.primaryDeep,
+                      minimumSize: const Size(36, 36),
+                      maximumSize: const Size(36, 36),
+                      padding: EdgeInsets.zero,
+                    ),
+                    icon: const Icon(Icons.close_rounded, size: 17),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, thickness: 1, color: AppColors.border),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 19),
+                itemCount: languages.length,
+                separatorBuilder: (_, _) {
+                  return const SizedBox(height: 7);
+                },
+                itemBuilder: (context, index) {
+                  final language = languages[index];
+
+                  final code = language['code']?.toString() ?? 'ANY';
+
+                  final selected = code == selectedCode;
+
+                  return Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.pop(context, code);
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 170),
+                        padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? AppColors.primarySoft.withValues(alpha: 0.92)
+                              : const Color(0xFFFCFEFD),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: selected
+                                ? AppColors.primary.withValues(alpha: 0.42)
+                                : AppColors.border,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 39,
+                              height: 39,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? Colors.white.withValues(alpha: 0.86)
+                                    : AppColors.primarySoft.withValues(
+                                        alpha: 0.48,
+                                      ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: selected
+                                      ? AppColors.primary.withValues(
+                                          alpha: 0.22,
+                                        )
+                                      : AppColors.border.withValues(
+                                          alpha: 0.82,
+                                        ),
+                                ),
+                              ),
+                              child: Icon(
+                                _icon(code),
+                                size: 17,
+                                color: selected
+                                    ? AppColors.primaryDark
+                                    : AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _displayName(language),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: selected
+                                          ? AppColors.primaryDeep
+                                          : AppColors.textPrimary,
+                                      fontSize: 12.6,
+                                      fontWeight: selected
+                                          ? FontWeight.w900
+                                          : FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _subtitle(code),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 9.4,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 170),
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? AppColors.primary
+                                    : Colors.transparent,
+                                shape: BoxShape.circle,
+                                border: selected
+                                    ? null
+                                    : Border.all(color: AppColors.borderStrong),
+                              ),
+                              child: selected
+                                  ? const Icon(
+                                      Icons.check_rounded,
+                                      color: Colors.white,
+                                      size: 15,
+                                    )
+                                  : null,
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.lightbulb_outline_rounded,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 18),
-
-            const Text(
-              'VOXIDENCE GUEST STUDIO',
-              style: TextStyle(
-                color: AppColors.primaryDark,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.2,
-              ),
-            ),
-
-            const SizedBox(height: 5),
-
-            const Text(
-              'Preparing your discovery space',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-
-            const SizedBox(height: 5),
-
-            const Text(
-              'Loading the domains and context you can build from.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-
-            const SizedBox(height: 17),
-
-            const SizedBox(
-              width: 150,
-              child: LinearProgressIndicator(
-                minHeight: 4,
-                backgroundColor: AppColors.primarySoft,
-                valueColor: AlwaysStoppedAnimation(AppColors.primary),
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -2575,78 +2783,397 @@ class _BootstrapView extends StatelessWidget {
   }
 }
 
-class _GenerationOrb extends StatelessWidget {
-  const _GenerationOrb();
+class _BootstrapView extends StatelessWidget {
+  const _BootstrapView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _BootstrapLogoOrbit(),
+            const SizedBox(height: 18),
+            const Text(
+              'VOXIDENCE GUEST STUDIO',
+              style: TextStyle(
+                color: AppColors.primaryDark,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Preparing your discovery space',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Loading the domains and context you can build from.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 17),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: const SizedBox(
+                width: 150,
+                child: LinearProgressIndicator(
+                  minHeight: 4,
+                  backgroundColor: AppColors.primarySoft,
+                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Animated multi-orbit bulb mark.
+///
+/// Two soft supporting orbits stay around the bulb while a tighter hero orbit
+/// passes behind and in front of the icon to create a refined 3D wrap effect.
+/// The same animation is reused while opening Guest Generate and while the
+/// generated idea is being prepared.
+///
+/// @author Eman
+class _BootstrapLogoOrbit extends StatefulWidget {
+  const _BootstrapLogoOrbit();
+
+  @override
+  State<_BootstrapLogoOrbit> createState() => _BootstrapLogoOrbitState();
+}
+
+class _BootstrapLogoOrbitState extends State<_BootstrapLogoOrbit>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _orbitController;
+
+  static const double _canvasWidth = 220;
+
+  static const double _canvasHeight = 170;
+
+  static const double _orbit1Width = 188;
+
+  static const double _orbit1Height = 104;
+
+  static const double _orbit1Tilt = -0.20;
+
+  static const double _orbit2Width = 158;
+
+  static const double _orbit2Height = 124;
+
+  static const double _orbit2Tilt = 0.46;
+
+  static const double _heroOrbitWidth = 142;
+
+  static const double _heroOrbitHeight = 52;
+
+  static const double _heroOrbitTilt = -0.28;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _orbitController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 5000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _orbitController.dispose();
+    super.dispose();
+  }
+
+  Offset _orbitOffset({
+    required double progress,
+    required double width,
+    required double height,
+    required double tilt,
+    double phase = 0,
+    bool reverse = false,
+  }) {
+    final resolvedProgress = reverse ? 1 - progress : progress;
+
+    final angle = ((resolvedProgress + phase) % 1.0) * math.pi * 2;
+
+    final x = (width / 2) * math.cos(angle);
+
+    final y = (height / 2) * math.sin(angle);
+
+    final rotatedX = (x * math.cos(tilt)) - (y * math.sin(tilt));
+
+    final rotatedY = (x * math.sin(tilt)) + (y * math.cos(tilt));
+
+    return Offset(rotatedX, rotatedY);
+  }
+
+  bool _isFront({
+    required double progress,
+    double phase = 0,
+    bool reverse = false,
+  }) {
+    final resolvedProgress = reverse ? 1 - progress : progress;
+
+    final angle = ((resolvedProgress + phase) % 1.0) * math.pi * 2;
+
+    return math.sin(angle) >= 0;
+  }
+
+  Widget _buildOrbitDot({
+    required bool front,
+    required double width,
+    required double height,
+    required double tilt,
+    required double phase,
+    required double size,
+    bool reverse = false,
+    double opacity = 1,
+  }) {
+    return AnimatedBuilder(
+      animation: _orbitController,
+      builder: (context, child) {
+        final progress = _orbitController.value;
+
+        final currentlyFront = _isFront(
+          progress: progress,
+          phase: phase,
+          reverse: reverse,
+        );
+
+        if (currentlyFront != front) {
+          return const SizedBox.shrink();
+        }
+
+        return Transform.translate(
+          offset: _orbitOffset(
+            progress: progress,
+            width: width,
+            height: height,
+            tilt: tilt,
+            phase: phase,
+            reverse: reverse,
+          ),
+          child: child,
+        );
+      },
+      child: _BootstrapOrbitDot(size: size, opacity: opacity, back: !front),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 138,
-      height: 138,
+      width: _canvasWidth,
+      height: _canvasHeight,
       child: Stack(
         alignment: Alignment.center,
+        clipBehavior: Clip.none,
         children: [
-          Container(
-            width: 132,
-            height: 132,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.16),
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _BootstrapOrbitPainter(
+                  front: false,
+                  orbitWidth: _orbit1Width,
+                  orbitHeight: _orbit1Height,
+                  tilt: _orbit1Tilt,
+                  opacity: 0.14,
+                  strokeWidth: 1.25,
+                ),
               ),
             ),
           ),
 
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primarySoft.withValues(alpha: 0.72),
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _BootstrapOrbitPainter(
+                  front: false,
+                  orbitWidth: _orbit2Width,
+                  orbitHeight: _orbit2Height,
+                  tilt: _orbit2Tilt,
+                  opacity: 0.10,
+                  strokeWidth: 1.1,
+                ),
+              ),
             ),
           ),
 
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF68C8C2), Color(0xFF46AAA4)],
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _BootstrapOrbitPainter(
+                  front: false,
+                  orbitWidth: _heroOrbitWidth,
+                  orbitHeight: _heroOrbitHeight,
+                  tilt: _heroOrbitTilt,
+                  opacity: 0.17,
+                  strokeWidth: 1.4,
+                ),
               ),
-              borderRadius: BorderRadius.circular(22),
+            ),
+          ),
+
+          _buildOrbitDot(
+            front: false,
+            width: _orbit1Width,
+            height: _orbit1Height,
+            tilt: _orbit1Tilt,
+            phase: 0.05,
+            size: 8,
+            opacity: 0.45,
+          ),
+
+          _buildOrbitDot(
+            front: false,
+            width: _orbit2Width,
+            height: _orbit2Height,
+            tilt: _orbit2Tilt,
+            phase: 0.42,
+            reverse: true,
+            size: 7,
+            opacity: 0.36,
+          ),
+
+          _buildOrbitDot(
+            front: false,
+            width: _heroOrbitWidth,
+            height: _heroOrbitHeight,
+            tilt: _heroOrbitTilt,
+            phase: 0.70,
+            size: 8,
+            opacity: 0.45,
+          ),
+
+          Container(
+            width: 66,
+            height: 66,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(21),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.primary.withValues(alpha: 0.24),
-                  blurRadius: 25,
-                  offset: const Offset(0, 12),
+                  blurRadius: 27,
+                  offset: const Offset(0, 11),
+                ),
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  blurRadius: 44,
+                  spreadRadius: 6,
                 ),
               ],
             ),
             child: const Icon(
-              Icons.auto_awesome_rounded,
+              Icons.lightbulb_outline_rounded,
               color: Colors.white,
-              size: 26,
+              size: 28,
             ),
           ),
 
-          const Positioned(
-            top: 15,
-            right: 29,
-            child: _OrbitDot(color: AppColors.primary),
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _BootstrapOrbitPainter(
+                  front: true,
+                  orbitWidth: _orbit1Width,
+                  orbitHeight: _orbit1Height,
+                  tilt: _orbit1Tilt,
+                  opacity: 0.32,
+                  strokeWidth: 1.45,
+                ),
+              ),
+            ),
           ),
 
-          const Positioned(
-            bottom: 21,
-            left: 24,
-            child: _OrbitDot(color: AppColors.pinkLight),
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _BootstrapOrbitPainter(
+                  front: true,
+                  orbitWidth: _orbit2Width,
+                  orbitHeight: _orbit2Height,
+                  tilt: _orbit2Tilt,
+                  opacity: 0.23,
+                  strokeWidth: 1.35,
+                ),
+              ),
+            ),
           ),
 
-          const Positioned(
-            bottom: 16,
-            right: 39,
-            child: _OrbitDot(color: AppColors.primaryDark),
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _BootstrapOrbitPainter(
+                  front: true,
+                  orbitWidth: _heroOrbitWidth,
+                  orbitHeight: _heroOrbitHeight,
+                  tilt: _heroOrbitTilt,
+                  opacity: 0.92,
+                  strokeWidth: 2.4,
+                ),
+              ),
+            ),
+          ),
+
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _BootstrapOrbitHighlightPainter(
+                  orbitWidth: _heroOrbitWidth,
+                  orbitHeight: _heroOrbitHeight,
+                  tilt: _heroOrbitTilt,
+                ),
+              ),
+            ),
+          ),
+
+          _buildOrbitDot(
+            front: true,
+            width: _orbit1Width,
+            height: _orbit1Height,
+            tilt: _orbit1Tilt,
+            phase: 0.05,
+            size: 8.5,
+            opacity: 0.72,
+          ),
+
+          _buildOrbitDot(
+            front: true,
+            width: _orbit2Width,
+            height: _orbit2Height,
+            tilt: _orbit2Tilt,
+            phase: 0.42,
+            reverse: true,
+            size: 7.5,
+            opacity: 0.60,
+          ),
+
+          _buildOrbitDot(
+            front: true,
+            width: _heroOrbitWidth,
+            height: _heroOrbitHeight,
+            tilt: _heroOrbitTilt,
+            phase: 0.70,
+            size: 11,
+            opacity: 1,
           ),
         ],
       ),
@@ -2654,26 +3181,150 @@ class _GenerationOrb extends StatelessWidget {
   }
 }
 
-class _OrbitDot extends StatelessWidget {
-  const _OrbitDot({required this.color});
+class _BootstrapOrbitPainter extends CustomPainter {
+  const _BootstrapOrbitPainter({
+    required this.front,
+    required this.orbitWidth,
+    required this.orbitHeight,
+    required this.tilt,
+    required this.opacity,
+    required this.strokeWidth,
+  });
 
-  final Color color;
+  final bool front;
+
+  final double orbitWidth;
+
+  final double orbitHeight;
+
+  final double tilt;
+
+  final double opacity;
+
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+
+    canvas.save();
+
+    canvas.translate(center.dx, center.dy);
+
+    canvas.rotate(tilt);
+
+    final orbitRect = Rect.fromCenter(
+      center: Offset.zero,
+      width: orbitWidth,
+      height: orbitHeight,
+    );
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = strokeWidth
+      ..color = AppColors.primary.withValues(alpha: opacity);
+
+    if (front) {
+      canvas.drawArc(orbitRect, 0, math.pi, false, paint);
+    } else {
+      canvas.drawArc(orbitRect, math.pi, math.pi, false, paint);
+    }
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _BootstrapOrbitPainter oldDelegate) {
+    return oldDelegate.front != front ||
+        oldDelegate.orbitWidth != orbitWidth ||
+        oldDelegate.orbitHeight != orbitHeight ||
+        oldDelegate.tilt != tilt ||
+        oldDelegate.opacity != opacity ||
+        oldDelegate.strokeWidth != strokeWidth;
+  }
+}
+
+class _BootstrapOrbitHighlightPainter extends CustomPainter {
+  const _BootstrapOrbitHighlightPainter({
+    required this.orbitWidth,
+    required this.orbitHeight,
+    required this.tilt,
+  });
+
+  final double orbitWidth;
+
+  final double orbitHeight;
+
+  final double tilt;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+
+    canvas.save();
+
+    canvas.translate(center.dx, center.dy);
+
+    canvas.rotate(tilt);
+
+    final orbitRect = Rect.fromCenter(
+      center: Offset.zero,
+      width: orbitWidth,
+      height: orbitHeight,
+    );
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 3.2
+      ..color = Colors.white.withValues(alpha: 0.42);
+
+    canvas.drawArc(orbitRect, 0.20, 0.48, false, paint);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _BootstrapOrbitHighlightPainter oldDelegate) {
+    return oldDelegate.orbitWidth != orbitWidth ||
+        oldDelegate.orbitHeight != orbitHeight ||
+        oldDelegate.tilt != tilt;
+  }
+}
+
+class _BootstrapOrbitDot extends StatelessWidget {
+  const _BootstrapOrbitDot({
+    this.back = false,
+    this.size = 10,
+    this.opacity = 1,
+  });
+
+  final bool back;
+
+  final double size;
+
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 9,
-      height: 9,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.16),
-            blurRadius: 0,
-            spreadRadius: 5,
-          ),
-        ],
+    return Opacity(
+      opacity: back ? opacity * 0.55 : opacity,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.primary,
+          border: Border.all(color: Colors.white, width: back ? 1.2 : 2),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: back ? 0.08 : 0.30),
+              blurRadius: back ? 5 : 10,
+              spreadRadius: back ? 0 : 1,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2719,6 +3370,7 @@ class _ResultSection extends StatelessWidget {
   const _ResultSection({required this.title, required this.text});
 
   final String title;
+
   final String text;
 
   @override
@@ -2743,9 +3395,7 @@ class _ResultSection extends StatelessWidget {
               letterSpacing: 0.7,
             ),
           ),
-
           const SizedBox(height: 6),
-
           Text(
             text,
             style: const TextStyle(
@@ -2765,6 +3415,7 @@ class _ResultList extends StatelessWidget {
   const _ResultList({required this.title, required this.items});
 
   final String title;
+
   final List<String> items;
 
   @override
@@ -2789,9 +3440,7 @@ class _ResultList extends StatelessWidget {
               letterSpacing: 0.7,
             ),
           ),
-
           const SizedBox(height: 7),
-
           ...items.take(5).map((item) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 5),
@@ -2807,9 +3456,7 @@ class _ResultList extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                   ),
-
                   const SizedBox(width: 8),
-
                   Expanded(
                     child: Text(
                       item,
@@ -2867,6 +3514,7 @@ class _BenefitTile extends StatelessWidget {
   const _BenefitTile({required this.icon, required this.text});
 
   final IconData icon;
+
   final String text;
 
   @override
@@ -2881,9 +3529,7 @@ class _BenefitTile extends StatelessWidget {
       child: Row(
         children: [
           _MiniIcon(icon: icon),
-
           const SizedBox(width: 10),
-
           Expanded(
             child: Text(
               text,
@@ -2894,7 +3540,6 @@ class _BenefitTile extends StatelessWidget {
               ),
             ),
           ),
-
           const Icon(
             Icons.arrow_forward_rounded,
             size: 15,
@@ -2915,7 +3560,6 @@ class _GenerateBackground extends StatelessWidget {
       child: Stack(
         children: [
           const ColoredBox(color: AppColors.background),
-
           Positioned(
             top: -90,
             right: -75,
@@ -2928,7 +3572,6 @@ class _GenerateBackground extends StatelessWidget {
               ),
             ),
           ),
-
           Positioned(
             top: 210,
             left: -90,
@@ -2941,7 +3584,6 @@ class _GenerateBackground extends StatelessWidget {
               ),
             ),
           ),
-
           Positioned(
             bottom: -80,
             right: -60,
