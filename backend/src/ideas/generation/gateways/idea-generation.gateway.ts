@@ -39,6 +39,86 @@ type AccessTokenPayload = {
   readonly iat?: number;
 };
 
+type CorsOriginCallback = (error: Error | null, allow?: boolean) => void;
+
+
+type GenerationRunWatcher = {
+  readonly ownerId: string;
+  readonly subscribers: Set<string>;
+  timer?: ReturnType<typeof setTimeout>;
+  lastFingerprint: string;
+  polling: boolean;
+};
+
+const configuredGenerationOrigins = (process.env.FRONTEND_URL ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+/**
+ * Durable fallback cadence for room snapshots.
+ *
+ * Direct pipeline events remain immediate. This sub-second database watcher is
+ * only a safety bridge for deployments where generation work and the WebSocket
+ * gateway do not share the same Node.js process (where an in-memory
+ * EventEmitter cannot cross the process boundary).
+ */
+const GENERATION_ROOM_WATCH_INTERVAL_MS = 650;
+
+function isLocalGenerationOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return true;
+    }
+
+    if (/^10\./u.test(host) || /^192\.168\./u.test(host)) {
+      return true;
+    }
+
+    const private172Match = /^172\.(\d{1,2})\./u.exec(host);
+
+    if (!private172Match) {
+      return false;
+    }
+
+    const secondOctet = Number(private172Match[1]);
+    return secondOctet >= 16 && secondOctet <= 31;
+  } catch {
+    return false;
+  }
+}
+
+function allowIdeaGenerationSocketOrigin(
+  origin: string | undefined,
+  callback: CorsOriginCallback,
+): void {
+  if (!origin) {
+    callback(null, true);
+    return;
+  }
+
+  if (configuredGenerationOrigins.includes(origin)) {
+    callback(null, true);
+    return;
+  }
+
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    isLocalGenerationOrigin(origin)
+  ) {
+    callback(null, true);
+    return;
+  }
+
+  callback(
+    new Error(`Socket.IO CORS blocked origin: ${origin}`),
+    false,
+  );
+}
+
 /**
  * Socket.IO gateway exposing authenticated realtime generation progress.
  *
@@ -51,7 +131,7 @@ type AccessTokenPayload = {
 @WebSocketGateway({
   namespace: '/idea-generation',
   cors: {
-    origin: process.env.FRONTEND_URL?.trim() || true,
+    origin: allowIdeaGenerationSocketOrigin,
     credentials: true,
   },
 })
@@ -60,6 +140,7 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
   private server!: Server;
 
   private readonly logger = new Logger(IdeaGenerationGateway.name);
+  private readonly runWatchers = new Map<string, GenerationRunWatcher>();
   private unsubscribeStage?: () => void;
   private unsubscribeRun?: () => void;
 
@@ -82,6 +163,14 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     this.unsubscribeStage?.();
     this.unsubscribeRun?.();
+
+    for (const watcher of this.runWatchers.values()) {
+      if (watcher.timer) {
+        clearTimeout(watcher.timer);
+      }
+    }
+
+    this.runWatchers.clear();
   }
 
   /** Authenticates each connection before any room subscription is accepted. */
@@ -98,6 +187,19 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
 
       this.logger.warn(`Rejected generation socket connection: ${message}`);
       client.disconnect(true);
+    }
+  }
+
+  /** Stops durable run watchers when a socket disconnects unexpectedly. */
+  handleDisconnect(client: AuthenticatedIdeaGenerationSocket): void {
+    for (const [runId, watcher] of this.runWatchers.entries()) {
+      if (!watcher.subscribers.delete(client.id)) {
+        continue;
+      }
+
+      if (watcher.subscribers.size === 0) {
+        this.stopRunWatcher(runId);
+      }
     }
   }
 
@@ -140,6 +242,13 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
     const latestSnapshot =
       (await this.loadOwnedSnapshot(userId, runId)) ?? snapshot;
 
+    this.watchRun(
+      runId,
+      userId,
+      client.id,
+      latestSnapshot,
+    );
+
     client.emit(IDEA_GENERATION_SOCKET_EVENTS.SNAPSHOT, latestSnapshot);
 
     return { success: true, runId };
@@ -161,8 +270,169 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
     }
 
     await client.leave(this.roomName(runId));
+    this.unwatchRun(runId, client.id);
 
     return { success: true, runId };
+  }
+
+  /**
+   * Keeps one authoritative sub-second snapshot stream alive while at least one
+   * client is watching a run.
+   *
+   * This complements direct realtime events. It intentionally does not replace
+   * them: direct events provide zero-wait transitions, while this durable bridge
+   * guarantees updates when pipeline execution happens in another process.
+   */
+  private watchRun(
+    runId: string,
+    ownerId: string,
+    socketId: string,
+    initialSnapshot: IdeaGenerationRealtimeSnapshot,
+  ): void {
+    const existing = this.runWatchers.get(runId);
+
+    if (existing) {
+      existing.subscribers.add(socketId);
+      return;
+    }
+
+    const watcher: GenerationRunWatcher = {
+      ownerId,
+      subscribers: new Set([socketId]),
+      lastFingerprint: this.snapshotFingerprint(initialSnapshot),
+      polling: false,
+    };
+
+    this.runWatchers.set(runId, watcher);
+    this.scheduleRunWatch(runId);
+  }
+
+  private unwatchRun(runId: string, socketId: string): void {
+    const watcher = this.runWatchers.get(runId);
+    if (!watcher) {
+      return;
+    }
+
+    watcher.subscribers.delete(socketId);
+
+    if (watcher.subscribers.size === 0) {
+      this.stopRunWatcher(runId);
+    }
+  }
+
+  private stopRunWatcher(runId: string): void {
+    const watcher = this.runWatchers.get(runId);
+    if (!watcher) {
+      return;
+    }
+
+    if (watcher.timer) {
+      clearTimeout(watcher.timer);
+    }
+
+    this.runWatchers.delete(runId);
+  }
+
+  private scheduleRunWatch(runId: string): void {
+    const watcher = this.runWatchers.get(runId);
+
+    if (!watcher || watcher.subscribers.size === 0) {
+      return;
+    }
+
+    if (watcher.timer) {
+      clearTimeout(watcher.timer);
+    }
+
+    watcher.timer = setTimeout(() => {
+      void this.pollWatchedRun(runId);
+    }, GENERATION_ROOM_WATCH_INTERVAL_MS);
+
+    watcher.timer.unref?.();
+  }
+
+  private async pollWatchedRun(runId: string): Promise<void> {
+    const watcher = this.runWatchers.get(runId);
+
+    if (
+      !watcher ||
+      watcher.polling ||
+      watcher.subscribers.size === 0
+    ) {
+      return;
+    }
+
+    watcher.polling = true;
+
+    try {
+      const snapshot = await this.loadOwnedSnapshot(
+        watcher.ownerId,
+        runId,
+      );
+
+      if (!snapshot) {
+        this.stopRunWatcher(runId);
+        return;
+      }
+
+      const fingerprint = this.snapshotFingerprint(snapshot);
+
+      if (fingerprint !== watcher.lastFingerprint) {
+        watcher.lastFingerprint = fingerprint;
+
+        this.server
+          .to(this.roomName(runId))
+          .emit(IDEA_GENERATION_SOCKET_EVENTS.SNAPSHOT, snapshot);
+      }
+
+      if (
+        snapshot.status === 'COMPLETED' ||
+        snapshot.status === 'FAILED' ||
+        snapshot.status === 'CANCELLED'
+      ) {
+        /*
+         * Keep one final packet path, then stop polling. Connected clients
+         * already hold the terminal snapshot and no further stage transition is
+         * possible for this run.
+         */
+        this.stopRunWatcher(runId);
+        return;
+      }
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown watcher error';
+
+      this.logger.debug(
+        `Generation room watcher could not refresh run "${runId}": ${message}`,
+      );
+    } finally {
+      const current = this.runWatchers.get(runId);
+
+      if (current) {
+        current.polling = false;
+        this.scheduleRunWatch(runId);
+      }
+    }
+  }
+
+  private snapshotFingerprint(
+    snapshot: IdeaGenerationRealtimeSnapshot,
+  ): string {
+    return JSON.stringify([
+      snapshot.status,
+      snapshot.progressPercent,
+      snapshot.currentStageKey,
+      snapshot.ideaId,
+      snapshot.completedAt?.toISOString() ?? null,
+      snapshot.updatedAt.toISOString(),
+      ...snapshot.stages.map((stage) => [
+        stage.stageKey,
+        stage.status,
+        stage.progressPercent,
+        stage.attemptCount,
+        stage.updatedAt.toISOString(),
+      ]),
+    ]);
   }
 
   private emitStageUpdated(payload: IdeaGenerationRealtimeStagePayload): void {

@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 
@@ -108,14 +108,16 @@ function extractAcceptance(payload) {
 export default function PublicationDetailPage() {
   const { publicationId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const publicationSeed = location.state?.publicationSeed ?? null;
 
-  const [publication, setPublication] = useState(null);
+  const [publication, setPublication] = useState(() => publicationSeed);
   const [acceptance, setAcceptance] = useState(null);
   const [rating, setRatingValue] = useState(0);
   const [vote, setVoteValue] = useState('');
   const [feedback, setFeedbackValue] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('card');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !publicationSeed);
   const [busyAction, setBusyAction] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [notice, setNotice] = useState('');
@@ -130,7 +132,9 @@ export default function PublicationDetailPage() {
   const [creditUnlockReceipt, setCreditUnlockReceipt] = useState(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!publicationSeed) {
+      setLoading(true);
+    }
     setErrorMessage('');
 
     try {
@@ -230,7 +234,7 @@ export default function PublicationDetailPage() {
       setErrorMessage(error?.message || 'This discovery could not be opened.');
       setLoading(false);
     }
-  }, [publicationId]);
+  }, [publicationId, publicationSeed]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getPaymentPricing().then(setPaymentPricing).catch(() => undefined); }, []);

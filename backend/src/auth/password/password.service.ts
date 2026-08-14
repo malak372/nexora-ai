@@ -272,6 +272,7 @@ export class AuthPasswordService {
     meta?: AuthRequestMeta,
     resetClient:
       PasswordResetClient = 'web',
+    mobileResetBridgeUrl?: string,
   ) {
     const user =
       await this.prisma.user.findUnique({
@@ -360,6 +361,7 @@ export class AuthPasswordService {
       this.buildPasswordResetLink(
         resetToken,
         resetClient,
+        mobileResetBridgeUrl,
       );
 
     await this.mailService.sendPasswordResetEmail(
@@ -404,6 +406,7 @@ export class AuthPasswordService {
     resetToken: string,
     resetClient:
       PasswordResetClient,
+    mobileResetBridgeUrl?: string,
   ): string {
     const encodedToken =
       encodeURIComponent(
@@ -414,20 +417,46 @@ export class AuthPasswordService {
       resetClient ===
       'mobile'
     ) {
-      const mobileResetUrl =
+      /*
+       * Email clients are significantly more reliable with an HTTP/HTTPS
+       * action link than a raw custom-scheme URL.
+       *
+       * The browser-safe bridge immediately forwards into:
+       * voxidence://reset-password?token=...
+       *
+       * MOBILE_RESET_BRIDGE_URL is useful in production. During local mobile
+       * development the controller supplies the same LAN backend origin that
+       * received the forgot-password request.
+       */
+      const bridgeUrl =
         process.env
-          .MOBILE_RESET_PASSWORD_URL
+          .MOBILE_RESET_BRIDGE_URL
           ?.trim() ||
-        'voxidence://reset-password';
+        mobileResetBridgeUrl
+          ?.trim();
 
-      const separator =
-        mobileResetUrl.includes(
-          '?',
-        )
-          ? '&'
-          : '?';
+      if (bridgeUrl) {
+        const normalizedBridgeUrl =
+          bridgeUrl.replace(
+            /\/$/,
+            '',
+          );
 
-      return `${mobileResetUrl}${separator}token=${encodedToken}`;
+        const separator =
+          normalizedBridgeUrl.includes(
+            '?',
+          )
+            ? '&'
+            : '?';
+
+        return `${normalizedBridgeUrl}${separator}token=${encodedToken}`;
+      }
+
+      /*
+       * Fallback for environments where no HTTP bridge can be determined.
+       * Native manifests still register this custom Voxidence scheme.
+       */
+      return `voxidence://reset-password?token=${encodedToken}`;
     }
 
     const frontendUrl =

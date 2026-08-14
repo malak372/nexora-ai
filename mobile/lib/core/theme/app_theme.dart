@@ -4,6 +4,7 @@
 // @author Eman
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 abstract final class AppColors {
   static const background = Color(0xFFFAF9F6);
@@ -64,6 +65,15 @@ abstract final class AppTheme {
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         foregroundColor: AppColors.textPrimary,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: AppColors.background,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+          systemNavigationBarColor: AppColors.background,
+          systemNavigationBarIconBrightness: Brightness.dark,
+          systemStatusBarContrastEnforced: false,
+          systemNavigationBarContrastEnforced: false,
+        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: 68,
@@ -144,7 +154,9 @@ abstract final class AppTheme {
           foregroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
         ),
       ),
@@ -153,14 +165,19 @@ abstract final class AppTheme {
           foregroundColor: AppColors.primaryDark,
           side: const BorderSide(color: AppColors.borderStrong),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: const Color(0xFFFCFEFD),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 15,
+          vertical: 14,
+        ),
         hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
         labelStyle: const TextStyle(color: AppColors.textSecondary),
         prefixIconColor: AppColors.primaryDark,
@@ -186,11 +203,17 @@ abstract final class AppTheme {
           borderSide: const BorderSide(color: AppColors.pink, width: 1.4),
         ),
       ),
-      dividerTheme: const DividerThemeData(color: AppColors.border, thickness: 1),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.border,
+        thickness: 1,
+      ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.primaryDeep,
-        contentTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        contentTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );

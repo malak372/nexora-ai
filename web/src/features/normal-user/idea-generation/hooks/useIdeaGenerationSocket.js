@@ -22,7 +22,8 @@ const SOCKET_URL =
   'http://localhost:3000';
 
 const SOCKET_RECONCILIATION_MS = 15_000;
-const FALLBACK_RECONCILIATION_MS = 2_000;
+const FALLBACK_RECONCILIATION_MS = 1_250;
+const INITIAL_SOCKET_GRACE_MS = 750;
 const RATE_LIMIT_RETRY_MS = 15_000;
 
 const STAGE_SEQUENCE = new Map([
@@ -270,23 +271,31 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
       }, delay);
     };
 
-    // Fetch immediately. This catches stages that started before the page mounted.
-    loadSnapshot({ silent: false })
-      .catch(() => undefined)
-      .finally(() => scheduleReconciliation(FALLBACK_RECONCILIATION_MS));
+    /*
+     * Give Socket.IO the first chance to hydrate the page. joinRun emits an
+     * authoritative snapshot immediately, so an eager HTTP request here only
+     * duplicates DB work and can compete with the socket handshake. If the
+     * realtime path is unavailable, the reconciliation loop starts in under a
+     * second and keeps polling until the socket recovers.
+     */
+    scheduleReconciliation(INITIAL_SOCKET_GRACE_MS);
 
     const socket = io(`${SOCKET_URL}/idea-generation`, {
-      transports: ['websocket'],
-      upgrade: false,
+      /*
+       * Do not force WebSocket-only mode. Socket.IO can now connect through
+       * polling and upgrade to WebSocket automatically, which keeps realtime
+       * working behind dev proxies, mobile hotspots, reverse proxies, and
+       * networks that reject a direct WebSocket handshake.
+       */
       auth: (callback) => {
         callback({ token: getAccessToken() });
       },
       withCredentials: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 4_000,
-      timeout: 10_000,
+      reconnectionDelay: 350,
+      reconnectionDelayMax: 3_000,
+      timeout: 8_000,
     });
 
     socketRef.current = socket;
@@ -294,6 +303,8 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
     const markRealtimeEvent = () => {
       socketProvenRef.current = true;
       setConnectionState('connected');
+      clearReconciliationTimer();
+      scheduleReconciliation(SOCKET_RECONCILIATION_MS);
     };
 
     socket.on('connect', () => {
@@ -321,11 +332,13 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
     socket.on('disconnect', () => {
       socketProvenRef.current = false;
       setConnectionState('reconnecting');
+      scheduleReconciliation(250);
     });
 
     socket.on('connect_error', () => {
       socketProvenRef.current = false;
       setConnectionState('fallback');
+      scheduleReconciliation(250);
     });
 
     socket.on('idea-generation.snapshot', (payload) => {

@@ -1,59 +1,51 @@
 <!--
-  Android application manifest for the Voxidence mobile application.
+  Android manifest for Voxidence.
 
-  Configures internet access, Flutter activity settings, application
-  metadata, and the custom deep link used for password recovery.
+  Registers the Voxidence custom URL scheme so password-reset and payment
+  links can open the installed application directly.
 
   @author Eman
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Allows the application to communicate with the backend API. -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
         android:label="Voxidence"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:usesCleartextTraffic="true">
 
-        <!--
-          Main Flutter activity.
-
-          Uses singleTop launch mode so existing activity instances can
-          receive incoming deep links without creating unnecessary copies.
-        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
-            android:theme="@style/LaunchTheme"
+            android:theme="@style/VoxidenceLaunchThemeV18"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
 
-            <!-- Flutter theme applied after the initial launch screen. -->
+            <!-- app_links owns custom-scheme navigation. -->
             <meta-data
-                android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme"
+                android:name="flutter_deeplinking_enabled"
+                android:value="false"
             />
 
-            <!-- Registers the activity as the main application launcher. -->
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/VoxidenceNormalThemeV18"
+            />
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!--
-              Handles Voxidence password-reset deep links.
-
-              Example:
-              voxidence://reset-password?token=...
-            -->
+            <!-- voxidence://reset-password?token=... -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW"/>
-
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
 
@@ -62,9 +54,20 @@
                     android:host="reset-password"/>
             </intent-filter>
 
+            <!-- voxidence://payment/success and /cancel -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+
+                <data
+                    android:scheme="voxidence"
+                    android:host="payment"
+                    android:pathPrefix="/"/>
+            </intent-filter>
+
         </activity>
 
-        <!-- Indicates that the application uses Flutter Android embedding v2. -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"
@@ -72,10 +75,6 @@
 
     </application>
 
-    <!--
-      Declares the PROCESS_TEXT intent query required for compatible
-      Android text-processing integrations.
-    -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

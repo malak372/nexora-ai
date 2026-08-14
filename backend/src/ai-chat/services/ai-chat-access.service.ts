@@ -160,7 +160,7 @@ export class AiChatAccessService {
       throw new NotFoundException('AI chat session was not found.');
     }
 
-    await this.ensureIdeaChatAccess(userId, session.ideaId);
+    this.assertSessionIdeaAccess(userId, session);
 
     return session;
   }
@@ -203,9 +203,49 @@ export class AiChatAccessService {
       throw new NotFoundException('AI chat session was not found.');
     }
 
-    await this.ensureIdeaChatAccess(userId, ideaId);
+    this.assertSessionIdeaAccess(userId, session);
 
     return session;
+  }
+
+  /**
+   * Validates Premium and idea entitlement using the relations already loaded
+   * with the chat session. This keeps room joins and message submissions on a
+   * single authorization query instead of querying the same idea twice.
+   */
+  private assertSessionIdeaAccess(
+    userId: string,
+    session: AiChatSessionAccessRecord,
+  ): void {
+    if (session.user.accountStatus !== AccountStatus.PREMIUM) {
+      throw new ForbiddenException(
+        'AI Chat is available only while the account is Premium.',
+      );
+    }
+
+    const idea = session.idea;
+    const ownsIdea = idea.userId === userId;
+    const hasAcceptedAdvancedAccess = Boolean(
+      idea.publication?.acceptances?.some(
+        (acceptance) =>
+          acceptance.userId === userId &&
+          acceptance.advancedUnlockedAt !== null,
+      ),
+    );
+
+    if (ownsIdea) {
+      if (!idea.isUnlocked) {
+        throw new ForbiddenException(
+          'AI Chat is available only for unlocked ideas.',
+        );
+      }
+
+      return;
+    }
+
+    if (!hasAcceptedAdvancedAccess) {
+      throw new NotFoundException('Idea was not found.');
+    }
   }
 
 }

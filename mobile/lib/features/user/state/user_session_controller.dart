@@ -66,20 +66,28 @@ class UserSessionController extends ChangeNotifier {
       summary = fresh;
       usingCachedSnapshot = false;
 
-      await SessionStore.instance.updateUser({
-        'id': fresh.id,
-        'fullName': fresh.fullName,
-        'email': fresh.email,
-        'userType': fresh.userType,
-        'accountStatus': fresh.accountStatus,
-        'creditBalance': fresh.creditBalance,
-        'remainingFreeGenerations': fresh.remainingFreeGenerations,
-        'ideasCount': fresh.ideasCount,
-        'publishedIdeasCount': fresh.publishedIdeasCount,
-        'favoriteIdeasCount': fresh.favoriteIdeasCount,
-        'unreadNotificationsCount': fresh.unreadNotificationsCount,
-        'avatarUrl': fresh.avatarUrl,
-      });
+      // Paint fresh account data immediately. Persisting the lightweight
+      // snapshot is useful for the next launch, but it should never keep the
+      // current dashboard in a loading state while secure storage writes.
+      notifyListeners();
+      unawaited(
+        SessionStore.instance.updateUser({
+          'id': fresh.id,
+          'fullName': fresh.fullName,
+          'email': fresh.email,
+          'userType': fresh.userType,
+          'accountStatus': fresh.accountStatus,
+          'creditBalance': fresh.creditBalance,
+          'remainingFreeGenerations': fresh.remainingFreeGenerations,
+          'ideasCount': fresh.ideasCount,
+          'publishedIdeasCount': fresh.publishedIdeasCount,
+          'favoriteIdeasCount': fresh.favoriteIdeasCount,
+          'unreadNotificationsCount': fresh.unreadNotificationsCount,
+          'avatarUrl': fresh.avatarUrl,
+        }).catchError((_) {
+          // Snapshot persistence is best-effort; live session data stays valid.
+        }),
+      );
     } catch (e) {
       error = e;
 

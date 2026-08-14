@@ -9,15 +9,15 @@
  * - Persist completed, failed, timed-out, and cancelled states.
  * - Prevent overlapping responses in one session.
  *
- * Provider adapters currently return a completed response. The service emits
- * bounded presentation chunks after generation so the transport contract is
- * already compatible with future native provider streaming.
+ * Streaming-capable provider adapters emit text deltas while generation is
+ * still running. A bounded presentation fallback remains for providers that
+ * return only a completed response.
  *
  * @author Eman
  */
 
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { ApiRequestType, PromptType } from '@prisma/client';
+import { AiRoutingStrategy, ApiRequestType, PromptType } from '@prisma/client';
 
 import { AiProviderErrorCode } from '../../ai/errors/ai-provider-error-code.enum';
 import { AiProviderError } from '../../ai/errors/ai-provider.error';
@@ -25,7 +25,11 @@ import { AiExecutionService } from '../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../ai/types/ai-provider.type';
 import {
   AI_CHAT_ERROR_CODES,
+  AI_CHAT_MAX_MODELS_PER_OPERATION,
   AI_CHAT_MAX_OUTPUT_TOKENS,
+  AI_CHAT_MAX_RETRIES_PER_MODEL,
+  AI_CHAT_PREFERRED_API_MODEL_IDS,
+  AI_CHAT_PROVIDER_TIMEOUT_MS,
   AI_CHAT_RESPONSE_TEMPERATURE,
   AI_CHAT_RESPONSE_TIMEOUT_MS,
   AI_CHAT_STREAM_CHUNK_DELAY_MS,
@@ -38,7 +42,6 @@ import type {
 } from '../types/ai-chat-message.types';
 import { AiChatAccessService } from './ai-chat-access.service';
 import { AiChatContextService } from './ai-chat-context.service';
-import { AiChatTitleService } from './ai-chat-title.service';
 import { AiChatMessageWriterService } from './messages/ai-chat-message-writer.service';
 
 /**
@@ -89,7 +92,6 @@ export class AiChatStreamService {
     private readonly aiExecutionService: AiExecutionService,
     private readonly aiChatAccessService: AiChatAccessService,
     private readonly aiChatContextService: AiChatContextService,
-    private readonly aiChatTitleService: AiChatTitleService,
     private readonly messageWriterService: AiChatMessageWriterService,
   ) { }
 
@@ -186,17 +188,12 @@ export class AiChatStreamService {
     }, AI_CHAT_RESPONSE_TIMEOUT_MS);
 
     try {
-      const context = await this.aiChatContextService.buildContext(
+      const contextPromise = this.aiChatContextService.buildContext(
         activeResponse.userId,
         activeResponse.sessionId,
         turn.userMessage.id,
         turn.userMessage.message,
       );
-
-      if (activeResponse.controller.signal.aborted) {
-        await this.handleAbortedResponse(activeResponse, observer);
-        return;
-      }
 
       const streamingMessage =
         await this.messageWriterService.markAiMessageStreaming(
@@ -207,45 +204,116 @@ export class AiChatStreamService {
 
       observer.onStarted(streamingMessage);
 
+      const context = await contextPromise;
+
+      if (activeResponse.controller.signal.aborted) {
+        await this.handleAbortedResponse(activeResponse, observer);
+        return;
+      }
+
+      let nextChunkIndex = 0;
+      let nativeDeltaBuffer = '';
+      let nativeDeltaSeen = false;
+
+      const flushNativeDeltaBuffer = () => {
+        if (
+          !nativeDeltaBuffer ||
+          activeResponse.controller.signal.aborted
+        ) {
+          return;
+        }
+
+        observer.onChunk({
+          sessionId: activeResponse.sessionId,
+          messageId: activeResponse.messageId,
+          index: nextChunkIndex,
+          content: nativeDeltaBuffer,
+        });
+
+        nextChunkIndex += 1;
+        nativeDeltaBuffer = '';
+      };
+
+      const onTextDelta = (delta: string) => {
+        if (
+          !delta ||
+          activeResponse.controller.signal.aborted
+        ) {
+          return;
+        }
+
+        nativeDeltaSeen = true;
+        nativeDeltaBuffer += delta;
+
+        /*
+         * Flush the very first provider fragment immediately so users see
+         * words as soon as the model starts. Afterwards buffer tiny token
+         * fragments to avoid flooding Socket.IO with one event per token.
+         */
+        if (
+          nextChunkIndex === 0 ||
+          nativeDeltaBuffer.length >= 96 ||
+          /[\n.!?؟]\s*$/.test(nativeDeltaBuffer)
+        ) {
+          flushNativeDeltaBuffer();
+        }
+      };
+
       const result = await this.aiExecutionService.execute({
         userPrompt: context.userPrompt,
         systemInstruction: context.systemInstruction,
         requestType: ApiRequestType.AI_CHAT,
         promptType: PromptType.CHAT_RESPONSE,
+        strategy: AiRoutingStrategy.DEFAULT,
+        preferredApiModelIds:
+          AI_CHAT_PREFERRED_API_MODEL_IDS,
+        excludeLocalFallback: true,
+        allowPartialTextOnMaxTokens: true,
         userId: context.userId,
         ideaId: context.ideaId,
         maxOutputTokens: AI_CHAT_MAX_OUTPUT_TOKENS,
         estimatedOutputTokens: AI_CHAT_MAX_OUTPUT_TOKENS,
         temperature: AI_CHAT_RESPONSE_TEMPERATURE,
         responseFormat: AiResponseFormat.TEXT,
+        signal: activeResponse.controller.signal,
+        onTextDelta,
+        timeoutMs: AI_CHAT_PROVIDER_TIMEOUT_MS,
+        maxRetriesPerModel: AI_CHAT_MAX_RETRIES_PER_MODEL,
+        maxModelsPerOperation:
+          AI_CHAT_MAX_MODELS_PER_OPERATION,
       });
 
-      if (activeResponse.controller.signal.aborted) {
-        await this.handleAbortedResponse(activeResponse, observer);
-        return;
-      }
-
-      await this.emitResponseChunks(activeResponse, result.text, observer);
+      flushNativeDeltaBuffer();
 
       if (activeResponse.controller.signal.aborted) {
         await this.handleAbortedResponse(activeResponse, observer);
         return;
       }
+
+      /*
+       * Older/non-streaming adapters still work: if no provider delta was
+       * observed, present the final response through the existing chunker.
+       */
+      if (!nativeDeltaSeen && result.text) {
+        nextChunkIndex = await this.emitResponseChunks(
+          activeResponse,
+          result.text,
+          observer,
+          nextChunkIndex,
+        );
+      }
+
+      const accumulatedResponse = result.text;
 
       const completedMessage =
         await this.messageWriterService.completeAiMessage(
           activeResponse.userId,
           activeResponse.sessionId,
           activeResponse.messageId,
-          result.text,
+          accumulatedResponse,
         );
 
       observer.onCompleted(completedMessage);
-
-      void this.aiChatTitleService.refreshTitleIfNeeded(
-        activeResponse.userId,
-        activeResponse.sessionId,
-      );
     } catch (error: unknown) {
       if (activeResponse.controller.signal.aborted) {
         await this.handleAbortedResponse(activeResponse, observer);
@@ -346,18 +414,19 @@ export class AiChatStreamService {
     activeResponse: ActiveAiChatResponse,
     response: string,
     observer: ChatResponseStreamObserver,
-  ): Promise<void> {
-    const chunks = this.splitIntoChunks(response.trim());
+    startIndex = 0,
+  ): Promise<number> {
+    const chunks = this.splitIntoChunks(response);
 
     for (let index = 0; index < chunks.length; index += 1) {
       if (activeResponse.controller.signal.aborted) {
-        return;
+        return startIndex + index;
       }
 
       observer.onChunk({
         sessionId: activeResponse.sessionId,
         messageId: activeResponse.messageId,
-        index,
+        index: startIndex + index,
         content: chunks[index],
       });
 
@@ -366,6 +435,8 @@ export class AiChatStreamService {
         activeResponse.controller.signal,
       );
     }
+
+    return startIndex + chunks.length;
   }
 
   /**

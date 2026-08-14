@@ -11,7 +11,7 @@ import {
   Sparkles,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -24,8 +24,8 @@ import {
 } from '../utils/paymentReturn.storage';
 import '../styles/payment-result.css';
 
-const MAX_STATUS_ATTEMPTS = 10;
-const STATUS_POLL_DELAY_MS = 300;
+const MAX_STATUS_ATTEMPTS = 7;
+const STATUS_POLL_DELAY_MS = 240;
 
 function wait(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -72,6 +72,7 @@ export default function PaymentResultPage() {
   const [query] = useSearchParams();
   const navigate = useNavigate();
   const storedReference = useMemo(() => readPaymentReturnReference(), []);
+  const confirmationRunRef = useRef(0);
 
   const paymentId = query.get('paymentId') || storedReference?.paymentId || null;
   const fallbackIdeaId = query.get('ideaId') || storedReference?.ideaId || null;
@@ -87,10 +88,15 @@ export default function PaymentResultPage() {
     processingMessage: 'Voxidence is verifying the provider session and applying your access safely.',
   });
 
-  const confirmPayment = useCallback(async () => {
+  const confirmPayment = useCallback(async (runId) => {
+    const isCurrentRun = () => confirmationRunRef.current === runId;
+
     if (!paymentId && alreadyUnlocked && fallbackIdeaId) {
       void refreshPaymentDestination({ ideaId: fallbackIdeaId });
       clearPaymentReturnReference();
+
+      if (!isCurrentRun()) return;
+
       setState({
         loading: false,
         error: '',
@@ -108,6 +114,8 @@ export default function PaymentResultPage() {
     }
 
     if (!paymentId) {
+      if (!isCurrentRun()) return;
+
       setState({
         loading: false,
         error:
@@ -117,6 +125,8 @@ export default function PaymentResultPage() {
       });
       return;
     }
+
+    if (!isCurrentRun()) return;
 
     setState((current) => ({
       ...current,
@@ -128,22 +138,28 @@ export default function PaymentResultPage() {
     let lastError = null;
 
     for (let attempt = 0; attempt < MAX_STATUS_ATTEMPTS; attempt += 1) {
-      try {
-        // Read the local payment row first. In the common webhook-success case
-        // this completes immediately without contacting Stripe again.
-        let payment = await getPaymentState(paymentId, { force: true });
+      if (!isCurrentRun()) return;
 
-        // If the redirect reached the app before the webhook, perform one
-        // trusted server-to-server reconciliation and wait for its fresh state.
-        // The backend now commits the payment before starting expensive AI work,
-        // so this normally returns in a single provider round-trip.
-        if (payment?.status === 'PENDING' && attempt === 0) {
+      try {
+        /*
+         * Read the trusted local status first. In the common case the Stripe
+         * webhook has already completed before the browser returns, so one
+         * quick database read is enough. Reconcile with the provider only when
+         * that first read is still pending.
+         */
+        let payment = await getPaymentState(paymentId, {
+          force: true,
+        });
+
+        if (attempt === 0 && payment.status === 'PENDING') {
           try {
             payment = await reconcilePayment(paymentId);
           } catch (reconcileError) {
             lastError = reconcileError;
           }
         }
+
+        if (!isCurrentRun()) return;
 
         latestPayment = payment;
 
@@ -155,7 +171,9 @@ export default function PaymentResultPage() {
 
         if (payment.status === 'SUCCEEDED') {
           lastError = null;
-          window.dispatchEvent(new CustomEvent('voxidence :credits-updated'));
+          window.dispatchEvent(
+            new CustomEvent('nexora:credits-updated'),
+          );
         }
 
         if (payment.status === 'FAILED') {
@@ -171,13 +189,15 @@ export default function PaymentResultPage() {
         if (isFulfillmentComplete(payment)) {
           void refreshPaymentDestination({
             ideaId: payment.ideaId || fallbackIdeaId,
-            publicationId: payment.publicationId || fallbackPublicationId,
+            publicationId:
+              payment.publicationId || fallbackPublicationId,
           });
 
           clearPaymentReturnReference();
 
           if (payment.paymentPurpose === 'DIRECT_UNLOCK') {
-            const destinationIdeaId = payment.ideaId || fallbackIdeaId;
+            const destinationIdeaId =
+              payment.ideaId || fallbackIdeaId;
 
             if (destinationIdeaId) {
               navigate(`/normal/ideas/${destinationIdeaId}`, {
@@ -217,7 +237,10 @@ export default function PaymentResultPage() {
       }
     }
 
-    const paymentWasVerified = latestPayment?.status === 'SUCCEEDED';
+    if (!isCurrentRun()) return;
+
+    const paymentWasVerified =
+      latestPayment?.status === 'SUCCEEDED';
 
     setState({
       loading: false,
@@ -237,15 +260,15 @@ export default function PaymentResultPage() {
   ]);
 
   useEffect(() => {
-    let active = true;
+    const runId = confirmationRunRef.current + 1;
+    confirmationRunRef.current = runId;
 
-    void (async () => {
-      if (!active) return;
-      await confirmPayment();
-    })();
+    void confirmPayment(runId);
 
     return () => {
-      active = false;
+      if (confirmationRunRef.current === runId) {
+        confirmationRunRef.current += 1;
+      }
     };
   }, [confirmPayment, retryToken]);
 

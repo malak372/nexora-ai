@@ -4,12 +4,13 @@
 //
 // Requires: flutter pub add socket_io_client
 //
-// @author  Malak
+// @author Eman
 
 import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -54,7 +55,9 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
   List<Map<String, dynamic>> _messages = const [];
   String? _activeSessionId;
   String? _streamingMessageId;
+  String? _joinedSessionId;
   io.Socket? _socket;
+  final Map<String, List<Map<String, dynamic>>> _messageCache = {};
   bool _loading = true;
   bool _creating = false;
   bool _sending = false;
@@ -68,13 +71,15 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
   @override
   void initState() {
     super.initState();
-    _loadSessions();
-    _initSpeech();
+    unawaited(_primeRealtime());
+    unawaited(_loadSessions());
+    unawaited(_initSpeech());
   }
 
   @override
   void dispose() {
-    _leaveAndDisposeSocket();
+    _detachSocketListeners();
+    _leaveSession();
     _speech.cancel();
     _draft.dispose();
     _scrollController.dispose();
@@ -85,171 +90,317 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
     try {
       final sessions = await UserApi.instance.getChatSessions(widget.ideaId);
       if (!mounted) return;
+
       setState(() {
         _sessions = sessions;
+        _loading = false;
         _error = null;
       });
 
-      if (sessions.isNotEmpty) {
-        final targetId = _activeSessionId != null &&
-                sessions.any((item) => item['id']?.toString() == _activeSessionId)
-            ? _activeSessionId!
-            : sessions.first['id']?.toString();
-        if (targetId != null && targetId.isNotEmpty) {
-          await _openSession(targetId);
-        }
+      if (sessions.isEmpty) return;
+
+      final targetId =
+          _activeSessionId != null &&
+              sessions.any(
+                (item) => item['id']?.toString() == _activeSessionId,
+              )
+          ? _activeSessionId!
+          : sessions.first['id']?.toString() ?? '';
+
+      if (targetId.isNotEmpty) {
+        unawaited(_openSession(targetId));
       }
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = error.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'AI Chat could not load conversations.';
+      });
+    }
+  }
+
+  Future<void> _primeRealtime() async {
+    try {
+      final socket = await _ensureSocket();
+      if (!socket.connected) socket.connect();
+    } catch (_) {
+      // The page retries when a session is joined or a message is sent.
     }
   }
 
   Future<void> _openSession(String sessionId) async {
     if (sessionId.isEmpty) return;
-    setState(() {
-      _activeSessionId = sessionId;
-      _messages = const [];
-      _error = null;
-      _sending = false;
-      _streamingMessageId = null;
-    });
+
+    final cached = _messageCache[sessionId];
+
+    if (mounted) {
+      setState(() {
+        _activeSessionId = sessionId;
+        _messages = cached ?? const [];
+        _error = null;
+        _sending = false;
+        _streamingMessageId = null;
+      });
+    }
+
+    // Join realtime immediately. Message history can arrive independently.
+    unawaited(_joinSession(sessionId));
+
+    if (cached != null) {
+      _scrollToBottom(jump: true);
+      return;
+    }
 
     try {
-      final messages = await UserApi.instance.getChatMessages(sessionId);
+      final messages = _sortConversationHistory(
+        await UserApi.instance.getChatMessages(sessionId),
+      );
+      _messageCache[sessionId] = messages;
       if (!mounted || _activeSessionId != sessionId) return;
       setState(() => _messages = messages);
       _scrollToBottom(jump: true);
-      await _connectSocket(sessionId);
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted && _activeSessionId == sessionId) {
+        setState(() => _error = error.message);
+      }
     }
   }
 
-  Future<void> _connectSocket(String sessionId) async {
-    _leaveAndDisposeSocket();
-    try {
-      final socket = await RealtimeSocket.connect('/ai-chat');
-      if (!mounted || _activeSessionId != sessionId) {
-        socket.dispose();
-        return;
-      }
-      _socket = socket;
+  Future<io.Socket> _ensureSocket() async {
+    final current = _socket;
+    if (current != null) return current;
 
-      socket.onConnect((_) {
-        if (!mounted || _activeSessionId != sessionId) return;
-        setState(() => _connected = true);
-        socket.emit('chat:join-session', {'sessionId': sessionId});
-      });
+    final socket = await RealtimeSocket.connect('/ai-chat');
+    _socket = socket;
+    _attachSocketListeners(socket);
 
-      socket.onDisconnect((_) {
-        if (mounted) setState(() => _connected = false);
-      });
-
-      socket.onConnectError((dynamic error) {
-        if (!mounted) return;
-        setState(() {
-          _connected = false;
-          _error = 'Realtime connection was interrupted. Reconnecting…';
-        });
-      });
-
-      socket.on('chat:session-joined', (dynamic payload) {
-        final map = _asMap(payload);
-        if (!mounted || map['sessionId']?.toString() != sessionId) return;
-        setState(() {
-          _connected = true;
-          if (_error?.startsWith('Realtime connection') == true) _error = null;
-        });
-      });
-
-      socket.on('chat:message-accepted', (dynamic payload) {
-        final map = _asMap(payload);
-        if (map['sessionId']?.toString() != sessionId) return;
-        final userMessage = _asMap(map['userMessage']);
-        final aiMessage = _asMap(map['aiMessage']);
-        if (!mounted) return;
-        setState(() {
-          _messages = _mergeMessage(_messages, userMessage);
-          _messages = _mergeMessage(_messages, aiMessage);
-          _streamingMessageId = aiMessage['id']?.toString();
-          _sending = true;
-          _error = null;
-        });
-        _scrollToBottom();
-      });
-
-      socket.on('chat:message-stream-started', (dynamic payload) {
-        final map = _asMap(payload);
-        if (map['sessionId']?.toString() != sessionId) return;
-        final message = _asMap(map['message']);
-        if (!mounted) return;
-        setState(() {
-          _messages = _mergeMessage(_messages, message);
-          _streamingMessageId = message['id']?.toString();
-          _sending = true;
-        });
-      });
-
-      socket.on('chat:message-chunk', (dynamic payload) {
-        final map = _asMap(payload);
-        if (map['sessionId']?.toString() != sessionId) return;
-        final messageId = map['messageId']?.toString();
-        final content = map['content']?.toString() ?? '';
-        if (!mounted || messageId == null || content.isEmpty) return;
-
-        setState(() {
-          final next = _messages.map((message) {
-            if (message['id']?.toString() != messageId) return message;
-            return <String, dynamic>{
-              ...message,
-              'message': '${message['message'] ?? ''}$content',
-              'status': 'STREAMING',
-            };
-          }).toList();
-          _messages = next;
-          _streamingMessageId = messageId;
-          _sending = true;
-        });
-        _scrollToBottom();
-      });
-
-      void terminalHandler(dynamic payload) {
-        final map = _asMap(payload);
-        if (map['sessionId']?.toString() != sessionId) return;
-        final message = _asMap(map['message']);
-        if (!mounted) return;
-        setState(() {
-          _messages = _mergeMessage(_messages, message);
-          _sending = false;
-          _streamingMessageId = null;
-        });
-        _scrollToBottom();
-        _refreshSessionTitles();
-      }
-
-      socket.on('chat:message-completed', terminalHandler);
-      socket.on('chat:message-failed', terminalHandler);
-      socket.on('chat:message-cancelled', terminalHandler);
-
-      socket.on('chat:error', (dynamic payload) {
-        final map = _asMap(payload);
-        if (!mounted) return;
-        setState(() {
-          _error = map['message']?.toString() ?? 'AI Chat could not complete the request.';
-          _sending = false;
-        });
-      });
-
+    if (!socket.connected) {
       socket.connect();
-    } catch (error) {
+    } else if (mounted) {
+      setState(() => _connected = true);
+    }
+
+    return socket;
+  }
+
+  void _attachSocketListeners(io.Socket socket) {
+    _detachSocketListeners();
+
+    socket.onConnect((_) {
+      if (!mounted) return;
+      setState(() {
+        _connected = true;
+        if (_error?.startsWith('Realtime connection') == true) {
+          _error = null;
+        }
+      });
+
+      final sessionId = _activeSessionId;
+      if (sessionId != null && sessionId.isNotEmpty) {
+        unawaited(_joinSession(sessionId));
+      }
+    });
+
+    socket.onDisconnect((_) {
+      if (mounted) setState(() => _connected = false);
+    });
+
+    socket.onConnectError((dynamic _) {
       if (!mounted) return;
       setState(() {
         _connected = false;
-        _error = error is ApiException ? error.message : 'AI Chat could not connect.';
+        if (_messages.isEmpty) {
+          _error = 'Realtime connection is reconnecting…';
+        }
       });
+    });
+
+    socket.on('chat:session-joined', (dynamic payload) {
+      final map = _asMap(payload);
+      final sessionId = map['sessionId']?.toString() ?? '';
+      if (!mounted || sessionId.isEmpty) return;
+      if (sessionId != _activeSessionId) return;
+
+      setState(() {
+        _connected = true;
+        _joinedSessionId = sessionId;
+        if (_error?.startsWith('Realtime connection') == true) {
+          _error = null;
+        }
+      });
+    });
+
+    socket.on('chat:message-accepted', (dynamic payload) {
+      final map = _asMap(payload);
+      if (map['sessionId']?.toString() != _activeSessionId) return;
+
+      final userMessage = _asMap(map['userMessage']);
+      final aiMessage = _asMap(map['aiMessage']);
+      final requestId = map['clientRequestId']?.toString();
+      if (!mounted) return;
+
+      setState(() {
+        var next = _removeOptimisticPairForAccepted(
+          _messages,
+          requestId: requestId,
+          userMessage: userMessage,
+        );
+        next = _mergeMessage(next, userMessage);
+        next = _mergeMessage(next, aiMessage);
+        _messages = next;
+        _cacheActiveMessages();
+        _streamingMessageId = aiMessage['id']?.toString();
+        _sending = true;
+        _error = null;
+      });
+      _scrollToBottom();
+    });
+
+    socket.on('chat:message-stream-started', (dynamic payload) {
+      final map = _asMap(payload);
+      if (map['sessionId']?.toString() != _activeSessionId) return;
+      final message = _asMap(map['message']);
+      if (!mounted) return;
+      setState(() {
+        _messages = _mergeMessage(_messages, message);
+        _cacheActiveMessages();
+        _streamingMessageId = message['id']?.toString();
+        _sending = true;
+      });
+    });
+
+    socket.on('chat:message-chunk', (dynamic payload) {
+      final map = _asMap(payload);
+      if (map['sessionId']?.toString() != _activeSessionId) return;
+      final messageId = map['messageId']?.toString();
+      final content = map['content']?.toString() ?? '';
+      if (!mounted || messageId == null || content.isEmpty) return;
+
+      setState(() {
+        _messages = _messages.map((message) {
+          if (message['id']?.toString() != messageId) return message;
+          return <String, dynamic>{
+            ...message,
+            'message': '${message['message'] ?? ''}$content',
+            'status': 'STREAMING',
+          };
+        }).toList();
+        _cacheActiveMessages();
+        _streamingMessageId = messageId;
+        _sending = true;
+      });
+      _scrollToBottom();
+    });
+
+    void terminalHandler(dynamic payload) {
+      final map = _asMap(payload);
+      if (map['sessionId']?.toString() != _activeSessionId) return;
+      final message = _asMap(map['message']);
+      if (!mounted) return;
+      setState(() {
+        _messages = _mergeMessage(_messages, message);
+        _cacheActiveMessages();
+        _sending = false;
+        _streamingMessageId = null;
+      });
+      _scrollToBottom();
+      unawaited(_refreshSessionTitles());
     }
+
+    socket.on('chat:message-completed', terminalHandler);
+    socket.on('chat:message-failed', terminalHandler);
+    socket.on('chat:message-cancelled', terminalHandler);
+
+    socket.on('chat:error', (dynamic payload) {
+      final map = _asMap(payload);
+      if (!mounted) return;
+      setState(() {
+        _error =
+            map['message']?.toString() ??
+            'AI Chat could not complete the request.';
+        _sending = false;
+        _streamingMessageId = null;
+      });
+    });
+  }
+
+  void _detachSocketListeners() {
+    final socket = _socket;
+    if (socket == null) return;
+    for (final event in <String>[
+      'connect',
+      'disconnect',
+      'connect_error',
+      'chat:session-joined',
+      'chat:message-accepted',
+      'chat:message-stream-started',
+      'chat:message-chunk',
+      'chat:message-completed',
+      'chat:message-failed',
+      'chat:message-cancelled',
+      'chat:error',
+    ]) {
+      socket.off(event);
+    }
+  }
+
+  Future<void> _joinSession(String sessionId) async {
+    if (sessionId.isEmpty) return;
+    if (_joinedSessionId == sessionId && _socket?.connected == true) return;
+
+    final socket = await _ensureSocket();
+
+    if (!socket.connected) {
+      final ready = Completer<void>();
+      late void Function(dynamic) onConnect;
+      onConnect = (_) {
+        if (!ready.isCompleted) ready.complete();
+      };
+      socket.on('connect', onConnect);
+      socket.connect();
+      try {
+        await ready.future.timeout(const Duration(seconds: 4));
+      } finally {
+        socket.off('connect', onConnect);
+      }
+    }
+
+    final previous = _joinedSessionId;
+    if (previous != null && previous != sessionId && socket.connected) {
+      socket.emit('chat:leave-session', {'sessionId': previous});
+    }
+
+    final joined = Completer<void>();
+    socket.emitWithAck(
+      'chat:join-session',
+      {'sessionId': sessionId},
+      ack: (_) {
+        if (!joined.isCompleted) joined.complete();
+      },
+    );
+
+    await joined.future.timeout(
+      const Duration(seconds: 3),
+      onTimeout: () {},
+    );
+
+    if (!mounted || _activeSessionId != sessionId) return;
+    setState(() {
+      _joinedSessionId = sessionId;
+      _connected = socket.connected;
+    });
+  }
+
+  void _cacheActiveMessages() {
+    final sessionId = _activeSessionId;
+    if (sessionId == null || sessionId.isEmpty) return;
+    _messageCache[sessionId] = List<Map<String, dynamic>>.from(_messages);
   }
 
   Future<void> _refreshSessionTitles() async {
@@ -263,20 +414,173 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
     }
   }
 
-  Future<void> _createSession() async {
-    if (_creating) return;
-    setState(() => _creating = true);
+  Future<String?> _createSession({bool preserveMessages = false}) async {
+    if (_creating) {
+      return _activeSessionId;
+    }
+
+    if (mounted) {
+      setState(() {
+        _creating = true;
+        _error = null;
+      });
+    }
+
     try {
       final session = await UserApi.instance.createChatSession(widget.ideaId);
-      final id = session['id']?.toString();
-      final sessions = await UserApi.instance.getChatSessions(widget.ideaId);
-      if (!mounted) return;
-      setState(() => _sessions = sessions);
-      if (id != null && id.isNotEmpty) await _openSession(id);
+      final id = session['id']?.toString().trim() ?? '';
+
+      if (id.isEmpty) {
+        throw const ApiException(
+          'Voxidence created the conversation without a valid identifier.',
+        );
+      }
+
+      if (!mounted) return id;
+
+      setState(() {
+        _sessions = [
+          session,
+          ..._sessions.where((item) => item['id']?.toString() != id),
+        ];
+        _activeSessionId = id;
+        if (!preserveMessages) {
+          _messages = const [];
+        }
+        _messageCache[id] = List<Map<String, dynamic>>.from(_messages);
+        _streamingMessageId = null;
+        _error = null;
+      });
+
+      // Do not wait for history. New-message sends join immediately below.
+      if (!preserveMessages) {
+        unawaited(_joinSession(id));
+      }
+      return id;
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
+      return null;
     } finally {
       if (mounted) setState(() => _creating = false);
+    }
+  }
+
+
+  String _normalizeSessionTitle(String? raw) {
+    final value = (raw ?? '').trim();
+    if (value.isEmpty) return '';
+
+    final lower = value.toLowerCase();
+    const genericValues = {
+      'new chat',
+      'new conversation',
+      'new project discussion',
+      'untitled chat',
+      'untitled conversation',
+    };
+
+    if (genericValues.contains(lower)) return '';
+    if (lower.startsWith('conversation ')) return '';
+    if (lower.startsWith('chat ')) return '';
+    return value;
+  }
+
+  String _titleFromDraft(String text) {
+    final normalized = text
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'^[\-–—•\s]+'), '')
+        .trim();
+
+    if (normalized.isEmpty) return 'New chat';
+    const maxLength = 52;
+    if (normalized.length <= maxLength) return normalized;
+    return '${normalized.substring(0, maxLength).trimRight()}…';
+  }
+
+  String _sessionDisplayTitle(Map<String, dynamic> session, {int? index}) {
+    final explicit = _normalizeSessionTitle(session['title']?.toString());
+    if (explicit.isNotEmpty) return explicit;
+
+    final preview = _normalizeSessionTitle(session['latestUserMessage']?.toString());
+    if (preview.isNotEmpty) return _titleFromDraft(preview);
+
+    final id = session['id']?.toString() ?? '';
+    final cached = _messageCache[id];
+    if (cached != null) {
+      for (final message in cached) {
+        final sender = '${message['sender'] ?? ''}'.toUpperCase();
+        final body = '${message['message'] ?? ''}'.trim();
+        if (sender == 'USER' && body.isNotEmpty) {
+          return _titleFromDraft(body);
+        }
+      }
+    }
+
+    return index == null ? 'New chat' : 'Conversation ${index + 1}';
+  }
+
+  String _activeConversationTitle() {
+    final sessionId = _activeSessionId;
+    if (sessionId == null || sessionId.isEmpty) return 'Premium AI Chat';
+
+    final session = _sessions.cast<Map<String, dynamic>?>().firstWhere(
+      (item) => item?['id']?.toString() == sessionId,
+      orElse: () => null,
+    );
+
+    if (session == null) return 'Premium AI Chat';
+    return _sessionDisplayTitle(session);
+  }
+
+  Future<void> _maybeApplyAutoTitle(String sessionId, String firstPrompt) async {
+    final draftTitle = _titleFromDraft(firstPrompt);
+    if (draftTitle.trim().isEmpty) return;
+
+    final sessionIndex = _sessions.indexWhere(
+      (item) => item['id']?.toString() == sessionId,
+    );
+    if (sessionIndex < 0) return;
+
+    final current = _sessions[sessionIndex];
+    final existing = _normalizeSessionTitle(current['title']?.toString());
+    if (existing.isNotEmpty) return;
+
+    if (mounted) {
+      setState(() {
+        final updated = <String, dynamic>{
+          ...current,
+          'title': draftTitle,
+        };
+        _sessions = [
+          for (var i = 0; i < _sessions.length; i++)
+            if (i == sessionIndex) updated else _sessions[i],
+        ];
+      });
+    }
+
+    try {
+      final saved = await UserApi.instance.updateChatSession(
+        sessionId,
+        title: draftTitle,
+      );
+      if (!mounted) return;
+      setState(() {
+        _sessions = _sessions
+            .map(
+              (item) => item['id']?.toString() == sessionId
+                  ? <String, dynamic>{
+                      ...item,
+                      ...saved,
+                      'title': (saved['title']?.toString().trim().isNotEmpty ?? false)
+                          ? saved['title']
+                          : draftTitle,
+                    }
+                  : item,
+            )
+            .toList();
+      });
+    } catch (_) {
+      // Best-effort mobile parity with web session titling.
     }
   }
 
@@ -299,8 +603,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
             labelText: 'Conversation title',
             prefixIcon: Icon(Icons.edit_outlined),
           ),
-          onSubmitted: (value) =>
-              Navigator.of(dialogContext).pop(value.trim()),
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value.trim()),
         ),
         actions: [
           TextButton(
@@ -352,9 +655,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete this chat?'),
-        content: Text(
-          '“$title” and its messages will be permanently removed.',
-        ),
+        content: Text('“$title” and its messages will be permanently removed.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -372,7 +673,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
 
     try {
       if (_activeSessionId == id) {
-        _leaveAndDisposeSocket();
+        _leaveSession();
         setState(() {
           _activeSessionId = null;
           _messages = const [];
@@ -412,11 +713,12 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
           final raw = error.errorMsg.toLowerCase();
           setState(() {
             _listening = false;
-            _voiceHint = raw.contains('permission') || raw.contains('not-allowed')
+            _voiceHint =
+                raw.contains('permission') || raw.contains('not-allowed')
                 ? 'Allow microphone access to use voice typing.'
                 : raw.contains('no-speech')
-                    ? 'No speech detected — tap the microphone to try again'
-                    : 'Voice typing stopped — tap the microphone to try again';
+                ? 'No speech detected — tap the microphone to try again'
+                : 'Voice typing stopped — tap the microphone to try again';
           });
         },
       );
@@ -439,7 +741,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
   }
 
   Future<void> _toggleVoice() async {
-    if (_sending || _activeSessionId == null) return;
+    if (_sending) return;
     FocusManager.instance.primaryFocus?.unfocus();
 
     if (_speech.isListening || _listening) {
@@ -474,7 +776,8 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
       if (mounted) {
         setState(() {
           _listening = false;
-          _voiceHint = 'The microphone could not start. Check permission and try again.';
+          _voiceHint =
+              'The microphone could not start. Check permission and try again.';
         });
       }
     }
@@ -484,10 +787,10 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
     final spoken = result.recognizedWords.trim();
     if (spoken.isEmpty) return;
 
-    final next = [_voiceBase, spoken]
-        .where((value) => value.trim().isNotEmpty)
-        .join(' ')
-        .trim();
+    final next = [
+      _voiceBase,
+      spoken,
+    ].where((value) => value.trim().isNotEmpty).join(' ').trim();
 
     _draft.value = TextEditingValue(
       text: next,
@@ -504,61 +807,257 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
 
   Future<void> _sendMessage() async {
     final text = _draft.text.trim();
-    if (text.isEmpty || _sending) return;
+    if (text.isEmpty || _sending || _creating) return;
+
+    final clientRequestId = createUuidV4();
+    final optimisticUserId = 'local-user-$clientRequestId';
+    final optimisticAiId = 'local-ai-$clientRequestId';
+
+    _draft.clear();
+
+    if (mounted) {
+      setState(() {
+        _sending = true;
+        _error = null;
+        _messages = [
+          ..._messages,
+          <String, dynamic>{
+            'id': optimisticUserId,
+            'sender': 'USER',
+            'message': text,
+            'status': 'COMPLETED',
+            '_clientRequestId': clientRequestId,
+          },
+          <String, dynamic>{
+            'id': optimisticAiId,
+            'sender': 'AI',
+            'message': '',
+            'status': 'PENDING',
+            '_clientRequestId': clientRequestId,
+          },
+        ];
+      });
+      _scrollToBottom();
+    }
 
     var sessionId = _activeSessionId;
-    if (sessionId == null) {
-      await _createSession();
-      sessionId = _activeSessionId;
-    }
-    if (sessionId == null) return;
 
-    if (_socket?.connected != true) {
-      await _connectSocket(sessionId);
-      await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (sessionId == null || sessionId.isEmpty) {
+      sessionId = await _createSession(preserveMessages: true);
     }
 
-    if (_socket?.connected != true) {
-      if (mounted) {
-        setState(() => _error = 'Realtime connection is not ready. Try again in a moment.');
-      }
+    if (sessionId == null || sessionId.isEmpty || !mounted) {
+      _markOptimisticFailure(
+        clientRequestId,
+        'Voxidence could not create this conversation.',
+      );
       return;
     }
 
-    _draft.clear();
-    setState(() {
-      _sending = true;
-      _error = null;
-    });
+    unawaited(_maybeApplyAutoTitle(sessionId, text));
 
-    _socket!.emit('chat:send-message', {
-      'sessionId': sessionId,
-      'clientRequestId': createUuidV4(),
-      'message': text,
+    try {
+      await _joinSession(sessionId);
+      final socket = await _ensureSocket();
+
+      if (!socket.connected) {
+        throw const ApiException(
+          'Realtime connection is not ready. Try again in a moment.',
+        );
+      }
+
+      socket.emitWithAck(
+        'chat:send-message',
+        {
+          'sessionId': sessionId,
+          'clientRequestId': clientRequestId,
+          'message': text,
+        },
+        ack: (dynamic payload) {
+          final map = _asMap(payload);
+          if (!mounted) return;
+
+          if (map['success'] == false) {
+            _markOptimisticFailure(
+              clientRequestId,
+              map['message']?.toString() ??
+                  'Voxidence could not start this response.',
+            );
+          }
+        },
+      );
+    } on ApiException catch (error) {
+      _markOptimisticFailure(clientRequestId, error.message);
+    } catch (_) {
+      _markOptimisticFailure(
+        clientRequestId,
+        'Voxidence could not start this response.',
+      );
+    }
+  }
+
+  void _markOptimisticFailure(String clientRequestId, String message) {
+    if (!mounted) return;
+    setState(() {
+      _messages = _messages.map((item) {
+        if (item['_clientRequestId']?.toString() != clientRequestId) {
+          return item;
+        }
+        if ('${item['sender']}'.toUpperCase() == 'AI') {
+          return <String, dynamic>{
+            ...item,
+            'message': message,
+            'status': 'FAILED',
+          };
+        }
+        return item;
+      }).toList();
+      _sending = false;
+      _streamingMessageId = null;
+      _cacheActiveMessages();
     });
   }
 
   void _cancelMessage() {
     final sessionId = _activeSessionId;
     final messageId = _streamingMessageId;
-    if (sessionId == null || messageId == null || _socket?.connected != true) return;
+    if (sessionId == null ||
+        messageId == null ||
+        _socket?.connected != true) {
+      return;
+    }
     _socket!.emit('chat:cancel-message', {
       'sessionId': sessionId,
       'messageId': messageId,
     });
   }
 
-  void _leaveAndDisposeSocket() {
+  void _leaveSession() {
     final socket = _socket;
-    final sessionId = _activeSessionId;
-    if (socket != null) {
-      if (sessionId != null && socket.connected) {
-        socket.emit('chat:leave-session', {'sessionId': sessionId});
-      }
-      socket.dispose();
+    final sessionId = _joinedSessionId ?? _activeSessionId;
+    if (socket != null && sessionId != null && socket.connected) {
+      socket.emit('chat:leave-session', {'sessionId': sessionId});
     }
+    _joinedSessionId = null;
     _socket = null;
     _connected = false;
+  }
+
+  List<Map<String, dynamic>> _removeOptimisticPairForAccepted(
+    List<Map<String, dynamic>> current, {
+    required String? requestId,
+    required Map<String, dynamic> userMessage,
+  }) {
+    final idsToRemove = <String>{};
+
+    if (requestId != null && requestId.isNotEmpty) {
+      idsToRemove.add(requestId);
+    }
+
+    final acceptedText = _messageBody(userMessage);
+
+    if (acceptedText.isNotEmpty) {
+      for (var index = current.length - 1; index >= 0; index--) {
+        final item = current[index];
+        final id = item['id']?.toString() ?? '';
+        final sender = '${item['sender'] ?? item['role'] ?? ''}'.toUpperCase();
+        final localRequestId = item['_clientRequestId']?.toString() ?? '';
+
+        if (!id.startsWith('local-user-') ||
+            sender != 'USER' ||
+            localRequestId.isEmpty) {
+          continue;
+        }
+
+        if (_messageBody(item) == acceptedText) {
+          idsToRemove.add(localRequestId);
+          break;
+        }
+      }
+    }
+
+    if (idsToRemove.isEmpty) return current;
+
+    return current
+        .where(
+          (item) => !idsToRemove.contains(
+            item['_clientRequestId']?.toString() ?? '',
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> _sortConversationHistory(
+    List<Map<String, dynamic>> messages,
+  ) {
+    final indexed = messages.asMap().entries.toList(growable: false);
+
+    indexed.sort((left, right) {
+      final leftMessage = left.value;
+      final rightMessage = right.value;
+
+      final leftSequence = _messageSequence(leftMessage);
+      final rightSequence = _messageSequence(rightMessage);
+      if (leftSequence != null && rightSequence != null) {
+        final sequenceOrder = leftSequence.compareTo(rightSequence);
+        if (sequenceOrder != 0) return sequenceOrder;
+      }
+
+      final leftTime = _messageTimestamp(leftMessage);
+      final rightTime = _messageTimestamp(rightMessage);
+      if (leftTime != null && rightTime != null) {
+        final timeOrder = leftTime.compareTo(rightTime);
+        if (timeOrder != 0) return timeOrder;
+      }
+
+      // Some backends create the USER and AI placeholders in the same
+      // millisecond. In that tie, always show the question first and its
+      // answer immediately after it instead of reversing the pair.
+      final senderOrder = _senderOrder(leftMessage).compareTo(
+        _senderOrder(rightMessage),
+      );
+      if (senderOrder != 0) return senderOrder;
+
+      return left.key.compareTo(right.key);
+    });
+
+    return indexed.map((entry) => entry.value).toList(growable: false);
+  }
+
+  num? _messageSequence(Map<String, dynamic> message) {
+    for (final key in const ['sequence', 'order', 'position', 'index']) {
+      final raw = message[key];
+      if (raw is num) return raw;
+      final parsed = num.tryParse('${raw ?? ''}');
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  DateTime? _messageTimestamp(Map<String, dynamic> message) {
+    for (final key in const [
+      'createdAt',
+      'sentAt',
+      'timestamp',
+      'updatedAt',
+    ]) {
+      final raw = message[key];
+      if (raw is DateTime) return raw.toUtc();
+      final parsed = DateTime.tryParse('${raw ?? ''}');
+      if (parsed != null) return parsed.toUtc();
+    }
+    return null;
+  }
+
+  int _senderOrder(Map<String, dynamic> message) {
+    final sender = '${message['sender'] ?? message['role'] ?? ''}'.toUpperCase();
+    if (sender == 'USER') return 0;
+    if (sender == 'AI' || sender == 'ASSISTANT') return 1;
+    return 2;
+  }
+
+  String _messageBody(Map<String, dynamic> message) {
+    return '${message['message'] ?? message['content'] ?? ''}'.trim();
   }
 
   List<Map<String, dynamic>> _mergeMessage(
@@ -567,11 +1066,73 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
   ) {
     final id = incoming['id']?.toString();
     if (id == null || id.isEmpty) return current;
-    final index = current.indexWhere((message) => message['id']?.toString() == id);
-    if (index < 0) return [...current, incoming];
-    final next = [...current];
-    next[index] = {...next[index], ...incoming};
-    return next;
+
+    final exactIndex = current.indexWhere(
+      (message) => message['id']?.toString() == id,
+    );
+
+    if (exactIndex >= 0) {
+      final next = [...current];
+      next[exactIndex] = {...next[exactIndex], ...incoming};
+      return next;
+    }
+
+    final incomingRequestId = incoming['_clientRequestId']?.toString() ?? '';
+    if (incomingRequestId.isNotEmpty) {
+      final requestIndex = current.indexWhere(
+        (message) =>
+            message['_clientRequestId']?.toString() == incomingRequestId,
+      );
+
+      if (requestIndex >= 0) {
+        final next = [...current];
+        next[requestIndex] = {
+          ...next[requestIndex],
+          ...incoming,
+        };
+        return next;
+      }
+    }
+
+    final sender = '${incoming['sender'] ?? incoming['role'] ?? ''}'.toUpperCase();
+    final incomingBody = _messageBody(incoming);
+
+    // The backend may omit clientRequestId in the accepted event. Replace the
+    // latest optimistic bubble instead of appending the same user text again.
+    if (sender == 'USER' && incomingBody.isNotEmpty) {
+      for (var index = current.length - 1; index >= 0; index--) {
+        final item = current[index];
+        final itemId = item['id']?.toString() ?? '';
+        final itemSender = '${item['sender'] ?? item['role'] ?? ''}'.toUpperCase();
+
+        if (itemId.startsWith('local-user-') &&
+            itemSender == 'USER' &&
+            _messageBody(item) == incomingBody) {
+          final next = [...current];
+          next[index] = {...item, ...incoming};
+          return next;
+        }
+      }
+    }
+
+    if (sender == 'AI') {
+      for (var index = current.length - 1; index >= 0; index--) {
+        final item = current[index];
+        final itemId = item['id']?.toString() ?? '';
+        final itemSender = '${item['sender'] ?? item['role'] ?? ''}'.toUpperCase();
+        final status = '${item['status'] ?? ''}'.toUpperCase();
+
+        if (itemId.startsWith('local-ai-') &&
+            itemSender == 'AI' &&
+            const {'PENDING', 'STREAMING'}.contains(status)) {
+          final next = [...current];
+          next[index] = {...item, ...incoming};
+          return next;
+        }
+      }
+    }
+
+    return [...current, incoming];
   }
 
   void _scrollToBottom({bool jump = false}) {
@@ -590,7 +1151,6 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
     });
   }
 
-
   void _applyPrompt(String prompt) {
     _draft.value = TextEditingValue(
       text: prompt,
@@ -601,54 +1161,55 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
     setState(() {});
   }
 
-
-
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: AppColors.background,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: AppColors.background,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
       key: _scaffoldKey,
-      backgroundColor: Colors.transparent,
-      drawerScrimColor:
-          AppColors.primaryDeep.withValues(alpha: .18),
+      backgroundColor: AppColors.background,
+      drawerScrimColor: AppColors.primaryDeep.withValues(alpha: .18),
       drawer: _ChatConversationsDrawer(
         contextLabel: widget.contextLabel,
         sessions: _sessions,
         activeSessionId: _activeSessionId,
         creating: _creating,
         connected: _connected,
+        titleForSession: (session, index) =>
+            _sessionDisplayTitle(session, index: index),
         onNewChat: () {
           Navigator.of(context).pop();
-          Future<void>.microtask(_createSession);
+          Future<void>.microtask(() async {
+            await _createSession();
+          });
         },
         onOpen: (sessionId) {
           Navigator.of(context).pop();
-          Future<void>.microtask(
-            () => _openSession(sessionId),
-          );
+          Future<void>.microtask(() => _openSession(sessionId));
         },
         onRename: (session) {
           Navigator.of(context).pop();
-          Future<void>.microtask(
-            () => _renameSession(session),
-          );
+          Future<void>.microtask(() => _renameSession(session));
         },
         onDelete: (session) {
           Navigator.of(context).pop();
-          Future<void>.microtask(
-            () => _deleteSession(session),
-          );
+          Future<void>.microtask(() => _deleteSession(session));
         },
       ),
       appBar: AppBar(
+        backgroundColor: AppColors.background,
+        surfaceTintColor: Colors.transparent,
         leadingWidth: 50,
         leading: IconButton(
           tooltip: 'Back to ${widget.returnTitle}',
           onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            size: 22,
-          ),
+          icon: const Icon(Icons.arrow_back_rounded, size: 22),
         ),
         titleSpacing: 0,
         title: Column(
@@ -665,7 +1226,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
               ),
             ),
             Text(
-              widget.returnSubtitle,
+              _activeConversationTitle(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -677,11 +1238,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
           ],
         ),
         actions: [
-          Center(
-            child: _ConnectionBadge(
-              connected: _connected,
-            ),
-          ),
+          Center(child: _ConnectionBadge(connected: _connected)),
           const SizedBox(width: 5),
           Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -690,8 +1247,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: () =>
-                      _scaffoldKey.currentState?.openDrawer(),
+                  onTap: () => _scaffoldKey.currentState?.openDrawer(),
                   borderRadius: BorderRadius.circular(12),
                   child: Ink(
                     width: 36,
@@ -700,15 +1256,11 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [
-                          AppColors.primarySoft,
-                          AppColors.surfaceRose,
-                        ],
+                        colors: [AppColors.primarySoft, AppColors.surfaceRose],
                       ),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: AppColors.primaryDark
-                            .withValues(alpha: .065),
+                        color: AppColors.primaryDark.withValues(alpha: .065),
                       ),
                     ),
                     child: const Icon(
@@ -724,59 +1276,47 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
         ],
       ),
       body: WorkspaceBackground(
-        child: _loading
-            ? const Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.primary,
-                ),
-              )
-            : Column(
-                children: [
-                  if (_error != null)
-                    _ChatNotice(
-                      message: _error!,
-                    ),
-
-                  Expanded(
-                    child: _buildConversation(),
-                  ),
-
-                  _buildComposer(),
-                ],
+        child: Column(
+          children: [
+            if (_loading)
+              const LinearProgressIndicator(
+                minHeight: 2,
+                backgroundColor: AppColors.background,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
               ),
+            if (_error != null) _ChatNotice(message: _error!),
+            Expanded(child: _buildConversation()),
+            _buildComposer(),
+          ],
+        ),
+      ),
       ),
     );
   }
 
   Widget _buildConversation() {
-    final noActiveConversation =
-        _sessions.isEmpty || _activeSessionId == null;
+    final noActiveConversation = _sessions.isEmpty || _activeSessionId == null;
 
     if (noActiveConversation || _messages.isEmpty) {
       return LayoutBuilder(
         builder: (context, constraints) {
           return SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(
-              15,
-              10,
-              15,
-              14,
-            ),
+            padding: const EdgeInsets.fromLTRB(15, 10, 15, 14),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minHeight: math.max(
-                  0,
-                  constraints.maxHeight - 24,
-                ),
+                minHeight: math.max(0, constraints.maxHeight - 24),
               ),
               child: Center(
                 child: _ChatWelcomeCard(
                   contextLabel: widget.contextLabel,
                   compact: !noActiveConversation,
                   onStart: noActiveConversation
-                      ? (_creating ? null : _createSession)
+                      ? (_creating
+                            ? null
+                            : () {
+                                unawaited(_createSession());
+                              })
                       : null,
                   onPrompt: _applyPrompt,
                 ),
@@ -790,30 +1330,20 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
     return ListView.builder(
       controller: _scrollController,
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(
-        13,
-        12,
-        13,
-        18,
-      ),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 18),
       itemCount: _messages.length,
       itemBuilder: (context, index) {
         final message = _messages[index];
-        final sender =
-            '${message['sender'] ?? message['role'] ?? ''}'
-                .toUpperCase();
+        final sender = '${message['sender'] ?? message['role'] ?? ''}'
+            .toUpperCase();
         final isUser = sender == 'USER';
-        final status =
-            '${message['status'] ?? ''}'.toUpperCase();
-        final text =
-            '${message['message'] ?? message['content'] ?? ''}';
+        final status = '${message['status'] ?? ''}'.toUpperCase();
+        final text = '${message['message'] ?? message['content'] ?? ''}';
 
-        final thinking = !isUser &&
+        final thinking =
+            !isUser &&
             text.trim().isEmpty &&
-            const {
-              'PENDING',
-              'STREAMING',
-            }.contains(status);
+            const {'PENDING', 'STREAMING'}.contains(status);
 
         return _ChatMessageBubble(
           text: text,
@@ -826,29 +1356,21 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
   }
 
   Widget _buildComposer() {
-    final hasSession = _activeSessionId != null;
 
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(
-          11,
-          7,
-          11,
-          9,
-        ),
+        padding: const EdgeInsets.fromLTRB(11, 7, 11, 9),
         decoration: BoxDecoration(
           color: AppColors.surface.withValues(alpha: .97),
           border: Border(
             top: BorderSide(
-              color: AppColors.primaryDark
-                  .withValues(alpha: .045),
+              color: AppColors.primaryDark.withValues(alpha: .045),
             ),
           ),
           boxShadow: [
             BoxShadow(
-              color:
-                  AppColors.primaryDeep.withValues(alpha: .045),
+              color: AppColors.primaryDeep.withValues(alpha: .045),
               blurRadius: 17,
               offset: const Offset(0, -5),
             ),
@@ -857,27 +1379,18 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.fromLTRB(
-                5,
-                4,
-                5,
-                4,
-              ),
+              padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFFCFEFD),
-                    Color(0xFFF5FAF8),
-                  ],
+                  colors: [Color(0xFFFCFEFD), Color(0xFFF5FAF8)],
                 ),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
                   color: _listening
                       ? AppColors.pink.withValues(alpha: .24)
-                      : AppColors.primary
-                          .withValues(alpha: .11),
+                      : AppColors.primary.withValues(alpha: .11),
                 ),
               ),
               child: Row(
@@ -888,7 +1401,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
                       controller: _draft,
                       minLines: 1,
                       maxLines: 4,
-                      enabled: hasSession && !_sending,
+                      enabled: !_sending,
                       textInputAction: TextInputAction.newline,
                       style: const TextStyle(
                         color: AppColors.textPrimary,
@@ -896,9 +1409,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
                         height: 1.35,
                       ),
                       decoration: InputDecoration(
-                        hintText: hasSession
-                            ? 'Ask about this idea…'
-                            : 'Create a conversation to start',
+                        hintText: 'Ask Voxidence anything about this idea…',
                         hintStyle: const TextStyle(
                           color: AppColors.textMuted,
                           fontSize: 10.4,
@@ -908,36 +1419,23 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
                         disabledBorder: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.fromLTRB(
-                          9,
-                          10,
-                          7,
-                          9,
-                        ),
+                        contentPadding: const EdgeInsets.fromLTRB(9, 10, 7, 9),
                       ),
                     ),
                   ),
 
                   _ComposerAction(
-                    tooltip: _listening
-                        ? 'Stop voice typing'
-                        : 'Voice typing',
+                    tooltip: _listening ? 'Stop voice typing' : 'Voice typing',
                     icon: _listening
                         ? Icons.stop_circle_outlined
                         : Icons.mic_none_rounded,
                     active: _listening,
-                    onTap: hasSession &&
-                            !_sending &&
-                            _speechReady
-                        ? _toggleVoice
-                        : null,
+                    onTap: !_sending && _speechReady ? _toggleVoice : null,
                   ),
 
                   const SizedBox(width: 4),
 
-                  if (_sending &&
-                      _streamingMessageId != null)
+                  if (_sending && _streamingMessageId != null)
                     _ComposerAction(
                       tooltip: 'Stop response',
                       icon: Icons.stop_rounded,
@@ -946,14 +1444,14 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
                     )
                   else
                     _ComposerSendButton(
-                      enabled: hasSession && !_sending,
+                      enabled: !_sending,
                       onTap: _sendMessage,
                     ),
                 ],
               ),
             ),
 
-            if (hasSession && _voiceHint.isNotEmpty) ...[
+            if (_voiceHint.isNotEmpty) ...[
               const SizedBox(height: 5),
               Row(
                 children: [
@@ -969,9 +1467,7 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      _listening
-                          ? _voiceHint
-                          : 'Private chat for this idea',
+                      _listening ? _voiceHint : 'Private chat for this idea',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1018,18 +1514,8 @@ class _PremiumChatPageState extends State<PremiumChatPage> {
   }
 }
 
-
-
-
-
-
-
-
-
 class _IdeaIntelligenceOrb extends StatelessWidget {
-  const _IdeaIntelligenceOrb({
-    required this.compact,
-  });
+  const _IdeaIntelligenceOrb({required this.compact});
 
   final bool compact;
 
@@ -1050,8 +1536,7 @@ class _IdeaIntelligenceOrb extends StatelessWidget {
               shape: BoxShape.circle,
               color: AppColors.primarySoft,
               border: Border.all(
-                color: AppColors.primary
-                    .withValues(alpha: .10),
+                color: AppColors.primary.withValues(alpha: .10),
               ),
             ),
           ),
@@ -1063,15 +1548,11 @@ class _IdeaIntelligenceOrb extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF69C6C0),
-                  Color(0xFF50AAA5),
-                ],
+                colors: [Color(0xFF69C6C0), Color(0xFF50AAA5)],
               ),
               boxShadow: [
                 BoxShadow(
-                  color:
-                      AppColors.primary.withValues(alpha: .12),
+                  color: AppColors.primary.withValues(alpha: .12),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -1108,6 +1589,7 @@ class _ChatConversationsDrawer extends StatelessWidget {
     required this.activeSessionId,
     required this.creating,
     required this.connected,
+    required this.titleForSession,
     required this.onNewChat,
     required this.onOpen,
     required this.onRename,
@@ -1119,6 +1601,8 @@ class _ChatConversationsDrawer extends StatelessWidget {
   final String? activeSessionId;
   final bool creating;
   final bool connected;
+  final String Function(Map<String, dynamic> session, int index)
+      titleForSession;
 
   final VoidCallback onNewChat;
   final ValueChanged<String> onOpen;
@@ -1127,26 +1611,18 @@ class _ChatConversationsDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width =
-        math.min(MediaQuery.sizeOf(context).width * .86, 360.0);
+    final width = math.min(MediaQuery.sizeOf(context).width * .86, 360.0);
 
     return Drawer(
       width: width,
       elevation: 0,
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(
-          right: Radius.circular(24),
-        ),
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
       ),
       child: SafeArea(
         child: Container(
-          margin: const EdgeInsets.fromLTRB(
-            7,
-            7,
-            0,
-            7,
-          ),
+          margin: const EdgeInsets.fromLTRB(7, 7, 0, 7),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
@@ -1161,13 +1637,10 @@ class _ChatConversationsDrawer extends StatelessWidget {
             borderRadius: const BorderRadius.horizontal(
               right: Radius.circular(24),
             ),
-            border: Border.all(
-              color: Colors.white,
-            ),
+            border: Border.all(color: Colors.white),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primaryDeep
-                    .withValues(alpha: .11),
+                color: AppColors.primaryDeep.withValues(alpha: .11),
                 blurRadius: 28,
                 offset: const Offset(8, 0),
               ),
@@ -1176,12 +1649,7 @@ class _ChatConversationsDrawer extends StatelessWidget {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  13,
-                  13,
-                  10,
-                  9,
-                ),
+                padding: const EdgeInsets.fromLTRB(13, 13, 10, 9),
                 child: Row(
                   children: [
                     Container(
@@ -1192,13 +1660,9 @@ class _ChatConversationsDrawer extends StatelessWidget {
                         gradient: const LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [
-                            Color(0xFF68C5BF),
-                            Color(0xFF50AAA5),
-                          ],
+                          colors: [Color(0xFF68C5BF), Color(0xFF50AAA5)],
                         ),
-                        borderRadius:
-                            BorderRadius.circular(13),
+                        borderRadius: BorderRadius.circular(13),
                       ),
                       child: const Icon(
                         Icons.forum_outlined,
@@ -1209,8 +1673,7 @@ class _ChatConversationsDrawer extends StatelessWidget {
                     const SizedBox(width: 9),
                     Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
                             'CHATS',
@@ -1244,8 +1707,7 @@ class _ChatConversationsDrawer extends StatelessWidget {
                         color: connected
                             ? const Color(0xFFEAF8F2)
                             : AppColors.primarySoft,
-                        borderRadius:
-                            BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(999),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1276,24 +1738,15 @@ class _ChatConversationsDrawer extends StatelessWidget {
                     ),
                     IconButton(
                       tooltip: 'Close chats',
-                      onPressed: () =>
-                          Navigator.of(context).pop(),
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        size: 19,
-                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded, size: 19),
                     ),
                   ],
                 ),
               ),
 
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  11,
-                  3,
-                  11,
-                  7,
-                ),
+                padding: const EdgeInsets.fromLTRB(11, 3, 11, 7),
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -1301,22 +1754,16 @@ class _ChatConversationsDrawer extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14),
                     child: Ink(
                       height: 48,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
-                          colors: [
-                            Color(0xFFE5F5F1),
-                            Color(0xFFFFF4F7),
-                          ],
+                          colors: [Color(0xFFE5F5F1), Color(0xFFFFF4F7)],
                         ),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: AppColors.primary
-                              .withValues(alpha: .11),
+                          color: AppColors.primary.withValues(alpha: .11),
                         ),
                       ),
                       child: Row(
@@ -1327,15 +1774,12 @@ class _ChatConversationsDrawer extends StatelessWidget {
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: AppColors.primary,
-                              borderRadius:
-                                  BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                             child: creating
                                 ? const Padding(
-                                    padding:
-                                        EdgeInsets.all(7),
-                                    child:
-                                        CircularProgressIndicator(
+                                    padding: EdgeInsets.all(7),
+                                    child: CircularProgressIndicator(
                                       strokeWidth: 1.5,
                                       color: Colors.white,
                                     ),
@@ -1349,16 +1793,13 @@ class _ChatConversationsDrawer extends StatelessWidget {
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Column(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.center,
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   'New chat',
                                   style: TextStyle(
-                                    color:
-                                        AppColors.textPrimary,
+                                    color: AppColors.textPrimary,
                                     fontSize: 9.3,
                                     fontWeight: FontWeight.w900,
                                   ),
@@ -1387,12 +1828,7 @@ class _ChatConversationsDrawer extends StatelessWidget {
               ),
 
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  14,
-                  7,
-                  14,
-                  6,
-                ),
+                padding: const EdgeInsets.fromLTRB(14, 7, 14, 6),
                 child: Row(
                   children: [
                     const Text(
@@ -1412,8 +1848,7 @@ class _ChatConversationsDrawer extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: AppColors.primarySoft,
-                        borderRadius:
-                            BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
                         '${sessions.length}',
@@ -1432,32 +1867,20 @@ class _ChatConversationsDrawer extends StatelessWidget {
                 child: sessions.isEmpty
                     ? const _EmptyChatsDrawer()
                     : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(
-                          9,
-                          3,
-                          9,
-                          16,
-                        ),
-                        physics:
-                            const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(9, 3, 9, 16),
+                        physics: const BouncingScrollPhysics(),
                         itemCount: sessions.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: 5),
+                        separatorBuilder: (_, _) => const SizedBox(height: 5),
                         itemBuilder: (context, index) {
                           final session = sessions[index];
-                          final id =
-                              session['id']?.toString() ?? '';
+                          final id = session['id']?.toString() ?? '';
 
                           return _DrawerConversationTile(
-                            title:
-                                '${session['title'] ?? 'Conversation ${index + 1}'}',
-                            selected:
-                                id == activeSessionId,
+                            title: titleForSession(session, index),
+                            selected: id == activeSessionId,
                             onTap: () => onOpen(id),
-                            onRename: () =>
-                                onRename(session),
-                            onDelete: () =>
-                                onDelete(session),
+                            onRename: () => onRename(session),
+                            onDelete: () => onDelete(session),
                           );
                         },
                       ),
@@ -1493,21 +1916,15 @@ class _DrawerConversationTile extends StatelessWidget {
             ? const LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
-                colors: [
-                  Color(0xFFE6F5F2),
-                  Color(0xFFFFF4F7),
-                ],
+                colors: [Color(0xFFE6F5F2), Color(0xFFFFF4F7)],
               )
             : null,
-        color: selected
-            ? null
-            : Colors.white.withValues(alpha: .56),
+        color: selected ? null : Colors.white.withValues(alpha: .56),
         borderRadius: BorderRadius.circular(13),
         border: Border.all(
           color: selected
               ? AppColors.primary.withValues(alpha: .15)
-              : AppColors.primaryDark
-                  .withValues(alpha: .04),
+              : AppColors.primaryDark.withValues(alpha: .04),
         ),
       ),
       child: Row(
@@ -1519,12 +1936,7 @@ class _DrawerConversationTile extends StatelessWidget {
                 onTap: onTap,
                 borderRadius: BorderRadius.circular(13),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    9,
-                    8,
-                    4,
-                    8,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(9, 8, 4, 8),
                   child: Row(
                     children: [
                       Container(
@@ -1535,8 +1947,7 @@ class _DrawerConversationTile extends StatelessWidget {
                           color: selected
                               ? AppColors.primary
                               : AppColors.primarySoft,
-                          borderRadius:
-                              BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
                           selected
@@ -1551,26 +1962,21 @@ class _DrawerConversationTile extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               title,
                               maxLines: 1,
-                              overflow:
-                                  TextOverflow.ellipsis,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color:
-                                    AppColors.textPrimary,
+                                color: AppColors.textPrimary,
                                 fontSize: 8.8,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              selected
-                                  ? 'CURRENT CHAT'
-                                  : 'OPEN CHAT',
+                              selected ? 'CURRENT CHAT' : 'OPEN CHAT',
                               style: TextStyle(
                                 color: selected
                                     ? AppColors.primaryDark
@@ -1609,10 +2015,7 @@ class _DrawerConversationTile extends StatelessWidget {
                 value: 'rename',
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.edit_outlined,
-                      size: 16,
-                    ),
+                    Icon(Icons.edit_outlined, size: 16),
                     SizedBox(width: 8),
                     Text('Rename'),
                   ],
@@ -1678,10 +2081,7 @@ class _EmptyChatsDrawer extends StatelessWidget {
             const Text(
               'Start a new chat to build on this idea.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 7.4,
-              ),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 7.4),
             ),
           ],
         ),
@@ -1691,19 +2091,14 @@ class _EmptyChatsDrawer extends StatelessWidget {
 }
 
 class _ConnectionBadge extends StatelessWidget {
-  const _ConnectionBadge({
-    required this.connected,
-  });
+  const _ConnectionBadge({required this.connected});
 
   final bool connected;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: connected
             ? const Color(0xFFEAF8F2)
@@ -1723,18 +2118,14 @@ class _ConnectionBadge extends StatelessWidget {
             height: 6,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: connected
-                  ? AppColors.success
-                  : AppColors.textMuted,
+              color: connected ? AppColors.success : AppColors.textMuted,
             ),
           ),
           const SizedBox(width: 5),
           Text(
             connected ? 'LIVE' : 'SYNC',
             style: TextStyle(
-              color: connected
-                  ? AppColors.success
-                  : AppColors.textMuted,
+              color: connected ? AppColors.success : AppColors.textMuted,
               fontSize: 5.8,
               fontWeight: FontWeight.w900,
               letterSpacing: .58,
@@ -1747,9 +2138,7 @@ class _ConnectionBadge extends StatelessWidget {
 }
 
 class _ChatNotice extends StatelessWidget {
-  const _ChatNotice({
-    required this.message,
-  });
+  const _ChatNotice({required this.message});
 
   final String message;
 
@@ -1757,27 +2146,14 @@ class _ChatNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(
-        14,
-        5,
-        14,
-        3,
-      ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 8,
-      ),
+      margin: const EdgeInsets.fromLTRB(14, 5, 14, 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [
-            AppColors.surfaceRose,
-            Color(0xFFF5FAF8),
-          ],
+          colors: [AppColors.surfaceRose, Color(0xFFF5FAF8)],
         ),
         borderRadius: BorderRadius.circular(13),
-        border: Border.all(
-          color: AppColors.pink.withValues(alpha: .15),
-        ),
+        border: Border.all(color: AppColors.pink.withValues(alpha: .15)),
       ),
       child: Row(
         children: [
@@ -1817,8 +2193,7 @@ class _ChatWelcomeCard extends StatelessWidget {
   final ValueChanged<String> onPrompt;
   final bool compact;
 
-  static const _prompts = <
-      (String label, String prompt, IconData icon)>[
+  static const _prompts = <(String label, String prompt, IconData icon)>[
     (
       'Plan the next MVP step',
       'Suggest the next MVP step for this idea.',
@@ -1840,34 +2215,20 @@ class _ChatWelcomeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(
-        maxWidth: 430,
-      ),
-      padding: EdgeInsets.fromLTRB(
-        14,
-        compact ? 13 : 16,
-        14,
-        14,
-      ),
+      constraints: const BoxConstraints(maxWidth: 430),
+      padding: EdgeInsets.fromLTRB(14, compact ? 13 : 16, 14, 14),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFBFDFC),
-            Color(0xFFF0F8F5),
-            AppColors.surfaceRose,
-          ],
+          colors: [Color(0xFFFBFDFC), Color(0xFFF0F8F5), AppColors.surfaceRose],
           stops: [0, .64, 1],
         ),
         borderRadius: BorderRadius.circular(23),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .06),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .06)),
         boxShadow: [
           BoxShadow(
-            color:
-                AppColors.primaryDeep.withValues(alpha: .035),
+            color: AppColors.primaryDeep.withValues(alpha: .035),
             blurRadius: 16,
             offset: const Offset(0, 7),
           ),
@@ -1879,14 +2240,11 @@ class _ChatWelcomeCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _IdeaIntelligenceOrb(
-                compact: compact,
-              ),
+              _IdeaIntelligenceOrb(compact: compact),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'IDEA INTELLIGENCE',
@@ -1957,8 +2315,7 @@ class _ChatWelcomeCard extends StatelessWidget {
               rose: i == 1,
               onTap: () => onPrompt(_prompts[i].$2),
             ),
-            if (i != _prompts.length - 1)
-              const SizedBox(height: 5),
+            if (i != _prompts.length - 1) const SizedBox(height: 5),
           ],
 
           if (onStart != null) ...[
@@ -1967,10 +2324,7 @@ class _ChatWelcomeCard extends StatelessWidget {
               width: double.infinity,
               child: FilledButton.icon(
                 onPressed: onStart,
-                icon: const Icon(
-                  Icons.add_comment_outlined,
-                  size: 14,
-                ),
+                icon: const Icon(Icons.add_comment_outlined, size: 14),
                 label: const Text('Start a conversation'),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(41),
@@ -1991,8 +2345,6 @@ class _ChatWelcomeCard extends StatelessWidget {
   }
 }
 
-
-
 class _QuickPromptTile extends StatelessWidget {
   const _QuickPromptTile({
     required this.icon,
@@ -2008,8 +2360,7 @@ class _QuickPromptTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent =
-        rose ? AppColors.pinkDeep : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Material(
       color: Colors.transparent,
@@ -2024,9 +2375,7 @@ class _QuickPromptTile extends StatelessWidget {
                 ? AppColors.pinkSoft.withValues(alpha: .60)
                 : AppColors.primarySoft.withValues(alpha: .58),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: accent.withValues(alpha: .05),
-            ),
+            border: Border.all(color: accent.withValues(alpha: .05)),
           ),
           child: Row(
             children: [
@@ -2038,11 +2387,7 @@ class _QuickPromptTile extends StatelessWidget {
                   color: Colors.white.withValues(alpha: .70),
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(
-                  icon,
-                  size: 12.5,
-                  color: accent,
-                ),
+                child: Icon(icon, size: 12.5, color: accent),
               ),
               const SizedBox(width: 7),
               Expanded(
@@ -2055,11 +2400,7 @@ class _QuickPromptTile extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(
-                Icons.arrow_forward_rounded,
-                size: 11,
-                color: accent,
-              ),
+              Icon(Icons.arrow_forward_rounded, size: 11, color: accent),
             ],
           ),
         ),
@@ -2067,8 +2408,6 @@ class _QuickPromptTile extends StatelessWidget {
     );
   }
 }
-
-
 
 class _ChatMessageBubble extends StatelessWidget {
   const _ChatMessageBubble({
@@ -2100,15 +2439,11 @@ class _ChatMessageBubble extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [
-                    Color(0xFFE4F4F0),
-                    Color(0xFFFFF2F6),
-                  ],
+                  colors: [Color(0xFFE4F4F0), Color(0xFFFFF2F6)],
                 ),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: AppColors.primaryDark
-                      .withValues(alpha: .05),
+                  color: AppColors.primaryDark.withValues(alpha: .05),
                 ),
               ),
               child: const Icon(
@@ -2123,53 +2458,35 @@ class _ChatMessageBubble extends StatelessWidget {
           Flexible(
             child: Container(
               constraints: BoxConstraints(
-                maxWidth:
-                    MediaQuery.sizeOf(context).width * .78,
+                maxWidth: MediaQuery.sizeOf(context).width * .78,
               ),
-              padding: const EdgeInsets.fromLTRB(
-                11,
-                9,
-                11,
-                9,
-              ),
+              padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
               decoration: BoxDecoration(
                 gradient: isUser
                     ? const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFF60BEB9),
-                          Color(0xFF4FA9A4),
-                        ],
+                        colors: [Color(0xFF60BEB9), Color(0xFF4FA9A4)],
                       )
                     : const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFFFCFEFD),
-                          Color(0xFFF2F8F6),
-                        ],
+                        colors: [Color(0xFFFCFEFD), Color(0xFFF2F8F6)],
                       ),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(
-                    isUser ? 16 : 4,
-                  ),
-                  bottomRight: Radius.circular(
-                    isUser ? 4 : 16,
-                  ),
+                  bottomLeft: Radius.circular(isUser ? 16 : 4),
+                  bottomRight: Radius.circular(isUser ? 4 : 16),
                 ),
                 border: isUser
                     ? null
                     : Border.all(
-                        color: AppColors.primaryDark
-                            .withValues(alpha: .055),
+                        color: AppColors.primaryDark.withValues(alpha: .055),
                       ),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primaryDeep
-                        .withValues(alpha: .03),
+                    color: AppColors.primaryDeep.withValues(alpha: .03),
                     blurRadius: 9,
                     offset: const Offset(0, 3),
                   ),
@@ -2181,9 +2498,7 @@ class _ChatMessageBubble extends StatelessWidget {
                       text,
                       textDirection: textDirection,
                       style: TextStyle(
-                        color: isUser
-                            ? Colors.white
-                            : AppColors.textPrimary,
+                        color: isUser ? Colors.white : AppColors.textPrimary,
                         height: 1.47,
                         fontSize: 10.8,
                       ),
@@ -2195,8 +2510,6 @@ class _ChatMessageBubble extends StatelessWidget {
     );
   }
 }
-
-
 
 class _ComposerAction extends StatelessWidget {
   const _ComposerAction({
@@ -2238,9 +2551,7 @@ class _ComposerAction extends StatelessWidget {
             child: Icon(
               icon,
               size: 16,
-              color: onTap == null
-                  ? AppColors.silver
-                  : accent,
+              color: onTap == null ? AppColors.silver : accent,
             ),
           ),
         ),
@@ -2250,10 +2561,7 @@ class _ComposerAction extends StatelessWidget {
 }
 
 class _ComposerSendButton extends StatelessWidget {
-  const _ComposerSendButton({
-    required this.enabled,
-    required this.onTap,
-  });
+  const _ComposerSendButton({required this.enabled, required this.onTap});
 
   final bool enabled;
   final VoidCallback onTap;
@@ -2273,10 +2581,7 @@ class _ComposerSendButton extends StatelessWidget {
                 ? const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF66C4BE),
-                      Color(0xFF4FA9A4),
-                    ],
+                    colors: [Color(0xFF66C4BE), Color(0xFF4FA9A4)],
                   )
                 : null,
             color: enabled
@@ -2296,9 +2601,7 @@ class _ComposerSendButton extends StatelessWidget {
           child: Icon(
             Icons.arrow_upward_rounded,
             size: 17,
-            color: enabled
-                ? Colors.white
-                : AppColors.silver,
+            color: enabled ? Colors.white : AppColors.silver,
           ),
         ),
       ),

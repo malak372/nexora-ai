@@ -31,11 +31,9 @@ class AuthApi {
 
   static final AuthApi instance = AuthApi._();
 
-  static final PlatformKeyValueStore _storage =
-      PlatformKeyValueStore.instance;
+  static final PlatformKeyValueStore _storage = PlatformKeyValueStore.instance;
 
-  static const String _guestCookieStorageKey =
-      'guest_session_cookie';
+  static const String _guestCookieStorageKey = 'guest_session_cookie';
 
   static const String accountTemporarilyLockedCode =
       'ACCOUNT_TEMPORARILY_LOCKED';
@@ -65,29 +63,18 @@ class AuthApi {
     try {
       final response = await _dio.post<dynamic>(
         '/auth/login',
-        data: {
-          'email': email.trim().toLowerCase(),
-          'password': password,
-        },
+        data: {'email': email.trim().toLowerCase(), 'password': password},
       );
 
-      final data = _asMap(
-        _unwrap(response.data),
-      );
+      final data = _asMap(_unwrap(response.data));
 
-      final accessToken =
-          data['accessToken']?.toString().trim() ?? '';
+      final accessToken = data['accessToken']?.toString().trim() ?? '';
 
-      final refreshToken =
-          data['refreshToken']?.toString().trim() ?? '';
+      final refreshToken = data['refreshToken']?.toString().trim() ?? '';
 
-      final user = _asMap(
-        data['user'],
-      );
+      final user = _asMap(data['user']);
 
-      if (accessToken.isEmpty ||
-          refreshToken.isEmpty ||
-          user.isEmpty) {
+      if (accessToken.isEmpty || refreshToken.isEmpty || user.isEmpty) {
         throw const AuthException(
           message: 'The login response is incomplete.',
           title: 'Sign in failed',
@@ -111,10 +98,7 @@ class AuthApi {
     } on DioException catch (error) {
       throw _buildLoginException(error);
     } on AuthSessionException catch (error) {
-      throw AuthException(
-        message: error.message,
-        title: 'Sign in failed',
-      );
+      throw AuthException(message: error.message, title: 'Sign in failed');
     }
   }
 
@@ -129,10 +113,7 @@ class AuthApi {
     required String userType,
   }) async {
     try {
-      final guestCookie =
-          await _storage.read(
-        _guestCookieStorageKey,
-      );
+      final guestCookie = await _storage.read(_guestCookieStorageKey);
 
       final response = await _dio.post<dynamic>(
         '/auth/register',
@@ -142,48 +123,28 @@ class AuthApi {
           'password': password,
           'userType': userType,
         },
-        options:
-            guestCookie == null ||
-                    guestCookie.trim().isEmpty
-                ? null
-                : Options(
-                    headers: {
-                      'Cookie': guestCookie,
-                    },
-                  ),
+        options: guestCookie == null || guestCookie.trim().isEmpty
+            ? null
+            : Options(headers: {'Cookie': guestCookie}),
       );
 
-      await _storage.delete(
-        _guestCookieStorageKey,
-      );
+      await _storage.delete(_guestCookieStorageKey);
 
-      return _asMap(
-        _unwrap(response.data),
-      );
+      return _asMap(_unwrap(response.data));
     } on DioException catch (error) {
-      final message =
-          _readRegisterMessage(error);
+      final message = _readRegisterMessage(error);
 
-      final normalizedMessage =
-          message.toLowerCase();
+      final normalizedMessage = message.toLowerCase();
 
       final accountWasCreated =
-          normalizedMessage.contains(
-            'account was created',
-          ) &&
-          normalizedMessage.contains(
-            'verification email',
-          );
+          normalizedMessage.contains('account was created') &&
+          normalizedMessage.contains('verification email');
 
       if (accountWasCreated) {
-        await _storage.delete(
-          _guestCookieStorageKey,
-        );
+        await _storage.delete(_guestCookieStorageKey);
       }
 
-      throw AuthException(
-        message: message,
-      );
+      throw AuthException(message: message);
     }
   }
 
@@ -195,58 +156,34 @@ class AuthApi {
     required String code,
   }) async {
     try {
-      final digitsOnly =
-          code.replaceAll(
-        RegExp(r'\D'),
-        '',
-      );
+      final digitsOnly = code.replaceAll(RegExp(r'\D'), '');
 
-      final normalizedCode =
-          digitsOnly.length > 6
-              ? digitsOnly.substring(0, 6)
-              : digitsOnly;
+      final normalizedCode = digitsOnly.length > 6
+          ? digitsOnly.substring(0, 6)
+          : digitsOnly;
 
-      final response =
-          await _dio.post<dynamic>(
+      final response = await _dio.post<dynamic>(
         '/auth/email/verify',
-        data: {
-          'email': email.trim().toLowerCase(),
-          'code': normalizedCode,
-        },
+        data: {'email': email.trim().toLowerCase(), 'code': normalizedCode},
       );
 
-      return _asMap(
-        _unwrap(response.data),
-      );
+      return _asMap(_unwrap(response.data));
     } on DioException catch (error) {
-      throw AuthException(
-        message:
-            _readEmailVerificationMessage(error),
-      );
+      throw AuthException(message: _readEmailVerificationMessage(error));
     }
   }
 
   /// Resends an email verification code.
-  Future<Map<String, dynamic>> resendVerification(
-    String email,
-  ) async {
+  Future<Map<String, dynamic>> resendVerification(String email) async {
     try {
-      final response =
-          await _dio.post<dynamic>(
+      final response = await _dio.post<dynamic>(
         '/auth/email/resend-verification',
-        data: {
-          'email': email.trim().toLowerCase(),
-        },
+        data: {'email': email.trim().toLowerCase()},
       );
 
-      return _asMap(
-        _unwrap(response.data),
-      );
+      return _asMap(_unwrap(response.data));
     } on DioException catch (error) {
-      throw AuthException(
-        message:
-            _readEmailVerificationMessage(error),
-      );
+      throw AuthException(message: _readEmailVerificationMessage(error));
     }
   }
 
@@ -254,42 +191,24 @@ class AuthApi {
   ///
   /// Native mobile requests identify themselves to the backend so the
   /// generated reset link can use the mobile deep-link scheme.
-  Future<Map<String, dynamic>> requestPasswordReset(
-    String email,
-  ) async {
+  Future<Map<String, dynamic>> requestPasswordReset(String email) async {
     try {
-      final response =
-          await _dio.post<dynamic>(
+      final response = await _dio.post<dynamic>(
         '/auth/password/forgot',
-        data: {
-          'email': email.trim().toLowerCase(),
-        },
-        options:
-            ApiConfig.isNativeMobile
-                ? Options(
-                    headers: const {
-                      'X-Voxidence-Client':
-                          'mobile',
-                    },
-                  )
-                : null,
+        data: {'email': email.trim().toLowerCase()},
+        options: ApiConfig.isNativeMobile
+            ? Options(headers: const {'X-Voxidence-Client': 'mobile'})
+            : null,
       );
 
-      return _asMap(
-        _unwrap(response.data),
-      );
+      return _asMap(_unwrap(response.data));
     } on DioException catch (error) {
-      throw AuthException(
-        message:
-            _readRecoveryMessage(error),
-      );
+      throw AuthException(message: _readRecoveryMessage(error));
     }
   }
 
   /// Compatibility alias for pages that still call `forgotPassword`.
-  Future<void> forgotPassword(
-    String email,
-  ) async {
+  Future<void> forgotPassword(String email) async {
     await requestPasswordReset(email);
   }
 
@@ -302,25 +221,16 @@ class AuthApi {
     required String newPassword,
   }) async {
     try {
-      final response =
-          await _dio.post<dynamic>(
+      final response = await _dio.post<dynamic>(
         '/auth/password/reset',
-        data: {
-          'token': token.trim(),
-          'newPassword': newPassword,
-        },
+        data: {'token': token.trim(), 'newPassword': newPassword},
       );
 
       await _clearLocalSession();
 
-      return _asMap(
-        _unwrap(response.data),
-      );
+      return _asMap(_unwrap(response.data));
     } on DioException catch (error) {
-      throw AuthException(
-        message:
-            _readRecoveryMessage(error),
-      );
+      throw AuthException(message: _readRecoveryMessage(error));
     }
   }
 
@@ -330,46 +240,27 @@ class AuthApi {
   /// "Remember me" was not selected. Remember-me only controls persistence
   /// across application restarts.
   Future<bool> refreshSession() async {
-    final refreshToken =
-        await AuthSessionStore.instance
-            .getRefreshToken();
+    final refreshToken = await AuthSessionStore.instance.getRefreshToken();
 
-    final user =
-        await AuthSessionStore.instance
-            .getUser();
+    final user = await AuthSessionStore.instance.getUser();
 
-    if (refreshToken == null ||
-        refreshToken.trim().isEmpty ||
-        user == null) {
+    if (refreshToken == null || refreshToken.trim().isEmpty || user == null) {
       return false;
     }
 
     try {
-      final response =
-          await _dio.post<dynamic>(
+      final response = await _dio.post<dynamic>(
         '/auth/refresh',
-        data: {
-          'refreshToken':
-              refreshToken.trim(),
-        },
+        data: {'refreshToken': refreshToken.trim()},
       );
 
-      final data = _asMap(
-        _unwrap(response.data),
-      );
+      final data = _asMap(_unwrap(response.data));
 
-      final accessToken =
-          data['accessToken']?.toString().trim() ??
-              '';
+      final accessToken = data['accessToken']?.toString().trim() ?? '';
 
-      final nextRefreshToken =
-          data['refreshToken']
-                  ?.toString()
-                  .trim() ??
-              '';
+      final nextRefreshToken = data['refreshToken']?.toString().trim() ?? '';
 
-      if (accessToken.isEmpty ||
-          nextRefreshToken.isEmpty) {
+      if (accessToken.isEmpty || nextRefreshToken.isEmpty) {
         await _clearLocalSession();
 
         return false;
@@ -380,9 +271,7 @@ class AuthApi {
         refreshToken: nextRefreshToken,
       );
 
-      final rememberMe =
-          await AuthSessionStore.instance
-              .getRememberMe();
+      final rememberMe = await AuthSessionStore.instance.getRememberMe();
 
       await SessionStore.instance.saveSession(
         accessToken: accessToken,
@@ -393,37 +282,27 @@ class AuthApi {
 
       return true;
     } on DioException catch (error) {
-      final status =
-          error.response?.statusCode;
+      final status = error.response?.statusCode;
 
-      if (status == 401 ||
-          status == 403) {
+      if (status == 401 || status == 403) {
         await _clearLocalSession();
 
         return false;
       }
 
-      throw AuthException(
-        message: _readMessage(error),
-      );
+      throw AuthException(message: _readMessage(error));
     }
   }
 
   /// Logs the user out from the backend and clears both local session stores.
   Future<void> logout() async {
-    final refreshToken =
-        await AuthSessionStore.instance
-            .getRefreshToken();
+    final refreshToken = await AuthSessionStore.instance.getRefreshToken();
 
     try {
-      if (refreshToken != null &&
-          refreshToken.trim().isNotEmpty) {
+      if (refreshToken != null && refreshToken.trim().isNotEmpty) {
         await _dio.post<void>(
           '/auth/logout',
-          data: {
-            'refreshToken':
-                refreshToken.trim(),
-          },
+          data: {'refreshToken': refreshToken.trim()},
         );
       }
     } on DioException {
@@ -440,59 +319,32 @@ class AuthApi {
   }
 
   /// Converts backend login errors into structured errors suitable for the UI.
-  AuthException _buildLoginException(
-    DioException error,
-  ) {
-    final response =
-        error.response;
+  AuthException _buildLoginException(DioException error) {
+    final response = error.response;
 
-    final data =
-        response?.data;
+    final data = response?.data;
 
-    final body =
-        data is Map
-            ? Map<String, dynamic>.from(
-                data,
-              )
-            : <String, dynamic>{};
+    final body = data is Map
+        ? Map<String, dynamic>.from(data)
+        : <String, dynamic>{};
 
-    final status =
-        response?.statusCode;
+    final status = response?.statusCode;
 
-    final code =
-        body['code']?.toString();
+    final code = body['code']?.toString();
 
-    final isLocked =
-        code ==
-            accountTemporarilyLockedCode ||
-        status == 429;
+    final isLocked = code == accountTemporarilyLockedCode || status == 429;
 
     if (isLocked) {
       return AuthException(
-        message:
-            'Your account is temporarily locked.',
-        title:
-            'Account temporarily locked',
+        message: 'Your account is temporarily locked.',
+        title: 'Account temporarily locked',
         type: 'locked',
-        code:
-            accountTemporarilyLockedCode,
+        code: accountTemporarilyLockedCode,
         statusCode: status,
-        attemptsRemaining:
-            _asInt(
-          body['attemptsRemaining'],
-        ),
-        remainingSeconds:
-            _remainingSeconds(
-          error,
-          body,
-        ),
-        lockDurationMinutes:
-            _asInt(
-          body['lockDurationMinutes'],
-        ),
-        lockedUntil:
-            body['lockedUntil']
-                ?.toString(),
+        attemptsRemaining: _asInt(body['attemptsRemaining']),
+        remainingSeconds: _remainingSeconds(error, body),
+        lockDurationMinutes: _asInt(body['lockDurationMinutes']),
+        lockedUntil: body['lockedUntil']?.toString(),
         justLocked:
             body['justLocked'] == true ||
             body['newlyLocked'] == true ||
@@ -500,15 +352,10 @@ class AuthApi {
       );
     }
 
-    final attemptsRemaining =
-        _asInt(
-      body['attemptsRemaining'],
-    );
+    final attemptsRemaining = _asInt(body['attemptsRemaining']);
 
-    if (code ==
-            'LOGIN_ATTEMPTS_WARNING' &&
-        (attemptsRemaining == 1 ||
-            attemptsRemaining == 2)) {
+    if (code == 'LOGIN_ATTEMPTS_WARNING' &&
+        (attemptsRemaining == 1 || attemptsRemaining == 2)) {
       return AuthException(
         message:
             _backendMessage(body) ??
@@ -520,23 +367,16 @@ class AuthApi {
         type: 'warning',
         code: code,
         statusCode: status,
-        attemptsRemaining:
-            attemptsRemaining,
+        attemptsRemaining: attemptsRemaining,
       );
     }
 
-    if (status == 400 ||
-        status == 401 ||
-        status == 403 ||
-        status == 404) {
+    if (status == 400 || status == 401 || status == 403 || status == 404) {
       return AuthException(
-        message:
-            'Invalid email or password.',
+        message: 'Invalid email or password.',
         title: 'Sign in failed',
         type: 'error',
-        code:
-            code ??
-            'INVALID_CREDENTIALS',
+        code: code ?? 'INVALID_CREDENTIALS',
         statusCode: status,
       );
     }
@@ -551,26 +391,14 @@ class AuthApi {
   }
 
   /// Calculates the remaining temporary-account-lock duration.
-  int? _remainingSeconds(
-    DioException error,
-    Map<String, dynamic> body,
-  ) {
-    final lockedUntilText =
-        body['lockedUntil']?.toString();
+  int? _remainingSeconds(DioException error, Map<String, dynamic> body) {
+    final lockedUntilText = body['lockedUntil']?.toString();
 
     if (lockedUntilText != null) {
-      final lockedUntil =
-          DateTime.tryParse(
-        lockedUntilText,
-      )?.toLocal();
+      final lockedUntil = DateTime.tryParse(lockedUntilText)?.toLocal();
 
       if (lockedUntil != null) {
-        final seconds =
-            lockedUntil
-                .difference(
-                  DateTime.now(),
-                )
-                .inSeconds;
+        final seconds = lockedUntil.difference(DateTime.now()).inSeconds;
 
         if (seconds > 0) {
           return seconds + 1;
@@ -578,62 +406,36 @@ class AuthApi {
       }
     }
 
-    final bodySeconds =
-        _asInt(
-      body['remainingSeconds'],
-    );
+    final bodySeconds = _asInt(body['remainingSeconds']);
 
-    if (bodySeconds != null &&
-        bodySeconds > 0) {
+    if (bodySeconds != null && bodySeconds > 0) {
       return bodySeconds;
     }
 
-    final retryAfter =
-        error.response?.headers.value(
-      'retry-after',
-    );
+    final retryAfter = error.response?.headers.value('retry-after');
 
-    if (retryAfter == null ||
-        retryAfter.trim().isEmpty) {
+    if (retryAfter == null || retryAfter.trim().isEmpty) {
       return null;
     }
 
-    final seconds =
-        int.tryParse(
-      retryAfter.trim(),
-    );
+    final seconds = int.tryParse(retryAfter.trim());
 
-    if (seconds != null &&
-        seconds > 0) {
+    if (seconds != null && seconds > 0) {
       return seconds;
     }
 
-    final retryDate =
-        DateTime.tryParse(
-      retryAfter,
-    )?.toLocal();
+    final retryDate = DateTime.tryParse(retryAfter)?.toLocal();
 
     if (retryDate == null) {
       return null;
     }
 
-    return math.max(
-      0,
-      retryDate
-              .difference(
-                DateTime.now(),
-              )
-              .inSeconds +
-          1,
-    );
+    return math.max(0, retryDate.difference(DateTime.now()).inSeconds + 1);
   }
 
   /// Reads a registration-specific backend error.
-  String _readRegisterMessage(
-    DioException error,
-  ) {
-    final backendMessage =
-        _messageFromResponse(error);
+  String _readRegisterMessage(DioException error) {
+    final backendMessage = _messageFromResponse(error);
 
     if (backendMessage != null) {
       return backendMessage;
@@ -653,11 +455,8 @@ class AuthApi {
   }
 
   /// Reads an email-verification-specific backend error.
-  String _readEmailVerificationMessage(
-    DioException error,
-  ) {
-    final backendMessage =
-        _messageFromResponse(error);
+  String _readEmailVerificationMessage(DioException error) {
+    final backendMessage = _messageFromResponse(error);
 
     if (backendMessage != null) {
       return backendMessage;
@@ -677,73 +476,49 @@ class AuthApi {
   }
 
   /// Extracts a readable backend message when one exists.
-  String? _messageFromResponse(
-    DioException error,
-  ) {
-    final data =
-        error.response?.data;
+  String? _messageFromResponse(DioException error) {
+    final data = error.response?.data;
 
     if (data is! Map) {
       return null;
     }
 
-    final message =
-        data['message'];
+    final message = data['message'];
 
-    if (message is List &&
-        message.isNotEmpty) {
+    if (message is List && message.isNotEmpty) {
       return message.join(' ');
     }
 
-    if (message is String &&
-        message.trim().isNotEmpty) {
+    if (message is String && message.trim().isNotEmpty) {
       return message.trim();
     }
 
-    if (message is Map &&
-        message['message'] != null) {
-      final nested =
-          message['message']
-              .toString()
-              .trim();
+    if (message is Map && message['message'] != null) {
+      final nested = message['message'].toString().trim();
 
-      return nested.isEmpty
-          ? null
-          : nested;
+      return nested.isEmpty ? null : nested;
     }
 
     return null;
   }
 
   /// Returns true when the request failed because of a timeout.
-  bool _isTimeout(
-    DioException error,
-  ) {
-    return error.type ==
-            DioExceptionType
-                .connectionTimeout ||
-        error.type ==
-            DioExceptionType
-                .sendTimeout ||
-        error.type ==
-            DioExceptionType
-                .receiveTimeout;
+  bool _isTimeout(DioException error) {
+    return error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout;
   }
 
   /// Reads password-recovery errors.
-  String _readRecoveryMessage(
-    DioException error,
-  ) {
-    final status =
-        error.response?.statusCode;
+  String _readRecoveryMessage(DioException error) {
+    final status = error.response?.statusCode;
 
     if (status == 429) {
       return 'Too many attempts. '
           'Please wait a moment and try again.';
     }
 
-    if (status != null &&
-        status >= 500) {
+    if (status != null && status >= 500) {
       return 'The server could not complete '
           'the request. Please try again.';
     }
@@ -752,28 +527,17 @@ class AuthApi {
   }
 
   /// Converts a generic Dio error into a user-readable message.
-  String _readMessage(
-    DioException error,
-  ) {
-    final backendMessage =
-        _messageFromResponse(error);
+  String _readMessage(DioException error) {
+    final backendMessage = _messageFromResponse(error);
 
     if (backendMessage != null) {
       return backendMessage;
     }
 
-    if (error.type ==
-            DioExceptionType
-                .connectionError ||
-        error.type ==
-            DioExceptionType
-                .connectionTimeout ||
-        error.type ==
-            DioExceptionType
-                .sendTimeout ||
-        error.type ==
-            DioExceptionType
-                .receiveTimeout) {
+    if (error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout) {
       return 'Unable to reach the server. '
           'Check your connection and try again.';
     }
@@ -783,49 +547,35 @@ class AuthApi {
   }
 
   /// Reads a message directly from a decoded backend response body.
-  String? _backendMessage(
-    Map<String, dynamic> body,
-  ) {
-    final message =
-        body['message'];
+  String? _backendMessage(Map<String, dynamic> body) {
+    final message = body['message'];
 
     if (message is List) {
       return message.join(' ');
     }
 
-    if (message is String &&
-        message.trim().isNotEmpty) {
+    if (message is String && message.trim().isNotEmpty) {
       return message.trim();
     }
 
-    if (message is Map &&
-        message['message'] != null) {
-      final nested =
-          message['message']
-              .toString()
-              .trim();
+    if (message is Map && message['message'] != null) {
+      final nested = message['message'].toString().trim();
 
-      return nested.isEmpty
-          ? null
-          : nested;
+      return nested.isEmpty ? null : nested;
     }
 
     return null;
   }
 
   /// Unwraps common `{ data: ... }` response envelopes.
-  dynamic _unwrap(
-    dynamic value,
-  ) {
-    dynamic current =
-        value;
+  dynamic _unwrap(dynamic value) {
+    dynamic current = value;
 
     for (var i = 0; i < 2; i++) {
       if (current is Map &&
           current.length == 1 &&
           current.containsKey('data')) {
-        current =
-            current['data'];
+        current = current['data'];
       } else {
         break;
       }
@@ -835,27 +585,20 @@ class AuthApi {
   }
 
   /// Converts an arbitrary map-like value to a typed Dart map.
-  Map<String, dynamic> _asMap(
-    dynamic value,
-  ) {
-    if (value
-        is Map<String, dynamic>) {
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
       return value;
     }
 
     if (value is Map) {
-      return Map<String, dynamic>.from(
-        value,
-      );
+      return Map<String, dynamic>.from(value);
     }
 
     return <String, dynamic>{};
   }
 
   /// Safely converts backend numeric values to integers.
-  int? _asInt(
-    dynamic value,
-  ) {
+  int? _asInt(dynamic value) {
     if (value is int) {
       return value;
     }
@@ -864,9 +607,7 @@ class AuthApi {
       return value.round();
     }
 
-    return int.tryParse(
-      value?.toString() ?? '',
-    );
+    return int.tryParse(value?.toString() ?? '');
   }
 }
 
@@ -907,13 +648,10 @@ class AuthException implements Exception {
 
   final bool justLocked;
 
-  bool get isLocked =>
-      type == 'locked';
+  bool get isLocked => type == 'locked';
 
-  bool get isWarning =>
-      type == 'warning';
+  bool get isWarning => type == 'warning';
 
   @override
-  String toString() =>
-      message;
+  String toString() => message;
 }

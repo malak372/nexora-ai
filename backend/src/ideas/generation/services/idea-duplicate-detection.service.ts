@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -74,6 +74,7 @@ type CachedDuplicateCorpus = {
  */
 @Injectable()
 export class IdeaDuplicateDetectionService {
+  private readonly logger = new Logger(IdeaDuplicateDetectionService.name);
   private readonly benchmarkCorpusCache = new Map<string, CachedDuplicateCorpus>();
   private readonly benchmarkCorpusLoads = new Map<
     string,
@@ -90,15 +91,22 @@ export class IdeaDuplicateDetectionService {
   async prepareBenchmarkSemanticCorpus(
     cacheKey: string,
     domainId: string,
-  ): Promise<void> {
+  ): Promise<readonly DuplicateIdeaCandidate[]> {
     const normalizedCacheKey = cacheKey.trim();
     const normalizedDomainId = domainId.trim();
 
     if (!normalizedCacheKey || !normalizedDomainId) {
-      return;
+      return [];
     }
 
-    await this.getBenchmarkSemanticCorpus(
+    /*
+     * Return the warmed corpus as well as caching it. Core generation can use
+     * the same already-paid database read to tell the model which recent
+     * same-domain concepts must not be reproduced. This prevents a predictable
+     * duplicate from costing a second 15-25 second provider call while keeping
+     * the normal exact-title and semantic duplicate checks unchanged.
+     */
+    return this.getBenchmarkSemanticCorpus(
       normalizedCacheKey,
       normalizedDomainId,
       this.prisma,
@@ -131,11 +139,36 @@ export class IdeaDuplicateDetectionService {
     const rawTitle = idea.title.trim().slice(0, MAX_DUPLICATE_TITLE_LENGTH);
 
     /*
-     * Phase 1: global exact-title lookup.
+     * Start the two independent database reads together.
      *
-     * This query is intentionally narrow and avoids loading large JSON and
-     * abstract fields unless a true exact-title collision exists.
+     * The global exact-title guard and the bounded same-domain semantic corpus
+     * do not depend on each other. Running them sequentially made the final
+     * duplicate stage pay two remote PostgreSQL round trips back-to-back.
+     *
+     * Quality and race protection are unchanged:
+     * - exact-title protection is still global and fresh;
+     * - the final pipeline stage still performs a fresh semantic corpus read;
+     * - benchmark calls may still reuse only their run-scoped warmed corpus.
      */
+    const duplicateCheckStartedAt = Date.now();
+
+    const semanticCorpusPromise = (async () => {
+      const startedAt = Date.now();
+      const candidates = semanticCorpusCacheKey
+        ? await this.getBenchmarkSemanticCorpus(
+            semanticCorpusCacheKey,
+            normalizedDomainId,
+            client,
+          )
+        : await this.loadSemanticCorpus(normalizedDomainId, client);
+
+      return {
+        candidates,
+        elapsedMs: Date.now() - startedAt,
+      };
+    })();
+
+    const exactTitleStartedAt = Date.now();
     const exactTitleMatch = await client.idea.findFirst({
       where: {
         deletedAt: null,
@@ -156,8 +189,21 @@ export class IdeaDuplicateDetectionService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const exactTitleMs = Date.now() - exactTitleStartedAt;
 
     if (exactTitleMatch) {
+      /*
+       * The semantic read was intentionally launched in parallel. If a global
+       * exact-title collision is already decisive, do not delay the rejection
+       * waiting for the unrelated corpus read. Attach a rejection handler so a
+       * later database failure cannot become an unhandled promise rejection.
+       */
+      void semanticCorpusPromise.catch(() => undefined);
+
+      this.logger.debug(
+        `Duplicate detection exact-title hit | domainId=${normalizedDomainId} | exactTitleMs=${exactTitleMs} | totalMs=${Date.now() - duplicateCheckStartedAt}`,
+      );
+
       return {
         isDuplicate: true,
         highestSimilarity: 1,
@@ -171,20 +217,11 @@ export class IdeaDuplicateDetectionService {
       };
     }
 
-    /*
-     * Phase 2: one bounded database query, then in-memory comparison.
-     *
-     * Semantic duplicate detection is scoped to the same domain because that
-     * is where materially equivalent ideas are most likely. Exact-title
-     * protection remains global through phase 1.
-     */
-    const candidates = semanticCorpusCacheKey
-      ? await this.getBenchmarkSemanticCorpus(
-          semanticCorpusCacheKey,
-          normalizedDomainId,
-          client,
-        )
-      : await this.loadSemanticCorpus(normalizedDomainId, client);
+    const {
+      candidates,
+      elapsedMs: semanticCorpusMs,
+    } = await semanticCorpusPromise;
+    const comparisonStartedAt = Date.now();
 
     let matchedIdea: DuplicateIdeaCandidate | null = null;
     let highestSimilarity = 0;
@@ -309,6 +346,20 @@ export class IdeaDuplicateDetectionService {
     if (familyCompoundDuplicate) {
       duplicateReasons.push('SAME_PROBLEM_FAMILY');
     }
+
+    const comparisonMs = Date.now() - comparisonStartedAt;
+
+    this.logger.debug(
+      [
+        'Duplicate detection timing',
+        `domainId=${normalizedDomainId}`,
+        `candidates=${candidates.length}`,
+        `exactTitleMs=${exactTitleMs}`,
+        `semanticCorpusMs=${semanticCorpusMs}`,
+        `comparisonMs=${comparisonMs}`,
+        `totalMs=${Date.now() - duplicateCheckStartedAt}`,
+      ].join(' | '),
+    );
 
     return {
       isDuplicate,

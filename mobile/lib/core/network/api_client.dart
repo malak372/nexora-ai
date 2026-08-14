@@ -105,15 +105,21 @@ class ApiClient {
   final Map<String, Future<dynamic>> _inFlightGets = {};
   Future<String>? _refreshFuture;
 
-  /// Removes the common Nest/HTTP response wrappers without accidentally
-  /// stripping real domain objects that simply happen to contain a `data` key.
+  /// Removes ordinary HTTP/Nest response wrappers while preserving paginated
+  /// envelopes. A response such as `{ data: [...], meta: { total: 222 } }`
+  /// must stay intact so list screens can read the real total and totalPages.
+  ///
+  /// The previous implementation unwrapped that response to the nine visible
+  /// rows only, which made My Ideas report `9 ideas` even when the account had
+  /// hundreds of ideas.
   dynamic unwrap(dynamic value) {
     dynamic current = value;
 
     for (var i = 0; i < 4; i++) {
       if (current is! Map || !current.containsKey('data')) break;
 
-      final keys = current.keys.map((key) => key.toString()).toSet();
+      final map = Map<String, dynamic>.from(current);
+      final keys = map.keys.toSet();
       const wrapperKeys = {
         'data',
         'success',
@@ -125,10 +131,24 @@ class ApiClient {
       };
 
       final looksLikeEnvelope =
-          current.length == 1 || keys.every(wrapperKeys.contains);
-
+          map.length == 1 || keys.every(wrapperKeys.contains);
       if (!looksLikeEnvelope) break;
-      current = current['data'];
+
+      final data = map['data'];
+      final hasPagination =
+          map['meta'] is Map ||
+          map['pagination'] is Map;
+
+      // Preserve paginated list envelopes. UserApi._paged() understands both
+      // `meta` and `pagination` and needs those fields to expose all pages.
+      if (hasPagination && data is List) {
+        return map;
+      }
+
+      // Some backends wrap an object that itself contains items + metadata.
+      // Unwrap one level and allow the next iteration to preserve that inner
+      // paginated envelope when appropriate.
+      current = data;
     }
 
     return current;
@@ -169,10 +189,7 @@ class ApiClient {
     return request;
   }
 
-  Future<List<int>> getBytes(
-    String path, {
-    Map<String, dynamic>? query,
-  }) async {
+  Future<List<int>> getBytes(String path, {Map<String, dynamic>? query}) async {
     try {
       final response = await _dio.get<List<int>>(
         path,
@@ -185,10 +202,7 @@ class ApiClient {
     }
   }
 
-  Future<String> getText(
-    String path, {
-    Map<String, dynamic>? query,
-  }) async {
+  Future<String> getText(String path, {Map<String, dynamic>? query}) async {
     try {
       final response = await _dio.get<String>(
         path,
@@ -236,9 +250,7 @@ class ApiClient {
         data: data,
         options: receiveTimeout == null
             ? null
-            : Options(
-                receiveTimeout: receiveTimeout,
-              ),
+            : Options(receiveTimeout: receiveTimeout),
       );
       return unwrap(response.data);
     } on DioException catch (error) {
@@ -255,11 +267,7 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> patch(
-    String path, {
-    dynamic data,
-    Options? options,
-  }) async {
+  Future<dynamic> patch(String path, {dynamic data, Options? options}) async {
     try {
       final response = await _dio.patch<dynamic>(
         path,
@@ -342,9 +350,11 @@ class ApiClient {
   }
 
   ApiException _toException(DioException error) {
-    final message = _extractMessage(error.response?.data) ??
+    final message =
+        _extractMessage(error.response?.data) ??
         switch (error.type) {
-          DioExceptionType.connectionTimeout || DioExceptionType.connectionError =>
+          DioExceptionType.connectionTimeout ||
+          DioExceptionType.connectionError =>
             'Unable to reach the server at $baseUrl. Check the API address and your connection.',
           DioExceptionType.receiveTimeout =>
             'The server took too long to respond. Please try again.',

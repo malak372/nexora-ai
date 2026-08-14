@@ -648,7 +648,12 @@ export class IdeaPublicationQueryService {
       ? query.sortBy!
       : 'publishedAt';
 
-    const [items, total] = await this.prisma.$transaction([
+    /*
+     * The list and count are read-only and do not require a transactional
+     * snapshot. Running them concurrently avoids serial round trips to the
+     * remote PostgreSQL database on the first uncached Discover request.
+     */
+    const [items, total] = await Promise.all([
       this.prisma.ideaPublication.findMany({
         where: effectiveWhere,
         skip: (page - 1) * limit,
@@ -671,24 +676,62 @@ export class IdeaPublicationQueryService {
       }
     >();
 
-    if (options.viewerUserId && items.length > 0) {
-      const acceptances = await this.prisma.ideaPublicationAcceptance.findMany({
-        where: {
-          userId: options.viewerUserId,
-          publicationId: { in: items.map((item) => item.id) },
-        },
-        select: {
-          id: true,
-          publicationId: true,
-          advancedUnlockedAt: true,
-        },
-      });
+    /*
+     * Acceptance state and aggregate counts depend on the publication ids,
+     * but not on each other. Fetch them concurrently for Discover instead of
+     * waiting for two sequential database round trips.
+     */
+    const publicationIds = items.map((item) => item.id);
 
-      acceptances.forEach((acceptance) => {
-        acceptanceByPublicationId.set(acceptance.publicationId, acceptance);
-      });
+    type ViewerAcceptanceRow = {
+      id: string;
+      publicationId: string;
+      advancedUnlockedAt: Date | null;
+    };
+
+    type GroupedAcceptanceRow = {
+      publicationId: string;
+      _count: {
+        _all: number;
+      };
+    };
+
+    let viewerAcceptances: ViewerAcceptanceRow[] = [];
+    let groupedAcceptances: GroupedAcceptanceRow[] = [];
+
+    if (items.length > 0 && !options.includeAcceptors) {
+      const [viewerAcceptanceRows, groupedAcceptanceRows] = await Promise.all([
+        options.viewerUserId
+          ? this.prisma.ideaPublicationAcceptance.findMany({
+              where: {
+                userId: options.viewerUserId,
+                publicationId: { in: publicationIds },
+              },
+              select: {
+                id: true,
+                publicationId: true,
+                advancedUnlockedAt: true,
+              },
+            })
+          : Promise.resolve([] as ViewerAcceptanceRow[]),
+        this.prisma.ideaPublicationAcceptance.groupBy({
+          by: ['publicationId'],
+          where: {
+            publicationId: { in: publicationIds },
+          },
+          _count: {
+            _all: true,
+          },
+        }),
+      ]);
+
+      viewerAcceptances = viewerAcceptanceRows;
+      groupedAcceptances = groupedAcceptanceRows;
     }
 
+    viewerAcceptances.forEach((acceptance) => {
+      acceptanceByPublicationId.set(acceptance.publicationId, acceptance);
+    });
 
     /*
      * Acceptance totals are safe for discovery cards. Accepter identities are
@@ -708,73 +751,58 @@ export class IdeaPublicationQueryService {
       }
     >();
 
-    if (items.length > 0) {
-      const publicationIds = items.map((item) => item.id);
-
-      if (options.includeAcceptors) {
-        const ownerAcceptances =
-          await this.prisma.ideaPublicationAcceptance.findMany({
-            where: {
-              publicationId: { in: publicationIds },
-            },
-            orderBy: {
-              acceptedAt: 'desc',
-            },
-            select: {
-              publicationId: true,
-              acceptedAt: true,
-              advancedUnlockedAt: true,
-              user: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  userType: true,
-                },
+    if (options.includeAcceptors && items.length > 0) {
+      const ownerAcceptances =
+        await this.prisma.ideaPublicationAcceptance.findMany({
+          where: {
+            publicationId: { in: publicationIds },
+          },
+          orderBy: {
+            acceptedAt: 'desc',
+          },
+          select: {
+            publicationId: true,
+            acceptedAt: true,
+            advancedUnlockedAt: true,
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                userType: true,
               },
             },
-          });
-
-        ownerAcceptances.forEach((acceptance) => {
-          const current = acceptanceSummaryByPublicationId.get(
-            acceptance.publicationId,
-          ) ?? {
-            count: 0,
-            acceptedBy: [],
-          };
-
-          current.count += 1;
-          current.acceptedBy.push({
-            id: acceptance.user.id,
-            fullName: acceptance.user.fullName,
-            userType: acceptance.user.userType,
-            acceptedAt: acceptance.acceptedAt,
-            hasAdvancedAccess: acceptance.advancedUnlockedAt !== null,
-          });
-
-          acceptanceSummaryByPublicationId.set(
-            acceptance.publicationId,
-            current,
-          );
+          },
         });
-      } else {
-        const groupedAcceptances =
-          await this.prisma.ideaPublicationAcceptance.groupBy({
-            by: ['publicationId'],
-            where: {
-              publicationId: { in: publicationIds },
-            },
-            _count: {
-              _all: true,
-            },
-          });
 
-        groupedAcceptances.forEach((group) => {
-          acceptanceSummaryByPublicationId.set(group.publicationId, {
-            count: group._count._all,
-            acceptedBy: [],
-          });
+      ownerAcceptances.forEach((acceptance) => {
+        const current = acceptanceSummaryByPublicationId.get(
+          acceptance.publicationId,
+        ) ?? {
+          count: 0,
+          acceptedBy: [],
+        };
+
+        current.count += 1;
+        current.acceptedBy.push({
+          id: acceptance.user.id,
+          fullName: acceptance.user.fullName,
+          userType: acceptance.user.userType,
+          acceptedAt: acceptance.acceptedAt,
+          hasAdvancedAccess: acceptance.advancedUnlockedAt !== null,
         });
-      }
+
+        acceptanceSummaryByPublicationId.set(
+          acceptance.publicationId,
+          current,
+        );
+      });
+    } else {
+      groupedAcceptances.forEach((group) => {
+        acceptanceSummaryByPublicationId.set(group.publicationId, {
+          count: group._count._all,
+          acceptedBy: [],
+        });
+      });
     }
 
     return {

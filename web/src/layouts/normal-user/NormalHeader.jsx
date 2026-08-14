@@ -1,3 +1,4 @@
+/* @refresh reset */
 /**
  * Responsive normal-user workspace header.
  *

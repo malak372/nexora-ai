@@ -18,11 +18,6 @@ export const AI_CHAT_IDEA_ACCESS_SELECT = Prisma.validator<Prisma.IdeaSelect>()(
     userId: true,
     isUnlocked: true,
     deletedAt: true,
-    user: {
-      select: {
-        accountStatus: true,
-      },
-    },
     publication: {
       select: {
         id: true,
@@ -40,8 +35,9 @@ export const AI_CHAT_IDEA_ACCESS_SELECT = Prisma.validator<Prisma.IdeaSelect>()(
 /**
  * Minimal chat-session fields required by AI Chat access checks.
  *
- * The related idea is selected so access remains valid only while the idea
- * exists, belongs to the same user, is not soft-deleted, and is unlocked.
+ * The session user is selected only for the current account status check.
+ * The related idea is selected with the entitlement fields required for
+ * owner and accepted-publication access validation.
  */
 export const AI_CHAT_SESSION_ACCESS_SELECT =
   Prisma.validator<Prisma.ChatSessionSelect>()({
@@ -49,6 +45,11 @@ export const AI_CHAT_SESSION_ACCESS_SELECT =
     userId: true,
     ideaId: true,
     deletedAt: true,
+    user: {
+      select: {
+        accountStatus: true,
+      },
+    },
     idea: {
       select: AI_CHAT_IDEA_ACCESS_SELECT,
     },

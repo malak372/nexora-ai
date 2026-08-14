@@ -166,13 +166,11 @@ class IdeaSummary {
     final domain = json['domain'] is Map
         ? Map<String, dynamic>.from(json['domain'] as Map)
         : idea['domain'] is Map
-            ? Map<String, dynamic>.from(idea['domain'] as Map)
-            : const <String, dynamic>{};
+        ? Map<String, dynamic>.from(idea['domain'] as Map)
+        : const <String, dynamic>{};
 
-    final rawIdeaId = json['ideaId'] ??
-        idea['id'] ??
-        publication['ideaId'] ??
-        json['id'];
+    final rawIdeaId =
+        json['ideaId'] ?? idea['id'] ?? publication['ideaId'] ?? json['id'];
 
     return IdeaSummary(
       id: '${rawIdeaId ?? ''}',
@@ -188,7 +186,8 @@ class IdeaSummary {
       createdAt: DateTime.tryParse(
         '${json['createdAt'] ?? json['publishedAt'] ?? idea['createdAt'] ?? ''}',
       ),
-      publicationId: publication['id']?.toString() ??
+      publicationId:
+          publication['id']?.toString() ??
           json['publicationId']?.toString() ??
           (json.containsKey('publicTitle') ? json['id']?.toString() : null),
       publicationStatus:
@@ -204,6 +203,7 @@ class DiscoveryItem {
     required this.description,
     required this.domainName,
     required this.publisherName,
+    this.publisherId = '',
     required this.acceptanceCount,
     required this.ratingAverage,
     required this.publishedAt,
@@ -219,6 +219,7 @@ class DiscoveryItem {
   final String description;
   final String domainName;
   final String publisherName;
+  final String publisherId;
   final int acceptanceCount;
   final double ratingAverage;
   final DateTime? publishedAt;
@@ -235,13 +236,13 @@ class DiscoveryItem {
     final domain = json['domain'] is Map
         ? Map<String, dynamic>.from(json['domain'] as Map)
         : idea['domain'] is Map
-            ? Map<String, dynamic>.from(idea['domain'] as Map)
-            : const <String, dynamic>{};
+        ? Map<String, dynamic>.from(idea['domain'] as Map)
+        : const <String, dynamic>{};
     final user = json['user'] is Map
         ? Map<String, dynamic>.from(json['user'] as Map)
         : json['publisher'] is Map
-            ? Map<String, dynamic>.from(json['publisher'] as Map)
-            : const <String, dynamic>{};
+        ? Map<String, dynamic>.from(json['publisher'] as Map)
+        : const <String, dynamic>{};
 
     return DiscoveryItem(
       id: '${json['id'] ?? json['publicationId'] ?? ''}',
@@ -252,12 +253,15 @@ class DiscoveryItem {
       domainName: '${domain['name'] ?? json['domainName'] ?? 'General'}',
       publisherName:
           '${user['fullName'] ?? json['publisherName'] ?? 'Community member'}',
-      acceptanceCount:
-          _asInt(json['acceptanceCount'] ?? json['acceptancesCount']),
-      ratingAverage:
-          _asDouble(json['ratingAverage'] ?? json['averageRating']),
-      publishedAt:
-          DateTime.tryParse('${json['publishedAt'] ?? json['createdAt'] ?? ''}'),
+      publisherId:
+          '${json['publisherId'] ?? user['id'] ?? json['userId'] ?? ''}',
+      acceptanceCount: _asInt(
+        json['acceptanceCount'] ?? json['acceptancesCount'],
+      ),
+      ratingAverage: _asDouble(json['ratingAverage'] ?? json['averageRating']),
+      publishedAt: DateTime.tryParse(
+        '${json['publishedAt'] ?? json['createdAt'] ?? ''}',
+      ),
       upvotesCount: _asInt(json['upvotesCount'] ?? json['upvoteCount']),
       downvotesCount: _asInt(json['downvotesCount'] ?? json['downvoteCount']),
       ratingsCount: _asInt(json['ratingsCount'] ?? json['ratingCount']),
@@ -266,7 +270,8 @@ class DiscoveryItem {
             json['feedbacksCount'] ??
             json['commentsCount'],
       ),
-      isAccepted: json['isAccepted'] == true ||
+      isAccepted:
+          json['isAccepted'] == true ||
           json['acceptanceId'] != null ||
           (json['acceptance'] is Map &&
               (json['acceptance'] as Map)['id'] != null),
@@ -322,7 +327,6 @@ class AppNotification {
     );
   }
 }
-
 
 String? _firstNonEmpty(List<dynamic> values) {
   for (final value in values) {

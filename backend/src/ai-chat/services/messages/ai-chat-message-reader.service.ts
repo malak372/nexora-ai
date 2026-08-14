@@ -62,7 +62,7 @@ export class AiChatMessageReaderService {
       deletedAt: null,
     };
 
-    const [items, totalItems] = await this.prisma.$transaction([
+    const [items, totalItems] = await Promise.all([
       this.prisma.chatMessage.findMany({
         where,
         select: AI_CHAT_MESSAGE_SELECT,

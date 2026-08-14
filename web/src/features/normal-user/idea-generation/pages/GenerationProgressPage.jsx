@@ -78,7 +78,7 @@ export default function GenerationProgressPage() {
 
     syncedPremiumRunRef.current = runId;
     invalidatePaymentPricingCache();
-    window.dispatchEvent(new CustomEvent('voxidence :credits-updated'));
+    window.dispatchEvent(new CustomEvent('nexora:credits-updated'));
   }, [isComplete, run?.generationType, runId]);
 
   const handleCancel = async () => {

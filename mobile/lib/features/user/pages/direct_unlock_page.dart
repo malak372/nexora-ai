@@ -3,14 +3,14 @@
 // @author  Malak
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
+import '../widgets/workspace_navigation.dart';
 import 'idea_workspace_page.dart';
+import 'mobile_checkout_page.dart';
 
 class DirectUnlockPage extends StatefulWidget {
   const DirectUnlockPage({super.key, required this.ideaId});
@@ -81,14 +81,22 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
         return;
       }
 
-      final result = await UserApi.instance.createDirectUnlockCheckout(widget.ideaId);
-      final url = result['checkoutUrl']?.toString() ?? result['url']?.toString();
-      if (url == null || url.trim().isEmpty) {
-        throw const ApiException('The payment provider did not return a checkout URL.');
-      }
-      final uri = Uri.tryParse(url);
-      if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        throw const ApiException('The secure checkout could not be opened.');
+      final result = await UserApi.instance.createDirectUnlockCheckout(
+        widget.ideaId,
+      );
+
+      final flow = await openVoxidenceCheckout(
+        // ignore: use_build_context_synchronously
+        context,
+        checkoutResult: result,
+        selectedSection: WorkspaceSection.ideas,
+        ideaId: widget.ideaId,
+        title: 'Unlock advanced workspace',
+      );
+
+      if (flow.status == CheckoutFlowStatus.completed && mounted) {
+        await session.load(force: true);
+        await _load();
       }
     } on ApiException catch (error) {
       if (mounted) {
@@ -118,7 +126,9 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                 children: [
                   WorkspacePageHeader(
                     eyebrow: premium ? 'PREMIUM ACCESS' : 'DIRECT UNLOCK',
-                    title: premium ? 'Unlock with credits' : 'Complete this idea',
+                    title: premium
+                        ? 'Unlock with credits'
+                        : 'Complete this idea',
                     subtitle: premium
                         ? 'Use your Premium credits to attach the advanced outputs and AI workspace.'
                         : 'Open the complete execution package through secure checkout.',
@@ -147,7 +157,9 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                         children: [
                           Row(
                             children: [
-                              const SoftIconBadge(icon: Icons.auto_awesome_rounded),
+                              const SoftIconBadge(
+                                icon: Icons.auto_awesome_rounded,
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
@@ -160,10 +172,25 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          _Benefit(icon: Icons.description_outlined, text: 'Full abstract and complete technical stack'),
-                          _Benefit(icon: Icons.account_tree_outlined, text: 'System architecture, database design, MVP and timeline'),
-                          _Benefit(icon: Icons.analytics_outlined, text: 'Business, feasibility, market and budget outputs'),
-                          _Benefit(icon: Icons.picture_as_pdf_outlined, text: 'Business-model studio with polished PDF export'),
+                          _Benefit(
+                            icon: Icons.description_outlined,
+                            text: 'Full abstract and complete technical stack',
+                          ),
+                          _Benefit(
+                            icon: Icons.account_tree_outlined,
+                            text:
+                                'System architecture, database design, MVP and timeline',
+                          ),
+                          _Benefit(
+                            icon: Icons.analytics_outlined,
+                            text:
+                                'Business, feasibility, market and budget outputs',
+                          ),
+                          _Benefit(
+                            icon: Icons.picture_as_pdf_outlined,
+                            text:
+                                'Business-model studio with polished PDF export',
+                          ),
                         ],
                       ),
                     ),
@@ -173,7 +200,9 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                         Expanded(
                           child: _TrustPill(
                             icon: Icons.verified_user_outlined,
-                            label: premium ? 'No direct payment' : 'Provider verified',
+                            label: premium
+                                ? 'No direct payment'
+                                : 'Provider verified',
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -181,7 +210,9 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                           child: _TrustPill(
                             icon: Icons.lock_outline_rounded,
                             label: premium
-                                ? (cost > 0 ? '$cost credits only' : 'Workspace-priced credits')
+                                ? (cost > 0
+                                      ? '$cost credits only'
+                                      : 'Workspace-priced credits')
                                 : 'Secure redirect',
                           ),
                         ),
@@ -200,8 +231,8 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                           Text(
                             premium
                                 ? (cost > 0
-                                    ? '$cost credits · ${session.summary?.creditBalance ?? 0} available. Confirming deducts the required credits once and opens the advanced workspace.'
-                                    : 'The required credit amount is loaded from your workspace pricing before unlock.')
+                                      ? '$cost credits · ${session.summary?.creditBalance ?? 0} available. Confirming deducts the required credits once and opens the advanced workspace.'
+                                      : 'The required credit amount is loaded from your workspace pricing before unlock.')
                                 : '${_money(_pricing['directUnlockPrice'])} ${_pricing['currency'] ?? 'USD'} · Choose a payment method. Voxidence sends you to a secure provider-hosted checkout and grants access only after verified confirmation.',
                             style: const TextStyle(
                               color: AppColors.textSecondary,
@@ -243,7 +274,9 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                                     ),
                               label: Text(
                                 premium
-                                    ? (cost > 0 ? 'Unlock for $cost credits' : 'Unlock with credits')
+                                    ? (cost > 0
+                                          ? 'Unlock for $cost credits'
+                                          : 'Unlock with credits')
                                     : 'Open secure checkout',
                               ),
                             ),

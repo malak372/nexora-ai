@@ -21,16 +21,14 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../models/user_models.dart';
+import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
 import 'accepted_idea_workspace_page.dart';
 import 'idea_workspace_page.dart';
 import 'publication_page.dart';
 
 class LibraryPage extends StatefulWidget {
-  const LibraryPage({
-    super.key,
-    this.initialTab = 0,
-  });
+  const LibraryPage({super.key, this.initialTab = 0});
 
   final int initialTab;
 
@@ -39,31 +37,14 @@ class LibraryPage extends StatefulWidget {
 }
 
 class _LibraryPageState extends State<LibraryPage> {
+  static const int _pageSize = 18;
   static const _filters = <_LibraryFilter>[
-    _LibraryFilter(
-      label: 'All',
-      icon: Icons.grid_view_rounded,
-    ),
-    _LibraryFilter(
-      label: 'Free',
-      icon: Icons.eco_outlined,
-    ),
-    _LibraryFilter(
-      label: 'Unlocked',
-      icon: Icons.lock_open_rounded,
-    ),
-    _LibraryFilter(
-      label: 'Published',
-      icon: Icons.public_rounded,
-    ),
-    _LibraryFilter(
-      label: 'Accepted',
-      icon: Icons.handshake_outlined,
-    ),
-    _LibraryFilter(
-      label: 'Favorites',
-      icon: Icons.favorite_border_rounded,
-    ),
+    _LibraryFilter(label: 'All', icon: Icons.grid_view_rounded),
+    _LibraryFilter(label: 'Free', icon: Icons.eco_outlined),
+    _LibraryFilter(label: 'Unlocked', icon: Icons.lock_open_rounded),
+    _LibraryFilter(label: 'Published', icon: Icons.public_rounded),
+    _LibraryFilter(label: 'Accepted', icon: Icons.handshake_outlined),
+    _LibraryFilter(label: 'Favorites', icon: Icons.favorite_border_rounded),
   ];
 
   final TextEditingController _search = TextEditingController();
@@ -87,12 +68,7 @@ class _LibraryPageState extends State<LibraryPage> {
   void initState() {
     super.initState();
 
-    _tab = widget.initialTab
-        .clamp(
-          0,
-          _filters.length - 1,
-        )
-        .toInt();
+    _tab = widget.initialTab.clamp(0, _filters.length - 1).toInt();
 
     _load();
   }
@@ -104,9 +80,7 @@ class _LibraryPageState extends State<LibraryPage> {
     super.dispose();
   }
 
-  Future<void> _load({
-    bool force = false,
-  }) async {
+  Future<void> _load({bool force = false}) async {
     if (mounted) {
       setState(() {
         _loading = true;
@@ -121,12 +95,13 @@ class _LibraryPageState extends State<LibraryPage> {
       if (_tab <= 2) {
         result = await UserApi.instance.getMyIdeas(
           page: _page,
+          limit: _pageSize,
           search: query,
           isUnlocked: _tab == 1
               ? false
               : _tab == 2
-                  ? true
-                  : null,
+              ? true
+              : null,
           fromDate: _from,
           toDate: _to,
           force: force,
@@ -134,6 +109,7 @@ class _LibraryPageState extends State<LibraryPage> {
       } else if (_tab == 3) {
         final raw = await UserApi.instance.getPublishedRaw(
           page: _page,
+          limit: _pageSize,
           search: query,
           fromDate: _from,
           toDate: _to,
@@ -141,106 +117,88 @@ class _LibraryPageState extends State<LibraryPage> {
         );
 
         result = PagedResult<IdeaSummary>(
-          items: raw.items
-              .map(IdeaSummary.fromJson)
-              .toList(),
+          items: raw.items.map(IdeaSummary.fromJson).toList(),
           total: raw.total,
           totalPages: raw.totalPages,
         );
       } else if (_tab == 4) {
         result = await UserApi.instance.getAccepted(
           page: _page,
+          limit: _pageSize,
           search: query,
           fromDate: _from,
           toDate: _to,
           force: force,
         );
       } else {
-        final all = await UserApi.instance.getFavorites(
-          force: force,
-        );
+        final all = await UserApi.instance.getFavorites(force: force);
 
         final filtered = all.where((item) {
-          final searchMatch = query.isEmpty ||
-              item.title
-                  .toLowerCase()
-                  .contains(query.toLowerCase()) ||
-              item.abstractText
-                  .toLowerCase()
-                  .contains(query.toLowerCase()) ||
-              item.domainName
-                  .toLowerCase()
-                  .contains(query.toLowerCase());
+          final searchMatch =
+              query.isEmpty ||
+              item.title.toLowerCase().contains(query.toLowerCase()) ||
+              item.abstractText.toLowerCase().contains(query.toLowerCase()) ||
+              item.domainName.toLowerCase().contains(query.toLowerCase());
 
           final date = item.createdAt?.toLocal();
 
-          final fromMatch = _from == null ||
+          final fromMatch =
+              _from == null ||
               date == null ||
-              !date.isBefore(
-                DateTime(
-                  _from!.year,
-                  _from!.month,
-                  _from!.day,
-                ),
-              );
+              !date.isBefore(DateTime(_from!.year, _from!.month, _from!.day));
 
           final toEnd = _to == null
               ? null
-              : DateTime(
-                  _to!.year,
-                  _to!.month,
-                  _to!.day,
-                  23,
-                  59,
-                  59,
-                  999,
-                );
+              : DateTime(_to!.year, _to!.month, _to!.day, 23, 59, 59, 999);
 
-          final toMatch = toEnd == null ||
-              date == null ||
-              !date.isAfter(toEnd);
+          final toMatch = toEnd == null || date == null || !date.isAfter(toEnd);
 
           return searchMatch && fromMatch && toMatch;
         }).toList();
 
-        const pageSize = 9;
-
-        final start = ((_page - 1) * pageSize)
-            .clamp(
-              0,
-              filtered.length,
-            )
+        final start = ((_page - 1) * _pageSize)
+            .clamp(0, filtered.length)
             .toInt();
 
-        final end = (start + pageSize)
-            .clamp(
-              0,
-              filtered.length,
-            )
-            .toInt();
+        final end = (start + _pageSize).clamp(0, filtered.length).toInt();
 
         result = PagedResult<IdeaSummary>(
-          items: filtered.sublist(
-            start,
-            end,
-          ),
+          items: filtered.sublist(start, end),
           total: filtered.length,
-          totalPages:
-              ((filtered.length + pageSize - 1) ~/ pageSize)
-                  .clamp(
-                    1,
-                    99999,
-                  )
-                  .toInt(),
+          totalPages: ((filtered.length + _pageSize - 1) ~/ _pageSize)
+              .clamp(1, 99999)
+              .toInt(),
         );
       }
 
       if (!mounted) return;
 
+      var resolvedTotal = result.total;
+      var resolvedTotalPages = result.totalPages;
+
+      // The account summary is a safe fallback for the unfiltered owned-ideas
+      // view. It prevents a malformed/missing pagination envelope from making
+      // an account with hundreds of ideas look as if it only owns one page.
+      if (_tab == 0 && query.isEmpty && _from == null && _to == null) {
+        final summaryTotal =
+            UserSessionController.instance.summary?.ideasCount ?? 0;
+        if (summaryTotal > resolvedTotal) {
+          resolvedTotal = summaryTotal;
+          final pagesFromSummary =
+              ((summaryTotal + _pageSize - 1) ~/ _pageSize)
+                  .clamp(1, 999999)
+                  .toInt();
+          if (pagesFromSummary > resolvedTotalPages) {
+            resolvedTotalPages = pagesFromSummary;
+          }
+        }
+      }
+
       setState(() {
         _items = result.items;
-        _total = result.total;
-        _totalPages = result.totalPages;
+        _total = resolvedTotal;
+        _totalPages = resolvedTotalPages < 1 ? 1 : resolvedTotalPages;
+        if (_page > _totalPages) _page = _totalPages;
       });
     } catch (error) {
       if (mounted) {
@@ -258,13 +216,10 @@ class _LibraryPageState extends State<LibraryPage> {
 
     _debounce?.cancel();
 
-    _debounce = Timer(
-      const Duration(milliseconds: 350),
-      () {
-        _page = 1;
-        _load(force: true);
-      },
-    );
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      _page = 1;
+      _load(force: true);
+    });
   }
 
   void _selectTab(int value) {
@@ -279,16 +234,12 @@ class _LibraryPageState extends State<LibraryPage> {
     _load();
   }
 
-
   Future<void> _openFilterPicker() async {
     final selected = await showModalBottomSheet<int>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _LibraryFilterSheet(
-        filters: _filters,
-        selected: _tab,
-      ),
+      builder: (_) => _LibraryFilterSheet(filters: _filters, selected: _tab),
     );
 
     if (selected == null || !mounted) return;
@@ -300,10 +251,7 @@ class _LibraryPageState extends State<LibraryPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _DateRangeSheet(
-        initialFrom: _from,
-        initialTo: _to,
-      ),
+      builder: (_) => _DateRangeSheet(initialFrom: _from, initialTo: _to),
     );
 
     if (result == null || !mounted) return;
@@ -329,93 +277,60 @@ class _LibraryPageState extends State<LibraryPage> {
     _load(force: true);
   }
 
-  Future<void> _toggleFavorite(
-    IdeaSummary idea,
-  ) async {
+  Future<void> _toggleFavorite(IdeaSummary idea) async {
     try {
       if (idea.isFavorite || _tab == 5) {
-        await UserApi.instance.removeFavorite(
-          idea.id,
-        );
+        await UserApi.instance.removeFavorite(idea.id);
       } else {
-        await UserApi.instance.addFavorite(
-          idea.id,
-        );
+        await UserApi.instance.addFavorite(idea.id);
       }
 
       await _load(force: true);
     } on ApiException catch (error) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     }
   }
 
-  Future<void> _deleteIdea(
-    IdeaSummary idea,
-  ) async {
+  Future<void> _deleteIdea(IdeaSummary idea) async {
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _DeleteIdeaSheet(
-        title: idea.title,
-      ),
+      builder: (_) => _DeleteIdeaSheet(title: idea.title),
     );
 
     if (confirmed != true) return;
 
     try {
-      await UserApi.instance.deleteIdea(
-        idea.id,
-      );
+      await UserApi.instance.deleteIdea(idea.id);
 
       await _load(force: true);
 
       if (mounted) {
-        showAppSnackBar(
-          context,
-          'Idea deleted.',
-        );
+        showAppSnackBar(context, 'Idea deleted.');
       }
     } on ApiException catch (error) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     }
   }
 
-  Future<void> _open(
-    IdeaSummary idea,
-  ) async {
+  Future<void> _open(IdeaSummary idea) async {
     Widget page;
 
     if (_tab == 4 && idea.publicationId != null) {
       page = idea.isUnlocked
-          ? AcceptedIdeaWorkspacePage(
-              publicationId: idea.publicationId!,
-            )
-          : PublicationPage(
-              publicationId: idea.publicationId!,
-            );
+          ? AcceptedIdeaWorkspacePage(publicationId: idea.publicationId!)
+          : PublicationPage(publicationId: idea.publicationId!);
     } else {
-      page = IdeaWorkspacePage(
-        ideaId: idea.id,
-      );
+      page = IdeaWorkspacePage(ideaId: idea.id);
     }
 
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => page,
-      ),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => page));
 
     if (mounted) {
       await _load(force: true);
@@ -437,17 +352,9 @@ class _LibraryPageState extends State<LibraryPage> {
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
-              padding: const EdgeInsets.fromLTRB(
-                15,
-                11,
-                15,
-                118,
-              ),
+              padding: const EdgeInsets.fromLTRB(15, 11, 15, 118),
               children: [
-                _LibraryHero(
-                  total: _total,
-                  filter: activeFilter.label,
-                ),
+                _LibraryHero(total: _total, filter: activeFilter.label),
 
                 const SizedBox(height: 9),
 
@@ -470,10 +377,9 @@ class _LibraryPageState extends State<LibraryPage> {
                   to: _to,
                   onFilterTap: _openFilterPicker,
                   onDateTap: _openDateRange,
-                  onClearDates:
-                      _from == null && _to == null
-                          ? null
-                          : _clearDates,
+                  onClearDates: _from == null && _to == null
+                      ? null
+                      : _clearDates,
                 ),
 
                 const SizedBox(height: 12),
@@ -491,16 +397,11 @@ class _LibraryPageState extends State<LibraryPage> {
                 else if (_error != null && _items.isEmpty)
                   EmptyState(
                     icon: Icons.cloud_off_rounded,
-                    title:
-                        'Could not load ${activeFilter.label.toLowerCase()}',
+                    title: 'Could not load ${activeFilter.label.toLowerCase()}',
                     message: _error.toString(),
                     action: FilledButton.icon(
-                      onPressed: () =>
-                          _load(force: true),
-                      icon: const Icon(
-                        Icons.refresh_rounded,
-                        size: 15,
-                      ),
+                      onPressed: () => _load(force: true),
+                      icon: const Icon(Icons.refresh_rounded, size: 15),
                       label: const Text('Retry'),
                     ),
                   )
@@ -511,31 +412,20 @@ class _LibraryPageState extends State<LibraryPage> {
                     message: _emptyMessage(),
                   )
                 else ...[
-                  for (var index = 0;
-                      index < _items.length;
-                      index++) ...[
+                  for (var index = 0; index < _items.length; index++) ...[
                     _LibraryIdeaCard(
                       idea: _items[index],
                       tab: _tab,
-                      index:
-                          ((_page - 1) * 9) + index + 1,
-                      onTap: () => _open(
-                        _items[index],
-                      ),
-                      onFavorite:
-                          _tab == 3 || _tab == 4
-                              ? null
-                              : () => _toggleFavorite(
-                                    _items[index],
-                                  ),
+                      index: ((_page - 1) * _pageSize) + index + 1,
+                      onTap: () => _open(_items[index]),
+                      onFavorite: _tab == 3 || _tab == 4
+                          ? null
+                          : () => _toggleFavorite(_items[index]),
                       onDelete: _tab <= 2
-                          ? () => _deleteIdea(
-                                _items[index],
-                              )
+                          ? () => _deleteIdea(_items[index])
                           : null,
                     ),
-                    if (index != _items.length - 1)
-                      const SizedBox(height: 9),
+                    if (index != _items.length - 1) const SizedBox(height: 9),
                   ],
 
                   if (_totalPages > 1) ...[
@@ -546,17 +436,13 @@ class _LibraryPageState extends State<LibraryPage> {
                       onPrevious: _page <= 1
                           ? null
                           : () {
-                              setState(
-                                () => _page -= 1,
-                              );
+                              setState(() => _page -= 1);
                               _load();
                             },
                       onNext: _page >= _totalPages
                           ? null
                           : () {
-                              setState(
-                                () => _page += 1,
-                              );
+                              setState(() => _page += 1);
                               _load();
                             },
                     ),
@@ -572,37 +458,26 @@ class _LibraryPageState extends State<LibraryPage> {
 
   String _emptyMessage() {
     return switch (_tab) {
-      1 =>
-        'Free core ideas appear here before advanced access is unlocked.',
+      1 => 'Free core ideas appear here before advanced access is unlocked.',
       2 =>
         'Ideas with advanced outputs appear here after a credit or direct unlock.',
-      3 =>
-        'Publish one of your private ideas to share a safe public snapshot.',
-      4 =>
-        'Ideas you accept from Discover appear here.',
-      5 =>
-        'Tap the heart on an owned idea to save it for quick access.',
-      _ =>
-        'Generate your first evidence-backed software direction.',
+      3 => 'Publish one of your private ideas to share a safe public snapshot.',
+      4 => 'Ideas you accept from Discover appear here.',
+      5 => 'Tap the heart on an owned idea to save it for quick access.',
+      _ => 'Generate your first evidence-backed software direction.',
     };
   }
 }
 
 class _LibraryFilter {
-  const _LibraryFilter({
-    required this.label,
-    required this.icon,
-  });
+  const _LibraryFilter({required this.label, required this.icon});
 
   final String label;
   final IconData icon;
 }
 
 class _LibraryHero extends StatelessWidget {
-  const _LibraryHero({
-    required this.total,
-    required this.filter,
-  });
+  const _LibraryHero({required this.total, required this.filter});
 
   final int total;
   final String filter;
@@ -610,24 +485,13 @@ class _LibraryHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(
-        minHeight: 150,
-      ),
-      padding: const EdgeInsets.fromLTRB(
-        15,
-        14,
-        14,
-        13,
-      ),
+      constraints: const BoxConstraints(minHeight: 150),
+      padding: const EdgeInsets.fromLTRB(15, 14, 14, 13),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF0F8F5),
-            Color(0xFFF7FBF9),
-          ],
+          colors: [AppColors.surface, Color(0xFFF0F8F5), Color(0xFFF7FBF9)],
           stops: [0, .58, 1],
         ),
         borderRadius: BorderRadius.circular(24),
@@ -644,15 +508,9 @@ class _LibraryHero extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          const Positioned(
-            right: -7,
-            top: -5,
-            child: _LibraryHeroVisual(),
-          ),
+          const Positioned(right: -7, top: -5, child: _LibraryHeroVisual()),
           Padding(
-            padding: const EdgeInsets.only(
-              right: 96,
-            ),
+            padding: const EdgeInsets.only(right: 96),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -762,10 +620,7 @@ class _LibraryHeroVisual extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF6BC5BF),
-                  Color(0xFF4EA8A3),
-                ],
+                colors: [Color(0xFF6BC5BF), Color(0xFF4EA8A3)],
               ),
               borderRadius: BorderRadius.circular(15),
               boxShadow: [
@@ -785,26 +640,17 @@ class _LibraryHeroVisual extends StatelessWidget {
           Positioned(
             right: 12,
             top: 17,
-            child: _LibraryHeroDot(
-              size: 7,
-              color: AppColors.primary,
-            ),
+            child: _LibraryHeroDot(size: 7, color: AppColors.primary),
           ),
           Positioned(
             left: 5,
             bottom: 24,
-            child: _LibraryHeroDot(
-              size: 6,
-              color: AppColors.sage,
-            ),
+            child: _LibraryHeroDot(size: 6, color: AppColors.sage),
           ),
           Positioned(
             right: 10,
             bottom: 12,
-            child: _LibraryHeroDot(
-              size: 5,
-              color: AppColors.primaryDark,
-            ),
+            child: _LibraryHeroDot(size: 5, color: AppColors.primaryDark),
           ),
         ],
       ),
@@ -813,10 +659,7 @@ class _LibraryHeroVisual extends StatelessWidget {
 }
 
 class _LibraryHeroDot extends StatelessWidget {
-  const _LibraryHeroDot({
-    required this.size,
-    required this.color,
-  });
+  const _LibraryHeroDot({required this.size, required this.color});
 
   final double size;
   final Color color;
@@ -829,10 +672,7 @@ class _LibraryHeroDot extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: color.withValues(alpha: .74),
-        border: Border.all(
-          color: Colors.white,
-          width: 1.3,
-        ),
+        border: Border.all(color: Colors.white, width: 1.3),
       ),
     );
   }
@@ -855,12 +695,8 @@ class _LibraryHeroPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 31,
-      constraints: const BoxConstraints(
-        maxWidth: 104,
-      ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-      ),
+      constraints: const BoxConstraints(maxWidth: 104),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: soft
             ? Colors.white.withValues(alpha: .68)
@@ -873,11 +709,7 @@ class _LibraryHeroPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 10.5,
-            color: AppColors.primaryDark,
-          ),
+          Icon(icon, size: 10.5, color: AppColors.primaryDark),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
@@ -922,12 +754,7 @@ class _LibrarySearch extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 55,
-      padding: const EdgeInsets.fromLTRB(
-        6,
-        5,
-        6,
-        5,
-      ),
+      padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .78),
         borderRadius: BorderRadius.circular(18),
@@ -952,40 +779,27 @@ class _LibrarySearch extends StatelessWidget {
         ),
         decoration: InputDecoration(
           hintText: 'Search your ideas…',
-          hintStyle: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 9.8,
-          ),
+          hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 9.8),
           prefixIcon: const Padding(
-            padding: EdgeInsets.only(
-              left: 3,
-              right: 2,
-            ),
+            padding: EdgeInsets.only(left: 3, right: 2),
             child: Icon(
               Icons.search_rounded,
               size: 18,
               color: AppColors.primaryDark,
             ),
           ),
-          prefixIconConstraints: const BoxConstraints(
-            minWidth: 38,
-          ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 38),
           suffixIcon: onClear == null
               ? null
               : IconButton(
                   tooltip: 'Clear search',
                   onPressed: onClear,
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    size: 16,
-                  ),
+                  icon: const Icon(Icons.close_rounded, size: 16),
                 ),
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
           focusedBorder: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            vertical: 11,
-          ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 11),
         ),
       ),
     );
@@ -1019,10 +833,7 @@ class _LibraryControlBar extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF4FAF8),
-            AppColors.surface,
-          ],
+          colors: [Color(0xFFF4FAF8), AppColors.surface],
         ),
         borderRadius: BorderRadius.circular(19),
         border: Border.all(
@@ -1099,9 +910,7 @@ class _LibraryControlButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: Ink(
           height: 50,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 8,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: .70),
             borderRadius: BorderRadius.circular(14),
@@ -1119,11 +928,7 @@ class _LibraryControlButton extends StatelessWidget {
                   color: AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
-                  icon,
-                  size: 14,
-                  color: AppColors.primaryDark,
-                ),
+                child: Icon(icon, size: 14, color: AppColors.primaryDark),
               ),
               const SizedBox(width: 7),
               Expanded(
@@ -1156,10 +961,7 @@ class _LibraryControlButton extends StatelessWidget {
                   ],
                 ),
               ),
-              if (trailing != null) ...[
-                const SizedBox(width: 4),
-                trailing!,
-              ],
+              if (trailing != null) ...[const SizedBox(width: 4), trailing!],
             ],
           ),
         ),
@@ -1169,10 +971,7 @@ class _LibraryControlButton extends StatelessWidget {
 }
 
 class _LibraryFilterSheet extends StatelessWidget {
-  const _LibraryFilterSheet({
-    required this.filters,
-    required this.selected,
-  });
+  const _LibraryFilterSheet({required this.filters, required this.selected});
 
   final List<_LibraryFilter> filters;
   final int selected;
@@ -1188,10 +987,7 @@ class _LibraryFilterSheet extends StatelessWidget {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              AppColors.surface,
-              Color(0xFFF2F9F7),
-            ],
+            colors: [AppColors.surface, Color(0xFFF2F9F7)],
           ),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: Colors.white),
@@ -1326,7 +1122,6 @@ class _LibraryFilterOption extends StatelessWidget {
   }
 }
 
-
 class _ResultsHeading extends StatelessWidget {
   const _ResultsHeading({
     required this.label,
@@ -1393,9 +1188,7 @@ class _ResultsHeading extends StatelessWidget {
         else
           Container(
             height: 27,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 8,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: .66),
@@ -1561,7 +1354,9 @@ class _LibraryIdeaCard extends StatelessWidget {
                           const SizedBox(width: 7),
                           Expanded(
                             child: Text(
-                              idea.domainName.isEmpty ? 'General' : idea.domainName,
+                              idea.domainName.isEmpty
+                                  ? 'General'
+                                  : idea.domainName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -1606,10 +1401,7 @@ class _LibraryIdeaCard extends StatelessWidget {
                           gradient: const LinearGradient(
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
-                            colors: [
-                              Color(0xFFFFF3F6),
-                              Color(0xFFF2F9F7),
-                            ],
+                            colors: [Color(0xFFFFF3F6), Color(0xFFF2F9F7)],
                           ),
                           borderRadius: BorderRadius.circular(13),
                         ),
@@ -1730,7 +1522,6 @@ class _LibraryIdeaCard extends StatelessWidget {
   }
 }
 
-
 class _IdeaAppearance {
   const _IdeaAppearance({
     required this.label,
@@ -1744,7 +1535,6 @@ class _IdeaAppearance {
   final Color accent;
   final Color tint;
 }
-
 
 class _IdeaStatusBadge extends StatelessWidget {
   const _IdeaStatusBadge({
@@ -1763,24 +1553,16 @@ class _IdeaStatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 28,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: tint,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: accent.withValues(alpha: .075),
-        ),
+        border: Border.all(color: accent.withValues(alpha: .075)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 10.5,
-            color: accent,
-          ),
+          Icon(icon, size: 10.5, color: accent),
           const SizedBox(width: 4),
           Text(
             label,
@@ -1825,11 +1607,7 @@ class _CardIconAction extends StatelessWidget {
               color: Colors.white.withValues(alpha: .70),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(
-              icon,
-              size: 15,
-              color: color,
-            ),
+            child: Icon(icon, size: 15, color: color),
           ),
         ),
       ),
@@ -1838,10 +1616,7 @@ class _CardIconAction extends StatelessWidget {
 }
 
 class _CardStaticIcon extends StatelessWidget {
-  const _CardStaticIcon({
-    required this.icon,
-    required this.color,
-  });
+  const _CardStaticIcon({required this.icon, required this.color});
 
   final IconData icon;
   final Color color;
@@ -1856,11 +1631,7 @@ class _CardStaticIcon extends StatelessWidget {
         color: Colors.white.withValues(alpha: .70),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Icon(
-        icon,
-        size: 15,
-        color: color,
-      ),
+      child: Icon(icon, size: 15, color: color),
     );
   }
 }
@@ -1882,20 +1653,14 @@ class _Pagination extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 51,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 7,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 7),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFFF4FAF8),
-            AppColors.surfaceRose,
-          ],
+          colors: [Color(0xFFF4FAF8), AppColors.surfaceRose],
         ),
         borderRadius: BorderRadius.circular(17),
         border: Border.all(
-          color: AppColors.primaryDark
-              .withValues(alpha: .055),
+          color: AppColors.primaryDark.withValues(alpha: .055),
         ),
       ),
       child: Row(
@@ -1929,10 +1694,7 @@ class _Pagination extends StatelessWidget {
               ],
             ),
           ),
-          _PaginationButton(
-            icon: Icons.chevron_right_rounded,
-            onTap: onNext,
-          ),
+          _PaginationButton(icon: Icons.chevron_right_rounded, onTap: onNext),
         ],
       ),
     );
@@ -1940,10 +1702,7 @@ class _Pagination extends StatelessWidget {
 }
 
 class _PaginationButton extends StatelessWidget {
-  const _PaginationButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _PaginationButton({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback? onTap;
@@ -1967,9 +1726,7 @@ class _PaginationButton extends StatelessWidget {
           child: Icon(
             icon,
             size: 19,
-            color: onTap == null
-                ? AppColors.silver
-                : Colors.white,
+            color: onTap == null ? AppColors.silver : Colors.white,
           ),
         ),
       ),
@@ -1978,9 +1735,7 @@ class _PaginationButton extends StatelessWidget {
 }
 
 class _DeleteIdeaSheet extends StatelessWidget {
-  const _DeleteIdeaSheet({
-    required this.title,
-  });
+  const _DeleteIdeaSheet({required this.title});
 
   final String title;
 
@@ -1989,33 +1744,19 @@ class _DeleteIdeaSheet extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Container(
-        margin: const EdgeInsets.fromLTRB(
-          9,
-          0,
-          9,
-          9,
-        ),
-        padding: const EdgeInsets.fromLTRB(
-          15,
-          10,
-          15,
-          15,
-        ),
+        margin: const EdgeInsets.fromLTRB(9, 0, 9, 9),
+        padding: const EdgeInsets.fromLTRB(15, 10, 15, 15),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              AppColors.surface,
-              AppColors.surfaceRose,
-            ],
+            colors: [AppColors.surface, AppColors.surfaceRose],
           ),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: Colors.white),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primaryDeep
-                  .withValues(alpha: .14),
+              color: AppColors.primaryDeep.withValues(alpha: .14),
               blurRadius: 30,
               offset: const Offset(0, 12),
             ),
@@ -2073,20 +1814,15 @@ class _DeleteIdeaSheet extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(false),
+                    onPressed: () => Navigator.of(context).pop(false),
                     child: const Text('Keep idea'),
                   ),
                 ),
                 const SizedBox(width: 7),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: () =>
-                        Navigator.of(context).pop(true),
-                    icon: const Icon(
-                      Icons.delete_outline_rounded,
-                      size: 14,
-                    ),
+                    onPressed: () => Navigator.of(context).pop(true),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 14),
                     label: const Text('Delete'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.danger,
@@ -2103,27 +1839,20 @@ class _DeleteIdeaSheet extends StatelessWidget {
 }
 
 class _DateRangeResult {
-  const _DateRangeResult({
-    required this.from,
-    required this.to,
-  });
+  const _DateRangeResult({required this.from, required this.to});
 
   final DateTime? from;
   final DateTime? to;
 }
 
 class _DateRangeSheet extends StatefulWidget {
-  const _DateRangeSheet({
-    required this.initialFrom,
-    required this.initialTo,
-  });
+  const _DateRangeSheet({required this.initialFrom, required this.initialTo});
 
   final DateTime? initialFrom;
   final DateTime? initialTo;
 
   @override
-  State<_DateRangeSheet> createState() =>
-      _DateRangeSheetState();
+  State<_DateRangeSheet> createState() => _DateRangeSheetState();
 }
 
 class _DateRangeSheetState extends State<_DateRangeSheet> {
@@ -2135,11 +1864,9 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
 
   DateTime get _today => _dateOnly(DateTime.now())!;
 
-  DateTime get _latest =>
-      _today.add(const Duration(days: 1));
+  DateTime get _latest => _today.add(const Duration(days: 1));
 
-  DateTime get _firstAllowed =>
-      DateTime(2020, 1, 1);
+  DateTime get _firstAllowed => DateTime(2020, 1, 1);
 
   @override
   void initState() {
@@ -2155,8 +1882,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
   }
 
   void _selectDate(DateTime date) {
-    if (date.isBefore(_firstAllowed) ||
-        date.isAfter(_latest)) {
+    if (date.isBefore(_firstAllowed) || date.isAfter(_latest)) {
       return;
     }
 
@@ -2190,9 +1916,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
 
     setState(() {
       _to = to;
-      _from = to.subtract(
-        const Duration(days: 6),
-      );
+      _from = to.subtract(const Duration(days: 6));
       _month = DateTime(to.year, to.month);
       _selectingFrom = true;
     });
@@ -2203,9 +1927,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
 
     setState(() {
       _to = to;
-      _from = to.subtract(
-        const Duration(days: 29),
-      );
+      _from = to.subtract(const Duration(days: 29));
       _month = DateTime(to.year, to.month);
       _selectingFrom = true;
     });
@@ -2215,32 +1937,17 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
     final now = _today;
 
     setState(() {
-      _from = DateTime(
-        now.year,
-        now.month,
-        1,
-      );
+      _from = DateTime(now.year, now.month, 1);
       _to = now;
-      _month = DateTime(
-        now.year,
-        now.month,
-      );
+      _month = DateTime(now.year, now.month);
       _selectingFrom = true;
     });
   }
 
   void _previousMonth() {
-    final previous = DateTime(
-      _month.year,
-      _month.month - 1,
-    );
+    final previous = DateTime(_month.year, _month.month - 1);
 
-    if (previous.isBefore(
-      DateTime(
-        _firstAllowed.year,
-        _firstAllowed.month,
-      ),
-    )) {
+    if (previous.isBefore(DateTime(_firstAllowed.year, _firstAllowed.month))) {
       return;
     }
 
@@ -2248,30 +1955,19 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
   }
 
   void _nextMonth() {
-    final next = DateTime(
-      _month.year,
-      _month.month + 1,
-    );
+    final next = DateTime(_month.year, _month.month + 1);
 
-    final latestMonth = DateTime(
-      _latest.year,
-      _latest.month,
-    );
+    final latestMonth = DateTime(_latest.year, _latest.month);
 
     if (next.isAfter(latestMonth)) return;
 
     setState(() => _month = next);
   }
 
-  bool _sameDay(
-    DateTime? a,
-    DateTime? b,
-  ) {
+  bool _sameDay(DateTime? a, DateTime? b) {
     if (a == null || b == null) return false;
 
-    return a.year == b.year &&
-        a.month == b.month &&
-        a.day == b.day;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   bool _insideRange(DateTime day) {
@@ -2279,30 +1975,21 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
       return false;
     }
 
-    return day.isAfter(_from!) &&
-        day.isBefore(_to!);
+    return day.isAfter(_from!) && day.isBefore(_to!);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottom =
-        MediaQuery.viewInsetsOf(context).bottom;
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: SafeArea(
         top: false,
         child: Container(
-          margin: const EdgeInsets.fromLTRB(
-            8,
-            0,
-            8,
-            8,
-          ),
+          margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
           constraints: BoxConstraints(
-            maxHeight:
-                MediaQuery.sizeOf(context).height *
-                    .88,
+            maxHeight: MediaQuery.sizeOf(context).height * .88,
           ),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
@@ -2318,23 +2005,16 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
             border: Border.all(color: Colors.white),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primaryDeep
-                    .withValues(alpha: .15),
+                color: AppColors.primaryDeep.withValues(alpha: .15),
                 blurRadius: 34,
                 offset: const Offset(0, 13),
               ),
             ],
           ),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              14,
-              10,
-              14,
-              14,
-            ),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
                   child: Container(
@@ -2342,8 +2022,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                     height: 4,
                     decoration: BoxDecoration(
                       color: AppColors.silver,
-                      borderRadius:
-                          BorderRadius.circular(999),
+                      borderRadius: BorderRadius.circular(999),
                     ),
                   ),
                 ),
@@ -2352,24 +2031,18 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
 
                 const Row(
                   children: [
-                    SoftIconBadge(
-                      icon: Icons.date_range_outlined,
-                      size: 39,
-                    ),
+                    SoftIconBadge(icon: Icons.date_range_outlined, size: 39),
                     SizedBox(width: 9),
                     Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'DATE RANGE',
                             style: TextStyle(
-                              color:
-                                  AppColors.primaryDark,
+                              color: AppColors.primaryDark,
                               fontSize: 6.2,
-                              fontWeight:
-                                  FontWeight.w900,
+                              fontWeight: FontWeight.w900,
                               letterSpacing: .68,
                             ),
                           ),
@@ -2377,19 +2050,16 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                           Text(
                             'Filter your idea library',
                             style: TextStyle(
-                              color:
-                                  AppColors.textPrimary,
+                              color: AppColors.textPrimary,
                               fontSize: 13.5,
-                              fontWeight:
-                                  FontWeight.w900,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
                           SizedBox(height: 2),
                           Text(
                             'Choose a start and end date without leaving the library.',
                             style: TextStyle(
-                              color:
-                                  AppColors.textMuted,
+                              color: AppColors.textMuted,
                               fontSize: 7.6,
                               height: 1.35,
                             ),
@@ -2413,24 +2083,17 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                         ),
                         selected: _selectingFrom,
                         rose: false,
-                        onTap: () => setState(
-                          () => _selectingFrom = true,
-                        ),
+                        onTap: () => setState(() => _selectingFrom = true),
                       ),
                     ),
                     const SizedBox(width: 7),
                     Expanded(
                       child: _DateSelectionTile(
                         label: 'TO',
-                        value: _formatCompactDate(
-                          _to,
-                          fallback: 'Choose date',
-                        ),
+                        value: _formatCompactDate(_to, fallback: 'Choose date'),
                         selected: !_selectingFrom,
                         rose: true,
-                        onTap: () => setState(
-                          () => _selectingFrom = false,
-                        ),
+                        onTap: () => setState(() => _selectingFrom = false),
                       ),
                     ),
                   ],
@@ -2452,10 +2115,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                         onTap: _presetLast30Days,
                       ),
                       const SizedBox(width: 6),
-                      _PresetChip(
-                        label: 'This month',
-                        onTap: _presetThisMonth,
-                      ),
+                      _PresetChip(label: 'This month', onTap: _presetThisMonth),
                     ],
                   ),
                 ),
@@ -2463,20 +2123,12 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                 const SizedBox(height: 12),
 
                 Container(
-                  padding: const EdgeInsets.fromLTRB(
-                    10,
-                    10,
-                    10,
-                    11,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
                   decoration: BoxDecoration(
-                    color:
-                        Colors.white.withValues(alpha: .68),
-                    borderRadius:
-                        BorderRadius.circular(18),
+                    color: Colors.white.withValues(alpha: .68),
+                    borderRadius: BorderRadius.circular(18),
                     border: Border.all(
-                      color: AppColors.primaryDark
-                          .withValues(alpha: .05),
+                      color: AppColors.primaryDark.withValues(alpha: .05),
                     ),
                   ),
                   child: Column(
@@ -2484,8 +2136,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                       Row(
                         children: [
                           _CalendarArrow(
-                            icon: Icons
-                                .chevron_left_rounded,
+                            icon: Icons.chevron_left_rounded,
                             onTap: _previousMonth,
                           ),
                           Expanded(
@@ -2494,37 +2145,29 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                                 Text(
                                   _monthTitle(_month),
                                   style: const TextStyle(
-                                    color: AppColors
-                                        .textPrimary,
+                                    color: AppColors.textPrimary,
                                     fontSize: 11,
-                                    fontWeight:
-                                        FontWeight.w900,
+                                    fontWeight: FontWeight.w900,
                                   ),
                                 ),
-                                const SizedBox(
-                                  height: 2,
-                                ),
+                                const SizedBox(height: 2),
                                 Text(
                                   _selectingFrom
                                       ? 'Choose start date'
                                       : 'Choose end date',
                                   style: TextStyle(
                                     color: _selectingFrom
-                                        ? AppColors
-                                            .primaryDark
-                                        : AppColors
-                                            .pinkDeep,
+                                        ? AppColors.primaryDark
+                                        : AppColors.pinkDeep,
                                     fontSize: 6.4,
-                                    fontWeight:
-                                        FontWeight.w800,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
                               ],
                             ),
                           ),
                           _CalendarArrow(
-                            icon: Icons
-                                .chevron_right_rounded,
+                            icon: Icons.chevron_right_rounded,
                             onTap: _nextMonth,
                           ),
                         ],
@@ -2548,15 +2191,13 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
 
                       _CalendarGrid(
                         month: _month,
-                        firstAllowed:
-                            _firstAllowed,
+                        firstAllowed: _firstAllowed,
                         latest: _latest,
                         from: _from,
                         to: _to,
                         onTap: _selectDate,
                         sameDay: _sameDay,
-                        insideRange:
-                            _insideRange,
+                        insideRange: _insideRange,
                       ),
                     ],
                   ),
@@ -2582,26 +2223,15 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                     Expanded(
                       flex: 2,
                       child: FilledButton.icon(
-                        onPressed: () =>
-                            Navigator.of(context).pop(
-                          _DateRangeResult(
-                            from: _from,
-                            to: _to,
-                          ),
-                        ),
-                        icon: const Icon(
-                          Icons.check_rounded,
-                          size: 14,
-                        ),
-                        label: const Text(
-                          'Apply date range',
-                        ),
+                        onPressed: () => Navigator.of(
+                          context,
+                        ).pop(_DateRangeResult(from: _from, to: _to)),
+                        icon: const Icon(Icons.check_rounded, size: 14),
+                        label: const Text('Apply date range'),
                         style: FilledButton.styleFrom(
-                          minimumSize:
-                              const Size.fromHeight(43),
+                          minimumSize: const Size.fromHeight(43),
                           shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                       ),
@@ -2634,8 +2264,7 @@ class _DateSelectionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent =
-        rose ? AppColors.pinkDeep : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Material(
       color: Colors.transparent,
@@ -2645,21 +2274,16 @@ class _DateSelectionTile extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           height: 58,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
             color: selected
-                ? (rose
-                    ? AppColors.pinkSoft
-                    : AppColors.primarySoft)
+                ? (rose ? AppColors.pinkSoft : AppColors.primarySoft)
                 : Colors.white.withValues(alpha: .65),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: selected
                   ? accent.withValues(alpha: .24)
-                  : AppColors.primaryDark
-                      .withValues(alpha: .045),
+                  : AppColors.primaryDark.withValues(alpha: .045),
               width: selected ? 1.2 : 1,
             ),
           ),
@@ -2675,10 +2299,8 @@ class _DateSelectionTile extends StatelessWidget {
               const SizedBox(width: 7),
               Expanded(
                 child: Column(
-                  mainAxisAlignment:
-                      MainAxisAlignment.center,
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       label,
@@ -2703,12 +2325,7 @@ class _DateSelectionTile extends StatelessWidget {
                   ],
                 ),
               ),
-              if (selected)
-                Icon(
-                  Icons.circle,
-                  size: 6,
-                  color: accent,
-                ),
+              if (selected) Icon(Icons.circle, size: 6, color: accent),
             ],
           ),
         ),
@@ -2718,10 +2335,7 @@ class _DateSelectionTile extends StatelessWidget {
 }
 
 class _PresetChip extends StatelessWidget {
-  const _PresetChip({
-    required this.label,
-    required this.onTap,
-  });
+  const _PresetChip({required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;
@@ -2735,16 +2349,12 @@ class _PresetChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         child: Ink(
           height: 31,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
-            color: AppColors.primarySoft
-                .withValues(alpha: .68),
+            color: AppColors.primarySoft.withValues(alpha: .68),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: AppColors.primaryDark
-                  .withValues(alpha: .045),
+              color: AppColors.primaryDark.withValues(alpha: .045),
             ),
           ),
           child: Center(
@@ -2764,10 +2374,7 @@ class _PresetChip extends StatelessWidget {
 }
 
 class _CalendarArrow extends StatelessWidget {
-  const _CalendarArrow({
-    required this.icon,
-    required this.onTap,
-  });
+  const _CalendarArrow({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback onTap;
@@ -2786,11 +2393,7 @@ class _CalendarArrow extends StatelessWidget {
             color: AppColors.primarySoft,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: AppColors.primaryDark,
-          ),
+          child: Icon(icon, size: 18, color: AppColors.primaryDark),
         ),
       ),
     );
@@ -2841,49 +2444,32 @@ class _CalendarGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final first = DateTime(
-      month.year,
-      month.month,
-      1,
-    );
+    final first = DateTime(month.year, month.month, 1);
 
     final leading = first.weekday % 7;
 
-    final daysInMonth = DateTime(
-      month.year,
-      month.month + 1,
-      0,
-    ).day;
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
 
-    final cells =
-        ((leading + daysInMonth + 6) ~/ 7) * 7;
+    final cells = ((leading + daysInMonth + 6) ~/ 7) * 7;
 
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: cells,
-      gridDelegate:
-          const SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 7,
         mainAxisExtent: 36,
       ),
       itemBuilder: (context, index) {
         final dayNumber = index - leading + 1;
 
-        if (dayNumber < 1 ||
-            dayNumber > daysInMonth) {
+        if (dayNumber < 1 || dayNumber > daysInMonth) {
           return const SizedBox.shrink();
         }
 
-        final day = DateTime(
-          month.year,
-          month.month,
-          dayNumber,
-        );
+        final day = DateTime(month.year, month.month, dayNumber);
 
-        final disabled =
-            day.isBefore(firstAllowed) ||
-                day.isAfter(latest);
+        final disabled = day.isBefore(firstAllowed) || day.isAfter(latest);
 
         final isFrom = sameDay(day, from);
         final isTo = sameDay(day, to);
@@ -2894,10 +2480,8 @@ class _CalendarGrid extends StatelessWidget {
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap:
-                  disabled ? null : () => onTap(day),
-              borderRadius:
-                  BorderRadius.circular(11),
+              onTap: disabled ? null : () => onTap(day),
+              borderRadius: BorderRadius.circular(11),
               child: Container(
                 width: 32,
                 height: 32,
@@ -2908,25 +2492,16 @@ class _CalendarGrid extends StatelessWidget {
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: isTo
-                              ? const [
-                                  AppColors.pink,
-                                  AppColors.pinkDeep,
-                                ]
-                              : const [
-                                  AppColors.primary,
-                                  Color(
-                                    0xFF4FA9A4,
-                                  ),
-                                ],
+                              ? const [AppColors.pink, AppColors.pinkDeep]
+                              : const [AppColors.primary, Color(0xFF4FA9A4)],
                         )
                       : null,
                   color: edge
                       ? null
                       : inRange
-                          ? AppColors.primarySoft
-                          : Colors.transparent,
-                  borderRadius:
-                      BorderRadius.circular(11),
+                      ? AppColors.primarySoft
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(11),
                 ),
                 child: Text(
                   '$dayNumber',
@@ -2934,10 +2509,10 @@ class _CalendarGrid extends StatelessWidget {
                     color: disabled
                         ? AppColors.silver
                         : edge
-                            ? Colors.white
-                            : inRange
-                                ? AppColors.primaryDark
-                                : AppColors.textSecondary,
+                        ? Colors.white
+                        : inRange
+                        ? AppColors.primaryDark
+                        : AppColors.textSecondary,
                     fontSize: 7.4,
                     fontWeight: edge || inRange
                         ? FontWeight.w900
@@ -2956,11 +2531,7 @@ class _CalendarGrid extends StatelessWidget {
 DateTime? _dateOnly(DateTime? value) {
   if (value == null) return null;
 
-  return DateTime(
-    value.year,
-    value.month,
-    value.day,
-  );
+  return DateTime(value.year, value.month, value.day);
 }
 
 String _monthTitle(DateTime value) {
@@ -2982,21 +2553,26 @@ String _monthTitle(DateTime value) {
   return '${months[value.month - 1]} ${value.year}';
 }
 
-String _formatShortDate(
-  DateTime? value, {
-  required String fallback,
-}) {
+String _formatShortDate(DateTime? value, {required String fallback}) {
   if (value == null) return fallback;
   const months = <String>[
-    'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[value.month - 1]} ${value.day}';
 }
 
-String _formatCompactDate(
-  DateTime? value, {
-  required String fallback,
-}) {
+String _formatCompactDate(DateTime? value, {required String fallback}) {
   if (value == null) return fallback;
 
   const months = <String>[

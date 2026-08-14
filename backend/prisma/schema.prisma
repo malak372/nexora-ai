@@ -342,6 +342,7 @@ model Idea {
   @@index([generationType])
   @@index([isUnlocked])
   @@index([collectionJobId])
+  @@index([domainId, deletedAt, createdAt], map: "ideas_domain_deleted_created_idx")
   @@map("ideas")
 }
 

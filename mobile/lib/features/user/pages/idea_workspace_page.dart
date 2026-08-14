@@ -4,17 +4,21 @@
 // intentionally matches the Accepted Workspace so both flows feel like one
 // product while preserving the owned-idea actions and access rules.
 //
-// @author  Malak
+// @author Eman
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-
+import 'package:flutter/services.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/network/realtime_socket.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
+import '../widgets/workspace_navigation.dart';
 import 'business_model_page.dart';
-import 'direct_unlock_page.dart';
+import 'mobile_checkout_page.dart';
 import 'premium_chat_page.dart';
 import 'publish_idea_page.dart';
 
@@ -33,12 +37,10 @@ class IdeaWorkspacePage extends StatefulWidget {
   final String returnTitle;
 
   @override
-  State<IdeaWorkspacePage> createState() =>
-      _IdeaWorkspacePageState();
+  State<IdeaWorkspacePage> createState() => _IdeaWorkspacePageState();
 }
 
-class _IdeaWorkspacePageState
-    extends State<IdeaWorkspacePage> {
+class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
   Map<String, dynamic>? _bundle;
   Object? _error;
 
@@ -50,12 +52,9 @@ class _IdeaWorkspacePageState
     _load();
   }
 
-  Future<void> _load({
-    bool force = false,
-  }) async {
+  Future<void> _load({bool force = false}) async {
     try {
-      final bundle =
-          await UserApi.instance.getWorkspace(
+      final bundle = await UserApi.instance.getWorkspace(
         widget.ideaId,
         force: force,
       );
@@ -79,28 +78,66 @@ class _IdeaWorkspacePageState
     setState(() => _unlocking = true);
 
     try {
-      await UserApi.instance.unlockIdeaWithCredits(
-        widget.ideaId,
-      );
+      await UserApi.instance.unlockIdeaWithCredits(widget.ideaId);
 
       await Future.wait([
         _load(force: true),
-        UserSessionController.instance.load(
-          force: true,
-        ),
+        UserSessionController.instance.load(force: true),
       ]);
 
       if (mounted) {
-        showAppSnackBar(
-          context,
-          'Advanced outputs unlocked.',
-        );
+        showAppSnackBar(context, 'Advanced outputs unlocked.');
       }
     } on ApiException catch (error) {
       if (mounted) {
+        showAppSnackBar(context, error.message, error: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _unlocking = false);
+      }
+    }
+  }
+
+  /// Opens secure direct-unlock checkout inside the mobile application.
+  ///
+  /// Normal users no longer pass through a second unlock-options page. The
+  /// provider checkout is embedded, then PaymentResultPage verifies and applies
+  /// the unlock through the backend before the workspace is refreshed.
+  Future<void> _openDirectCheckout() async {
+    if (_unlocking) return;
+
+    setState(() => _unlocking = true);
+
+    try {
+      final result = await UserApi.instance.createDirectUnlockCheckout(
+        widget.ideaId,
+      );
+
+      final flow = await openVoxidenceCheckout(
+        // ignore: use_build_context_synchronously
+        context,
+        checkoutResult: result,
+        selectedSection: WorkspaceSection.ideas,
+        ideaId: widget.ideaId,
+        title: 'Unlock advanced workspace',
+      );
+
+      if (flow.status == CheckoutFlowStatus.completed && mounted) {
+        await Future.wait([
+          _load(force: true),
+          UserSessionController.instance.load(force: true),
+        ]);
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        showAppSnackBar(context, error.message, error: true);
+      }
+    } catch (_) {
+      if (mounted) {
         showAppSnackBar(
           context,
-          error.message,
+          'Could not open secure checkout. Please try again.',
           error: true,
         );
       }
@@ -111,9 +148,7 @@ class _IdeaWorkspacePageState
     }
   }
 
-  Future<void> _openPublish(
-    Map<String, dynamic> idea,
-  ) async {
+  Future<void> _openPublish(Map<String, dynamic> idea) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PublishIdeaPage(
@@ -129,9 +164,7 @@ class _IdeaWorkspacePageState
     }
   }
 
-  Future<void> _openBusinessModel(
-    Map<String, dynamic> idea,
-  ) async {
+  Future<void> _openBusinessModel(Map<String, dynamic> idea) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => BusinessModelPage(
@@ -147,6 +180,8 @@ class _IdeaWorkspacePageState
   }
 
   Future<void> _openAiChat() async {
+    unawaited(RealtimeSocket.warm('/ai-chat'));
+
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PremiumChatPage(
@@ -164,9 +199,7 @@ class _IdeaWorkspacePageState
     final bundle = _bundle;
 
     final idea = bundle?['idea'] is Map
-        ? Map<String, dynamic>.from(
-            bundle!['idea'] as Map,
-          )
+        ? Map<String, dynamic>.from(bundle!['idea'] as Map)
         : const <String, dynamic>{};
 
     final outputs = bundle?['outputs'] is List
@@ -174,27 +207,20 @@ class _IdeaWorkspacePageState
         : const [];
 
     final access = idea['access'] is Map
-        ? Map<String, dynamic>.from(
-            idea['access'] as Map,
-          )
+        ? Map<String, dynamic>.from(idea['access'] as Map)
         : const <String, dynamic>{};
 
-    final canChat =
-        access['canUseAiChat'] == true;
+    final canChat = access['canUseAiChat'] == true;
 
-    final canPublish =
-        access['canPublish'] == true;
+    final canPublish = access['canPublish'] == true;
 
-    final unlocked =
-        idea['isUnlocked'] == true;
+    final unlocked = idea['isUnlocked'] == true;
 
-    final premiumAccount =
-        UserSessionController.instance.isPremium;
+    final premiumAccount = UserSessionController.instance.isPremium;
 
-    final title =
-        _text(idea['title']).isEmpty
-            ? 'Untitled idea'
-            : _text(idea['title']);
+    final title = _text(idea['title']).isEmpty
+        ? 'Untitled idea'
+        : _text(idea['title']);
 
     final abstractValue =
         idea['fullAbstract'] ??
@@ -202,40 +228,37 @@ class _IdeaWorkspacePageState
         idea['limitedAbstract'];
 
     final domain = idea['domain'] is Map
-        ? _text(
-            (idea['domain'] as Map)['name'],
-          )
-        : _text(
-            idea['domainName'],
-          );
+        ? _text((idea['domain'] as Map)['name'])
+        : _text(idea['domainName']);
 
     final generationType = _humanize(
-      _text(
-        idea['generationType'],
-      ).isEmpty
+      _text(idea['generationType']).isEmpty
           ? 'Idea'
-          : _text(
-              idea['generationType'],
-            ),
+          : _text(idea['generationType']),
     );
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: AppColors.background,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: AppColors.background,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
+        backgroundColor: AppColors.background,
+        surfaceTintColor: Colors.transparent,
         leadingWidth: 50,
         leading: IconButton(
           tooltip: 'Back to ${widget.returnTitle}',
-          onPressed: () =>
-              Navigator.of(context).maybePop(),
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            size: 22,
-          ),
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back_rounded, size: 22),
         ),
         titleSpacing: 0,
         title: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               widget.returnTitle,
@@ -261,55 +284,34 @@ class _IdeaWorkspacePageState
       body: WorkspaceBackground(
         child: RefreshIndicator(
           color: AppColors.primary,
-          onRefresh: () =>
-              _load(force: true),
+          onRefresh: () => _load(force: true),
           child: ListView(
-            physics:
-                const AlwaysScrollableScrollPhysics(
+            physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
-            padding: const EdgeInsets.fromLTRB(
-              18,
-              12,
-              18,
-              42,
-            ),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 42),
             children: [
-              if (bundle == null &&
-                  _error == null)
+              if (bundle == null && _error == null)
                 const LoadingList(count: 4)
               else if (_error != null)
                 EmptyState(
-                  icon:
-                      Icons.cloud_off_rounded,
-                  title:
-                      'Idea workspace unavailable',
+                  icon: Icons.cloud_off_rounded,
+                  title: 'Idea workspace unavailable',
                   message: _error.toString(),
                   action: FilledButton.icon(
-                    onPressed: () =>
-                        _load(force: true),
-                    icon: const Icon(
-                      Icons.refresh_rounded,
-                      size: 15,
-                    ),
+                    onPressed: () => _load(force: true),
+                    icon: const Icon(Icons.refresh_rounded, size: 15),
                     label: const Text('Retry'),
                   ),
                 )
               else ...[
                 _IdeaWorkspaceHeader(
                   title: title,
-                  generationType:
-                      generationType,
-                  domain: domain.isEmpty
-                      ? 'General innovation'
-                      : domain,
-                  createdAt:
-                      _workspaceDate(
-                    idea['createdAt'],
-                  ),
+                  generationType: generationType,
+                  domain: domain.isEmpty ? 'General innovation' : domain,
+                  createdAt: _workspaceDate(idea['createdAt']),
                   unlocked: unlocked,
-                  premiumAccount:
-                      premiumAccount,
+                  premiumAccount: premiumAccount,
                 ),
 
                 const SizedBox(height: 12),
@@ -321,39 +323,26 @@ class _IdeaWorkspacePageState
                 Row(
                   children: [
                     Expanded(
-                      child:
-                          _WorkspaceToolAction(
-                        icon:
-                            Icons.public_rounded,
+                      child: _WorkspaceToolAction(
+                        icon: Icons.public_rounded,
                         eyebrow: 'SHARE',
                         title: 'Publish',
                         subtitle: canPublish
                             ? 'Create a safe public snapshot'
                             : 'Publishing is unavailable',
-                        onTap: canPublish
-                            ? () => _openPublish(
-                                  idea,
-                                )
-                            : null,
+                        onTap: canPublish ? () => _openPublish(idea) : null,
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child:
-                          _WorkspaceToolAction(
-                        icon: Icons
-                            .dashboard_customize_outlined,
+                      child: _WorkspaceToolAction(
+                        icon: Icons.dashboard_customize_outlined,
                         eyebrow: 'PLAN',
                         title: 'Business model',
                         subtitle: unlocked
                             ? 'Open the business studio'
                             : 'Unlock advanced access first',
-                        onTap: unlocked
-                            ? () =>
-                                _openBusinessModel(
-                                  idea,
-                                )
-                            : null,
+                        onTap: unlocked ? () => _openBusinessModel(idea) : null,
                         rose: true,
                       ),
                     ),
@@ -363,13 +352,10 @@ class _IdeaWorkspacePageState
                 if (canChat) ...[
                   const SizedBox(height: 8),
                   _WorkspaceToolAction(
-                    icon:
-                        Icons.forum_outlined,
-                    eyebrow:
-                        'PREMIUM INTELLIGENCE',
+                    icon: Icons.forum_outlined,
+                    eyebrow: 'PREMIUM INTELLIGENCE',
                     title: 'AI Chat',
-                    subtitle:
-                        'Ask questions about this idea in real time',
+                    subtitle: 'Ask questions about this idea in real time',
                     onTap: _openAiChat,
                     fullWidth: true,
                   ),
@@ -377,58 +363,42 @@ class _IdeaWorkspacePageState
 
                 const SizedBox(height: 14),
 
-                if (_hasContent(
-                  abstractValue,
-                ))
+                if (_hasContent(abstractValue))
                   _WorkspaceSectionCard(
                     number: '01',
                     title: 'Overview',
                     value: abstractValue,
-                    icon:
-                        Icons.description_outlined,
+                    icon: Icons.description_outlined,
                   ),
 
-                if (_hasContent(
-                  idea['problemStatement'],
-                )) ...[
+                if (_hasContent(idea['problemStatement'])) ...[
                   const SizedBox(height: 10),
                   _WorkspaceSectionCard(
                     number: '02',
-                    title:
-                        'Problem overview',
-                    value:
-                        idea['problemStatement'],
-                    icon:
-                        Icons.layers_outlined,
+                    title: 'Problem overview',
+                    value: idea['problemStatement'],
+                    icon: Icons.layers_outlined,
                   ),
                 ],
 
-                if (_hasContent(
-                  idea['objectives'],
-                )) ...[
+                if (_hasContent(idea['objectives'])) ...[
                   const SizedBox(height: 10),
                   _WorkspaceSectionCard(
                     number: '03',
                     title: 'Objectives',
-                    value:
-                        idea['objectives'],
-                    icon:
-                        Icons.flag_outlined,
+                    value: idea['objectives'],
+                    icon: Icons.flag_outlined,
                     rose: true,
                   ),
                 ],
 
-                if (_hasContent(
-                  idea['targetUsers'],
-                )) ...[
+                if (_hasContent(idea['targetUsers'])) ...[
                   const SizedBox(height: 10),
                   _WorkspaceSectionCard(
                     number: '04',
                     title: 'Target users',
-                    value:
-                        idea['targetUsers'],
-                    icon:
-                        Icons.groups_outlined,
+                    value: idea['targetUsers'],
+                    icon: Icons.groups_outlined,
                   ),
                 ],
 
@@ -436,127 +406,66 @@ class _IdeaWorkspacePageState
 
                 _AdvancedPackageHeading(
                   unlocked: unlocked,
-                  outputCount:
-                      outputs.length,
+                  outputCount: outputs.length,
                 ),
 
                 const SizedBox(height: 9),
 
                 if (!unlocked)
                   _LockedAdvancedPanel(
-                    premiumAccount:
-                        premiumAccount,
+                    premiumAccount: premiumAccount,
                     unlocking: _unlocking,
-                    onUnlock:
-                        premiumAccount
-                            ? _unlockWithCredits
-                            : () async {
-                                await Navigator.of(
-                                  context,
-                                ).push(
-                                  MaterialPageRoute<
-                                      void>(
-                                    builder: (_) =>
-                                        DirectUnlockPage(
-                                      ideaId:
-                                          widget
-                                              .ideaId,
-                                    ),
-                                  ),
-                                );
-
-                                if (mounted) {
-                                  await _load(
-                                    force: true,
-                                  );
-                                }
-                              },
+                    onUnlock: premiumAccount
+                        ? _unlockWithCredits
+                        : _openDirectCheckout,
                   )
                 else if (outputs.isEmpty)
                   const EmptyState(
-                    icon:
-                        Icons.layers_outlined,
-                    title:
-                        'No outputs available',
+                    icon: Icons.layers_outlined,
+                    title: 'No outputs available',
                     message:
                         'The idea is unlocked but no completed advanced outputs were returned.',
                   )
                 else
-                  ...List.generate(
-                    outputs.length,
-                    (index) {
-                      final raw =
-                          outputs[index];
+                  ...List.generate(outputs.length, (index) {
+                    final raw = outputs[index];
 
-                      final output =
-                          raw is Map
-                              ? Map<
-                                  String,
-                                  dynamic>.from(
-                                  raw,
-                                )
-                              : const <
-                                  String,
-                                  dynamic>{};
+                    final output = raw is Map
+                        ? Map<String, dynamic>.from(raw)
+                        : const <String, dynamic>{};
 
-                      final content =
-                          output['content'] ??
-                          output[
-                              'structuredContent'];
+                    final content =
+                        output['content'] ?? output['structuredContent'];
 
-                      final outputTitle =
-                          _text(
-                            output['title'],
-                          ).isNotEmpty
-                              ? _text(
-                                  output[
-                                      'title'],
-                                )
-                              : _humanize(
-                                  _text(
-                                    output[
-                                        'outputKey'],
-                                  ).isEmpty
-                                      ? 'Advanced output'
-                                      : _text(
-                                          output[
-                                              'outputKey'],
-                                        ),
-                                );
+                    final outputTitle = _text(output['title']).isNotEmpty
+                        ? _text(output['title'])
+                        : _humanize(
+                            _text(output['outputKey']).isEmpty
+                                ? 'Advanced output'
+                                : _text(output['outputKey']),
+                          );
 
-                      return Padding(
-                        padding:
-                            const EdgeInsets.only(
-                          bottom: 9,
-                        ),
-                        child:
-                            _AdvancedOutputCard(
-                          number:
-                              (index + 1)
-                                  .toString()
-                                  .padLeft(
-                                    2,
-                                    '0',
-                                  ),
-                          title:
-                              outputTitle,
-                          value: content,
-                          rose: false,
-                        ),
-                      );
-                    },
-                  ),
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: _AdvancedOutputCard(
+                        number: (index + 1).toString().padLeft(2, '0'),
+                        title: outputTitle,
+                        value: content,
+                        rose: false,
+                      ),
+                    );
+                  }),
               ],
             ],
           ),
         ),
       ),
+      ),
     );
   }
 }
 
-class _IdeaWorkspaceHeader
-    extends StatelessWidget {
+class _IdeaWorkspaceHeader extends StatelessWidget {
   const _IdeaWorkspaceHeader({
     required this.title,
     required this.generationType,
@@ -577,31 +486,20 @@ class _IdeaWorkspaceHeader
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        13,
-        12,
-        13,
-        13,
-      ),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            AppColors.surfaceRose,
-            Color(0xFFF0F8F5),
-          ],
+          colors: [AppColors.surface, AppColors.surfaceRose, Color(0xFFF0F8F5)],
         ),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: AppColors.primaryDark
-              .withValues(alpha: .065),
+          color: AppColors.primaryDark.withValues(alpha: .065),
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep
-                .withValues(alpha: .035),
+            color: AppColors.primaryDeep.withValues(alpha: .035),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -615,46 +513,32 @@ class _IdeaWorkspaceHeader
             child: Icon(
               Icons.auto_awesome_rounded,
               size: 75,
-              color: AppColors.primaryDark
-                  .withValues(alpha: .025),
+              color: AppColors.primaryDark.withValues(alpha: .025),
             ),
           ),
           Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   _HeaderBadge(
-                    icon: Icons
-                        .auto_awesome_rounded,
-                    label: generationType
-                        .toUpperCase(),
-                    accent:
-                        AppColors.primaryDark,
-                    tint:
-                        AppColors.primarySoft,
+                    icon: Icons.auto_awesome_rounded,
+                    label: generationType.toUpperCase(),
+                    accent: AppColors.primaryDark,
+                    tint: AppColors.primarySoft,
                   ),
                   const Spacer(),
                   _HeaderBadge(
                     icon: unlocked
-                        ? Icons
-                            .lock_open_rounded
-                        : Icons
-                            .lock_outline_rounded,
-                    label: unlocked
-                        ? 'ADVANCED'
-                        : 'NORMAL',
+                        ? Icons.lock_open_rounded
+                        : Icons.lock_outline_rounded,
+                    label: unlocked ? 'ADVANCED' : 'NORMAL',
                     accent: unlocked
                         ? AppColors.success
-                        : AppColors
-                            .primaryDark,
+                        : AppColors.primaryDark,
                     tint: unlocked
-                        ? const Color(
-                            0xFFEAF8F2,
-                          )
-                        : AppColors
-                            .primarySoft,
+                        ? const Color(0xFFEAF8F2)
+                        : AppColors.primarySoft,
                   ),
                 ],
               ),
@@ -663,15 +547,11 @@ class _IdeaWorkspaceHeader
 
               Text(
                 title,
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(
-                      fontSize: 19.5,
-                      height: 1.08,
-                      letterSpacing:
-                          -.36,
-                    ),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontSize: 19.5,
+                  height: 1.08,
+                  letterSpacing: -.36,
+                ),
               ),
 
               const SizedBox(height: 8),
@@ -680,23 +560,16 @@ class _IdeaWorkspaceHeader
                 spacing: 6,
                 runSpacing: 6,
                 children: [
+                  _HeaderMeta(icon: Icons.grid_view_rounded, label: domain),
                   _HeaderMeta(
-                    icon:
-                        Icons.grid_view_rounded,
-                    label: domain,
-                  ),
-                  _HeaderMeta(
-                    icon: Icons
-                        .calendar_today_outlined,
+                    icon: Icons.calendar_today_outlined,
                     label: createdAt,
                     rose: true,
                   ),
                   if (premiumAccount)
                     const _HeaderMeta(
-                      icon: Icons
-                          .auto_awesome_rounded,
-                      label:
-                          'Premium workspace',
+                      icon: Icons.auto_awesome_rounded,
+                      label: 'Premium workspace',
                     ),
                 ],
               ),
@@ -724,23 +597,15 @@ class _HeaderBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: tint,
-        borderRadius:
-            BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 10.5,
-            color: accent,
-          ),
+          Icon(icon, size: 10.5, color: accent),
           const SizedBox(width: 4),
           Text(
             label,
@@ -770,53 +635,33 @@ class _HeaderMeta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
       height: 28,
-      constraints:
-          const BoxConstraints(
-        maxWidth: 180,
-      ),
-      padding:
-          const EdgeInsets.symmetric(
-        horizontal: 8,
-      ),
+      constraints: const BoxConstraints(maxWidth: 180),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: rose
-            ? AppColors.pinkSoft
-                .withValues(alpha: .70)
-            : Colors.white
-                .withValues(alpha: .62),
-        borderRadius:
-            BorderRadius.circular(999),
-        border: Border.all(
-          color: accent
-              .withValues(alpha: .05),
-        ),
+            ? AppColors.pinkSoft.withValues(alpha: .70)
+            : Colors.white.withValues(alpha: .62),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: .05)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 10.5,
-            color: accent,
-          ),
+          Icon(icon, size: 10.5, color: accent),
           const SizedBox(width: 4),
           Flexible(
             child: Text(
               label,
               maxLines: 1,
-              overflow:
-                  TextOverflow.ellipsis,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: accent,
                 fontSize: 6.6,
-                fontWeight:
-                    FontWeight.w800,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -826,8 +671,7 @@ class _HeaderMeta extends StatelessWidget {
   }
 }
 
-class _WorkspaceToolsHeading
-    extends StatelessWidget {
+class _WorkspaceToolsHeading extends StatelessWidget {
   const _WorkspaceToolsHeading();
 
   @override
@@ -854,8 +698,7 @@ class _WorkspaceToolsHeading
   }
 }
 
-class _WorkspaceToolAction
-    extends StatelessWidget {
+class _WorkspaceToolAction extends StatelessWidget {
   const _WorkspaceToolAction({
     required this.icon,
     required this.eyebrow,
@@ -882,86 +725,44 @@ class _WorkspaceToolAction
     final accent = !enabled
         ? AppColors.textMuted
         : rose
-            ? AppColors.pinkDeep
-            : AppColors.primaryDark;
+        ? AppColors.pinkDeep
+        : AppColors.primaryDark;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius:
-            BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(18),
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight:
-                fullWidth ? 76 : 94,
-          ),
+          constraints: BoxConstraints(minHeight: fullWidth ? 76 : 94),
           child: Ink(
-            width: fullWidth
-                ? double.infinity
-                : null,
-            padding:
-                const EdgeInsets.fromLTRB(
-              10,
-              10,
-              9,
-              10,
-            ),
+            width: fullWidth ? double.infinity : null,
+            padding: const EdgeInsets.fromLTRB(10, 10, 9, 10),
             decoration: BoxDecoration(
               gradient: enabled
                   ? LinearGradient(
-                      begin:
-                          Alignment.topLeft,
-                      end: Alignment
-                          .bottomRight,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                       colors: rose
-                          ? const [
-                              AppColors
-                                  .surface,
-                              AppColors
-                                  .surfaceRose,
-                            ]
-                          : const [
-                              AppColors
-                                  .surface,
-                              Color(
-                                0xFFF0F8F5,
-                              ),
-                            ],
+                          ? const [AppColors.surface, AppColors.surfaceRose]
+                          : const [AppColors.surface, Color(0xFFF0F8F5)],
                     )
                   : null,
               color: enabled
                   ? null
-                  : AppColors.surfaceMuted
-                      .withValues(
-                      alpha: .70,
-                    ),
-              borderRadius:
-                  BorderRadius.circular(18),
+                  : AppColors.surfaceMuted.withValues(alpha: .70),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: enabled
-                    ? accent.withValues(
-                        alpha: .09,
-                      )
-                    : AppColors.silver
-                        .withValues(
-                          alpha: .25,
-                        ),
+                    ? accent.withValues(alpha: .09)
+                    : AppColors.silver.withValues(alpha: .25),
               ),
               boxShadow: enabled
                   ? [
                       BoxShadow(
-                        color: AppColors
-                            .primaryDeep
-                            .withValues(
-                          alpha: .035,
-                        ),
+                        color: AppColors.primaryDeep.withValues(alpha: .035),
                         blurRadius: 14,
-                        offset:
-                            const Offset(
-                          0,
-                          5,
-                        ),
+                        offset: const Offset(0, 5),
                       ),
                     ]
                   : null,
@@ -973,68 +774,43 @@ class _WorkspaceToolAction
                         icon: icon,
                         accent: accent,
                         rose: rose,
-                        enabled:
-                            enabled,
+                        enabled: enabled,
                       ),
-                      const SizedBox(
-                        width: 9,
-                      ),
+                      const SizedBox(width: 9),
                       Expanded(
                         child: _ToolText(
-                          eyebrow:
-                              eyebrow,
+                          eyebrow: eyebrow,
                           title: title,
-                          subtitle:
-                              subtitle,
-                          accent:
-                              accent,
-                          enabled:
-                              enabled,
+                          subtitle: subtitle,
+                          accent: accent,
+                          enabled: enabled,
                         ),
                       ),
-                      _ToolArrow(
-                        accent: accent,
-                        enabled:
-                            enabled,
-                      ),
+                      _ToolArrow(accent: accent, enabled: enabled),
                     ],
                   )
                 : Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
                           _ToolIcon(
                             icon: icon,
-                            accent:
-                                accent,
+                            accent: accent,
                             rose: rose,
-                            enabled:
-                                enabled,
+                            enabled: enabled,
                           ),
                           const Spacer(),
-                          _ToolArrow(
-                            accent:
-                                accent,
-                            enabled:
-                                enabled,
-                          ),
+                          _ToolArrow(accent: accent, enabled: enabled),
                         ],
                       ),
-                      const SizedBox(
-                        height: 8,
-                      ),
+                      const SizedBox(height: 8),
                       _ToolText(
-                        eyebrow:
-                            eyebrow,
+                        eyebrow: eyebrow,
                         title: title,
-                        subtitle:
-                            subtitle,
+                        subtitle: subtitle,
                         accent: accent,
-                        enabled:
-                            enabled,
+                        enabled: enabled,
                       ),
                     ],
                   ),
@@ -1066,28 +842,19 @@ class _ToolIcon extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: !enabled
-            ? AppColors.silver
-                .withValues(alpha: .16)
+            ? AppColors.silver.withValues(alpha: .16)
             : rose
-                ? AppColors.pinkSoft
-                : AppColors.primarySoft,
-        borderRadius:
-            BorderRadius.circular(11),
+            ? AppColors.pinkSoft
+            : AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(11),
       ),
-      child: Icon(
-        icon,
-        size: 16,
-        color: accent,
-      ),
+      child: Icon(icon, size: 16, color: accent),
     );
   }
 }
 
 class _ToolArrow extends StatelessWidget {
-  const _ToolArrow({
-    required this.accent,
-    required this.enabled,
-  });
+  const _ToolArrow({required this.accent, required this.enabled});
 
   final Color accent;
   final bool enabled;
@@ -1099,14 +866,11 @@ class _ToolArrow extends StatelessWidget {
       height: 25,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white
-            .withValues(alpha: .68),
+        color: Colors.white.withValues(alpha: .68),
         shape: BoxShape.circle,
       ),
       child: Icon(
-        enabled
-            ? Icons.arrow_outward_rounded
-            : Icons.lock_outline_rounded,
+        enabled ? Icons.arrow_outward_rounded : Icons.lock_outline_rounded,
         size: 12,
         color: accent,
       ),
@@ -1132,8 +896,7 @@ class _ToolText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
@@ -1153,9 +916,7 @@ class _ToolText extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: enabled
-                ? AppColors.textPrimary
-                : AppColors.textMuted,
+            color: enabled ? AppColors.textPrimary : AppColors.textMuted,
             fontSize: 10.1,
             fontWeight: FontWeight.w900,
           ),
@@ -1176,8 +937,7 @@ class _ToolText extends StatelessWidget {
   }
 }
 
-class _WorkspaceSectionCard
-    extends StatelessWidget {
+class _WorkspaceSectionCard extends StatelessWidget {
   const _WorkspaceSectionCard({
     required this.number,
     required this.title,
@@ -1194,42 +954,24 @@ class _WorkspaceSectionCard
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        13,
-        12,
-        13,
-        13,
-      ),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: rose
-              ? const [
-                  AppColors.surface,
-                  AppColors.surfaceRose,
-                ]
-              : const [
-                  AppColors.surface,
-                  Color(0xFFF2F9F7),
-                ],
+              ? const [AppColors.surface, AppColors.surfaceRose]
+              : const [AppColors.surface, Color(0xFFF2F9F7)],
         ),
-        borderRadius:
-            BorderRadius.circular(20),
-        border: Border.all(
-          color: accent
-              .withValues(alpha: .07),
-        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withValues(alpha: .07)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep
-                .withValues(alpha: .035),
+            color: AppColors.primaryDeep.withValues(alpha: .035),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -1243,8 +985,7 @@ class _WorkspaceSectionCard
             child: Text(
               number,
               style: TextStyle(
-                color: accent
-                    .withValues(alpha: .065),
+                color: accent.withValues(alpha: .065),
                 fontSize: 36,
                 height: 1,
                 fontWeight: FontWeight.w900,
@@ -1252,50 +993,35 @@ class _WorkspaceSectionCard
             ),
           ),
           Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Container(
                     width: 34,
                     height: 34,
-                    alignment:
-                        Alignment.center,
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: rose
-                          ? AppColors.pinkSoft
-                          : AppColors.primarySoft,
-                      borderRadius:
-                          BorderRadius.circular(
-                        11,
-                      ),
+                      color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Icon(
-                      icon,
-                      size: 16,
-                      color: accent,
-                    ),
+                    child: Icon(icon, size: 16, color: accent),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       title,
                       style: const TextStyle(
-                        color: AppColors
-                            .textPrimary,
+                        color: AppColors.textPrimary,
                         fontSize: 12,
-                        fontWeight:
-                            FontWeight.w900,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 9),
-              _WorkspaceContent(
-                value: value,
-              ),
+              _WorkspaceContent(value: value),
             ],
           ),
         ],
@@ -1304,8 +1030,7 @@ class _WorkspaceSectionCard
   }
 }
 
-class _AdvancedPackageHeading
-    extends StatelessWidget {
+class _AdvancedPackageHeading extends StatelessWidget {
   const _AdvancedPackageHeading({
     required this.unlocked,
     required this.outputCount,
@@ -1317,32 +1042,22 @@ class _AdvancedPackageHeading
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment:
-          CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Container(
           width: 37,
           height: 37,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            gradient:
-                const LinearGradient(
+            gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                AppColors.primarySoft,
-                AppColors.surfaceRose,
-              ],
+              colors: [AppColors.primarySoft, AppColors.surfaceRose],
             ),
-            borderRadius:
-                BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
-            unlocked
-                ? Icons
-                    .verified_outlined
-                : Icons
-                    .lock_outline_rounded,
+            unlocked ? Icons.verified_outlined : Icons.lock_outline_rounded,
             size: 17,
             color: AppColors.primaryDark,
           ),
@@ -1350,31 +1065,24 @@ class _AdvancedPackageHeading
         const SizedBox(width: 9),
         Expanded(
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
                 'ADVANCED PACKAGE',
                 style: TextStyle(
-                  color:
-                      AppColors.primaryDark,
+                  color: AppColors.primaryDark,
                   fontSize: 6.1,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                   letterSpacing: .68,
                 ),
               ),
               const SizedBox(height: 3),
               Text(
-                unlocked
-                    ? 'Execution outputs'
-                    : 'Protected outputs',
+                unlocked ? 'Execution outputs' : 'Protected outputs',
                 style: const TextStyle(
-                  color:
-                      AppColors.textPrimary,
+                  color: AppColors.textPrimary,
                   fontSize: 14,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 2),
@@ -1383,8 +1091,7 @@ class _AdvancedPackageHeading
                     ? '$outputCount generated ${outputCount == 1 ? 'section' : 'sections'} available.'
                     : 'Unlock the evidence-backed execution layer when you are ready.',
                 style: const TextStyle(
-                  color:
-                      AppColors.textMuted,
+                  color: AppColors.textMuted,
                   fontSize: 7.5,
                   height: 1.3,
                 ),
@@ -1397,8 +1104,7 @@ class _AdvancedPackageHeading
   }
 }
 
-class _LockedAdvancedPanel
-    extends StatelessWidget {
+class _LockedAdvancedPanel extends StatelessWidget {
   const _LockedAdvancedPanel({
     required this.premiumAccount,
     required this.unlocking,
@@ -1413,28 +1119,15 @@ class _LockedAdvancedPanel
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        14,
-        15,
-        14,
-        14,
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 15, 14, 14),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF0F8F5),
-            AppColors.surfaceRose,
-          ],
+          colors: [AppColors.surface, Color(0xFFF0F8F5), AppColors.surfaceRose],
         ),
-        borderRadius:
-            BorderRadius.circular(21),
-        border: Border.all(
-          color: AppColors.primary
-              .withValues(alpha: .10),
-        ),
+        borderRadius: BorderRadius.circular(21),
+        border: Border.all(color: AppColors.primary.withValues(alpha: .10)),
       ),
       child: Column(
         children: [
@@ -1446,8 +1139,7 @@ class _LockedAdvancedPanel
               shape: BoxShape.circle,
               color: AppColors.primarySoft,
               border: Border.all(
-                color: AppColors.primary
-                    .withValues(alpha: .10),
+                color: AppColors.primary.withValues(alpha: .10),
               ),
             ),
             child: const Icon(
@@ -1460,7 +1152,7 @@ class _LockedAdvancedPanel
           Text(
             premiumAccount
                 ? 'Unlock with Premium credits'
-                : 'Advanced workspace is locked',
+                : 'Unlock advanced workspace',
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: AppColors.textPrimary,
@@ -1472,7 +1164,7 @@ class _LockedAdvancedPanel
           Text(
             premiumAccount
                 ? 'Your balance and configured credit cost are checked before a one-time unlock.'
-                : 'Open the secure unlock options to activate advanced outputs for this idea.',
+                : 'Continue straight to secure payment. There is no extra unlock-options screen.',
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: AppColors.textMuted,
@@ -1484,14 +1176,12 @@ class _LockedAdvancedPanel
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed:
-                  unlocking ? null : onUnlock,
+              onPressed: unlocking ? null : onUnlock,
               icon: unlocking
                   ? const SizedBox(
                       width: 14,
                       height: 14,
-                      child:
-                          CircularProgressIndicator(
+                      child: CircularProgressIndicator(
                         strokeWidth: 1.7,
                         color: Colors.white,
                       ),
@@ -1499,23 +1189,20 @@ class _LockedAdvancedPanel
                   : Icon(
                       premiumAccount
                           ? Icons.bolt_rounded
-                          : Icons
-                              .lock_open_rounded,
+                          : Icons.lock_open_rounded,
                       size: 15,
                     ),
               label: Text(
                 unlocking
                     ? 'Opening…'
                     : premiumAccount
-                        ? 'Unlock with credits'
-                        : 'View unlock options',
+                    ? 'Unlock with credits'
+                    : 'Pay & unlock advanced',
               ),
               style: FilledButton.styleFrom(
-                minimumSize:
-                    const Size.fromHeight(43),
+                minimumSize: const Size.fromHeight(43),
                 shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
@@ -1546,15 +1233,10 @@ class _AdvancedOutputCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF2F9F7),
-          ],
+          colors: [AppColors.surface, Color(0xFFF2F9F7)],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .07),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .07)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .03),
@@ -1601,10 +1283,7 @@ class _AdvancedOutputCard extends StatelessWidget {
             padding: EdgeInsets.only(top: 2),
             child: Text(
               'Advanced workspace output',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 6.6,
-              ),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 6.6),
             ),
           ),
           iconColor: AppColors.primaryDark,
@@ -1629,13 +1308,8 @@ class _AdvancedOutputCard extends StatelessWidget {
   }
 }
 
-
-
-class _WorkspaceContent
-    extends StatelessWidget {
-  const _WorkspaceContent({
-    required this.value,
-  });
+class _WorkspaceContent extends StatelessWidget {
+  const _WorkspaceContent({required this.value});
 
   final dynamic value;
 
@@ -1644,10 +1318,7 @@ class _WorkspaceContent
     if (!_hasContent(value)) {
       return const Text(
         'Not available yet.',
-        style: TextStyle(
-          color: AppColors.textMuted,
-          fontSize: 8.8,
-        ),
+        style: TextStyle(color: AppColors.textMuted, fontSize: 8.8),
       );
     }
 
@@ -1655,39 +1326,24 @@ class _WorkspaceContent
       final items = value as List;
 
       return Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: items
             .map(
               (item) => Padding(
-                padding:
-                    const EdgeInsets.only(
-                  bottom: 6,
-                ),
+                padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Padding(
-                      padding:
-                          EdgeInsets.only(
-                        top: 2,
-                      ),
+                      padding: EdgeInsets.only(top: 2),
                       child: Icon(
-                        Icons
-                            .check_circle_outline_rounded,
+                        Icons.check_circle_outline_rounded,
                         size: 13,
-                        color:
-                            AppColors.primary,
+                        color: AppColors.primary,
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Expanded(
-                      child:
-                          _WorkspaceContent(
-                        value: item,
-                      ),
-                    ),
+                    Expanded(child: _WorkspaceContent(value: item)),
                   ],
                 ),
               ),
@@ -1697,64 +1353,37 @@ class _WorkspaceContent
     }
 
     if (value is Map) {
-      final entries =
-          (value as Map).entries.toList();
+      final entries = (value as Map).entries.toList();
 
       return Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: entries
             .map(
               (entry) => Padding(
-                padding:
-                    const EdgeInsets.only(
-                  bottom: 8,
-                ),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Container(
                   width: double.infinity,
-                  padding:
-                      const EdgeInsets.all(9),
+                  padding: const EdgeInsets.all(9),
                   decoration: BoxDecoration(
-                    color: Colors.white
-                        .withValues(
-                      alpha: .58,
-                    ),
-                    borderRadius:
-                        BorderRadius.circular(
-                      12,
-                    ),
+                    color: Colors.white.withValues(alpha: .58),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: AppColors
-                          .primaryDark
-                          .withValues(
-                        alpha: .045,
-                      ),
+                      color: AppColors.primaryDark.withValues(alpha: .045),
                     ),
                   ),
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _humanize(
-                          '${entry.key}',
-                        ),
+                        _humanize('${entry.key}'),
                         style: const TextStyle(
-                          color: AppColors
-                              .textPrimary,
-                          fontWeight:
-                              FontWeight.w900,
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w900,
                           fontSize: 9.2,
                         ),
                       ),
-                      const SizedBox(
-                        height: 3,
-                      ),
-                      _WorkspaceContent(
-                        value:
-                            entry.value,
-                      ),
+                      const SizedBox(height: 3),
+                      _WorkspaceContent(value: entry.value),
                     ],
                   ),
                 ),
@@ -1769,17 +1398,14 @@ class _WorkspaceContent
     final lines = raw
         .split('\n')
         .map((line) => line.trim())
-        .where(
-          (line) => line.isNotEmpty,
-        )
+        .where((line) => line.isNotEmpty)
         .toList();
 
     if (lines.length <= 1) {
       return Text(
         raw,
         style: const TextStyle(
-          color:
-              AppColors.textSecondary,
+          color: AppColors.textSecondary,
           fontSize: 9.2,
           height: 1.48,
         ),
@@ -1787,40 +1413,28 @@ class _WorkspaceContent
     }
 
     return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: lines
           .map(
             (line) => Padding(
-              padding:
-                  const EdgeInsets.only(
-                bottom: 6,
-              ),
+              padding: const EdgeInsets.only(bottom: 6),
               child: Row(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Padding(
-                    padding:
-                        EdgeInsets.only(
-                      top: 2,
-                    ),
+                    padding: EdgeInsets.only(top: 2),
                     child: Icon(
-                      Icons
-                          .auto_awesome_rounded,
+                      Icons.auto_awesome_rounded,
                       size: 11,
-                      color: AppColors
-                          .primaryDark,
+                      color: AppColors.primaryDark,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       line,
-                      style:
-                          const TextStyle(
-                        color: AppColors
-                            .textSecondary,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
                         fontSize: 9.2,
                         height: 1.45,
                       ),
@@ -1853,19 +1467,14 @@ bool _hasContent(dynamic value) {
   return true;
 }
 
-String _text(dynamic value) =>
-    value?.toString().trim() ?? '';
+String _text(dynamic value) => value?.toString().trim() ?? '';
 
 String _humanize(String value) {
   final spaced = value
-      .replaceAll(
-        RegExp(r'[_-]+'),
-        ' ',
-      )
+      .replaceAll(RegExp(r'[_-]+'), ' ')
       .replaceAllMapped(
         RegExp(r'([a-z0-9])([A-Z])'),
-        (match) =>
-            '${match[1]} ${match[2]}',
+        (match) => '${match[1]} ${match[2]}',
       )
       .trim();
 
@@ -1884,8 +1493,7 @@ String _humanize(String value) {
 }
 
 String _workspaceDate(dynamic value) {
-  final parsed =
-      DateTime.tryParse('$value')?.toLocal();
+  final parsed = DateTime.tryParse('$value')?.toLocal();
 
   if (parsed == null) {
     return 'Created recently';

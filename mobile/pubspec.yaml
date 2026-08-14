@@ -38,7 +38,6 @@ dependencies:
   gap: ^3.0.1
   lucide_icons_flutter: ^3.1.15
   image_picker: ^1.2.3
-  file_picker: ^3.0.4
   url_launcher: ^6.3.2
   path_provider: ^2.1.6
   permission_handler: ^12.0.3
@@ -50,7 +49,7 @@ dependencies:
   firebase_core: ^4.12.1
   firebase_messaging: ^16.4.3
   flutter_local_notifications: ^22.2.0
-  webview_flutter: ^4.14.1
+  webview_flutter: 4.13.0
   app_links: ^7.2.1
   speech_to_text: ^7.4.0
   record: ^7.1.1

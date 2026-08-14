@@ -1,3 +1,4 @@
+/* @refresh reset */
 /**
  * Provides the current authenticated user's account-access information.
  *
@@ -73,7 +74,7 @@ const readSnapshot = () => {
  *   refresh: Function
  * }}
  */
-export default function useAccountAccess() {
+export function useAccountAccess() {
     const [access, setAccess] = useState(readSnapshot);
 
     /**
@@ -184,3 +185,5 @@ export default function useAccountAccess() {
         refresh,
     };
 }
+
+export default useAccountAccess;

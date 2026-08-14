@@ -2,29 +2,28 @@
 // The center generation action intentionally matches the compact floating
 // bulb used by the Voxidence mobile reference instead of a large FAB.
 //
-// @author  Malak
+// @author Eman
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_client.dart';
+import '../../../core/storage/session_store.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../auth/api/auth_api.dart';
 import '../../home/widgets/common.dart';
+import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
+import '../widgets/workspace_navigation.dart';
 import 'account_page.dart';
-import 'billing_page.dart';
-import 'compliance_page.dart';
-import 'credits_page.dart';
 import 'dashboard_page.dart';
 import 'discover_page.dart';
 import 'generate_idea_page.dart';
 import 'library_page.dart';
-import 'notifications_page.dart';
-import 'preferences_page.dart';
-import 'profile_settings_page.dart';
-import 'published_page.dart';
 
 class UserShell extends StatefulWidget {
   const UserShell({
@@ -47,26 +46,67 @@ class _UserShellState extends State<UserShell> {
   final _controller = UserSessionController.instance;
 
   bool _premiumCelebrationCheckRunning = false;
+  bool _signingOut = false;
 
-  late final List<Widget> _pages = [
-    DashboardPage(
-      onOpenGenerate: () => _setIndex(2),
-      onOpenLibrary: () => _setIndex(3),
-      onOpenDiscover: () => _setIndex(1),
-    ),
-    const DiscoverPage(),
-    GenerateIdeaPage(
-      initialProblem: widget.initialGenerateProblem,
-      onGenerationStarted: _handleGenerationStarted,
-    ),
-    LibraryPage(initialTab: widget.initialLibraryTab),
-    const AccountPage(),
-  ];
+  final List<Widget?> _pages = List<Widget?>.filled(5, null);
+
+  Widget _createPage(int index) {
+    return switch (index) {
+      0 => DashboardPage(
+          onOpenGenerate: () => _setIndex(2),
+          onOpenLibrary: () => _setIndex(3),
+          onOpenDiscover: () => _setIndex(1),
+        ),
+      1 => const DiscoverPage(),
+      2 => GenerateIdeaPage(
+          initialProblem: widget.initialGenerateProblem,
+          onGenerationStarted: _handleGenerationStarted,
+          onExit: () => _setIndex(0),
+        ),
+      3 => LibraryPage(initialTab: widget.initialLibraryTab),
+      4 => const AccountPage(),
+      _ => const SizedBox.shrink(),
+    };
+  }
+
+  void _ensurePage(int index) {
+    if (index < 0 || index >= _pages.length || _pages[index] != null) return;
+    _pages[index] = _createPage(index);
+  }
+
+  /// Warms only the two most frequently opened list screens after the first
+  /// frame. Requests are sequential and cached, so this does not flood the
+  /// backend like broad eager-prefetching, while Discover/My Ideas usually
+  /// open from memory when the user taps them.
+  Future<void> _warmCommonScreens() async {
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+
+    if (_index != 3) {
+      try {
+        await UserApi.instance.getMyIdeas(page: 1, limit: 18);
+      } catch (_) {
+        // Prefetch is opportunistic and must never surface as a UI error.
+      }
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    if (!mounted) return;
+
+    if (_index != 1) {
+      try {
+        await UserApi.instance.getDiscoveries(page: 1, limit: 12);
+      } catch (_) {
+        // The screen will retry normally if the user opens it later.
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _index = widget.initialIndex.clamp(0, 4).toInt();
+    _ensurePage(_index);
 
     _controller.addListener(_handleSessionChanged);
 
@@ -76,6 +116,8 @@ class _UserShellState extends State<UserShell> {
       } else {
         _handleSessionChanged();
       }
+
+      unawaited(_warmCommonScreens());
     });
   }
 
@@ -99,8 +141,7 @@ class _UserShellState extends State<UserShell> {
       return;
     }
 
-    if (_premiumCelebrationCheckRunning ||
-        !_controller.canShowPremiumWelcome) {
+    if (_premiumCelebrationCheckRunning || !_controller.canShowPremiumWelcome) {
       return;
     }
 
@@ -113,9 +154,7 @@ class _UserShellState extends State<UserShell> {
     if (!mounted || _premiumCelebrationCheckRunning) return;
 
     final summary = _controller.summary;
-    if (summary == null ||
-        !summary.isPremium ||
-        summary.id.isEmpty) {
+    if (summary == null || !summary.isPremium || summary.id.isEmpty) {
       return;
     }
 
@@ -133,9 +172,7 @@ class _UserShellState extends State<UserShell> {
         barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 260),
         pageBuilder: (context, animation, secondaryAnimation) {
-          return _PremiumCelebration(
-            fullName: summary.fullName,
-          );
+          return _PremiumCelebration(fullName: summary.fullName);
         },
         transitionBuilder: (context, animation, secondaryAnimation, child) {
           final curved = CurvedAnimation(
@@ -147,10 +184,7 @@ class _UserShellState extends State<UserShell> {
           return FadeTransition(
             opacity: animation,
             child: ScaleTransition(
-              scale: Tween<double>(
-                begin: .992,
-                end: 1,
-              ).animate(curved),
+              scale: Tween<double>(begin: .992, end: 1).animate(curved),
               child: child,
             ),
           );
@@ -162,6 +196,13 @@ class _UserShellState extends State<UserShell> {
   }
 
   void _setIndex(int value) {
+    if (value == 2) {
+      // Generation entitlement changes after free runs, credit purchases,
+      // upgrades, and unlock flows. Always refresh it when Generate opens.
+      unawaited(_controller.load(force: true));
+    }
+
+    _ensurePage(value);
     if (_index == value) return;
     setState(() => _index = value);
   }
@@ -170,124 +211,251 @@ class _UserShellState extends State<UserShell> {
     _controller.load(force: true);
   }
 
-  Future<void> _push(Widget page) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => page),
+  String get _currentReturnTitle {
+    return switch (_index) {
+      0 => 'Home',
+      1 => 'Discover',
+      2 => 'Generate',
+      3 => 'My ideas',
+      4 => 'Profile',
+      _ => 'Home',
+    };
+  }
+
+  String get _currentReturnRoute {
+    return switch (_index) {
+      0 => '/normal/dashboard',
+      1 => '/normal/discover',
+      2 => '/normal/generate',
+      3 => '/normal/ideas',
+      4 => '/normal/profile',
+      _ => '/normal/dashboard',
+    };
+  }
+
+  Future<void> _pushWorkspaceRoute(String routeName) async {
+    await Navigator.of(context).pushNamed(
+      routeName,
+      arguments: <String, String>{
+        'returnTitle': _currentReturnTitle,
+        'returnRoute': _currentReturnRoute,
+      },
     );
     if (mounted) _controller.load(force: true);
   }
 
+  Future<void> _signOutFromWorkspace() async {
+    if (_signingOut) return;
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const _WorkspaceSignOutSheet(),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _signingOut = true);
+
+    try {
+      try {
+        await AuthApi.instance.logout();
+      } catch (_) {
+        await SessionStore.instance.clear();
+      }
+
+      ApiClient.instance.clearCache();
+      UserSessionController.instance.reset();
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
+  }
+
   Future<void> _openMenu() async {
     final summary = _controller.summary;
+
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      useSafeArea: true,
+      barrierColor: AppColors.primaryDeep.withValues(alpha: .16),
       builder: (sheetContext) {
         return DraggableScrollableSheet(
           initialChildSize: .76,
           minChildSize: .52,
-          maxChildSize: .92,
-          builder: (context, scrollController) => Container(
-            margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: Colors.white),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaryDeep.withValues(alpha: .12),
-                  blurRadius: 38,
-                  offset: const Offset(0, 14),
-                ),
-              ],
-            ),
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.silver,
-                      borderRadius: BorderRadius.circular(99),
+          maxChildSize: .88,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(29),
+                border: Border.all(color: Colors.white),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryDeep.withValues(alpha: .13),
+                    blurRadius: 38,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: ListView(
+                controller: scrollController,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(15, 9, 15, 22),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.silver.withValues(alpha: .85),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 15),
-                Row(
-                  children: [
-                    const SoftIconBadge(icon: Icons.grid_view_rounded, size: 42),
-                    const SizedBox(width: 11),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Workspace menu',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'All account tools in one mobile-friendly place.',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 9.8,
-                            ),
-                          ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(12, 11, 11, 11),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.primarySoft.withValues(alpha: .58),
+                          Colors.white.withValues(alpha: .88),
+                          AppColors.surfaceRose.withValues(alpha: .42),
                         ],
                       ),
-                    ),
-                    AccountTierBadge(isPremium: summary?.isPremium == true),
-                  ],
-                ),
-                const SizedBox(height: 17),
-                _MenuGrid(
-                  unread: summary?.unreadNotificationsCount ?? 0,
-                  onTap: (value) => Navigator.pop(sheetContext, value),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(13),
-                  decoration: BoxDecoration(
-                    color: AppColors.primarySoft.withValues(alpha: .62),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        summary?.isPremium == true
-                            ? Icons.bolt_rounded
-                            : Icons.eco_outlined,
-                        color: AppColors.primaryDark,
-                        size: 19,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.border.withValues(alpha: .86),
                       ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          summary?.isPremium == true
-                              ? '${summary?.creditBalance ?? 0} credits available for Premium actions.'
-                              : '${summary?.remainingFreeGenerations ?? 0} free idea generations remaining.',
-                          style: const TextStyle(
-                            color: AppColors.primaryDeep,
-                            fontSize: 10.3,
-                            fontWeight: FontWeight.w800,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .86),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: .10),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.grid_view_rounded,
+                            size: 19,
+                            color: AppColors.primaryDark,
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Workspace menu',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 15.4,
+                                  height: 1.05,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -.25,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Quick access to account tools',
+                                style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 8.6,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        AccountTierBadge(
+                          isPremium: summary?.isPremium == true,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
+                  const SizedBox(height: 15),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 2, bottom: 8),
+                    child: Text(
+                      'ACCOUNT TOOLS',
+                      style: TextStyle(
+                        color: AppColors.primaryDark,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.05,
+                      ),
+                    ),
+                  ),
+                  _MenuGrid(
+                    unread: summary?.unreadNotificationsCount ?? 0,
+                    onTap: (value) => Navigator.pop(sheetContext, value),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft.withValues(alpha: .56),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: .09),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .76),
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                          child: Icon(
+                            summary?.isPremium == true
+                                ? Icons.bolt_rounded
+                                : Icons.eco_outlined,
+                            color: AppColors.primaryDark,
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            summary?.isPremium == true
+                                ? '${summary?.creditBalance ?? 0} Premium credits available'
+                                : '${summary?.remainingFreeGenerations ?? 0} free idea generations remaining',
+                            style: const TextStyle(
+                              color: AppColors.primaryDeep,
+                              fontSize: 9.2,
+                              height: 1.25,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -310,25 +478,28 @@ class _UserShellState extends State<UserShell> {
         _setIndex(4);
         break;
       case 'notifications':
-        await _push(const NotificationsPage());
+        await _pushWorkspaceRoute('/normal/notifications');
         break;
       case 'published':
-        await _push(const PublishedPage());
+        await _pushWorkspaceRoute('/normal/published');
         break;
       case 'credits':
-        await _push(const CreditsPage());
+        await _pushWorkspaceRoute('/normal/credits');
         break;
       case 'billing':
-        await _push(const BillingPage());
+        await _pushWorkspaceRoute('/normal/billing');
         break;
       case 'preferences':
-        await _push(const PreferencesPage());
+        await _pushWorkspaceRoute('/normal/preferences');
         break;
       case 'compliance':
-        await _push(const CompliancePage());
+        await _pushWorkspaceRoute('/normal/compliance');
         break;
       case 'security':
-        await _push(const ProfileSettingsPage());
+        await _pushWorkspaceRoute('/normal/settings/profile');
+        break;
+      case 'signout':
+        await _signOutFromWorkspace();
         break;
     }
   }
@@ -378,9 +549,7 @@ class _UserShellState extends State<UserShell> {
                             ],
                           ),
                         ),
-                        AccountTierBadge(
-                          isPremium: summary?.isPremium == true,
-                        ),
+                        AccountTierBadge(isPremium: summary?.isPremium == true),
                         const SizedBox(width: 7),
                         Material(
                           color: Colors.white.withValues(alpha: .78),
@@ -398,7 +567,8 @@ class _UserShellState extends State<UserShell> {
                               ),
                               child: Badge(
                                 isLabelVisible:
-                                    (summary?.unreadNotificationsCount ?? 0) > 0,
+                                    (summary?.unreadNotificationsCount ?? 0) >
+                                    0,
                                 backgroundColor: AppColors.pink,
                                 smallSize: 7,
                                 child: const Icon(
@@ -414,15 +584,37 @@ class _UserShellState extends State<UserShell> {
                     ),
                   ),
                   Expanded(
-                    child: IndexedStack(index: _index, children: _pages),
+                    child: IndexedStack(
+                      index: _index,
+                      children: List<Widget>.generate(
+                        _pages.length,
+                        (index) => _pages[index] ?? const SizedBox.shrink(),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          bottomNavigationBar: _FloatingWorkspaceNav(
-            selectedIndex: _index,
-            onSelected: _setIndex,
+          bottomNavigationBar: PersistentWorkspaceBottomNav(
+            selected: switch (_index) {
+              0 => WorkspaceSection.home,
+              1 => WorkspaceSection.discover,
+              2 => WorkspaceSection.generate,
+              3 => WorkspaceSection.ideas,
+              4 => WorkspaceSection.profile,
+              _ => null,
+            },
+            onSelected: (section) {
+              final nextIndex = switch (section) {
+                WorkspaceSection.home => 0,
+                WorkspaceSection.discover => 1,
+                WorkspaceSection.generate => 2,
+                WorkspaceSection.ideas => 3,
+                WorkspaceSection.profile => 4,
+              };
+              _setIndex(nextIndex);
+            },
           ),
         );
       },
@@ -436,18 +628,13 @@ class _UserShellState extends State<UserShell> {
 /// enters a Premium workspace without interrupting every later visit.
 
 class _PremiumCelebration extends StatefulWidget {
-  const _PremiumCelebration({
-    required this.fullName,
-  });
+  const _PremiumCelebration({required this.fullName});
 
   final String fullName;
 
   @override
   State<_PremiumCelebration> createState() => _PremiumCelebrationState();
 }
-
-
-
 
 class _PremiumCelebrationState extends State<_PremiumCelebration>
     with SingleTickerProviderStateMixin {
@@ -553,8 +740,9 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF4D5D58)
-                                      .withValues(alpha: .14),
+                                  color: const Color(
+                                    0xFF4D5D58,
+                                  ).withValues(alpha: .14),
                                   blurRadius: 48,
                                   offset: const Offset(0, 22),
                                 ),
@@ -570,8 +758,9 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                     bottom: -100,
                                     child: _PremiumGlow(
                                       size: 205,
-                                      color: const Color(0xFFF3D6DC)
-                                          .withValues(alpha: .54),
+                                      color: const Color(
+                                        0xFFF3D6DC,
+                                      ).withValues(alpha: .54),
                                     ),
                                   ),
                                   Positioned(
@@ -579,8 +768,9 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                     bottom: -98,
                                     child: _PremiumGlow(
                                       size: 205,
-                                      color: const Color(0xFFD8EAE2)
-                                          .withValues(alpha: .58),
+                                      color: const Color(
+                                        0xFFD8EAE2,
+                                      ).withValues(alpha: .58),
                                     ),
                                   ),
                                   Positioned.fill(
@@ -588,8 +778,9 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                       padding: const EdgeInsets.all(9),
                                       child: DecoratedBox(
                                         decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(19),
+                                          borderRadius: BorderRadius.circular(
+                                            19,
+                                          ),
                                           border: Border.all(
                                             color: const Color(0xFFDDE0DC),
                                           ),
@@ -600,8 +791,7 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                   Positioned.fill(
                                     child: IgnorePointer(
                                       child: CustomPaint(
-                                        painter:
-                                            _PremiumInnerSparklePainter(
+                                        painter: _PremiumInnerSparklePainter(
                                           progress: _controller.value,
                                         ),
                                       ),
@@ -613,8 +803,9 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                     child: Material(
                                       color: Colors.transparent,
                                       child: InkWell(
-                                        borderRadius:
-                                            BorderRadius.circular(999),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
                                         onTap: () =>
                                             Navigator.of(context).maybePop(),
                                         child: Container(
@@ -640,8 +831,7 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                                 color: AppColors.primary
                                                     .withValues(alpha: .08),
                                                 blurRadius: 15,
-                                                offset:
-                                                    const Offset(0, 5),
+                                                offset: const Offset(0, 5),
                                               ),
                                             ],
                                           ),
@@ -670,24 +860,20 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                           child: Transform.translate(
                                             offset: Offset(
                                               0,
-                                              10 *
-                                                  (1 -
-                                                      _interval(.03, .12)),
+                                              10 * (1 - _interval(.03, .12)),
                                             ),
                                             child: Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: 14,
-                                                vertical: 8,
-                                              ),
+                                                    horizontal: 14,
+                                                    vertical: 8,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 borderRadius:
                                                     BorderRadius.circular(999),
-                                                gradient:
-                                                    const LinearGradient(
+                                                gradient: const LinearGradient(
                                                   begin: Alignment.topLeft,
-                                                  end:
-                                                      Alignment.bottomRight,
+                                                  end: Alignment.bottomRight,
                                                   colors: [
                                                     Color(0xFFF6FCFB),
                                                     Color(0xFFE0F2EF),
@@ -700,32 +886,28 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                                 boxShadow: [
                                                   BoxShadow(
                                                     color: AppColors.primary
-                                                        .withValues(
-                                                      alpha: .10,
-                                                    ),
+                                                        .withValues(alpha: .10),
                                                     blurRadius: 18,
-                                                    offset:
-                                                        const Offset(0, 6),
+                                                    offset: const Offset(0, 6),
                                                   ),
                                                 ],
                                               ),
                                               child: const Row(
-                                                mainAxisSize:
-                                                    MainAxisSize.min,
+                                                mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   Icon(
                                                     Icons
                                                         .workspace_premium_outlined,
                                                     size: 14,
-                                                    color: AppColors
-                                                        .primaryDark,
+                                                    color:
+                                                        AppColors.primaryDark,
                                                   ),
                                                   SizedBox(width: 8),
                                                   Text(
                                                     'PREMIUM WORKSPACE',
                                                     style: TextStyle(
-                                                      color: AppColors
-                                                          .primaryDark,
+                                                      color:
+                                                          AppColors.primaryDark,
                                                       fontSize: 8.3,
                                                       fontWeight:
                                                           FontWeight.w900,
@@ -734,11 +916,10 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                                   ),
                                                   SizedBox(width: 8),
                                                   Icon(
-                                                    Icons
-                                                        .auto_awesome_rounded,
+                                                    Icons.auto_awesome_rounded,
                                                     size: 13,
-                                                    color: AppColors
-                                                        .primaryDark,
+                                                    color:
+                                                        AppColors.primaryDark,
                                                   ),
                                                 ],
                                               ),
@@ -753,8 +934,7 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                         Opacity(
                                           opacity: _interval(.17, .26),
                                           child: _PremiumDivider(
-                                            progress:
-                                                _interval(.17, .26),
+                                            progress: _interval(.17, .26),
                                           ),
                                         ),
                                         const SizedBox(height: 16),
@@ -763,16 +943,13 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                           child: Transform.translate(
                                             offset: Offset(
                                               0,
-                                              10 *
-                                                  (1 -
-                                                      _interval(.20, .29)),
+                                              10 * (1 - _interval(.20, .29)),
                                             ),
                                             child: const Text(
                                               'Your premium workspace is ready.',
                                               textAlign: TextAlign.center,
                                               style: TextStyle(
-                                                color:
-                                                    AppColors.primaryDark,
+                                                color: AppColors.primaryDark,
                                                 fontSize: 13.2,
                                                 fontWeight: FontWeight.w600,
                                               ),
@@ -782,34 +959,27 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                         if (displayName.isNotEmpty) ...[
                                           const SizedBox(height: 19),
                                           Opacity(
-                                            opacity:
-                                                _interval(.22, .31),
+                                            opacity: _interval(.22, .31),
                                             child: Row(
-                                              mainAxisSize:
-                                                  MainAxisSize.min,
+                                              mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 const Text(
                                                   '✦',
                                                   style: TextStyle(
-                                                    color:
-                                                        AppColors.pinkDeep,
+                                                    color: AppColors.pinkDeep,
                                                     fontSize: 11,
                                                   ),
                                                 ),
                                                 const SizedBox(width: 9),
                                                 Flexible(
                                                   child: Text(
-                                                    displayName
-                                                        .toUpperCase(),
+                                                    displayName.toUpperCase(),
                                                     maxLines: 1,
-                                                    overflow: TextOverflow
-                                                        .ellipsis,
-                                                    textAlign:
-                                                        TextAlign.center,
-                                                    style:
-                                                        const TextStyle(
-                                                      color: AppColors
-                                                          .pinkDeep,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    textAlign: TextAlign.center,
+                                                    style: const TextStyle(
+                                                      color: AppColors.pinkDeep,
                                                       fontSize: 11.2,
                                                       fontWeight:
                                                           FontWeight.w900,
@@ -821,8 +991,7 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
                                                 const Text(
                                                   '✦',
                                                   style: TextStyle(
-                                                    color:
-                                                        AppColors.pinkDeep,
+                                                    color: AppColors.pinkDeep,
                                                     fontSize: 11,
                                                   ),
                                                 ),
@@ -851,10 +1020,6 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
   }
 }
 
-
-
-
-
 class _PremiumWelcomeTitle extends StatelessWidget {
   const _PremiumWelcomeTitle({required this.progress});
 
@@ -874,11 +1039,10 @@ class _PremiumWelcomeTitle extends StatelessWidget {
         final local = progress <= start
             ? 0.0
             : progress >= end
-                ? 1.0
-                : Curves.easeOutCubic.transform(
-                    ((progress - start) / (end - start))
-                        .clamp(0.0, 1.0),
-                  );
+            ? 1.0
+            : Curves.easeOutCubic.transform(
+                ((progress - start) / (end - start)).clamp(0.0, 1.0),
+              );
 
         final character = text[index];
 
@@ -962,10 +1126,7 @@ class _PremiumDivider extends StatelessWidget {
 }
 
 class _PremiumGlow extends StatelessWidget {
-  const _PremiumGlow({
-    required this.size,
-    required this.color,
-  });
+  const _PremiumGlow({required this.size, required this.color});
 
   final double size;
   final Color color;
@@ -978,12 +1139,7 @@ class _PremiumGlow extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color,
-              color.withValues(alpha: 0),
-            ],
-          ),
+          gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
         ),
       ),
     );
@@ -1020,8 +1176,9 @@ class _PremiumOuterConfettiPainter extends CustomPainter {
       final fadeIn = (local / .07).clamp(0.0, 1.0);
       final fadeOut = ((1 - local) / .12).clamp(0.0, 1.0);
       final opacity = math.min(fadeIn, fadeOut);
-      final color = _palette[i % _palette.length]
-          .withValues(alpha: opacity * .95);
+      final color = _palette[i % _palette.length].withValues(
+        alpha: opacity * .95,
+      );
 
       final pieceSize = 4.5 + ((i % 5) * 1.15);
       final shape = i % 3;
@@ -1092,8 +1249,7 @@ class _PremiumInnerSparklePainter extends CustomPainter {
 
     for (var i = 0; i < points.length; i++) {
       final point = points[i];
-      final localPulse =
-          (pulse + ((i % 3) * .12)).clamp(0.0, 1.0).toDouble();
+      final localPulse = (pulse + ((i % 3) * .12)).clamp(0.0, 1.0).toDouble();
       final center = Offset(size.width * point.x, size.height * point.y);
       final paint = Paint()
         ..color = point.color.withValues(alpha: .42 + localPulse * .42);
@@ -1116,11 +1272,7 @@ class _PremiumInnerSparklePainter extends CustomPainter {
           paint,
         );
       } else {
-        canvas.drawCircle(
-          center,
-          point.radius + (localPulse * 1.2),
-          paint,
-        );
+        canvas.drawCircle(center, point.radius + (localPulse * 1.2), paint);
       }
     }
   }
@@ -1131,8 +1283,6 @@ class _PremiumInnerSparklePainter extends CustomPainter {
   }
 }
 
-
-
 class _MenuGrid extends StatelessWidget {
   const _MenuGrid({required this.unread, required this.onTap});
 
@@ -1142,14 +1292,56 @@ class _MenuGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = <_MenuEntry>[
-      const _MenuEntry('notifications', 'Notifications', Icons.notifications_none_rounded),
-      const _MenuEntry('published', 'Published', Icons.public_rounded),
-      const _MenuEntry('credits', 'Credits', Icons.bolt_rounded),
-      const _MenuEntry('billing', 'Billing', Icons.receipt_long_outlined),
-      const _MenuEntry('preferences', 'Preferences', Icons.tune_rounded),
-      const _MenuEntry('compliance', 'Compliance', Icons.shield_outlined),
-      const _MenuEntry('security', 'Security', Icons.security_rounded),
-      const _MenuEntry('ideas', 'Idea library', Icons.folder_copy_outlined),
+      const _MenuEntry(
+        'notifications',
+        'Notifications',
+        'Updates & messages',
+        Icons.notifications_none_rounded,
+        rose: true,
+      ),
+      const _MenuEntry(
+        'published',
+        'Published',
+        'Your public ideas',
+        Icons.public_rounded,
+      ),
+      const _MenuEntry(
+        'credits',
+        'Credits',
+        'Premium balance',
+        Icons.bolt_rounded,
+      ),
+      const _MenuEntry(
+        'billing',
+        'Billing',
+        'Payments & invoices',
+        Icons.receipt_long_outlined,
+      ),
+      const _MenuEntry(
+        'preferences',
+        'Preferences',
+        'Personalize workspace',
+        Icons.tune_rounded,
+      ),
+      const _MenuEntry(
+        'compliance',
+        'Compliance',
+        'Privacy & support',
+        Icons.shield_outlined,
+      ),
+      const _MenuEntry(
+        'security',
+        'Security',
+        'Password & sessions',
+        Icons.security_rounded,
+      ),
+      const _MenuEntry(
+        'signout',
+        'Sign out',
+        'Leave this account',
+        Icons.logout_rounded,
+        danger: true,
+      ),
     ];
 
     return GridView.builder(
@@ -1159,62 +1351,142 @@ class _MenuGrid extends StatelessWidget {
         crossAxisCount: 2,
         crossAxisSpacing: 9,
         mainAxisSpacing: 9,
-        childAspectRatio: 2.05,
+        mainAxisExtent: 94,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
+        final showUnread = item.key == 'notifications' && unread > 0;
+
+        final baseColor = item.danger
+            ? AppColors.pinkSoft.withValues(alpha: .72)
+            : item.rose
+            ? AppColors.surfaceRose.withValues(alpha: .68)
+            : AppColors.primarySoft.withValues(alpha: .44);
+
+        final accent = item.danger
+            ? AppColors.danger
+            : item.rose
+            ? AppColors.pinkDeep
+            : AppColors.primaryDark;
+
         return Material(
-          color: AppColors.surfaceMuted.withValues(alpha: .72),
-          borderRadius: BorderRadius.circular(18),
+          color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(19),
             onTap: () => onTap(item.key),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Ink(
+              padding: const EdgeInsets.fromLTRB(10, 9, 9, 9),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.border.withValues(alpha: .8)),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    baseColor,
+                    Colors.white.withValues(alpha: .91),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(19),
+                border: Border.all(
+                  color: item.danger
+                      ? AppColors.pink.withValues(alpha: .17)
+                      : AppColors.border.withValues(alpha: .86),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryDeep.withValues(alpha: .028),
+                    blurRadius: 13,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
-                  SoftIconBadge(
-                    icon: item.icon,
-                    size: 34,
-                    rose: item.key == 'notifications' && unread > 0,
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .82),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: item.danger
+                            ? AppColors.pink.withValues(alpha: .14)
+                            : AppColors.primary.withValues(alpha: .09),
+                      ),
+                    ),
+                    child: Icon(
+                      item.icon,
+                      size: 17,
+                      color: accent,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      item.label,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 10.2,
-                        fontWeight: FontWeight.w900,
-                        height: 1.15,
-                      ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                item.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: item.danger
+                                      ? AppColors.danger
+                                      : AppColors.textPrimary,
+                                  fontSize: 10.4,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -.08,
+                                ),
+                              ),
+                            ),
+                            if (showUnread)
+                              Container(
+                                constraints: const BoxConstraints(minWidth: 20),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.pink,
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                                child: Text(
+                                  unread > 99 ? '99+' : '$unread',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 7,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              )
+                            else
+                              Icon(
+                                Icons.north_east_rounded,
+                                size: 11.5,
+                                color: accent.withValues(alpha: .45),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          item.subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 7.25,
+                            height: 1.2,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  if (item.key == 'notifications' && unread > 0)
-                    Container(
-                      constraints: const BoxConstraints(minWidth: 18),
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.pink,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        unread > 99 ? '99+' : '$unread',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 7.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -1226,245 +1498,119 @@ class _MenuGrid extends StatelessWidget {
 }
 
 class _MenuEntry {
-  const _MenuEntry(this.key, this.label, this.icon);
+  const _MenuEntry(
+    this.key,
+    this.label,
+    this.subtitle,
+    this.icon, {
+    this.rose = false,
+    this.danger = false,
+  });
 
   final String key;
   final String label;
+  final String subtitle;
   final IconData icon;
+  final bool rose;
+  final bool danger;
 }
 
-class _FloatingWorkspaceNav extends StatefulWidget {
-  const _FloatingWorkspaceNav({
-    required this.selectedIndex,
-    required this.onSelected,
-  });
-
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-
-  @override
-  State<_FloatingWorkspaceNav> createState() => _FloatingWorkspaceNavState();
-}
-
-class _FloatingWorkspaceNavState extends State<_FloatingWorkspaceNav>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2400),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
+class _WorkspaceSignOutSheet extends StatelessWidget {
+  const _WorkspaceSignOutSheet();
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+      top: false,
       child: Container(
-        height: 64,
-        padding: const EdgeInsets.symmetric(horizontal: 7),
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .97),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: AppColors.border.withValues(alpha: .76),
-          ),
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primaryDeep.withValues(alpha: .10),
-              blurRadius: 25,
-              offset: const Offset(0, 8),
+              color: AppColors.primaryDeep.withValues(alpha: .13),
+              blurRadius: 34,
+              offset: const Offset(0, 14),
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: _NavItem(
-                icon: Icons.home_outlined,
-                selectedIcon: Icons.home_rounded,
-                label: 'Home',
-                selected: widget.selectedIndex == 0,
-                onTap: () => widget.onSelected(0),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.silver,
+                borderRadius: BorderRadius.circular(99),
               ),
             ),
-            Expanded(
-              child: _NavItem(
-                icon: Icons.search_rounded,
-                selectedIcon: Icons.travel_explore_rounded,
-                label: 'Discover',
-                selected: widget.selectedIndex == 1,
-                onTap: () => widget.onSelected(1),
-              ),
-            ),
-            Expanded(
-              child: AnimatedBuilder(
-                animation: _pulse,
-                builder: (context, _) {
-                  final selected = widget.selectedIndex == 2;
-                  final lift = selected ? -10.5 : -9.0;
-                  final halo = 12 + (_pulse.value * 5);
-
-                  return Center(
-                    child: Transform.translate(
-                      offset: Offset(0, lift),
-                      child: Semantics(
-                        button: true,
-                        label: 'Generate idea',
-                        child: GestureDetector(
-                          onTap: () => widget.onSelected(2),
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Container(
-                                width: 58,
-                                height: 58,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: const Color(0xFFFFF8D9)
-                                      .withValues(alpha: .18 + (_pulse.value * .06)),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFFF0D982)
-                                          .withValues(alpha: .12),
-                                      blurRadius: halo,
-                                      spreadRadius: 1,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 190),
-                                curve: Curves.easeOut,
-                                width: selected ? 50 : 48,
-                                height: selected ? 50 : 48,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      Color(0xFF78D0C5),
-                                      Color(0xFF42A9A2),
-                                    ],
-                                  ),
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 3,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.primary.withValues(
-                                        alpha: .25 + (_pulse.value * .06),
-                                      ),
-                                      blurRadius: 16 + (_pulse.value * 4),
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
-                                ),
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    const Icon(
-                                      Icons.lightbulb_outline_rounded,
-                                      color: Colors.white,
-                                      size: 23,
-                                    ),
-                                    Positioned(
-                                      top: 8,
-                                      right: 9,
-                                      child: Icon(
-                                        Icons.auto_awesome_rounded,
-                                        color: const Color(0xFFFFF2A8)
-                                            .withValues(alpha: .90),
-                                        size: 7.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Expanded(
-              child: _NavItem(
-                icon: Icons.lightbulb_outline_rounded,
-                selectedIcon: Icons.lightbulb_rounded,
-                label: 'My Ideas',
-                selected: widget.selectedIndex == 3,
-                onTap: () => widget.onSelected(3),
-              ),
-            ),
-            Expanded(
-              child: _NavItem(
-                icon: Icons.person_outline_rounded,
-                selectedIcon: Icons.person_rounded,
-                label: 'Profile',
-                selected: widget.selectedIndex == 4,
-                onTap: () => widget.onSelected(4),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  const _NavItem({
-    required this.icon,
-    required this.selectedIcon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final IconData selectedIcon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                selected ? selectedIcon : icon,
-                size: 18.5,
-                color: selected ? AppColors.primaryDark : AppColors.textSecondary,
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  color: selected ? AppColors.primaryDark : AppColors.textSecondary,
-                  fontSize: 7.5,
-                  fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
-                  letterSpacing: -.08,
+            const SizedBox(height: 18),
+            Container(
+              width: 56,
+              height: 56,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.pinkSoft,
+                border: Border.all(
+                  color: AppColors.pink.withValues(alpha: .20),
                 ),
               ),
-            ],
-          ),
+              child: const Icon(
+                Icons.logout_rounded,
+                color: AppColors.danger,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 13),
+            const Text(
+              'Sign out of Voxidence?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -.25,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Your saved ideas and unlocked work stay safely attached to your account.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Stay signed in'),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    icon: const Icon(Icons.logout_rounded, size: 16),
+                    label: const Text('Sign out'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.danger,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

@@ -131,6 +131,20 @@ type AiExecutionBaseInput = {
   readonly excludedAiModelIds?: ReadonlyArray<string>;
 
   /**
+   * Optional provider-side model identifiers that should be moved to the
+   * front of the already-routable execution order.
+   *
+   * Unlike aiModelId, this is a preference rather than an exact-model lock.
+   * Models that are inactive, unhealthy, temporarily unavailable, or simply
+   * absent are ignored, and normal fallback models remain available.
+   *
+   * This is useful for interactive AI chat, which may prefer a stronger
+   * conversational model without changing the application's global default
+   * model used by idea generation.
+   */
+  readonly preferredApiModelIds?: ReadonlyArray<string>;
+
+  /**
    * Optional AI-model routing strategy.
    *
    * When omitted, AiExecutionService uses provider-balanced routing. Pass
@@ -169,6 +183,15 @@ type AiExecutionBaseInput = {
   /** Optional caller-driven cancellation signal for this logical operation. */
   readonly signal?: AbortSignal;
 
+  /**
+   * Optional realtime plain-text callback.
+   *
+   * When provided, a streaming-capable provider emits text fragments while
+   * generation is still in progress. This allows chat UIs to render the first
+   * words immediately instead of waiting for the complete provider response.
+   */
+  readonly onTextDelta?: (delta: string) => void;
+
   /** Optional per-operation provider timeout override in milliseconds. */
   readonly timeoutMs?: number;
 
@@ -184,6 +207,26 @@ type AiExecutionBaseInput = {
    * model when providers are slow or unavailable.
    */
   readonly maxModelsPerOperation?: number;
+
+  /**
+   * Prevents the local Ollama model from being appended as an emergency
+   * fallback for latency-sensitive operations such as interactive chat.
+   *
+   * When true, only routed online models are eligible.
+   */
+  readonly excludeLocalFallback?: boolean;
+
+  /**
+   * Allows a plain-text caller to receive a provider response that ended with
+   * MAX_TOKENS instead of converting that partial text into an execution
+   * failure.
+   *
+   * This is intended for domain services, such as interactive chat, that
+   * immediately continue generation from the stopping point and therefore do
+   * not expose the partial segment as a completed answer. Structured JSON
+   * operations must never enable this option.
+   */
+  readonly allowPartialTextOnMaxTokens?: boolean;
 
   /**
    * Allows a trusted system-generated operation to continue with another

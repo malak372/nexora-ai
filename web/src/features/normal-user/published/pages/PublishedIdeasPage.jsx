@@ -44,6 +44,7 @@ import {
 
 import PublishedIdeaCard from '../components/PublishedIdeaCard';
 import PublicationInsightsPanel from '../components/PublicationInsightsPanel';
+import { preloadPublicationStudio } from '../../../../routes/routePreloaders';
 
 import '../styles/published.css';
 
@@ -696,6 +697,10 @@ export default function PublishedIdeasPage() {
                   publication
                 }
                 index={index}
+                onWarmEdit={() =>
+                  publication.ideaId &&
+                  preloadPublicationStudio(publication.ideaId)
+                }
                 onEdit={() =>
                   publication.ideaId &&
                   navigate(
@@ -704,6 +709,8 @@ export default function PublishedIdeasPage() {
                       state: {
                         returnTo: '/normal/published',
                         returnLabel: 'Published',
+                        publicationOrigin: 'published',
+                        publicationSeed: publication,
                       },
                     },
                   )

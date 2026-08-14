@@ -4,25 +4,19 @@ import * as bcrypt from 'bcryptjs';
 import { AuditAction, AuditTargetType } from '@prisma/client';
 import type { Cache } from 'cache-manager';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { MailService } from '../../mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { userCacheKeys } from '../cache/user-cache.keys';
-import {
-  detectSupportedAvatar,
-  getLocalAvatarFilename,
-} from '../utils/avatar-file-filter.util';
+import { AvatarStorageService } from '../storage/avatar-storage.service';
+import { detectSupportedAvatar } from '../utils/avatar-file-filter.util';
 import { UserValidationService } from '../validation/validation.service';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { RequestEmailChangeDto } from './dto/request-email-change.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailChangeDto } from './dto/verify-email-change.dto';
 
-const AVATAR_PUBLIC_PREFIX = '/uploads/avatars/';
-const AVATAR_DIRECTORY = join(process.cwd(), 'uploads', 'avatars');
 const EMAIL_CHANGE_CODE_TTL_MS = 10 * 60 * 1000;
 const EMAIL_CHANGE_MAX_ATTEMPTS = 5;
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -36,6 +30,7 @@ export class UserProfileService {
     private readonly userCommonService: UserValidationService,
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
+    private readonly avatarStorageService: AvatarStorageService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) { }
 
@@ -88,16 +83,8 @@ export class UserProfileService {
     ]);
   }
 
-  private async safelyDeleteLocalAvatar(avatarUrl: string | null): Promise<void> {
-    const filename = getLocalAvatarFilename(avatarUrl);
-    if (!filename) return;
-
-    try {
-      await unlink(join(AVATAR_DIRECTORY, filename));
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'ENOENT') throw error;
-    }
+  private async safelyDeleteStoredAvatar(avatarUrl: string | null): Promise<void> {
+    await this.avatarStorageService.deleteAvatarByUrl(avatarUrl);
   }
 
   async getProfile(userId: string) {
@@ -580,25 +567,28 @@ export class UserProfileService {
     const oldUser = await this.userCommonService.findUserOrThrow(userId);
     const detectedType = detectSupportedAvatar(file.buffer);
     const filename = `${randomUUID()}.${detectedType.extension}`;
-    const avatarUrl = `${AVATAR_PUBLIC_PREFIX}${filename}`;
 
-    await mkdir(AVATAR_DIRECTORY, { recursive: true });
-    await writeFile(join(AVATAR_DIRECTORY, filename), file.buffer, {
-      flag: 'wx',
+    const uploadedAvatar = await this.avatarStorageService.uploadAvatar({
+      userId,
+      filename,
+      buffer: file.buffer,
+      contentType: detectedType.mimeType,
     });
 
     let updatedUser;
     try {
       updatedUser = await this.prisma.user.update({
         where: { id: userId },
-        data: { avatarUrl },
+        data: { avatarUrl: uploadedAvatar.publicUrl },
       });
     } catch (error) {
-      await this.safelyDeleteLocalAvatar(avatarUrl);
+      await this.avatarStorageService.deleteAvatarByUrl(
+        uploadedAvatar.publicUrl,
+      );
       throw error;
     }
 
-    await this.safelyDeleteLocalAvatar(oldUser.avatarUrl);
+    await this.safelyDeleteStoredAvatar(oldUser.avatarUrl);
     await this.clearProfileCaches(userId);
 
     await this.auditService.createLog({
@@ -613,7 +603,7 @@ export class UserProfileService {
     return this.buildProfile(updatedUser);
   }
 
-  /** Removes the avatar from both the database and local storage. */
+  /** Removes the avatar from both the database and Supabase Storage. */
   async removeAvatar(userId: string) {
     const oldUser = await this.userCommonService.findUserOrThrow(userId);
 
@@ -622,7 +612,7 @@ export class UserProfileService {
       data: { avatarUrl: null },
     });
 
-    await this.safelyDeleteLocalAvatar(oldUser.avatarUrl);
+    await this.safelyDeleteStoredAvatar(oldUser.avatarUrl);
     await this.clearProfileCaches(userId);
 
     await this.auditService.createLog({
@@ -703,7 +693,7 @@ export class UserProfileService {
     });
 
     await this.clearProfileCaches(userId);
-    await this.safelyDeleteLocalAvatar(user.avatarUrl);
+    await this.safelyDeleteStoredAvatar(user.avatarUrl);
 
     await this.auditService.createLog({
       actorId: userId,

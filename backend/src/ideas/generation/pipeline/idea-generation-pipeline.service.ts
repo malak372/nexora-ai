@@ -729,7 +729,7 @@ export class IdeaGenerationPipelineService {
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= definition.maxAttempts; attempt += 1) {
-      await this.markStageRunning(context.runId, definition, attempt);
+      await this.markStageRunning(context, definition, attempt);
 
       try {
         const result = await this.executeStageWithinBudget(
@@ -903,10 +903,26 @@ export class IdeaGenerationPipelineService {
    * @param attempt Current attempt number.
    */
   private async markStageRunning(
-    runId: string,
+    context: IdeaGenerationContext,
     definition: IdeaGenerationStageDefinition,
     attempt: number,
   ): Promise<void> {
+    const runId = context.runId;
+
+    /*
+     * Context checkpoints update IdeaGenerationRun.contextSnapshot. Let any
+     * already-started checkpoint finish before opening the serializable idea
+     * persistence transaction. Otherwise a background checkpoint can update
+     * the same run row while persistence is reading/attaching it, forcing the
+     * entire 4-8 second transaction to retry. This changes only scheduling of
+     * recovery metadata; generation quality, entitlement atomicity, duplicate
+     * protection, and generated outputs are unchanged.
+     */
+    if (
+      definition.key === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
+    ) {
+      await this.flushContextCheckpoints(runId);
+    }
     this.realtime.publishStageTransition({
       runId,
       stageKey: definition.key,
@@ -948,6 +964,24 @@ export class IdeaGenerationPipelineService {
               currentStageKey: definition.key,
               progressPercent: definition.progressStart,
               lastHeartbeatAt: new Date(),
+
+              /*
+               * CollectionJobResolutionStage has already validated and
+               * completed this exact job. Attach it to the run during the
+               * existing guarded persistence-stage update so
+               * IdeaPersistenceService does not need a second defensive
+               * CollectionJob lookup inside the serializable transaction.
+               *
+               * Direct/non-pipeline callers still keep the persistence
+               * service's fallback validation when run.collectionJobId is null.
+               */
+              ...(definition.key ===
+                IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE &&
+              context.collection?.collectionJobId
+                ? {
+                    collectionJobId: context.collection.collectionJobId,
+                  }
+                : {}),
             },
           }),
         {
@@ -1422,6 +1456,22 @@ export class IdeaGenerationPipelineService {
     );
 
     return checkpoint?.definition.sequence ?? null;
+  }
+
+  /** Waits only for recovery snapshots that were already queued for this run. */
+  private async flushContextCheckpoints(runId: string): Promise<void> {
+    const pending = this.contextCheckpointQueues.get(runId);
+
+    if (!pending) {
+      return;
+    }
+
+    try {
+      await pending;
+    } catch {
+      // enqueueContextCheckpoint already records the failure. A recovery
+      // snapshot must never replace a valid generation result.
+    }
   }
 
   private shouldCheckpointAfterStage(stageKey: IdeaGenerationStageKey): boolean {

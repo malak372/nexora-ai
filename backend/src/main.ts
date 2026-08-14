@@ -8,7 +8,6 @@
  * - Cross-origin resource sharing with credentials.
  * - Global DTO validation and transformation.
  * - Swagger/OpenAPI documentation.
- * - Public uploads directory.
  * - Graceful application shutdown.
  *
  * @module main
@@ -28,7 +27,6 @@ import cookieParser from 'cookie-parser';
 
 import type { Express } from 'express';
 
-import { join } from 'node:path';
 
 import { AppModule } from './app.module';
 
@@ -244,20 +242,6 @@ async function bootstrap(): Promise<void> {
       },
     );
   }
-
-  app.useStaticAssets(
-    join(process.cwd(), 'uploads'),
-    {
-      prefix: '/uploads/',
-      maxAge: configService.get<string>(
-        'UPLOAD_CACHE_MAX_AGE',
-        '1d',
-      ),
-      immutable:
-        configService.get<string>('NODE_ENV') ===
-        'production',
-    },
-  );
 
   app.enableShutdownHooks();
 

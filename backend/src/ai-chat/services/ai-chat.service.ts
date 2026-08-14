@@ -43,11 +43,6 @@ import type {
 import { AiChatAccessService } from './ai-chat-access.service';
 
 /**
- * Maximum retries for a serializable chat-session creation transaction.
- */
-const AI_CHAT_SESSION_CREATION_TRANSACTION_RETRIES = 3;
-
-/**
  * Service responsible for the lifecycle of authenticated users' AI chat
  * sessions.
  */
@@ -74,61 +69,28 @@ export class AiChatService {
   ): Promise<AiChatSessionRecord> {
     await this.aiChatAccessService.ensureIdeaChatAccess(userId, ideaId);
 
-    for (
-      let attempt = 1;
-      attempt <= AI_CHAT_SESSION_CREATION_TRANSACTION_RETRIES;
-      attempt += 1
-    ) {
-      try {
-        return await this.prisma.$transaction(
-          async (transaction) => {
-            const currentSessionCount = await transaction.chatSession.count({
-              where: {
-                userId,
-                ideaId,
-                deletedAt: null,
-              },
-            });
+    const currentSessionCount = await this.prisma.chatSession.count({
+      where: {
+        userId,
+        ideaId,
+        deletedAt: null,
+      },
+    });
 
-            if (currentSessionCount >= AI_CHAT_MAX_SESSIONS_PER_IDEA) {
-              throw new BadRequestException(
-                `A maximum of ${AI_CHAT_MAX_SESSIONS_PER_IDEA} AI chat sessions is allowed for one idea.`,
-              );
-            }
-
-            return transaction.chatSession.create({
-              data: {
-                userId,
-                ideaId,
-                title: dto.title ?? AI_CHAT_DEFAULT_SESSION_TITLE,
-              },
-              select: AI_CHAT_SESSION_SELECT,
-            });
-          },
-          {
-            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-          },
-        );
-      } catch (error: unknown) {
-        const isSerializableConflict =
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2034';
-
-        if (!isSerializableConflict) {
-          throw error;
-        }
-
-        if (attempt >= AI_CHAT_SESSION_CREATION_TRANSACTION_RETRIES) {
-          throw new ConflictException(
-            'The AI chat session could not be created because of concurrent requests.',
-          );
-        }
-      }
+    if (currentSessionCount >= AI_CHAT_MAX_SESSIONS_PER_IDEA) {
+      throw new BadRequestException(
+        `A maximum of ${AI_CHAT_MAX_SESSIONS_PER_IDEA} AI chat sessions is allowed for one idea.`,
+      );
     }
 
-    throw new ConflictException(
-      'The AI chat session could not be created because of concurrent requests.',
-    );
+    return this.prisma.chatSession.create({
+      data: {
+        userId,
+        ideaId,
+        title: dto.title ?? AI_CHAT_DEFAULT_SESSION_TITLE,
+      },
+      select: AI_CHAT_SESSION_SELECT,
+    });
   }
 
   /**
@@ -165,7 +127,7 @@ export class AiChatService {
 
     const orderBy = this.buildOrderBy(query.sortBy, query.sortOrder);
 
-    const [items, totalItems] = await this.prisma.$transaction([
+    const [items, totalItems] = await Promise.all([
       this.prisma.chatSession.findMany({
         where,
         select: AI_CHAT_SESSION_SELECT,

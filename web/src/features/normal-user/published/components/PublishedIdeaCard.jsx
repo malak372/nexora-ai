@@ -36,6 +36,7 @@ function formatDate(value, fallback) {
 export default function PublishedIdeaCard({
   publication,
   onEdit,
+  onWarmEdit,
   onInsights,
   onStop,
   onRepost,
@@ -153,6 +154,9 @@ export default function PublishedIdeaCard({
             <motion.button
               type="button"
               className="is-quiet"
+              onMouseEnter={onWarmEdit}
+              onFocus={onWarmEdit}
+              onPointerDown={onWarmEdit}
               onClick={onEdit}
               whileHover={shouldReduceMotion ? undefined : { y: -2 }}
             >

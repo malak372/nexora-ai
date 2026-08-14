@@ -1,24 +1,25 @@
 // Mobile workspace for ideas accepted from Discover.
 // Supports permanent advanced access, Premium chat, and Business Model.
 //
-// @author  Malak
+// @author Eman
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-
+import 'package:flutter/services.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/network/realtime_socket.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
+import '../widgets/workspace_navigation.dart';
 import 'business_model_page.dart';
+import 'mobile_checkout_page.dart';
 import 'premium_chat_page.dart';
 
 class AcceptedIdeaWorkspacePage extends StatefulWidget {
-  const AcceptedIdeaWorkspacePage({
-    super.key,
-    required this.publicationId,
-  });
+  const AcceptedIdeaWorkspacePage({super.key, required this.publicationId});
 
   final String publicationId;
 
@@ -27,8 +28,7 @@ class AcceptedIdeaWorkspacePage extends StatefulWidget {
       _AcceptedIdeaWorkspacePageState();
 }
 
-class _AcceptedIdeaWorkspacePageState
-    extends State<AcceptedIdeaWorkspacePage> {
+class _AcceptedIdeaWorkspacePageState extends State<AcceptedIdeaWorkspacePage> {
   Map<String, dynamic>? _detail;
   Object? _error;
   bool _loading = true;
@@ -82,21 +82,21 @@ class _AcceptedIdeaWorkspacePageState
       final result = await UserApi.instance.createAcceptedAdvancedCheckout(
         widget.publicationId,
       );
-      final payment = result['payment'] is Map
-          ? Map<String, dynamic>.from(result['payment'] as Map)
-          : const <String, dynamic>{};
-      final checkoutUrl = result['checkoutUrl']?.toString() ??
-          payment['checkoutUrl']?.toString() ??
-          result['url']?.toString();
-      if (checkoutUrl == null || checkoutUrl.isEmpty) {
-        throw const ApiException(
-          'The payment provider did not return a checkout URL.',
-        );
-      }
-      final uri = Uri.tryParse(checkoutUrl);
-      if (uri == null ||
-          !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        throw const ApiException('The secure checkout could not be opened.');
+
+      final flow = await openVoxidenceCheckout(
+        // ignore: use_build_context_synchronously
+        context,
+        checkoutResult: result,
+        selectedSection: WorkspaceSection.ideas,
+        publicationId: widget.publicationId,
+        title: 'Unlock accepted workspace',
+      );
+
+      if (flow.status == CheckoutFlowStatus.completed && mounted) {
+        await Future.wait([
+          _load(force: true),
+          UserSessionController.instance.load(force: true),
+        ]);
       }
     } on ApiException catch (error) {
       if (mounted) showAppSnackBar(context, error.message, error: true);
@@ -118,24 +118,36 @@ class _AcceptedIdeaWorkspacePageState
         ? Map<String, dynamic>.from(detail['businessModel'] as Map)
         : const <String, dynamic>{};
     final sourceIdeaId = detail['ideaId']?.toString();
-    final advancedGranted = detail['advancedAccessGranted'] == true ||
+    final advancedGranted =
+        detail['advancedAccessGranted'] == true ||
         acceptance['advancedUnlockedAt'] != null;
-    final hasAdvanced = detail['hasAdvancedAccess'] == true ||
+    final hasAdvanced =
+        detail['hasAdvancedAccess'] == true ||
         (advancedGranted && outputs.isNotEmpty);
-    final advancedAvailable = detail['advancedOutputsAvailable'] != false &&
-        ((detail['advancedOutputsCount'] as num?)?.toInt() ?? outputs.length) > 0;
+    final advancedAvailable =
+        detail['advancedOutputsAvailable'] != false &&
+        ((detail['advancedOutputsCount'] as num?)?.toInt() ?? outputs.length) >
+            0;
     final premium = UserSessionController.instance.isPremium;
 
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: AppColors.background,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: AppColors.background,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
+        backgroundColor: AppColors.background,
+        surfaceTintColor: Colors.transparent,
         leadingWidth: 50,
         leading: IconButton(
           tooltip: 'Back to Publication',
           onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            size: 22,
-          ),
+          icon: const Icon(Icons.arrow_back_rounded, size: 22),
         ),
         titleSpacing: 0,
         title: const Column(
@@ -226,16 +238,19 @@ class _AcceptedIdeaWorkspacePageState
                             title: 'AI Chat',
                             subtitle: 'Ask about this idea',
                             rose: true,
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => PremiumChatPage(
-                                  ideaId: sourceIdeaId,
-                                  returnTitle: 'Accepted workspace',
-                                  returnSubtitle: 'Premium AI Chat',
-                                  contextLabel: 'Accepted idea workspace',
+                            onTap: () {
+                              unawaited(RealtimeSocket.warm('/ai-chat'));
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PremiumChatPage(
+                                    ideaId: sourceIdeaId,
+                                    returnTitle: 'Accepted workspace',
+                                    returnSubtitle: 'Premium AI Chat',
+                                    contextLabel: 'Accepted idea workspace',
+                                  ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -285,8 +300,8 @@ class _AcceptedIdeaWorkspacePageState
                   subtitle: hasAdvanced
                       ? '${outputs.length} execution section(s) available permanently.'
                       : advancedAvailable
-                          ? 'Unlock the protected execution outputs for this accepted idea.'
-                          : 'The publisher has no completed advanced outputs for this idea.',
+                      ? 'Unlock the protected execution outputs for this accepted idea.'
+                      : 'The publisher has no completed advanced outputs for this idea.',
                 ),
                 const SizedBox(height: 10),
                 if (!advancedGranted && advancedAvailable)
@@ -318,14 +333,16 @@ class _AcceptedIdeaWorkspacePageState
                         FilledButton.icon(
                           onPressed: _unlocking ? null : _unlockAdvanced,
                           icon: Icon(
-                            premium ? Icons.bolt_rounded : Icons.lock_outline_rounded,
+                            premium
+                                ? Icons.bolt_rounded
+                                : Icons.lock_outline_rounded,
                           ),
                           label: Text(
                             _unlocking
                                 ? 'Opening...'
                                 : premium
-                                    ? 'Unlock with credits'
-                                    : 'Open secure checkout',
+                                ? 'Unlock with credits'
+                                : 'Open secure checkout',
                           ),
                         ),
                       ],
@@ -351,12 +368,14 @@ class _AcceptedIdeaWorkspacePageState
                     final output = raw is Map
                         ? Map<String, dynamic>.from(raw)
                         : const <String, dynamic>{};
-                    final value = output['structuredContent'] ?? output['content'];
+                    final value =
+                        output['structuredContent'] ?? output['content'];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 9),
                       child: _AcceptedAdvancedOutputCard(
                         number: (index + 1).toString().padLeft(2, '0'),
-                        title: '${output['title'] ?? _humanize('${output['outputKey'] ?? 'Advanced output'}')}',
+                        title:
+                            '${output['title'] ?? _humanize('${output['outputKey'] ?? 'Advanced output'}')}',
                         value: value,
                       ),
                     );
@@ -365,6 +384,7 @@ class _AcceptedIdeaWorkspacePageState
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -422,21 +442,12 @@ class _AcceptedWorkspaceHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        13,
-        12,
-        13,
-        13,
-      ),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            AppColors.surfaceRose,
-            Color(0xFFF0F8F5),
-          ],
+          colors: [AppColors.surface, AppColors.surfaceRose, Color(0xFFF0F8F5)],
         ),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
@@ -449,10 +460,7 @@ class _AcceptedWorkspaceHeader extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEAF8F2),
                   borderRadius: BorderRadius.circular(999),
@@ -515,14 +523,11 @@ class _AcceptedWorkspaceHeader extends StatelessWidget {
           const SizedBox(height: 9),
           Text(
             title,
-            style: Theme.of(context)
-                .textTheme
-                .headlineSmall
-                ?.copyWith(
-                  fontSize: 19.5,
-                  height: 1.08,
-                  letterSpacing: -.36,
-                ),
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontSize: 19.5,
+              height: 1.08,
+              letterSpacing: -.36,
+            ),
           ),
           if (publisherLine.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -599,8 +604,7 @@ class _AcceptedAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent =
-        rose ? AppColors.pinkDeep : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Material(
       color: Colors.transparent,
@@ -608,34 +612,19 @@ class _AcceptedAction extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            minHeight: 92,
-          ),
+          constraints: const BoxConstraints(minHeight: 92),
           child: Ink(
-            padding: const EdgeInsets.fromLTRB(
-              10,
-              10,
-              9,
-              10,
-            ),
+            padding: const EdgeInsets.fromLTRB(10, 10, 9, 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: rose
-                    ? const [
-                        AppColors.surface,
-                        AppColors.surfaceRose,
-                      ]
-                    : const [
-                        AppColors.surface,
-                        Color(0xFFF0F8F5),
-                      ],
+                    ? const [AppColors.surface, AppColors.surfaceRose]
+                    : const [AppColors.surface, Color(0xFFF0F8F5)],
               ),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: accent.withValues(alpha: .09),
-              ),
+              border: Border.all(color: accent.withValues(alpha: .09)),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.primaryDeep.withValues(alpha: .035),
@@ -659,11 +648,7 @@ class _AcceptedAction extends StatelessWidget {
                             : AppColors.primarySoft,
                         borderRadius: BorderRadius.circular(11),
                       ),
-                      child: Icon(
-                        icon,
-                        size: 16,
-                        color: accent,
-                      ),
+                      child: Icon(icon, size: 16, color: accent),
                     ),
                     const Spacer(),
                     Container(
@@ -723,8 +708,6 @@ class _AcceptedAction extends StatelessWidget {
   }
 }
 
-
-
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.number,
@@ -742,35 +725,21 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent =
-        rose ? AppColors.pinkDeep : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        13,
-        12,
-        13,
-        13,
-      ),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: rose
-              ? const [
-                  AppColors.surface,
-                  AppColors.surfaceRose,
-                ]
-              : const [
-                  AppColors.surface,
-                  Color(0xFFF2F9F7),
-                ],
+              ? const [AppColors.surface, AppColors.surfaceRose]
+              : const [AppColors.surface, Color(0xFFF2F9F7)],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: accent.withValues(alpha: .07),
-        ),
+        border: Border.all(color: accent.withValues(alpha: .07)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .035),
@@ -804,16 +773,10 @@ class _SectionCard extends StatelessWidget {
                     height: 34,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: rose
-                          ? AppColors.pinkSoft
-                          : AppColors.primarySoft,
+                      color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Icon(
-                      icon,
-                      size: 16,
-                      color: accent,
-                    ),
+                    child: Icon(icon, size: 16, color: accent),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -838,9 +801,6 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-
-
-
 class _AcceptedAdvancedOutputCard extends StatelessWidget {
   const _AcceptedAdvancedOutputCard({
     required this.number,
@@ -859,15 +819,10 @@ class _AcceptedAdvancedOutputCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF2F9F7),
-          ],
+          colors: [AppColors.surface, Color(0xFFF2F9F7)],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .07),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .07)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .03),
@@ -914,10 +869,7 @@ class _AcceptedAdvancedOutputCard extends StatelessWidget {
             padding: EdgeInsets.only(top: 2),
             child: Text(
               'Advanced workspace output',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 6.6,
-              ),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 6.6),
             ),
           ),
           iconColor: AppColors.primaryDark,
@@ -943,9 +895,7 @@ class _AcceptedAdvancedOutputCard extends StatelessWidget {
 }
 
 class _AcceptedContent extends StatelessWidget {
-  const _AcceptedContent({
-    required this.value,
-  });
+  const _AcceptedContent({required this.value});
 
   final dynamic value;
 
@@ -972,11 +922,7 @@ class _AcceptedContent extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Expanded(
-                      child: _AcceptedContent(
-                        value: item,
-                      ),
-                    ),
+                    Expanded(child: _AcceptedContent(value: item)),
                   ],
                 ),
               ),
@@ -988,8 +934,7 @@ class _AcceptedContent extends StatelessWidget {
     if (value is Map) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: (value as Map)
-            .entries
+        children: (value as Map).entries
             .map(
               (entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -1000,8 +945,7 @@ class _AcceptedContent extends StatelessWidget {
                     color: Colors.white.withValues(alpha: .58),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: AppColors.primaryDark
-                          .withValues(alpha: .045),
+                      color: AppColors.primaryDark.withValues(alpha: .045),
                     ),
                   ),
                   child: Column(
@@ -1016,9 +960,7 @@ class _AcceptedContent extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 3),
-                      _AcceptedContent(
-                        value: entry.value,
-                      ),
+                      _AcceptedContent(value: entry.value),
                     ],
                   ),
                 ),
@@ -1051,5 +993,3 @@ class _AcceptedContent extends StatelessWidget {
     return '${spaced[0].toUpperCase()}${spaced.substring(1)}';
   }
 }
-
-

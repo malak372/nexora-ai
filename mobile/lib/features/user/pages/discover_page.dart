@@ -18,11 +18,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../models/user_models.dart';
+import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
 import 'publication_page.dart';
 
@@ -61,25 +63,16 @@ class _DiscoverPageState extends State<DiscoverPage> {
   }
 
   ({String by, String order}) get _sortQuery => switch (_sort) {
-        'rating' => (
-            by: 'ratingAverage',
-            order: 'desc',
-          ),
-        'upvotes' => (
-            by: 'upvotesCount',
-            order: 'desc',
-          ),
-        _ => (
-            by: 'publishedAt',
-            order: 'desc',
-          ),
-      };
+    'rating' => (by: 'ratingAverage', order: 'desc'),
+    'upvotes' => (by: 'upvotesCount', order: 'desc'),
+    _ => (by: 'publishedAt', order: 'desc'),
+  };
 
   String get _sortLabel => switch (_sort) {
-        'rating' => 'Highest rated',
-        'upvotes' => 'Most upvoted',
-        _ => 'Newest',
-      };
+    'rating' => 'Highest rated',
+    'upvotes' => 'Most upvoted',
+    _ => 'Newest',
+  };
 
   Future<void> _load({bool force = false}) async {
     if (mounted) {
@@ -103,8 +96,21 @@ class _DiscoverPageState extends State<DiscoverPage> {
 
       if (!mounted) return;
 
+      final currentUserId =
+          UserSessionController.instance.summary?.id.trim() ?? '';
+
+      final visibleItems = currentUserId.isEmpty
+          ? result.items
+          : result.items
+              .where(
+                (item) =>
+                    item.publisherId.isEmpty ||
+                    item.publisherId != currentUserId,
+              )
+              .toList(growable: false);
+
       setState(() {
-        _items = result.items;
+        _items = visibleItems;
         _total = result.total;
         _totalPages = result.totalPages;
       });
@@ -134,17 +140,15 @@ class _DiscoverPageState extends State<DiscoverPage> {
   Future<void> _open(DiscoveryItem item) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        settings: RouteSettings(
-          name: '/normal/discover/${item.id}',
-        ),
-        builder: (_) => PublicationPage(
-          publicationId: item.id,
-        ),
+        settings: RouteSettings(name: '/normal/discover/${item.id}'),
+        builder: (_) => PublicationPage(publicationId: item.id),
       ),
     );
 
     if (mounted) {
-      await _load(force: true);
+      // Reuse the two-minute discovery cache on return. The list remains
+      // visible immediately and a later pull-to-refresh can force the server.
+      unawaited(_load());
     }
   }
 
@@ -186,10 +190,18 @@ class _DiscoverPageState extends State<DiscoverPage> {
         ? const <DiscoveryItem>[]
         : _items.skip(1).toList(growable: false);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: WorkspaceBackground(
-        child: SafeArea(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: AppColors.background,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: AppColors.background,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: WorkspaceBackground(
+          child: SafeArea(
           child: RefreshIndicator(
             color: AppColors.primary,
             onRefresh: () => _load(force: true),
@@ -197,12 +209,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
-              padding: const EdgeInsets.fromLTRB(
-                16,
-                10,
-                16,
-                118,
-              ),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 118),
               children: [
                 _Reveal(
                   delay: 0,
@@ -260,21 +267,20 @@ class _DiscoverPageState extends State<DiscoverPage> {
 
                   if (remaining.isEmpty && _page == 1)
                     const _GalleryCompleteState()
-                  else
-                    ...[
-                      for (var i = 0; i < remaining.length; i++)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 11),
-                          child: _Reveal(
-                            delay: 175 + (i.clamp(0, 4) * 35),
-                            child: _DiscoveryStoryCard(
-                              item: remaining[i],
-                              index: ((_page - 1) * 12) + i,
-                              onTap: () => _open(remaining[i]),
-                            ),
+                  else ...[
+                    for (var i = 0; i < remaining.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 11),
+                        child: _Reveal(
+                          delay: 175 + (i.clamp(0, 4) * 35),
+                          child: _DiscoveryStoryCard(
+                            item: remaining[i],
+                            index: ((_page - 1) * 12) + i,
+                            onTap: () => _open(remaining[i]),
                           ),
                         ),
-                    ],
+                      ),
+                  ],
 
                   if (_totalPages > 1) ...[
                     const SizedBox(height: 3),
@@ -290,15 +296,13 @@ class _DiscoverPageState extends State<DiscoverPage> {
           ),
         ),
       ),
+      ),
     );
   }
 }
 
 class _DiscoverHero extends StatefulWidget {
-  const _DiscoverHero({
-    required this.total,
-    required this.loading,
-  });
+  const _DiscoverHero({required this.total, required this.loading});
 
   final int total;
   final bool loading;
@@ -328,16 +332,10 @@ class _DiscoverHeroState extends State<_DiscoverHero>
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFFFDFC),
-            Color(0xFFFFF7F9),
-            Color(0xFFF0FAF8),
-          ],
+          colors: [Color(0xFFFFFDFC), Color(0xFFFFF7F9), Color(0xFFF0FAF8)],
           stops: [0, .55, 1],
         ),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .08),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .08)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .07),
@@ -357,9 +355,7 @@ class _DiscoverHeroState extends State<_DiscoverHero>
               children: [
                 Positioned.fill(
                   child: CustomPaint(
-                    painter: _HeroGridPainter(
-                      progress: _controller.value,
-                    ),
+                    painter: _HeroGridPainter(progress: _controller.value),
                   ),
                 ),
                 Positioned(
@@ -387,9 +383,7 @@ class _DiscoverHeroState extends State<_DiscoverHero>
                       const SizedBox(height: 14),
                       RichText(
                         text: TextSpan(
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineMedium
+                          style: Theme.of(context).textTheme.headlineMedium
                               ?.copyWith(
                                 color: AppColors.textPrimary,
                                 fontSize: 27,
@@ -398,9 +392,7 @@ class _DiscoverHeroState extends State<_DiscoverHero>
                                 letterSpacing: -.95,
                               ),
                           children: const [
-                            TextSpan(
-                              text: 'Discover ideas shaped by\n',
-                            ),
+                            TextSpan(text: 'Discover ideas shaped by\n'),
                             TextSpan(
                               text: 'real community ',
                               style: TextStyle(
@@ -469,16 +461,11 @@ class _HeroEyebrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 7,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .78),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .08),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .08)),
       ),
       child: const Row(
         mainAxisSize: MainAxisSize.min,
@@ -505,10 +492,7 @@ class _HeroEyebrow extends StatelessWidget {
 }
 
 class _HeroChip extends StatelessWidget {
-  const _HeroChip({
-    required this.icon,
-    required this.text,
-  });
+  const _HeroChip({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
@@ -521,18 +505,12 @@ class _HeroChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .72),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .07),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .07)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 11.5,
-            color: AppColors.primaryDark,
-          ),
+          Icon(icon, size: 11.5, color: AppColors.primaryDark),
           const SizedBox(width: 4),
           Text(
             text,
@@ -549,10 +527,7 @@ class _HeroChip extends StatelessWidget {
 }
 
 class _AvailableStat extends StatelessWidget {
-  const _AvailableStat({
-    required this.count,
-    required this.loading,
-  });
+  const _AvailableStat({required this.count, required this.loading});
 
   final int count;
   final bool loading;
@@ -564,9 +539,7 @@ class _AvailableStat extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .82),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .08),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .08)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .045),
@@ -585,10 +558,7 @@ class _AvailableStat extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF69C5BF),
-                  Color(0xFF4DAAA5),
-                ],
+                colors: [Color(0xFF69C5BF), Color(0xFF4DAAA5)],
               ),
               borderRadius: BorderRadius.circular(12),
             ),
@@ -635,10 +605,7 @@ class _AvailableStat extends StatelessWidget {
                 const SizedBox(height: 2),
                 const Text(
                   'discoveries loaded',
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 7.2,
-                  ),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 7.2),
                 ),
               ],
             ),
@@ -699,39 +666,27 @@ class _Controls extends StatelessWidget {
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: 'Search titles, problems, creators...',
-              prefixIcon: const Icon(
-                Icons.search_rounded,
-                size: 20,
-              ),
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
               suffixIcon: hasSearch
                   ? IconButton(
                       onPressed: onClear,
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        size: 18,
-                      ),
+                      icon: const Icon(Icons.close_rounded, size: 18),
                       tooltip: 'Clear',
                     )
                   : Container(
                       margin: const EdgeInsets.all(7),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 13),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
-                          colors: [
-                            Color(0xFF58BDB8),
-                            Color(0xFF59C2BE),
-                          ],
+                          colors: [Color(0xFF58BDB8), Color(0xFF59C2BE)],
                         ),
                         borderRadius: BorderRadius.circular(11),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.primaryDark
-                                .withValues(alpha: .08),
+                            color: AppColors.primaryDark.withValues(alpha: .08),
                             blurRadius: 9,
                             offset: const Offset(0, 3),
                           ),
@@ -750,9 +705,7 @@ class _Controls extends StatelessWidget {
               enabledBorder: InputBorder.none,
               focusedBorder: InputBorder.none,
               filled: false,
-              contentPadding: const EdgeInsets.symmetric(
-                vertical: 16,
-              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 16),
             ),
           ),
         ),
@@ -766,9 +719,7 @@ class _Controls extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             child: Ink(
               height: 50,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 13,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 13),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: .82),
                 borderRadius: BorderRadius.circular(16),
@@ -883,10 +834,7 @@ class _SortSheet extends StatelessWidget {
             const SizedBox(height: 4),
             const Text(
               'Choose how the community gallery is ordered.',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 9.2,
-              ),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 9.2),
             ),
             const SizedBox(height: 12),
             for (final option in options)
@@ -932,13 +880,12 @@ class _SortOption extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: selected
                 ? const LinearGradient(
-                    colors: [
-                      Color(0xFF5CBDB9),
-                      Color(0xFF4DAAA5),
-                    ],
+                    colors: [Color(0xFF5CBDB9), Color(0xFF4DAAA5)],
                   )
                 : null,
-            color: selected ? null : AppColors.primarySoft.withValues(alpha: .42),
+            color: selected
+                ? null
+                : AppColors.primarySoft.withValues(alpha: .42),
             borderRadius: BorderRadius.circular(15),
             border: Border.all(
               color: selected
@@ -965,11 +912,7 @@ class _SortOption extends StatelessWidget {
                 ),
               ),
               if (selected)
-                const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
+                const Icon(Icons.check_rounded, color: Colors.white, size: 18),
             ],
           ),
         ),
@@ -986,17 +929,13 @@ class _SortOption extends StatelessWidget {
 ///
 /// @author  Malak
 class _FeaturedOpportunity extends StatefulWidget {
-  const _FeaturedOpportunity({
-    required this.item,
-    required this.onTap,
-  });
+  const _FeaturedOpportunity({required this.item, required this.onTap});
 
   final DiscoveryItem item;
   final VoidCallback onTap;
 
   @override
-  State<_FeaturedOpportunity> createState() =>
-      _FeaturedOpportunityState();
+  State<_FeaturedOpportunity> createState() => _FeaturedOpportunityState();
 }
 
 class _FeaturedOpportunityState extends State<_FeaturedOpportunity>
@@ -1066,10 +1005,7 @@ class _FeaturedOpportunityState extends State<_FeaturedOpportunity>
                             child: Transform.translate(
                               offset: Offset(
                                 0,
-                                math.sin(
-                                      _controller.value * math.pi * 2,
-                                    ) *
-                                    1.6,
+                                math.sin(_controller.value * math.pi * 2) * 1.6,
                               ),
                               child: Container(
                                 width: 23,
@@ -1078,13 +1014,12 @@ class _FeaturedOpportunityState extends State<_FeaturedOpportunity>
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: .76),
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.white,
-                                  ),
+                                  border: Border.all(color: Colors.white),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppColors.primaryDark
-                                          .withValues(alpha: .05),
+                                      color: AppColors.primaryDark.withValues(
+                                        alpha: .05,
+                                      ),
                                       blurRadius: 7,
                                       offset: const Offset(0, 3),
                                     ),
@@ -1118,8 +1053,7 @@ class _FeaturedOpportunityState extends State<_FeaturedOpportunity>
                             color: AppColors.pinkSoft,
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: AppColors.pink
-                                  .withValues(alpha: .14),
+                              color: AppColors.pink.withValues(alpha: .14),
                             ),
                           ),
                           child: const Row(
@@ -1150,9 +1084,7 @@ class _FeaturedOpportunityState extends State<_FeaturedOpportunity>
                           item.title,
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
+                          style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(
                                 fontSize: 15.5,
                                 height: 1.15,
@@ -1248,17 +1180,11 @@ class _FeaturedOpportunityState extends State<_FeaturedOpportunity>
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.travel_explore_rounded,
-                        size: 14,
-                      ),
+                      Icon(Icons.travel_explore_rounded, size: 14),
                       SizedBox(width: 7),
                       Text('Explore opportunity'),
                       SizedBox(width: 7),
-                      Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 14,
-                      ),
+                      Icon(Icons.arrow_forward_rounded, size: 14),
                     ],
                   ),
                 ),
@@ -1273,9 +1199,7 @@ class _FeaturedOpportunityState extends State<_FeaturedOpportunity>
 
 /// Small brand-colored visual used only by the newest discovery card.
 class _FeaturedVisualPainter extends CustomPainter {
-  const _FeaturedVisualPainter({
-    required this.progress,
-  });
+  const _FeaturedVisualPainter({required this.progress});
 
   final double progress;
 
@@ -1284,19 +1208,12 @@ class _FeaturedVisualPainter extends CustomPainter {
     final rect = Offset.zero & size;
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        rect,
-        const Radius.circular(19),
-      ),
+      RRect.fromRectAndRadius(rect, const Radius.circular(19)),
       Paint()
         ..shader = const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.primarySoft,
-            AppColors.mint,
-            Color(0xFFF7E9ED),
-          ],
+          colors: [AppColors.primarySoft, AppColors.mint, Color(0xFFF7E9ED)],
           stops: [0, .62, 1],
         ).createShader(rect),
     );
@@ -1326,20 +1243,11 @@ class _FeaturedVisualPainter extends CustomPainter {
       center.dy + math.sin(-angle * 1.35) * 16,
     );
 
-    canvas.drawCircle(
-      outer,
-      2.8,
-      Paint()..color = AppColors.pink,
-    );
+    canvas.drawCircle(outer, 2.8, Paint()..color = AppColors.pink);
 
-    canvas.drawCircle(
-      inner,
-      2.4,
-      Paint()..color = AppColors.primary,
-    );
+    canvas.drawCircle(inner, 2.4, Paint()..color = AppColors.primary);
 
-    final shimmerX =
-        -18 + ((size.width + 36) * progress);
+    final shimmerX = -18 + ((size.width + 36) * progress);
 
     final shimmer = Path()
       ..moveTo(shimmerX - 15, size.height)
@@ -1350,24 +1258,18 @@ class _FeaturedVisualPainter extends CustomPainter {
 
     canvas.drawPath(
       shimmer,
-      Paint()
-        ..color = Colors.white.withValues(alpha: .18),
+      Paint()..color = Colors.white.withValues(alpha: .18),
     );
   }
 
   @override
-  bool shouldRepaint(
-    covariant _FeaturedVisualPainter oldDelegate,
-  ) {
+  bool shouldRepaint(covariant _FeaturedVisualPainter oldDelegate) {
     return oldDelegate.progress != progress;
   }
 }
 
 class _GalleryHeading extends StatelessWidget {
-  const _GalleryHeading({
-    required this.count,
-    required this.page,
-  });
+  const _GalleryHeading({required this.count, required this.page});
 
   final int count;
   final int page;
@@ -1384,10 +1286,7 @@ class _GalleryHeading extends StatelessWidget {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0xFFFFF3F6),
-                Color(0xFFEAF6F3),
-              ],
+              colors: [Color(0xFFFFF3F6), Color(0xFFEAF6F3)],
             ),
             borderRadius: BorderRadius.circular(13),
           ),
@@ -1423,19 +1322,13 @@ class _GalleryHeading extends StatelessWidget {
               const SizedBox(height: 2),
               const Text(
                 'Ideas shared by Voxidence creators.',
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 8.4,
-                ),
+                style: TextStyle(color: AppColors.textMuted, fontSize: 8.4),
               ),
             ],
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 9,
-            vertical: 6,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
           decoration: BoxDecoration(
             color: AppColors.primarySoft.withValues(alpha: .62),
             borderRadius: BorderRadius.circular(999),
@@ -1466,17 +1359,14 @@ class _DiscoveryStoryCard extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_DiscoveryStoryCard> createState() =>
-      _DiscoveryStoryCardState();
+  State<_DiscoveryStoryCard> createState() => _DiscoveryStoryCardState();
 }
 
 class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: Duration(
-      seconds: 8 + (widget.index % 4),
-    ),
+    duration: Duration(seconds: 8 + (widget.index % 4)),
   )..repeat();
 
   @override
@@ -1536,13 +1426,10 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                               height: 38,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color:
-                                    Colors.white.withValues(alpha: .13),
-                                borderRadius:
-                                    BorderRadius.circular(14),
+                                color: Colors.white.withValues(alpha: .13),
+                                borderRadius: BorderRadius.circular(14),
                                 border: Border.all(
-                                  color: Colors.white
-                                      .withValues(alpha: .32),
+                                  color: Colors.white.withValues(alpha: .32),
                                 ),
                               ),
                               child: Text(
@@ -1561,8 +1448,7 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                             child: Text(
                               '#${(widget.index + 1).toString().padLeft(2, '0')}',
                               style: TextStyle(
-                                color:
-                                    Colors.white.withValues(alpha: .72),
+                                color: Colors.white.withValues(alpha: .72),
                                 fontSize: 7.4,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -1574,12 +1460,7 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    13,
-                    12,
-                    13,
-                    13,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1591,10 +1472,7 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFFFFF3F6),
-                                  Color(0xFFEAF6F3),
-                                ],
+                                colors: [Color(0xFFFFF3F6), Color(0xFFEAF6F3)],
                               ),
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -1610,14 +1488,12 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   item.publisherName,
                                   maxLines: 1,
-                                  overflow:
-                                      TextOverflow.ellipsis,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: AppColors.textPrimary,
                                     fontSize: 8.7,
@@ -1648,17 +1524,13 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                         ],
                       ),
                       const SizedBox(height: 10),
-                      _StoryLabel(
-                        accepted: item.isAccepted,
-                      ),
+                      _StoryLabel(accepted: item.isAccepted),
                       const SizedBox(height: 7),
                       Text(
                         item.title,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
+                        style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               fontSize: 14,
                               height: 1.2,
@@ -1685,8 +1557,7 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                         children: [
                           _TinyMetric(
                             icon: Icons.star_outline_rounded,
-                            value:
-                                item.ratingAverage.toStringAsFixed(1),
+                            value: item.ratingAverage.toStringAsFixed(1),
                           ),
                           _TinyMetric(
                             icon: Icons.thumb_up_alt_outlined,
@@ -1697,8 +1568,7 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                             value: '${item.downvotesCount}',
                           ),
                           _TinyMetric(
-                            icon:
-                                Icons.chat_bubble_outline_rounded,
+                            icon: Icons.chat_bubble_outline_rounded,
                             value: '${item.feedbackCount}',
                           ),
                           _TinyMetric(
@@ -1715,23 +1585,18 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
                         child: OutlinedButton.icon(
                           onPressed: widget.onTap,
                           iconAlignment: IconAlignment.end,
-                          icon: const Icon(
-                            Icons.north_east_rounded,
-                            size: 13,
-                          ),
+                          icon: const Icon(Icons.north_east_rounded, size: 13),
                           label: const Text('Explore the idea'),
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(40),
-                            backgroundColor:
-                                AppColors.primarySoft
-                                    .withValues(alpha: .42),
+                            backgroundColor: AppColors.primarySoft.withValues(
+                              alpha: .42,
+                            ),
                             side: BorderSide(
-                              color: AppColors.primary
-                                  .withValues(alpha: .12),
+                              color: AppColors.primary.withValues(alpha: .12),
                             ),
                             shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                             textStyle: const TextStyle(
                               fontSize: 9.1,
@@ -1761,10 +1626,7 @@ class _DiscoveryStoryCardState extends State<_DiscoveryStoryCard>
 ///
 /// @author  Malak
 class _StoryArtPainter extends CustomPainter {
-  const _StoryArtPainter({
-    required this.progress,
-    required this.variant,
-  });
+  const _StoryArtPainter({required this.progress, required this.variant});
 
   final double progress;
   final int variant;
@@ -1772,22 +1634,10 @@ class _StoryArtPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final colors = switch (variant) {
-      1 => const [
-          Color(0xFF4C817A),
-          AppColors.sage,
-        ],
-      2 => const [
-          Color(0xFFB97787),
-          AppColors.pink,
-        ],
-      3 => const [
-          Color(0xFF5D8D84),
-          Color(0xFF9EC8BD),
-        ],
-      _ => const [
-          AppColors.primaryDark,
-          AppColors.primary,
-        ],
+      1 => const [Color(0xFF4C817A), AppColors.sage],
+      2 => const [Color(0xFFB97787), AppColors.pink],
+      3 => const [Color(0xFF5D8D84), Color(0xFF9EC8BD)],
+      _ => const [AppColors.primaryDark, AppColors.primary],
     };
 
     final rect = Offset.zero & size;
@@ -1817,23 +1667,15 @@ class _StoryArtPainter extends CustomPainter {
         ).createShader(rect),
     );
 
-    final dots = Paint()
-      ..color = Colors.white.withValues(alpha: .11);
+    final dots = Paint()..color = Colors.white.withValues(alpha: .11);
 
     for (double x = 9; x < size.width; x += 18) {
       for (double y = 9; y < size.height; y += 18) {
-        canvas.drawCircle(
-          Offset(x, y),
-          .6,
-          dots,
-        );
+        canvas.drawCircle(Offset(x, y), .6, dots);
       }
     }
 
-    final ringCenter = Offset(
-      size.width - 30,
-      23,
-    );
+    final ringCenter = Offset(size.width - 30, 23);
 
     for (final radius in [23.0, 42.0]) {
       canvas.drawCircle(
@@ -1855,9 +1697,7 @@ class _StoryArtPainter extends CustomPainter {
       ),
       3.1,
       Paint()
-        ..color = variant == 2
-            ? const Color(0xFFE9F5F1)
-            : AppColors.pinkLight,
+        ..color = variant == 2 ? const Color(0xFFE9F5F1) : AppColors.pinkLight,
     );
 
     final secondAngle = -angle * 1.25;
@@ -1868,8 +1708,7 @@ class _StoryArtPainter extends CustomPainter {
         ringCenter.dy + math.sin(secondAngle) * 23,
       ),
       2.5,
-      Paint()
-        ..color = Colors.white.withValues(alpha: .90),
+      Paint()..color = Colors.white.withValues(alpha: .90),
     );
 
     final beam = math.sin(progress * math.pi * 2) * 22;
@@ -1895,15 +1734,10 @@ class _StoryArtPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(
-    covariant _StoryArtPainter oldDelegate,
-  ) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.variant != variant;
+  bool shouldRepaint(covariant _StoryArtPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.variant != variant;
   }
 }
-
-
 
 class _StoryLabel extends StatelessWidget {
   const _StoryLabel({required this.accepted});
@@ -1920,19 +1754,13 @@ class _StoryLabel extends StatelessWidget {
               ? Icons.check_circle_outline_rounded
               : Icons.auto_awesome_rounded,
           size: 12,
-          color: accepted
-              ? AppColors.success
-              : AppColors.primaryDark,
+          color: accepted ? AppColors.success : AppColors.primaryDark,
         ),
         const SizedBox(width: 4),
         Text(
-          accepted
-              ? 'Accepted opportunity'
-              : 'Community discovery',
+          accepted ? 'Accepted opportunity' : 'Community discovery',
           style: TextStyle(
-            color: accepted
-                ? AppColors.success
-                : AppColors.primaryDark,
+            color: accepted ? AppColors.success : AppColors.primaryDark,
             fontSize: 7.7,
             fontWeight: FontWeight.w900,
           ),
@@ -1952,10 +1780,7 @@ class _DomainPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 135),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: AppColors.primarySoft.withValues(alpha: .58),
         borderRadius: BorderRadius.circular(999),
@@ -1983,10 +1808,7 @@ class _RatingBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 7,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
       decoration: BoxDecoration(
         color: AppColors.pinkSoft.withValues(alpha: .74),
         borderRadius: BorderRadius.circular(999),
@@ -1994,11 +1816,7 @@ class _RatingBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.star_rounded,
-            size: 12,
-            color: AppColors.pinkDeep,
-          ),
+          const Icon(Icons.star_rounded, size: 12, color: AppColors.pinkDeep),
           const SizedBox(width: 3),
           Text(
             value <= 0 ? 'New' : value.toStringAsFixed(1),
@@ -2033,9 +1851,7 @@ class _TinyMetric extends StatelessWidget {
       height: 27,
       padding: const EdgeInsets.symmetric(horizontal: 7),
       decoration: BoxDecoration(
-        color: positive
-            ? const Color(0xFFF0F9F5)
-            : const Color(0xFFF7F8F7),
+        color: positive ? const Color(0xFFF0F9F5) : const Color(0xFFF7F8F7),
         borderRadius: BorderRadius.circular(9),
         border: Border.all(
           color: positive
@@ -2049,17 +1865,13 @@ class _TinyMetric extends StatelessWidget {
           Icon(
             icon,
             size: 11,
-            color: positive
-                ? AppColors.success
-                : AppColors.textMuted,
+            color: positive ? AppColors.success : AppColors.textMuted,
           ),
           const SizedBox(width: 4),
           Text(
             value,
             style: TextStyle(
-              color: positive
-                  ? AppColors.success
-                  : AppColors.textSecondary,
+              color: positive ? AppColors.success : AppColors.textSecondary,
               fontSize: 7.3,
               fontWeight: FontWeight.w900,
             ),
@@ -2068,10 +1880,7 @@ class _TinyMetric extends StatelessWidget {
             const SizedBox(width: 3),
             Text(
               suffix!,
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 6.6,
-              ),
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 6.6),
             ),
           ],
         ],
@@ -2094,26 +1903,15 @@ class _MetricPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 9,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: positive
-              ? const [
-                  Color(0xFFF0FAF6),
-                  Color(0xFFE8F5F0),
-                ]
-              : const [
-                  Color(0xFFFFF4F7),
-                  Color(0xFFF0F8F6),
-                ],
+              ? const [Color(0xFFF0FAF6), Color(0xFFE8F5F0)]
+              : const [Color(0xFFFFF4F7), Color(0xFFF0F8F6)],
         ),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .05),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .05)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2121,17 +1919,13 @@ class _MetricPill extends StatelessWidget {
           Icon(
             icon,
             size: 12,
-            color: positive
-                ? AppColors.success
-                : AppColors.primaryDark,
+            color: positive ? AppColors.success : AppColors.primaryDark,
           ),
           const SizedBox(width: 5),
           Text(
             text,
             style: TextStyle(
-              color: positive
-                  ? AppColors.success
-                  : AppColors.textPrimary,
+              color: positive ? AppColors.success : AppColors.textPrimary,
               fontSize: 7.7,
               fontWeight: FontWeight.w900,
             ),
@@ -2144,10 +1938,8 @@ class _MetricPill extends StatelessWidget {
 
 // ignore: unused_element
 class _SectionEyebrow extends StatelessWidget {
-  const _SectionEyebrow({
-    required this.icon,
-    required this.label,
-  }) : rose = false;
+  const _SectionEyebrow({required this.icon, required this.label})
+    : rose = false;
 
   final IconData icon;
   final String label;
@@ -2155,17 +1947,11 @@ class _SectionEyebrow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final color = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 12,
-          color: color,
-        ),
+        Icon(icon, size: 12, color: color),
         const SizedBox(width: 5),
         Expanded(
           child: Text(
@@ -2202,19 +1988,13 @@ class _CompactPagination extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .82),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .07),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .07)),
       ),
       child: Row(
         children: [
           IconButton(
-            onPressed: page <= 1
-                ? null
-                : () => onPage(page - 1),
-            icon: const Icon(
-              Icons.chevron_left_rounded,
-            ),
+            onPressed: page <= 1 ? null : () => onPage(page - 1),
+            icon: const Icon(Icons.chevron_left_rounded),
           ),
           Expanded(
             child: Text(
@@ -2228,12 +2008,8 @@ class _CompactPagination extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: page >= totalPages
-                ? null
-                : () => onPage(page + 1),
-            icon: const Icon(
-              Icons.chevron_right_rounded,
-            ),
+            onPressed: page >= totalPages ? null : () => onPage(page + 1),
+            icon: const Icon(Icons.chevron_right_rounded),
           ),
         ],
       ),
@@ -2274,10 +2050,7 @@ class _DiscoverSkeletons extends StatelessWidget {
 }
 
 class _DiscoverError extends StatelessWidget {
-  const _DiscoverError({
-    required this.error,
-    required this.onRetry,
-  });
+  const _DiscoverError({required this.error, required this.onRetry});
 
   final Object? error;
   final VoidCallback onRetry;
@@ -2292,10 +2065,7 @@ class _DiscoverError extends StatelessWidget {
           : '$error',
       action: FilledButton.icon(
         onPressed: onRetry,
-        icon: const Icon(
-          Icons.refresh_rounded,
-          size: 16,
-        ),
+        icon: const Icon(Icons.refresh_rounded, size: 16),
         label: const Text('Retry'),
       ),
     );
@@ -2310,8 +2080,7 @@ class _NoDiscoveries extends StatelessWidget {
     return const EmptyState(
       icon: Icons.auto_awesome_rounded,
       title: 'No discoveries found',
-      message:
-          'Try another search or return after new ideas are published.',
+      message: 'Try another search or return after new ideas are published.',
     );
   }
 }
@@ -2352,10 +2121,7 @@ class _GalleryCompleteState extends StatelessWidget {
 }
 
 class _Reveal extends StatelessWidget {
-  const _Reveal({
-    required this.child,
-    required this.delay,
-  });
+  const _Reveal({required this.child, required this.delay});
 
   final Widget child;
   final int delay;
@@ -2367,16 +2133,15 @@ class _Reveal extends StatelessWidget {
       duration: Duration(milliseconds: 520 + delay),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) {
-        final normalized =
-            ((value * (520 + delay) - delay) / 520).clamp(0.0, 1.0);
+        final normalized = ((value * (520 + delay) - delay) / 520).clamp(
+          0.0,
+          1.0,
+        );
 
         return Opacity(
           opacity: normalized,
           child: Transform.translate(
-            offset: Offset(
-              0,
-              18 * (1 - normalized),
-            ),
+            offset: Offset(0, 18 * (1 - normalized)),
             child: child,
           ),
         );
@@ -2387,10 +2152,7 @@ class _Reveal extends StatelessWidget {
 }
 
 class _HeroGlow extends StatelessWidget {
-  const _HeroGlow({
-    required this.size,
-    required this.color,
-  });
+  const _HeroGlow({required this.size, required this.color});
 
   final double size;
   final Color color;
@@ -2403,12 +2165,7 @@ class _HeroGlow extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color,
-              color.withValues(alpha: 0),
-            ],
-          ),
+          gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
         ),
       ),
     );
@@ -2416,9 +2173,7 @@ class _HeroGlow extends StatelessWidget {
 }
 
 class _HeroGridPainter extends CustomPainter {
-  const _HeroGridPainter({
-    required this.progress,
-  });
+  const _HeroGridPainter({required this.progress});
 
   final double progress;
 
@@ -2431,23 +2186,14 @@ class _HeroGridPainter extends CustomPainter {
     const step = 29.0;
 
     for (double x = 0; x < size.width; x += step) {
-      canvas.drawLine(
-        Offset(x, 0),
-        Offset(x, size.height),
-        line,
-      );
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), line);
     }
 
     for (double y = 0; y < size.height; y += step) {
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
-        line,
-      );
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
     }
 
-    final pulse =
-        (math.sin(progress * math.pi * 2) + 1) / 2;
+    final pulse = (math.sin(progress * math.pi * 2) + 1) / 2;
 
     final points = [
       Offset(size.width * .82, size.height * .20),
@@ -2468,14 +2214,10 @@ class _HeroGridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(
-    covariant _HeroGridPainter oldDelegate,
-  ) {
+  bool shouldRepaint(covariant _HeroGridPainter oldDelegate) {
     return oldDelegate.progress != progress;
   }
 }
-
-
 
 String _initials(String value) {
   final parts = value
@@ -2487,8 +2229,5 @@ String _initials(String value) {
 
   if (parts.isEmpty) return 'VX';
 
-  return parts
-      .map((part) => part[0])
-      .join()
-      .toUpperCase();
+  return parts.map((part) => part[0]).join().toUpperCase();
 }

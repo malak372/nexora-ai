@@ -7,12 +7,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../widgets/user_ui.dart';
+import 'business_model_print.dart';
 
 class BusinessModelPage extends StatefulWidget {
   const BusinessModelPage({
@@ -71,10 +70,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
       // complete studio fail.
       final values = await Future.wait([
         UserApi.instance.getBusinessModelTemplates(force: force),
-        UserApi.instance.getCurrentBusinessModel(
-          widget.ideaId,
-          force: force,
-        ),
+        UserApi.instance.getCurrentBusinessModel(widget.ideaId, force: force),
       ]);
 
       final templates = values[0] as List<Map<String, dynamic>>;
@@ -93,9 +89,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
 
       if (!mounted) return;
 
-      final currentTemplate = _map(
-        current?['businessModelTemplate'],
-      );
+      final currentTemplate = _map(current?['businessModelTemplate']);
       final currentId = currentTemplate['id']?.toString();
 
       Map<String, dynamic>? defaultTemplate;
@@ -107,15 +101,13 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
         }
       }
 
-      defaultTemplate ??=
-          templates.isEmpty ? null : templates.first;
+      defaultTemplate ??= templates.isEmpty ? null : templates.first;
 
       setState(() {
         _templates = templates;
         _current = current;
         _idea = idea;
-        _templateId =
-            currentId ?? defaultTemplate?['id']?.toString();
+        _templateId = currentId ?? defaultTemplate?['id']?.toString();
       });
     } catch (error) {
       if (mounted) {
@@ -128,9 +120,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
     }
   }
 
-  Future<Map<String, dynamic>> _loadIdeaContext({
-    required bool force,
-  }) async {
+  Future<Map<String, dynamic>> _loadIdeaContext({required bool force}) async {
     final publicationId = widget.publicationId?.trim();
 
     try {
@@ -155,10 +145,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
         };
       }
 
-      return await UserApi.instance.getIdeaDetails(
-        widget.ideaId,
-        force: force,
-      );
+      return await UserApi.instance.getIdeaDetails(widget.ideaId, force: force);
     } on ApiException catch (error) {
       // The studio endpoints themselves are authoritative. Page context is
       // only used for presentation labels, so a 404 here must not block an
@@ -169,18 +156,16 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
 
       return {
         'id': widget.ideaId,
-        'title': _cleanTitle(widget.ideaTitle) ??
-            (publicationId == null
-                ? 'Voxidence idea'
-                : 'Accepted opportunity'),
+        'title':
+            _cleanTitle(widget.ideaTitle) ??
+            (publicationId == null ? 'Voxidence idea' : 'Accepted opportunity'),
       };
     } catch (_) {
       return {
         'id': widget.ideaId,
-        'title': _cleanTitle(widget.ideaTitle) ??
-            (publicationId == null
-                ? 'Voxidence idea'
-                : 'Accepted opportunity'),
+        'title':
+            _cleanTitle(widget.ideaTitle) ??
+            (publicationId == null ? 'Voxidence idea' : 'Accepted opportunity'),
       };
     }
   }
@@ -188,9 +173,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
   Future<void> _generate() async {
     final templateId = _templateId;
 
-    if (_generating ||
-        templateId == null ||
-        templateId.isEmpty) {
+    if (_generating || templateId == null || templateId.isEmpty) {
       return;
     }
 
@@ -200,8 +183,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
     });
 
     try {
-      final generated =
-          await UserApi.instance.generateBusinessModel(
+      final generated = await UserApi.instance.generateBusinessModel(
         widget.ideaId,
         templateId,
       );
@@ -210,22 +192,16 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
 
       setState(() => _current = generated);
 
-      showAppSnackBar(
-        context,
-        'Business model generated successfully.',
-      );
+      showAppSnackBar(context, 'Business model generated successfully.');
     } on ApiException catch (error) {
-      final timeout = error.message
-          .toLowerCase()
-          .contains('too long');
+      final timeout = error.message.toLowerCase().contains('too long');
 
       // A client timeout does not guarantee the backend stopped. The AI
       // request may have completed and persisted the model after the mobile
       // connection closed. Check the current model before asking the user to
       // generate a duplicate version.
       if (timeout) {
-        final recovered =
-            await _recoverGeneratedModel(templateId);
+        final recovered = await _recoverGeneratedModel(templateId);
 
         if (recovered) {
           if (mounted) {
@@ -239,19 +215,11 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
       }
 
       if (mounted) {
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } catch (error) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          '$error',
-          error: true,
-        );
+        showAppSnackBar(context, '$error', error: true);
       }
     } finally {
       if (mounted) {
@@ -260,9 +228,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
     }
   }
 
-  Future<bool> _recoverGeneratedModel(
-    String templateId,
-  ) async {
+  Future<bool> _recoverGeneratedModel(String templateId) async {
     const delays = <Duration>[
       Duration(seconds: 2),
       Duration(seconds: 3),
@@ -273,17 +239,14 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
       await Future<void>.delayed(delay);
 
       try {
-        final model =
-            await UserApi.instance.getCurrentBusinessModel(
+        final model = await UserApi.instance.getCurrentBusinessModel(
           widget.ideaId,
           force: true,
         );
 
         if (model == null) continue;
 
-        final template = _map(
-          model['businessModelTemplate'],
-        );
+        final template = _map(model['businessModelTemplate']);
 
         if (template['id']?.toString() != templateId) {
           continue;
@@ -305,15 +268,12 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
   Future<void> _chooseFramework() async {
     if (_templates.isEmpty || _generating) return;
 
-    final selectedId =
-        await showModalBottomSheet<String>(
+    final selectedId = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _FrameworkPickerSheet(
-        templates: _templates,
-        selectedId: _templateId,
-      ),
+      builder: (_) =>
+          _FrameworkPickerSheet(templates: _templates, selectedId: _templateId),
     );
 
     if (!mounted ||
@@ -337,9 +297,9 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
     final model = _current;
     if (model == null) return false;
     final currentTemplate = _map(model['businessModelTemplate']);
-    return _templateId == null || currentTemplate['id']?.toString() == _templateId;
+    return _templateId == null ||
+        currentTemplate['id']?.toString() == _templateId;
   }
-
 
   String get _resolvedIdeaTitle {
     final explicit = _cleanTitle(widget.ideaTitle);
@@ -348,9 +308,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
     final idea = _idea;
     if (idea != null) {
       final direct = _cleanTitle(
-        idea['title'] ??
-        idea['publicTitle'] ??
-        idea['ideaTitle'],
+        idea['title'] ?? idea['publicTitle'] ?? idea['ideaTitle'],
       );
       if (direct != null) return direct;
     }
@@ -358,10 +316,7 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
     final model = _current;
     if (model != null) {
       final embeddedIdea = _map(model['idea']);
-      final embedded = _cleanTitle(
-        embeddedIdea['title'] ??
-        model['ideaTitle'],
-      );
+      final embedded = _cleanTitle(embeddedIdea['title'] ?? model['ideaTitle']);
       if (embedded != null) return embedded;
     }
 
@@ -380,7 +335,10 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
       backgroundColor: Colors.transparent,
       builder: (_) => _BusinessModelPresentationSheet(
         ideaTitle: _resolvedIdeaTitle,
-        templateName: template['name']?.toString() ?? _selectedTemplate?['name']?.toString() ?? 'Business Model',
+        templateName:
+            template['name']?.toString() ??
+            _selectedTemplate?['name']?.toString() ??
+            'Business Model',
         version: _asInt(model['version'], fallback: 1),
         content: content,
       ),
@@ -394,12 +352,12 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
     final visibleModel = _modelMatchesSelection ? model : null;
     final currentTemplate = _map(visibleModel?['businessModelTemplate']);
     final content = _map(visibleModel?['content']);
-    final layoutName = selected?['name']?.toString() ??
+    final layoutName =
+        selected?['name']?.toString() ??
         currentTemplate['name']?.toString() ??
         'Business Model';
 
-    final openedFromAccepted =
-        widget.publicationId?.trim().isNotEmpty == true;
+    final openedFromAccepted = widget.publicationId?.trim().isNotEmpty == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -409,19 +367,14 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
               ? 'Back to Accepted workspace'
               : 'Back to Idea workspace',
           onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            size: 22,
-          ),
+          icon: const Icon(Icons.arrow_back_rounded, size: 22),
         ),
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              openedFromAccepted
-                  ? 'Accepted workspace'
-                  : 'Idea workspace',
+              openedFromAccepted ? 'Accepted workspace' : 'Idea workspace',
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 16,
@@ -499,16 +452,11 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
 
                 _GenerateModelPanel(
                   templateName:
-                      selected?['name']?.toString() ??
-                      'Choose a framework',
+                      selected?['name']?.toString() ?? 'Choose a framework',
                   generating: _generating,
                   hasCurrentModel: visibleModel != null,
-                  enabled:
-                      _templateId != null &&
-                      !_generating,
-                  changedFramework:
-                      model != null &&
-                      !_modelMatchesSelection,
+                  enabled: _templateId != null && !_generating,
+                  changedFramework: model != null && !_modelMatchesSelection,
                   onGenerate: _generate,
                 ),
 
@@ -517,39 +465,32 @@ class _BusinessModelPageState extends State<BusinessModelPage> {
                 else ...[
                   _GeneratedModelHeader(
                     templateName:
-                        currentTemplate['name']?.toString() ??
-                        layoutName,
-                    version:
-                        _asInt(
-                          visibleModel['version'],
-                          fallback: 1,
-                        ),
-                    onPresentation: () =>
-                        _openPresentation(visibleModel),
+                        currentTemplate['name']?.toString() ?? layoutName,
+                    version: _asInt(visibleModel['version'], fallback: 1),
+                    onPresentation: () => _openPresentation(visibleModel),
                   ),
                   const SizedBox(height: 10),
                   if (content.isEmpty)
                     const EmptyState(
                       icon: Icons.layers_outlined,
                       title: 'Model content unavailable',
-                      message: 'Pull down to refresh the current model from the server.',
+                      message:
+                          'Pull down to refresh the current model from the server.',
                     )
                   else
-                    ...content.entries.toList().asMap().entries.map(
-                      (indexed) {
-                        final index = indexed.key;
-                        final entry = indexed.value;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _ModelSectionCard(
-                            number: index + 1,
-                            title: _prettify(entry.key),
-                            value: entry.value,
-                            rose: index.isOdd,
-                          ),
-                        );
-                      },
-                    ),
+                    ...content.entries.toList().asMap().entries.map((indexed) {
+                      final index = indexed.key;
+                      final entry = indexed.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _ModelSectionCard(
+                          number: index + 1,
+                          title: _prettify(entry.key),
+                          value: entry.value,
+                          rose: index.isOdd,
+                        ),
+                      );
+                    }),
                 ],
               ],
             ],
@@ -577,27 +518,16 @@ class _BusinessStudioHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        13,
-        12,
-        13,
-        12,
-      ),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF0F8F5),
-            AppColors.surfaceRose,
-          ],
+          colors: [AppColors.surface, Color(0xFFF0F8F5), AppColors.surfaceRose],
           stops: [0, .60, 1],
         ),
         borderRadius: BorderRadius.circular(23),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .07),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .07)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .045),
@@ -632,10 +562,7 @@ class _BusinessStudioHero extends StatelessWidget {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF65C3BD),
-                          Color(0xFF51AAA5),
-                        ],
+                        colors: [Color(0xFF65C3BD), Color(0xFF51AAA5)],
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -731,8 +658,7 @@ class _StudioMeta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent =
-        rose ? AppColors.pinkDeep : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
       height: 47,
@@ -742,17 +668,11 @@ class _StudioMeta extends StatelessWidget {
             ? AppColors.pinkSoft.withValues(alpha: .70)
             : AppColors.primarySoft.withValues(alpha: .70),
         borderRadius: BorderRadius.circular(13),
-        border: Border.all(
-          color: accent.withValues(alpha: .06),
-        ),
+        border: Border.all(color: accent.withValues(alpha: .06)),
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 14,
-            color: accent,
-          ),
+          Icon(icon, size: 14, color: accent),
           const SizedBox(width: 7),
           Expanded(
             child: Column(
@@ -787,8 +707,6 @@ class _StudioMeta extends StatelessWidget {
     );
   }
 }
-
-
 
 class _BusinessSectionLabel extends StatelessWidget {
   const _BusinessSectionLabel({
@@ -880,12 +798,7 @@ class _FrameworkSelector extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(19),
         child: Ink(
-          padding: const EdgeInsets.fromLTRB(
-            11,
-            11,
-            10,
-            11,
-          ),
+          padding: const EdgeInsets.fromLTRB(11, 11, 10, 11),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
@@ -897,14 +810,10 @@ class _FrameworkSelector extends StatelessWidget {
               ],
             ),
             borderRadius: BorderRadius.circular(19),
-            border: Border.all(
-              color: AppColors.primary
-                  .withValues(alpha: .16),
-            ),
+            border: Border.all(color: AppColors.primary.withValues(alpha: .16)),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primaryDeep
-                    .withValues(alpha: .035),
+                color: AppColors.primaryDeep.withValues(alpha: .035),
                 blurRadius: 13,
                 offset: const Offset(0, 5),
               ),
@@ -920,10 +829,7 @@ class _FrameworkSelector extends StatelessWidget {
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF68C5BF),
-                      Color(0xFF51AAA5),
-                    ],
+                    colors: [Color(0xFF68C5BF), Color(0xFF51AAA5)],
                   ),
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -936,8 +842,7 @@ class _FrameworkSelector extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
@@ -957,10 +862,8 @@ class _FrameworkSelector extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white
-                                .withValues(alpha: .72),
-                            borderRadius:
-                                BorderRadius.circular(999),
+                            color: Colors.white.withValues(alpha: .72),
+                            borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
                             '$templateCount options',
@@ -1003,8 +906,7 @@ class _FrameworkSelector extends StatelessWidget {
                 height: 31,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white
-                      .withValues(alpha: .78),
+                  color: Colors.white.withValues(alpha: .78),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -1032,21 +934,13 @@ class _FrameworkPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxHeight =
-        MediaQuery.sizeOf(context).height * .82;
+    final maxHeight = MediaQuery.sizeOf(context).height * .82;
 
     return SafeArea(
       top: false,
       child: Container(
-        constraints: BoxConstraints(
-          maxHeight: maxHeight,
-        ),
-        margin: const EdgeInsets.fromLTRB(
-          8,
-          0,
-          8,
-          8,
-        ),
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
@@ -1058,13 +952,10 @@ class _FrameworkPickerSheet extends StatelessWidget {
             ],
           ),
           borderRadius: BorderRadius.circular(25),
-          border: Border.all(
-            color: Colors.white,
-          ),
+          border: Border.all(color: Colors.white),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primaryDeep
-                  .withValues(alpha: .14),
+              color: AppColors.primaryDeep.withValues(alpha: .14),
               blurRadius: 34,
               offset: const Offset(0, 13),
             ),
@@ -1082,12 +973,7 @@ class _FrameworkPickerSheet extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                14,
-                13,
-                14,
-                10,
-              ),
+              padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
               child: Row(
                 children: [
                   Container(
@@ -1096,8 +982,7 @@ class _FrameworkPickerSheet extends StatelessWidget {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: AppColors.primarySoft,
-                      borderRadius:
-                          BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
                       Icons.dashboard_customize_outlined,
@@ -1108,8 +993,7 @@ class _FrameworkPickerSheet extends StatelessWidget {
                   const SizedBox(width: 9),
                   const Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'CHOOSE A FRAMEWORK',
@@ -1138,27 +1022,19 @@ class _FrameworkPickerSheet extends StatelessWidget {
             ),
             Expanded(
               child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(
-                  12,
-                  2,
-                  12,
-                  14,
-                ),
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 14),
                 physics: const BouncingScrollPhysics(),
                 itemCount: templates.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(height: 6),
+                separatorBuilder: (_, _) => const SizedBox(height: 6),
                 itemBuilder: (context, index) {
                   final template = templates[index];
-                  final id =
-                      template['id']?.toString() ?? '';
+                  final id = template['id']?.toString() ?? '';
 
                   return _TemplateCard(
                     index: index + 1,
                     template: template,
                     selected: id == selectedId,
-                    onTap: () =>
-                        Navigator.of(context).pop(id),
+                    onTap: () => Navigator.of(context).pop(id),
                   );
                 },
               ),
@@ -1190,31 +1066,17 @@ class _GenerateModelPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        12,
-        12,
-        12,
-        12,
-      ),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: generating
-              ? const [
-                  Color(0xFFE7F6F2),
-                  Color(0xFFFFF4F7),
-                ]
-              : const [
-                  Color(0xFFF8FCFB),
-                  Color(0xFFF0F8F5),
-                ],
+              ? const [Color(0xFFE7F6F2), Color(0xFFFFF4F7)]
+              : const [Color(0xFFF8FCFB), Color(0xFFF0F8F5)],
         ),
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(
-          color: AppColors.primary
-              .withValues(alpha: .11),
-        ),
+        border: Border.all(color: AppColors.primary.withValues(alpha: .11)),
       ),
       child: Column(
         children: [
@@ -1225,18 +1087,14 @@ class _GenerateModelPanel extends StatelessWidget {
                 height: 38,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: generating
-                      ? AppColors.primary
-                      : AppColors.primarySoft,
-                  borderRadius:
-                      BorderRadius.circular(12),
+                  color: generating ? AppColors.primary : AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: generating
                     ? const SizedBox(
                         width: 17,
                         height: 17,
-                        child:
-                            CircularProgressIndicator(
+                        child: CircularProgressIndicator(
                           strokeWidth: 2,
                           color: Colors.white,
                         ),
@@ -1252,15 +1110,14 @@ class _GenerateModelPanel extends StatelessWidget {
               const SizedBox(width: 9),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       generating
                           ? 'Building your model…'
                           : hasCurrentModel
-                              ? 'Generate a new version'
-                              : 'Ready to build',
+                          ? 'Generate a new version'
+                          : 'Ready to build',
                       style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 10.7,
@@ -1283,17 +1140,12 @@ class _GenerateModelPanel extends StatelessWidget {
               ),
               if (!generating)
                 FilledButton(
-                  onPressed:
-                      enabled ? onGenerate : null,
+                  onPressed: enabled ? onGenerate : null,
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(43, 39),
-                    padding:
-                        const EdgeInsets.symmetric(
-                      horizontal: 12,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: Icon(
@@ -1312,8 +1164,7 @@ class _GenerateModelPanel extends StatelessWidget {
               child: const LinearProgressIndicator(
                 minHeight: 4,
                 color: AppColors.primary,
-                backgroundColor:
-                    AppColors.primarySoft,
+                backgroundColor: AppColors.primarySoft,
               ),
             ),
             const SizedBox(height: 7),
@@ -1380,27 +1231,15 @@ class _GeneratedModelHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        12,
-        11,
-        10,
-        11,
-      ),
+      padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF2FAF7),
-            AppColors.surface,
-            AppColors.surfaceRose,
-          ],
+          colors: [Color(0xFFF2FAF7), AppColors.surface, AppColors.surfaceRose],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppColors.primaryDark
-              .withValues(alpha: .06),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .06)),
       ),
       child: Row(
         children: [
@@ -1421,8 +1260,7 @@ class _GeneratedModelHeader extends StatelessWidget {
           const SizedBox(width: 9),
           Expanded(
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   templateName,
@@ -1451,28 +1289,18 @@ class _GeneratedModelHeader extends StatelessWidget {
             onPressed: onPresentation,
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(0, 36),
-              padding:
-                  const EdgeInsets.symmetric(
-                horizontal: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(11),
+                borderRadius: BorderRadius.circular(11),
               ),
             ),
             child: const Row(
               children: [
-                Icon(
-                  Icons.visibility_outlined,
-                  size: 13,
-                ),
+                Icon(Icons.visibility_outlined, size: 13),
                 SizedBox(width: 4),
                 Text(
                   'View',
-                  style: TextStyle(
-                    fontSize: 7.8,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: TextStyle(fontSize: 7.8, fontWeight: FontWeight.w900),
                 ),
               ],
             ),
@@ -1514,32 +1342,21 @@ class _TemplateCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.fromLTRB(
-            11,
-            10,
-            10,
-            10,
-          ),
+          padding: const EdgeInsets.fromLTRB(11, 10, 10, 10),
           decoration: BoxDecoration(
             gradient: selected
                 ? const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFFE5F5F1),
-                      AppColors.surfaceRose,
-                    ],
+                    colors: [Color(0xFFE5F5F1), AppColors.surfaceRose],
                   )
                 : null,
-            color: selected
-                ? null
-                : Colors.white.withValues(alpha: .72),
+            color: selected ? null : Colors.white.withValues(alpha: .72),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: selected
                   ? AppColors.primary.withValues(alpha: .34)
-                  : AppColors.primaryDark
-                      .withValues(alpha: .055),
+                  : AppColors.primaryDark.withValues(alpha: .055),
               width: selected ? 1.2 : 1,
             ),
           ),
@@ -1550,17 +1367,13 @@ class _TemplateCard extends StatelessWidget {
                 height: 38,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: selected
-                      ? AppColors.primary
-                      : AppColors.primarySoft,
+                  color: selected ? AppColors.primary : AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   index.toString().padLeft(2, '0'),
                   style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : AppColors.primaryDark,
+                    color: selected ? Colors.white : AppColors.primaryDark,
                     fontSize: 8.5,
                     fontWeight: FontWeight.w900,
                     letterSpacing: .45,
@@ -1570,8 +1383,7 @@ class _TemplateCard extends StatelessWidget {
               const SizedBox(width: 9),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       name,
@@ -1605,13 +1417,9 @@ class _TemplateCard extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: selected
-                      ? AppColors.primary
-                      : Colors.transparent,
+                  color: selected ? AppColors.primary : Colors.transparent,
                   border: Border.all(
-                    color: selected
-                        ? AppColors.primary
-                        : AppColors.silver,
+                    color: selected ? AppColors.primary : AppColors.silver,
                   ),
                 ),
                 child: selected
@@ -1629,8 +1437,6 @@ class _TemplateCard extends StatelessWidget {
     );
   }
 }
-
-
 
 class _ModelSectionCard extends StatelessWidget {
   const _ModelSectionCard({
@@ -1712,17 +1518,24 @@ class _BusinessModelPresentationSheet extends StatelessWidget {
       version: version,
       content: content,
     );
-    final uri = Uri.dataFromString(
+
+    final safeTitle = ideaTitle
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '-')
+        .replaceAll(RegExp(r'-{2,}'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '')
+        .toLowerCase();
+
+    final opened = await openBusinessModelPrintableHtml(
       html,
-      mimeType: 'text/html',
-      encoding: utf8,
+      fileName:
+          '${safeTitle.isEmpty ? 'voxidence-business-model' : safeTitle}-v$version.html',
+      shareTitle: '$ideaTitle · $templateName',
     );
 
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
       showAppSnackBar(
         context,
-        'Printable view could not be opened on this device.',
+        'Print / PDF could not be opened. Try again from the presentation preview.',
         error: true,
       );
     }
@@ -1762,7 +1575,10 @@ class _BusinessModelPresentationSheet extends StatelessWidget {
                           '$ideaTitle · $templateName',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.textMuted, fontSize: 9.5),
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 9.5,
+                          ),
                         ),
                       ],
                     ),
@@ -1869,7 +1685,11 @@ class _ContentValue extends StatelessWidget {
                   children: [
                     const Padding(
                       padding: EdgeInsets.only(top: 7),
-                      child: Icon(Icons.circle, size: 5, color: AppColors.primary),
+                      child: Icon(
+                        Icons.circle,
+                        size: 5,
+                        color: AppColors.primary,
+                      ),
                     ),
                     const SizedBox(width: 7),
                     Expanded(
@@ -1903,10 +1723,12 @@ class _ContentValue extends StatelessWidget {
       );
     }
 
-    return Text(_stringify(value), style: Theme.of(context).textTheme.bodyMedium);
+    return Text(
+      _stringify(value),
+      style: Theme.of(context).textTheme.bodyMedium,
+    );
   }
 }
-
 
 String? _cleanTitle(dynamic value) {
   final title = value?.toString().trim() ?? '';
@@ -1936,7 +1758,10 @@ int _asInt(dynamic value, {required int fallback}) {
 
 String _prettify(String value) {
   return value
-      .replaceAllMapped(RegExp(r'([a-z0-9])([A-Z])'), (match) => '${match[1]} ${match[2]}')
+      .replaceAllMapped(
+        RegExp(r'([a-z0-9])([A-Z])'),
+        (match) => '${match[1]} ${match[2]}',
+      )
       .replaceAll(RegExp(r'[-_]+'), ' ')
       .split(' ')
       .where((part) => part.isNotEmpty)
@@ -1948,7 +1773,10 @@ String _stringify(dynamic value) {
   if (value is List) return value.map(_stringify).join(' · ');
   if (value is Map) {
     return value.entries
-        .map((entry) => '${_prettify(entry.key.toString())}: ${_stringify(entry.value)}')
+        .map(
+          (entry) =>
+              '${_prettify(entry.key.toString())}: ${_stringify(entry.value)}',
+        )
         .join(' · ');
   }
   return '$value';

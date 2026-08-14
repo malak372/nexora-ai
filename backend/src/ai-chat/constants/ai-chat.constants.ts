@@ -72,45 +72,88 @@ export const AI_CHAT_MAX_SESSION_TITLE_LENGTH = 120;
  * Older messages remain stored in PostgreSQL but are omitted from the AI
  * context to prevent uncontrolled token growth.
  */
-export const AI_CHAT_MAX_CONTEXT_MESSAGES = 12;
+export const AI_CHAT_MAX_CONTEXT_MESSAGES = 8;
 
 /**
  * Maximum number of characters from previous chat messages that may be
  * included in one AI request.
  */
-export const AI_CHAT_MAX_HISTORY_CONTEXT_CHARACTERS = 20_000;
+export const AI_CHAT_MAX_HISTORY_CONTEXT_CHARACTERS = 4_500;
 
 /**
  * Maximum number of characters from the selected idea, NLP analysis, and
  * generated outputs that may be included in one AI request.
  */
-export const AI_CHAT_MAX_IDEA_CONTEXT_CHARACTERS = 30_000;
+export const AI_CHAT_MAX_IDEA_CONTEXT_CHARACTERS = 4_500;
 
 /**
  * Approximate character length of each emitted response chunk when the
  * selected AI provider does not support native token streaming.
  */
-export const AI_CHAT_STREAM_CHUNK_SIZE = 80;
+export const AI_CHAT_STREAM_CHUNK_SIZE = 220;
 
 /**
  * Delay between simulated response chunks.
  */
-export const AI_CHAT_STREAM_CHUNK_DELAY_MS = 20;
+export const AI_CHAT_STREAM_CHUNK_DELAY_MS = 0;
 
 /**
  * Maximum period allowed for completing one AI chat response.
  */
-export const AI_CHAT_RESPONSE_TIMEOUT_MS = 60_000;
+export const AI_CHAT_RESPONSE_TIMEOUT_MS = 35_000;
 
 /**
  * Maximum number of output tokens requested for one AI chat response.
  */
-export const AI_CHAT_MAX_OUTPUT_TOKENS = 2_000;
+export const AI_CHAT_MAX_OUTPUT_TOKENS = 1400;
 
 /**
  * Stable low-variance temperature used for project-specific assistance.
  */
-export const AI_CHAT_RESPONSE_TEMPERATURE = 0.35;
+export const AI_CHAT_RESPONSE_TEMPERATURE = 0.30;
+
+
+/**
+ * Chat favors low latency over broad provider retry chains.
+ * One routed online model is attempted, with the runtime still preserving
+ * the configured local Ollama fallback when available.
+ */
+export const AI_CHAT_PROVIDER_TIMEOUT_MS = 25_000;
+export const AI_CHAT_MAX_MODELS_PER_OPERATION = 1;
+export const AI_CHAT_MAX_RETRIES_PER_MODEL = 0;
+
+/**
+ * Preferred provider model order for interactive chat.
+ *
+ * This does not change the global default model used by idea generation.
+ * AiExecutionService simply moves these models to the front when they are
+ * active and routable. When they are unavailable, normal routing order is
+ * preserved automatically.
+ *
+ * OpenAI GPT-4.1 Mini is preferred for conversational quality and instruction
+ * following. Gemini 2.5 Flash remains the first fallback.
+ */
+export const AI_CHAT_PREFERRED_API_MODEL_IDS = Object.freeze([
+  'gemini-2.5-flash',
+  'openai/gpt-4.1-mini',
+] as const);
+
+/**
+ * Maximum number of provider segments used to finish one long chat answer.
+ *
+ * Each segment may independently reach the provider output-token limit. The
+ * chat service immediately streams that segment to the client, then asks the
+ * same model to continue from the exact stopping point. This keeps the first
+ * visible response fast without treating a long answer as a failure.
+ */
+export const AI_CHAT_MAX_CONTINUATION_SEGMENTS = 1;
+
+/**
+ * Maximum tail of the already generated answer included in a continuation
+ * prompt. A bounded tail is enough to preserve sentence continuity while
+ * avoiding unnecessarily large repeat prompts.
+ */
+export const AI_CHAT_CONTINUATION_CONTEXT_CHARACTERS = 3_500;
 
 /** Maximum output tokens used when generating a concise chat title. */
 export const AI_CHAT_TITLE_MAX_OUTPUT_TOKENS = 40;
@@ -122,7 +165,7 @@ export const AI_CHAT_TITLE_TEMPERATURE = 0.15;
 export const AI_CHAT_TITLE_CONTEXT_MESSAGES = 10;
 
 /** Maximum title-generation duration. Title generation is non-blocking. */
-export const AI_CHAT_TITLE_TIMEOUT_MS = 15_000;
+export const AI_CHAT_TITLE_TIMEOUT_MS = 4_000;
 
 /**
  * Maximum number of simultaneous AI responses allowed in one chat session.
