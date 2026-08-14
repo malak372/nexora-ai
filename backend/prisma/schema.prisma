@@ -186,6 +186,9 @@ model SystemSetting {
   /// One credit allows one premium idea generation.
   creditPrice Decimal @default(1.00) @map("credit_price") @db.Decimal(10, 2)
 
+  /// Base currency used by administrators when configuring all direct prices.
+  pricingCurrency String @default("USD") @map("pricing_currency") @db.VarChar(3)
+
   /// Credits required to generate one Premium idea.
   premiumIdeaCreditCost Int @default(15) @map("premium_idea_credit_cost")
 
@@ -915,6 +918,7 @@ model UserPreference {
   updatedAt             DateTime      @updatedAt @map("updated_at")
   preferredDataSources  Json?         @map("preferred_data_sources")
   preferredLanguage     LanguageCode? @map("preferred_language")
+  paymentCurrency       String        @default("USD") @map("payment_currency") @db.VarChar(3)
   lastRefreshedAt       DateTime?     @map("last_refreshed_at")
   onboardingCompleted   Boolean       @default(false) @map("onboarding_completed")
   onboardingCompletedAt DateTime?     @map("onboarding_completed_at")

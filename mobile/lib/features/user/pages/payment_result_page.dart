@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
+import '../models/payment_currency.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
 
@@ -335,7 +336,7 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                               _DetailRow(
                                 label: 'Amount',
                                 value:
-                                    '${payment['amount'] ?? '—'} ${payment['currency'] ?? 'USD'}',
+                                    '${payment['amount'] ?? '—'} ${payment['currency'] ?? PaymentCurrencyPreference.current}',
                                 last: true,
                               ),
                             ],

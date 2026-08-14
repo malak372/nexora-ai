@@ -14,7 +14,9 @@ import '../../../core/network/api_client.dart';
 import '../../../core/network/realtime_socket.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
+import '../models/payment_currency.dart';
 import '../state/user_session_controller.dart';
+import '../widgets/payment_currency_selector.dart';
 import '../widgets/user_ui.dart';
 import '../widgets/workspace_navigation.dart';
 import 'business_model_page.dart';
@@ -42,6 +44,8 @@ class IdeaWorkspacePage extends StatefulWidget {
 
 class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
   Map<String, dynamic>? _bundle;
+  Map<String, dynamic> _pricing = const {};
+  String _currency = PaymentCurrencyPreference.current;
   Object? _error;
 
   bool _unlocking = false;
@@ -50,6 +54,7 @@ class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
   void initState() {
     super.initState();
     _load();
+    unawaited(_loadPricing());
   }
 
   Future<void> _load({bool force = false}) async {
@@ -72,46 +77,57 @@ class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
     }
   }
 
-  Future<void> _unlockWithCredits() async {
-    if (_unlocking) return;
-
-    setState(() => _unlocking = true);
-
+  Future<void> _loadPricing({bool force = false}) async {
     try {
-      await UserApi.instance.unlockIdeaWithCredits(widget.ideaId);
+      final currency =
+          await UserApi.instance.getPaymentCurrencyPreference(force: force);
+      final pricing = await UserApi.instance.getPricing(
+        currency: currency,
+        force: force,
+      );
 
-      await Future.wait([
-        _load(force: true),
-        UserSessionController.instance.load(force: true),
-      ]);
+      if (!mounted) return;
 
-      if (mounted) {
-        showAppSnackBar(context, 'Advanced outputs unlocked.');
-      }
-    } on ApiException catch (error) {
-      if (mounted) {
-        showAppSnackBar(context, error.message, error: true);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _unlocking = false);
-      }
+      setState(() {
+        _currency = currency;
+        _pricing = pricing;
+      });
+    } catch (_) {
+      // The backend remains authoritative for the final charge.
     }
   }
 
-  /// Opens secure direct-unlock checkout inside the mobile application.
-  ///
-  /// Normal users no longer pass through a second unlock-options page. The
-  /// provider checkout is embedded, then PaymentResultPage verifies and applies
-  /// the unlock through the backend before the workspace is refreshed.
-  Future<void> _openDirectCheckout() async {
+  Future<void> _unlockAdvanced() async {
     if (_unlocking) return;
+
+    if (_pricing.isEmpty) {
+      await _loadPricing();
+      if (!mounted) return;
+    }
+
+    final session = UserSessionController.instance;
+    final premium = session.isPremium;
 
     setState(() => _unlocking = true);
 
     try {
+      if (premium) {
+        await UserApi.instance.unlockIdeaWithCredits(widget.ideaId);
+
+        await Future.wait([
+          _load(force: true),
+          session.load(force: true),
+        ]);
+
+        if (mounted) {
+          showAppSnackBar(context, 'Advanced workspace unlocked.');
+        }
+        return;
+      }
+
       final result = await UserApi.instance.createDirectUnlockCheckout(
         widget.ideaId,
+        currency: _currency,
       );
 
       final flow = await openVoxidenceCheckout(
@@ -126,20 +142,12 @@ class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
       if (flow.status == CheckoutFlowStatus.completed && mounted) {
         await Future.wait([
           _load(force: true),
-          UserSessionController.instance.load(force: true),
+          session.load(force: true),
         ]);
       }
     } on ApiException catch (error) {
       if (mounted) {
         showAppSnackBar(context, error.message, error: true);
-      }
-    } catch (_) {
-      if (mounted) {
-        showAppSnackBar(
-          context,
-          'Could not open secure checkout. Please try again.',
-          error: true,
-        );
       }
     } finally {
       if (mounted) {
@@ -217,6 +225,15 @@ class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
     final unlocked = idea['isUnlocked'] == true;
 
     final premiumAccount = UserSessionController.instance.isPremium;
+    final premiumCreditCost = _asInt(_pricing['premiumIdeaCreditCost']);
+    final pricingCurrency = _text(_pricing['currency']).isEmpty
+        ? _currency
+        : _text(_pricing['currency']);
+    final unlockPriceLabel = premiumAccount
+        ? premiumCreditCost > 0
+              ? '$premiumCreditCost credits'
+              : 'Loading credit cost…'
+        : '${_money(_pricing['directUnlockPrice'])} $pricingCurrency';
 
     final title = _text(idea['title']).isEmpty
         ? 'Untitled idea'
@@ -415,9 +432,20 @@ class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
                   _LockedAdvancedPanel(
                     premiumAccount: premiumAccount,
                     unlocking: _unlocking,
-                    onUnlock: premiumAccount
-                        ? _unlockWithCredits
-                        : _openDirectCheckout,
+                    priceLabel: unlockPriceLabel,
+                    creditBalance:
+                        UserSessionController.instance.summary?.creditBalance ?? 0,
+                    currencySelector: premiumAccount
+                        ? null
+                        : PaymentCurrencyPreferenceCard(
+                            value: _currency,
+                            compact: true,
+                            returnTitle: 'Idea workspace',
+                            returnRoute: '/normal/ideas/${widget.ideaId}',
+                            returnAfterSave: true,
+                            onReturn: () => _loadPricing(force: true),
+                          ),
+                    onUnlock: _unlockAdvanced,
                   )
                 else if (outputs.isEmpty)
                   const EmptyState(
@@ -1108,11 +1136,17 @@ class _LockedAdvancedPanel extends StatelessWidget {
   const _LockedAdvancedPanel({
     required this.premiumAccount,
     required this.unlocking,
+    required this.priceLabel,
+    required this.creditBalance,
+    required this.currencySelector,
     required this.onUnlock,
   });
 
   final bool premiumAccount;
   final bool unlocking;
+  final String priceLabel;
+  final int creditBalance;
+  final Widget? currencySelector;
   final VoidCallback onUnlock;
 
   @override
@@ -1151,8 +1185,8 @@ class _LockedAdvancedPanel extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             premiumAccount
-                ? 'Unlock with Premium credits'
-                : 'Unlock advanced workspace',
+                ? 'Unlock advanced workspace'
+                : 'Secure direct payment',
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: AppColors.textPrimary,
@@ -1163,8 +1197,8 @@ class _LockedAdvancedPanel extends StatelessWidget {
           const SizedBox(height: 5),
           Text(
             premiumAccount
-                ? 'Your balance and configured credit cost are checked before a one-time unlock.'
-                : 'Continue straight to secure payment. There is no extra unlock-options screen.',
+                ? '$priceLabel · $creditBalance credits available. The configured cost is deducted once.'
+                : '$priceLabel · Your saved payment currency is shown below. Change it from Preferences before paying if needed.',
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: AppColors.textMuted,
@@ -1172,6 +1206,52 @@ class _LockedAdvancedPanel extends StatelessWidget {
               height: 1.4,
             ),
           ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft.withValues(alpha: .55),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: .10),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  premiumAccount
+                      ? Icons.toll_rounded
+                      : Icons.credit_card_outlined,
+                  size: 16,
+                  color: AppColors.primaryDark,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'One-time advanced unlock',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Text(
+                  priceLabel,
+                  style: const TextStyle(
+                    color: AppColors.primaryDark,
+                    fontSize: 9.4,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (currencySelector != null) ...[
+            const SizedBox(height: 10),
+            currencySelector!,
+          ],
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -1194,10 +1274,10 @@ class _LockedAdvancedPanel extends StatelessWidget {
                     ),
               label: Text(
                 unlocking
-                    ? 'Opening…'
+                    ? 'Processing…'
                     : premiumAccount
-                    ? 'Unlock with credits'
-                    : 'Pay & unlock advanced',
+                    ? 'Unlock · $priceLabel'
+                    : 'Pay · $priceLabel',
               ),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(43),
@@ -1490,6 +1570,20 @@ String _humanize(String value) {
             : '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
       )
       .join(' ');
+}
+
+int _asInt(dynamic value) {
+  if (value is num) return value.toInt();
+  return int.tryParse('${value ?? ''}') ?? 0;
+}
+
+String _money(dynamic value) {
+  final amount = num.tryParse('$value');
+  if (amount == null) return 'Loading price…';
+
+  return amount == amount.roundToDouble()
+      ? amount.toInt().toString()
+      : amount.toStringAsFixed(2);
 }
 
 String _workspaceDate(dynamic value) {

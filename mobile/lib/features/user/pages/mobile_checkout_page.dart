@@ -17,7 +17,6 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
-import '../state/user_session_controller.dart';
 import '../widgets/workspace_navigation.dart';
 
 enum CheckoutFlowStatus { completed, cancelled, closed }
@@ -78,7 +77,6 @@ Future<CheckoutFlowResult> openVoxidenceCheckout(
     }
 
     final verified = await _waitForPaymentFulfillment(paymentId);
-    await UserSessionController.instance.load(force: true);
 
     return CheckoutFlowResult(
       status: CheckoutFlowStatus.completed,
@@ -122,7 +120,7 @@ Future<Map<String, dynamic>> _waitForPaymentFulfillment(
   String paymentId, {
   ValueChanged<String>? onMessage,
 }) async {
-  const maxAttempts = 42;
+  const maxAttempts = 22;
   Object? lastError;
   Map<String, dynamic>? latest;
 
@@ -134,7 +132,8 @@ Future<Map<String, dynamic>> _waitForPaymentFulfillment(
       );
 
       final initialStatus = '${state['status'] ?? ''}'.toUpperCase();
-      if (initialStatus == 'PENDING' && attempt % 4 == 0) {
+      if (initialStatus == 'PENDING' &&
+          (attempt == 0 || attempt == 4 || attempt == 10)) {
         try {
           state = await UserApi.instance.reconcilePayment(paymentId);
         } catch (error) {
@@ -169,7 +168,7 @@ Future<Map<String, dynamic>> _waitForPaymentFulfillment(
     }
 
     if (attempt < maxAttempts - 1) {
-      await Future<void>.delayed(const Duration(milliseconds: 550));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
     }
   }
 
@@ -419,8 +418,6 @@ class _MobileCheckoutPageState extends State<MobileCheckoutPage> {
         },
       );
 
-      await UserSessionController.instance.load(force: true);
-
       if (!mounted) {
         return;
       }
@@ -431,7 +428,7 @@ class _MobileCheckoutPageState extends State<MobileCheckoutPage> {
         _verificationError = null;
       });
 
-      await Future<void>.delayed(const Duration(milliseconds: 720));
+      await Future<void>.delayed(const Duration(milliseconds: 220));
 
       if (!mounted) {
         return;

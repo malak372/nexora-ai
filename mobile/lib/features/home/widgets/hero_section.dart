@@ -25,38 +25,272 @@ class HeroSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-
     final compact = screenWidth < 355;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, compact ? 25 : 30, 16, 22),
+      padding: EdgeInsets.fromLTRB(14, compact ? 13 : 17, 14, 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _HeroBadge(),
-
-          SizedBox(height: compact ? 20 : 23),
-
-          const _HeroHeading(),
-
-          SizedBox(height: compact ? 13 : 16),
-
-          const _HeroLead(),
-
-          SizedBox(height: compact ? 22 : 28),
-
+          _HeroIntroPanel(
+            compact: compact,
+            onGeneratePressed: onGeneratePressed,
+            onExplorePressed: onExplorePressed,
+          ),
+          const SizedBox(height: 14),
           _DiscoveryCard(
             onGeneratePressed: onGeneratePressed,
             onExplorePressed: onExplorePressed,
           ),
-
-          const SizedBox(height: 17),
-
+          const SizedBox(height: 15),
           const _FeatureStrip(),
-
           const SizedBox(height: 24),
-
           const _VisualShowcase(),
+        ],
+      ),
+    );
+  }
+}
+
+/// Gives the top of Home the same complete, card-led visual language used by
+/// the rest of the mobile product without changing any navigation or logic.
+class _HeroIntroPanel extends StatelessWidget {
+  const _HeroIntroPanel({
+    required this.compact,
+    required this.onGeneratePressed,
+    required this.onExplorePressed,
+  });
+
+  final bool compact;
+  final VoidCallback onGeneratePressed;
+  final VoidCallback onExplorePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.surface.withValues(alpha: .98),
+            const Color(0xFFF8FCFA),
+            AppColors.surfaceRose.withValues(alpha: .72),
+          ],
+          stops: const [0, .64, 1],
+        ),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: AppColors.borderStrong.withValues(alpha: .58),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: .045),
+            blurRadius: 34,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            right: -42,
+            top: -58,
+            child: Container(
+              width: 176,
+              height: 176,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primarySoft.withValues(alpha: .55),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 22,
+            top: 22,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary,
+                border: Border.all(color: Colors.white, width: 3),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 51,
+            top: 54,
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.pink,
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              compact ? 15 : 18,
+              compact ? 17 : 20,
+              compact ? 15 : 18,
+              compact ? 16 : 18,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _HeroBadge(),
+                SizedBox(height: compact ? 17 : 20),
+                const _HeroHeading(),
+                SizedBox(height: compact ? 10 : 12),
+                const _HeroLead(),
+                SizedBox(height: compact ? 14 : 16),
+                const _HeroSignalFlow(),
+                SizedBox(height: compact ? 15 : 17),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: _HeroPrimaryAction(onTap: onGeneratePressed),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 5,
+                      child: _HeroSecondaryAction(onTap: onExplorePressed),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: [
+                    _HeroTrustPoint(
+                      icon: Icons.forum_outlined,
+                      label: 'Real voices',
+                    ),
+                    _HeroTrustPoint(
+                      icon: Icons.fact_check_outlined,
+                      label: 'Evidence-backed',
+                    ),
+                    _HeroTrustPoint(
+                      icon: Icons.auto_awesome_rounded,
+                      label: 'AI refined',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroPrimaryAction extends StatelessWidget {
+  const _HeroPrimaryAction({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        style: FilledButton.styleFrom(
+          elevation: 0,
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.primaryDeep,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        icon: const Icon(
+          Icons.auto_awesome_rounded,
+          size: 17,
+          color: AppColors.primaryDeep,
+        ),
+        label: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'Generate free idea',
+            style: TextStyle(fontSize: 11.2, fontWeight: FontWeight.w900),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroSecondaryAction extends StatelessWidget {
+  const _HeroSecondaryAction({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primaryDeep,
+          backgroundColor: Colors.white.withValues(alpha: .76),
+          side: BorderSide(
+            color: AppColors.borderStrong.withValues(alpha: .92),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        icon: const Icon(Icons.south_rounded, size: 16),
+        label: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'How it works',
+            style: TextStyle(fontSize: 11.1, fontWeight: FontWeight.w900),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroTrustPoint extends StatelessWidget {
+  const _HeroTrustPoint({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .62),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border.withValues(alpha: .8)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12.5, color: AppColors.primaryDark),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 8.3,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ],
       ),
     );
@@ -69,41 +303,72 @@ class _HeroBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      width: double.infinity,
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.borderStrong),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: 0.025),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        color: AppColors.primarySoft.withValues(alpha: .64),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.borderStrong.withValues(alpha: .68),
+        ),
       ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          _LiveDot(),
-
-          SizedBox(width: 8),
-
-          Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.primary),
-
-          SizedBox(width: 6),
-
-          Flexible(
+          Container(
+            width: 27,
+            height: 27,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.surface.withValues(alpha: .92),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.graphic_eq_rounded,
+              size: 14,
+              color: AppColors.primaryDark,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Expanded(
             child: Text(
-              'EVIDENCE-FIRST IDEA DISCOVERY',
+              'REAL VOICES  →  VERIFIED EVIDENCE',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: AppColors.primaryDark,
-                fontSize: 9.4,
+                fontSize: 7.8,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 0.48,
+                letterSpacing: .48,
               ),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 10.5,
+                  color: AppColors.primaryDark,
+                ),
+                SizedBox(width: 4),
+                Text(
+                  'BUILDABLE IDEAS',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 6.9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .35,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -112,25 +377,29 @@ class _HeroBadge extends StatelessWidget {
   }
 }
 
-class _LiveDot extends StatelessWidget {
-  const _LiveDot();
+// ignore: unused_element
+class _HeroBadgeMark extends StatelessWidget {
+  const _HeroBadgeMark();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.27),
-            blurRadius: 8,
-            spreadRadius: 2,
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          decoration: const BoxDecoration(
+            color: AppColors.primarySoft,
+            shape: BoxShape.circle,
           ),
-        ],
-      ),
+        ),
+        const Icon(
+          Icons.auto_awesome_rounded,
+          size: 12,
+          color: AppColors.primaryDark,
+        ),
+      ],
     );
   }
 }
@@ -141,27 +410,24 @@ class _HeroHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-
-    final fontSize = screenWidth < 355 ? 31.5 : 34.0;
+    final fontSize = screenWidth < 355 ? 27.5 : 30.0;
 
     return Text.rich(
       TextSpan(
         style: TextStyle(
           color: AppColors.textPrimary,
           fontSize: fontSize,
-          height: 1.08,
+          height: 1.04,
           fontWeight: FontWeight.w900,
-          letterSpacing: -1.25,
+          letterSpacing: -1.0,
         ),
         children: const [
-          TextSpan(text: 'Real voices reveal\nthe '),
-
+          TextSpan(text: 'Hear the need.\n'),
+          TextSpan(text: 'Find the evidence.\n'),
           TextSpan(
-            text: 'ideas',
-            style: TextStyle(color: AppColors.primary),
+            text: 'Build the idea.',
+            style: TextStyle(color: AppColors.primaryDark),
           ),
-
-          TextSpan(text: ' worth building.'),
         ],
       ),
     );
@@ -177,24 +443,144 @@ class _HeroLead extends StatelessWidget {
       TextSpan(
         style: TextStyle(
           color: AppColors.textSecondary,
-          fontSize: 13.2,
-          height: 1.62,
+          fontSize: 12.3,
+          height: 1.52,
           fontWeight: FontWeight.w500,
         ),
         children: [
           TextSpan(
             text: 'Voxidence ',
             style: TextStyle(
-              color: AppColors.primaryDark,
+              color: AppColors.primaryDeep,
               fontWeight: FontWeight.w900,
             ),
           ),
-
           TextSpan(
             text:
-                'listens to recurring community needs, connects them with evidence, and turns them into focused software opportunities.',
+                'connects recurring community pain points with evidence, then turns the strongest signals into focused software opportunities.',
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HeroSignalFlow extends StatelessWidget {
+  const _HeroSignalFlow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft.withValues(alpha: .55),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.borderStrong.withValues(alpha: .64),
+        ),
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            child: _HeroSignalStep(
+              icon: Icons.record_voice_over_outlined,
+              label: 'Listen',
+              caption: 'voices',
+            ),
+          ),
+          _HeroFlowArrow(),
+          Expanded(
+            child: _HeroSignalStep(
+              icon: Icons.hub_outlined,
+              label: 'Connect',
+              caption: 'evidence',
+            ),
+          ),
+          _HeroFlowArrow(),
+          Expanded(
+            child: _HeroSignalStep(
+              icon: Icons.lightbulb_outline_rounded,
+              label: 'Shape',
+              caption: 'ideas',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroSignalStep extends StatelessWidget {
+  const _HeroSignalStep({
+    required this.icon,
+    required this.label,
+    required this.caption,
+  });
+
+  final IconData icon;
+  final String label;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 29,
+          height: 29,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: .9),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 15, color: AppColors.primaryDark),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                caption,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 7.4,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HeroFlowArrow extends StatelessWidget {
+  const _HeroFlowArrow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Icon(
+        Icons.arrow_forward_rounded,
+        size: 13,
+        color: AppColors.sage.withValues(alpha: .9),
       ),
     );
   }

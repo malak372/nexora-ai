@@ -69,10 +69,12 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   }
 
   Future<void> _loadInitial() async {
-    await Future.wait([
-      _loadActivity(),
-      _loadSent(),
-    ]);
+    // Paint the activity ledger first. Sent history is warmed quietly after
+    // the critical first view so opening Alerts feels immediate on mobile.
+    await _loadActivity();
+    if (mounted) {
+      unawaited(_loadSent(quiet: true));
+    }
   }
 
   Map<String, dynamic> get _commonQuery {
@@ -669,7 +671,7 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
         search: search,
         sortBy: 'fullName',
         sortOrder: 'asc',
-        force: true,
+        force: false,
         extra: const {'isActive': 'true'},
       );
 
@@ -700,11 +702,17 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
         ? _confirmBroadcast
         : _selectedUsers.isNotEmpty;
 
+    final title = _titleController.text.trim();
+    final message = _messageController.text.trim();
+    final maxMessageLength = _sendInApp ? 1000 : 3000;
+
     return !_sending &&
         hasRecipients &&
         (_sendInApp || _sendEmail) &&
-        _titleController.text.trim().isNotEmpty &&
-        _messageController.text.trim().isNotEmpty;
+        title.isNotEmpty &&
+        title.length <= 100 &&
+        message.isNotEmpty &&
+        message.length <= maxMessageLength;
   }
 
   void _addUser(Map<String, dynamic> user) {
@@ -788,6 +796,8 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
     final availableUsers = _users
         .where((row) => !selectedIds.contains(_string(row['id'])))
         .toList();
+    final maxMessageLength = _sendInApp ? 1000 : 3000;
+    final emailOnly = _sendEmail && !_sendInApp;
 
     return Padding(
       padding: EdgeInsets.only(bottom: viewInsets.bottom),
@@ -805,11 +815,22 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
               padding: const EdgeInsets.fromLTRB(18, 12, 12, 10),
               child: Row(
                 children: [
-                  const AdminIconBadge(
-                    icon: Icons.send_rounded,
-                    size: 40,
-                    tone: AppColors.primarySoft,
-                    iconColor: AppColors.primaryDark,
+                  Container(
+                    width: 42,
+                    height: 42,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: .14),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.campaign_outlined,
+                      size: 20,
+                      color: AppColors.primaryDark,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   const Expanded(
@@ -817,7 +838,7 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'SEND COMMUNICATION',
+                          'ADMIN COMMUNICATION',
                           style: TextStyle(
                             color: AppColors.primaryDark,
                             fontSize: 8.4,
@@ -827,7 +848,7 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'New administrator alert',
+                          'Create a new alert',
                           style: TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 18,
@@ -1002,8 +1023,10 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                                 ),
                                 itemBuilder: (_, index) {
                                   final user = availableUsers[index];
-                                  return ListTile(
-                                    dense: true,
+                                  return Material(
+                                    color: Colors.transparent,
+                                    child: ListTile(
+                                      dense: true,
                                     visualDensity: VisualDensity.compact,
                                     leading: CircleAvatar(
                                       radius: 17,
@@ -1041,7 +1064,8 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                                       color: AppColors.primaryDark,
                                       size: 19,
                                     ),
-                                    onTap: () => _addUser(user),
+                                      onTap: () => _addUser(user),
+                                    ),
                                   );
                                 },
                               ),
@@ -1051,16 +1075,16 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                     Container(
                       padding: const EdgeInsets.all(13),
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceRose,
+                        color: AppColors.primarySoft.withValues(alpha: .62),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.pinkLight),
+                        border: Border.all(color: AppColors.borderStrong),
                       ),
                       child: const Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Icon(
                             Icons.info_outline_rounded,
-                            color: AppColors.pinkDeep,
+                            color: AppColors.primaryDark,
                             size: 19,
                           ),
                           SizedBox(width: 9),
@@ -1113,7 +1137,7 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                     maxLength: 100,
                     onChanged: (_) => setState(() {}),
                     decoration: _inputDecoration(
-                      hint: 'Communication title',
+                      hint: emailOnly ? 'Email subject' : 'Alert title',
                       icon: Icons.title_rounded,
                     ),
                   ),
@@ -1122,7 +1146,7 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                     controller: _messageController,
                     minLines: 5,
                     maxLines: 9,
-                    maxLength: 3000,
+                    maxLength: maxMessageLength,
                     onChanged: (_) => setState(() {}),
                     decoration: _inputDecoration(
                       hint: 'Write the message users should receive...',
@@ -1132,13 +1156,15 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                   ),
                   if (_scope == 'broadcast') ...[
                     const SizedBox(height: 4),
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
+                    Material(
+                      color: Colors.transparent,
+                      child: CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
                       value: _confirmBroadcast,
                       onChanged: (value) {
                         setState(() => _confirmBroadcast = value ?? false);
                       },
-                      activeColor: AppColors.primaryDark,
+                      activeColor: AppColors.primary,
                       controlAffinity: ListTileControlAffinity.leading,
                       title: const Text(
                         'I understand this will be sent to all active users.',
@@ -1147,6 +1173,7 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
                         ),
+                      ),
                       ),
                     ),
                   ],
@@ -1193,7 +1220,7 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                               height: 15,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: AppColors.primaryDeep,
                               ),
                             )
                           : const Icon(Icons.send_rounded, size: 16),
@@ -1204,8 +1231,8 @@ class _ComposeAlertSheetState extends State<_ComposeAlertSheet> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primaryDark,
-                        foregroundColor: Colors.white,
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.primaryDeep,
                         minimumSize: const Size.fromHeight(47),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(15),
@@ -1309,225 +1336,519 @@ class _AlertFilterSheetState extends State<_AlertFilterSheet> {
     });
   }
 
+  void _reset() {
+    setState(() {
+      _type = '';
+      _channel = '';
+      _audience = '';
+      _sortBy = 'createdAt';
+      _sortOrder = 'desc';
+      _fromDate = null;
+      _toDate = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 22),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.silver,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.all(10),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .90,
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryDeep.withValues(alpha: .07),
+              blurRadius: 30,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.silver,
+                  borderRadius: BorderRadius.circular(99),
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.tune_rounded,
+                    size: 20,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Filter communication',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Use the same controls as the web workspace, arranged for mobile.',
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 9.5,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: _reset,
+                  child: const Text('Reset'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (widget.ledgerMode == 'activity') ...[
+                      const _AlertFilterSectionTitle(
+                        icon: Icons.category_outlined,
+                        title: 'Category',
+                        subtitle: 'Choose which notification family to show.',
+                      ),
+                      const SizedBox(height: 8),
+                      _AlertChoiceWrap(
+                        selected: _type,
+                        options: const [
+                          _AlertChoiceData('', 'All', Icons.all_inbox_outlined),
+                          _AlertChoiceData('ADMIN', 'Admin notices', Icons.admin_panel_settings_outlined),
+                          _AlertChoiceData('SYSTEM', 'System', Icons.settings_suggest_outlined),
+                          _AlertChoiceData('PAYMENT', 'Payment', Icons.payments_outlined),
+                          _AlertChoiceData('CREDIT_LOW', 'Credit low', Icons.account_balance_wallet_outlined),
+                          _AlertChoiceData('CREDIT_EXHAUSTED', 'Credits exhausted', Icons.money_off_csred_outlined),
+                        ],
+                        onChanged: (value) => setState(() => _type = value),
+                      ),
+                      const SizedBox(height: 16),
+                      const _AlertFilterSectionTitle(
+                        icon: Icons.swap_vert_rounded,
+                        title: 'Sort alerts',
+                        subtitle: 'Server-side ordering before pagination.',
+                      ),
+                      const SizedBox(height: 8),
+                      _AlertSortOptions(
+                        selected: _sortBy,
+                        onChanged: (value) => setState(() => _sortBy = value),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceMuted,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _AlertDirectionChoice(
+                                label: 'Ascending',
+                                icon: Icons.arrow_upward_rounded,
+                                selected: _sortOrder == 'asc',
+                                onTap: () => setState(() => _sortOrder = 'asc'),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: _AlertDirectionChoice(
+                                label: 'Descending',
+                                icon: Icons.arrow_downward_rounded,
+                                selected: _sortOrder == 'desc',
+                                onTap: () => setState(() => _sortOrder = 'desc'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      const _AlertFilterSectionTitle(
+                        icon: Icons.hub_outlined,
+                        title: 'Delivery channel',
+                        subtitle: 'Filter the sent ledger by requested channel.',
+                      ),
+                      const SizedBox(height: 8),
+                      _AlertChoiceWrap(
+                        selected: _channel,
+                        options: const [
+                          _AlertChoiceData('', 'All', Icons.all_inbox_outlined),
+                          _AlertChoiceData('IN_APP', 'In-app', Icons.notifications_none_rounded),
+                          _AlertChoiceData('EMAIL', 'Email', Icons.mail_outline_rounded),
+                          _AlertChoiceData('BOTH', 'Both', Icons.hub_outlined),
+                        ],
+                        onChanged: (value) => setState(() => _channel = value),
+                      ),
+                      const SizedBox(height: 16),
+                      const _AlertFilterSectionTitle(
+                        icon: Icons.groups_2_outlined,
+                        title: 'Audience',
+                        subtitle: 'Separate targeted sends from broadcasts.',
+                      ),
+                      const SizedBox(height: 8),
+                      _AlertChoiceWrap(
+                        selected: _audience,
+                        options: const [
+                          _AlertChoiceData('', 'All', Icons.people_alt_outlined),
+                          _AlertChoiceData('SELECTED', 'Selected users', Icons.person_search_outlined),
+                          _AlertChoiceData('BROADCAST', 'Broadcasts', Icons.campaign_outlined),
+                        ],
+                        onChanged: (value) => setState(() => _audience = value),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    const _AlertFilterSectionTitle(
+                      icon: Icons.date_range_outlined,
+                      title: 'Date range',
+                      subtitle: 'Limit records to a specific activity window.',
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
                       children: [
-                        Text(
-                          'Filter communication',
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                        Expanded(
+                          child: _DateButton(
+                            label: 'From',
+                            date: _fromDate,
+                            onTap: () => _pickDate(true),
                           ),
                         ),
-                        SizedBox(height: 3),
-                        Text(
-                          'Narrow the ledger without losing any web controls.',
-                          style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 10.5,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _DateButton(
+                            label: 'To',
+                            date: _toDate,
+                            onTap: () => _pickDate(false),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _type = '';
-                        _channel = '';
-                        _audience = '';
-                        _sortBy = 'createdAt';
-                        _sortOrder = 'desc';
-                        _fromDate = null;
-                        _toDate = null;
-                      });
-                    },
-                    child: const Text('Reset'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              if (widget.ledgerMode == 'activity') ...[
-                const Text(
-                  'Category',
-                  style: _labelStyle,
-                ),
-                const SizedBox(height: 7),
-                _SelectField(
-                  value: _type,
-                  items: const {
-                    '': 'All categories',
-                    'ADMIN': 'Admin notices',
-                    'SYSTEM': 'System',
-                    'PAYMENT': 'Payment',
-                    'CREDIT_LOW': 'Credit low',
-                    'CREDIT_EXHAUSTED': 'Credits exhausted',
-                  },
-                  onChanged: (value) => setState(() => _type = value),
-                ),
-                const SizedBox(height: 14),
-                const Text('Sort alerts', style: _labelStyle),
-                const SizedBox(height: 7),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SelectField(
-                        value: _sortBy,
-                        items: const {
-                          'createdAt': 'Newest activity',
-                          'title': 'Title',
-                          'type': 'Category',
-                          'isRead': 'Read status',
-                        },
-                        onChanged: (value) => setState(() => _sortBy = value),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 54,
-                      height: 50,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          setState(() {
-                            _sortOrder = _sortOrder == 'asc' ? 'desc' : 'asc';
-                          });
-                        },
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          side: const BorderSide(color: AppColors.borderStrong),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        child: Icon(
-                          _sortOrder == 'asc'
-                              ? Icons.arrow_upward_rounded
-                              : Icons.arrow_downward_rounded,
-                          color: AppColors.primaryDark,
-                          size: 19,
+                    if (_fromDate != null || _toDate != null)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _fromDate = null;
+                              _toDate = null;
+                            });
+                          },
+                          icon: const Icon(Icons.close_rounded, size: 14),
+                          label: const Text('Clear dates'),
                         ),
                       ),
-                    ),
                   ],
                 ),
-              ] else ...[
-                const Text('Channel', style: _labelStyle),
-                const SizedBox(height: 7),
-                _SelectField(
-                  value: _channel,
-                  items: const {
-                    '': 'All channels',
-                    'IN_APP': 'In-app only',
-                    'EMAIL': 'Email only',
-                    'BOTH': 'In-app + email',
-                  },
-                  onChanged: (value) => setState(() => _channel = value),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.pop(
+                    context,
+                    _AlertFilterResult(
+                      type: _type,
+                      channel: _channel,
+                      audience: _audience,
+                      sortBy: _sortBy,
+                      sortOrder: _sortOrder,
+                      fromDate: _fromDate,
+                      toDate: _toDate,
+                    ),
+                  );
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.primaryDeep,
+                  minimumSize: const Size.fromHeight(47),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
                 ),
-                const SizedBox(height: 14),
-                const Text('Audience', style: _labelStyle),
-                const SizedBox(height: 7),
-                _SelectField(
-                  value: _audience,
-                  items: const {
-                    '': 'All audiences',
-                    'SELECTED': 'Selected users',
-                    'BROADCAST': 'Broadcasts',
-                  },
-                  onChanged: (value) => setState(() => _audience = value),
+                icon: const Icon(Icons.check_rounded, size: 17),
+                label: const Text('Apply filters'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AlertFilterSectionTitle extends StatelessWidget {
+  const _AlertFilterSectionTitle({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 31,
+          height: 31,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 15, color: AppColors.primaryDark),
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 10.7,
+                  fontWeight: FontWeight.w900,
                 ),
-              ],
-              const SizedBox(height: 14),
-              const Text('Date range', style: _labelStyle),
-              const SizedBox(height: 7),
-              Row(
+              ),
+              const SizedBox(height: 1),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 8.4,
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AlertChoiceData {
+  const _AlertChoiceData(this.value, this.label, this.icon);
+
+  final String value;
+  final String label;
+  final IconData icon;
+}
+
+class _AlertChoiceWrap extends StatelessWidget {
+  const _AlertChoiceWrap({
+    required this.selected,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String selected;
+  final List<_AlertChoiceData> options;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 7,
+      runSpacing: 7,
+      children: options.map((option) {
+        final active = selected == option.value;
+        return Material(
+          color: active ? AppColors.primarySoft : AppColors.background.withValues(alpha: .6),
+          borderRadius: BorderRadius.circular(13),
+          child: InkWell(
+            onTap: () => onChanged(option.value),
+            borderRadius: BorderRadius.circular(13),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: active
+                      ? AppColors.primary.withValues(alpha: .32)
+                      : AppColors.border,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: _DateButton(
-                      label: 'From',
-                      date: _fromDate,
-                      onTap: () => _pickDate(true),
+                  Icon(
+                    option.icon,
+                    size: 14,
+                    color: active ? AppColors.primaryDark : AppColors.textMuted,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    option.label,
+                    style: TextStyle(
+                      color: active ? AppColors.primaryDeep : AppColors.textSecondary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _DateButton(
-                      label: 'To',
-                      date: _toDate,
-                      onTap: () => _pickDate(false),
+                  if (active) ...[
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      size: 14,
+                      color: AppColors.primaryDark,
                     ),
-                  ),
+                  ],
                 ],
               ),
-              if (_fromDate != null || _toDate != null)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _fromDate = null;
-                        _toDate = null;
-                      });
-                    },
-                    icon: const Icon(Icons.close_rounded, size: 14),
-                    label: const Text('Clear dates'),
-                  ),
-                ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () {
-                    Navigator.pop(
-                      context,
-                      _AlertFilterResult(
-                        type: _type,
-                        channel: _channel,
-                        audience: _audience,
-                        sortBy: _sortBy,
-                        sortOrder: _sortOrder,
-                        fromDate: _fromDate,
-                        toDate: _toDate,
-                      ),
-                    );
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primaryDark,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(47),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                  ),
-                  child: const Text('Apply filters'),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _AlertSortOptions extends StatelessWidget {
+  const _AlertSortOptions({required this.selected, required this.onChanged});
+
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const options = [
+      _AlertChoiceData('createdAt', 'Newest activity', Icons.schedule_rounded),
+      _AlertChoiceData('title', 'Title', Icons.title_rounded),
+      _AlertChoiceData('type', 'Category', Icons.category_outlined),
+      _AlertChoiceData('isRead', 'Read status', Icons.mark_email_read_outlined),
+    ];
+
+    return Column(
+      children: options.map((option) {
+        final active = selected == option.value;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            clipBehavior: Clip.antiAlias,
+            child: ListTile(
+              onTap: () => onChanged(option.value),
+            dense: true,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(
+                color: active
+                    ? AppColors.primary.withValues(alpha: .18)
+                    : AppColors.primaryDark.withValues(alpha: .05),
+              ),
+            ),
+            tileColor: active
+                ? AppColors.primarySoft
+                : AppColors.background.withValues(alpha: .55),
+            leading: Icon(
+              option.icon,
+              color: active ? AppColors.primaryDeep : AppColors.textMuted,
+              size: 18,
+            ),
+            title: Text(
+              option.label,
+              style: TextStyle(
+                color: active ? AppColors.primaryDeep : AppColors.textPrimary,
+                fontSize: 10.2,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+              trailing: active
+                  ? const Icon(
+                      Icons.check_circle_rounded,
+                      size: 18,
+                      color: AppColors.primaryDark,
+                    )
+                  : null,
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _AlertDirectionChoice extends StatelessWidget {
+  const _AlertDirectionChoice({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.surface : Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? AppColors.primaryDeep : AppColors.textMuted,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? AppColors.primaryDeep : AppColors.textMuted,
+                  fontSize: 8.4,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
@@ -2150,79 +2471,137 @@ class _ComposeButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: Ink(
-          height: 58,
-          padding: const EdgeInsets.symmetric(horizontal: 13),
+          padding: const EdgeInsets.fromLTRB(14, 14, 13, 14),
           decoration: BoxDecoration(
-            color: AppColors.primarySoft,
-            borderRadius: BorderRadius.circular(20),
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(color: AppColors.borderStrong),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primaryDeep.withValues(alpha: .045),
+                blurRadius: 24,
+                offset: const Offset(0, 9),
+              ),
+            ],
           ),
           child: Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: AppColors.primaryDark,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primaryDark.withValues(alpha: .16),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: .22),
+                  ),
                 ),
                 child: const Icon(
                   Icons.send_rounded,
-                  size: 16,
-                  color: Colors.white,
+                  size: 20,
+                  color: AppColors.primaryDark,
                 ),
               ),
-              const SizedBox(width: 11),
+              const SizedBox(width: 12),
               const Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Send a new alert',
                       style: TextStyle(
                         color: AppColors.textPrimary,
-                        fontSize: 12.5,
+                        fontSize: 13.2,
                         fontWeight: FontWeight.w900,
+                        letterSpacing: -.15,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    SizedBox(height: 4),
                     Text(
-                      'In-app, email, or both',
+                      'Choose the audience, then send in-app, by email, or both.',
                       style: TextStyle(
                         color: AppColors.textMuted,
-                        fontSize: 9.2,
+                        fontSize: 8.9,
+                        height: 1.35,
                         fontWeight: FontWeight.w600,
                       ),
+                    ),
+                    SizedBox(height: 9),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _ComposeMiniChip(
+                          icon: Icons.notifications_none_rounded,
+                          label: 'In-app',
+                        ),
+                        _ComposeMiniChip(
+                          icon: Icons.mail_outline_rounded,
+                          label: 'Email',
+                        ),
+                        _ComposeMiniChip(
+                          icon: Icons.group_outlined,
+                          label: 'Targeted',
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 10),
               Container(
-                width: 28,
-                height: 28,
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.surface.withValues(alpha: .78),
-                  shape: BoxShape.circle,
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: const Icon(
                   Icons.arrow_forward_rounded,
-                  size: 15,
-                  color: AppColors.primaryDark,
+                  size: 18,
+                  color: Colors.white,
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ComposeMiniChip extends StatelessWidget {
+  const _ComposeMiniChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border.withValues(alpha: .9)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: AppColors.primaryDark),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 7.6,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3178,55 +3557,6 @@ class _ChannelCard extends StatelessWidget {
   }
 }
 
-class _SelectField extends StatelessWidget {
-  const _SelectField({
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  final String value;
-  final Map<String, String> items;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: AppColors.background,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: const BorderSide(color: AppColors.borderStrong),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: const BorderSide(color: AppColors.primary),
-        ),
-      ),
-      style: const TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 10.5,
-        fontWeight: FontWeight.w800,
-      ),
-      items: items.entries
-          .map(
-            (entry) => DropdownMenuItem<String>(
-              value: entry.key,
-              child: Text(entry.value),
-            ),
-          )
-          .toList(),
-      onChanged: (next) {
-        if (next != null) onChanged(next);
-      },
-    );
-  }
-}
-
 class _DateButton extends StatelessWidget {
   const _DateButton({required this.label, required this.date, required this.onTap});
 
@@ -3553,12 +3883,6 @@ class _PageMeta {
     );
   }
 }
-
-const _labelStyle = TextStyle(
-  color: AppColors.textSecondary,
-  fontSize: 9.5,
-  fontWeight: FontWeight.w900,
-);
 
 InputDecoration _inputDecoration({
   required String hint,

@@ -22,6 +22,7 @@ import {
   clearPaymentReturnReference,
   readPaymentReturnReference,
 } from '../utils/paymentReturn.storage';
+import { getStoredPaymentCurrency } from '../utils/paymentCurrency';
 import '../styles/payment-result.css';
 
 const MAX_STATUS_ATTEMPTS = 7;
@@ -105,7 +106,7 @@ export default function PaymentResultPage() {
           ideaId: fallbackIdeaId,
           ideaUnlocked: true,
           amount: '0.00',
-          currency: 'USD',
+          currency: getStoredPaymentCurrency(),
           accountStatus: 'NORMAL',
         },
         processingMessage: '',

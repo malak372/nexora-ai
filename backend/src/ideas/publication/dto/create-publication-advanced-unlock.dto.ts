@@ -1,18 +1,19 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
-import { IsIn, IsString, IsUrl, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUrl,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
-/**
- * Creates a direct-payment checkout for advanced publication outputs.
- *
- * This request is valid only when the authenticated NORMAL user already owns
- * the basic publication acceptance and advanced access is still locked.
- */
+import { PAYMENT_CURRENCY_CODES } from '../../../payments/constants/payment.constants';
+
 export class CreatePublicationAdvancedUnlockDto {
-  /** Stable idempotency identifier generated once for this checkout action. */
   @IsUUID('4')
   clientRequestId!: string;
 
-  /** Stripe card payment-method key. */
   @IsString()
   @IsIn(['card'])
   @MaxLength(30)
@@ -21,11 +22,17 @@ export class CreatePublicationAdvancedUnlockDto {
   )
   paymentMethodKey!: string;
 
-  /** Provider return URL after a successful checkout. */
+  @IsOptional()
+  @IsString()
+  @IsIn([...PAYMENT_CURRENCY_CODES])
+  @Transform(({ value }: TransformFnParams): unknown =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  currency?: string;
+
   @IsUrl({ require_tld: false, require_protocol: true })
   successUrl!: string;
 
-  /** Provider return URL when checkout is cancelled. */
   @IsUrl({ require_tld: false, require_protocol: true })
   cancelUrl!: string;
 }

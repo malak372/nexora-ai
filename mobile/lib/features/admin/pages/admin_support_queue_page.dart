@@ -366,7 +366,9 @@ class _AdminSupportQueuePageState extends State<AdminSupportQueuePage> {
       final backendMessage = result['message']?.toString().trim() ?? '';
 
       final notice = _isComplaint
-          ? 'Complaint updated successfully.'
+          ? (backendMessage.isNotEmpty
+                ? backendMessage
+                : 'Complaint updated successfully.')
           : emailSent
           ? 'Reply saved and email sent${emailRecipient.isEmpty ? '' : ' to $emailRecipient'}.'
           : backendMessage.isNotEmpty
@@ -408,57 +410,318 @@ class _AdminSupportQueuePageState extends State<AdminSupportQueuePage> {
   /// Selecting a new status resets pagination to page one and reloads
   /// the queue.
   Future<void> _chooseStatus() async {
-    final statuses = _isComplaint
-        ? ['', 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'REJECTED']
-        : ['', 'NEW', 'IN_PROGRESS', 'REPLIED', 'CLOSED'];
+    final options = _isComplaint
+        ? const <(String, String, String, IconData, Color)>[
+            (
+              '',
+              'All cases',
+              'Show every active complaint in the queue',
+              Icons.view_list_rounded,
+              AppColors.primaryDark,
+            ),
+            (
+              'OPEN',
+              'Open',
+              'Waiting for administrator review',
+              Icons.inbox_outlined,
+              AppColors.primaryDark,
+            ),
+            (
+              'IN_PROGRESS',
+              'In progress',
+              'Cases currently being handled',
+              Icons.schedule_rounded,
+              AppColors.warning,
+            ),
+            (
+              'RESOLVED',
+              'Resolved',
+              'Completed complaint resolutions',
+              Icons.check_circle_outline_rounded,
+              AppColors.success,
+            ),
+            (
+              'REJECTED',
+              'Rejected',
+              'Cases closed without further action',
+              Icons.cancel_outlined,
+              AppColors.danger,
+            ),
+          ]
+        : const <(String, String, String, IconData, Color)>[
+            (
+              '',
+              'All messages',
+              'Show every active inbox message',
+              Icons.view_list_rounded,
+              AppColors.primaryDark,
+            ),
+            (
+              'NEW',
+              'New',
+              'Messages waiting for review',
+              Icons.mark_email_unread_outlined,
+              AppColors.primaryDark,
+            ),
+            (
+              'IN_PROGRESS',
+              'In progress',
+              'Messages currently being handled',
+              Icons.schedule_rounded,
+              AppColors.warning,
+            ),
+            (
+              'REPLIED',
+              'Replied',
+              'Messages that received a response',
+              Icons.mark_email_read_outlined,
+              AppColors.success,
+            ),
+            (
+              'CLOSED',
+              'Closed',
+              'Completed inbox conversations',
+              Icons.task_alt_rounded,
+              AppColors.textMuted,
+            ),
+          ];
+
+    var draftStatus = _status;
 
     final selected = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(10),
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.silver,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(10),
+            padding: const EdgeInsets.fromLTRB(15, 10, 15, 16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: Colors.white),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryDeep.withValues(alpha: .06),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * .80,
+              ),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.silver,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 15),
+                    Text(
+                      _isComplaint ? 'Filter complaints' : 'Filter messages',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _isComplaint
+                          ? 'Choose one case state, then apply it to the directory.'
+                          : 'Choose one inbox state, then apply it to the directory.',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 9.3,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceMuted.withValues(alpha: .58),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.border.withValues(alpha: .76),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          for (var index = 0;
+                              index < options.length;
+                              index++) ...[
+                            Material(
+                              color: draftStatus == options[index].$1
+                                  ? AppColors.primarySoft
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(14),
+                              child: InkWell(
+                                onTap: () {
+                                  setSheetState(() {
+                                    draftStatus = options[index].$1;
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(14),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 10,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 35,
+                                        height: 35,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.surface,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: AppColors.border.withValues(
+                                              alpha: .78,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          options[index].$4,
+                                          size: 17,
+                                          color: options[index].$5,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              options[index].$2,
+                                              style: TextStyle(
+                                                color: draftStatus ==
+                                                        options[index].$1
+                                                    ? AppColors.primaryDeep
+                                                    : AppColors.textPrimary,
+                                                fontSize: 10.6,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              options[index].$3,
+                                              style: const TextStyle(
+                                                color: AppColors.textMuted,
+                                                fontSize: 8.6,
+                                                height: 1.35,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 160),
+                                        width: 24,
+                                        height: 24,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: draftStatus ==
+                                                  options[index].$1
+                                              ? AppColors.primary
+                                              : AppColors.surface,
+                                          border: Border.all(
+                                            color: draftStatus ==
+                                                    options[index].$1
+                                                ? AppColors.primary
+                                                : AppColors.borderStrong,
+                                          ),
+                                        ),
+                                        child: draftStatus == options[index].$1
+                                            ? const Icon(
+                                                Icons.check_rounded,
+                                                size: 15,
+                                                color: Colors.white,
+                                              )
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (index != options.length - 1)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 9),
+                                child: Divider(
+                                  height: 1,
+                                  color: AppColors.border.withValues(alpha: .4),
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 13),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              setSheetState(() => draftStatus = '');
+                            },
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(46),
+                              foregroundColor: AppColors.textSecondary,
+                              side: const BorderSide(color: AppColors.border),
+                            ),
+                            child: const Text('Reset'),
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          flex: 2,
+                          child: FilledButton.icon(
+                            onPressed: () {
+                              Navigator.pop(sheetContext, draftStatus);
+                            },
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(46),
+                              backgroundColor: AppColors.surface,
+                              foregroundColor: AppColors.primaryDeep,
+                              elevation: 0,
+                              side: BorderSide(
+                                color:
+                                    AppColors.primary.withValues(alpha: .34),
+                              ),
+                            ),
+                            icon: const Icon(Icons.check_rounded, size: 17),
+                            label: const Text('Apply filter'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 15),
-              Text(
-                'Filter status',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: statuses
-                    .map(
-                      (value) => ChoiceChip(
-                        label: Text(value.isEmpty ? 'All' : _readable(value)),
-                        selected: _status == value,
-                        onSelected: (_) {
-                          Navigator.pop(context, value);
-                        },
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -483,132 +746,195 @@ class _AdminSupportQueuePageState extends State<AdminSupportQueuePage> {
   /// priority and resolution-date options.
   Future<void> _chooseSort() async {
     final options = _isComplaint
-        ? const <String, String>{
-            'createdAt': 'Submitted date',
-            'updatedAt': 'Last activity',
-            'status': 'Status',
-            'priority': 'Priority',
-            'resolvedAt': 'Resolution date',
-          }
-        : const <String, String>{
-            'createdAt': 'Received date',
-            'updatedAt': 'Last activity',
-            'status': 'Status',
-          };
+        ? const <(String, String, IconData)>[
+            ('createdAt', 'Submitted date', Icons.calendar_month_outlined),
+            ('updatedAt', 'Last activity', Icons.schedule_rounded),
+            ('status', 'Status', Icons.fact_check_outlined),
+            ('priority', 'Priority', Icons.flag_outlined),
+            ('resolvedAt', 'Resolution date', Icons.task_alt_rounded),
+          ]
+        : const <(String, String, IconData)>[
+            ('createdAt', 'Received date', Icons.calendar_month_outlined),
+            ('updatedAt', 'Last activity', Icons.schedule_rounded),
+            ('status', 'Status', Icons.fact_check_outlined),
+          ];
 
-    final selected = await showModalBottomSheet<String>(
+    var draftField = _sortBy;
+    var draftOrder = _sortOrder;
+
+    final selected = await showModalBottomSheet<(String, String)>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(10),
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.silver,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(10),
+            padding: const EdgeInsets.fromLTRB(15, 10, 15, 16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: Colors.white),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryDeep.withValues(alpha: .06),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
                 ),
+              ],
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * .82,
               ),
-              const SizedBox(height: 15),
-              Text(
-                _isComplaint ? 'Sort complaints' : 'Sort messages',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 5),
-              Text(
-                _isComplaint
-                    ? 'Choose which complaint field should control the queue order.'
-                    : 'Choose which contact-message field should control the inbox order.',
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 10,
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ...options.entries.map(
-                (entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 7),
-                  child: Material(
-                    color: _sortBy == entry.key
-                        ? AppColors.primarySoft
-                        : AppColors.background,
-                    borderRadius: BorderRadius.circular(15),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(15),
-                      onTap: () {
-                        Navigator.pop(context, entry.key);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 11,
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              _sortBy == entry.key
-                                  ? Icons.radio_button_checked_rounded
-                                  : Icons.radio_button_off_rounded,
-                              size: 18,
-                              color: _sortBy == entry.key
-                                  ? AppColors.primaryDark
-                                  : AppColors.textMuted,
-                            ),
-                            const SizedBox(width: 9),
-                            Expanded(
-                              child: Text(
-                                entry.value,
-                                style: TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 11,
-                                  fontWeight: _sortBy == entry.key
-                                      ? FontWeight.w900
-                                      : FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.silver,
+                          borderRadius: BorderRadius.circular(99),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 15),
+                    Text(
+                      _isComplaint ? 'Sort complaints' : 'Sort messages',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Sorting is applied by the server before pagination.',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 9.3,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...options.map(
+                      (option) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Material(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(14),
+                          clipBehavior: Clip.antiAlias,
+                          child: ListTile(
+                            onTap: () {
+                            setSheetState(() => draftField = option.$1);
+                          },
+                          dense: true,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: BorderSide(
+                              color: option.$1 == draftField
+                                  ? AppColors.primary.withValues(alpha: .18)
+                                  : AppColors.primaryDark.withValues(alpha: .05),
+                            ),
+                          ),
+                          tileColor: option.$1 == draftField
+                              ? AppColors.primarySoft
+                              : AppColors.background.withValues(alpha: .55),
+                          leading: Icon(
+                            option.$3,
+                            color: option.$1 == draftField
+                                ? AppColors.primaryDeep
+                                : AppColors.textMuted,
+                            size: 18,
+                          ),
+                          title: Text(
+                            option.$2,
+                            style: TextStyle(
+                              color: option.$1 == draftField
+                                  ? AppColors.primaryDeep
+                                  : AppColors.textPrimary,
+                              fontSize: 10.2,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                            trailing: option.$1 == draftField
+                                ? const Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 18,
+                                    color: AppColors.primaryDark,
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceMuted,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _SupportSortDirectionChoice(
+                              label: 'Ascending',
+                              icon: Icons.arrow_upward_rounded,
+                              selected: draftOrder == 'asc',
+                              onTap: () {
+                                setSheetState(() => draftOrder = 'asc');
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _SupportSortDirectionChoice(
+                              label: 'Descending',
+                              icon: Icons.arrow_downward_rounded,
+                              selected: draftOrder == 'desc',
+                              onTap: () {
+                                setSheetState(() => draftOrder = 'desc');
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          Navigator.pop(
+                            sheetContext,
+                            (draftField, draftOrder),
+                          );
+                        },
+                        icon: const Icon(Icons.check_rounded, size: 17),
+                        label: const Text('Apply sorting'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
 
-    if (!mounted || selected == null || selected == _sortBy) {
-      return;
-    }
+    if (!mounted || selected == null) return;
+    if (selected.$1 == _sortBy && selected.$2 == _sortOrder) return;
 
     setState(() {
-      _sortBy = selected;
-      _page = 1;
-    });
-
-    _load();
-  }
-
-  /// Toggles sorting between ascending and descending order.
-  void _toggleSortOrder() {
-    setState(() {
-      _sortOrder = _sortOrder == 'asc' ? 'desc' : 'asc';
+      _sortBy = selected.$1;
+      _sortOrder = selected.$2;
       _page = 1;
     });
 
@@ -893,8 +1219,37 @@ class _AdminSupportQueuePageState extends State<AdminSupportQueuePage> {
                       height: 48,
                       child: FilledButton.tonal(
                         onPressed: _chooseStatus,
-                        style: FilledButton.styleFrom(padding: EdgeInsets.zero),
-                        child: const Icon(Icons.tune_rounded, size: 20),
+                        style: FilledButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          backgroundColor: _status.isEmpty
+                              ? AppColors.primarySoft
+                              : AppColors.surfaceRose,
+                          foregroundColor: _status.isEmpty
+                              ? AppColors.primaryDark
+                              : AppColors.pinkDeep,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                        ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            const Icon(Icons.tune_rounded, size: 20),
+                            if (_status.isNotEmpty)
+                              Positioned(
+                                right: -4,
+                                top: -5,
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.pink,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -907,62 +1262,57 @@ class _AdminSupportQueuePageState extends State<AdminSupportQueuePage> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: _chooseSort,
-                        icon: const Icon(Icons.sort_rounded, size: 17),
+                        icon: Icon(
+                          _sortOrder == 'asc'
+                              ? Icons.arrow_upward_rounded
+                              : Icons.arrow_downward_rounded,
+                          size: 16,
+                        ),
                         label: Text(
-                          _sortLabel,
+                          'Sort · $_sortLabel',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(0, 44),
+                          minimumSize: const Size(0, 46),
                           padding: const EdgeInsets.symmetric(horizontal: 11),
+                          backgroundColor:
+                              AppColors.surface.withValues(alpha: .74),
                         ),
                       ),
                     ),
-
-                    const SizedBox(width: 7),
-
-                    SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: OutlinedButton(
-                        onPressed: _toggleSortOrder,
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                        ),
-                        child: Icon(
-                          _sortOrder == 'asc'
-                              ? Icons.arrow_upward_rounded
-                              : Icons.arrow_downward_rounded,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(width: 7),
-
+                    const SizedBox(width: 8),
                     Builder(
                       builder: (shareContext) => SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: FilledButton.tonal(
+                        height: 46,
+                        child: OutlinedButton.icon(
                           onPressed: _exporting
                               ? null
                               : () {
                                   _exportCsv(shareContext);
                                 },
-                          style: FilledButton.styleFrom(
-                            padding: EdgeInsets.zero,
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor:
+                                AppColors.surface.withValues(alpha: .74),
+                            padding: const EdgeInsets.symmetric(horizontal: 11),
                           ),
-                          child: _exporting
+                          icon: _exporting
                               ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
+                                  width: 14,
+                                  height: 14,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
+                                    color: AppColors.primaryDark,
                                   ),
                                 )
-                              : const Icon(Icons.download_rounded, size: 18),
+                              : const Icon(
+                                  Icons.file_download_outlined,
+                                  size: 17,
+                                ),
+                          label: Text(
+                            _exporting ? 'Preparing…' : 'Export CSV',
+                            maxLines: 1,
+                          ),
                         ),
                       ),
                     ),
@@ -1152,15 +1502,59 @@ class _AdminSupportQueuePageState extends State<AdminSupportQueuePage> {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  /// Converts a backend enum-style value into a readable title.
-  static String _readable(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll('_', ' ')
-        .split(' ')
-        .where((part) => part.isNotEmpty)
-        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
-        .join(' ');
+}
+
+class _SupportSortDirectionChoice extends StatelessWidget {
+  const _SupportSortDirectionChoice({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.surface : Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? AppColors.primaryDeep : AppColors.textMuted,
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected
+                        ? AppColors.primaryDeep
+                        : AppColors.textMuted,
+                    fontSize: 8.7,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -2217,7 +2611,7 @@ class _SupportCaseSheetState extends State<_SupportCaseSheet> {
       if (_isComplaint) {
         final reply = _reply.text.trim();
 
-        await _api.updateComplaint(
+        result = await _api.updateComplaint(
           id,
           status: _status,
           priority: _priority,
@@ -2225,8 +2619,6 @@ class _SupportCaseSheetState extends State<_SupportCaseSheet> {
           // instead of overwriting an already saved administrator reply.
           adminReply: reply.isEmpty ? null : reply,
         );
-
-        result = const {'updated': true};
       } else {
         final reply = _reply.text.trim();
 
@@ -2862,7 +3254,7 @@ class _SupportCaseSheetState extends State<_SupportCaseSheet> {
 
                       Text(
                         _isComplaint
-                            ? 'Update the case state and response.'
+                            ? 'Update status, priority and reply. User-visible changes are delivered in-app.'
                             : 'Reply by email and manage the inbox state.',
                         style: const TextStyle(
                           color: AppColors.textMuted,
@@ -3236,8 +3628,12 @@ class _SupportCaseSheetState extends State<_SupportCaseSheet> {
               child: FilledButton.icon(
                 onPressed: _busy ? null : _save,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primaryDark,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppColors.surface,
+                  foregroundColor: AppColors.primaryDeep,
+                  elevation: 0,
+                  side: BorderSide(
+                    color: AppColors.primary.withValues(alpha: .34),
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(17),
                   ),
@@ -3248,7 +3644,7 @@ class _SupportCaseSheetState extends State<_SupportCaseSheet> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color: AppColors.primaryDark,
                         ),
                       )
                     : Icon(

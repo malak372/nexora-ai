@@ -12,7 +12,6 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 
 import {
-  DEFAULT_PAYMENT_CURRENCY,
   GLOBAL_SYSTEM_SETTINGS_KEY,
   PAYMENT_METADATA_KEYS,
 } from '../constants/payment.constants';
@@ -30,6 +29,7 @@ import { PaymentGatewayFactory } from '../gateways/payment-gateway.factory';
 import type { CreatePaymentSessionInput } from '../types/create-payment-session.type';
 import type { PaymentSessionResult } from '../types/payment-session-result.type';
 import { PaymentProcessingService } from './payment-processing.service';
+import { PaymentCurrencyService } from './payment-currency.service';
 
 /**
  * Supported user-facing payment-method keys.
@@ -122,34 +122,68 @@ export class PaymentCheckoutService {
     private readonly prisma: PrismaService,
     private readonly paymentGatewayFactory: PaymentGatewayFactory,
     private readonly paymentProcessingService: PaymentProcessingService,
+    private readonly paymentCurrencyService: PaymentCurrencyService,
   ) {}
 
   /** Returns database-backed prices for the authenticated account. */
-  async getPaymentPricing(userId: string, creditsQuantity = 1) {
-    const [user, settings] = await Promise.all([this.ensureEligibleUser(userId), this.getSystemSettings()]);
-    const activationFee = user.accountStatus === AccountStatus.NORMAL ? settings.premiumActivationFee : new Prisma.Decimal(0);
-    const total = settings.creditPrice.mul(creditsQuantity).add(activationFee);
-    const acceptance = user.accountStatus === AccountStatus.PREMIUM
-      ? new Prisma.Decimal(0)
-      : settings.normalAcceptancePrice;
+  async getPaymentPricing(
+    userId: string,
+    creditsQuantity = 1,
+    requestedCurrency?: string,
+  ) {
+    const [user, settings] = await Promise.all([
+      this.ensureEligibleUser(userId),
+      this.getSystemSettings(),
+    ]);
+    const quote = await this.paymentCurrencyService.getQuote(
+      requestedCurrency,
+      settings.pricingCurrency,
+    );
+
+    const activationFee =
+      user.accountStatus === AccountStatus.NORMAL
+        ? settings.premiumActivationFee
+        : new Prisma.Decimal(0);
+    const purchaseTotal = settings.creditPrice
+      .mul(creditsQuantity)
+      .add(activationFee);
+    const acceptancePrice =
+      user.accountStatus === AccountStatus.PREMIUM
+        ? new Prisma.Decimal(0)
+        : settings.normalAcceptancePrice;
+
+    const convert = (amount: Prisma.Decimal) =>
+      this.paymentCurrencyService.convert(amount, quote);
+    const format = (amount: Prisma.Decimal) =>
+      this.paymentCurrencyService.formatAmount(convert(amount));
+
     return {
-      currency: DEFAULT_PAYMENT_CURRENCY,
+      baseCurrency: quote.baseCurrency,
+      currency: quote.currency,
+      exchangeRate: quote.rate.toString(),
+      exchangeRateDate: quote.rateDate,
+      supportedCurrencies:
+        this.paymentCurrencyService.getSupportedCurrencies(),
       accountStatus: user.accountStatus,
       creditsQuantity,
-      creditPrice: settings.creditPrice.toFixed(2),
+      creditPrice: format(settings.creditPrice),
+      creditPurchaseSubtotal: format(
+        settings.creditPrice.mul(creditsQuantity),
+      ),
       premiumIdeaCreditCost: settings.premiumIdeaCreditCost,
       minimumCreditsForPremiumActivation:
         user.accountStatus === AccountStatus.NORMAL
           ? settings.premiumIdeaCreditCost
           : 1,
-      premiumActivationFee: settings.premiumActivationFee.toFixed(2),
-      activationFeeApplied: activationFee.toFixed(2),
-      creditPurchaseTotal: total.toFixed(2),
-      directUnlockPrice: settings.directUnlockPrice.toFixed(2),
-      normalAcceptancePrice: settings.normalAcceptancePrice.toFixed(2),
-      publicationAcceptancePrice: acceptance.toFixed(2),
-      normalPublicationAdvancedPrice:
-        settings.normalPublicationAdvancedPrice.toFixed(2),
+      premiumActivationFee: format(settings.premiumActivationFee),
+      activationFeeApplied: format(activationFee),
+      creditPurchaseTotal: format(purchaseTotal),
+      directUnlockPrice: format(settings.directUnlockPrice),
+      normalAcceptancePrice: format(settings.normalAcceptancePrice),
+      publicationAcceptancePrice: format(acceptancePrice),
+      normalPublicationAdvancedPrice: format(
+        settings.normalPublicationAdvancedPrice,
+      ),
       publicationAdvancedCreditCost:
         settings.publicationAdvancedCreditCost,
     };
@@ -205,11 +239,11 @@ export class PaymentCheckoutService {
     const activationFee = activatesPremium
       ? settings.premiumActivationFee
       : new Prisma.Decimal(0);
-    const amount = settings.creditPrice
+    const baseAmount = settings.creditPrice
       .mul(purchasedCredits)
       .add(activationFee);
 
-    if (amount.lte(0)) {
+    if (baseAmount.lte(0)) {
       throw new PaymentProcessingError(
         PaymentErrorCode.INVALID_PAYMENT_AMOUNT,
         'The calculated credit-purchase amount must be greater than zero.',
@@ -221,18 +255,32 @@ export class PaymentCheckoutService {
       );
     }
 
+    const quote = await this.paymentCurrencyService.getQuote(
+      dto.currency,
+      settings.pricingCurrency,
+    );
+    const amount = this.paymentCurrencyService.convert(
+      baseAmount,
+      quote,
+    );
+
     const payment = await this.createPendingPayment({
       userId,
       ideaId: null,
       amount,
-      currency: DEFAULT_PAYMENT_CURRENCY,
+      currency: quote.currency,
       paymentMethodKey,
       providerKey,
       paymentPurpose: PaymentPurpose.BUY_CREDITS,
       creditsAmount: purchasedCredits,
       bonusCreditsAmount: bonusCredits,
-      creditPriceAtPurchase: settings.creditPrice,
-      premiumActivationFeeAtPurchase: activatesPremium ? activationFee : null,
+      creditPriceAtPurchase: this.paymentCurrencyService.convert(
+        settings.creditPrice,
+        quote,
+      ),
+      premiumActivationFeeAtPurchase: activatesPremium
+        ? this.paymentCurrencyService.convert(activationFee, quote)
+        : null,
       activatesPremium,
       publicationId: null,
       acceptanceCountry: null,
@@ -256,6 +304,10 @@ export class PaymentCheckoutService {
     dto: CreateDirectUnlockPaymentDto,
   ): Promise<PaymentCheckoutResult> {
     await this.ensureEligibleUser(userId);
+
+    const currency = this.paymentCurrencyService.normalizeCurrency(
+      dto.currency,
+    );
 
     const paymentMethodKey = this.normalizePaymentMethodKey(
       dto.paymentMethodKey,
@@ -283,6 +335,7 @@ export class PaymentCheckoutService {
           ideaId: dto.ideaId,
           paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
           status: PaymentStatus.PENDING,
+          currency,
         },
         orderBy: {
           createdAt: 'desc',
@@ -301,6 +354,17 @@ export class PaymentCheckoutService {
     ]);
 
     this.validateDirectUnlockPrice(settings.directUnlockPrice);
+
+    const quote = await this.paymentCurrencyService.getQuote(
+      currency,
+      settings.pricingCurrency,
+    );
+
+    const directUnlockAmount =
+      this.paymentCurrencyService.convert(
+        settings.directUnlockPrice,
+        quote,
+      );
 
     if (!idea) {
       throw new PaymentProcessingError(
@@ -323,7 +387,8 @@ export class PaymentCheckoutService {
         paymentId: existingPendingPayment?.id ?? 'already-unlocked',
         paymentMethodKey,
         providerKey,
-        amount: settings.directUnlockPrice,
+        amount: existingPendingPayment?.amount ?? directUnlockAmount,
+        currency,
         successUrl: dto.successUrl,
         ideaId: idea.id,
       });
@@ -361,8 +426,8 @@ export class PaymentCheckoutService {
     const payment = await this.createPendingPayment({
       userId,
       ideaId: idea.id,
-      amount: settings.directUnlockPrice,
-      currency: DEFAULT_PAYMENT_CURRENCY,
+      amount: directUnlockAmount,
+      currency,
       paymentMethodKey,
       providerKey,
       paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
@@ -462,7 +527,7 @@ export class PaymentCheckoutService {
         paymentMethodKey: payment.paymentMethodKey,
         providerKey: payment.providerKey,
         status: PaymentStatus.PENDING,
-        amount: payment.amount.toFixed(2),
+        amount: this.paymentCurrencyService.formatAmount(payment.amount),
         currency: payment.currency,
         checkoutUrl: inspection.checkoutUrl,
         providerSessionId: payment.providerSessionId,
@@ -483,6 +548,7 @@ export class PaymentCheckoutService {
         paymentMethodKey: payment.paymentMethodKey,
         providerKey: payment.providerKey,
         amount: payment.amount,
+        currency: payment.currency,
         successUrl: input.successUrl,
         ideaId: input.ideaId,
         providerSessionId: payment.providerSessionId,
@@ -506,6 +572,7 @@ export class PaymentCheckoutService {
     readonly paymentMethodKey: string;
     readonly providerKey: string;
     readonly amount: Prisma.Decimal;
+    readonly currency: string;
     readonly successUrl: string;
     readonly ideaId: string;
     readonly providerSessionId?: string;
@@ -516,8 +583,8 @@ export class PaymentCheckoutService {
       paymentMethodKey: input.paymentMethodKey,
       providerKey: input.providerKey,
       status: PaymentStatus.SUCCEEDED,
-      amount: input.amount.toFixed(2),
-      currency: DEFAULT_PAYMENT_CURRENCY,
+      amount: this.paymentCurrencyService.formatAmount(input.amount),
+      currency: input.currency,
       checkoutUrl: this.appendCompletedDirectUnlockReturnParameters(
         input.successUrl,
         input.paymentId,
@@ -628,12 +695,20 @@ export class PaymentCheckoutService {
       dto.paymentMethodKey,
     );
     const providerKey = this.resolveProviderKey(paymentMethodKey);
+    const quote = await this.paymentCurrencyService.getQuote(
+      dto.currency,
+      settings.pricingCurrency,
+    );
+    const amount = this.paymentCurrencyService.convert(
+      settings.normalAcceptancePrice,
+      quote,
+    );
     const payment = await this.createPendingPayment({
       userId,
       ideaId: null,
       publicationId,
-      amount: settings.normalAcceptancePrice,
-      currency: DEFAULT_PAYMENT_CURRENCY,
+      amount,
+      currency: quote.currency,
       paymentMethodKey,
       providerKey,
       paymentPurpose: PaymentPurpose.ACCEPT_PUBLICATION,
@@ -734,13 +809,21 @@ export class PaymentCheckoutService {
       dto.paymentMethodKey,
     );
     const providerKey = this.resolveProviderKey(paymentMethodKey);
+    const quote = await this.paymentCurrencyService.getQuote(
+      dto.currency,
+      settings.pricingCurrency,
+    );
+    const amount = this.paymentCurrencyService.convert(
+      settings.normalPublicationAdvancedPrice,
+      quote,
+    );
 
     const payment = await this.createPendingPayment({
       userId,
       ideaId: null,
       publicationId,
-      amount: settings.normalPublicationAdvancedPrice,
-      currency: DEFAULT_PAYMENT_CURRENCY,
+      amount,
+      currency: quote.currency,
       paymentMethodKey,
       providerKey,
       paymentPurpose: PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED,
@@ -907,7 +990,7 @@ export class PaymentCheckoutService {
         paymentMethodKey: payment.paymentMethodKey,
         providerKey: session.providerKey,
         status: PaymentStatus.PENDING,
-        amount: payment.amount.toFixed(2),
+        amount: this.paymentCurrencyService.formatAmount(payment.amount),
         currency: payment.currency,
         checkoutUrl: session.checkoutUrl,
         providerSessionId: session.providerSessionId,
@@ -967,7 +1050,7 @@ export class PaymentCheckoutService {
       userId: payment.userId,
       paymentMethodKey: payment.paymentMethodKey,
       paymentPurpose: payment.paymentPurpose,
-      amount: payment.amount.toFixed(2),
+      amount: this.paymentCurrencyService.formatAmount(payment.amount),
       currency: payment.currency,
       successUrl: this.appendPaymentReturnParameters(options.successUrl, payment, options),
       cancelUrl: options.cancelUrl,
@@ -1029,7 +1112,7 @@ export class PaymentCheckoutService {
       paymentId: payment.id,
       status: payment.status,
       paymentPurpose: payment.paymentPurpose,
-      amount: payment.amount.toFixed(2),
+      amount: this.paymentCurrencyService.formatAmount(payment.amount),
       currency: payment.currency,
       paidAt: payment.paidAt,
       failureReason: payment.failureReason,
@@ -1434,6 +1517,7 @@ export class PaymentCheckoutService {
     const settings = await this.prisma.systemSetting.findUnique({
       where: { key: GLOBAL_SYSTEM_SETTINGS_KEY },
       select: {
+        pricingCurrency: true,
         creditPrice: true,
         premiumIdeaCreditCost: true,
         directUnlockPrice: true,

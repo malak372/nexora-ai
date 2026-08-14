@@ -42,6 +42,7 @@ export class SettingsService {
         data: {
           key: 'GLOBAL',
           creditPrice: 1,
+          pricingCurrency: 'USD',
           premiumIdeaCreditCost: 15,
           directUnlockPrice: 15,
           premiumActivationFee: 5,
@@ -75,6 +76,7 @@ export class SettingsService {
     const currentSettings = await this.getSystemSettings();
 
     const hasChanges =
+      this.changedText(body.pricingCurrency, currentSettings.pricingCurrency) ||
       this.changed(body.creditPrice, currentSettings.creditPrice) ||
       this.changed(body.premiumIdeaCreditCost, currentSettings.premiumIdeaCreditCost) ||
       this.changed(body.directUnlockPrice, currentSettings.directUnlockPrice) ||
@@ -102,6 +104,9 @@ export class SettingsService {
     const updatedSettings = await this.prisma.systemSetting.update({
       where: { id: currentSettings.id },
       data: {
+        ...(body.pricingCurrency !== undefined && {
+          pricingCurrency: body.pricingCurrency,
+        }),
         ...(body.creditPrice !== undefined && {
           creditPrice: body.creditPrice,
         }),
@@ -178,6 +183,11 @@ export class SettingsService {
     };
   }
 
+  /** Handles text settings consistently. */
+  private changedText(nextValue: string | undefined, currentValue: string): boolean {
+    return nextValue !== undefined && nextValue !== currentValue;
+  }
+
   /** Handles both numeric and integer settings consistently. */
   private changed(
     nextValue: number | undefined,
@@ -188,6 +198,7 @@ export class SettingsService {
 
   /** Restricts the audit payload to commercial fields only. */
   private toAuditableValues(settings: {
+    pricingCurrency: string;
     creditPrice: number;
     directUnlockPrice: number;
     premiumActivationFee: number;
@@ -199,6 +210,7 @@ export class SettingsService {
     bonusCredits: number;
   }) {
     return {
+      pricingCurrency: settings.pricingCurrency,
       creditPrice: settings.creditPrice,
       premiumIdeaCreditCost: settings.premiumIdeaCreditCost,
       directUnlockPrice: settings.directUnlockPrice,

@@ -21,10 +21,12 @@ const unwrap = (response) => extractApiData(response);
 
 const reconcileRequests = new Map();
 
-export async function getPaymentPricing(creditsQuantity = 1, { force = false } = {}) {
+export async function getPaymentPricing(creditsQuantity = 1, { force = false, currency = 'USD' } = {}) {
   const normalizedQuantity = Math.max(1, Number(creditsQuantity) || 1);
+  const normalizedCurrency = String(currency || 'USD').trim().toUpperCase();
   const cacheKey = createRequestCacheKey('payment-pricing', {
     creditsQuantity: normalizedQuantity,
+    currency: normalizedCurrency,
   });
 
   try {
@@ -32,7 +34,7 @@ export async function getPaymentPricing(creditsQuantity = 1, { force = false } =
       cacheKey,
       async () => unwrap(
         await normalUserApi.get('/users/payments/pricing', {
-          params: { creditsQuantity: normalizedQuantity },
+          params: { creditsQuantity: normalizedQuantity, currency: normalizedCurrency },
         }),
       ),
       {

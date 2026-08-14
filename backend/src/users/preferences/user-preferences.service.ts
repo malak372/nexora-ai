@@ -117,6 +117,7 @@ export class UserPreferencesService {
       preferredCity: user.preference?.preferredCity ?? null,
       preferredRegion: user.preference?.preferredRegion ?? null,
       preferredLanguage: user.preference?.preferredLanguage ?? null,
+      paymentCurrency: user.preference?.paymentCurrency ?? 'USD',
       selections: user.preferenceSelections.map((selection) => ({
         ...selection.preferenceOption,
         selectedAt: selection.selectedAt,
@@ -208,6 +209,7 @@ export class UserPreferencesService {
           preferredCity: this.normalizeOptionalText(dto.preferredCity),
           preferredRegion: this.normalizeOptionalText(dto.preferredRegion),
           preferredLanguage: dto.preferredLanguage,
+          paymentCurrency: dto.paymentCurrency ?? 'USD',
           preferredDomains: legacyValues.preferredDomains,
           preferredTechnologies: legacyValues.preferredTechnologies,
           preferredDataSources: legacyValues.preferredDataSources,
@@ -227,6 +229,9 @@ export class UserPreferencesService {
           }),
           ...(dto.preferredLanguage !== undefined && {
             preferredLanguage: dto.preferredLanguage,
+          }),
+          ...(dto.paymentCurrency !== undefined && {
+            paymentCurrency: dto.paymentCurrency,
           }),
           preferredDomains: legacyValues.preferredDomains,
           preferredTechnologies: legacyValues.preferredTechnologies,

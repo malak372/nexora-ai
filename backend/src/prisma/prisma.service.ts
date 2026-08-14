@@ -21,15 +21,35 @@ export class PrismaService
       ? PrismaService.buildBoundedDatabaseUrl(configuredUrl)
       : undefined;
 
-    super(
-      datasourceUrl
+    const configuredMaxWait = Number.parseInt(
+      process.env.PRISMA_TRANSACTION_MAX_WAIT_MS ?? '10000',
+      10,
+    );
+    const configuredTimeout = Number.parseInt(
+      process.env.PRISMA_TRANSACTION_TIMEOUT_MS ?? '20000',
+      10,
+    );
+
+    const maxWait = Number.isFinite(configuredMaxWait)
+      ? Math.max(2_000, configuredMaxWait)
+      : 10_000;
+    const timeout = Number.isFinite(configuredTimeout)
+      ? Math.max(5_000, configuredTimeout)
+      : 20_000;
+
+    super({
+      ...(datasourceUrl
         ? {
             datasources: {
               db: { url: datasourceUrl },
             },
           }
-        : {},
-    );
+        : {}),
+      transactionOptions: {
+        maxWait,
+        timeout,
+      },
+    });
   }
 
   async onModuleInit() {
@@ -44,12 +64,12 @@ export class PrismaService
     try {
       const url = new URL(databaseUrl);
       const requestedLimit = Number.parseInt(
-        process.env.PRISMA_CONNECTION_LIMIT ?? '2',
+        process.env.PRISMA_CONNECTION_LIMIT ?? '4',
         10,
       );
       const safeLimit = Number.isFinite(requestedLimit)
         ? Math.min(5, Math.max(1, requestedLimit))
-        : 2;
+        : 4;
 
       const currentLimit = Number.parseInt(
         url.searchParams.get('connection_limit') ?? '',

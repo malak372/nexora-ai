@@ -390,6 +390,9 @@ export class IdeaPublicationAcceptanceService {
           balanceAfter: creditResult.balanceAfter,
         },
       };
+    }, {
+      maxWait: 10_000,
+      timeout: 20_000,
     });
 
     if (transactionResult.creditChange) {

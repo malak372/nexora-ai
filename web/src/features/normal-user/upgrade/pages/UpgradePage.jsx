@@ -1,13 +1,3 @@
-/**
- * Premium credit purchase experience.
- *
- * Users may choose any quantity supported by the backend and complete payment
- * securely through Stripe Checkout. Common quantities remain available as
- * quick-select shortcuts.
- *
- * @author Malak
- */
-
 import {
   CheckCircle2,
   CreditCard,
@@ -17,6 +7,7 @@ import {
   LoaderCircle,
   Minus,
   Plus,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   UsersRound,
@@ -26,11 +17,16 @@ import {
   useReducedMotion,
 } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { getStoredUser } from '../../../auth/shared/auth.storage';
 import { createCreditsCheckout } from '../api/upgradeApi';
 import { getPaymentPricing } from '../../payments/api/paymentFlowApi';
 import { storePaymentReturnReference } from '../../payments/utils/paymentReturn.storage';
+import {
+  getStoredPaymentCurrency,
+  loadPreferredPaymentCurrency,
+} from '../../payments/utils/paymentCurrency';
 import '../styles/upgrade.css';
 
 const QUICK_AMOUNTS = [15, 30, 45, 60];
@@ -93,6 +89,10 @@ export default function UpgradePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pricing, setPricing] = useState(null);
+  const [pricingLoading, setPricingLoading] = useState(true);
+  const [pricingRefreshKey, setPricingRefreshKey] = useState(0);
+  const [currency, setCurrency] = useState(getStoredPaymentCurrency);
+  const [currencyReady, setCurrencyReady] = useState(false);
 
   const isAlreadyPremium =
     (pricing?.accountStatus || storedUser.accountStatus) === 'PREMIUM';
@@ -111,34 +111,84 @@ export default function UpgradePage() {
   useEffect(() => {
     let active = true;
 
-    getPaymentPricing(credits)
+    loadPreferredPaymentCurrency({ force: true })
+      .then((preferredCurrency) => {
+        if (active) setCurrency(preferredCurrency);
+      })
+      .finally(() => {
+        if (active) setCurrencyReady(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currencyReady) {
+      return undefined;
+    }
+
+    let active = true;
+
+    setPricingLoading(true);
+
+    getPaymentPricing(credits, { currency })
       .then((value) => {
-        if (active) {
-          setPricing(value);
-
-          const responseIsPremium = value?.accountStatus === 'PREMIUM';
-          const requiredMinimum = responseIsPremium
-            ? 1
-            : Math.max(
-              1,
-              Number(value?.minimumCreditsForPremiumActivation) || 1,
-            );
-
-          setCredits((current) =>
-            current < requiredMinimum ? requiredMinimum : current,
-          );
+        if (!active) {
+          return;
         }
+
+        setPricing(value);
+        setError('');
+
+        const responseIsPremium = value?.accountStatus === 'PREMIUM';
+        const requiredMinimum = responseIsPremium
+          ? 1
+          : Math.max(
+            1,
+            Number(value?.minimumCreditsForPremiumActivation) || 1,
+          );
+
+        setCredits((current) =>
+          current < requiredMinimum ? requiredMinimum : current,
+        );
       })
       .catch((requestError) => {
+        if (!active) {
+          return;
+        }
+
+        const message = String(requestError?.message || '').trim();
+
+        setPricing(null);
+
+        if (
+          /exchange rate|currency rate|rate is temporarily unavailable/i.test(
+            message,
+          )
+        ) {
+          setError(
+            `The ${currency} exchange rate could not be refreshed right now. Retry in a moment or change your saved currency in Preferences.`,
+          );
+        } else if (/internal server error/i.test(message)) {
+          setError(
+            'Pricing is temporarily unavailable. Please retry in a moment.',
+          );
+        } else {
+          setError(message || 'Pricing could not be loaded.');
+        }
+      })
+      .finally(() => {
         if (active) {
-          setError(requestError.message);
+          setPricingLoading(false);
         }
       });
 
     return () => {
       active = false;
     };
-  }, [credits]);
+  }, [credits, currency, currencyReady, pricingRefreshKey]);
 
   const totalLabel = useMemo(
     () =>
@@ -171,6 +221,7 @@ export default function UpgradePage() {
       const result = await createCreditsCheckout({
         creditsQuantity,
         paymentMethodKey: method,
+        currency,
         successUrl: `${origin}/normal/payments/success`,
         cancelUrl: `${origin}/normal/credits?payment=cancelled`,
       });
@@ -356,38 +407,44 @@ export default function UpgradePage() {
         </p>
 
         <div className="upgrade-quantity">
-          {QUICK_AMOUNTS.map((amount) => (
-            <motion.button
-              type="button"
-              className={
-                credits === amount
-                  ? 'selected'
-                  : ''
-              }
-              onClick={() => setCredits(amount)}
-              disabled={amount < minimumCredits}
-              key={amount}
-              whileHover={
-                shouldReduceMotion
-                  ? undefined
-                  : { y: -3 }
-              }
-              whileTap={
-                shouldReduceMotion
-                  ? undefined
-                  : { scale: 0.98 }
-              }
-            >
-              <strong>{amount}</strong>
-              <small>
-                credit{amount > 1 ? 's' : ''}
-              </small>
-            </motion.button>
-          ))}
+          {QUICK_AMOUNTS.map((amount) => {
+            const isSelected = credits === amount;
+
+            return (
+              <motion.button
+                type="button"
+                className={isSelected ? 'selected' : ''}
+                onClick={() => setCredits(amount)}
+                disabled={amount < minimumCredits}
+                key={amount}
+                aria-pressed={isSelected}
+                whileHover={
+                  shouldReduceMotion
+                    ? undefined
+                    : { y: -2 }
+                }
+                whileTap={
+                  shouldReduceMotion
+                    ? undefined
+                    : { scale: 0.985 }
+                }
+              >
+                <span className="upgrade-quantity__status">
+                  {isSelected ? <CheckCircle2 size={14} /> : null}
+                </span>
+
+                <strong>{amount}</strong>
+
+                <small>
+                  credit{amount > 1 ? 's' : ''}
+                </small>
+              </motion.button>
+            );
+          })}
         </div>
 
         <div className="upgrade-custom-quantity">
-          <div>
+          <div className="upgrade-custom-quantity__heading">
             <span>Custom quantity</span>
             <small>
               {isAlreadyPremium
@@ -434,91 +491,119 @@ export default function UpgradePage() {
           <small>Provider-hosted checkout</small>
         </div>
 
-        <div className="upgrade-methods">
-          {PAYMENT_METHODS.map(
-            (paymentMethod) => {
-              const Icon = paymentMethod.icon;
-              const isSelected =
-                method === paymentMethod.key;
+        <div className="upgrade-payment-stack">
+          <div className="upgrade-currency-preference">
+            <span className="upgrade-currency-preference__icon">
+              <CreditCard size={17} />
+            </span>
 
-              return (
-                <motion.label
-                  key={paymentMethod.key}
-                  className={
-                    isSelected ? 'selected' : ''
-                  }
-                  whileHover={
-                    shouldReduceMotion
-                      ? undefined
-                      : { y: -3 }
-                  }
-                  whileTap={
-                    shouldReduceMotion
-                      ? undefined
-                      : { scale: 0.99 }
-                  }
-                >
-                  <input
-                    type="radio"
-                    name="payment-method"
-                    checked={isSelected}
-                    onChange={() =>
-                      setMethod(
-                        paymentMethod.key,
-                      )
+            <div>
+              <small>Saved payment currency</small>
+              <strong>{currency}</strong>
+              <p>Used automatically for every checkout.</p>
+            </div>
+
+            <Link
+              to="/normal/preferences"
+              state={{
+                returnTo: '/normal/credits',
+                returnLabel: 'Back to Premium credits',
+              }}
+            >
+              Change
+            </Link>
+          </div>
+
+          <div className="upgrade-methods">
+            {PAYMENT_METHODS.map(
+              (paymentMethod) => {
+                const Icon = paymentMethod.icon;
+                const isSelected = method === paymentMethod.key;
+
+                return (
+                  <motion.label
+                    key={paymentMethod.key}
+                    className={isSelected ? 'selected' : ''}
+                    whileHover={
+                      shouldReduceMotion
+                        ? undefined
+                        : { y: -2 }
                     }
-                  />
+                    whileTap={
+                      shouldReduceMotion
+                        ? undefined
+                        : { scale: 0.99 }
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name="payment-method"
+                      checked={isSelected}
+                      onChange={() => setMethod(paymentMethod.key)}
+                    />
 
-                  <span className="upgrade-methods__icon">
-                    <Icon size={20} />
-                  </span>
-
-                  <span className="upgrade-methods__copy">
-                    <span>
-                      <b>
-                        {paymentMethod.title}
-                      </b>
-                      <small>
-                        {paymentMethod.badge}
-                      </small>
+                    <span className="upgrade-methods__icon">
+                      <Icon size={19} />
                     </span>
 
-                    <em>
-                      {paymentMethod.description}
-                    </em>
-                  </span>
+                    <span className="upgrade-methods__copy">
+                      <span>
+                        <b>{paymentMethod.title}</b>
+                        <small>{paymentMethod.badge}</small>
+                      </span>
 
-                  <span className="upgrade-methods__check">
-                    {isSelected ? (
-                      <CheckCircle2 size={17} />
-                    ) : null}
-                  </span>
-                </motion.label>
-              );
-            },
-          )}
+                      <em>{paymentMethod.description}</em>
+                    </span>
+
+                    <span className="upgrade-methods__check">
+                      {isSelected ? <CheckCircle2 size={16} /> : null}
+                    </span>
+                  </motion.label>
+                );
+              },
+            )}
+          </div>
         </div>
 
-        <div
-          className={`upgrade-activation-fee ${isAlreadyPremium ? 'is-inactive' : 'is-applicable'
-            }`}
-        >
-          <span>
-            <Crown size={16} />
-          </span>
+        <div className="upgrade-pricing-grid">
+          <div className="upgrade-credit-price">
+            <div>
+              <span>Credit price</span>
+              <small>Current backend price in your saved currency</small>
+            </div>
 
-          <div>
             <strong>
-              {isAlreadyPremium
-                ? 'No Premium activation fee'
-                : 'Premium activation fee'}
+              {pricingLoading
+                ? 'Updating…'
+                : pricing
+                  ? `1 credit = ${pricing.creditPrice} ${pricing.currency}`
+                  : 'Loading…'}
             </strong>
+          </div>
 
-            <small>
-              {isAlreadyPremium
-                ? 'Your account is already Premium, so the activation fee is not charged again.'
-                : pricing ? `${pricing.activationFeeApplied} ${pricing.currency} is charged when this Normal account activates Premium. If the balance later reaches 0, the account returns to Normal and this fee applies again on the next activation.` : 'Loading the current activation fee from Voxidence settings…'}
-            </small>
+          <div
+            className={`upgrade-activation-fee ${isAlreadyPremium ? 'is-inactive' : 'is-applicable'
+              }`}
+          >
+            <span>
+              <Crown size={16} />
+            </span>
+
+            <div>
+              <strong>
+                {isAlreadyPremium
+                  ? 'No Premium activation fee'
+                  : 'Premium activation fee'}
+              </strong>
+
+              <small>
+                {isAlreadyPremium
+                  ? 'Already Premium, so this fee is not charged again.'
+                  : pricing
+                    ? `${pricing.activationFeeApplied} ${pricing.currency} applies when a Normal account activates Premium.`
+                    : 'Loading the current activation fee…'}
+              </small>
+            </div>
           </div>
         </div>
 
@@ -526,23 +611,41 @@ export default function UpgradePage() {
           <div>
             <span>Selected package</span>
             <small>
-              Final amount is calculated by the backend from the current database pricing.
+              {pricing ? `${credits} credits subtotal: ${pricing.creditPurchaseSubtotal ?? '—'} ${pricing.currency}.` : 'Final amount is calculated by the backend from current database pricing.'}
             </small>
           </div>
 
-          <strong>{pricing ? `${pricing.creditPurchaseTotal} ${pricing.currency}` : totalLabel}</strong>
+          <strong>
+            {pricingLoading
+              ? 'Updating…'
+              : pricing
+                ? `${pricing.creditPurchaseTotal} ${pricing.currency}`
+                : totalLabel}
+          </strong>
         </div>
 
         {error ? (
-          <p className="upgrade-error">
-            {error}
-          </p>
+          <div className="upgrade-error">
+            <span>{error}</span>
+
+            <button
+              type="button"
+              onClick={() => {
+                setError('');
+                setPricingRefreshKey((value) => value + 1);
+              }}
+              disabled={pricingLoading}
+            >
+              <RefreshCw size={13} />
+              Retry
+            </button>
+          </div>
         ) : null}
 
         <motion.button
           className="upgrade-checkout-button"
           type="button"
-          disabled={busy || !pricing}
+          disabled={busy || pricingLoading || !pricing}
           onClick={checkout}
           whileHover={
             shouldReduceMotion || busy

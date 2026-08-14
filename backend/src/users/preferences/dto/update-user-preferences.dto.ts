@@ -4,11 +4,14 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
 } from 'class-validator';
+
+import { PAYMENT_CURRENCY_CODES } from '../../../payments/constants/payment.constants';
 
 /**
  * Updates the authenticated user's personalization preferences.
@@ -25,6 +28,12 @@ export class UpdateUserPreferencesDto {
   @ArrayMaxSize(20)
   @IsUUID('4', { each: true })
   preferenceOptionIds!: string[];
+
+  /** Preferred currency used for all paid checkout flows. */
+  @IsOptional()
+  @IsString()
+  @IsIn(PAYMENT_CURRENCY_CODES)
+  paymentCurrency?: string;
 
   /** Preferred language for discovery and generated results. */
   @IsOptional()

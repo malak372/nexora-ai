@@ -1,3 +1,44 @@
+
+.preferences-backbar {
+  position: sticky;
+  top: 72px;
+  z-index: 24;
+  display: flex;
+  justify-content: flex-start;
+  margin: -10px 0 14px;
+  pointer-events: none;
+}
+
+.preferences-backbar button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid rgba(83, 145, 138, .18);
+  border-radius: 999px;
+  background: rgba(255, 253, 252, .9);
+  color: #3d6862;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 850;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(62, 93, 88, .09);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.preferences-backbar button:hover {
+  transform: translateX(-2px);
+  border-color: rgba(69, 157, 149, .34);
+  box-shadow: 0 13px 30px rgba(62, 93, 88, .13);
+}
+
+.preferences-backbar button svg {
+  color: #3f9b93;
+}
+
 .preferences-page {
   width: min(100%, 1320px);
   margin: 0 auto;
@@ -972,5 +1013,129 @@
   .preferences-savebar button {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* Saved payment-currency preference */
+.preferences-section--payment {
+  background:
+    radial-gradient(circle at 92% 8%, rgba(117, 196, 187, .12), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(249, 252, 250, .96));
+}
+
+.preferences-section__badge.is-payment {
+  color: #367f79;
+  background: rgba(226, 243, 239, .86);
+  border-color: rgba(74, 151, 143, .18);
+}
+
+.preferences-payment-currencies {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.preferences-payment-currencies button {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 10px;
+  min-height: 70px;
+  padding: 12px;
+  border: 1px solid rgba(73, 108, 102, .13);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .86);
+  color: #465853;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(58, 89, 82, .04);
+  transition: 180ms ease;
+}
+
+.preferences-payment-currencies button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(69, 150, 142, .28);
+  box-shadow: 0 14px 28px rgba(58, 112, 104, .08);
+}
+
+.preferences-payment-currencies button.is-selected {
+  border-color: rgba(55, 143, 135, .46);
+  background: linear-gradient(145deg, #f0faf6, #fff8f9);
+  box-shadow: 0 14px 30px rgba(58, 126, 118, .10);
+}
+
+.preferences-payment-currencies button > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(72, 166, 156, .09);
+  color: #38877f;
+  font-size: .86rem;
+  font-weight: 900;
+}
+
+.preferences-payment-currencies button > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.preferences-payment-currencies strong {
+  color: #344b46;
+  font-size: .78rem;
+  font-weight: 900;
+}
+
+.preferences-payment-currencies small {
+  overflow: hidden;
+  color: #87938f;
+  font-size: .61rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.preferences-payment-currencies i {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(66, 156, 147, .08);
+  color: #3e9189;
+  font-style: normal;
+}
+
+.preferences-payment-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 11px 13px;
+  border: 1px solid rgba(69, 150, 142, .11);
+  border-radius: 14px;
+  background: rgba(239, 248, 245, .68);
+  color: #74837f;
+  font-size: .67rem;
+  line-height: 1.5;
+}
+
+.preferences-payment-note svg {
+  flex: none;
+  margin-top: 1px;
+  color: #4a9c94;
+}
+
+@media (max-width: 980px) {
+  .preferences-payment-currencies {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .preferences-payment-currencies {
+    grid-template-columns: 1fr;
   }
 }

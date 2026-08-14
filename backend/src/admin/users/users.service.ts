@@ -87,9 +87,14 @@ export class UsersService {
       query.isActive !== undefined ? query.isActive === 'true' : undefined;
 
     const includeDeleted = query.includeDeleted === 'true';
+    const deletedOnly = query.deletedOnly === 'true';
 
     return {
-      ...(includeDeleted ? {} : { deletedAt: null }),
+      ...(deletedOnly
+        ? { deletedAt: { not: null } }
+        : includeDeleted
+          ? {}
+          : { deletedAt: null }),
 
       /*
        * This workspace manages platform members, not administrator accounts.
@@ -178,6 +183,7 @@ export class UsersService {
           id: true,
           fullName: true,
           email: true,
+          avatarUrl: true,
           role: true,
           accountStatus: true,
           userType: true,
@@ -186,6 +192,7 @@ export class UsersService {
           freeGenerationLimit: true,
           isActive: true,
           isVerified: true,
+          deletedAt: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -548,6 +555,7 @@ export class UsersService {
         freeGenerationLimit: true,
         isActive: true,
         isVerified: true,
+        deletedAt: true,
         emailVerifiedAt: true,
         lastLoginAt: true,
         premiumActivatedAt: true,
@@ -765,6 +773,7 @@ export class UsersService {
         freeGenerationLimit: true,
         isActive: true,
         isVerified: true,
+        deletedAt: true,
         createdAt: true,
         updatedAt: true,
         _count: {
@@ -790,6 +799,7 @@ export class UsersService {
       'Free Generation Limit',
       'Is Active',
       'Is Verified',
+      'Deleted At',
       'Ideas Count',
       'Payments Count',
       'Credit Transactions Count',
@@ -810,6 +820,7 @@ export class UsersService {
       user.freeGenerationLimit,
       user.isActive,
       user.isVerified,
+      user.deletedAt?.toISOString() ?? '',
       user._count.ideas,
       user._count.payments,
       user._count.creditTransactions,
@@ -860,6 +871,12 @@ export class UsersService {
 
     if (user.role === UserRole.ADMIN) {
       throw new BadRequestException('Cannot modify another admin account');
+    }
+
+    if (user.deletedAt !== null) {
+      throw new BadRequestException(
+        'Deleted user accounts cannot be reactivated from the active-status control',
+      );
     }
 
     if (user.isActive === isActive) {
@@ -948,6 +965,7 @@ export class UsersService {
         email: true,
         role: true,
         isActive: true,
+        deletedAt: true,
       },
     });
 
@@ -958,6 +976,12 @@ export class UsersService {
     if (user.role === UserRole.ADMIN) {
       throw new BadRequestException(
         'Cannot send password reset email to another admin account',
+      );
+    }
+
+    if (user.deletedAt) {
+      throw new BadRequestException(
+        'Cannot send password reset email to a deleted user account',
       );
     }
 
@@ -1105,7 +1129,7 @@ export class UsersService {
     });
 
     return {
-      message: 'User soft deleted successfully',
+      message: 'User moved to deleted users successfully',
       user: deletedUser,
       updated: true,
     };

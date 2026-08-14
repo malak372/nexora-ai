@@ -5,22 +5,8 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/admin_api.dart';
 import '../widgets/admin_ui.dart';
+import '../widgets/admin_selection_field.dart';
 
-/// Displays the complete mobile AI analytics workspace.
-///
-/// The mobile page keeps the same analytics capabilities available on the
-/// administrator web workspace while presenting them in a compact,
-/// touch-friendly layout.
-///
-/// Included information:
-/// - Overall AI request volume, reliability, latency and estimated cost.
-/// - Input/output token usage, fallback attempts and represented models.
-/// - Date, provider and request-type analytics filters.
-/// - Per-model request volume, reliability, latency, tokens and cost.
-/// - Model traffic share, provider/API model metadata and model search/sort.
-/// - Most-used and fastest-model highlights.
-///
-/// @author Eman
 class AdminAiAnalyticsPage extends StatefulWidget {
   const AdminAiAnalyticsPage({super.key});
 
@@ -42,6 +28,8 @@ class _AdminAiAnalyticsPageState extends State<AdminAiAnalyticsPage> {
   String _sortBy = 'requests';
   String _sortOrder = 'desc';
   String _search = '';
+
+  int _requestId = 0;
 
   bool _loading = true;
   bool _refreshing = false;
@@ -87,13 +75,13 @@ class _AdminAiAnalyticsPageState extends State<AdminAiAnalyticsPage> {
 
   Future<void> _load({bool force = false, bool quiet = false}) async {
     if (!mounted) return;
+    final requestId = ++_requestId;
 
     setState(() {
       _error = '';
-
       if (quiet) {
         _refreshing = true;
-      } else {
+      } else if (_data.isEmpty) {
         _loading = true;
       }
     });
@@ -105,7 +93,7 @@ class _AdminAiAnalyticsPageState extends State<AdminAiAnalyticsPage> {
         query: _analyticsQuery(),
       );
 
-      if (!mounted) return;
+      if (!mounted || requestId != _requestId) return;
 
       setState(() {
         _data = payload['data'] is Map
@@ -113,19 +101,13 @@ class _AdminAiAnalyticsPageState extends State<AdminAiAnalyticsPage> {
             : payload;
       });
     } on ApiException catch (error) {
-      if (!mounted) return;
-
-      setState(() {
-        _error = error.message;
-      });
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _error = error.message);
     } catch (_) {
-      if (!mounted) return;
-
-      setState(() {
-        _error = 'Could not load AI usage analytics.';
-      });
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _error = 'Could not load AI usage analytics.');
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _requestId) {
         setState(() {
           _loading = false;
           _refreshing = false;
@@ -434,6 +416,7 @@ class _AdminAiAnalyticsPageState extends State<AdminAiAnalyticsPage> {
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 84),
               children: [
                 AdminPageHeader(
+                  accentColor: AppColors.primary,
                   title: 'AI analytics',
                   subtitle:
                       'Reliability, traffic, latency, token consumption and AI spend in one mobile workspace.',
@@ -618,13 +601,13 @@ class _RefreshButton extends StatelessWidget {
                   height: 17,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: AppColors.primaryDark,
+                    color: AppColors.primary,
                   ),
                 )
               : const Icon(
                   Icons.refresh_rounded,
                   size: 20,
-                  color: AppColors.primaryDark,
+                  color: AppColors.primary,
                 ),
         ),
       ),
@@ -658,12 +641,12 @@ class _SectionHeading extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(icon, size: 13, color: AppColors.primaryDark),
+                  Icon(icon, size: 13, color: AppColors.primary),
                   const SizedBox(width: 5),
                   Text(
                     eyebrow.toUpperCase(),
                     style: const TextStyle(
-                      color: AppColors.primaryDark,
+                      color: AppColors.primary,
                       fontSize: 8.3,
                       fontWeight: FontWeight.w900,
                       letterSpacing: .8,
@@ -721,7 +704,7 @@ class _LivePill extends StatelessWidget {
           Text(
             'Aggregated',
             style: TextStyle(
-              color: AppColors.primaryDark,
+              color: AppColors.primary,
               fontSize: 8.2,
               fontWeight: FontWeight.w900,
             ),
@@ -783,7 +766,7 @@ class _AnalyticsMetricGrid extends StatelessWidget {
                 value: _wholeNumber(totalRequests),
                 hint: '${_wholeNumber(successfulRequests)} successful attempts',
                 tone: AppColors.primarySoft,
-                iconColor: AppColors.primaryDark,
+                iconColor: AppColors.primary,
               ),
             ),
             SizedBox(
@@ -820,7 +803,7 @@ class _AnalyticsMetricGrid extends StatelessWidget {
                 value: _formatMoney(totalCost),
                 hint: 'Backend-calculated usage estimate',
                 tone: const Color(0xFFF0F7F3),
-                iconColor: AppColors.primaryDeep,
+                iconColor: AppColors.primary,
               ),
             ),
           ],
@@ -982,7 +965,7 @@ class _AnalyticsSignalChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: AppColors.primaryDark),
+          Icon(icon, size: 12, color: AppColors.primary),
           const SizedBox(width: 5),
           Text(
             value,
@@ -1051,7 +1034,7 @@ class _FilterSummaryCard extends StatelessWidget {
                 child: const Icon(
                   Icons.tune_rounded,
                   size: 15,
-                  color: AppColors.primaryDark,
+                  color: AppColors.primary,
                 ),
               ),
               const SizedBox(width: 9),
@@ -1103,7 +1086,7 @@ class _FilterSummaryCard extends StatelessWidget {
                   backgroundColor: activeFilterCount > 0
                       ? AppColors.primarySoft
                       : AppColors.surfaceMuted,
-                  foregroundColor: AppColors.primaryDark,
+                  foregroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
                     vertical: 9,
@@ -1162,7 +1145,7 @@ class _FilterValue extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: AppColors.primaryDark),
+          Icon(icon, size: 11, color: AppColors.primary),
           const SizedBox(width: 4),
           Text(
             text,
@@ -1235,7 +1218,7 @@ class _HighlightCard extends StatelessWidget {
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 14, color: AppColors.primaryDark),
+            child: Icon(icon, size: 14, color: AppColors.primary),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -1354,7 +1337,7 @@ class _ModelControls extends StatelessWidget {
                         ? Icons.arrow_downward_rounded
                         : Icons.arrow_upward_rounded,
                     size: 17,
-                    color: AppColors.primaryDark,
+                    color: AppColors.primary,
                   ),
                 ),
               ),
@@ -1427,7 +1410,7 @@ class _ModelUsageCard extends StatelessWidget {
                 child: const Icon(
                   Icons.memory_rounded,
                   size: 18,
-                  color: AppColors.primaryDark,
+                  color: AppColors.primary,
                 ),
               ),
               const SizedBox(width: 10),
@@ -1843,7 +1826,7 @@ class _DateFilterButton extends StatelessWidget {
               const Icon(
                 Icons.date_range_outlined,
                 size: 15,
-                color: AppColors.primaryDark,
+                color: AppColors.primary,
               ),
               const SizedBox(width: 7),
               Expanded(
@@ -1898,40 +1881,20 @@ class _LabeledDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
-      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-      style: const TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 10,
-        fontWeight: FontWeight.w800,
-      ),
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, size: 17),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 12,
-        ),
-      ),
-      items: options
+    return AdminSelectionField(
+      label: label,
+      icon: icon,
+      value: value,
+      options: options
           .map(
-            (option) => DropdownMenuItem<String>(
+            (option) => AdminSelectionOption(
               value: option.key,
-              child: Text(
-                option.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              label: option.label,
+              icon: icon,
             ),
           )
           .toList(),
-      onChanged: (next) {
-        if (next != null) {
-          onChanged(next);
-        }
-      },
+      onChanged: onChanged,
     );
   }
 }
@@ -1951,37 +1914,21 @@ class _CompactDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
-      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 17),
-      decoration: InputDecoration(
-        isDense: true,
-        prefixIcon: Icon(icon, size: 16),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      ),
-      style: const TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 9.5,
-        fontWeight: FontWeight.w800,
-      ),
-      items: options
+    return AdminSelectionField(
+      label: 'Select',
+      icon: icon,
+      value: value,
+      compact: true,
+      options: options
           .map(
-            (option) => DropdownMenuItem<String>(
+            (option) => AdminSelectionOption(
               value: option.key,
-              child: Text(
-                option.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              label: option.label,
+              icon: icon,
             ),
           )
           .toList(),
-      onChanged: (next) {
-        if (next != null) {
-          onChanged(next);
-        }
-      },
+      onChanged: onChanged,
     );
   }
 }

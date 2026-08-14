@@ -11,6 +11,8 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
+import '../models/payment_currency.dart';
+import '../widgets/payment_currency_selector.dart';
 import '../widgets/user_ui.dart';
 import '../widgets/workspace_navigation.dart';
 import 'mobile_checkout_page.dart';
@@ -33,6 +35,7 @@ class _CreditsPageState extends State<CreditsPage> {
   bool _checkoutLoading = false;
 
   int _quantity = 15;
+  String _currency = PaymentCurrencyPreference.current;
 
   @override
   void initState() {
@@ -49,8 +52,13 @@ class _CreditsPageState extends State<CreditsPage> {
     }
 
     try {
+      final preferredCurrency =
+          await UserApi.instance.getPaymentCurrencyPreference(force: force);
+      _currency = preferredCurrency;
+
       var pricing = await UserApi.instance.getPricing(
         creditsQuantity: _quantity,
+        currency: _currency,
       );
 
       final minimum = _asInt(
@@ -60,7 +68,7 @@ class _CreditsPageState extends State<CreditsPage> {
 
       if (_quantity < minimum) {
         _quantity = minimum;
-        pricing = await UserApi.instance.getPricing(creditsQuantity: _quantity);
+        pricing = await UserApi.instance.getPricing(creditsQuantity: _quantity, currency: _currency);
       }
 
       if (!mounted) return;
@@ -89,7 +97,7 @@ class _CreditsPageState extends State<CreditsPage> {
     });
 
     try {
-      final pricing = await UserApi.instance.getPricing(creditsQuantity: next);
+      final pricing = await UserApi.instance.getPricing(creditsQuantity: next, currency: _currency);
 
       if (!mounted) return;
       setState(() => _pricing = pricing);
@@ -113,6 +121,7 @@ class _CreditsPageState extends State<CreditsPage> {
     try {
       final result = await UserApi.instance.createCreditsCheckout(
         quantity: _quantity,
+        currency: _currency,
       );
 
       final flow = await openVoxidenceCheckout(
@@ -218,6 +227,14 @@ class _CreditsPageState extends State<CreditsPage> {
                             onSelectPreset: _setQuantity,
                             onDecrease: () => _changeQuantity(-1),
                             onIncrease: () => _changeQuantity(1),
+                          ),
+                          const SizedBox(height: 12),
+                          PaymentCurrencyPreferenceCard(
+                            value: _currency,
+                            returnTitle: 'Credits',
+                            returnRoute: '/normal/credits',
+                            returnAfterSave: true,
+                            onReturn: () => _load(force: true),
                           ),
                           const SizedBox(height: 12),
                           _CheckoutCard(

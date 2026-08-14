@@ -1,6 +1,3 @@
-// Shared mobile authentication layout for Voxidence.
-//
-// @author Eman
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -323,9 +320,6 @@ class AuthField extends StatelessWidget {
 
         prefixIcon: Icon(icon, size: 18),
 
-        // Only explicit suffix widgets are shown.
-        // Valid email state no longer adds
-        // a check icon inside the text field.
         suffixIcon: suffixIcon,
 
         counterText: '',
@@ -334,14 +328,20 @@ class AuthField extends StatelessWidget {
         enabledBorder: validState
             ? OutlineInputBorder(
                 borderRadius: BorderRadius.circular(15),
-                borderSide: const BorderSide(color: validColor, width: 1.15),
+                borderSide: const BorderSide(
+                  color: AppColors.primary,
+                  width: 1.5,
+                ),
               )
             : null,
 
         focusedBorder: validState
             ? OutlineInputBorder(
                 borderRadius: BorderRadius.circular(15),
-                borderSide: const BorderSide(color: validColor, width: 1.35),
+                borderSide: const BorderSide(
+                  color: AppColors.primary,
+                  width: 1.5,
+                ),
               )
             : null,
       ),
@@ -363,8 +363,6 @@ class AuthField extends StatelessWidget {
               ),
             ),
 
-            // Keep "Valid format" above
-            // the field with its subtle check.
             if (validState && validLabel != null) ...[
               const Icon(Icons.check_rounded, size: 13, color: validColor),
               const SizedBox(width: 4),

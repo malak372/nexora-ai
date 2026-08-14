@@ -31,6 +31,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
   bool _loading = true;
   bool _saving = false;
   bool _uploadingAvatar = false;
+  bool _isAdmin = false;
 
   Object? _error;
 
@@ -128,6 +129,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
             .catchError(
               (_) => <Map<String, dynamic>>[],
             ),
+        SessionStore.instance.readUser(),
       ]);
 
       final profile = Map<String, dynamic>.from(
@@ -155,6 +157,14 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
             List<Map<String, dynamic>>.from(
           values[1] as List,
         );
+
+        final sessionUser = values[2] is Map
+            ? Map<String, dynamic>.from(values[2] as Map)
+            : <String, dynamic>{};
+        final role = '${profile['role'] ?? sessionUser['role'] ?? ''}'
+            .trim()
+            .toUpperCase();
+        _isAdmin = role == 'ADMIN';
       });
     } catch (error) {
       if (mounted) {
@@ -191,7 +201,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
       final updated =
           await UserApi.instance.updateProfile(
         fullName: name,
-        userType: _userType,
+        userType: _isAdmin ? null : _userType,
       );
 
       UserSessionController.instance.applyProfile(
@@ -760,6 +770,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                     else if (profile != null) ...[
                       _ProfileIdentityCard(
                         profile: profile,
+                        isAdmin: _isAdmin,
                         avatarUrl: _mediaUrl(
                           '${profile['avatarUrl'] ?? ''}',
                         ),
@@ -782,6 +793,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                       _ProfileDetailsCard(
                         nameController:
                             _name,
+                        isAdmin: _isAdmin,
                         userType:
                             _userType,
                         userTypeLabel:
@@ -1426,6 +1438,7 @@ class _ProfileIdentityCard
     extends StatelessWidget {
   const _ProfileIdentityCard({
     required this.profile,
+    required this.isAdmin,
     required this.avatarUrl,
     required this.uploading,
     required this.onChangePhoto,
@@ -1433,6 +1446,7 @@ class _ProfileIdentityCard
   });
 
   final Map<String, dynamic> profile;
+  final bool isAdmin;
   final String avatarUrl;
   final bool uploading;
   final VoidCallback onChangePhoto;
@@ -1568,13 +1582,15 @@ class _ProfileIdentityCard
                         ),
                       ],
                     ),
-                    const SizedBox(
-                      height: 7,
-                    ),
-                    AccountTierBadge(
-                      isPremium:
-                          isPremium,
-                    ),
+                    if (!isAdmin) ...[
+                      const SizedBox(
+                        height: 7,
+                      ),
+                      AccountTierBadge(
+                        isPremium:
+                            isPremium,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1702,6 +1718,7 @@ class _ProfileDetailsCard
     extends StatelessWidget {
   const _ProfileDetailsCard({
     required this.nameController,
+    required this.isAdmin,
     required this.userType,
     required this.userTypeLabel,
     required this.saving,
@@ -1711,6 +1728,7 @@ class _ProfileDetailsCard
 
   final TextEditingController
       nameController;
+  final bool isAdmin;
 
   final String userType;
   final String userTypeLabel;
@@ -1802,16 +1820,18 @@ class _ProfileDetailsCard
               ),
             ),
           ),
-          const SizedBox(
-            height: 10,
-          ),
-          _UserTypeSelector(
-            value: userType,
-            label:
-                userTypeLabel,
-            onTap:
-                onPickUserType,
-          ),
+          if (!isAdmin) ...[
+            const SizedBox(
+              height: 10,
+            ),
+            _UserTypeSelector(
+              value: userType,
+              label:
+                  userTypeLabel,
+              onTap:
+                  onPickUserType,
+            ),
+          ],
           const SizedBox(
             height: 11,
           ),

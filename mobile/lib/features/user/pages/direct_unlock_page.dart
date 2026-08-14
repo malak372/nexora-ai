@@ -7,9 +7,10 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
+import '../models/payment_currency.dart';
+import '../widgets/payment_currency_selector.dart';
 import '../widgets/user_ui.dart';
 import '../widgets/workspace_navigation.dart';
-import 'idea_workspace_page.dart';
 import 'mobile_checkout_page.dart';
 
 class DirectUnlockPage extends StatefulWidget {
@@ -27,6 +28,7 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
   String? _error;
   Map<String, dynamic> _pricing = const {};
   Map<String, dynamic> _idea = const {};
+  String _currency = PaymentCurrencyPreference.current;
 
   @override
   void initState() {
@@ -40,8 +42,10 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
       _error = null;
     });
     try {
+      _currency = await UserApi.instance.getPaymentCurrencyPreference();
+
       final values = await Future.wait([
-        UserApi.instance.getPricing(),
+        UserApi.instance.getPricing(currency: _currency, force: true),
         UserApi.instance.getIdeaDetails(widget.ideaId, force: true),
       ]);
       if (!mounted) return;
@@ -73,16 +77,18 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
         await session.load(force: true);
         if (!mounted) return;
         showAppSnackBar(context, 'Advanced idea outputs unlocked.');
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute<void>(
-            builder: (_) => IdeaWorkspacePage(ideaId: widget.ideaId),
-          ),
-        );
+        final navigator = Navigator.of(context);
+        if (navigator.canPop()) {
+          navigator.pop(true);
+        } else {
+          navigator.pushReplacementNamed('/normal/ideas/${widget.ideaId}');
+        }
         return;
       }
 
       final result = await UserApi.instance.createDirectUnlockCheckout(
         widget.ideaId,
+        currency: _currency,
       );
 
       final flow = await openVoxidenceCheckout(
@@ -96,7 +102,13 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
 
       if (flow.status == CheckoutFlowStatus.completed && mounted) {
         await session.load(force: true);
-        await _load();
+        if (!mounted) return;
+        final navigator = Navigator.of(context);
+        if (navigator.canPop()) {
+          navigator.pop(true);
+        } else {
+          navigator.pushReplacementNamed('/normal/ideas/${widget.ideaId}');
+        }
       }
     } on ApiException catch (error) {
       if (mounted) {
@@ -242,6 +254,15 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                           ),
                           if (!premium) ...[
                             const SizedBox(height: 13),
+                            PaymentCurrencyPreferenceCard(
+                              value: _currency,
+                              compact: true,
+                              returnTitle: 'Direct unlock',
+                              returnRoute: '/normal/ideas/${widget.ideaId}/unlock',
+                              returnAfterSave: true,
+                              onReturn: _load,
+                            ),
+                            const SizedBox(height: 10),
                             const _PaymentMethodCard(),
                           ],
                           if (_error != null) ...[
@@ -277,7 +298,7 @@ class _DirectUnlockPageState extends State<DirectUnlockPage> {
                                     ? (cost > 0
                                           ? 'Unlock for $cost credits'
                                           : 'Unlock with credits')
-                                    : 'Open secure checkout',
+                                    : 'Continue · ${_money(_pricing['directUnlockPrice'])} ${_pricing['currency'] ?? _currency}',
                               ),
                             ),
                           ),

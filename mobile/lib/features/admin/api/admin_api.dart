@@ -2,51 +2,13 @@ import 'package:dio/dio.dart';
 
 import '../../../core/network/api_client.dart';
 
-/// Provides all administrative API operations used by the mobile
-/// administration interface.
-///
-/// This service acts as a centralized gateway between admin-facing
-/// Flutter features and the backend administration endpoints.
-///
-/// It supports:
-/// - Sensitive workspace verification and protected requests.
-/// - Dashboard and summary retrieval.
-/// - Generic paginated admin resource loading.
-/// - Complaint and contact-message moderation.
-/// - Publication moderation.
-/// - User account status management.
-/// - Credit adjustments.
-/// - Domain and data-source administration.
-/// - AI model activation and deactivation.
-/// - Alert delivery.
-/// - Local API cache invalidation after mutations.
-///
-/// The class follows a singleton pattern through [instance] so that
-/// all administrative features share the same [ApiClient].
-///
-/// @author Eman
 class AdminApi {
-  /// Private constructor used by the singleton instance.
   AdminApi._();
 
-  /// Shared singleton instance of [AdminApi].
   static final AdminApi instance = AdminApi._();
 
-  /// Shared API client used for all backend requests.
   final ApiClient _api = ApiClient.instance;
 
-  /// Verifies that the current administrator is allowed to access
-  /// a sensitive administrative workspace.
-  ///
-  /// The backend validates the administrator password and requested
-  /// [scope]. When successful, it returns the data required to access
-  /// protected administrative endpoints.
-  ///
-  /// Parameters:
-  /// - [scope]: Identifier of the sensitive area being accessed.
-  /// - [password]: Administrator password used for verification.
-  ///
-  /// Returns the normalized backend response.
   Future<Map<String, dynamic>> verifySensitiveAccess(
     String scope,
     String password,
@@ -59,17 +21,6 @@ class AdminApi {
     );
   }
 
-  /// Retrieves data from a sensitive administrative workspace.
-  ///
-  /// The provided [accessToken] is attached through the
-  /// `X-Admin-Sensitive-Token` header.
-  ///
-  /// Parameters:
-  /// - [path]: Sensitive backend endpoint to request.
-  /// - [accessToken]: Token returned after sensitive access verification.
-  /// - [force]: Whether to bypass cached responses.
-  ///
-  /// Returns the normalized workspace response.
   Future<Map<String, dynamic>> getSensitiveWorkspace(
     String path,
     String accessToken, {
@@ -84,14 +35,6 @@ class AdminApi {
     );
   }
 
-  /// Sends a one-time administrator invitation from the protected
-  /// administrators workspace.
-  ///
-  /// The backend requires the same sensitive-access token that unlocks
-  /// the administrators page.
-  ///
-  /// A successful request emails the recipient a one-time invitation
-  /// code and creates a pending invitation record.
   Future<Map<String, dynamic>> inviteAdministrator({
     required String fullName,
     required String email,
@@ -109,17 +52,6 @@ class AdminApi {
     return _map(response);
   }
 
-  /// Sends an update request to a protected administrative endpoint.
-  ///
-  /// The [accessToken] is included in the sensitive-access header to
-  /// authorize the requested operation.
-  ///
-  /// Parameters:
-  /// - [path]: Protected backend endpoint.
-  /// - [body]: Update payload.
-  /// - [accessToken]: Verified sensitive-access token.
-  ///
-  /// Returns the normalized backend response.
   Future<Map<String, dynamic>> patchSensitive(
     String path,
     Map<String, dynamic> body,
@@ -134,25 +66,20 @@ class AdminApi {
     );
   }
 
-  /// Retrieves administrative dashboard information.
-  ///
-  /// Dashboard data is cached for one minute unless [force] is `true`.
-  ///
-  /// Returns the normalized dashboard response.
-  Future<Map<String, dynamic>> getDashboard({bool force = false}) async {
+  Future<Map<String, dynamic>> getDashboard({
+    bool force = false,
+    String period = 'all',
+  }) async {
     return _map(
       await _api.get(
         '/admin/dashboard',
-        cacheFor: const Duration(minutes: 1),
+        query: {'period': period},
+        cacheFor: const Duration(minutes: 2),
         force: force,
       ),
     );
   }
 
-  /// Retrieves and normalizes a generic paginated administrative list.
-  ///
-  /// This method is shared across multiple admin resources including
-  /// users, ideas, payments, domains, comments, models, and logs.
   Future<Map<String, dynamic>> getList(
     String path, {
     int page = 1,
@@ -175,7 +102,7 @@ class AdminApi {
         'sortOrder': sortOrder,
         ...extra,
       },
-      cacheFor: const Duration(seconds: 30),
+      cacheFor: const Duration(minutes: 1),
       force: force,
       unwrapResponse: false,
     );
@@ -183,7 +110,6 @@ class AdminApi {
     return _normalizeList(raw);
   }
 
-  /// Retrieves summary information for an administrative resource.
   Future<Map<String, dynamic>> getSummary(
     String path, {
     bool force = false,
@@ -193,23 +119,21 @@ class AdminApi {
       await _api.get(
         path,
         query: query,
-        cacheFor: const Duration(minutes: 1),
+        cacheFor: const Duration(minutes: 2),
         force: force,
       ),
     );
   }
 
-  /// Retrieves detailed information for a specific admin resource.
   Future<Map<String, dynamic>> getDetail(
     String path, {
     bool force = false,
   }) async {
     return _map(
-      await _api.get(path, cacheFor: const Duration(minutes: 1), force: force),
+      await _api.get(path, cacheFor: const Duration(minutes: 2), force: force),
     );
   }
 
-  /// Updates the moderation state of a user complaint.
   Future<Map<String, dynamic>> updateComplaint(
     String id, {
     required String status,
@@ -233,7 +157,6 @@ class AdminApi {
     return value;
   }
 
-  /// Updates an administrative contact-inbox message.
   Future<Map<String, dynamic>> updateContactMessage(
     String id, {
     required String status,
@@ -246,9 +169,6 @@ class AdminApi {
         '/admin/contact-messages/$id',
         data: {
           'status': status,
-          // Match the web inbox: an empty response means a status-only update.
-          // Omitting the field also avoids failing the backend's minimum-length
-          // validation for adminReply.
           if (normalizedReply != null && normalizedReply.isNotEmpty)
             'adminReply': normalizedReply,
         },
@@ -262,7 +182,6 @@ class AdminApi {
     return value;
   }
 
-  /// Reviews and moderates a publication report.
   Future<Map<String, dynamic>> reviewPublicationReport(
     String id, {
     required String status,
@@ -298,7 +217,31 @@ class AdminApi {
     return value;
   }
 
-  /// Activates or deactivates a user account.
+  Future<Map<String, dynamic>> updateUser(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final value = _map(await _api.patch('/admin/users/$id', data: body));
+
+    _api.invalidate('/admin/users');
+    _api.invalidate('/admin/dashboard');
+
+    return value;
+  }
+
+  Future<Map<String, dynamic>> sendUserPasswordReset(String id) async {
+    return _map(await _api.post('/admin/users/$id/send-password-reset-email'));
+  }
+
+  Future<Map<String, dynamic>> moveUserToDeleted(String id) async {
+    final value = _map(await _api.delete('/admin/users/$id'));
+
+    _api.invalidate('/admin/users');
+    _api.invalidate('/admin/dashboard');
+
+    return value;
+  }
+
   Future<Map<String, dynamic>> setUserStatus(String id, bool isActive) async {
     final value = _map(
       await _api.patch('/admin/users/$id/status', data: {'isActive': isActive}),
@@ -311,32 +254,116 @@ class AdminApi {
     return value;
   }
 
-  /// Performs an administrative credit adjustment for a user.
   Future<Map<String, dynamic>> adjustCredits({
     required String userId,
     required int amount,
-    required String reason,
+    required String description,
   }) async {
     final value = _map(
       await _api.post(
         '/admin/credits/adjust',
-        data: {'userId': userId, 'amount': amount, 'reason': reason.trim()},
+        data: {
+          'userId': userId,
+          'amount': amount,
+          'description': description.trim(),
+        },
       ),
     );
 
     _api.invalidate('/admin/credits');
-
     _api.invalidate('/admin/users');
-
     _api.invalidate('/admin/dashboard');
 
     return value;
   }
 
-  /// Removes a currently published idea from community discovery.
-  ///
-  /// This mirrors the Ideas workspace moderation action on the web. The
-  /// backend also handles notifying the publisher with the supplied reason.
+  Future<List<int>> exportPaymentsCsv({
+    String? search,
+    String? status,
+    String? paymentPurpose,
+    String? paymentMethodKey,
+    String? providerKey,
+    String? fromDate,
+    String? toDate,
+    String? sortBy,
+    String? sortOrder,
+  }) {
+    return _api.getBytes(
+      '/admin/payments/export/csv',
+      query: {
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (status != null && status.trim().isNotEmpty) 'status': status.trim(),
+        if (paymentPurpose != null && paymentPurpose.trim().isNotEmpty)
+          'paymentPurpose': paymentPurpose.trim(),
+        if (paymentMethodKey != null && paymentMethodKey.trim().isNotEmpty)
+          'paymentMethodKey': paymentMethodKey.trim(),
+        if (providerKey != null && providerKey.trim().isNotEmpty)
+          'providerKey': providerKey.trim(),
+        if (fromDate != null && fromDate.trim().isNotEmpty)
+          'fromDate': fromDate.trim(),
+        if (toDate != null && toDate.trim().isNotEmpty) 'toDate': toDate.trim(),
+        if (sortBy != null && sortBy.trim().isNotEmpty) 'sortBy': sortBy.trim(),
+        if (sortOrder != null && sortOrder.trim().isNotEmpty)
+          'sortOrder': sortOrder.trim(),
+      },
+    );
+  }
+
+  Future<List<int>> exportCreditsCsv({
+    String? search,
+    String? type,
+    String? fromDate,
+    String? toDate,
+    String? sortBy,
+    String? sortOrder,
+  }) {
+    return _api.getBytes(
+      '/admin/credits/export/csv',
+      query: {
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (type != null && type.trim().isNotEmpty) 'type': type.trim(),
+        if (fromDate != null && fromDate.trim().isNotEmpty)
+          'fromDate': fromDate.trim(),
+        if (toDate != null && toDate.trim().isNotEmpty) 'toDate': toDate.trim(),
+        if (sortBy != null && sortBy.trim().isNotEmpty) 'sortBy': sortBy.trim(),
+        if (sortOrder != null && sortOrder.trim().isNotEmpty)
+          'sortOrder': sortOrder.trim(),
+      },
+    );
+  }
+
+  Future<List<int>> exportAuditLogsCsv({
+    String? search,
+    String? action,
+    String? targetType,
+    String? targetId,
+    String? actorId,
+    String? fromDate,
+    String? toDate,
+    String? sortBy,
+    String? sortOrder,
+  }) {
+    return _api.getBytes(
+      '/audit-logs/export/csv',
+      query: {
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (action != null && action.trim().isNotEmpty) 'action': action.trim(),
+        if (targetType != null && targetType.trim().isNotEmpty)
+          'targetType': targetType.trim(),
+        if (targetId != null && targetId.trim().isNotEmpty)
+          'targetId': targetId.trim(),
+        if (actorId != null && actorId.trim().isNotEmpty)
+          'actorId': actorId.trim(),
+        if (fromDate != null && fromDate.trim().isNotEmpty)
+          'fromDate': fromDate.trim(),
+        if (toDate != null && toDate.trim().isNotEmpty) 'toDate': toDate.trim(),
+        if (sortBy != null && sortBy.trim().isNotEmpty) 'sortBy': sortBy.trim(),
+        if (sortOrder != null && sortOrder.trim().isNotEmpty)
+          'sortOrder': sortOrder.trim(),
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> unpublishPublication(
     String id,
     String reason,
@@ -353,11 +380,26 @@ class AdminApi {
     return value;
   }
 
-  /// Downloads the current Ideas directory as CSV bytes.
-  ///
-  /// [publishedOnly] selects the dedicated published-ideas export endpoint.
-  /// Remaining filters are kept aligned with the server-side directory query
-  /// used by the web administration workspace.
+  Future<List<int>> exportUsersCsv({
+    String? search,
+    String? sortBy,
+    String? sortOrder,
+    bool? isActive,
+    bool deletedOnly = false,
+  }) {
+    return _api.getBytes(
+      '/admin/users/export/csv',
+      query: {
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (sortBy != null && sortBy.trim().isNotEmpty) 'sortBy': sortBy.trim(),
+        if (sortOrder != null && sortOrder.trim().isNotEmpty)
+          'sortOrder': sortOrder.trim(),
+        if (isActive != null) 'isActive': isActive.toString(),
+        if (deletedOnly) 'deletedOnly': 'true',
+      },
+    );
+  }
+
   Future<List<int>> exportIdeasCsv({
     bool publishedOnly = false,
     String? search,
@@ -381,10 +423,6 @@ class AdminApi {
     );
   }
 
-  /// Exports the complaints queue as CSV bytes using the active filters.
-  ///
-  /// The method mirrors the export action used by the web administration
-  /// support queue and keeps filtering on the backend before generating CSV.
   Future<List<int>> exportComplaintsCsv({
     String? search,
     String? status,
@@ -406,10 +444,6 @@ class AdminApi {
     );
   }
 
-  /// Exports the contact inbox as CSV bytes using the active filters.
-  ///
-  /// Search, status and sort options are sent to the backend so the exported
-  /// file matches the current administration view.
   Future<List<int>> exportContactMessagesCsv({
     String? search,
     String? status,
@@ -431,7 +465,6 @@ class AdminApi {
     );
   }
 
-  /// Hides a publication from public visibility.
   Future<Map<String, dynamic>> hidePublication(String id, String reason) async {
     final value = _map(
       await _api.patch(
@@ -445,7 +478,6 @@ class AdminApi {
     return value;
   }
 
-  /// Restores a previously hidden publication.
   Future<Map<String, dynamic>> restorePublication(String id) async {
     final value = _map(
       await _api.patch('/admin/publications/$id/restore', data: const {}),
@@ -456,7 +488,6 @@ class AdminApi {
     return value;
   }
 
-  /// Archives a publication.
   Future<Map<String, dynamic>> archivePublication(
     String id,
     String reason,
@@ -473,7 +504,6 @@ class AdminApi {
     return value;
   }
 
-  /// Sends an administrative platform alert.
   Future<Map<String, dynamic>> sendAlert(Map<String, dynamic> body) async {
     final value = _map(await _api.post('/admin/alerts/send', data: body));
 
@@ -484,7 +514,6 @@ class AdminApi {
     return value;
   }
 
-  /// Activates or deactivates an idea-generation domain.
   Future<Map<String, dynamic>> setDomainStatus(String id, bool isActive) async {
     final value = _map(
       await _api.patch('/admin/domains/$id', data: {'isActive': isActive}),
@@ -497,7 +526,41 @@ class AdminApi {
     return value;
   }
 
-  /// Enables or disables a configured collection data source.
+  Future<Map<String, dynamic>> createDataSource(
+    Map<String, dynamic> body,
+  ) async {
+    final value = _map(
+      await _api.post('/admin/data-sources', data: body),
+    );
+
+    _invalidateDataSources();
+
+    return value;
+  }
+
+  Future<Map<String, dynamic>> updateDataSource(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final value = _map(
+      await _api.patch('/admin/data-sources/$id', data: body),
+    );
+
+    _invalidateDataSources();
+
+    return value;
+  }
+
+  Future<Map<String, dynamic>> synchronizeDataSources() async {
+    final value = _map(
+      await _api.post('/admin/data-sources/synchronize', data: const {}),
+    );
+
+    _invalidateDataSources();
+
+    return value;
+  }
+
   Future<Map<String, dynamic>> setDataSourceStatus(
     String id,
     bool isActive,
@@ -509,14 +572,16 @@ class AdminApi {
       ),
     );
 
-    _api.invalidate('/admin/data-sources');
-
-    _api.invalidate('/admin/dashboard');
+    _invalidateDataSources();
 
     return value;
   }
 
-  /// Activates or deactivates a configured AI model.
+  void _invalidateDataSources() {
+    _api.invalidate('/admin/data-sources');
+    _api.invalidate('/admin/dashboard');
+  }
+
   Future<Map<String, dynamic>> setAiModelStatus(
     String id,
     bool isActive,
@@ -535,14 +600,12 @@ class AdminApi {
     return value;
   }
 
-  /// Invalidates cached support-management data.
   void _invalidateSupport() {
     _api.invalidate('/admin/complaints');
 
     _api.invalidate('/admin/dashboard');
   }
 
-  /// Invalidates cached idea and publication moderation data.
   void _invalidateIdeas() {
     _api.invalidate('/admin/ideas');
 
@@ -551,7 +614,6 @@ class AdminApi {
     _api.invalidate('/admin/dashboard');
   }
 
-  /// Normalizes different list response formats into a consistent shape.
   Map<String, dynamic> _normalizeList(dynamic raw) {
     if (raw is List) {
       final rows = raw
@@ -574,7 +636,6 @@ class AdminApi {
     return {'items': rows, 'meta': meta};
   }
 
-  /// Extracts a resource list from a backend response.
   List<Map<String, dynamic>> _listFrom(Map<String, dynamic> body) {
     dynamic source;
 
@@ -613,7 +674,6 @@ class AdminApi {
         .toList();
   }
 
-  /// Extracts and normalizes pagination metadata from a response.
   Map<String, dynamic> _metaFrom(Map<String, dynamic> body, int count) {
     final raw = body['meta'] ?? body['pagination'];
 
@@ -630,7 +690,6 @@ class AdminApi {
     };
   }
 
-  /// Converts an arbitrary value into a string-keyed map.
   Map<String, dynamic> _map(dynamic value) {
     if (value is Map<String, dynamic>) {
       return value;
@@ -643,7 +702,6 @@ class AdminApi {
     return <String, dynamic>{};
   }
 
-  /// Converts an arbitrary numeric value into an integer.
   int _int(dynamic value) {
     if (value is int) {
       return value;
