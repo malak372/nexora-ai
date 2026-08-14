@@ -495,6 +495,7 @@ export default function AdminResourcePage({ section }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [openUserActionMenu, setOpenUserActionMenu] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -520,6 +521,13 @@ export default function AdminResourcePage({ section }) {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    if (!notice) return undefined;
+
+    const timer = window.setTimeout(() => setNotice(''), 3600);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     if (!openUserActionMenu) return undefined;
@@ -598,6 +606,7 @@ export default function AdminResourcePage({ section }) {
     setSelected(null);
     setUserModalMode('view');
     setModalError('');
+    setNotice('');
     if (section === 'users') {
       setUserSortBy('createdAt');
       setUserSortOrder('desc');
@@ -638,11 +647,15 @@ export default function AdminResourcePage({ section }) {
     }
   };
 
-  const runMutation = async (id, operation) => {
+  const runMutation = async (id, operation, successMessage = '') => {
     setBusyId(id);
     setError('');
+    setNotice('');
     try {
-      await operation();
+      const result = await operation();
+      if (successMessage) {
+        setNotice(result?.message || successMessage);
+      }
       await loadData({ quiet: true });
     } catch (mutationError) {
       setError(getApiErrorMessage(mutationError, 'The requested action could not be completed.'));
@@ -821,11 +834,11 @@ export default function AdminResourcePage({ section }) {
         current?.id === id
           ? null
           : {
-              id,
-              item,
-              top,
-              left,
-            },
+            id,
+            item,
+            top,
+            left,
+          },
       );
     };
 
@@ -909,7 +922,7 @@ export default function AdminResourcePage({ section }) {
     if (column === 'identity') {
       const name = String(
         firstDefined(item, ['fullName', 'name', 'displayName'], 'Unnamed user') ||
-          'Unnamed user',
+        'Unnamed user',
       );
       const email = String(firstDefined(item, ['email'], '') || '');
 
@@ -987,10 +1000,10 @@ export default function AdminResourcePage({ section }) {
           {Number.isNaN(date.getTime())
             ? String(value)
             : date.toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}
         </span>
       );
     }
@@ -1101,6 +1114,26 @@ export default function AdminResourcePage({ section }) {
             </label>
           )}
         </div>
+
+        {notice && section === 'users' && (
+          <div className="admin-users-success-toast" role="status" aria-live="polite">
+            <span className="admin-users-success-toast__icon">
+              <CheckCircle2 size={18} />
+            </span>
+            <div className="admin-users-success-toast__content">
+              <strong>Email sent successfully</strong>
+              <span>{notice}</span>
+            </div>
+            <button
+              type="button"
+              className="admin-users-success-toast__close"
+              onClick={() => setNotice('')}
+              aria-label="Dismiss success message"
+            >
+              <XCircle size={17} />
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="admin-resource-error">
@@ -1219,7 +1252,11 @@ export default function AdminResourcePage({ section }) {
                 onClick={() => {
                   const id = openUserActionMenu.id;
                   setOpenUserActionMenu(null);
-                  runMutation(id, () => config.api.resetPassword(id));
+                  runMutation(
+                    id,
+                    () => config.api.resetPassword(id),
+                    'Password reset email sent successfully.',
+                  );
                 }}
               >
                 <span className="admin-user-actions-popover__icon">
@@ -1440,12 +1477,12 @@ export default function AdminResourcePage({ section }) {
                   <div className="admin-user-edit__actions">
                     <button type="button" className="admin-user-edit__cancel" onClick={() => setUserModalMode('view')} disabled={savingUser}>Cancel</button>
                     <button type="button" className="admin-user-edit__save" onClick={handleSaveUser} disabled={
-                        savingUser ||
-                        !userForm.fullName.trim() ||
-                        Number(userForm.freeGenerationsUsed) < 0 ||
-                        Number(userForm.freeGenerationLimit) < Number(userForm.freeGenerationsUsed) ||
-                        Number(userForm.creditBalance) < 0
-                      }>
+                      savingUser ||
+                      !userForm.fullName.trim() ||
+                      Number(userForm.freeGenerationsUsed) < 0 ||
+                      Number(userForm.freeGenerationLimit) < Number(userForm.freeGenerationsUsed) ||
+                      Number(userForm.creditBalance) < 0
+                    }>
                       {savingUser ? <LoaderCircle size={16} className="admin-spin" /> : <Save size={16} />}
                       {savingUser ? 'Saving…' : 'Save changes'}
                     </button>

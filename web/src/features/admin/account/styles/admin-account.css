@@ -48,22 +48,16 @@
   border-color: rgba(47, 119, 116, 0.12);
   border-radius: 30px;
   background:
-    radial-gradient(
-      circle at 85% 14%,
+    radial-gradient(circle at 85% 14%,
       rgba(183, 221, 216, 0.34),
-      transparent 28%
-    ),
-    radial-gradient(
-      circle at 13% 92%,
+      transparent 28%),
+    radial-gradient(circle at 13% 92%,
       rgba(243, 201, 211, 0.22),
-      transparent 31%
-    ),
-    linear-gradient(
-      135deg,
+      transparent 31%),
+    linear-gradient(135deg,
       #fffdfc 0%,
       #faf9f6 58%,
-      #eef8f5 100%
-    );
+      #eef8f5 100%);
   box-shadow:
     0 24px 65px rgba(47, 119, 116, 0.09),
     inset 0 1px 0 rgba(255, 255, 255, 0.97);
@@ -81,9 +75,7 @@
 
 /* Do not let the title become oversized simply because the sidebar is
    collapsed and the content viewport is wider. */
-.admin-shell.is-collapsed
-  .admin-account-host
-  .profile-settings-page__header h1 {
+.admin-shell.is-collapsed .admin-account-host .profile-settings-page__header h1 {
   font-size: clamp(2.6rem, 3.7vw, 4rem);
 }
 
@@ -97,50 +89,40 @@
 
 .admin-account-host .profile-settings-page__grid {
   background-image:
-    linear-gradient(
+    linear-gradient(rgba(47, 119, 116, 0.035) 1px,
+      transparent 1px),
+    linear-gradient(90deg,
       rgba(47, 119, 116, 0.035) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      rgba(47, 119, 116, 0.035) 1px,
-      transparent 1px
-    );
+      transparent 1px);
 }
 
 .admin-account-host .profile-settings-page__orb--one {
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(183, 221, 216, 0.32),
-      transparent 68%
-    );
+      transparent 68%);
 }
 
 .admin-account-host .profile-settings-page__orb--two {
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(243, 201, 211, 0.24),
-      transparent 68%
-    );
+      transparent 68%);
 }
 
-.admin-account-host .profile-settings-page__header > span,
+.admin-account-host .profile-settings-page__header>span,
 .admin-account-host .profile-settings-panel__title svg,
 .admin-account-host .profile-settings-avatar-card__icon,
 .admin-account-host .profile-settings__notice svg {
   color: var(--account-green-deep);
 }
 
-.admin-account-host .profile-settings-page__header > span {
+.admin-account-host .profile-settings-page__header>span {
   border-color: rgba(47, 119, 116, 0.14);
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       #f5fbf9,
-      #edf8f5
-    );
+      #edf8f5);
   box-shadow:
     0 10px 22px rgba(47, 119, 116, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.96);
@@ -158,15 +140,13 @@
   border-color: rgba(47, 119, 116, 0.11);
   border-radius: 26px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, .97),
       rgba(250, 249, 246, .96) 56%,
-      rgba(239, 249, 246, .92)
-    );
+      rgba(239, 249, 246, .92));
   box-shadow:
     0 16px 42px rgba(47, 119, 116, 0.065),
-    inset 0 1px 0 rgba(255,255,255,.96);
+    inset 0 1px 0 rgba(255, 255, 255, .96);
 }
 
 .admin-account-host .profile-settings-card__avatar {
@@ -179,7 +159,7 @@
   font-size: clamp(1.22rem, 1.5vw, 1.55rem);
 }
 
-.admin-account-host .profile-settings-card__identity > span,
+.admin-account-host .profile-settings-card__identity>span,
 .admin-account-host .profile-settings-card__identity small {
   color: var(--account-muted);
 }
@@ -197,19 +177,14 @@
 
 /* Keep panels readable when the content region grows after collapse.
    We do not stretch field lines to extreme widths. */
-.admin-shell.is-collapsed
-  .admin-account-host
-  .profile-settings-grid {
+.admin-shell.is-collapsed .admin-account-host .profile-settings-grid {
   grid-template-columns:
     repeat(2, minmax(340px, 1fr));
 }
 
-.admin-account-host
-  :is(
-    .profile-settings-panel,
-    .profile-settings-avatar-card,
-    .profile-settings-danger
-  ) {
+.admin-account-host :is(.profile-settings-panel,
+  .profile-settings-avatar-card,
+  .profile-settings-danger) {
   min-width: 0;
   border-color: rgba(47, 119, 116, 0.11);
   box-shadow:
@@ -239,16 +214,14 @@
     0 0 0 4px rgba(79, 169, 164, 0.11) !important;
 }
 
-.admin-account-host .profile-settings-panel > button[type='submit'],
+.admin-account-host .profile-settings-panel>button[type='submit'],
 .admin-account-host .profile-settings-avatar-card button.is-primary,
 .admin-account-host .profile-settings-card__actions button:not(.is-danger) {
   border-color: transparent;
   background:
-    linear-gradient(
-      135deg,
+    linear-gradient(135deg,
       #69b7b1,
-      #4fa9a4
-    );
+      #4fa9a4);
   color: #fff;
   box-shadow:
     0 10px 24px rgba(47, 119, 116, 0.18);
@@ -264,18 +237,10 @@
   width: 100%;
 }
 
-.admin-shell.is-collapsed
-  .admin-account-host
-  .profile-settings-page__header,
-.admin-shell.is-collapsed
-  .admin-account-host
-  .profile-settings-card,
-.admin-shell.is-collapsed
-  .admin-account-host
-  .profile-settings-grid,
-.admin-shell.is-collapsed
-  .admin-account-host
-  .profile-settings-danger {
+.admin-shell.is-collapsed .admin-account-host .profile-settings-page__header,
+.admin-shell.is-collapsed .admin-account-host .profile-settings-card,
+.admin-shell.is-collapsed .admin-account-host .profile-settings-grid,
+.admin-shell.is-collapsed .admin-account-host .profile-settings-danger {
   width: 100%;
   max-width: 100%;
 }
@@ -309,9 +274,7 @@
   }
 
   .admin-account-host .profile-settings-grid,
-  .admin-shell.is-collapsed
-    .admin-account-host
-    .profile-settings-grid {
+  .admin-shell.is-collapsed .admin-account-host .profile-settings-grid {
     grid-template-columns: 1fr;
   }
 }
