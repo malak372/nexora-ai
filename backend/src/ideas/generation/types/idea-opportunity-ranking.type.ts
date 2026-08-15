@@ -55,6 +55,15 @@ export type RankedIdeaOpportunity = {
   readonly baseScore: number;
   readonly confidencePenalty: number;
   readonly finalScore: number;
+  readonly matchedDomainNames?: readonly string[];
+  readonly domainRelevanceScores?: Readonly<Record<string, number>>;
+
+  /** Lexical/semantic match to the requester's explicit current description. */
+  readonly requestIntentAlignmentScore?: number;
+
+  /** Evidence score after bounded request-intent reranking. */
+  readonly requestIntentAdjustedScore?: number;
+
   readonly selectionEligible: boolean;
   readonly disqualificationReasons: readonly string[];
 

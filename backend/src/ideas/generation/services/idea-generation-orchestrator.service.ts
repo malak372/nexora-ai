@@ -132,6 +132,8 @@ type ExecuteOwnedIdeaGenerationInput = {
   /** Explainability-only trace for how the primary domain was resolved. */
   domainResolution: IdeaGenerationDomainResolutionTrace | null;
 
+  requestDescription: string | null;
+
   /**
    * User-provided generation keywords.
    */
@@ -316,6 +318,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: context.domainId,
       selectedDomains: context.selectedDomains ?? [],
       domainResolution: context.domainResolution ?? null,
+      requestDescription: context.requestDescription ?? null,
       keywords: context.keywords,
       requestedDataSourceKeys: context.requestedDataSourceKeys,
       location: context.location,
@@ -389,19 +392,32 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     const selectedDomains = requestedIds
       .map((id) => byId.get(id))
       .filter((domain): domain is (typeof domains)[number] => Boolean(domain))
-      .map((domain) => ({
-        id: domain.id,
-        name: domain.name,
-        keywords: this.normalizeStringArray(
+      .map((domain) => {
+        const configuredKeywords = this.normalizeStringArray(
           domain.domainKeywords.map((entry) => entry.keyword),
-        ).slice(0, 8),
-      }));
+        ).slice(0, 10);
+        const effectiveSearchKeywords = this.normalizeStringArray([
+          ...configuredKeywords,
+          ...this.buildFallbackDomainKeywords(domain.name),
+        ]).slice(0, 10);
+
+        return {
+          id: domain.id,
+          name: domain.name,
+          keywords: effectiveSearchKeywords,
+          configuredKeywords,
+          effectiveSearchKeywords,
+        };
+      });
 
     if (selectedDomains.length === 0) {
       throw new NotFoundException('No selected generation domain is active.');
     }
 
-    const userKeywords = this.normalizeStringArray(dto.keywords).slice(0, 6);
+    const requestIntentKeywords = this.buildRequestIntentKeywords(
+      dto.description,
+    );
+    const userKeywords = this.normalizeStringArray(dto.keywords).slice(0, 8);
     const bridgeKeyword = selectedDomains.length > 1
       ? `coherent cross-domain workflow combining ${selectedDomains.map((domain) => domain.name).join(' and ')}`
       : selectedDomains[0].name;
@@ -431,11 +447,238 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     return {
       selectedDomains,
       keywords: [...new Set([
+        ...requestIntentKeywords,
         ...userKeywords,
         bridgeKeyword,
         ...balancedDomainKeywords,
       ])].slice(0, 30),
     };
+  }
+
+  /**
+   * Runtime search vocabulary used when a selected domain has sparse or empty
+   * DomainKeyword rows. These terms also feed evidence attribution, so a result
+   * about checkout/orders can still be recognized as E-commerce evidence even
+   * when the database has not been fully seeded yet.
+   */
+  private buildFallbackDomainKeywords(domainName: string): string[] {
+    const normalized = domainName
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const vocabulary: Readonly<Record<string, readonly string[]>> = {
+      agriculture: [
+        'farming',
+        'irrigation',
+        'crop management',
+        'soil monitoring',
+        'harvest planning',
+      ],
+      blockchain: [
+        'distributed ledger',
+        'smart contract',
+        'web3',
+        'crypto wallet',
+        'blockchain security',
+      ],
+      cybersecurity: [
+        'authentication security',
+        'identity access',
+        'oauth security',
+        'security policy',
+        'threat detection',
+      ],
+      'artificial intelligence': [
+        'artificial intelligence',
+        'ai',
+        'ai model',
+        'ai chatbot',
+        'ai application',
+        'ai assistant',
+        'generative ai',
+        'machine learning',
+        'large language model',
+        'ai automation',
+      ],
+      'e commerce': [
+        'checkout',
+        'shopping cart',
+        'order management',
+        'seller marketplace',
+        'refund workflow',
+      ],
+      ecommerce: [
+        'checkout',
+        'shopping cart',
+        'order management',
+        'seller marketplace',
+        'refund workflow',
+      ],
+      energy: [
+        'electricity',
+        'solar',
+        'energy consumption',
+        'power grid',
+        'battery monitoring',
+      ],
+      education: [
+        'student homework',
+        'assignment submission',
+        'teacher feedback',
+        'coursework',
+        'grading workflow',
+      ],
+      finance: [
+        'invoice',
+        'expense management',
+        'budget',
+        'payroll',
+        'reconciliation',
+      ],
+      healthcare: [
+        'patient',
+        'clinical workflow',
+        'medical record',
+        'appointment',
+        'care coordination',
+      ],
+      government: [
+        'government services',
+        'citizen portal',
+        'public administration',
+        'government forms',
+        'permit application',
+        'public sector workflow',
+      ],
+      'hr recruitment': [
+        'recruitment',
+        'hiring',
+        'applicant tracking',
+        'candidate screening',
+        'interview scheduling',
+        'employee onboarding',
+        'talent acquisition',
+        'job application',
+      ],
+      environment: [
+        'environmental monitoring',
+        'waste management',
+        'pollution monitoring',
+        'sustainability',
+        'environmental compliance',
+      ],
+      'food restaurants': [
+        'restaurant operations',
+        'food ordering',
+        'kitchen workflow',
+        'table reservation',
+        'food delivery',
+      ],
+      'internet of things': [
+        'connected devices',
+        'sensor monitoring',
+        'device management',
+        'telemetry',
+        'edge computing',
+      ],
+      iot: [
+        'connected devices',
+        'sensor monitoring',
+        'device management',
+        'telemetry',
+        'edge computing',
+      ],
+      legaltech: [
+        'legal documents',
+        'contract management',
+        'case management',
+        'compliance workflow',
+        'legal research',
+      ],
+      logistics: [
+        'shipment tracking',
+        'warehouse management',
+        'last mile delivery',
+        'fleet routing',
+        'inventory logistics',
+      ],
+      manufacturing: [
+        'production planning',
+        'quality control',
+        'predictive maintenance',
+        'factory automation',
+        'manufacturing supply chain',
+      ],
+      'media entertainment': [
+        'content creation',
+        'streaming',
+        'audience engagement',
+        'media workflow',
+        'digital publishing',
+      ],
+      'mental health': [
+        'therapy access',
+        'mental wellness',
+        'counseling',
+        'crisis support',
+        'mood tracking',
+      ],
+      'real estate': [
+        'property management',
+        'real estate listing',
+        'tenant management',
+        'leasing workflow',
+        'property inspection',
+      ],
+      'smart cities': [
+        'urban mobility',
+        'public infrastructure',
+        'city services',
+        'traffic management',
+        'civic technology',
+      ],
+      'sports fitness': [
+        'workout tracking',
+        'fitness coaching',
+        'sports training',
+        'gym management',
+        'athlete performance',
+      ],
+      tourism: [
+        'travel planning',
+        'tourist services',
+        'travel booking',
+        'destination management',
+        'visitor experience',
+      ],
+      transportation: [
+        'public transit',
+        'route planning',
+        'fleet management',
+        'ticketing',
+        'traffic congestion',
+      ],
+    };
+
+    const configuredFallback = vocabulary[normalized];
+    if (configuredFallback?.length) {
+      return [...configuredFallback];
+    }
+
+    const canonicalName = domainName.replace(/\s+/gu, ' ').trim();
+    if (!canonicalName) {
+      return [];
+    }
+
+    return [
+      `${canonicalName} workflow`,
+      `${canonicalName} services`,
+      `${canonicalName} operations`,
+      `${canonicalName} management`,
+      `${canonicalName} software`,
+    ];
   }
 
   private resolveDomainForGuest(dto: GenerateGuestIdeaDto) {
@@ -477,16 +720,20 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     input: GenerateRegisteredIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
     const userId = this.normalizeRequiredValue(input.userId, 'User ID');
-    const policy = await this.resolveUserQueuePolicy(
-      userId,
-      input.dto.generationType,
-    );
+    /*
+     * Entitlement lookup and domain resolution are independent database reads.
+     * Run them together so personalization/domain inference does not add a
+     * sequential database round-trip to the hot generation path.
+     */
+    const [policy, resolvedDomain] = await Promise.all([
+      this.resolveUserQueuePolicy(userId, input.dto.generationType),
+      this.resolveDomainForUser(userId, input.dto),
+    ]);
 
     const owner: IdeaOwner = {
       type: IDEA_OWNER_TYPES.USER,
       userId,
     };
-    const resolvedDomain = await this.resolveDomainForUser(userId, input.dto);
     const domainProfile = await this.buildCrossDomainProfile(
       input.dto,
       resolvedDomain.domainId,
@@ -502,6 +749,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       selectedDomains: domainProfile.selectedDomains,
 
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
+
+      requestDescription: this.normalizeOptionalValue(input.dto.description),
 
       keywords: domainProfile.keywords,
 
@@ -567,7 +816,12 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
 
-      keywords: this.normalizeStringArray(input.dto.keywords),
+      requestDescription: this.normalizeOptionalValue(input.dto.description),
+
+      keywords: [
+        ...this.buildRequestIntentKeywords(input.dto.description),
+        ...this.normalizeStringArray(input.dto.keywords),
+      ].slice(0, 30),
 
       requestedDataSourceKeys: [],
 
@@ -617,6 +871,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: resolvedDomain.domainId,
       selectedDomains: domainProfile.selectedDomains,
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
+      requestDescription: this.normalizeOptionalValue(input.dto.description),
       keywords: domainProfile.keywords,
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
@@ -695,7 +950,11 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: resolvedDomain.domainId,
       selectedDomains: [],
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
-      keywords: this.normalizeStringArray(input.dto.keywords),
+      requestDescription: this.normalizeOptionalValue(input.dto.description),
+      keywords: [
+        ...this.buildRequestIntentKeywords(input.dto.description),
+        ...this.normalizeStringArray(input.dto.keywords),
+      ].slice(0, 30),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -873,6 +1132,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
       domainResolution: input.domainResolution,
 
+      requestDescription: input.requestDescription,
+
       keywords: input.keywords,
 
       requestedDataSourceKeys: input.requestedDataSourceKeys,
@@ -903,6 +1164,9 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainName: checkpoint.domainName ?? null,
       selectedDomains,
       domainResolution: checkpoint.domainResolution ?? null,
+      requestDescription: this.normalizeOptionalValue(
+        checkpoint.requestDescription ?? undefined,
+      ),
       keywords: this.normalizeRecoveredStringArray(checkpoint.keywords),
       requestedDataSourceKeys: this.normalizeRecoveredStringArray(
         checkpoint.requestedDataSourceKeys,
@@ -980,11 +1244,27 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         return [];
       }
 
+      const keywords = this.normalizeRecoveredStringArray(domain.keywords);
+      const configuredKeywords = this.normalizeRecoveredStringArray(
+        domain.configuredKeywords,
+      );
+      const effectiveSearchKeywords = this.normalizeRecoveredStringArray(
+        domain.effectiveSearchKeywords,
+      );
+
       return [
         {
           id,
           name,
-          keywords: this.normalizeRecoveredStringArray(domain.keywords),
+          keywords:
+            effectiveSearchKeywords.length > 0
+              ? effectiveSearchKeywords
+              : keywords,
+          configuredKeywords,
+          effectiveSearchKeywords:
+            effectiveSearchKeywords.length > 0
+              ? effectiveSearchKeywords
+              : keywords,
         },
       ];
     });
@@ -1293,6 +1573,119 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     }
 
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  }
+
+  private buildRequestIntentKeywords(description?: string): string[] {
+    const normalized = this.normalizeOptionalValue(description);
+
+    if (!normalized) {
+      return [];
+    }
+
+    const evidenceIntent = this.stripSolutionPreferencePhrases(normalized);
+    const searchableIntent = evidenceIntent || normalized;
+    const aliasMap: Readonly<Record<string, string>> = {
+      financial: 'finance',
+      finances: 'finance',
+      administration: 'administrative operations',
+      administrative: 'administrative operations',
+      company: 'business operations',
+      companies: 'business operations',
+      invoicing: 'invoice',
+      invoices: 'invoice',
+      expenses: 'expense',
+      budgeting: 'budget',
+      payrolls: 'payroll',
+      reconciliations: 'reconciliation',
+      procurements: 'procurement',
+    };
+
+    const stopWords = new Set([
+      'a',
+      'an',
+      'and',
+      'are',
+      'at',
+      'be',
+      'by',
+      'for',
+      'from',
+      'in',
+      'is',
+      'it',
+      'of',
+      'on',
+      'or',
+      'the',
+      'to',
+      'with',
+      'issue',
+      'issues',
+      'problem',
+      'problems',
+      'ai',
+      'enhance',
+      'enhanced',
+      'enhancement',
+      'improve',
+      'improved',
+      'improvement',
+      'optimize',
+      'optimized',
+      'optimization',
+    ]);
+
+    const tokens = searchableIntent
+      .toLowerCase()
+      .normalize('NFKC')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
+
+    const terms = [
+      searchableIntent,
+      ...tokens
+        .filter((token) => !stopWords.has(token))
+        .map((token) => aliasMap[token] ?? token),
+    ];
+
+    const hasAdministrationIntent = tokens.some((token) =>
+      ['administration', 'administrative', 'operations', 'company'].includes(token),
+    );
+    const hasFinanceIntent = tokens.some((token) =>
+      ['finance', 'financial', 'accounting', 'budget', 'invoice', 'expense', 'payroll', 'procurement', 'reconciliation'].includes(token),
+    );
+
+    if (hasAdministrationIntent) {
+      terms.unshift(
+        'business operations',
+        'administrative workflow',
+        'office administration',
+        'approval workflow',
+        'back office operations',
+      );
+    }
+
+    if (hasAdministrationIntent && hasFinanceIntent) {
+      terms.unshift(
+        'financial administration',
+        'administrative finance',
+        'finance operations',
+        'back office finance',
+      );
+    }
+
+    return this.normalizeStringArray(terms).slice(0, 12);
+  }
+
+  private stripSolutionPreferencePhrases(value: string): string {
+    return value
+      .replace(/\b(?:ai|artificial intelligence)[ -]?(?:enhance|enhanced|enhancement|powered)\b/giu, ' ')
+      .replace(/\b(?:enhance|enhanced|improve|improved|optimize|optimized)\b[^.!?,;]{0,24}\b(?:with|using|by)\s+(?:ai|artificial intelligence)\b/giu, ' ')
+      .replace(/\b(?:using|use|with)\s+(?:ai|artificial intelligence)\b/giu, ' ')
+      .replace(/\b(?:and|or|with|using|by)\s*$/giu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   /**

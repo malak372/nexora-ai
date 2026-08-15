@@ -494,6 +494,14 @@ export class CommunityAiAnalysisService {
     return {
       ...analysis,
       opportunities: analysis.opportunities.map((opportunity) => {
+        const evidenceDomainName = this.resolveEvidenceBackedDomainName(
+          context,
+          opportunity.evidenceSamples,
+        );
+        if (evidenceDomainName) {
+          return { ...opportunity, domainName: evidenceDomainName };
+        }
+
         const normalized = this.normalizeComparableText(
           opportunity.domainName,
         );
@@ -640,18 +648,10 @@ export class CommunityAiAnalysisService {
 
     const primaryDomainName =
       context.selectedDomains[0]?.name ?? context.domainName ?? 'Unassigned';
-    const primaryDomainId =
-      context.selectedDomains[0]?.id ?? context.domainId;
-    const primaryDomainEvidence = context.domainEvidence.find(
-      (entry) =>
-        entry.domainId === primaryDomainId ||
-        this.normalizeComparableText(entry.domainName) ===
-          this.normalizeComparableText(primaryDomainName),
-    );
-    const corpus = this.collectEvidenceCorpus({
-      nlp: context.nlp,
-      primaryDomainEvidence: primaryDomainEvidence ?? null,
-    });
+    const corpus = this.collectEvidenceCorpus([
+      context.nlp,
+      context.domainEvidence,
+    ]);
     const selectedDomainNames = new Map(
       context.selectedDomains.map((domain) => [
         this.normalizeComparableText(domain.name),
@@ -747,11 +747,6 @@ export class CommunityAiAnalysisService {
         unmetNeed,
         repairedProblem,
       );
-      const repairedTitle = this.deriveTitle(
-        repairedProblem,
-        repairedUnmetNeed,
-        evidenceSample,
-      );
 
       const signature = this.normalizeComparableText(repairedProblem);
       if (!signature || seenSignatures.has(signature)) {
@@ -763,9 +758,17 @@ export class CommunityAiAnalysisService {
         this.firstAvailableString(record, ['domainName', 'domain']) ??
         primaryDomainName;
       const domainName =
+        this.resolveEvidenceBackedDomainName(context, [evidenceSample]) ??
         selectedDomainNames.get(
           this.normalizeComparableText(rawDomainName),
-        ) ?? primaryDomainName;
+        ) ??
+        primaryDomainName;
+      const repairedTitle = this.deriveTitle(
+        repairedProblem,
+        repairedUnmetNeed,
+        evidenceSample,
+        domainName,
+      );
       const confidence = Math.max(
         COMMUNITY_AI_ANALYSIS_MIN_OPPORTUNITY_CONFIDENCE,
         this.normalizeOptionalScore(record.confidence ?? record.aiConfidence, 45),
@@ -835,10 +838,19 @@ export class CommunityAiAnalysisService {
     );
     const unmetNeed = this.buildProfessionalFallbackNeed('', problem);
 
+    const fallbackDomainName =
+      this.resolveEvidenceBackedDomainName(context, [strongestCorpusSample]) ??
+      primaryDomainName;
+
     return [
       {
-        domainName: primaryDomainName,
-        title: this.deriveTitle(problem, unmetNeed, strongestCorpusSample),
+        domainName: fallbackDomainName,
+        title: this.deriveTitle(
+          problem,
+          unmetNeed,
+          strongestCorpusSample,
+          fallbackDomainName,
+        ),
         problem,
         unmetNeed,
         solutionArea:
@@ -893,6 +905,48 @@ export class CommunityAiAnalysisService {
       apiModelId: null,
       attemptCount,
     };
+  }
+
+  private resolveEvidenceBackedDomainName(
+    context: IdeaGenerationContext,
+    evidenceSamples: readonly string[],
+  ): string | null {
+    const normalizedSamples = evidenceSamples
+      .map((sample) => sample.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean);
+    if (normalizedSamples.length === 0) {
+      return null;
+    }
+
+    let best: { readonly domainName: string; readonly matches: number } | null = null;
+
+    for (const domainEvidence of context.domainEvidence) {
+      const corpus = this.collectEvidenceCorpus([
+        domainEvidence.samplePosts,
+        domainEvidence.sampleComments,
+      ]);
+      const matches = normalizedSamples.filter((sample) =>
+        corpus.some((corpusSample) =>
+          this.isExactOrContainedEvidenceMatch(sample, corpusSample),
+        ),
+      ).length;
+
+      if (matches > 0 && (!best || matches > best.matches)) {
+        best = { domainName: domainEvidence.domainName, matches };
+      }
+    }
+
+    if (!best) {
+      return null;
+    }
+
+    const selected = context.selectedDomains.find(
+      (domain) =>
+        this.normalizeComparableText(domain.name) ===
+        this.normalizeComparableText(best.domainName),
+    );
+
+    return selected?.name ?? best.domainName;
   }
 
   private firstAvailableString(
@@ -1061,15 +1115,25 @@ export class CommunityAiAnalysisService {
       50,
     );
 
+    const domainName = this.optionalString(
+      normalizedValue.domainName ?? normalizedValue.domain ?? normalizedValue.category,
+      'Unassigned',
+    );
+    const providerTitle = this.optionalString(
+      normalizedValue.title ?? normalizedValue.name,
+      this.deriveTitle(problem, unmetNeed, evidenceSamples[0] ?? '', domainName),
+    );
+    const title = this.normalizeOpportunityTitle(
+      domainName,
+      providerTitle,
+      problem,
+      unmetNeed,
+      evidenceSamples[0] ?? '',
+    );
+
     return {
-      domainName: this.optionalString(
-        normalizedValue.domainName ?? normalizedValue.domain ?? normalizedValue.category,
-        'Unassigned',
-      ),
-      title: this.optionalString(
-        normalizedValue.title ?? normalizedValue.name,
-        this.deriveTitle(problem, unmetNeed),
-      ),
+      domainName,
+      title,
       problem,
       unmetNeed,
       solutionArea,
@@ -1430,6 +1494,47 @@ export class CommunityAiAnalysisService {
   }
 
   /**
+   * Repairs an AI-provided title when it names an unrelated domain that is not
+   * supported by the opportunity problem/evidence. This is a repair gate rather
+   * than a failure gate, so one bad title cannot fail the generation run.
+   */
+  private normalizeOpportunityTitle(
+    domainName: string,
+    title: string,
+    problem: string,
+    unmetNeed: string,
+    evidenceSample: string,
+  ): string {
+    const normalizedDomain = this.normalizeComparableText(domainName);
+    const normalizedTitle = this.normalizeComparableText(title);
+    const semanticText = this.normalizeComparableText(
+      `${problem} ${unmetNeed} ${evidenceSample}`,
+    );
+    const titleClaimsEnergy =
+      /(?:energy|solar|electricity|power grid|energy monitoring)/u.test(
+        normalizedTitle,
+      );
+    const domainIsEnergy = /(?:^|\s)(?:energy|utilities?)(?:\s|$)/u.test(
+      normalizedDomain,
+    );
+    const evidenceSupportsEnergy =
+      /(?:energy|solar|electricity|electric|power grid|battery|energy meter|solar inverter|power plant)/u.test(
+        semanticText,
+      );
+
+    if (titleClaimsEnergy && !domainIsEnergy && !evidenceSupportsEnergy) {
+      return this.deriveTitle(
+        problem,
+        unmetNeed,
+        evidenceSample,
+        domainName,
+      );
+    }
+
+    return title;
+  }
+
+  /**
    * Builds a stable, professional title from the semantic content of the
    * retained evidence. It intentionally avoids copying an arbitrary substring
    * from the middle of a community comment.
@@ -1438,10 +1543,12 @@ export class CommunityAiAnalysisService {
     problem: string,
     unmetNeed: string,
     evidenceSample = '',
+    domainName = '',
   ): string {
     const semanticText = this.normalizeComparableText(
       `${problem} ${unmetNeed} ${evidenceSample}`,
     );
+    const normalizedDomain = this.normalizeComparableText(domainName);
 
     if (
       /(?:security|vulnerabilit|hack|breach|unsafe)/u.test(semanticText) &&
@@ -1474,8 +1581,16 @@ export class CommunityAiAnalysisService {
       return 'Accounting Software Performance and Data Persistence Failures';
     }
 
+    const hasExplicitEnergyAnchor =
+      /(?:energy|solar|electricity|electric|power grid|battery|energy meter|solar inverter|power plant)/u.test(
+        semanticText,
+      );
+    const domainIsEnergy = /(?:^|\s)(?:energy|utilities?)(?:\s|$)/u.test(
+      normalizedDomain,
+    );
+
     if (
-      /(?:energy|solar|power|telemetry|generation|monitor)/u.test(semanticText) &&
+      (domainIsEnergy || hasExplicitEnergyAnchor) &&
       /(?:offline|reconnect|connection|doesn t work|does not work|not reliable|incorrect location|unable to correct|unresponsive|error)/u.test(
         semanticText,
       )
@@ -1800,7 +1915,7 @@ export class CommunityAiAnalysisService {
       throw new Error('NLP evidence is required for grounding validation.');
     }
 
-    const corpus = this.collectEvidenceCorpus(context.nlp);
+    const corpus = this.collectEvidenceCorpus([context.nlp, context.domainEvidence]);
 
     if (corpus.length === 0) {
       throw new Error(
@@ -1902,6 +2017,7 @@ export class CommunityAiAnalysisService {
           groundedProblem,
           groundedNeed,
           primaryEvidence,
+          opportunity.domainName,
         );
 
         return [

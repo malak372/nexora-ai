@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -42,9 +43,6 @@ type AuthenticatedAdmin = {
  * - Update source metadata.
  * - Activate and deactivate sources.
  * - Synchronize implementation state with CollectorsFactory.
- *
- * Permanent deletion is intentionally not exposed because
- * historical jobs and collected posts may reference the source.
  *
  * Base route:
  * /admin/data-sources
@@ -115,6 +113,18 @@ export class AdminDataSourcesController {
   /**
    * Updates editable source metadata.
    */
+
+  @Delete(':id')
+  remove(
+    @Param('id', ParseUUIDPipe)
+    id: string,
+
+    @CurrentUser()
+    admin: AuthenticatedAdmin,
+  ) {
+    return this.dataSourcesService.remove(id, admin.id);
+  }
+
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe)

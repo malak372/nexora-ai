@@ -32,12 +32,17 @@ export class CommunityAiAnalysisPromptService {
 
 Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} concise, non-duplicated software opportunities. Opportunities may belong to different domains. When two or more domains contribute to one connected workflow, preserve them as compatible components that a later stage can combine into one cross-domain product. Return fewer rather than inventing unsupported opportunities.`,
         primaryDomain: { id: context.domainId, name: context.domainName },
+        requestDescription: context.requestDescription,
         selectedDomains: context.selectedDomains.map((domain) => ({
           id: domain.id,
           name: domain.name,
-          keywords: domain.keywords.slice(0, 6),
+          configuredKeywords: (domain.configuredKeywords ?? []).slice(0, 6),
+          effectiveSearchKeywords: (
+            domain.effectiveSearchKeywords ?? domain.keywords
+          ).slice(0, 8),
         })),
         location: context.location,
+        domainEvidencePortfolio: this.buildDomainEvidencePortfolio(context),
         requestedKeywords: context.keywords.slice(0, 12),
         evidenceRules: {
           useOnlySuppliedEvidence: true,
@@ -115,6 +120,10 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
       'Prefer complete evidence that contains both the cause/context and the user impact over short fragments from the same report.',
       'Every opportunity must include at least one verbatim evidenceSamples item copied exactly from supplied evidence.',
       'One evidence quote may ground only one opportunity. Merge equivalent complaints and keep unrelated problems separate.',
+      'For every selected domain with at least one supplied direct evidence sample, return at least one opportunity for that domain when the configured opportunity limit allows it.',
+      'Treat the requester problem-scope as a mandatory selection constraint whenever requestDescription is present. An opportunity that does not materially address that described workflow may be returned only as a fallback diagnostic and must not be presented as the primary requested opportunity.',
+      'Specific requester anchors such as homework/assignment, login/authentication, checkout/payment, or another named workflow/object must remain present in the selected problem when they are part of requestDescription; a merely same-domain problem is not sufficient.',
+      'The requester problem-scope intent is a scope constraint only and is never evidence.',
       'domainName must exactly match one selectedDomains.name value.',
       'When selected domains lack evidence, add a quality warning instead of inventing an opportunity.',
       'Location is pilot context, never proof. localEvidenceAvailable is true only when evidence explicitly names the requested location.',
@@ -261,63 +270,97 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
   private collectCanonicalEvidenceSamples(
     context: IdeaGenerationContext,
   ): readonly string[] {
-    const samples: string[] = [];
-
-    const visit = (value: unknown): void => {
-      if (typeof value === 'string') {
-        const normalized = value.replace(/\s+/gu, ' ').trim();
-        if (normalized.length >= 24) {
-          samples.push(
-            normalized.slice(0, COMMUNITY_AI_ANALYSIS_MAX_SAMPLE_LENGTH),
-          );
+    const perDomain = (context.domainEvidence ?? []).map((domain) => {
+      const samples: string[] = [];
+      const visit = (value: unknown): void => {
+        if (typeof value === 'string') {
+          const normalized = value.replace(/\s+/gu, ' ').trim();
+          if (normalized.length >= 24) {
+            samples.push(
+              normalized.slice(0, COMMUNITY_AI_ANALYSIS_MAX_SAMPLE_LENGTH),
+            );
+          }
+          return;
         }
-        return;
-      }
-
-      if (Array.isArray(value)) {
-        for (const entry of value) visit(entry);
-        return;
-      }
-
-      if (value && typeof value === 'object') {
-        const record = value as Record<string, unknown>;
-        const text =
-          record.text ?? record.content ?? record.body ?? record.sample;
-        if (typeof text === 'string') {
-          visit(text);
+        if (Array.isArray(value)) {
+          value.forEach(visit);
+          return;
         }
-      }
-    };
-
-    for (const domain of context.domainEvidence ?? []) {
+        if (value && typeof value === 'object') {
+          const record = value as Record<string, unknown>;
+          const text = record.text ?? record.content ?? record.body ?? record.sample;
+          if (typeof text === 'string') visit(text);
+        }
+      };
       visit(domain.sampleComments);
       visit(domain.samplePosts);
+      return [...new Set(samples)];
+    });
+
+    const nlpFragments = this.collectNlpEvidenceFragments(context);
+    const sorted = perDomain.map((samples) =>
+      samples
+        .map((sample) => ({
+          sample,
+          matchesNlpFragment: nlpFragments.some((fragment) =>
+            this.evidenceTextsOverlap(fragment, sample),
+          ),
+        }))
+        .sort((left, right) => {
+          if (left.matchesNlpFragment !== right.matchesNlpFragment) {
+            return left.matchesNlpFragment ? -1 : 1;
+          }
+          return right.sample.length - left.sample.length;
+        })
+        .map(({ sample }) => sample),
+    );
+
+    const result: string[] = [];
+    const seen = new Set<string>();
+    for (let index = 0; result.length < COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS; index += 1) {
+      let added = false;
+      for (const samples of sorted) {
+        const sample = samples[index];
+        if (!sample || seen.has(sample)) continue;
+        seen.add(sample);
+        result.push(sample);
+        added = true;
+        if (result.length >= COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS) break;
+      }
+      if (!added) break;
     }
 
-    const uniqueSamples = [...new Set(samples)];
-    const nlpFragments = this.collectNlpEvidenceFragments(context);
+    return result;
+  }
 
-    /*
-     * Canonical evidence that explains a fragment already present in NLP gets
-     * first priority. This prevents a long but unrelated review from consuming
-     * the bounded canonical-evidence budget while the full source text behind
-     * "So I'm unable to claim the offer" is omitted.
-     */
-    return uniqueSamples
-      .map((sample) => ({
-        sample,
-        matchesNlpFragment: nlpFragments.some((fragment) =>
-          this.evidenceTextsOverlap(fragment, sample),
-        ),
-      }))
-      .sort((left, right) => {
-        if (left.matchesNlpFragment !== right.matchesNlpFragment) {
-          return left.matchesNlpFragment ? -1 : 1;
+  private buildDomainEvidencePortfolio(
+    context: IdeaGenerationContext,
+  ): readonly {
+    readonly domainName: string;
+    readonly samples: readonly string[];
+  }[] {
+    return (context.selectedDomains ?? []).map((domain) => {
+      const profile = (context.domainEvidence ?? []).find(
+        (item) => item.domainId === domain.id ||
+          item.domainName.trim().toLocaleLowerCase() === domain.name.trim().toLocaleLowerCase(),
+      );
+      const samples: string[] = [];
+      const append = (value: unknown): void => {
+        if (!Array.isArray(value)) return;
+        for (const entry of value) {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+          const text = (entry as Record<string, unknown>).text;
+          if (typeof text !== 'string') continue;
+          const normalized = text.replace(/\s+/gu, ' ').trim();
+          if (normalized.length < 24) continue;
+          samples.push(normalized.slice(0, COMMUNITY_AI_ANALYSIS_MAX_SAMPLE_LENGTH));
+          if (samples.length >= COMMUNITY_AI_ANALYSIS_MAX_SAMPLES_PER_GROUP) break;
         }
-        return right.sample.length - left.sample.length;
-      })
-      .slice(0, COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS)
-      .map(({ sample }) => sample);
+      };
+      append(profile?.sampleComments);
+      append(profile?.samplePosts);
+      return { domainName: domain.name, samples: [...new Set(samples)] };
+    });
   }
 
   private collectNlpEvidenceFragments(

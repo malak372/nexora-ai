@@ -1,6 +1,7 @@
 import {
   BadgeDollarSign,
   CheckCircle2,
+  ChevronDown,
   CircleAlert,
   Coins,
   CreditCard,
@@ -25,11 +26,85 @@ import '../styles/admin-settings.css';
 
 const SYSTEM_SETTINGS_SCOPE = 'SYSTEM_SETTINGS';
 
+const PRICING_CURRENCIES = [
+  { code: 'USD', label: 'US Dollar', symbol: '$' },
+  { code: 'EUR', label: 'Euro', symbol: '€' },
+  { code: 'GBP', label: 'British Pound', symbol: '£' },
+  { code: 'ILS', label: 'Israeli New Shekel', symbol: '₪' },
+  { code: 'AED', label: 'UAE Dirham', symbol: 'د.إ' },
+];
+const PRICING_CURRENCY_CODES = new Set(PRICING_CURRENCIES.map((item) => item.code));
+
+function PricingCurrencyPicker({ value, onChange, disabled, error }) {
+  const [open, setOpen] = useState(false);
+  const selected = PRICING_CURRENCIES.find((currency) => currency.code === value) || PRICING_CURRENCIES[0];
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  return (
+    <div
+      className={`admin-settings-currency-picker${open ? ' is-open' : ''}${error ? ' is-error' : ''}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        className="admin-settings-currency-picker__trigger"
+        onClick={() => setOpen((current) => !current)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="admin-settings-currency-picker__symbol">{selected.symbol}</span>
+        <span className="admin-settings-currency-picker__selected">
+          <strong>{selected.code}</strong>
+          <small>{selected.label}</small>
+        </span>
+        <ChevronDown size={15} />
+      </button>
+
+      {open && (
+        <div className="admin-settings-currency-picker__menu" role="listbox" aria-label="Pricing currency">
+          {PRICING_CURRENCIES.map((currency) => {
+            const active = currency.code === selected.code;
+            return (
+              <button
+                type="button"
+                key={currency.code}
+                className={`admin-settings-currency-picker__option${active ? ' is-selected' : ''}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(currency.code);
+                  setOpen(false);
+                }}
+                role="option"
+                aria-selected={active}
+              >
+                <span className="admin-settings-currency-picker__option-symbol">{currency.symbol}</span>
+                <span className="admin-settings-currency-picker__option-copy">
+                  <strong>{currency.code}</strong>
+                  <small>{currency.label}</small>
+                </span>
+                {active && <CheckCircle2 size={15} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 const FIELD_META = {
   creditPrice: {
+    money: true,
     label: 'Credit price',
-    hint: 'USD price charged for one credit.',
-    suffix: 'USD',
+    hint: 'Price charged for one credit in the base pricing currency.',
+    suffix: 'currency',
     step: '0.01',
     min: 0.01,
   },
@@ -41,30 +116,34 @@ const FIELD_META = {
     min: 1,
   },
   directUnlockPrice: {
+    money: true,
     label: 'Direct idea unlock',
     hint: 'Direct payment to unlock advanced outputs for a free idea.',
-    suffix: 'USD',
+    suffix: 'currency',
     step: '0.01',
     min: 0.01,
   },
   premiumActivationFee: {
+    money: true,
     label: 'Premium activation fee',
     hint: 'One-time fee charged when a NORMAL account becomes Premium.',
-    suffix: 'USD',
+    suffix: 'currency',
     step: '0.01',
     min: 0,
   },
   normalAcceptancePrice: {
+    money: true,
     label: 'Normal acceptance price',
     hint: 'Fixed price for a NORMAL user to accept a publication.',
-    suffix: 'USD',
+    suffix: 'currency',
     step: '0.01',
     min: 0.01,
   },
   normalPublicationAdvancedPrice: {
+    money: true,
     label: 'Normal publication advanced',
     hint: 'Direct payment for advanced publication outputs.',
-    suffix: 'USD',
+    suffix: 'currency',
     step: '0.01',
     min: 0.01,
   },
@@ -137,12 +216,35 @@ function numericValue(value) {
   return Number.isFinite(parsed) ? parsed : value;
 }
 
+function formFromSettings(settings) {
+  return {
+    pricingCurrency: String(settings?.pricingCurrency || 'USD').toUpperCase(),
+    ...Object.fromEntries(
+      Object.keys(FIELD_META).map((key) => [key, numericValue(settings?.[key])]),
+    ),
+  };
+}
+
 function changedKeys(settings, form) {
-  return Object.keys(FIELD_META).filter((key) => Number(settings?.[key]) !== Number(form?.[key]));
+  const changed = [];
+
+  if (String(settings?.pricingCurrency || 'USD').toUpperCase() !== String(form?.pricingCurrency || '').toUpperCase()) {
+    changed.push('pricingCurrency');
+  }
+
+  Object.keys(FIELD_META).forEach((key) => {
+    if (Number(settings?.[key]) !== Number(form?.[key])) changed.push(key);
+  });
+
+  return changed;
 }
 
 function validate(form) {
   const errors = {};
+
+  if (!PRICING_CURRENCY_CODES.has(String(form.pricingCurrency || '').toUpperCase())) {
+    errors.pricingCurrency = 'Choose a supported base currency.';
+  }
 
   Object.entries(FIELD_META).forEach(([key, meta]) => {
     const value = Number(form[key]);
@@ -164,8 +266,9 @@ function validate(form) {
   return errors;
 }
 
-function SettingField({ fieldKey, value, onChange, error }) {
+function SettingField({ fieldKey, value, onChange, error, pricingCurrency }) {
   const meta = FIELD_META[fieldKey];
+  const suffix = meta.money ? pricingCurrency : meta.suffix;
 
   return (
     <label className={`admin-settings-field ${error ? 'is-error' : ''}`}>
@@ -182,7 +285,7 @@ function SettingField({ fieldKey, value, onChange, error }) {
           value={value ?? ''}
           onChange={(event) => onChange(fieldKey, event.target.value)}
         />
-        <em>{meta.suffix}</em>
+        <em>{suffix}</em>
       </span>
 
       {error && <span className="admin-settings-field__error"><CircleAlert size={12} /> {error}</span>}
@@ -218,19 +321,25 @@ function ReviewModal({ settings, form, changes, busy, onClose, onConfirm }) {
           </div>
 
           <div className="admin-settings-review__changes">
-            {changes.map((key) => (
-              <article key={key}>
-                <div>
-                  <small>{FIELD_META[key].label}</small>
-                  <strong>{settings[key]} <span>{FIELD_META[key].suffix}</span></strong>
-                </div>
-                <span>→</span>
-                <div>
-                  <small>New value</small>
-                  <strong>{form[key]} <span>{FIELD_META[key].suffix}</span></strong>
-                </div>
-              </article>
-            ))}
+            {changes.map((key) => {
+              const isCurrency = key === 'pricingCurrency';
+              const label = isCurrency ? 'Base pricing currency' : FIELD_META[key].label;
+              const oldSuffix = isCurrency ? '' : (FIELD_META[key].money ? settings.pricingCurrency : FIELD_META[key].suffix);
+              const newSuffix = isCurrency ? '' : (FIELD_META[key].money ? form.pricingCurrency : FIELD_META[key].suffix);
+              return (
+                <article key={key}>
+                  <div>
+                    <small>{label}</small>
+                    <strong>{settings[key]} {oldSuffix && <span>{oldSuffix}</span>}</strong>
+                  </div>
+                  <span>→</span>
+                  <div>
+                    <small>New value</small>
+                    <strong>{form[key]} {newSuffix && <span>{newSuffix}</span>}</strong>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </div>
 
@@ -347,9 +456,7 @@ export default function AdminSettingsPage() {
       const payload = await loader(token);
       const next = normalizeSettings(payload);
       setSettings(next);
-      setForm(Object.fromEntries(
-        Object.keys(FIELD_META).map((key) => [key, numericValue(next[key])]),
-      ));
+      setForm(formFromSettings(next));
       setFieldErrors({});
     } catch (requestError) {
       if (requestError?.response?.status === 403) {
@@ -407,7 +514,10 @@ export default function AdminSettingsPage() {
 
     try {
       const body = Object.fromEntries(
-        changes.map((key) => [key, Number(form[key])]),
+        changes.map((key) => [
+          key,
+          key === 'pricingCurrency' ? String(form[key]).toUpperCase() : Number(form[key]),
+        ]),
       );
 
       const result = await adminApi.settings.update(body, accessToken);
@@ -417,9 +527,7 @@ export default function AdminSettingsPage() {
       const next = normalizeSettings(nextPayload);
 
       setSettings(next);
-      setForm(Object.fromEntries(
-        Object.keys(FIELD_META).map((key) => [key, numericValue(next[key])]),
-      ));
+      setForm(formFromSettings(next));
       setReviewOpen(false);
       setNotice(result?.updated === false ? 'No setting values changed.' : 'System settings updated successfully.');
     } catch (requestError) {
@@ -435,9 +543,7 @@ export default function AdminSettingsPage() {
 
   const discard = () => {
     if (!settings) return;
-    setForm(Object.fromEntries(
-      Object.keys(FIELD_META).map((key) => [key, numericValue(settings[key])]),
-    ));
+    setForm(formFromSettings(settings));
     setFieldErrors({});
     setError('');
   };
@@ -461,9 +567,7 @@ export default function AdminSettingsPage() {
             if (verificationResult?.settings) {
               const next = normalizeSettings(verificationResult.settings);
               setSettings(next);
-              setForm(Object.fromEntries(
-                Object.keys(FIELD_META).map((key) => [key, numericValue(next[key])]),
-              ));
+              setForm(formFromSettings(next));
               setFieldErrors({});
               setAccessToken(token);
               setNotice('System settings unlocked.');
@@ -475,9 +579,7 @@ export default function AdminSettingsPage() {
               const payload = await adminApi.settings.get(token);
               const next = normalizeSettings(payload);
               setSettings(next);
-              setForm(Object.fromEntries(
-                Object.keys(FIELD_META).map((key) => [key, numericValue(next[key])]),
-              ));
+              setForm(formFromSettings(next));
               setFieldErrors({});
               setAccessToken(token);
               setNotice('System settings unlocked.');
@@ -541,6 +643,27 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
+      <section className="admin-settings-currency-panel">
+        <div className="admin-settings-currency-panel__copy">
+          <span><BadgeDollarSign size={18} /></span>
+          <div>
+            <small>BASE PRICING CURRENCY</small>
+            <h2>Currency used by administrator-entered prices</h2>
+            <p>Credit price, activation fee, direct unlock and publication prices below are entered in this currency. Users may still choose another supported checkout currency.</p>
+          </div>
+        </div>
+        <label className={fieldErrors.pricingCurrency ? 'is-error' : ''}>
+          <span>Pricing currency</span>
+          <PricingCurrencyPicker
+            value={form.pricingCurrency || 'USD'}
+            onChange={(currency) => onChange('pricingCurrency', currency)}
+            disabled={busy}
+            error={fieldErrors.pricingCurrency}
+          />
+          {fieldErrors.pricingCurrency && <em>{fieldErrors.pricingCurrency}</em>}
+        </label>
+      </section>
+
       <section className="admin-settings-overview">
         <header>
           <div>
@@ -557,7 +680,7 @@ export default function AdminSettingsPage() {
         <div className="admin-settings-metrics">
           <article>
             <span><BadgeDollarSign size={19} /></span>
-            <div><small>Credit price</small><strong>${Number(form.creditPrice || 0).toFixed(2)}</strong><p>Per credit</p></div>
+            <div><small>Credit price</small><strong>{Number(form.creditPrice || 0).toFixed(2)} {form.pricingCurrency}</strong><p>Per credit</p></div>
           </article>
           <article>
             <span><Sparkles size={19} /></span>
@@ -565,11 +688,11 @@ export default function AdminSettingsPage() {
           </article>
           <article>
             <span><Crown size={19} /></span>
-            <div><small>Premium activation</small><strong>${Number(form.premiumActivationFee || 0).toFixed(2)}</strong><p>Activation fee</p></div>
+            <div><small>Premium activation</small><strong>{Number(form.premiumActivationFee || 0).toFixed(2)} {form.pricingCurrency}</strong><p>Activation fee</p></div>
           </article>
           <article>
             <span><CreditCard size={19} /></span>
-            <div><small>Direct unlock</small><strong>${Number(form.directUnlockPrice || 0).toFixed(2)}</strong><p>Owned free idea</p></div>
+            <div><small>Direct unlock</small><strong>{Number(form.directUnlockPrice || 0).toFixed(2)} {form.pricingCurrency}</strong><p>Owned free idea</p></div>
           </article>
         </div>
       </section>
@@ -597,6 +720,7 @@ export default function AdminSettingsPage() {
                     value={form[fieldKey]}
                     onChange={onChange}
                     error={fieldErrors[fieldKey]}
+                    pricingCurrency={form.pricingCurrency || 'USD'}
                   />
                 ))}
               </div>

@@ -2070,9 +2070,9 @@ class _ReportReviewSheetState extends State<_ReportReviewSheet> {
 
         const SizedBox(height: 13),
 
-        // ------------------------------------------------
+       
         // NEW APPLY DECISION SECTION
-        // ------------------------------------------------
+       
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(

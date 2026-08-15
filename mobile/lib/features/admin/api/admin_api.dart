@@ -551,6 +551,16 @@ class AdminApi {
     return value;
   }
 
+  Future<Map<String, dynamic>> deleteDataSource(String id) async {
+    final value = _map(
+      await _api.delete('/admin/data-sources/$id'),
+    );
+
+    _invalidateDataSources();
+
+    return value;
+  }
+
   Future<Map<String, dynamic>> synchronizeDataSources() async {
     final value = _map(
       await _api.post('/admin/data-sources/synchronize', data: const {}),

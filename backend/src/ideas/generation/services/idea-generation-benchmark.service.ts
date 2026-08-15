@@ -166,7 +166,7 @@ type AcceptedModelAttempt = {
  * parallel so a slow provider request cannot block a faster quality-approved
  * model behind a full timeout window.
  */
-const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 3;
+const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 4;
 
 @Injectable()
 export class IdeaGenerationBenchmarkService {
@@ -1715,19 +1715,46 @@ export class IdeaGenerationBenchmarkService {
       ),
     ];
 
-    const representedSupportedDomains = supportedDomains.filter((domain) =>
-      normalized.includes(this.normalizePortfolioText(domain)),
-    );
+    const narrative = this.normalizePortfolioText([
+      parsedOutput.coreIdea.problemStatement,
+      ...parsedOutput.coreIdea.objectives,
+      parsedOutput.coreIdea.partialAbstract ?? '',
+      parsedOutput.coreIdea.limitedAbstract ?? '',
+      parsedOutput.coreIdea.fullAbstract ?? '',
+    ].join(' '));
+    const representedSupportedDomains = supportedDomains.filter((domain) => {
+      if (narrative.includes(this.normalizePortfolioText(domain))) {
+        return true;
+      }
 
-    /*
-     * A multi-domain requirement is valid only when at least two domains have
-     * both usable collected evidence and an AI-supported opportunity. Merely
-     * selecting extra domains in the request must not force the generated
-     * problem statement to mention unsupported domains.
-     */
+      const opportunities = (context.communityAiAnalysis?.opportunities ?? [])
+        .filter((item) => item.domainName.trim().toLowerCase() === domain.toLowerCase());
+      const anchorTokens = new Set(
+        opportunities
+          .flatMap((item) => [item.title, item.problem, item.unmetNeed, item.solutionArea])
+          .join(' ')
+          .toLowerCase()
+          .normalize('NFKC')
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .split(/\s+/u)
+          .filter((token) => token.length >= 5)
+          .filter((token) => !['problem', 'issue', 'issues', 'users', 'system', 'workflow', 'software', 'solution'].includes(token)),
+      );
+      let matches = 0;
+      for (const token of anchorTokens) {
+        if (narrative.includes(token)) {
+          matches += 1;
+        }
+        if (matches >= 2) {
+          return true;
+        }
+      }
+      return false;
+    });
+
     if (supportedDomains.length > 1 && representedSupportedDomains.length < 2) {
-      throw new ServiceUnavailableException(
-        `UNIFIED_PROBLEM_STATEMENT_REJECTED: a genuinely multi-domain candidate must integrate at least two evidence-backed AI-supported domains; represented ${representedSupportedDomains.length}.`,
+      this.logger.warn(
+        `Candidate cross-domain coverage is partial: ${representedSupportedDomains.length}/${supportedDomains.length} evidence-backed AI-supported domain(s) are represented. The candidate will remain eligible and the quality score will decide instead of failing the run.`,
       );
     }
 
@@ -2048,38 +2075,43 @@ export class IdeaGenerationBenchmarkService {
      */
     const isControlledSparseFallback =
       !opportunity.selectionEligible && !isDefensiveFallbackAllowed;
-    const evidenceBackedDomains = context.domainEvidence
-      .filter((evidence) => {
-        const samplePosts = Array.isArray(evidence.samplePosts)
-          ? evidence.samplePosts
-          : [];
-        const sampleComments = Array.isArray(evidence.sampleComments)
-          ? evidence.sampleComments
-          : [];
-
-        return (
-          evidence.evidenceAvailable &&
-          evidence.totalTextsAnalyzed > 0 &&
-          (samplePosts.length > 0 || sampleComments.length > 0)
-        );
-      })
-      .map((evidence) => evidence.domainName);
-    const evidenceBackedDomainSet = new Set(
-      evidenceBackedDomains.map((domainName) =>
+    const opportunityDomainName =
+      opportunity.matchedDomainNames?.[0]?.trim() ||
+      (this.isJsonObject(opportunity.raw) &&
+      typeof opportunity.raw.domainName === 'string'
+        ? opportunity.raw.domainName.trim()
+        : '');
+    const finalClaimDomains = (
+      opportunity.matchedDomainNames?.length
+        ? opportunity.matchedDomainNames
+        : opportunityDomainName
+          ? [opportunityDomainName]
+          : context.domainName
+            ? [context.domainName]
+            : []
+    ).filter((domainName, index, items) =>
+      items.findIndex(
+        (candidate) =>
+          candidate.trim().toLocaleLowerCase() ===
+          domainName.trim().toLocaleLowerCase(),
+      ) === index,
+    );
+    const finalClaimDomainSet = new Set(
+      finalClaimDomains.map((domainName) =>
         domainName.trim().toLocaleLowerCase(),
       ),
     );
-    const opportunityDomainName =
-      this.isJsonObject(opportunity.raw) &&
-      typeof opportunity.raw.domainName === 'string'
-        ? opportunity.raw.domainName.trim()
-        : '';
-    const alignedEvidenceDomains = evidenceBackedDomains.filter(
-      (domainName) =>
-        !opportunityDomainName ||
-        domainName.toLocaleLowerCase() ===
-          opportunityDomainName.toLocaleLowerCase(),
+    const forbiddenSearchDomains = context.selectedDomains
+      .map((domain) => domain.name)
+      .filter(
+        (domainName) =>
+          !finalClaimDomainSet.has(domainName.trim().toLocaleLowerCase()),
+      );
+    const crossDomainPortfolio = this.buildCrossDomainOpportunityPortfolio(
+      context,
+      ranking,
     );
+    const alignedEvidenceDomains = finalClaimDomains;
 
     if (isControlledSparseFallback) {
       this.logger.warn(
@@ -2129,6 +2161,15 @@ export class IdeaGenerationBenchmarkService {
               ),
             ]
           : []),
+        ...(crossDomainPortfolio.length > 1
+          ? [
+              '- VERIFIED CROSS-DOMAIN WINNER: the selected opportunity itself is verified across the domains below. Integrate only these domains into one coherent product workflow.',
+              '- Do not add any selected search-space domain that is absent from this verified winner portfolio.',
+              '<cross_domain_problem_portfolio>',
+              JSON.stringify(crossDomainPortfolio),
+              '</cross_domain_problem_portfolio>',
+            ]
+          : []),
         ...(!opportunity.selectionEligible
           ? [
               isControlledSparseFallback
@@ -2138,21 +2179,15 @@ export class IdeaGenerationBenchmarkService {
           : []),
         ...(alignedEvidenceDomains.length > 1
           ? [
-              `- CROSS-DOMAIN COVERAGE: combine only these independently evidence-backed domains when they form one coherent workflow: ${alignedEvidenceDomains.join(', ')}.`,
-              '- Every target-user segment, objective, and capability must map to direct retained evidence from one of those domains.',
+              `- FINAL CLAIM SPACE: the selected opportunity is verified across ${alignedEvidenceDomains.join(', ')}. Use all and only these domains in the title, problem, target users, objectives, abstracts, features, architecture examples, market discussion, and pilot participants.`,
+              `- Forbidden search-space domains for this candidate: ${forbiddenSearchDomains.join(', ') || 'none'}.`,
+              '- Every target-user segment, objective, and capability must map to retained verified evidence supporting the selected opportunity.',
             ]
           : [
-              `- DOMAIN BOUNDARY: generate for the single evidence-backed domain ${alignedEvidenceDomains[0] ?? opportunityDomainName ?? context.domainName ?? 'represented by the selected opportunity'}.`,
-              `- Do not add users, workflows, institutions, or market claims from unsupported selected domains. Unsupported selected domains are: ${context.selectedDomains
-                .map((domain) => domain.name)
-                .filter(
-                  (domainName) =>
-                    !evidenceBackedDomainSet.has(
-                      domainName.trim().toLocaleLowerCase(),
-                    ),
-                )
-                .join(', ') || 'none'}.`,
-              '- A contextual mention of a domain, organization, website, or data source is not sufficient domain evidence. Classify the problem by the affected workflow and user job.',
+              `- FINAL CLAIM SPACE: generate only for ${alignedEvidenceDomains[0] ?? opportunityDomainName ?? context.domainName ?? 'the domain represented by the selected opportunity'}.`,
+              `- Do not add users, workflows, institutions, capabilities, architecture examples, market claims, or pilot participants from these other selected search-space domains: ${forbiddenSearchDomains.join(', ') || 'none'}.`,
+              '- Separate evidence attached to a shortlisted alternative does not authorize cross-domain wording in this candidate.',
+              '- A contextual mention of a domain, organization, website, product name, or data source is not sufficient domain evidence. Classify the problem by the affected workflow and verified winner evidence.',
             ]),
         '- All candidates must solve the same supported problem portfolio, but each assigned direction must use a materially different primary user job, core workflow, and dominant capability combination.',
         '- Produce one coherent commercially viable software product, not a feature list or a minor patch.',
@@ -2373,6 +2408,93 @@ export class IdeaGenerationBenchmarkService {
     );
   }
 
+  private buildCrossDomainOpportunityPortfolio(
+    context: IdeaGenerationContext,
+    ranking: NonNullable<IdeaGenerationContext['opportunityRanking']>,
+  ): readonly {
+    readonly domainName: string;
+    readonly title: string;
+    readonly problem: string | null;
+    readonly need: string | null;
+    readonly solutionArea: string | null;
+    readonly score: number;
+    readonly evidenceSamples: readonly string[];
+  }[] {
+    const ranked = [ranking.selected];
+    const finalClaimDomains = new Set(
+      (ranking.selected.matchedDomainNames ?? [])
+        .map((name) => name.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+    const portfolio: Array<{
+      domainName: string;
+      title: string;
+      problem: string | null;
+      need: string | null;
+      solutionArea: string | null;
+      score: number;
+      evidenceSamples: readonly string[];
+    }> = [];
+
+    for (const domain of context.selectedDomains) {
+      const normalizedDomain = domain.name.trim().toLocaleLowerCase();
+      if (
+        finalClaimDomains.size > 0 &&
+        !finalClaimDomains.has(normalizedDomain)
+      ) {
+        continue;
+      }
+      const candidates = ranked
+        .filter((candidate) => {
+          const matchedByRanking = (candidate.matchedDomainNames ?? []).some(
+            (name) => name.trim().toLocaleLowerCase() === normalizedDomain,
+          );
+          const rawDomain = this.isJsonObject(candidate.raw)
+            ? candidate.raw.domainName
+            : null;
+          const matchedByRaw =
+            typeof rawDomain === 'string' &&
+            rawDomain.trim().toLocaleLowerCase() === normalizedDomain;
+
+          return (
+            (matchedByRanking || matchedByRaw) &&
+            this.resolveOpportunityEvidenceSamples(candidate).length > 0
+          );
+        })
+        .sort((left, right) => right.finalScore - left.finalScore);
+      const candidate = candidates[0];
+      if (!candidate) continue;
+      portfolio.push({
+        domainName: domain.name,
+        title: candidate.title,
+        problem: candidate.problem,
+        need: candidate.need,
+        solutionArea: candidate.solutionArea,
+        score: candidate.finalScore,
+        evidenceSamples: this.resolveOpportunityEvidenceSamples(candidate).slice(0, 2),
+      });
+    }
+
+    if (portfolio.length === 0) {
+      portfolio.push({
+        domainName:
+          ranking.selected.matchedDomainNames?.[0] ??
+          (this.isJsonObject(ranking.selected.raw) &&
+          typeof ranking.selected.raw.domainName === 'string'
+            ? ranking.selected.raw.domainName
+            : context.domainName ?? 'Selected domain'),
+        title: ranking.selected.title,
+        problem: ranking.selected.problem,
+        need: ranking.selected.need,
+        solutionArea: ranking.selected.solutionArea,
+        score: ranking.selected.finalScore,
+        evidenceSamples: this.resolveOpportunityEvidenceSamples(ranking.selected).slice(0, 2),
+      });
+    }
+
+    return portfolio;
+  }
+
   /** Builds trusted metrics used by premium-output quality validation. */
   private buildQualityContext(
     context: IdeaGenerationContext,
@@ -2392,6 +2514,10 @@ export class IdeaGenerationBenchmarkService {
       0,
     );
 
+    const winnerDomains =
+      context.opportunityRanking?.selected.matchedDomainNames?.filter(Boolean) ?? [];
+    const primaryDomainName = winnerDomains[0] ?? context.domainName;
+
     return {
       totalTextsAnalyzed: context.nlp?.totalTextsAnalyzed,
       totalPostsAnalyzed: context.nlp?.totalPostsAnalyzed,
@@ -2402,10 +2528,8 @@ export class IdeaGenerationBenchmarkService {
       targetRegion: context.location.region,
       localEvidenceVerified: this.hasVerifiedLocalEvidence(context),
       directEvidenceCount: retainedDirectEvidenceCount,
-      primaryDomainName: context.domainName,
-      secondaryDomainNames: (context.selectedDomains ?? [])
-        .map((domain) => domain.name)
-        .filter((name) => name !== context.domainName),
+      primaryDomainName,
+      secondaryDomainNames: winnerDomains.slice(1),
     };
   }
 
@@ -2417,9 +2541,12 @@ export class IdeaGenerationBenchmarkService {
 
     return [
       'Generate one specific, evidence-grounded, differentiated, locally deployable software product.',
+      context.requestDescription
+        ? `Requester intent: ${context.requestDescription}. This is a mandatory product-scope constraint for the final idea, but it is never evidence. Keep the selected product directly about the named user problem/workflow and do not substitute an easier same-domain problem. If evidence is weak, build the smallest validation-first product for this exact requester scope. If the wording asks to enhance, improve, automate, or optimize something with AI, treat AI as a preferred solution mechanism rather than a separate problem domain unless Artificial Intelligence is explicitly selected as a domain.`
+        : '',
       'Do not invent statistics, market sizes, legal conclusions, API availability, institutional counts, failure rates, or local facts.',
       'When evidence is not locally verified, describe the discovered problem generally and say that the initial pilot deployment is planned for the target location. Never write that students, faculty, institutions, or residents in the requested city currently face or report the problem.',
-      'Mark estimates and assumptions explicitly. Any inferred root cause must be labeled as suspected, plausible, or a hypothesis to validate in every section where it appears, unless direct evidence proves causation. Never convert a symptom-only report into a confirmed token, database, network, or server diagnosis. Do not invent percentage impact targets. When no validated baseline is supplied, require the pilot to establish a baseline first and then measure directional change without precommitting to a numeric percentage.',
+      'Mark estimates and assumptions explicitly. Symptom-only evidence must never be rewritten with causal verbs such as stem from, result from, caused by, or driven by. Use "Potential contributing factors to validate include ..." for inferred mechanisms unless direct evidence proves causation. Never convert a symptom-only report into a confirmed token, database, network, server, release-cycle, schema, or asset-integrity diagnosis. Do not invent percentage impact targets. When no validated baseline is supplied, require the pilot to establish a baseline first and then measure directional change without precommitting to a numeric percentage.',
       'Treat store descriptions and promotional product copy as contextual source material, never as direct proof of a user complaint or unmet need.',
       'Reject evidence from unrelated developer programs, cloud-credit claims, repository governance records, political news, and AI research reports even when they contain broad words such as student, education, platform, or system.',
       'A GitHub issue that already specifies proposed implementation, routes, components, files to modify, infrastructure, tests, phases, or expected impact is a solution blueprint, not independent community-demand evidence. Do not copy, repackage, or productize that implementation plan. Use only independent user-observed pain that remains after removing the prescribed solution.',
@@ -2428,8 +2555,8 @@ export class IdeaGenerationBenchmarkService {
         ? 'Return partialAbstract as a concise overview. Return fullAbstract as a materially richer premium document of 3-5 paragraphs covering: the evidence-grounded problem and affected workflow; the end-to-end product workflow; the main technical components and data flow; concrete user value and pilot validation; and explicit evidence limitations. Qualification language must not dominate the document, and the two abstracts must not repeat each other verbatim.'
         : context.generationType === IdeaGenerationType.GUEST_FREE
           ? 'Return limitedAbstract and partialAbstract only. Do not return fullAbstract or advancedOutputs for guest generation.'
-          : 'Return partialAbstract only. Do not return fullAbstract or advancedOutputs for NORMAL_FREE generation.',
-      'Preserve every used opportunity as an immutable evidence unit: its title, problem, need, solution area, severity, frequency, domain label, and evidence samples must remain mutually consistent. Multiple units may be combined only when they form one coherent workflow.',
+          : 'For NORMAL_FREE, return exactly these root keys and no others: title, problemStatement, objectives, targetUsers, partialAbstract. Never return limitedAbstract, fullAbstract, advancedOutputs, businessModel, technologyStack, systemArchitecture, budgetEstimation, implementationTimeline, feasibilityAssessment, marketPotential, valueProposition, localRegulations, or any premium-only field.',
+      'Preserve the assigned opportunity as the immutable evidence unit for the candidate: its title, problem, need, solution area, severity, frequency, verified matched domains, and retained evidence must remain mutually consistent. Do not merge a separate shortlisted opportunity into the candidate unless that opportunity is the explicit candidate-specific assignment.',
       'The final problemStatement must be one coherent problem-only narrative. Use only domains that have retained direct evidence in domainEvidence. A selected domain with zero retained posts and comments must not appear in targetUsers, objectives, abstracts, market claims, or advanced outputs.',
       'Classify domain alignment by the affected user workflow and unmet need, not by incidental words naming a government website, school, city, company, repository, or source system.',
       'A cybersecurity incident such as ransomware, deletion by an attacker, or a data breach is not evidence of ordinary synchronization failure, network timeout, or storage-choice demand. Do not reinterpret security incidents as product reliability evidence.',

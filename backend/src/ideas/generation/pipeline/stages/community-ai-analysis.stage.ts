@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+import { COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES } from '../../constants/community-ai-analysis.constants';
+
 import {
   findIdeaGenerationStageDefinition,
   IDEA_GENERATION_STAGE_KEYS,
@@ -19,6 +21,7 @@ import type {
   IdeaGenerationContext,
   IdeaGenerationNlpContext,
 } from '../../types/idea-generation-context.type';
+import { classifyDirectCommunityEvidence } from '../../../../nlp/common/utils/community-evidence.util';
 
 /**
  * Enriches cleaned NLP output with evidence-grounded opportunities extracted
@@ -54,11 +57,12 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       };
     }
 
-    const analysis =
+    const baseAnalysis =
       context.nlp.totalTextsAnalyzed > 0
         ? (await this.communityAiAnalysisService.analyze(context)) ??
           this.buildFallbackAnalysis(context)
         : this.buildFallbackAnalysis(context);
+    const analysis = this.ensureSelectedDomainCoverage(context, baseAnalysis);
 
     const enrichedNlp: IdeaGenerationNlpContext = {
       ...context.nlp,
@@ -160,6 +164,96 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
    * intentionally not assignable to `JsonValue`. Building a `JsonArray` here
    * keeps the generation context type-safe without weakening its contract.
    */
+  private ensureSelectedDomainCoverage(
+    context: IdeaGenerationContext,
+    analysis: CommunityAiAnalysis,
+  ): CommunityAiAnalysis {
+    const represented = new Set(
+      analysis.opportunities.map((item) =>
+        item.domainName.trim().toLocaleLowerCase(),
+      ),
+    );
+    const fallback = this.buildFallbackAnalysis(context);
+    const additions = fallback.opportunities.filter((item) => {
+      const key = item.domainName.trim().toLocaleLowerCase();
+      return !represented.has(key) && item.evidenceSamples.length > 0;
+    });
+    const opportunities = [...analysis.opportunities];
+    for (const item of additions) {
+      if (opportunities.length >= COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES) break;
+      opportunities.push(item);
+      represented.add(item.domainName.trim().toLocaleLowerCase());
+    }
+    const missingEvidenceDomains = context.selectedDomains
+      .filter((domain) => {
+        const key = domain.name.trim().toLocaleLowerCase();
+        if (represented.has(key)) return false;
+        const profile = context.domainEvidence.find(
+          (item) => item.domainId === domain.id,
+        );
+        const posts = Array.isArray(profile?.samplePosts) ? profile.samplePosts.length : 0;
+        const comments = Array.isArray(profile?.sampleComments) ? profile.sampleComments.length : 0;
+        return posts + comments === 0;
+      })
+      .map((domain) => domain.name);
+    const qualityWarnings = analysis.qualityWarnings.filter(
+      (warning) => !this.isProviderDomainCoverageWarning(warning, context),
+    );
+
+    return {
+      ...analysis,
+      opportunities,
+      dominantProblems: opportunities.map((item) => item.problem),
+      unmetNeeds: opportunities.map((item) => item.unmetNeed),
+      qualityWarnings: [
+        ...qualityWarnings,
+        ...(additions.length > 0
+          ? [`Added ${additions.length} retained-evidence fallback opportunity candidate(s) so selected domains with direct evidence remain represented.`]
+          : []),
+        ...(missingEvidenceDomains.length > 0
+          ? [`No direct retained evidence was available for selected domain(s): ${missingEvidenceDomains.join(', ')}.`]
+          : []),
+      ],
+    };
+  }
+
+  private isProviderDomainCoverageWarning(
+    warning: string,
+    context: IdeaGenerationContext,
+  ): boolean {
+    const normalized = warning
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    const describesMissingEvidence =
+      /(?:lack|lacked|lacks|missing|without|unavailable|no)\b.*\bevidence\b/u.test(
+        normalized,
+      ) ||
+      /\bevidence\b.*\b(?:lack|lacked|lacks|missing|unavailable)\b/u.test(
+        normalized,
+      );
+
+    if (!describesMissingEvidence) {
+      return false;
+    }
+
+    const selectedDomainMentioned = context.selectedDomains.some((domain) =>
+      normalized.includes(
+        domain.name
+          .normalize('NFKC')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .replace(/\s+/gu, ' ')
+          .trim(),
+      ),
+    );
+
+    return selectedDomainMentioned || normalized.includes('selected domain');
+  }
+
   private toNlpOpportunities(
     opportunities: readonly CommunityAiOpportunity[],
   ): Prisma.JsonArray {
@@ -451,33 +545,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     value: string,
     sourceType: 'POST' | 'COMMENT',
   ): boolean {
-    const normalized = value.replace(/\s+/gu, ' ').trim().toLowerCase();
-    const hasProblemSignal =
-      /\b(?:cannot|can'?t|cant|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|unexpected (?:cost|bill)|billing|charged|need|needs|should|please add|feature request|wish|is it possible|can i|could i|how can i|why can'?t i)\b/iu.test(
-        normalized,
-      );
-
-    if (!hasProblemSignal) return false;
-
-    const publisherOrPromotional =
-      /https?:\/\//iu.test(normalized) ||
-      /\b(?:check out|download|install|app review|review of|subscribe|link in (?:the )?description|use my code|sponsored|available now|try it|watch the full|tutorial|guide|best .* tools?)\b/iu.test(
-        normalized,
-      );
-
-    if (sourceType === 'POST') {
-      const firstPersonComplaint =
-        /\b(?:i|we|my|our)\b/iu.test(normalized) &&
-        /\b(?:cannot|can'?t|unable|error|fail|broken|problem|issue|bug|missing|wrong|unsafe|security|privacy|billing|charged|cost|need)\b/iu.test(
-          normalized,
-        );
-      return firstPersonComplaint && !publisherOrPromotional;
-    }
-
-    return !publisherOrPromotional ||
-      /\b(?:cannot|can'?t|unable|error|fail|broken|problem|issue|bug|missing|wrong|unsafe|security|privacy|billing|charged|cost|need|should)\b/iu.test(
-        normalized,
-      );
+    return classifyDirectCommunityEvidence(value, sourceType) !== 'NONE';
   }
 
   private scoreFallbackEvidence(

@@ -439,15 +439,9 @@ export class IdeaGenerationPipelineService {
       return;
     }
 
-    throw new ConflictException({
-      code: 'IDEA_GENERATION_HARD_DEADLINE_EXCEEDED',
-      message:
-        `Generation run "${runId}" reached its hard safety deadline before stage "${stageKey}".`,
-      details: {
-        stageKey,
-        remainingMs: Math.max(0, remainingMs),
-      },
-    });
+    this.logger.warn(
+      `Generation run "${runId}" exceeded the ${IDEA_GENERATION_EXECUTION_DEADLINE_MS}ms performance target before stage "${stageKey}". The run will continue to a durable terminal state.`,
+    );
   }
 
   /**
@@ -840,29 +834,12 @@ export class IdeaGenerationPipelineService {
     const remainingExecutionMs = deadlineAt - Date.now() - reserveMs;
 
     if (remainingExecutionMs <= 0) {
-      throw this.createStageDeadlineError(stageKey, remainingExecutionMs);
+      this.logger.warn(
+        `Stage "${stageKey}" started after the fast-pipeline performance budget was exhausted. Stage-local provider and database timeouts remain authoritative.`,
+      );
     }
 
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-
-    try {
-      return await Promise.race([
-        this.stageService.executeStage(input),
-        new Promise<never>((_resolve, reject) => {
-          timeoutHandle = setTimeout(() => {
-            reject(
-              this.createStageDeadlineError(stageKey, remainingExecutionMs),
-            );
-          }, remainingExecutionMs);
-
-          timeoutHandle.unref?.();
-        }),
-      ]);
-    } finally {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
-    }
+    return this.stageService.executeStage(input);
   }
 
   /**
@@ -878,22 +855,6 @@ export class IdeaGenerationPipelineService {
     );
   }
 
-  /** Creates one consistent deadline error for stage and run tracking. */
-  private createStageDeadlineError(
-    stageKey: IdeaGenerationStageKey,
-    remainingExecutionMs: number,
-  ): ConflictException {
-    return new ConflictException({
-      code: 'IDEA_GENERATION_STAGE_DEADLINE_EXCEEDED',
-      message:
-        `Stage "${stageKey}" exceeded the remaining fast-pipeline budget. ` +
-        'The run was not marked completed because a persisted final idea is required.',
-      details: {
-        stageKey,
-        remainingExecutionMs: Math.max(0, remainingExecutionMs),
-      },
-    });
-  }
 
   /**
    * Marks a stage as running and records the current attempt.

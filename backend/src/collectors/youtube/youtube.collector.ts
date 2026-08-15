@@ -288,7 +288,10 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
 
     return CollectorQueryBuilderUtil.buildYouTubeAnchoredQueries({
       domainName: input.domainName,
-      userKeywords: input.keywords,
+      userKeywords: [
+        ...(input.domainKeywords ?? []),
+        ...(input.keywords ?? []),
+      ],
       maxQueries: isBoundedMode ? 3 : this.maxSearchQueries,
     });
   }

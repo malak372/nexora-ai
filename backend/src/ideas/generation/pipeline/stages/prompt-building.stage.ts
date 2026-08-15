@@ -101,6 +101,8 @@ export class PromptBuildingStage implements IdeaGenerationStage {
           ? context.owner.userId
           : undefined,
 
+      requestDescription: context.requestDescription,
+
       opportunityRanking: context.opportunityRanking ?? undefined,
 
       selectedDomains: context.selectedDomains,

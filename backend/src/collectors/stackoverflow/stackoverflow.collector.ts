@@ -283,7 +283,13 @@ export class StackOverflowCollector
     const technicalQueries =
       CollectorQueryBuilderUtil.buildStackOverflowTechnicalQueries({
         domainName: input.domainName,
-        maxQueries: isBoundedMode ? 1 : 6,
+        userKeywords: [
+          ...(input.domainKeywords ?? []),
+          ...(input.keywords ?? []),
+        ],
+        // The queries execute concurrently, so three selected-domain anchors
+        // improve recall without creating three sequential network waits.
+        maxQueries: isBoundedMode ? 3 : 6,
       });
 
     return technicalQueries.map((query, index) =>

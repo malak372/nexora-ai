@@ -21,6 +21,10 @@ const FAMILIES: ReadonlyArray<{
   readonly label: string;
   readonly pattern: RegExp;
 }> = [
+  { key: 'invoice-expense-operations', label: 'Invoice and Expense Processing Friction', pattern: /\b(?:invoice processing|invoice approval|invoice mismatch|expense report|expense claim|expense management|reimbursement|accounts payable|accounts receivable)\b/iu },
+  { key: 'financial-reconciliation', label: 'Financial Reconciliation and Accounting Friction', pattern: /\b(?:accounting|bookkeeping|reconciliation|ledger|month[- ]end close|financial close|cash flow)\b/iu },
+  { key: 'payroll-procurement', label: 'Payroll and Procurement Workflow Friction', pattern: /\b(?:payroll|procurement|purchase order|vendor approval|supplier approval)\b/iu },
+  { key: 'administrative-back-office', label: 'Administrative Back-Office Workflow Friction', pattern: /\b(?:approval workflow|administrative workflow|administrative process|back office|manual data entry|manual entry)\b/iu },
   { key: 'billing-payment', label: 'Billing and Payment Failures', pattern: /\b(?:payment|checkout|card|charged|charge|billing|bill|invoice|transaction|refund|price|cost|paywall|subscription)\b/iu },
   { key: 'outage-reliability', label: 'Service Outage and Reliability Failures', pattern: /\b(?:outage|power cut|service down|downtime|offline|unavailable|blackout|disconnect(?:ed|ion)?|interruption)\b/iu },
   { key: 'authentication', label: 'Login and Account Access Failures', pattern: /\b(?:login|log in|authentication|activation|verification|sign in|password|session expired|token|otp|account access)\b/iu },

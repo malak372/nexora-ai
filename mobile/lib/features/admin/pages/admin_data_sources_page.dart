@@ -1360,6 +1360,7 @@ class _DataSourceDetailSheetState extends State<_DataSourceDetailSheet> {
   late Map<String, dynamic> _item;
   bool _loading = false;
   bool _changingStatus = false;
+  bool _deleting = false;
   bool _changed = false;
 
   @override
@@ -1410,6 +1411,164 @@ class _DataSourceDetailSheetState extends State<_DataSourceDetailSheet> {
       );
     } finally {
       if (mounted) setState(() => _changingStatus = false);
+    }
+  }
+
+  Future<void> _delete() async {
+    if (_deleting) return;
+
+    final id = _string(_item['id']);
+    if (id.isEmpty) return;
+
+    final usage = _item['usage'] is Map
+        ? Map<String, dynamic>.from(_item['usage'] as Map)
+        : <String, dynamic>{};
+    final collectionJobs = _toInt(usage['collectionJobs']);
+    final socialPosts = _toInt(usage['socialPosts']);
+    final inUse = collectionJobs > 0 || socialPosts > 0;
+
+    if (inUse) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'This source is used by $collectionJobs collection job${collectionJobs == 1 ? '' : 's'} and $socialPosts collected post${socialPosts == 1 ? '' : 's'}. Deactivate it instead.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: AppColors.primaryDeep.withValues(alpha: .24),
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 22),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: AppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryDeep.withValues(alpha: .12),
+                  blurRadius: 30,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceRose,
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: const Icon(
+                        Icons.delete_outline_rounded,
+                        color: AppColors.pinkDeep,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'DELETE DATA SOURCE',
+                            style: TextStyle(
+                              color: AppColors.pinkDeep,
+                              fontSize: 7.8,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            _string(_item['displayName'], fallback: _string(_item['key'])),
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'This permanently removes the source from the administrator registry. This action cannot be undone.',
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 9.2,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.pinkDeep,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.delete_outline_rounded, size: 17),
+                        label: const Text('Delete'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || confirmed != true) return;
+
+    setState(() => _deleting = true);
+
+    try {
+      final result = await _api.deleteDataSource(id);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _string(result['message'], fallback: 'Data source deleted successfully.'),
+          ),
+        ),
+      );
+
+      Navigator.pop(context, true);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
   }
 
@@ -1723,23 +1882,31 @@ class _DataSourceDetailSheetState extends State<_DataSourceDetailSheet> {
                 Container(
                   padding: const EdgeInsets.all(11),
                   decoration: BoxDecoration(
-                    color: AppColors.background.withValues(alpha: .72),
+                    color: (_toInt(usage['collectionJobs']) > 0 || _toInt(usage['socialPosts']) > 0)
+                        ? AppColors.surfaceRose
+                        : AppColors.primarySoft.withValues(alpha: .55),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: AppColors.border),
                   ),
-                  child: const Row(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.history_toggle_off_rounded,
+                        (_toInt(usage['collectionJobs']) > 0 || _toInt(usage['socialPosts']) > 0)
+                            ? Icons.lock_outline_rounded
+                            : Icons.delete_sweep_outlined,
                         size: 15,
-                        color: AppColors.primaryDark,
+                        color: (_toInt(usage['collectionJobs']) > 0 || _toInt(usage['socialPosts']) > 0)
+                            ? AppColors.pinkDeep
+                            : AppColors.primaryDark,
                       ),
-                      SizedBox(width: 7),
+                      const SizedBox(width: 7),
                       Expanded(
                         child: Text(
-                          'Permanent deletion is intentionally unavailable because historical collection jobs and collected records may reference this source.',
-                          style: TextStyle(
+                          (_toInt(usage['collectionJobs']) > 0 || _toInt(usage['socialPosts']) > 0)
+                              ? 'Deletion is blocked because this source is referenced by historical collection data. You can deactivate it without removing evidence history.'
+                              : 'This source has no historical collection references and can be permanently deleted from the registry.',
+                          style: const TextStyle(
                             color: AppColors.textMuted,
                             fontSize: 8.2,
                             height: 1.35,
@@ -1757,7 +1924,7 @@ class _DataSourceDetailSheetState extends State<_DataSourceDetailSheet> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _changingStatus
+                  onPressed: _changingStatus || _deleting
                       ? null
                       : () => _toggleStatus(!active),
                   icon: Icon(
@@ -1772,7 +1939,7 @@ class _DataSourceDetailSheetState extends State<_DataSourceDetailSheet> {
               const SizedBox(width: 8),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _edit,
+                  onPressed: _deleting ? null : _edit,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primarySoft,
                     foregroundColor: AppColors.primaryDark,
@@ -1783,6 +1950,40 @@ class _DataSourceDetailSheetState extends State<_DataSourceDetailSheet> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: (_toInt(usage['collectionJobs']) > 0 ||
+                          _toInt(usage['socialPosts']) > 0 ||
+                          _deleting)
+                  ? null
+                  : _delete,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.pinkDeep,
+                side: BorderSide(
+                  color: AppColors.pinkDeep.withValues(alpha: .24),
+                ),
+                backgroundColor: AppColors.surfaceRose.withValues(alpha: .5),
+              ),
+              icon: _deleting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.pinkDeep,
+                      ),
+                    )
+                  : const Icon(Icons.delete_outline_rounded, size: 17),
+              label: Text(
+                (_toInt(usage['collectionJobs']) > 0 ||
+                        _toInt(usage['socialPosts']) > 0)
+                    ? 'Source is in use'
+                    : 'Delete data source',
+              ),
+            ),
           ),
         ],
       ),

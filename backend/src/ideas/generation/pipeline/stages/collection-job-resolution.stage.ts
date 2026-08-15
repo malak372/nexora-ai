@@ -88,9 +88,14 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         this.buildFastEvidenceForDomain(
           result.fastEvidenceInputs ?? [],
           domain,
-          domain.id === primaryDomain.id,
+          domains,
         ),
       ]),
+    );
+
+    const canonicalDirectNlpEvidence = this.buildCanonicalDirectNlpEvidence(
+      nlp,
+      result.fastEvidenceInputs ?? [],
     );
 
     const domainEvidence = domains.map((domain) => {
@@ -104,7 +109,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       const analyzedDomainEvidence = this.buildAnalyzedEvidenceForDomain(
         nlp.analyzedTexts,
         domain,
-        domain.id === primaryDomain.id,
+        domains,
       );
 
       const fastDomainEvidence = fastEvidenceByDomain.get(domain.id) ?? {
@@ -115,13 +120,12 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         fastDomainEvidence.posts,
         analyzedDomainEvidence.posts.length > 0
           ? analyzedDomainEvidence.posts
-          : this.filterEvidenceForDomain(nlp.samplePosts, domain),
+          : this.filterEvidenceForDomain(nlp.samplePosts, domain, domains),
         10,
       );
-      const canonicalNlpComments =
-        domain.id === primaryDomain.id
-          ? this.buildCanonicalDirectNlpEvidence(nlp, result.fastEvidenceInputs ?? [])
-          : [];
+      const canonicalNlpComments = canonicalDirectNlpEvidence.filter((item) =>
+        this.evidenceBelongsToDomain(item.text, domain, domains),
+      );
       const sampleComments = this.mergeRepresentativeEvidence(
         [
           ...canonicalNlpComments,
@@ -129,7 +133,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         ],
         (analyzedDomainEvidence.comments.length > 0
           ? analyzedDomainEvidence.comments
-          : this.filterEvidenceForDomain(nlp.sampleComments, domain)
+          : this.filterEvidenceForDomain(nlp.sampleComments, domain, domains)
         ).filter((value) =>
           this.isRepresentativeProblemEvidence(this.extractEvidenceText(value)),
         ),
@@ -253,7 +257,13 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       resolvedDomain: {
         id: primaryDomain.id,
         name: primaryDomain.name,
-        keywords: primaryDomain.keywords,
+        /*
+         * Keep the persisted primary domain identity, but expose a balanced
+         * vocabulary from every selected domain to collectors. This fixes the
+         * old behavior where collectors received only the first domain even
+         * though the request selected two or three domains.
+         */
+        keywords: this.buildBalancedDomainVocabulary(domains),
       },
       resolvedDataSources: context.selectedDataSources.map((source) => ({
         id: source.id,
@@ -307,43 +317,118 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     domains: readonly SelectedGenerationDomain[],
   ): string[] {
+    const balanced: string[] = [];
+    const addUnique = (value: string | null | undefined) => {
+      const trimmed = value?.trim();
+
+      if (!trimmed) {
+        return;
+      }
+
+      const normalized = this.normalizeTerm(trimmed);
+
+      if (
+        !balanced.some(
+          (candidate) => this.normalizeTerm(candidate) === normalized,
+        )
+      ) {
+        balanced.push(trimmed);
+      }
+    };
+
+    // The literal requester problem always receives the first search slot.
+    addUnique(this.buildEvidenceSearchIntent(context.requestDescription));
+
     /*
-     * Every selected domain receives the same bounded query budget. This keeps
-     * one unified parallel collector wave (fast) while preventing the primary
-     * domain from monopolizing all searches.
+     * Reserve the next slots for one explicit anchor from every selected
+     * domain before adding generic/request expansion. This guarantees that a
+     * 3-domain request cannot spend the entire FAST_GENERATION budget on the
+     * first domain.
      */
+    for (const domain of domains) {
+      addUnique(domain.name);
+    }
+
+    // Keep direct requester terms near the front without sacrificing one slot
+    // per selected domain. In text-only requests these terms are the strongest
+    // available intent signal.
+    for (const keyword of context.keywords.slice(0, 4)) {
+      addUnique(keyword);
+    }
+
     const buckets = domains.map((domain) => {
-      const focused = this.buildProblemFocusedQueries(domain).slice(0, 2);
-      const specific = this.selectSpecificDomainTerms(domain, 3);
-      return [domain.name, ...focused, ...specific];
+      const focused = this.buildProblemFocusedQueries(domain).slice(0, 3);
+      const specific = this.selectSpecificDomainTerms(domain, 4);
+      return [domain.name, ...specific, ...focused];
     });
 
-    const balanced: string[] = [];
-    for (let index = 0; balanced.length < 15; index += 1) {
+    for (let index = 1; balanced.length < 14; index += 1) {
       let added = false;
+
       for (const bucket of buckets) {
         const value = bucket[index];
         if (!value) continue;
+        const before = balanced.length;
+        addUnique(value);
+        added = added || balanced.length > before;
+        if (balanced.length >= 14) break;
+      }
+
+      if (!added) break;
+    }
+
+    // Fill the remaining budget with the orchestrator's request-first terms.
+    for (const keyword of context.keywords) {
+      if (balanced.length >= 20) break;
+      addUnique(keyword);
+    }
+
+    return balanced.slice(0, 20);
+  }
+
+  /**
+   * Creates a round-robin domain vocabulary for collectors that still consume
+   * resolvedDomain.keywords. Domain names are emitted first, followed by each
+   * domain's configured terms in layers, so secondary domains are never hidden
+   * behind a primary-domain flatMap().slice().
+   */
+  private buildBalancedDomainVocabulary(
+    domains: readonly SelectedGenerationDomain[],
+  ): string[] {
+    const output: string[] = [];
+    const seen = new Set<string>();
+    const buckets = domains.map((domain) => [domain.name, ...domain.keywords]);
+
+    for (let index = 0; output.length < 24; index += 1) {
+      let added = false;
+      for (const bucket of buckets) {
+        const value = bucket[index]?.trim();
+        if (!value) continue;
         const normalized = this.normalizeTerm(value);
-        if (!balanced.some((candidate) => this.normalizeTerm(candidate) === normalized)) {
-          balanced.push(value.trim());
-        }
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+        output.push(value);
         added = true;
-        if (balanced.length >= 15) break;
+        if (output.length >= 24) break;
       }
       if (!added) break;
     }
 
-    // Keep a very small requester-keyword tail for explicit user intent.
-    for (const keyword of context.keywords.slice(0, 4)) {
-      if (balanced.length >= 18) break;
-      const normalized = this.normalizeTerm(keyword);
-      if (!balanced.some((candidate) => this.normalizeTerm(candidate) === normalized)) {
-        balanced.push(keyword.trim());
-      }
+    return output;
+  }
+
+  private buildEvidenceSearchIntent(value: string | null | undefined): string {
+    if (!value) {
+      return '';
     }
 
-    return balanced;
+    return value
+      .replace(/\b(?:ai|artificial intelligence)[ -]?(?:enhance|enhanced|enhancement|powered)\b/giu, ' ')
+      .replace(/\b(?:enhance|enhanced|improve|improved|optimize|optimized)\b[^.!?,;]{0,24}\b(?:with|using|by)\s+(?:ai|artificial intelligence)\b/giu, ' ')
+      .replace(/\b(?:using|use|with)\s+(?:ai|artificial intelligence)\b/giu, ' ')
+      .replace(/\b(?:and|or|with|using|by)\s*$/giu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
 
@@ -410,7 +495,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
           const tokens = normalized.split(/\s+/u).filter(Boolean);
           const phraseBonus = Math.min(tokens.length, 4) * 5;
           const specificSignal =
-            /\b(?:content creation|video streaming|music streaming|podcasting|digital publishing|social media|content moderation|audience analytics|creator economy|gaming|live streaming|interactive media|public service|municipal|urban mobility|traffic|waste|energy|citizen service)\b/iu.test(
+            /\b(?:content creation|video streaming|music streaming|podcasting|digital publishing|social media|content moderation|audience analytics|creator economy|gaming|live streaming|interactive media|public service|municipal|urban mobility|traffic|waste|energy|citizen service|administrative operations|office administration|approval workflow|document workflow|back office operations|business operations|invoice|expense|reconciliation|payroll|procurement)\b/iu.test(
               normalized,
             )
               ? 25
@@ -468,7 +553,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       readonly isComplaintEvidence?: boolean;
     }[],
     domain: SelectedGenerationDomain,
-    isPrimaryDomain: boolean,
+    domains: readonly SelectedGenerationDomain[],
   ): {
     readonly posts: unknown[];
     readonly comments: unknown[];
@@ -486,10 +571,9 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       })
       .filter(({ input, text }) => {
         if (!text) return false;
-        const domainMatched =
-          this.textMatchesDomain(text, domain) ||
-          (isPrimaryDomain && this.textHasSpecificDomainAnchor(text, domain));
-        if (!domainMatched) return false;
+        if (!this.evidenceBelongsToDomain(text, domain, domains)) {
+          return false;
+        }
 
         return (
           input.isComplaintEvidence === true ||
@@ -724,10 +808,10 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
    * analyzed-text records returned by the in-memory NLP pipeline.
    *
    * The unified collection job uses merged keywords from all selected domains.
-   * A text is assigned to a domain only when its content matches that domain's
-   * strong terms. When no selected-domain term can be resolved at all, the
-   * primary domain receives the analyzed corpus because it owns the unified
-   * collection job; secondary domains remain evidence-free.
+   * A text is assigned to a domain when it matches either two strong domain
+   * terms or one non-generic specific domain anchor. This keeps attribution
+   * honest while allowing secondary domains with sparse DB keywords to retain
+   * evidence found by their own search anchors.
    */
   private buildAnalyzedEvidenceForDomain(
     analyzedTexts: readonly {
@@ -739,7 +823,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       readonly sentiment: string;
     }[],
     domain: SelectedGenerationDomain,
-    isPrimaryDomain: boolean,
+    domains: readonly SelectedGenerationDomain[],
   ): {
     readonly posts: Array<{
       readonly id: string;
@@ -753,24 +837,13 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       readonly sentiment: string;
     }>;
   } {
-    const matching = analyzedTexts.filter((item) =>
-      this.textMatchesDomain(
+    const resolved = analyzedTexts.filter((item) =>
+      this.evidenceBelongsToDomain(
         `${item.originalText} ${item.cleanedText}`,
         domain,
+        domains,
       ),
     );
-
-    const resolved =
-      matching.length > 0
-        ? matching
-        : isPrimaryDomain
-          ? analyzedTexts.filter((item) =>
-              this.textHasSpecificDomainAnchor(
-                `${item.originalText} ${item.cleanedText}`,
-                domain,
-              ),
-            )
-          : [];
 
     const representative = resolved.filter((item) =>
       this.isRepresentativeProblemEvidence(
@@ -829,141 +902,195 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
   }
 
   /**
-   * A one-term fallback used only when the strict two-term domain matcher
-   * produced no evidence for the primary domain. Generic cross-domain words
-   * are excluded so unrelated comments cannot inherit the primary domain.
+   * One-specific-term fallback used when the strict two-term matcher produced
+   * no evidence for a selected domain. Generic cross-domain words are excluded
+   * so secondary domains gain recall without inheriting unrelated comments.
    */
-  private textHasSpecificDomainAnchor(
+  private evidenceBelongsToDomain(
     value: string,
     domain: SelectedGenerationDomain,
+    domains: readonly SelectedGenerationDomain[],
   ): boolean {
-    const text = this.normalizeTerm(value);
-    if (!text) return false;
+    const scores = domains.map((candidate) => ({
+      domain: candidate,
+      score: this.calculateEvidenceDomainScore(value, candidate),
+    }));
+    const targetScore =
+      scores.find((item) => item.domain.id === domain.id)?.score ?? 0;
+    const bestScore = Math.max(0, ...scores.map((item) => item.score));
 
-    const domainName = this.normalizeTerm(domain.name);
-    if (domainName.length >= 4 && text.includes(domainName)) return true;
-
-    const genericTerms = new Set([
-      'privacy',
-      'secure',
-      'security',
-      'data',
-      'system',
-      'platform',
-      'application',
-      'software',
-      'monitoring',
-      'management',
-      'analytics',
-      'integration',
-      'smart',
-      'technology',
-      'digital',
-      'online',
-      'optimization',
-      'automation',
-      'prediction',
-      'recommendation',
-      'workflow',
-    ]);
-
-    return domain.keywords
-      .map((term) => this.normalizeTerm(term))
-      .filter(
-        (term) =>
-          term.length >= 5 &&
-          !genericTerms.has(term) &&
-          !term.endsWith(' platform') &&
-          !term.endsWith(' system') &&
-          !term.endsWith(' application') &&
-          !term.endsWith(' software'),
-      )
-      .some((term) => text.includes(term));
+    return (
+      targetScore >= 0.28 &&
+      targetScore >= bestScore - 0.12
+    );
   }
 
-  private textMatchesDomain(
+  private calculateEvidenceDomainScore(
     value: string,
     domain: SelectedGenerationDomain,
-  ): boolean {
-    const text = this.normalizeTerm(value);
-    if (!text) return false;
+  ): number {
+    const marker = value.match(/\bCommunity comment:\s*/iu);
+    const body = marker && marker.index !== undefined
+      ? value.slice(marker.index + marker[0].length)
+      : value;
+    const context = marker && marker.index !== undefined
+      ? value.slice(0, marker.index)
+      : '';
+    const bodyScore = this.calculateTextDomainSemanticScore(body, domain);
+    const contextScore = this.calculateTextDomainSemanticScore(context, domain);
 
-    const domainName = this.normalizeTerm(domain.name);
-    if (domainName.length >= 4 && text.includes(domainName)) {
-      return true;
+    if (bodyScore >= 0.28) {
+      return Math.min(1, bodyScore + contextScore * 0.08);
     }
 
-    const genericTerms = new Set([
-      'privacy',
-      'secure',
-      'security',
-      'data',
-      'system',
+    return Math.min(1, Math.max(bodyScore, contextScore * 0.55));
+  }
+
+  private calculateTextDomainSemanticScore(
+    value: string,
+    domain: SelectedGenerationDomain,
+  ): number {
+    const text = this.normalizeTerm(value)
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!text) return 0;
+
+    const domainName = this.normalizeTerm(domain.name)
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (domainName.length >= 3 && this.containsSemanticTerm(text, domainName)) {
+      return 1;
+    }
+
+    const terms = this.buildDomainSemanticTerms(domain);
+    const matched = terms.filter((term) =>
+      this.containsSemanticTerm(text, term),
+    );
+
+    if (matched.length >= 3) return 0.92;
+    if (matched.length === 2) return 0.78;
+    if (matched.length === 1) {
+      const term = matched[0];
+      return term.includes(' ') ? 0.68 : 0.5;
+    }
+
+    return 0;
+  }
+
+  private buildDomainSemanticTerms(
+    domain: SelectedGenerationDomain,
+  ): string[] {
+    const normalizedName = this.normalizeTerm(domain.name)
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const aliases: string[] = [];
+
+    if (/^(?:finance|financial services|fintech)$/u.test(normalizedName)) {
+      aliases.push(
+        'finance',
+        'financial',
+        'bank',
+        'banking',
+        'payment',
+        'payments',
+        'card',
+        'credit',
+        'debit',
+        'loan',
+        'cash',
+        'accounting',
+        'invoice',
+        'expense',
+        'budget',
+        'payroll',
+        'reconciliation',
+      );
+    }
+
+    if (/^(?:e commerce|ecommerce|online retail|retail)$/u.test(normalizedName)) {
+      aliases.push(
+        'e commerce',
+        'ecommerce',
+        'marketplace',
+        'buyer',
+        'seller',
+        'checkout',
+        'shopping cart',
+        'cart',
+        'order',
+        'orders',
+        'refund',
+        'storefront',
+        'paypal',
+      );
+    }
+
+    if (/^(?:artificial intelligence|ai|machine learning)$/u.test(normalizedName)) {
+      aliases.push(
+        'artificial intelligence',
+        'machine learning',
+        'generative ai',
+        'large language model',
+        'llm',
+        'ai model',
+        'prompt',
+        'chatbot',
+        'computer vision',
+        'natural language processing',
+      );
+    }
+
+    const generic = new Set([
       'platform',
+      'system',
       'application',
       'software',
+      'dashboard',
       'monitoring',
       'management',
       'analytics',
       'integration',
+      'automation',
+      'optimization',
       'smart',
-      'technology',
       'digital',
       'online',
     ]);
 
-    const strongTerms = domain.keywords
-      .map((term) => this.normalizeTerm(term))
-      .filter(
-        (term) =>
-          term.length >= 5 &&
-          !genericTerms.has(term) &&
-          !term.endsWith(' platform') &&
-          !term.endsWith(' system') &&
-          !term.endsWith(' application') &&
-          !term.endsWith(' software'),
-      );
+    return [...new Set([domain.name, ...domain.keywords, ...aliases])]
+      .map((term) =>
+        this.normalizeTerm(term)
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .replace(/\s+/gu, ' ')
+          .trim(),
+      )
+      .filter((term) => term.length >= 3 && !generic.has(term));
+  }
 
-    const matched = new Set(
-      strongTerms.filter((term) => text.includes(term)),
-    );
+  private containsSemanticTerm(text: string, term: string): boolean {
+    if (!term) return false;
+    if (term.includes(' ')) return text.includes(term);
+    return new RegExp(`(?:^|\\s)${this.escapeRegExp(term)}(?:$|\\s)`, 'u').test(text);
+  }
 
-    return matched.size >= 2;
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private filterEvidenceForDomain(
     values: unknown,
     domain: SelectedGenerationDomain,
+    domains: readonly SelectedGenerationDomain[],
   ): unknown[] {
     if (!Array.isArray(values)) return [];
 
-    const domainName = domain.name.trim().toLowerCase();
-    const genericTerms = new Set([
-      'privacy', 'secure', 'security', 'data', 'system', 'platform',
-      'application', 'software', 'monitoring', 'management', 'analytics',
-      'integration', 'smart', 'technology', 'digital', 'online',
-    ]);
-    const strongTerms = domain.keywords
-      .map((term) => term.trim().toLowerCase())
-      .filter(
-        (term) =>
-          term.length >= 5 &&
-          !genericTerms.has(term) &&
-          !term.endsWith(' platform') &&
-          !term.endsWith(' system') &&
-          !term.endsWith(' application') &&
-          !term.endsWith(' software'),
-      );
-
     return values.filter((value) => {
-      const text = this.extractEvidenceText(value).toLowerCase();
+      const text = this.extractEvidenceText(value);
       if (!text) return false;
-      if (domainName.length >= 4 && text.includes(domainName)) return true;
-
-      const matched = new Set(
-        strongTerms.filter((term) => text.includes(term)),
-      );
-      return matched.size >= 2;
+      return this.evidenceBelongsToDomain(text, domain, domains);
     });
   }
 

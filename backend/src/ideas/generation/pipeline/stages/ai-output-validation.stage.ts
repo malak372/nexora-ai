@@ -410,7 +410,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     return {
       coreIdea: {
         ...parsedOutput.coreIdea,
-        title: sanitizeText(parsedOutput.coreIdea.title),
+        title: this.normalizeCoreIdeaTitleForContext(
+          context,
+          sanitizeText(parsedOutput.coreIdea.title),
+        ),
         problemStatement: sanitizeText(parsedOutput.coreIdea.problemStatement),
         objectives: parsedOutput.coreIdea.objectives.map(sanitizeText),
         targetUsers: parsedOutput.coreIdea.targetUsers.map(sanitizeText),
@@ -445,6 +448,96 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           : {}),
       })),
     };
+  }
+
+  /**
+   * Repairs cross-domain title leakage instead of failing an otherwise valid
+   * idea. A domain label may appear in the final title only when that domain has
+   * retained evidence for this run (or when no evidence exists at all and the
+   * primary-domain validation fallback is intentionally being used).
+   */
+  private normalizeCoreIdeaTitleForContext(
+    context: IdeaGenerationContext,
+    title: string,
+  ): string {
+    const claimedDomain = this.detectStrongTitleDomain(title);
+    if (!claimedDomain) return title;
+
+    const evidenceBackedDomains = context.domainEvidence
+      .filter((entry) => entry.evidenceAvailable)
+      .map((entry) => entry.domainName.trim())
+      .filter(Boolean);
+    const winnerDomains = [
+      ...(context.benchmarkWinnerOpportunity?.matchedDomainNames ?? []),
+      ...(context.opportunityRanking?.selected.matchedDomainNames ?? []),
+    ]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .filter((value, index, values) =>
+        values.findIndex(
+          (candidate) =>
+            candidate.toLocaleLowerCase() === value.toLocaleLowerCase(),
+        ) === index,
+      );
+    const allowedDomains =
+      winnerDomains.length > 0
+        ? winnerDomains
+        : evidenceBackedDomains.length > 0
+          ? evidenceBackedDomains
+          : [context.domainName, context.selectedDomains[0]?.name]
+              .filter((value): value is string => Boolean(value?.trim()))
+              .map((value) => value.trim());
+
+    if (
+      allowedDomains.some(
+        (domainName) => this.detectStrongTitleDomain(domainName) === claimedDomain,
+      )
+    ) {
+      return title;
+    }
+
+    const rankedTitle = context.opportunityRanking?.selected.title?.trim();
+    if (rankedTitle) {
+      const rankedClaim = this.detectStrongTitleDomain(rankedTitle);
+      if (
+        !rankedClaim ||
+        allowedDomains.some(
+          (domainName) =>
+            this.detectStrongTitleDomain(domainName) === rankedClaim,
+        )
+      ) {
+        return rankedTitle;
+      }
+    }
+
+    const primaryDomain =
+      allowedDomains[0] ?? context.domainName?.trim() ?? 'Selected Domain';
+    return `${primaryDomain} Evidence-Grounded Workflow`;
+  }
+
+  /** Detects only strong domain labels; generic words such as monitor are ignored. */
+  private detectStrongTitleDomain(value: string): string | null {
+    const normalized = value
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    const definitions: readonly [string, RegExp][] = [
+      ['energy', /\b(?:energy|solar|electricity|electric|power grid|battery)\b/u],
+      ['education', /\b(?:education|student|students|school|homework|assignment|learning|classroom)\b/u],
+      ['agriculture', /\b(?:agriculture|agricultural|farming|farm|irrigation|crop|crops)\b/u],
+      ['ecommerce', /\b(?:e commerce|ecommerce|checkout|shopping cart|merchant|online store)\b/u],
+      ['healthcare', /\b(?:healthcare|medical|patient|patients|clinic|hospital)\b/u],
+      ['finance', /\b(?:finance|financial|accounting|invoice|payroll|expense|budget)\b/u],
+    ];
+
+    for (const [label, pattern] of definitions) {
+      if (pattern.test(normalized)) return label;
+    }
+
+    return null;
   }
 
   /**
@@ -678,8 +771,26 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       );
 
       if (cleanedProblems.length === 1) {
-        const domain =
-          domains[0] ?? context.domainName ?? 'the selected domain';
+        const winnerDomains = (
+          context.opportunityRanking?.selected.matchedDomainNames ?? []
+        ).filter((name) =>
+          context.selectedDomains.some(
+            (domain) =>
+              domain.name.trim().toLocaleLowerCase() ===
+              name.trim().toLocaleLowerCase(),
+          ),
+        );
+        const evidenceDomains =
+          winnerDomains.length > 0
+            ? winnerDomains
+            : domains.length > 0
+              ? domains
+              : [context.domainName ?? 'the selected domain'];
+        const domain = evidenceDomains[0] ?? 'the selected domain';
+        const domainScope =
+          evidenceDomains.length > 1
+            ? `across ${evidenceDomains.join(' and ')}`
+            : `from ${domain}`;
         const groundedProblem = cleanedProblems[0] ?? '';
         const selectedProblem =
           this.isSpecificProblemStatement(providerProblemStatement) &&
@@ -691,8 +802,8 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
 
         problemStatement = this.polishProblemStatement(
           this.hasStrongIndependentEvidence(context)
-            ? `Verified community evidence from ${domain} identifies a recurring operational challenge: ${problem}. ${this.buildProblemImpactSentence(cleanedProblems[0] ?? '')}`
-            : `A preliminary community signal from ${domain} reports an operational challenge: ${problem}. ${this.buildProblemImpactSentence(cleanedProblems[0] ?? '')} The proposed pilot should validate how broadly this issue occurs before wider deployment.`,
+            ? `Verified community evidence ${domainScope} identifies a recurring operational challenge: ${problem}. ${this.buildProblemImpactSentence(cleanedProblems[0] ?? '')}`
+            : `A preliminary community signal ${domainScope} reports an operational challenge: ${problem}. ${this.buildProblemImpactSentence(cleanedProblems[0] ?? '')} The proposed pilot should validate how broadly this issue occurs before wider deployment.`,
         );
       } else {
         const problemList = cleanedProblems
@@ -750,24 +861,31 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         context,
         output.content,
       );
+      const causalSafeContent = this.sanitizeUnsupportedCausalLanguage(
+        evidenceQualifiedContent,
+      );
+      const domainSafeContent = this.sanitizeFinalClaimDomainLeakage(
+        context,
+        causalSafeContent,
+      );
 
       if (output.outputKey === 'technology-stack') {
         return {
           ...output,
-          content: this.normalizeTechnologyStack(evidenceQualifiedContent),
+          content: this.normalizeTechnologyStack(domainSafeContent),
         };
       }
 
       if (output.outputKey === 'system-architecture') {
         return {
           ...output,
-          content: this.polishArchitectureContent(evidenceQualifiedContent),
+          content: this.polishArchitectureContent(domainSafeContent),
         };
       }
 
       return {
         ...output,
-        content: evidenceQualifiedContent,
+        content: domainSafeContent,
       };
     });
 
@@ -809,17 +927,26 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
      * Run final copy cleanup after every possible overview/full-abstract
      * reconstruction so duplicated zero-evidence wording cannot reappear.
      */
-    overview = this.enforceEvidenceNarrativeDiscipline(
+    overview = this.sanitizeFinalClaimDomainLeakage(
       context,
-      this.finalizePersistedNarrativeCopy(overview),
+      this.enforceEvidenceNarrativeDiscipline(
+        context,
+        this.finalizePersistedNarrativeCopy(overview),
+      ),
     );
-    problemStatement = this.enforceEvidenceNarrativeDiscipline(
+    problemStatement = this.sanitizeFinalClaimDomainLeakage(
       context,
-      this.finalizePersistedNarrativeCopy(problemStatement),
+      this.enforceEvidenceNarrativeDiscipline(
+        context,
+        this.finalizePersistedNarrativeCopy(problemStatement),
+      ),
     );
-    fullAbstract = this.enforceEvidenceNarrativeDiscipline(
+    fullAbstract = this.sanitizeFinalClaimDomainLeakage(
       context,
-      this.finalizePersistedNarrativeCopy(fullAbstract),
+      this.enforceEvidenceNarrativeDiscipline(
+        context,
+        this.finalizePersistedNarrativeCopy(fullAbstract),
+      ),
     );
 
     return {
@@ -832,7 +959,9 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         problemStatement,
         objectives: this.sanitizePrimaryDomainObjectives(
           context,
-          parsedOutput.coreIdea.objectives,
+          parsedOutput.coreIdea.objectives.map((objective) =>
+            this.sanitizeUnsupportedCausalLanguage(objective),
+          ),
         ),
         targetUsers: this.sanitizePrimaryDomainTargetUsers(
           context,
@@ -910,6 +1039,30 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .replace(/\s{2,}/gu, ' ')
       .replace(/\s+([,.;:!?])/gu, '$1')
       .trim();
+
+    if (directEvidenceCount > 1) {
+      const evidenceSubject = this.buildRetainedEvidenceSubject(
+        directEvidenceCount,
+        this.countRetainedIndependentSources(context),
+      );
+      cleaned = cleaned
+        .replace(
+          /\bOne retained community report indicates that\b/giu,
+          `${evidenceSubject} indicate that`,
+        )
+        .replace(
+          /\bOne retained community report describes\b/giu,
+          `${evidenceSubject} describe`,
+        )
+        .replace(
+          /\bOne collected report(?: from [^.!?]{0,140})? indicates that\b/giu,
+          `${evidenceSubject} indicate that`,
+        )
+        .replace(
+          /\bOne collected report(?: from [^.!?]{0,140})? describes\b/giu,
+          `${evidenceSubject} describe`,
+        );
+    }
 
     if (directEvidenceCount === 0) {
       cleaned = cleaned
@@ -1083,8 +1236,52 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
    * Final persisted-copy cleanup. This deliberately runs after all narrative
    * builders, sparse-evidence qualifiers, and abstract expansion.
    */
+  private sanitizeUnsupportedCausalLanguage(value: string): string {
+    return value
+      .replace(
+        /\bThe root cause is suspected to (?:be|involve|stem from|result from)\s+/giu,
+        'Potential contributing factors to validate include ',
+      )
+      .replace(
+        /\bThe root causes are suspected to (?:be|involve|stem from|result from)\s+/giu,
+        'Potential contributing factors to validate include ',
+      )
+      .replace(
+        /\b(?:A|The) suspected root cause is\s+/giu,
+        'One potential contributing factor to validate is ',
+      )
+      .replace(
+        /\bThe (?:likely|probable) root cause is\s+/giu,
+        'One potential contributing factor to validate is ',
+      )
+      .replace(
+        /\bThe root cause appears to be\s+/giu,
+        'One potential contributing factor to validate is ',
+      )
+      .replace(
+        /\bThis (?:is|appears to be) likely caused by\s+/giu,
+        'One potential contributing factor to validate is ',
+      )
+      .replace(
+        /\b(?:These|Those|Such|The)\s+(?:[\p{L}\p{N}-]+\s+){0,7}(?:failures?|issues?|problems?|friction|errors?|barriers?|regressions?|outages?|mismatches?)\s+(?:stem|stems|result|results)\s+from\s+/giu,
+        'Potential contributing factors to validate include ',
+      )
+      .replace(
+        /\b(?:These|Those|Such|The)\s+(?:[\p{L}\p{N}-]+\s+){0,7}(?:failures?|issues?|problems?|friction|errors?|barriers?|regressions?|outages?|mismatches?)\s+(?:are|is)\s+(?:caused|driven)\s+by\s+/giu,
+        'Potential contributing factors to validate include ',
+      )
+      .replace(
+        /\b(?:This|The)\s+(?:failure|issue|problem|friction|error|barrier|regression|outage|mismatch)\s+(?:stems|results)\s+from\s+/giu,
+        'One potential contributing factor to validate is ',
+      )
+      .replace(
+        /\b(?:This|The)\s+(?:failure|issue|problem|friction|error|barrier|regression|outage|mismatch)\s+is\s+(?:caused|driven)\s+by\s+/giu,
+        'One potential contributing factor to validate is ',
+      );
+  }
+
   private finalizePersistedNarrativeCopy(value: string): string {
-    const cleaned = value
+    const cleaned = this.sanitizeUnsupportedCausalLanguage(value)
       .replace(
         /\bIt tests whether the pilot will test whether\b/giu,
         'It tests whether',
@@ -1214,6 +1411,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         : '';
 
     const domainName =
+      rankedWinner.matchedDomainNames?.[0]?.trim() ||
       rawDomainName ||
       context.domainName?.trim() ||
       context.selectedDomains[0]?.name.trim() ||
@@ -1302,14 +1500,17 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const normalized = problemStatement.replace(/\s+/gu, ' ').trim();
 
     const communitySignal = normalized.match(
-      /^A preliminary community signal from\s+(.+?)\s+reports an operational challenge:\s*(.+)$/iu,
+      /^A preliminary community signal\s+(from|across)\s+(.+?)\s+reports an operational challenge:\s*(.+)$/iu,
     );
 
     if (communitySignal) {
-      const domain = communitySignal[1]?.trim() || 'the selected domain';
-      const problem = communitySignal[2]?.trim() || normalized;
+      const scope = communitySignal[1]?.toLocaleLowerCase() ?? 'from';
+      const domains = communitySignal[2]?.trim() || 'the selected domain';
+      const problem = communitySignal[3]?.trim() || normalized;
 
-      return `The proposed pilot responds to a limited community signal from the ${domain} domain: ${problem}`;
+      return scope === 'across'
+        ? `The proposed pilot responds to a limited community signal across ${domains}: ${problem}`
+        : `The proposed pilot responds to a limited community signal from the ${domains} domain: ${problem}`;
     }
 
     const limitedFeedback = normalized.match(
@@ -1543,11 +1744,17 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
 
     const title = parsedOutput.coreIdea.title.trim();
     const normalizedProblem = selectedProblem.replace(/[.]+$/u, '').trim();
-    const hasAnyDirectEvidence =
-      this.countRetainedDirectEvidence(context) > 0;
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const independentSourceCount =
+      this.countRetainedIndependentSources(context);
+    const hasAnyDirectEvidence = directEvidenceCount > 0;
 
     const evidenceSentence = hasAnyDirectEvidence
-      ? this.buildSparseEvidenceSentence(normalizedProblem)
+      ? this.buildSparseEvidenceSentence(
+          normalizedProblem,
+          directEvidenceCount,
+          independentSourceCount,
+        )
       : `This preliminary pilot does not claim that a specific community problem has already been validated. It tests whether ${this.lowercaseSentenceStart(
           normalizedProblem,
         )}.`;
@@ -1570,7 +1777,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
    * verbal clauses. This avoids constructions such as:
    * "a case in which uncertainty regarding..."
    */
-  private buildSparseEvidenceSentence(problem: string): string {
+  private buildSparseEvidenceSentence(
+    problem: string,
+    directEvidenceCount: number,
+    independentSourceCount: number,
+  ): string {
     let normalized = problem.replace(/\s+/gu, ' ').trim();
 
     // Remove qualifiers already produced by the model. The validator owns the
@@ -1610,24 +1821,29 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         .trim();
     }
 
+    const evidenceSubject = this.buildRetainedEvidenceSubject(
+      directEvidenceCount,
+      independentSourceCount,
+    );
+
     if (nounPhraseStart) {
-      return `One retained community report describes ${this.lowercaseSentenceStart(
-        normalized,
-      )}.`;
+      return `${evidenceSubject} ${
+        directEvidenceCount === 1 ? 'describes' : 'describe'
+      } ${this.lowercaseSentenceStart(normalized)}.`;
     }
 
     const firstPersonNeed = normalized.match(
       /^(?:the user|one user|a user)\s+(.+)$/iu,
     );
-    if (firstPersonNeed?.[1]) {
-      return `One retained community report describes a user who ${this.lowercaseSentenceStart(
+    if (firstPersonNeed?.[1] && directEvidenceCount === 1) {
+      return `${evidenceSubject} describes a user who ${this.lowercaseSentenceStart(
         firstPersonNeed[1],
       )}.`;
     }
 
-    return `One retained community report indicates that ${this.lowercaseSentenceStart(
-      normalized,
-    )}.`;
+    return `${evidenceSubject} ${
+      directEvidenceCount === 1 ? 'indicates' : 'indicate'
+    } that ${this.lowercaseSentenceStart(normalized)}.`;
   }
 
   /**
@@ -1648,6 +1864,8 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     }
 
     const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const independentSourceCount =
+      this.countRetainedIndependentSources(context);
 
     const paragraphs = fullAbstract
       .split(/\n\s*\n/u)
@@ -1661,9 +1879,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const evidenceOpening =
       directEvidenceCount <= 0
         ? 'The proposed pilot currently has no retained direct community report and must be treated as an unvalidated primary-domain hypothesis.'
-        : directEvidenceCount === 1
-          ? 'The proposed pilot responds to one collected report rather than a validated market-wide pattern.'
-          : `The proposed pilot responds to ${directEvidenceCount} collected reports rather than a validated market-wide pattern.`;
+        : `The proposed pilot is supported by ${this.buildRetainedEvidenceSubject(
+            directEvidenceCount,
+            independentSourceCount,
+            false,
+          )} and should remain preliminary rather than be presented as a validated market-wide pattern.`;
 
     const evidenceQualifier = [
       evidenceOpening,
@@ -1695,6 +1915,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       const correctedFirstParagraph = this.correctEvidenceQualifierCount(
         firstParagraph,
         directEvidenceCount,
+        independentSourceCount,
       );
       return [correctedFirstParagraph, ...paragraphs.slice(1)].join('\n\n');
     }
@@ -1763,16 +1984,78 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     return 0;
   }
 
+  private countRetainedIndependentSources(
+    context: IdeaGenerationContext,
+  ): number {
+    const selected = context.opportunityRanking?.selected;
+    const verifiedCount = selected?.verifiedIndependentSourceCount;
+    if (typeof verifiedCount === 'number' && verifiedCount > 0) {
+      return Math.floor(verifiedCount);
+    }
+
+    const sourceKeys = new Set(
+      (selected?.independentEvidence ?? [])
+        .map((item) => item.sourceKey?.trim().toLocaleLowerCase() ?? '')
+        .filter(Boolean),
+    );
+
+    return sourceKeys.size;
+  }
+
+  private buildRetainedEvidenceSubject(
+    reportCount: number,
+    sourceCount: number,
+    capitalize = true,
+  ): string {
+    const reportLabel = this.formatEvidenceCount(reportCount, capitalize);
+    const reportWord = reportCount === 1 ? 'report' : 'reports';
+    const sourceSuffix =
+      sourceCount === 1
+        ? ' from one independent source'
+        : sourceCount > 1
+          ? ` across ${this.formatEvidenceCount(
+              sourceCount,
+              false,
+            )} independent sources`
+          : '';
+
+    return `${reportLabel} retained community ${reportWord}${sourceSuffix}`;
+  }
+
+  private formatEvidenceCount(value: number, capitalize: boolean): string {
+    const words = [
+      'zero',
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'six',
+      'seven',
+      'eight',
+      'nine',
+      'ten',
+    ];
+    const normalized = Math.max(0, Math.floor(value));
+    const raw = words[normalized] ?? String(normalized);
+    return capitalize && /^[a-z]/u.test(raw)
+      ? `${raw[0].toUpperCase()}${raw.slice(1)}`
+      : raw;
+  }
+
   private correctEvidenceQualifierCount(
     paragraph: string,
     directEvidenceCount: number,
+    independentSourceCount: number,
   ): string {
     const opening =
       directEvidenceCount <= 0
         ? 'The proposed pilot currently has no retained direct community report and must be treated as an unvalidated primary-domain hypothesis.'
-        : directEvidenceCount === 1
-          ? 'The proposed pilot is supported by one retained direct community report and should be treated as a preliminary, not market-wide, signal.'
-          : `The proposed pilot is supported by ${directEvidenceCount} retained direct community reports and should still avoid market-wide claims until broader validation.`;
+        : `The proposed pilot is supported by ${this.buildRetainedEvidenceSubject(
+            directEvidenceCount,
+            independentSourceCount,
+            false,
+          )} and should remain preliminary until broader independent validation is available.`;
 
     const remainder = paragraph
       .replace(
@@ -1859,40 +2142,48 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     objectives: readonly string[],
   ): string[] {
-    if (this.hasAnyRetainedDirectEvidence(context)) {
-      return [...objectives];
-    }
-
+    const claimDomains = this.resolveFinalClaimDomains(context);
     const primaryDomain =
+      claimDomains[0] ||
       context.domainName?.trim() ||
       context.selectedDomains[0]?.name?.trim() ||
       'the selected domain';
     const unsupportedNames = context.selectedDomains
-      .slice(1)
       .map((domain) => domain.name.trim())
-      .filter(Boolean);
+      .filter(
+        (name) =>
+          Boolean(name) &&
+          !claimDomains.some(
+            (claim) =>
+              claim.toLocaleLowerCase() === name.toLocaleLowerCase(),
+          ),
+      );
+    const unsupportedPatterns = this.buildUnsupportedDomainAliasPatterns(
+      unsupportedNames,
+    );
 
     const sanitized = objectives
       .filter(
         (objective) =>
-          !unsupportedNames.some((name) =>
-            objective.toLowerCase().includes(name.toLowerCase()),
-          ),
+          !unsupportedPatterns.some((pattern) => pattern.test(objective)),
       )
       .map((objective) =>
-        this.replaceUnsupportedDomainNames(
-          objective,
-          unsupportedNames,
-          primaryDomain,
-        ),
+        this.sanitizeFinalClaimDomainLeakage(context, objective),
       );
 
-    const defaults = [
-      `Capture structured operational-friction reports from authorized ${primaryDomain} participants.`,
-      `Classify submitted reports into reviewable problem families without treating unverified clusters as recurring evidence.`,
-      `Protect submitted operational data through role-based access control, retention rules, and auditable access.`,
-      `Measure report quality, review time, and validated problem recurrence during the bounded ${primaryDomain} pilot.`,
-    ];
+    const defaults = this.hasAnyRetainedDirectEvidence(context)
+      ? [
+          `Implement the core ${primaryDomain} workflow represented by the verified winning evidence.`,
+          'Provide evidence-linked diagnostics and reviewed remediation guidance for the selected problem.',
+          'Protect authorized inputs and operational records through role-based access control, retention rules, and auditable access.',
+          `Establish a pilot baseline for the selected ${primaryDomain} workflow and measure directional change without inventing an unsupported impact target.`,
+        ]
+      : [
+          `Capture structured operational-friction reports from authorized ${primaryDomain} participants.`,
+          `Classify submitted reports into reviewable problem families without treating unverified clusters as recurring evidence.`,
+          `Protect submitted operational data through role-based access control, retention rules, and auditable access.`,
+          `Measure report quality, review time, and validated problem recurrence during the bounded ${primaryDomain} pilot.`,
+        ];
 
     return [...sanitized, ...defaults]
       .filter(
@@ -1913,34 +2204,30 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const professionalized = targetUsers.map((user) =>
       this.professionalizeTargetUser(user),
     );
-
-    if (this.hasAnyRetainedDirectEvidence(context)) {
-      return professionalized;
-    }
-
+    const claimDomains = this.resolveFinalClaimDomains(context);
     const primaryDomain =
+      claimDomains[0] ||
       context.domainName?.trim() ||
       context.selectedDomains[0]?.name?.trim() ||
       'the selected domain';
     const unsupportedNames = context.selectedDomains
-      .slice(1)
       .map((domain) => domain.name.trim())
-      .filter(Boolean);
-
-    const retained = professionalized
       .filter(
-        (user) =>
-          !unsupportedNames.some((name) =>
-            user.toLowerCase().includes(name.toLowerCase()),
+        (name) =>
+          Boolean(name) &&
+          !claimDomains.some(
+            (claim) =>
+              claim.toLocaleLowerCase() === name.toLocaleLowerCase(),
           ),
-      )
-      .map((user) =>
-        this.replaceUnsupportedDomainNames(
-          user,
-          unsupportedNames,
-          primaryDomain,
-        ),
       );
+    const unsupportedPatterns = this.buildUnsupportedDomainAliasPatterns(
+      unsupportedNames,
+    );
+
+    const retained = professionalized.filter(
+      (user) =>
+        !unsupportedPatterns.some((pattern) => pattern.test(user)),
+    );
 
     const defaults = [
       `${primaryDomain} operations professionals`,
@@ -1958,6 +2245,129 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           ) === index,
       )
       .slice(0, 4);
+  }
+
+  private resolveFinalClaimDomains(
+    context: IdeaGenerationContext,
+  ): string[] {
+    const domains =
+      context.benchmarkWinnerOpportunity?.matchedDomainNames?.length
+        ? context.benchmarkWinnerOpportunity.matchedDomainNames
+        : context.opportunityRanking?.selected.matchedDomainNames ?? [];
+
+    return domains
+      .map((name) => name.trim())
+      .filter(
+        (name, index, items) =>
+          Boolean(name) &&
+          items.findIndex(
+            (candidate) =>
+              candidate.toLocaleLowerCase() === name.toLocaleLowerCase(),
+          ) === index,
+      );
+  }
+
+  private buildUnsupportedDomainAliasPatterns(
+    domainNames: readonly string[],
+  ): RegExp[] {
+    const aliases: Readonly<Record<string, readonly string[]>> = {
+      'hr & recruitment': [
+        'hr & recruitment',
+        'human resources',
+        'recruitment',
+        'hiring',
+        'applicant tracking',
+        'candidate screening',
+      ],
+      'artificial intelligence': [
+        'artificial intelligence',
+        'generative ai',
+        'machine learning',
+        'large language model',
+        'ai domain',
+      ],
+      government: [
+        'government',
+        'public administration',
+        'public sector',
+        'citizen services',
+      ],
+      'mental health': [
+        'mental health',
+        'mental wellness',
+        'therapy workflow',
+        'counseling workflow',
+      ],
+    };
+
+    return domainNames.flatMap((name) => {
+      const normalized = name.trim().toLocaleLowerCase();
+      const terms = aliases[normalized] ?? [name];
+      return terms
+        .map((term) => term.trim())
+        .filter(Boolean)
+        .map(
+          (term) =>
+            new RegExp(`\\b${this.escapeRegExp(term)}\\b`, 'iu'),
+        );
+    });
+  }
+
+  private sanitizeFinalClaimDomainLeakage(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    if (!value.trim()) return value;
+
+    const claimDomains = this.resolveFinalClaimDomains(context);
+    if (claimDomains.length === 0) return value;
+
+    const forbiddenDomains = context.selectedDomains
+      .map((domain) => domain.name.trim())
+      .filter(
+        (name) =>
+          Boolean(name) &&
+          !claimDomains.some(
+            (claim) =>
+              claim.toLocaleLowerCase() === name.toLocaleLowerCase(),
+          ),
+      );
+    if (forbiddenDomains.length === 0) return value;
+
+    const forbiddenPatterns = this.buildUnsupportedDomainAliasPatterns(
+      forbiddenDomains,
+    );
+    const replacement = `The product remains scoped to the verified ${claimDomains.join(
+      ' and ',
+    )} workflow represented by the selected evidence.`;
+    const sentences = value
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .split(/(?<=[.!?])\s+/u)
+      .filter(Boolean);
+
+    const sanitized = sentences.map((sentence) => {
+      const hasForbiddenDomain = forbiddenPatterns.some((pattern) =>
+        pattern.test(sentence),
+      );
+      const makesScopeClaim =
+        /\bcross[- ]domain\b|\bacross\b|\bbetween\b|\b(?:domain|sector|industry|workflow|market|participant|user segment)s?\b/iu.test(
+          sentence,
+        );
+      return hasForbiddenDomain && makesScopeClaim ? replacement : sentence;
+    });
+
+    return sanitized
+      .filter(
+        (sentence, index, items) =>
+          items.findIndex(
+            (candidate) =>
+              candidate.toLocaleLowerCase() === sentence.toLocaleLowerCase(),
+          ) === index,
+      )
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   private replaceUnsupportedDomainNames(
@@ -2447,8 +2857,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     }
 
     return (
-      context.selectedDomains[0]?.name ??
+      context.benchmarkWinnerOpportunity?.matchedDomainNames?.[0] ??
+      context.opportunityRanking?.selected.matchedDomainNames?.[0] ??
       context.domainName ??
+      context.selectedDomains[0]?.name ??
       'General'
     );
   }

@@ -116,7 +116,7 @@ export class IdeaVotingService {
       };
     }, this.transactionOptions);
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    void this.publicationCache.invalidateDiscovery(publicationId).catch(() => undefined);
     return result;
   }
 
@@ -174,7 +174,7 @@ export class IdeaVotingService {
       };
     }, this.transactionOptions);
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    void this.publicationCache.invalidateDiscovery(publicationId).catch(() => undefined);
     return result;
   }
 

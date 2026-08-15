@@ -152,7 +152,7 @@ export class UserFeedbackService {
       };
     }, this.transactionOptions);
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    void this.publicationCache.invalidateDiscovery(publicationId).catch(() => undefined);
     return result;
   }
 
@@ -219,7 +219,7 @@ export class UserFeedbackService {
       };
     }, this.transactionOptions);
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    void this.publicationCache.invalidateDiscovery(publicationId).catch(() => undefined);
     return result;
   }
 
@@ -289,7 +289,7 @@ export class UserFeedbackService {
       };
     }, this.transactionOptions);
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    void this.publicationCache.invalidateDiscovery(publicationId).catch(() => undefined);
     return result;
   }
 
@@ -353,7 +353,7 @@ export class UserFeedbackService {
       };
     }, this.transactionOptions);
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    void this.publicationCache.invalidateDiscovery(publicationId).catch(() => undefined);
     return result;
   }
 

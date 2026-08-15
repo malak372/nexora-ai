@@ -328,6 +328,8 @@ export type SelectedGenerationDomain = {
   readonly id: string;
   readonly name: string;
   readonly keywords: readonly string[];
+  readonly configuredKeywords?: readonly string[];
+  readonly effectiveSearchKeywords?: readonly string[];
 };
 
 /**
@@ -414,6 +416,8 @@ export type IdeaGenerationContext = {
    * and is intentionally ignored by downstream generation stages.
    */
   domainResolution: IdeaGenerationDomainResolutionTrace | null;
+
+  requestDescription: string | null;
 
   /**
    * User-supplied keywords.
@@ -584,6 +588,8 @@ export type CreateIdeaGenerationContextInput = {
   /** Optional explainability trace for the primary domain resolution. */
   domainResolution?: IdeaGenerationDomainResolutionTrace | null;
 
+  requestDescription?: string | null;
+
   /**
    * Optional user-provided keywords.
    */
@@ -630,6 +636,7 @@ export function createIdeaGenerationContext(
     selectedDomains: input.selectedDomains ?? [],
     domainResolution: input.domainResolution ?? null,
 
+    requestDescription: input.requestDescription ?? null,
     keywords: input.keywords ?? [],
 
     requestedDataSourceKeys: input.requestedDataSourceKeys ?? [],
