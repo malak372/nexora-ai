@@ -680,7 +680,6 @@
     font-size: 8px;
     line-height: 1.4;
 }
-
 .admin-settings-locked-field i {
     min-width: 64px;
     padding: 9px 10px;
@@ -694,6 +693,254 @@
     text-align: center;
 }
 
+.admin-settings-currency-panel {
+    padding: 18px 20px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 250px;
+    align-items: center;
+    gap: 20px;
+    border: 1px solid rgba(47, 119, 116, .09);
+    border-radius: 21px;
+    background: linear-gradient(135deg, rgba(238, 249, 246, .9), rgba(255, 253, 251, .96));
+    box-shadow: 0 12px 30px rgba(47, 91, 81, .04);
+}
+
+.admin-settings-currency-panel__copy {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.admin-settings-currency-panel__copy>span {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 13px;
+    color: #3f8e87;
+    background: #dff2ed;
+}
+
+.admin-settings-currency-panel__copy small {
+    color: #4d8c84;
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .13em;
+}
+
+.admin-settings-currency-panel__copy h2 {
+    margin: 4px 0 0;
+    color: #485e57;
+    font-size: 14px;
+    font-weight: 820;
+    letter-spacing: -.02em;
+}
+
+.admin-settings-currency-panel__copy p {
+    max-width: 760px;
+    margin: 5px 0 0;
+    color: #84938e;
+    font-size: 8.5px;
+    line-height: 1.5;
+}
+
+.admin-settings-currency-panel>label {
+    display: grid;
+    gap: 7px;
+}
+
+.admin-settings-currency-panel>label>span {
+    color: #5b716a;
+    font-size: 8px;
+    font-weight: 850;
+}
+
+.admin-settings-currency-picker {
+    position: relative;
+    min-width: 0;
+}
+
+.admin-settings-currency-picker__trigger {
+    width: 100%;
+    min-height: 48px;
+    padding: 7px 11px 7px 8px;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    border: 1px solid rgba(47, 119, 116, .14);
+    border-radius: 14px;
+    outline: 0;
+    color: #4d655d;
+    background: rgba(255, 255, 255, .94);
+    box-shadow: 0 7px 18px rgba(47, 91, 81, .045);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.admin-settings-currency-picker__trigger:hover:not(:disabled) {
+    border-color: rgba(65, 159, 155, .3);
+    background: #fff;
+}
+
+.admin-settings-currency-picker.is-open .admin-settings-currency-picker__trigger {
+    border-color: rgba(65, 159, 155, .42);
+    box-shadow: 0 0 0 3px rgba(92, 189, 185, .1), 0 9px 22px rgba(47, 91, 81, .06);
+}
+
+.admin-settings-currency-picker.is-error .admin-settings-currency-picker__trigger {
+    border-color: rgba(190, 92, 111, .35);
+}
+
+.admin-settings-currency-picker__trigger:disabled {
+    cursor: not-allowed;
+    opacity: .62;
+}
+
+.admin-settings-currency-picker__symbol,
+.admin-settings-currency-picker__option-symbol {
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    color: #367c76;
+    background: #e4f4f0;
+    font-weight: 900;
+}
+
+.admin-settings-currency-picker__symbol {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+}
+
+.admin-settings-currency-picker__selected,
+.admin-settings-currency-picker__option-copy {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+}
+
+.admin-settings-currency-picker__selected strong {
+    color: #48635b;
+    font-size: 9.5px;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
+.admin-settings-currency-picker__selected small {
+    overflow: hidden;
+    color: #84958f;
+    font-size: 7.5px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-settings-currency-picker__trigger>svg {
+    color: #66827a;
+    transition: transform .18s ease;
+}
+
+.admin-settings-currency-picker.is-open .admin-settings-currency-picker__trigger>svg {
+    transform: rotate(180deg);
+}
+
+.admin-settings-currency-picker__menu {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 7px);
+    right: 0;
+    left: 0;
+    padding: 6px;
+    display: grid;
+    gap: 3px;
+    overflow: hidden;
+    border: 1px solid rgba(47, 119, 116, .12);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, .985);
+    box-shadow: 0 18px 42px rgba(38, 73, 65, .15), 0 4px 12px rgba(38, 73, 65, .05);
+    backdrop-filter: blur(16px);
+    animation: adminSettingsCurrencyMenuIn .16s ease both;
+}
+
+.admin-settings-currency-picker__option {
+    width: 100%;
+    min-height: 44px;
+    padding: 6px 8px;
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 9px;
+    border: 0;
+    border-radius: 11px;
+    color: #50675f;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background .15s ease, transform .15s ease;
+}
+
+.admin-settings-currency-picker__option:hover {
+    background: #f0f8f5;
+    transform: translateX(1px);
+}
+
+.admin-settings-currency-picker__option.is-selected {
+    background: linear-gradient(135deg, #e6f5f1, #f3faf8);
+}
+
+.admin-settings-currency-picker__option-symbol {
+    width: 30px;
+    height: 30px;
+    font-size: 9px;
+}
+
+.admin-settings-currency-picker__option-copy strong {
+    color: #476058;
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.admin-settings-currency-picker__option-copy small {
+    color: #8b9a95;
+    font-size: 7.5px;
+    font-weight: 650;
+}
+
+.admin-settings-currency-picker__option>svg {
+    justify-self: end;
+    color: #41918a;
+}
+
+@keyframes adminSettingsCurrencyMenuIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px) scale(.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.admin-settings-currency-panel>label>em {
+    color: #aa6170;
+    font-size: 7.5px;
+    font-style: normal;
+    font-weight: 760;
+}
+
+@media(max-width:760px) {
+    .admin-settings-currency-panel {
+        grid-template-columns: 1fr;
+    }
+}
 .admin-settings-metrics {
     display: grid !important;
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;

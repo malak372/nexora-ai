@@ -69,6 +69,70 @@ export class CollectorQueryBuilderUtil {
       'prompt reliability',
       'AI integration',
     ],
+    agriculture: [
+      'irrigation scheduling',
+      'crop monitoring',
+      'farm inventory',
+      'harvest planning',
+      'soil monitoring',
+      'farmer marketplace',
+    ],
+    'e commerce': [
+      'checkout payment',
+      'shopping cart',
+      'order tracking',
+      'seller marketplace',
+      'product listing',
+      'refund workflow',
+    ],
+    ecommerce: [
+      'checkout payment',
+      'shopping cart',
+      'order tracking',
+      'seller marketplace',
+      'product listing',
+      'refund workflow',
+    ],
+    'e-commerce': [
+      'checkout payment',
+      'shopping cart',
+      'order tracking',
+      'seller marketplace',
+      'product listing',
+      'refund workflow',
+    ],
+    energy: [
+      'energy consumption',
+      'solar monitoring',
+      'electricity usage',
+      'power outage reporting',
+      'battery monitoring',
+      'meter reading',
+    ],
+    education: [
+      'student homework',
+      'assignment submission',
+      'teacher feedback',
+      'coursework tracking',
+      'grading workflow',
+      'classroom learning',
+    ],
+    finance: [
+      'invoice approval',
+      'expense tracking',
+      'budget workflow',
+      'payroll processing',
+      'reconciliation',
+      'cash flow tracking',
+    ],
+    healthcare: [
+      'patient appointment',
+      'clinical workflow',
+      'medical record access',
+      'medication tracking',
+      'patient communication',
+      'care coordination',
+    ],
     'sports & fitness': [
       'exercise calorie adjustment',
       'nutrition tracking',
@@ -178,10 +242,29 @@ export class CollectorQueryBuilderUtil {
    */
   static buildStackOverflowTechnicalQueries(input: {
     readonly domainName?: string | null;
+    readonly userKeywords?: readonly string[];
     readonly maxQueries?: number;
   }): string[] {
     const domainName = this.normalize(input.domainName ?? '');
     const maxQueries = Math.max(1, input.maxQueries ?? 3);
+    const balancedTerms = this.cleanTerms(input.userKeywords ?? [])
+      .filter((term) => !this.isGenericProductExpansion(term))
+      .map((term) => this.expandKnownDomainAnchor(term))
+      .filter((term) => !/(?:user complaint problem|not working difficult confusing|review missing feature)$/iu.test(term))
+      .filter((term) => !/^(?:coherent cross-domain workflow|cross-domain workflow)/iu.test(term))
+      .slice(0, maxQueries);
+
+    if (balancedTerms.length > 1) {
+      return this.unique(
+        balancedTerms.map((term, index) =>
+          index % 3 === 0
+            ? `${term} api workflow fails`
+            : index % 3 === 1
+              ? `${term} integration error`
+              : `${term} data submission not working`,
+        ),
+      ).slice(0, maxQueries);
+    }
 
     const queries =
       domainName.includes('smart cit')
@@ -225,10 +308,29 @@ export class CollectorQueryBuilderUtil {
    */
   static buildGitHubFlexibleQueries(input: {
     readonly domainName?: string | null;
+    readonly userKeywords?: readonly string[];
     readonly maxQueries?: number;
   }): string[] {
     const domainName = this.normalize(input.domainName ?? '');
     const maxQueries = Math.max(1, input.maxQueries ?? 3);
+    const balancedTerms = this.cleanTerms(input.userKeywords ?? [])
+      .filter((term) => !this.isGenericProductExpansion(term))
+      .map((term) => this.expandKnownDomainAnchor(term))
+      .filter((term) => !/(?:user complaint problem|not working difficult confusing|review missing feature)$/iu.test(term))
+      .filter((term) => !/^(?:coherent cross-domain workflow|cross-domain workflow)/iu.test(term))
+      .slice(0, maxQueries);
+
+    if (balancedTerms.length > 1) {
+      return this.unique(
+        balancedTerms.map((term, index) =>
+          index % 3 === 0
+            ? `${term} bug failure`
+            : index % 3 === 1
+              ? `${term} not working issue`
+              : `${term} incorrect missing`,
+        ),
+      ).slice(0, maxQueries);
+    }
 
     const queries =
       domainName.includes('smart cit')
@@ -279,6 +381,7 @@ export class CollectorQueryBuilderUtil {
     const balancedDomainTerms = this.cleanTerms(input.userKeywords ?? [])
       .filter((term) => !/^(?:coherent cross-domain workflow|cross-domain workflow)/iu.test(term))
       .filter((term) => !this.isGenericProductExpansion(term))
+      .map((term) => this.expandKnownDomainAnchor(term))
       .filter((term) => !/(?:user complaint problem|not working difficult confusing|review missing feature)$/iu.test(term))
       .slice(0, maxQueries);
 
@@ -356,6 +459,31 @@ export class CollectorQueryBuilderUtil {
     }
 
     return [];
+  }
+
+  /**
+   * Converts a bare selected-domain label into one concrete search anchor.
+   * This is the zero-keyword safety net for newly added or incompletely seeded
+   * domains and guarantees useful first-run expansion without another DB read.
+   */
+  private static expandKnownDomainAnchor(value: string): string {
+    const normalized = this.normalize(value);
+    const anchors: Readonly<Record<string, string>> = {
+      agriculture: 'farming irrigation crop',
+      'e commerce': 'checkout marketplace order',
+      'e-commerce': 'checkout marketplace order',
+      ecommerce: 'checkout marketplace order',
+      energy: 'energy monitoring electricity',
+      education: 'student homework assignment',
+      finance: 'invoice expense reconciliation',
+      healthcare: 'patient clinical workflow',
+      transportation: 'public transport route',
+      logistics: 'shipment delivery tracking',
+      'artificial intelligence': 'AI model reliability',
+      'business operations': 'administrative approval workflow',
+    };
+
+    return anchors[normalized] ?? value;
   }
 
   private static cleanTerms(values: readonly string[]): string[] {

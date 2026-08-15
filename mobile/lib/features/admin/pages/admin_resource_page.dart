@@ -849,9 +849,9 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
 
                 const SizedBox(height: 18),
 
-                // ========================================================
+                // 
                 // IDEAS SUMMARY
-                // ========================================================
+                // 
                 if (isIdeas) ...[
                   _IdeasSummaryCard(total: _total),
                   const SizedBox(height: 16),
@@ -864,9 +864,9 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
                   const SizedBox(height: 14),
                 ],
 
-                // ========================================================
+                
                 // SEARCH + FILTER
-                // ========================================================
+                
                 Row(
                   children: [
                     Expanded(
@@ -1045,9 +1045,9 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
                   const SizedBox(height: 8),
                 ],
 
-                // ========================================================
+                
                 // BODY
-                // ========================================================
+                
                 if (_loading)
                   const AdminLoadingList()
                 else if (_error.isNotEmpty && _items.isEmpty)
@@ -1068,9 +1068,9 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
                     icon: widget.resource.icon,
                   )
                 else ...[
-                  // ======================================================
+                  // =
                   // RESULTS META
-                  // ======================================================
+                  // =
                   Row(
                     children: [
                       if (isIdeas) ...[
@@ -1134,9 +1134,9 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
 
                   const SizedBox(height: 10),
 
-                  // ======================================================
+                  // =
                   // RECORD CARDS
-                  // ======================================================
+                  // =
                   ..._items.map(
                     (item) => Padding(
                       padding: const EdgeInsets.only(bottom: 11),
@@ -1150,9 +1150,9 @@ class _AdminResourcePageState extends State<AdminResourcePage> {
                     ),
                   ),
 
-                  // ======================================================
+                  // =
                   // PAGINATION
-                  // ======================================================
+                  // =
                   if (_totalPages > 1) ...[
                     const SizedBox(height: 4),
 

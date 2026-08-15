@@ -89,7 +89,11 @@ export class RequestValidationStage implements IdeaGenerationStage {
 
       owner: this.normalizeOwner(context),
 
-      keywords: normalizeGenerationKeywords(context.keywords, 20, 100),
+      requestDescription: normalizeNullableGenerationText(
+        context.requestDescription,
+      ),
+
+      keywords: normalizeGenerationKeywords(context.keywords, 24, 120),
 
       requestedDataSourceKeys: normalizeGenerationStringArray(
         context.requestedDataSourceKeys,

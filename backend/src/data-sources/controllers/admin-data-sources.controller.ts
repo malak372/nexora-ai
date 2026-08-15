@@ -113,6 +113,18 @@ export class AdminDataSourcesController {
   /**
    * Updates editable source metadata.
    */
+
+  @Delete(':id')
+  remove(
+    @Param('id', ParseUUIDPipe)
+    id: string,
+
+    @CurrentUser()
+    admin: AuthenticatedAdmin,
+  ) {
+    return this.dataSourcesService.remove(id, admin.id);
+  }
+
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe)

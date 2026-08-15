@@ -7,7 +7,6 @@ import {
   AiRoutingStrategy,
   ApiRequestType,
   PromptType,
-  type AiModel,
 } from '@prisma/client';
 
 import { AiModelsService } from '../../../ai-models/ai-models.service';
@@ -74,12 +73,15 @@ export class IdeaCandidateJudgeService {
     }
 
     const prompt = this.promptService.build(context, candidates);
+    const routableModels = await this.aiModelsService.getRoutableModels();
+    const ollamaModels = routableModels.filter(
+      (model) =>
+        normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA,
+    );
     const localFallbackModel = IDEA_JUDGE_ALLOW_LOCAL_FALLBACK
-      ? await this.findLocalFallbackModel()
+      ? ollamaModels.find((model) => model.supportsJsonOutput) ?? null
       : null;
-    const onlineExcludedModelIds = localFallbackModel
-      ? [localFallbackModel.id]
-      : [];
+    const onlineExcludedModelIds = ollamaModels.map((model) => model.id);
     let lastFailureMessage = 'Unknown comparative judge failure.';
 
     /*
@@ -223,20 +225,6 @@ export class IdeaCandidateJudgeService {
     return evaluation;
   }
 
-  /**
-   * Finds one active, routable local model that can return structured JSON.
-   */
-  private async findLocalFallbackModel(): Promise<AiModel | null> {
-    const models = await this.aiModelsService.getRoutableModels();
-
-    return (
-      models.find(
-        (model) =>
-          normalizeAiProviderKey(model.providerKey) ===
-            AI_PROVIDER_KEYS.OLLAMA && model.supportsJsonOutput,
-      ) ?? null
-    );
-  }
 
   private parseEvaluation(text: string): IdeaJudgeEvaluation {
     const parsed: unknown = JSON.parse(text);

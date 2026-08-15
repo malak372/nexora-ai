@@ -77,17 +77,17 @@ export const GENERATION_HEARTBEAT_INTERVAL_MS = 15 * 1000;
  * providers will respond. The pipeline must never mark a run completed unless
  * a persisted idea exists and FinalizationStage succeeds.
  */
-export const IDEA_GENERATION_TARGET_BUDGET_MS = 120_000;
+export const IDEA_GENERATION_TARGET_BUDGET_MS = 70_000;
 
 /**
  * Hard safety deadline. The 60-second target is a performance objective, not
  * a reason to destroy a valid run while persistence or a provider call is
  * finishing. External adapters keep their own short timeouts.
  */
-export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 300_000;
+export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 70_000;
 
 /** Maximum provider time allocated to one non-specialized core model. */
-export const IDEA_CORE_MODEL_TIMEOUT_MS = 22_000;
+export const IDEA_CORE_MODEL_TIMEOUT_MS = 14_000;
 
 /**
  * Provider-specific core-generation deadlines. Google receives a wider window
@@ -95,11 +95,11 @@ export const IDEA_CORE_MODEL_TIMEOUT_MS = 22_000;
  * OpenRouter remains bounded more aggressively so a slow upstream endpoint does
  * not consume the complete generation budget.
  */
-export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 18_000;
-export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 28_000;
+export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 12_000;
+export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 14_000;
 
 /** Use a configured local model only after every online core model fails. */
-export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = true;
+export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = false;
 
 /**
  * Enables comparative AI judging when at least two quality-approved candidates
@@ -113,7 +113,7 @@ export const IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED = true;
  * Maximum number of milliseconds reserved for deterministic cleanup and
  * persistence after the AI phase.
  */
-export const IDEA_GENERATION_FINALIZATION_RESERVE_MS = 12_000;
+export const IDEA_GENERATION_FINALIZATION_RESERVE_MS = 10_000;
 
 /**
  * Maximum duration a running generation may remain without
@@ -562,7 +562,7 @@ export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
  * the pipeline can keep the stronger result without returning to long provider
  * timeout chains.
  */
-export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = 78;
+export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = 76;
 
 /**
  * Maximum time granted to already-running hedged peer requests after the first
@@ -572,7 +572,7 @@ export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = 78;
  * that are already in flight to finish, then the strongest deterministic
  * quality-approved candidate is selected.
  */
-export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 2_500;
+export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 1_200;
 
 /**
  * Maximum number of bounded quality-improvement attempts sent to the same
@@ -581,7 +581,7 @@ export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 2_500;
 export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
 
 /** Skip expensive self-revision when the first pass is already usable. */
-export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 65;
+export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 68;
 
 /**
  * Number of AI models launched in the first provider-diverse wave.
@@ -634,7 +634,7 @@ export const IDEA_BENCHMARK_MAX_CANDIDATES =
  * intentionally larger than the target candidate count. This leaves room for
  * provider fallback without making the benchmark unbounded.
  */
-export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 5;
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 4;
 
 /**
  * Maximum number of bounded regeneration attempts for a quality-approved
@@ -644,7 +644,7 @@ export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 5;
  * many redesign attempts before the benchmark advances to the next model or
  * ranked opportunity.
  */
-export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 1;
+export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 0;
 
 /**
  * Preferred minimum number of valid candidates before comparative judging.
@@ -663,7 +663,7 @@ export const IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES = 1;
  * After the retry is exhausted, IdeaGenerationBenchmarkService continues with
  * the next model from the ordered fallback rotation.
  */
-export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 1;
+export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 0;
 
 /**
  * Number of recent generation runs inspected when rotating AI model

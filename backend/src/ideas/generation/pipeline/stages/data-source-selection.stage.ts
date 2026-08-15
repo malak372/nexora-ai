@@ -73,34 +73,51 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       : [];
 
     const selectedDomains = currentSelectedDomains.length > 0
-      ? currentSelectedDomains.map((domain) =>
-          domain.id === selection.domain.id
-            ? {
-                ...domain,
-                name: selection.domain.name,
-                keywords: Array.isArray(selection.domain.keywords)
-                  ? selection.domain.keywords
-                  : [],
-              }
-            : {
-                ...domain,
-                keywords: Array.isArray(domain.keywords)
-                  ? domain.keywords
-                  : [],
-              },
-        )
+      ? currentSelectedDomains.map((domain) => {
+          const existingEffective = Array.isArray(domain.effectiveSearchKeywords)
+            ? domain.effectiveSearchKeywords
+            : Array.isArray(domain.keywords)
+              ? domain.keywords
+              : [];
+          const configuredKeywords =
+            domain.id === selection.domain.id &&
+            Array.isArray(selection.domain.keywords)
+              ? selection.domain.keywords.slice(0, 12)
+              : Array.isArray(domain.configuredKeywords)
+                ? domain.configuredKeywords.slice(0, 12)
+                : [];
+          const effectiveSearchKeywords = mergeGenerationStringArrays(
+            [existingEffective, configuredKeywords],
+            {
+              lowercase: true,
+              maxItems: 12,
+              maxItemLength: 100,
+            },
+          );
+
+          return {
+            ...domain,
+            name:
+              domain.id === selection.domain.id
+                ? selection.domain.name
+                : domain.name,
+            keywords: effectiveSearchKeywords,
+            configuredKeywords,
+            effectiveSearchKeywords,
+          };
+        })
       : [{
           id: selection.domain.id,
           name: selection.domain.name,
-          keywords: Array.isArray(selection.domain.keywords)
-            ? selection.domain.keywords
-            : [],
+          keywords: selection.domain.keywords.slice(0, 12),
+          configuredKeywords: selection.domain.keywords.slice(0, 12),
+          effectiveSearchKeywords: selection.domain.keywords.slice(0, 12),
         }];
 
     const balancedDomainTerms: string[] = [];
     const domainTermBuckets = selectedDomains.map((domain) => [
       domain.name,
-      ...domain.keywords,
+      ...(domain.effectiveSearchKeywords ?? domain.keywords),
     ]);
     for (let termIndex = 0; balancedDomainTerms.length < 30; termIndex += 1) {
       let added = false;

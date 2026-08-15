@@ -91,8 +91,9 @@ type HistoricalDomainScore = {
  * 1. Explicit concrete domain selected by the requester.
  * 2. Description and keywords supplied with the current request.
  * 3. Saved domain preferences of the authenticated user.
- * 4. The user's generated, favorite, and accepted-idea history.
- * 5. A deterministic system-wide domain fallback.
+ * 4. The user's favorite-idea history.
+ * 5. The user's recent generated-idea history.
+ * 6. A deterministic system-wide domain fallback.
  *
  * The final fallback selects the least-used active concrete domain rather than
  * choosing randomly. This keeps results reproducible and improves domain
@@ -103,8 +104,7 @@ type HistoricalDomainScore = {
 @Injectable()
 export class DomainResolutionService {
   private static readonly GENERATED_IDEA_WEIGHT = 3;
-  private static readonly FAVORITE_IDEA_WEIGHT = 4;
-  private static readonly ACCEPTED_IDEA_WEIGHT = 5;
+  private static readonly FAVORITE_IDEA_WEIGHT = 5;
   private static readonly MAX_HISTORY_RECORDS_PER_SIGNAL = 100;
 
   constructor(private readonly prisma: PrismaService) {}
@@ -125,44 +125,60 @@ export class DomainResolutionService {
     }
 
     const domains = await this.loadConcreteDomains(input.language);
+    const hasCurrentRequest = this.hasRequestSearchInput(
+      input.description,
+      input.keywords,
+    );
+
+    /*
+     * Explicit request text has priority over stored personalization because it
+     * represents the user's current intent. If the request describes a domain
+     * that is not configured yet, create a concrete active domain and persist
+     * the same request terms as domain keywords. This keeps the next run fast
+     * and prevents an unrelated preference/history fallback from replacing the
+     * user's current problem scope.
+     */
+    if (hasCurrentRequest) {
+      if (domains.length > 0) {
+        const keywordResult = this.resolveByKeywords(
+          domains,
+          input.description,
+          input.keywords,
+        );
+
+        if (keywordResult) {
+          return keywordResult;
+        }
+      }
+
+      const createdDomainResult = await this.resolveOrCreateRequestDomain(input);
+      if (createdDomainResult) {
+        return createdDomainResult;
+      }
+    }
 
     if (domains.length === 0) {
       throw new BadRequestException('No active concrete domain is configured.');
     }
 
     /*
-     * Explicit request text has priority over stored personalization because it
-     * represents the user's current intent.
+     * These personalization reads are independent. Load them in one database
+     * latency window, then apply the deterministic priority order in memory:
+     * saved preferences -> favorites -> recent generation history.
      */
-    if (this.hasRequestSearchInput(input.description, input.keywords)) {
-      const keywordResult = this.resolveByKeywords(
-        domains,
-        input.description,
-        input.keywords,
-      );
+    const [
+      preferredDomainResult,
+      favoriteDomainResult,
+      historicalDomainResult,
+    ] = await Promise.all([
+      this.resolvePreferredDomain(input.userId, domains),
+      this.resolveFromFavorites(input.userId, domains),
+      this.resolveFromGeneratedHistory(input.userId, domains),
+    ]);
 
-      if (keywordResult) {
-        return keywordResult;
-      }
-    }
-
-    const preferredDomainResult = await this.resolvePreferredDomain(
-      input.userId,
-      domains,
-    );
-
-    if (preferredDomainResult) {
-      return preferredDomainResult;
-    }
-
-    const historicalDomainResult = await this.resolveFromUserHistory(
-      input.userId,
-      domains,
-    );
-
-    if (historicalDomainResult) {
-      return historicalDomainResult;
-    }
+    if (preferredDomainResult) return preferredDomainResult;
+    if (favoriteDomainResult) return favoriteDomainResult;
+    if (historicalDomainResult) return historicalDomainResult;
 
     return this.resolveSystemFallback(domains);
   }
@@ -361,17 +377,11 @@ export class DomainResolutionService {
   }
 
   /**
-   * Infers a domain from the user's behavioral history.
-   *
-   * Signals are weighted as follows:
-   * - Generated idea: 3 points.
-   * - Favorite idea: 4 points.
-   * - Accepted publication: 5 points.
-   *
-   * Acceptance receives the highest weight because it represents the strongest
-   * explicit commitment to an idea. Only active concrete domains are eligible.
+   * Resolves the strongest domain from the user's favorite ideas.
+   * Favorites are an explicit long-lived preference signal and therefore run
+   * before generated-idea history when no current request/domain was supplied.
    */
-  private async resolveFromUserHistory(
+  private async resolveFromFavorites(
     userId: string | undefined,
     domains: readonly DomainCandidate[],
   ): Promise<DomainResolutionResult | null> {
@@ -380,78 +390,65 @@ export class DomainResolutionService {
     }
 
     const domainIds = domains.map((domain) => domain.id);
-
-    const [generatedIdeas, favoriteIdeas, acceptedIdeas] = await Promise.all([
-      this.prisma.idea.findMany({
-        where: {
-          userId,
+    const favorites = await this.prisma.favoriteIdea.findMany({
+      where: {
+        userId,
+        idea: {
           deletedAt: null,
-          domainId: {
-            in: domainIds,
-          },
+          domainId: { in: domainIds },
         },
-        select: {
-          domainId: true,
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        take: DomainResolutionService.MAX_HISTORY_RECORDS_PER_SIGNAL,
-      }),
-      this.prisma.favoriteIdea.findMany({
-        where: {
-          userId,
-          idea: {
-            deletedAt: null,
-            domainId: {
-              in: domainIds,
-            },
-          },
-        },
-        select: {
-          idea: {
-            select: {
-              domainId: true,
-            },
-          },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        take: DomainResolutionService.MAX_HISTORY_RECORDS_PER_SIGNAL,
-      }),
-      this.prisma.ideaPublicationAcceptance.findMany({
-        where: {
-          userId,
-          publication: {
-            idea: {
-              deletedAt: null,
-              domainId: {
-                in: domainIds,
-              },
-            },
-          },
-        },
-        select: {
-          publication: {
-            select: {
-              idea: {
-                select: {
-                  domainId: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: {
-          acceptedAt: 'desc',
-        },
-        take: DomainResolutionService.MAX_HISTORY_RECORDS_PER_SIGNAL,
-      }),
-    ]);
+      },
+      select: {
+        idea: { select: { domainId: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: DomainResolutionService.MAX_HISTORY_RECORDS_PER_SIGNAL,
+    });
 
     const scores = new Map<string, HistoricalDomainScore>();
+    for (const favorite of favorites) {
+      this.addHistoricalScore(
+        scores,
+        favorite.idea.domainId,
+        DomainResolutionService.FAVORITE_IDEA_WEIGHT,
+      );
+    }
 
+    return this.buildHistoryResolution(
+      domains,
+      scores,
+      0.84,
+      'The user did not provide a current problem/domain, so favorite-idea history selected the most explicitly preferred domain.',
+      'Favorite idea history',
+    );
+  }
+
+  /**
+   * Resolves the domain the user most often generates ideas for. This is used
+   * only after current request text, selected domains, saved preferences, and
+   * favorites have produced no usable signal.
+   */
+  private async resolveFromGeneratedHistory(
+    userId: string | undefined,
+    domains: readonly DomainCandidate[],
+  ): Promise<DomainResolutionResult | null> {
+    if (!userId) {
+      return null;
+    }
+
+    const domainIds = domains.map((domain) => domain.id);
+    const generatedIdeas = await this.prisma.idea.findMany({
+      where: {
+        userId,
+        deletedAt: null,
+        domainId: { in: domainIds },
+      },
+      select: { domainId: true },
+      orderBy: { createdAt: 'desc' },
+      take: DomainResolutionService.MAX_HISTORY_RECORDS_PER_SIGNAL,
+    });
+
+    const scores = new Map<string, HistoricalDomainScore>();
     for (const idea of generatedIdeas) {
       this.addHistoricalScore(
         scores,
@@ -460,67 +457,54 @@ export class DomainResolutionService {
       );
     }
 
-    for (const favorite of favoriteIdeas) {
-      this.addHistoricalScore(
-        scores,
-        favorite.idea.domainId,
-        DomainResolutionService.FAVORITE_IDEA_WEIGHT,
-      );
-    }
+    return this.buildHistoryResolution(
+      domains,
+      scores,
+      0.72,
+      "No current request, saved preference, or favorite-domain signal was available, so the user's recent generation history selected the domain.",
+      'Recent generated-idea history',
+    );
+  }
 
-    for (const acceptance of acceptedIdeas) {
-      this.addHistoricalScore(
-        scores,
-        acceptance.publication.idea.domainId,
-        DomainResolutionService.ACCEPTED_IDEA_WEIGHT,
-      );
-    }
-
+  /** Converts weighted history signals into one deterministic domain result. */
+  private buildHistoryResolution(
+    domains: readonly DomainCandidate[],
+    scores: ReadonlyMap<string, HistoricalDomainScore>,
+    confidence: number,
+    reason: string,
+    candidateReason: string,
+  ): DomainResolutionResult | null {
     const domainById = new Map(domains.map((domain) => [domain.id, domain]));
-
-    const bestHistoricalMatch = [...scores.values()]
+    const ordered = [...scores.values()]
       .filter((item) => domainById.has(item.domainId))
       .sort((first, second) => {
         const scoreDifference = second.score - first.score;
+        if (scoreDifference !== 0) return scoreDifference;
+        return (domainById.get(first.domainId)?.name ?? '').localeCompare(
+          domainById.get(second.domainId)?.name ?? '',
+        );
+      });
 
-        if (scoreDifference !== 0) {
-          return scoreDifference;
-        }
+    const best = ordered[0];
+    if (!best) return null;
 
-        const firstName = domainById.get(first.domainId)?.name ?? '';
-        const secondName = domainById.get(second.domainId)?.name ?? '';
-
-        return firstName.localeCompare(secondName);
-      })[0];
-
-    if (!bestHistoricalMatch) {
-      return null;
-    }
-
-    const historicalCandidates = [...scores.values()]
-      .filter((item) => domainById.has(item.domainId))
-      .sort((first, second) => second.score - first.score)
-      .slice(0, 3)
-      .map((item) => ({
-        domainId: item.domainId,
-        domainName: domainById.get(item.domainId)?.name ?? item.domainId,
-        score: item.score,
-        reasons: ['Weighted generated, favorite, and accepted idea history'],
-      }));
+    const selectedDomain = domainById.get(best.domainId);
+    if (!selectedDomain) return null;
 
     return {
-      domainId: bestHistoricalMatch.domainId,
-      domainName:
-        domainById.get(bestHistoricalMatch.domainId)?.name ??
-        bestHistoricalMatch.domainId,
+      domainId: selectedDomain.id,
+      domainName: selectedDomain.name,
       source: DomainResolutionSource.USER_HISTORY,
-      confidence: 0.75,
+      confidence,
       trace: {
-        reasons: [
-          'No explicit/current-request or saved-domain match was available, so weighted user history selected the domain.',
-        ],
+        reasons: [reason],
         matchedInterests: [],
-        candidates: historicalCandidates,
+        candidates: ordered.slice(0, 3).map((item) => ({
+          domainId: item.domainId,
+          domainName: domainById.get(item.domainId)?.name ?? item.domainId,
+          score: item.score,
+          reasons: [candidateReason],
+        })),
       },
     };
   }
@@ -555,36 +539,74 @@ export class DomainResolutionService {
     description?: string,
     keywords?: readonly string[],
   ): DomainResolutionResult | null {
-    const searchText = [description ?? '', ...(keywords ?? [])]
+    const rawSearchText = [description ?? '', ...(keywords ?? [])]
       .join(' ')
-      .trim()
-      .toLowerCase();
+      .trim();
 
-    if (!searchText) {
+    if (!rawSearchText) {
       return null;
     }
 
+    const normalizedSearchText = this.normalizeSemanticText(rawSearchText);
+    const searchTokens = new Set(
+      normalizedSearchText.split(/\s+/).filter(Boolean),
+    );
+
     const rankedDomains = domains
       .map((domain) => {
-        const terms = [
+        const configuredTerms = [
           domain.name,
           ...domain.domainKeywords.map((item) => item.keyword),
+          ...this.getDomainIntentAliases(domain.name),
         ]
-          .map((term) => term.trim().toLowerCase())
+          .map((term) => this.normalizeSemanticText(term))
           .filter(Boolean);
 
-        const score = terms.reduce(
-          (totalScore, term) =>
-            totalScore +
-            (searchText.includes(term)
-              ? Math.max(1, term.split(/\s+/).length)
-              : 0),
-          0,
-        );
+        let score = 0;
+        const reasons: string[] = [];
+
+        for (const term of [...new Set(configuredTerms)]) {
+          const termTokens = term.split(/\s+/).filter(Boolean);
+
+          if (normalizedSearchText.includes(term)) {
+            const exactWeight = Math.max(3, termTokens.length * 3);
+            score += exactWeight;
+            reasons.push(`Matched request phrase: ${term}`);
+            continue;
+          }
+
+          const matchedTokens = termTokens.filter((token) =>
+            searchTokens.has(token),
+          );
+
+          if (matchedTokens.length === 0) {
+            continue;
+          }
+
+          if (
+            termTokens.length > 1 &&
+            matchedTokens.length === 1 &&
+            matchedTokens[0] === 'ai'
+          ) {
+            continue;
+          }
+
+          const coverage = matchedTokens.length / termTokens.length;
+
+          if (coverage >= 0.5 || termTokens.length === 1) {
+            const tokenWeight =
+              matchedTokens.length * 2 + (coverage === 1 ? 1 : 0);
+            score += tokenWeight;
+            reasons.push(
+              `Matched request terms: ${matchedTokens.join(', ')}`,
+            );
+          }
+        }
 
         return {
           domain,
           score,
+          reasons: [...new Set(reasons)].slice(0, 4),
         };
       })
       .sort(
@@ -595,18 +617,26 @@ export class DomainResolutionService {
 
     const bestMatch = rankedDomains[0];
 
-    if (!bestMatch || bestMatch.score <= 0) {
+    if (!bestMatch || bestMatch.score < 2) {
       return null;
     }
+
+    const secondBestScore = rankedDomains[1]?.score ?? 0;
+    const lead = Math.max(0, bestMatch.score - secondBestScore);
+    const confidence = Math.min(
+      0.97,
+      0.68 + Math.min(0.2, bestMatch.score * 0.02) + Math.min(0.08, lead * 0.02),
+    );
 
     return {
       domainId: bestMatch.domain.id,
       domainName: bestMatch.domain.name,
       source: DomainResolutionSource.KEYWORD_MATCH,
-      confidence: Math.min(0.95, 0.55 + bestMatch.score * 0.08),
+      confidence,
       trace: {
         reasons: [
-          'The current generation description/keywords matched this domain more strongly than other active domains.',
+          'The current request intent matched this domain more strongly than stored preferences or historical behavior.',
+          ...bestMatch.reasons,
         ],
         matchedInterests: [],
         candidates: rankedDomains
@@ -616,10 +646,414 @@ export class DomainResolutionService {
             domainId: candidate.domain.id,
             domainName: candidate.domain.name,
             score: candidate.score,
-            reasons: ['Matched current request text or keywords'],
+            reasons:
+              candidate.reasons.length > 0
+                ? candidate.reasons
+                : ['Matched normalized current-request terms'],
           })),
       },
     };
+  }
+
+  private normalizeSemanticText(value: string): string {
+    const aliases: Readonly<Record<string, string>> = {
+      financial: 'finance',
+      finances: 'finance',
+      financing: 'finance',
+      administration: 'administrative',
+      admin: 'administrative',
+      companies: 'business',
+      company: 'business',
+      businesses: 'business',
+      invoicing: 'invoice',
+      invoices: 'invoice',
+      expenses: 'expense',
+      budgeting: 'budget',
+      budgets: 'budget',
+      reconciliations: 'reconciliation',
+      payments: 'payment',
+      payrolls: 'payroll',
+      procurements: 'procurement',
+    };
+
+    return value
+      .trim()
+      .toLowerCase()
+      .normalize('NFKC')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((token) => aliases[token] ?? token)
+      .join(' ');
+  }
+
+  private getDomainIntentAliases(domainName: string): readonly string[] {
+    const normalizedDomain = this.normalizeComparableValue(domainName);
+
+    if (normalizedDomain === 'finance') {
+      return [
+        'financial management',
+        'financial administration',
+        'administrative finance',
+        'finance operations',
+        'business finance',
+        'accounting',
+        'bookkeeping',
+        'invoice management',
+        'expense management',
+        'budget management',
+        'payroll',
+        'procurement',
+        'reconciliation',
+        'cash flow',
+        'back office finance',
+      ];
+    }
+
+    if (normalizedDomain === 'business operations') {
+      return [
+        'administration',
+        'administrative operations',
+        'business operations',
+        'company operations',
+        'office administration',
+        'approval workflow',
+        'document workflow',
+        'back office operations',
+        'internal operations',
+        'manual administration',
+        'workflow bottleneck',
+      ];
+    }
+
+    if (normalizedDomain === 'artificial intelligence') {
+      return [
+        'artificial intelligence',
+        'machine learning',
+        'generative ai',
+        'ai model',
+        'model inference',
+        'ai reliability',
+        'model hallucination',
+        'prompt reliability',
+      ];
+    }
+
+    if (normalizedDomain === 'e commerce' || normalizedDomain === 'ecommerce') {
+      return [
+        'online commerce',
+        'online store',
+        'shopping',
+        'checkout',
+        'merchant',
+        'order management',
+      ];
+    }
+
+    if (normalizedDomain === 'agriculture') {
+      return [
+        'farming',
+        'farm management',
+        'irrigation',
+        'crop management',
+        'crop monitoring',
+        'soil',
+        'harvest',
+        'agricultural operations',
+      ];
+    }
+
+    if (normalizedDomain === 'energy') {
+      return [
+        'electricity',
+        'solar',
+        'power grid',
+        'energy consumption',
+        'energy monitoring',
+        'battery',
+        'utility',
+        'power management',
+      ];
+    }
+
+    if (normalizedDomain === 'education') {
+      return [
+        'learning',
+        'teaching',
+        'student',
+        'students',
+        'school',
+        'university',
+        'homework',
+        'assignment',
+        'coursework',
+        'classroom',
+        'grading',
+      ];
+    }
+
+    if (normalizedDomain === 'healthcare') {
+      return ['health', 'medical', 'clinic', 'patient', 'hospital'];
+    }
+
+    return [];
+  }
+
+  /**
+   * Creates a concrete domain when current request text does not match any
+   * configured domain. The operation is idempotent and stores a compact search
+   * vocabulary so subsequent collection runs can reuse it immediately.
+   */
+  private async resolveOrCreateRequestDomain(
+    input: ResolveDomainInput,
+  ): Promise<DomainResolutionResult | null> {
+    const domainName = this.inferDomainName(input.description, input.keywords);
+    if (!domainName || this.isGeneral(domainName)) {
+      return null;
+    }
+
+    const keywordCandidates = this.buildAutoDomainKeywords(
+      input.description,
+      input.keywords,
+      domainName,
+    );
+
+    const persistDomain = () =>
+      this.prisma.$transaction(async (transaction) => {
+        const existing = await transaction.domain.findFirst({
+          where: {
+            name: { equals: domainName, mode: 'insensitive' },
+          },
+          select: { id: true, name: true, isActive: true },
+        });
+
+        const resolved = existing
+          ? existing.isActive
+            ? existing
+            : await transaction.domain.update({
+                where: { id: existing.id },
+                data: { isActive: true },
+                select: { id: true, name: true, isActive: true },
+              })
+          : await transaction.domain.create({
+              data: { name: domainName, isActive: true },
+              select: { id: true, name: true, isActive: true },
+            });
+
+        if (keywordCandidates.length > 0) {
+          await transaction.domainKeyword.createMany({
+            data: keywordCandidates.map((keyword) => ({
+              domainId: resolved.id,
+              keyword,
+              language: input.language,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        return resolved;
+      });
+
+    let domain: Awaited<ReturnType<typeof persistDomain>>;
+    try {
+      domain = await persistDomain();
+    } catch (error: unknown) {
+      /*
+       * Two simultaneous unmatched requests can infer the same new domain.
+       * Treat the unique-name race as success and reuse the winner instead of
+       * surfacing a transient database error to idea generation.
+       */
+      if (
+        !(
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        )
+      ) {
+        throw error;
+      }
+
+      const racedDomain = await this.prisma.domain.findFirst({
+        where: { name: { equals: domainName, mode: 'insensitive' } },
+        select: { id: true, name: true, isActive: true },
+      });
+      if (!racedDomain) throw error;
+
+      domain = racedDomain.isActive
+        ? racedDomain
+        : await this.prisma.domain.update({
+            where: { id: racedDomain.id },
+            data: { isActive: true },
+            select: { id: true, name: true, isActive: true },
+          });
+
+      if (keywordCandidates.length > 0) {
+        await this.prisma.domainKeyword.createMany({
+          data: keywordCandidates.map((keyword) => ({
+            domainId: domain.id,
+            keyword,
+            language: input.language,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    return {
+      domainId: domain.id,
+      domainName: domain.name,
+      source: DomainResolutionSource.KEYWORD_MATCH,
+      confidence: 0.72,
+      trace: {
+        reasons: [
+          'The current request did not match an existing domain strongly enough, so a new active domain was created from the requester intent instead of falling back to unrelated personalization.',
+          `Stored ${keywordCandidates.length} request-derived search keyword(s) for future collection.`,
+        ],
+        matchedInterests: [],
+        candidates: [
+          {
+            domainId: domain.id,
+            domainName: domain.name,
+            score: 1,
+            reasons: ['Auto-created from unmatched current-request intent'],
+          },
+        ],
+      },
+    };
+  }
+
+  /** Derives a stable short domain label from unmatched request text. */
+  private inferDomainName(
+    description?: string,
+    keywords?: readonly string[],
+  ): string | null {
+    const requestText = [description ?? '', ...(keywords ?? [])]
+      .join(' ')
+      .normalize('NFKC')
+      .toLowerCase();
+    const knownDomain = this.inferKnownDomainName(requestText);
+    if (knownDomain) return knownDomain;
+
+    const stopWords = new Set([
+      'a', 'an', 'and', 'are', 'about', 'for', 'from', 'in', 'into', 'is', 'of',
+      'on', 'or', 'the', 'to', 'with', 'without', 'problem', 'problems', 'issue',
+      'issues', 'need', 'needs', 'want', 'wants', 'software', 'system', 'app',
+      'application', 'platform', 'user', 'users', 'using', 'use', 'help', 'make',
+      'improve', 'solution', 'solutions', 'حل', 'مشكلة', 'مشاكل', 'في', 'من',
+      'على', 'عن', 'مع', 'بدون', 'مستخدم', 'مستخدمين', 'تطبيق', 'نظام',
+    ]);
+
+    const source = [
+      ...(keywords ?? []),
+      description ?? '',
+    ]
+      .join(' ')
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((token) => token.length >= 3 && !stopWords.has(token));
+
+    const unique = [...new Set(source)].slice(0, 3);
+    if (unique.length === 0) return null;
+
+    return unique
+      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+      .join(' ')
+      .slice(0, 80);
+  }
+
+  /**
+   * Maps common requester vocabulary to a canonical domain name even when the
+   * corresponding domain row does not exist yet. This avoids creating labels
+   * such as "Students Homework" when the actual missing domain is Education.
+   */
+  private inferKnownDomainName(requestText: string): string | null {
+    const normalized = requestText
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const definitions: readonly { readonly name: string; readonly pattern: RegExp }[] = [
+      {
+        name: 'Education',
+        pattern: /\b(?:student|students|homework|assignment|school|teacher|classroom|coursework|university|learning|grading)\b/u,
+      },
+      {
+        name: 'Agriculture',
+        pattern: /\b(?:agriculture|agricultural|farm|farming|farmer|crop|crops|irrigation|harvest|soil)\b/u,
+      },
+      {
+        name: 'E-commerce',
+        pattern: /\b(?:e commerce|ecommerce|checkout|shopping cart|online store|merchant|seller|order|orders|marketplace)\b/u,
+      },
+      {
+        name: 'Energy',
+        pattern: /\b(?:energy|electricity|solar|power grid|battery|utility|utilities|kilowatt|metering)\b/u,
+      },
+      {
+        name: 'Healthcare',
+        pattern: /\b(?:healthcare|medical|patient|patients|clinic|hospital|doctor|nurse|pharmacy)\b/u,
+      },
+      {
+        name: 'Finance',
+        pattern: /\b(?:finance|financial|accounting|invoice|expense|budget|payroll|reconciliation|cash flow)\b/u,
+      },
+      {
+        name: 'Transportation',
+        pattern: /\b(?:transportation|transport|transit|bus|route planning|fare|vehicle|commute|mobility)\b/u,
+      },
+      {
+        name: 'Logistics',
+        pattern: /\b(?:logistics|shipment|delivery|warehouse|fleet|dispatch|inventory handoff)\b/u,
+      },
+      {
+        name: 'Artificial Intelligence',
+        pattern: /\b(?:artificial intelligence|machine learning|generative ai|llm|model inference|prompt)\b/u,
+      },
+      {
+        name: 'Business Operations',
+        pattern: /\b(?:administration|administrative|back office|approval workflow|office operations|business operations|paperwork)\b/u,
+      },
+    ];
+
+    return definitions.find((definition) => definition.pattern.test(normalized))?.name ?? null;
+  }
+
+  /** Builds bounded, search-friendly keywords for an auto-created domain. */
+  private buildAutoDomainKeywords(
+    description: string | undefined,
+    keywords: readonly string[] | undefined,
+    domainName: string,
+  ): string[] {
+    const normalized = [
+      domainName,
+      ...this.getDomainIntentAliases(domainName),
+      ...(keywords ?? []),
+      ...(description ? [description] : []),
+    ]
+      .map((value) =>
+        value
+          .normalize('NFKC')
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .replace(/\s+/gu, ' ')
+          .trim(),
+      )
+      .filter(Boolean);
+
+    const tokenCandidates = normalized
+      .flatMap((value) => value.split(' '))
+      .filter((value) => value.length >= 3)
+      .filter(
+        (value) =>
+          !['problem', 'problems', 'issue', 'issues', 'need', 'needs', 'software', 'system', 'application', 'platform'].includes(value),
+      );
+
+    const phraseCandidates = normalized
+      .filter((value) => value.split(' ').length <= 6)
+      .slice(0, 6);
+
+    return [...new Set([...phraseCandidates, ...tokenCandidates])].slice(0, 12);
   }
 
   /**

@@ -400,6 +400,8 @@ export class PromptBuilderService {
      */
     const renderedPrompt = [
       this.buildEvidenceGroundingDirective(),
+      this.buildRequestIntentDirective(input),
+      this.buildTierOutputDirective(input),
       this.buildOutputQualityDirective(analysis, input),
       this.buildDomainEvidenceDirective(input),
       this.buildOpportunitySelectionDirective(input),
@@ -444,6 +446,50 @@ export class PromptBuilderService {
    * vague premium budget. Product descriptions are also explicitly separated
    * from complaint evidence before the model writes its final idea.
    */
+  private buildRequestIntentDirective(input: PromptBuilderInput): string {
+    if (input.purpose !== 'IDEA_GENERATION') {
+      return '';
+    }
+
+    const requestDescription = input.requestDescription?.trim();
+
+    if (!requestDescription) {
+      return '';
+    }
+
+    return [
+      'APPLICATION-ENFORCED REQUEST INTENT:',
+      `- Requester problem scope: ${requestDescription}`,
+      '- Use this text to prioritize which collected problems are relevant to the requester.',
+      '- This text is not community evidence and must never be cited as proof that the problem exists.',
+      '- If collected evidence contradicts or does not support the requested scope, keep the output cautious and follow the evidence rather than inventing support.',
+    ].join('\n');
+  }
+
+  private buildTierOutputDirective(input: PromptBuilderInput): string {
+    if (input.purpose !== 'IDEA_GENERATION') {
+      return '';
+    }
+
+    if (input.generationType === IdeaGenerationType.NORMAL_FREE) {
+      return [
+        'APPLICATION-ENFORCED NORMAL_FREE CONTRACT:',
+        '- Return exactly these root keys: title, problemStatement, objectives, targetUsers, partialAbstract.',
+        '- Never return limitedAbstract, fullAbstract, advancedOutputs, businessModel, technologyStack, systemArchitecture, budgetEstimation, implementationTimeline, feasibilityAssessment, marketPotential, valueProposition, localRegulations, or any other premium-only field.',
+      ].join('\n');
+    }
+
+    if (input.generationType === IdeaGenerationType.GUEST_FREE) {
+      return [
+        'APPLICATION-ENFORCED GUEST_FREE CONTRACT:',
+        '- Return only the fields allowed by the supplied guest response schema.',
+        '- Never return fullAbstract, advancedOutputs, or premium-only fields.',
+      ].join('\n');
+    }
+
+    return '';
+  }
+
   private buildOutputQualityDirective(
     analysis: IdeaGenerationNlpContext | CollectionJobPromptContext['nlpAnalysis'],
     input: PromptBuilderInput,
@@ -512,6 +558,7 @@ export class PromptBuilderService {
       '- The MVP must remain bounded: one primary integration path, one end-to-end workflow, one review/dashboard surface, and one measurement plan. Move broad multi-provider automation, autonomous remediation, and enterprise-wide rollout to post-MVP.',
       '- For sparse evidence, partialAbstract, fullAbstract, marketPotential, valueProposition, and communityFeedbackSummary must avoid recurring, common, widespread, substantial demand, validated, or market-proven wording.',
       '- Titles must name the distinctive product mechanism or outcome, not only the domain, pilot location, integration, sync, manager, platform, or system.',
+      '- Do not write "the root cause is suspected to be", "stem from", "result from", "caused by", "driven by", or equivalent causal wording from symptom-only evidence. Prefer "Potential contributing factors to validate include ..." unless the evidence explicitly demonstrates causation.',
       '- Before returning JSON, internally verify: standalone customer value, credible buyer/sponsor, explicit adoption trigger, bounded MVP, evidence-qualified market language, exact NLP counts, and internally consistent architecture.',
     ].join('\n');
   }
@@ -535,12 +582,21 @@ export class PromptBuilderService {
       sampleComments: item.sampleComments,
     }));
 
+    const winnerDomains = input.opportunityRanking?.selected.matchedDomainNames ?? [];
+
     return [
       'APPLICATION-ENFORCED CROSS-DOMAIN EVIDENCE MAP:',
       '- Keep each evidence sample attached to its domain.',
+      ...(winnerDomains.length > 0
+        ? [
+            `- The selected opportunity is primarily supported by: ${winnerDomains.join(', ')}.`,
+            '- Use those winner domains for the title, problem framing, and primary affected users. Do not substitute the first selected domain merely because it owns the collection job.',
+          ]
+        : []),
       '- One valid sample is enough to form a cautious preliminary problem hypothesis.',
-      '- When several selected domains have evidence, combine one compatible problem from each domain into one coherent end-to-end product workflow.',
-      '- A domain with no collected evidence may still appear as an explicitly labelled validation hypothesis; never present it as an observed community fact.',
+      '- selectedDomains define the search space only. matchedDomainNames on the selected opportunity define the final claim space.',
+      '- Evidence from a selected domain outside the winner domain set remains alternative evidence and must not be merged into the final title, problem, users, objectives, abstracts, or capabilities.',
+      '- A domain with no collected evidence may remain visible in diagnostics as an unsupported search-space domain, but it must not appear as part of the generated product claim.',
       '<untrusted_domain_evidence>',
       this.formatJsonForPrompt(
         evidence,
@@ -577,6 +633,7 @@ export class PromptBuilderService {
       need: item.need,
       solutionArea: item.solutionArea,
       score: item.finalScore,
+      matchedDomainNames: item.matchedDomainNames ?? [],
       evidenceSamples: item.evidenceSamples
         .slice(0, 2)
         .map((sample) => sample.replace(/\s+/gu, ' ').trim().slice(0, 1_200)),
@@ -592,6 +649,8 @@ export class PromptBuilderService {
       frequency: selected.frequency,
       severity: selected.severity,
       score: selected.finalScore,
+      matchedDomainNames: selected.matchedDomainNames ?? [],
+      domainRelevanceScores: selected.domainRelevanceScores ?? {},
       evidenceSamples: selected.evidenceSamples
         .slice(0, 2)
         .map((sample) => sample.replace(/\s+/gu, ' ').trim().slice(0, 1_800)),
@@ -601,9 +660,9 @@ export class PromptBuilderService {
       'AUTHORITATIVE OPPORTUNITY SELECTION:',
       '- The benchmark will generate distinct candidates from the highest-ranked opportunities below.',
       '- The selected opportunity remains the default direction when no candidate-specific assignment is appended.',
-      '- Derive a concrete user workflow and root cause from the evidence samples; never use a generic NLP label as the product concept.',
-      '- Cover every selected evidence-backed problem completely. Secondary capabilities are allowed only when they connect the same end-to-end workflow.',
-      '- Alternatives may be used only as supporting capabilities when they are compatible with the same user workflow.',
+      '- Derive a concrete user workflow from the evidence samples. Treat causal explanations as hypotheses unless the supplied evidence explicitly proves causation.',
+      '- Cover the selected opportunity completely. Its verified matchedDomainNames define the only domain claims allowed in the generated candidate.',
+      '- Shortlisted alternatives are diagnostic references only. Do not merge their domains, users, problems, or capabilities into the selected candidate unless a candidate-specific benchmark assignment explicitly selects that alternative instead.',
       '- A candidate-specific benchmark assignment may intentionally select a lower-ranked shortlisted opportunity to create concept diversity.',
       '- Do not generate a thin middleware, dashboard, wrapper, tracker, or document proxy unless the evidence proves that this is the complete product opportunity and the differentiator is substantial.',
       '- Prefer a defensible end-to-end product capability that measurably improves the affected workflow.',
@@ -640,15 +699,25 @@ export class PromptBuilderService {
 
     const domains = input.selectedDomains ?? [];
     const domainNames = domains.map((domain) => domain.name);
+    const winnerDomainNames = input.opportunityRanking?.selected.matchedDomainNames ?? [];
 
     return [
       'APPLICATION-ENFORCED MULTI-DOMAIN IDEA NARRATIVE:',
-      '- Return one coherent software product. It may solve compatible evidence-backed problems from more than one selected domain.',
+      '- Return one coherent software product scoped to the selected opportunity. It is cross-domain only when the selected opportunity matchedDomainNames contains more than one verified domain.',
       '- problemStatement must be one polished narrative paragraph of 90-180 words. Include only evidence-backed problems that the returned objectives and solution capabilities directly address. Cross-domain and multi-problem ideas are allowed, but every included problem must map to at least one concrete objective, one affected user role, and one product capability.',
-      '- Do not add legal, HR, recruitment, compliance, or any other cross-domain module unless its own evidence-backed problem is included and that module is necessary to the same end-to-end workflow.',
+      '- Do not add legal, HR, recruitment, compliance, AI, or any other selected-domain module that falls outside the selected opportunity matchedDomainNames, even when a separate shortlisted alternative has evidence for it.',
       '- When evidence contains unrelated problems, select the strongest coherent problem cluster instead of combining unrelated feature bundles.',
       '- Do not place solutions, objectives, feature lists, "Solution response", numbered portfolio entries, or implementation instructions inside problemStatement.',
-      '- Mention a domain only when supplied evidence supports its contribution. Do not force unsupported domains into the idea.',
+      '- Mention a domain as part of the product claim only when it belongs to the selected opportunity matchedDomainNames. Do not promote evidence from a separate alternative opportunity into the final candidate.',
+      ...(winnerDomainNames.length > 0
+        ? [
+            `- Authoritative final claim domains: ${winnerDomainNames.join(', ')}. The title, problem statement, affected users, objectives, abstracts, features, architecture examples, market discussion, and pilot participants must stay inside this set.`,
+            `- Search-space domains outside the final claim set are forbidden in the generated narrative: ${domainNames.filter((name) => !winnerDomainNames.some((winner) => winner.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase())).join(', ') || 'none'}.`,
+            winnerDomainNames.length > 1
+              ? `- When referring to the evidence source in prose, use "across ${winnerDomainNames.join(' and ')}" because the selected opportunity itself is verified across those domains.`
+              : `- When referring to the evidence source in prose, use the single verified winner domain ${winnerDomainNames[0]}. Do not describe the product as cross-domain merely because other selected domains produced separate evidence.`,
+          ]
+        : []),
       '- objectives must contain exactly 4 concrete, non-overlapping items: at least 2 distinct product capabilities, 1 security/privacy/operational-control capability, and 1 combined pilot measurement objective that establishes a baseline and evaluates directional change. Do not spend two separate objectives on baseline and evaluation.',
       '- targetUsers must contain 2-4 specific professional or behavioral segments. Never use vague labels such as "General users", "Everyone", or "People".',
       '- partialAbstract/limitedAbstract must be one concise overview of 80-130 words. It must describe the product, primary user, core workflow, and value in no more than four sentences.',
@@ -660,8 +729,8 @@ export class PromptBuilderService {
       '- system-architecture must explain component boundaries, data flow, integration method, read/write permissions, background processing, storage access, and security boundaries. For containerized local-file products, state whether bind mounts are read-only and how external APIs or credentials are handled.',
       ...(domainNames.length > 1
         ? [
-            `- Selected domains: ${domainNames.join(', ')}.`,
-            '- Cross-domain ideas are encouraged when the evidence shows one connected end-to-end workflow. Keep each domain contribution explicit but integrated.',
+            `- Search-space domains: ${domainNames.join(', ')}. These domains guided collection and ranking only; they are not automatically allowed in the final narrative.`,
+            `- Final claim domains: ${winnerDomainNames.join(', ') || 'the domain represented by the selected opportunity'}. Cross-domain wording is allowed only when this final claim set contains more than one domain.`,
           ]
         : [
             `- Selected domain: ${domainNames[0] ?? 'the resolved generation domain'}.`,

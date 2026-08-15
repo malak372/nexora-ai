@@ -91,7 +91,7 @@ export const IDEA_JUDGE_RELEVANT_ADVANCED_OUTPUT_KEYS = new Set<string>([
 
 
 /** Maximum time reserved for the optional comparative judge request. */
-export const IDEA_JUDGE_REQUEST_TIMEOUT_MS = 8_000;
+export const IDEA_JUDGE_REQUEST_TIMEOUT_MS = 5_000;
 
 /** Local judge fallback is disabled inside the strict one-minute path. */
 export const IDEA_JUDGE_ALLOW_LOCAL_FALLBACK = false;

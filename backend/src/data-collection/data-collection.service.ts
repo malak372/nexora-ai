@@ -152,7 +152,7 @@ export class DataCollectionService {
    * below ten seconds leaves time for filtering, persistence, and deterministic
    * NLP inside the desired 10–20 second collection window.
    */
-  private readonly FAST_GENERATION_COLLECTOR_TIMEOUT_MS = 8_000;
+  private readonly FAST_GENERATION_COLLECTOR_TIMEOUT_MS = 6_000;
 
   constructor(
     private readonly collectionJobService: CollectionJobService,
@@ -592,7 +592,7 @@ export class DataCollectionService {
             domain: {
               id: domain.id,
               name: domain.name,
-              keywords: domainKeywords,
+              keywords: relevanceTerms.slice(0, 30),
             },
             location: {
               country: dto.country,

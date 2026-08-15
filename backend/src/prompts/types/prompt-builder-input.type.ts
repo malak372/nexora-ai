@@ -67,6 +67,8 @@ export type IdeaGenerationPromptInput = {
    */
   readonly requesterUserId?: string;
 
+  readonly requestDescription?: string | null;
+
   /**
    * Deterministic opportunity ranking resolved before prompt construction.
    */

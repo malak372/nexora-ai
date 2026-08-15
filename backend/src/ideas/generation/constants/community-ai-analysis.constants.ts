@@ -15,7 +15,7 @@ export const COMMUNITY_AI_ANALYSIS_SCHEMA_NAME =
  * The value is sufficient for a compact structured response while keeping the
  * community-analysis stage inside the bounded fast-generation budget.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 900;
+export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 1_300;
 
 /**
  * Low temperature keeps extraction deterministic, evidence-focused,
@@ -46,7 +46,7 @@ export const COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES = 1;
 /**
  * Maximum number of opportunities accepted from one AI response.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES = 2;
+export const COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES = 3;
 
 /**
  * Number of domain-validation attempts using different online models.
@@ -66,10 +66,10 @@ export const COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION = 1;
  * The bounded timeout prevents the community-analysis stage from becoming a
  * bottleneck in the one-minute generation path.
  */
-export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 4_800;
+export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 5_200;
 
 /** Hard wall-clock cap for the complete online fallback chain. */
-export const COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS = 5_300;
+export const COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS = 6_000;
 
 /**
  * Disables the explicit Ollama fallback in the strict fast-generation path.

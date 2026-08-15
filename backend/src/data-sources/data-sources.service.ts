@@ -258,6 +258,62 @@ export class DataSourcesService implements OnModuleInit {
     return this.mapDataSourceResponse(dataSource);
   }
 
+  async remove(id: string, adminId: string) {
+    const existing = await this.prisma.dataSource.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            collectionJobSources: true,
+            socialPosts: true,
+          },
+        },
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Data source was not found.');
+    }
+
+    const collectionJobs = existing._count.collectionJobSources;
+    const socialPosts = existing._count.socialPosts;
+
+    if (collectionJobs > 0 || socialPosts > 0) {
+      throw new ConflictException(
+        `This data source cannot be deleted because it is referenced by ${collectionJobs} collection job${collectionJobs === 1 ? '' : 's'} and ${socialPosts} collected post${socialPosts === 1 ? '' : 's'}. Deactivate it instead to preserve historical evidence.`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.auditService.createLog(
+        {
+          actorId: adminId,
+          action: AuditAction.ADMIN_UPDATE_DATA_SOURCE,
+          targetType: AuditTargetType.DATA_SOURCE,
+          targetId: id,
+          oldValue: this.toAuditSnapshot(existing),
+          newValue: {
+            deleted: true,
+            id: existing.id,
+            key: existing.key,
+            displayName: existing.displayName,
+          },
+        },
+        tx,
+      );
+
+      await tx.dataSource.delete({
+        where: { id },
+      });
+    });
+
+    return {
+      message: 'Data source deleted successfully.',
+      id: existing.id,
+      key: existing.key,
+    };
+  }
+
   async update(
     id: string,
     dto: UpdateDataSourceDto,

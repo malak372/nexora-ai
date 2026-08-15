@@ -136,6 +136,11 @@ type NormalizedCandidate = {
   raw: Prisma.JsonValue;
 };
 
+type SelectedDomainRankingInput = {
+  readonly name: string;
+  readonly keywords: readonly string[];
+};
+
 /**
  * Signals that NLP completed successfully but produced no candidate that can
  * be ranked. The pipeline treats this as insufficient evidence, not as an NLP
@@ -162,8 +167,12 @@ export class IdeaOpportunityRankingService {
     locationTerms: readonly string[],
     previousIdeaTexts: readonly string[] = [],
     communityAiAnalysis: CommunityAiAnalysis | null = null,
-    selectedDomainTerms: readonly string[] = [],
+    selectedDomains: readonly SelectedDomainRankingInput[] = [],
   ): IdeaOpportunityRanking {
+    const selectedDomainTerms = selectedDomains.flatMap((domain) => [
+      domain.name,
+      ...domain.keywords,
+    ]);
     const extractedCandidates = [
       ...this.extractEvidenceFirstCandidates(nlp),
       ...this.extractCommunityAiCandidates(communityAiAnalysis),
@@ -201,6 +210,7 @@ export class IdeaOpportunityRankingService {
         previousIdeaTexts,
         nlp.confidence ?? 0,
         selectedDomainTerms,
+        selectedDomains,
       ),
     );
 
@@ -298,6 +308,109 @@ export class IdeaOpportunityRankingService {
         orderedCandidates,
         evidenceCoverage,
       ),
+    };
+  }
+
+  reconcileVerifiedDomainAttribution(
+    ranking: IdeaOpportunityRanking,
+    selectedDomains: readonly SelectedDomainRankingInput[],
+  ): IdeaOpportunityRanking {
+    if (selectedDomains.length === 0) {
+      return ranking;
+    }
+
+    const previousSelectedTitle = ranking.selected.title;
+    const reconciled = [ranking.selected, ...ranking.alternatives].map(
+      (candidate) =>
+        this.reconcileVerifiedCandidateDomainAttribution(
+          candidate,
+          selectedDomains,
+        ),
+    );
+
+    const ordered = reconciled
+      .sort((first, second) => {
+        if (first.selectionEligible !== second.selectionEligible) {
+          return first.selectionEligible ? -1 : 1;
+        }
+
+        const verifiedDifference =
+          (second.verifiedIndependentEvidenceCount ?? 0) -
+          (first.verifiedIndependentEvidenceCount ?? 0);
+        if (verifiedDifference !== 0) {
+          return verifiedDifference;
+        }
+
+        return (
+          second.finalScore - first.finalScore ||
+          second.evidenceReliabilityScore - first.evidenceReliabilityScore ||
+          first.title.localeCompare(second.title)
+        );
+      })
+      .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
+
+    const [selected, ...alternatives] = ordered;
+    if (!selected) {
+      return ranking;
+    }
+
+    return {
+      ...ranking,
+      selected,
+      alternatives,
+      selectionReason:
+        selected.title === previousSelectedTitle
+          ? ranking.selectionReason
+          : `Selected the strongest verified evidence-backed opportunity after reconciling domain attribution with retained independent evidence: ${selected.title}.`,
+    };
+  }
+
+  private reconcileVerifiedCandidateDomainAttribution(
+    candidate: RankedIdeaOpportunity,
+    selectedDomains: readonly SelectedDomainRankingInput[],
+  ): RankedIdeaOpportunity {
+    const verifiedEvidenceTexts = (candidate.independentEvidence ?? [])
+      .map((evidence) => evidence.text.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean);
+
+    if (verifiedEvidenceTexts.length === 0) {
+      return candidate;
+    }
+
+    const evidenceOnlyCandidate: NormalizedCandidate = {
+      title: '',
+      problem: null,
+      need: null,
+      solutionArea: null,
+      evidenceType: candidate.evidenceType,
+      sourceIndex: candidate.sourceIndex,
+      frequency: candidate.frequency,
+      severity: candidate.severity,
+      evidenceSamples: verifiedEvidenceTexts,
+      raw: candidate.raw,
+    };
+    const domainRelevanceScores = this.calculateDomainRelevanceScores(
+      evidenceOnlyCandidate,
+      selectedDomains,
+    );
+    const matchedDomainNames = Object.entries(domainRelevanceScores)
+      .filter(([, score]) => score >= MIN_SELECTED_DOMAIN_RELEVANCE)
+      .sort((left, right) => right[1] - left[1])
+      .map(([name]) => name);
+    const disqualificationReasons = new Set(candidate.disqualificationReasons);
+    disqualificationReasons.delete('OFF_SELECTED_DOMAIN');
+
+    if (matchedDomainNames.length === 0) {
+      disqualificationReasons.add('OFF_SELECTED_DOMAIN');
+    }
+
+    return {
+      ...candidate,
+      matchedDomainNames,
+      domainRelevanceScores,
+      selectionEligible:
+        candidate.selectionEligible && matchedDomainNames.length > 0,
+      disqualificationReasons: [...disqualificationReasons],
     };
   }
 
@@ -954,7 +1067,7 @@ export class IdeaOpportunityRankingService {
         /\b(?:artificial intelligence|machine learning|deep learning|neural network|llm|large language model|prompt|inference|training model|ai model|chatbot|computer vision|natural language processing|recommendation model|predictive model)\b/iu,
       ],
       finance: [
-        /\b(?:finance|financial|fintech|payment|invoice|billing|budget|expense|revenue|accounting|banking|credit|loan|investment|cash flow|fraud)\b/iu,
+        /\b(?:finance|financial|fintech|payment|invoice|billing|budget|expense|revenue|accounting|bookkeeping|banking|credit|loan|investment|cash flow|fraud|payroll|procurement|reconciliation|approval workflow|administrative workflow|administrative operations|back office|manual data entry)\b/iu,
       ],
       energy: [
         /\b(?:energy|electricity|power grid|solar|wind turbine|battery|consumption|kilowatt|renewable|utility|metering|load forecast)\b/iu,
@@ -1546,6 +1659,7 @@ export class IdeaOpportunityRankingService {
     previousIdeaTexts: readonly string[],
     nlpConfidence: number,
     selectedDomainTerms: readonly string[],
+    selectedDomains: readonly SelectedDomainRankingInput[],
   ): Omit<RankedIdeaOpportunity, 'rank'> {
     const frequencyScore = Math.min(
       Math.log2(Math.max(candidate.frequency, 1) + 1) / 4,
@@ -1583,8 +1697,18 @@ export class IdeaOpportunityRankingService {
     const marketGapScore = this.calculateMarketGap(candidate);
     const competitionScore = this.calculateCompetitionAdvantage(candidate);
     const technicalRiskScore = this.calculateTechnicalRisk(candidate);
+    const domainRelevanceScores = this.calculateDomainRelevanceScores(
+      candidate,
+      selectedDomains,
+    );
+    const matchedDomainNames = Object.entries(domainRelevanceScores)
+      .filter(([, score]) => score >= MIN_SELECTED_DOMAIN_RELEVANCE)
+      .sort((left, right) => right[1] - left[1])
+      .map(([name]) => name);
     const selectedDomainRelevanceScore =
-      this.calculateSelectedDomainRelevance(candidate, selectedDomainTerms);
+      selectedDomains.length > 0
+        ? Math.max(0, ...Object.values(domainRelevanceScores))
+        : this.calculateSelectedDomainRelevance(candidate, selectedDomainTerms);
 
     const weightedScore =
       (frequencyScore * 0.13 +
@@ -1661,8 +1785,10 @@ export class IdeaOpportunityRankingService {
     );
 
     const offSelectedDomain =
-      selectedDomainTerms.length > 0 &&
-      selectedDomainRelevanceScore < MIN_SELECTED_DOMAIN_RELEVANCE;
+      selectedDomains.length > 0
+        ? matchedDomainNames.length === 0
+        : selectedDomainTerms.length > 0 &&
+          selectedDomainRelevanceScore < MIN_SELECTED_DOMAIN_RELEVANCE;
 
     if (offSelectedDomain) {
       disqualificationReasons.push('OFF_SELECTED_DOMAIN');
@@ -1704,6 +1830,8 @@ export class IdeaOpportunityRankingService {
       baseScore: this.round(baseScore),
       confidencePenalty: this.round(confidencePenalty),
       finalScore,
+      matchedDomainNames,
+      domainRelevanceScores,
       selectionEligible: disqualificationReasons.length === 0,
       disqualificationReasons,
     };
@@ -1718,6 +1846,183 @@ export class IdeaOpportunityRankingService {
    * software words are ignored so an unrelated GitHub issue cannot win merely
    * because it contains words such as "system", "application", or "platform".
    */
+  private calculateDomainRelevanceScores(
+    candidate: NormalizedCandidate,
+    selectedDomains: readonly SelectedDomainRankingInput[],
+  ): Readonly<Record<string, number>> {
+    if (selectedDomains.length === 0) {
+      return {};
+    }
+
+    const coreCandidate = this.buildDomainSemanticCandidate(candidate, false);
+    const contextCandidate = this.buildDomainSemanticCandidate(candidate, true);
+    const semanticScores = new Map<string, number>();
+    const contextScores = new Map<string, number>();
+
+    for (const domain of selectedDomains) {
+      const terms = this.expandDomainSemanticTerms(domain);
+      semanticScores.set(
+        domain.name,
+        this.calculateSelectedDomainRelevance(coreCandidate, terms),
+      );
+      contextScores.set(
+        domain.name,
+        this.calculateSelectedDomainRelevance(contextCandidate, terms),
+      );
+    }
+
+    const strongestSemantic = Math.max(0, ...semanticScores.values());
+    const rawDomainName = this.readRawCandidateDomainName(candidate.raw);
+    const output: Record<string, number> = {};
+
+    for (const domain of selectedDomains) {
+      const semantic = semanticScores.get(domain.name) ?? 0;
+      const context = contextScores.get(domain.name) ?? 0;
+      const explicit =
+        this.normalizeDomainName(rawDomainName) ===
+        this.normalizeDomainName(domain.name);
+      let score = semantic;
+
+      if (semantic < MIN_SELECTED_DOMAIN_RELEVANCE) {
+        score = Math.max(
+          score,
+          context *
+            (strongestSemantic < MIN_SELECTED_DOMAIN_RELEVANCE ? 0.62 : 0.38),
+        );
+      }
+
+      if (explicit) {
+        if (
+          semantic >= 0.16 ||
+          strongestSemantic < MIN_SELECTED_DOMAIN_RELEVANCE
+        ) {
+          score = Math.max(score, 0.72);
+        } else {
+          score = Math.max(score, 0.18);
+        }
+      }
+
+      output[domain.name] = this.round(Math.min(1, score));
+    }
+
+    return output;
+  }
+
+  private buildDomainSemanticCandidate(
+    candidate: NormalizedCandidate,
+    contextOnly: boolean,
+  ): NormalizedCandidate {
+    const evidenceSamples = candidate.evidenceSamples
+      .map((sample) => {
+        const marker = sample.match(/\bCommunity comment:\s*/iu);
+        if (!marker || marker.index === undefined) {
+          return contextOnly ? '' : sample;
+        }
+
+        const markerEnd = marker.index + marker[0].length;
+        return contextOnly
+          ? sample.slice(0, marker.index).trim()
+          : sample.slice(markerEnd).trim();
+      })
+      .filter(Boolean);
+
+    return {
+      ...candidate,
+      title: contextOnly ? '' : candidate.title,
+      problem: contextOnly ? null : candidate.problem,
+      need: contextOnly ? null : candidate.need,
+      solutionArea: contextOnly ? null : candidate.solutionArea,
+      evidenceSamples,
+    };
+  }
+
+  private expandDomainSemanticTerms(
+    domain: SelectedDomainRankingInput,
+  ): string[] {
+    const normalizedName = this.normalizeDomainName(domain.name);
+    const aliases: string[] = [];
+
+    if (/^(?:finance|financial services|fintech)$/u.test(normalizedName)) {
+      aliases.push(
+        'finance',
+        'financial',
+        'bank',
+        'banking',
+        'payment',
+        'payments',
+        'card',
+        'credit',
+        'debit',
+        'loan',
+        'cash',
+        'accounting',
+        'invoice',
+        'expense',
+        'budget',
+        'payroll',
+        'reconciliation',
+      );
+    }
+
+    if (/^(?:e commerce|ecommerce|online retail|retail)$/u.test(normalizedName)) {
+      aliases.push(
+        'e commerce',
+        'ecommerce',
+        'marketplace',
+        'buyer',
+        'seller',
+        'checkout',
+        'shopping cart',
+        'cart',
+        'order',
+        'orders',
+        'refund',
+        'storefront',
+        'paypal',
+      );
+    }
+
+    if (/^(?:artificial intelligence|ai|machine learning)$/u.test(normalizedName)) {
+      aliases.push(
+        'artificial intelligence',
+        'ai',
+        'ai model',
+        'ai assistant',
+        'ai chatbot',
+        'ai application',
+        'generative ai',
+        'machine learning',
+        'large language model',
+        'llm',
+        'chatgpt',
+        'prompt',
+        'chatbot',
+        'computer vision',
+        'natural language processing',
+      );
+    }
+
+    return [...new Set([domain.name, ...domain.keywords, ...aliases])];
+  }
+
+  private readRawCandidateDomainName(value: Prisma.JsonValue): string {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return '';
+    }
+
+    const rawDomain = (value as Prisma.JsonObject).domainName;
+    return typeof rawDomain === 'string' ? rawDomain.trim() : '';
+  }
+
+  private normalizeDomainName(value: string): string {
+    return value
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+  }
+
   private calculateSelectedDomainRelevance(
     candidate: NormalizedCandidate,
     selectedDomainTerms: readonly string[],
@@ -1771,11 +2076,14 @@ export class IdeaOpportunityRankingService {
 
     for (const rawTerm of selectedDomainTerms) {
       const term = normalize(rawTerm);
-      if (!term || term.length < 3) continue;
+      if (!term || (term.length < 3 && term !== 'ai')) continue;
 
       const tokens = term
         .split(' ')
-        .filter((token) => token.length >= 3 && !genericTokens.has(token));
+        .filter(
+          (token) =>
+            (token === 'ai' || token.length >= 3) && !genericTokens.has(token),
+        );
       if (tokens.length === 0) continue;
 
       if (term.includes(' ') && haystack.includes(term)) {
@@ -2230,11 +2538,35 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
-      /(?:accounting|invoice|customer email|ledger|quickbooks).{0,140}(?:slow|load|save|saved|missing|disappear|persistence|data loss)|(?:slow|load|save|saved|missing|disappear|persistence|data loss).{0,140}(?:accounting|invoice|customer email|ledger|quickbooks)/iu.test(
+      /(?:invoice|expense|reimbursement|accounts payable|accounts receivable).{0,140}(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck)|(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck).{0,140}(?:invoice|expense|reimbursement|accounts payable|accounts receivable)/iu.test(
         normalized,
       )
     ) {
-      return 'Accounting Software Performance and Data Persistence Failures';
+      return 'Invoice and Expense Processing Friction';
+    }
+
+    if (
+      /(?:accounting|bookkeeping|reconciliation|ledger|cash flow|financial close).{0,140}(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck|data loss)|(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck|data loss).{0,140}(?:accounting|bookkeeping|reconciliation|ledger|cash flow|financial close)/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Financial Reconciliation and Accounting Friction';
+    }
+
+    if (
+      /(?:payroll|procurement|purchase order|vendor approval|supplier approval).{0,140}(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck)|(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck).{0,140}(?:payroll|procurement|purchase order|vendor approval|supplier approval)/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Payroll and Procurement Workflow Friction';
+    }
+
+    if (
+      /(?:approval workflow|administrative workflow|administrative process|back office|manual data entry).{0,140}(?:slow|delay|delayed|manual|error|failed|bottleneck|rework)|(?:slow|delay|delayed|manual|error|failed|bottleneck|rework).{0,140}(?:approval workflow|administrative workflow|administrative process|back office|manual data entry)/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Administrative Back-Office Workflow Friction';
     }
 
     if (
@@ -2696,11 +3028,35 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
-      /(?:accounting|invoice|customer email|ledger|quickbooks).{0,140}(?:slow|load|save|saved|missing|disappear|persistence|data loss)|(?:slow|load|save|saved|missing|disappear|persistence|data loss).{0,140}(?:accounting|invoice|customer email|ledger|quickbooks)/iu.test(
+      /(?:invoice|expense|reimbursement|accounts payable|accounts receivable).{0,140}(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck)|(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck).{0,140}(?:invoice|expense|reimbursement|accounts payable|accounts receivable)/iu.test(
         text,
       )
     ) {
-      return 'Accounting Software Performance and Data Persistence Failures';
+      return 'Invoice and Expense Processing Friction';
+    }
+
+    if (
+      /(?:accounting|bookkeeping|reconciliation|ledger|cash flow|financial close).{0,140}(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck|data loss)|(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck|data loss).{0,140}(?:accounting|bookkeeping|reconciliation|ledger|cash flow|financial close)/iu.test(
+        text,
+      )
+    ) {
+      return 'Financial Reconciliation and Accounting Friction';
+    }
+
+    if (
+      /(?:payroll|procurement|purchase order|vendor approval|supplier approval).{0,140}(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck)|(?:slow|delay|delayed|missing|duplicate|mismatch|manual|error|failed|bottleneck).{0,140}(?:payroll|procurement|purchase order|vendor approval|supplier approval)/iu.test(
+        text,
+      )
+    ) {
+      return 'Payroll and Procurement Workflow Friction';
+    }
+
+    if (
+      /(?:approval workflow|administrative workflow|administrative process|back office|manual data entry).{0,140}(?:slow|delay|delayed|manual|error|failed|bottleneck|rework)|(?:slow|delay|delayed|manual|error|failed|bottleneck|rework).{0,140}(?:approval workflow|administrative workflow|administrative process|back office|manual data entry)/iu.test(
+        text,
+      )
+    ) {
+      return 'Administrative Back-Office Workflow Friction';
     }
 
     if (/(?:crash|freeze|broken|bug|error)/iu.test(text)) {

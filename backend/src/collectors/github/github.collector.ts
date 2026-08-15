@@ -233,6 +233,10 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       input.collectionMode === 'TARGETED_RECOVERY';
     const clauses = CollectorQueryBuilderUtil.buildGitHubFlexibleQueries({
       domainName: input.domainName,
+      userKeywords: [
+        ...(input.domainKeywords ?? []),
+        ...(input.keywords ?? []),
+      ],
       maxQueries: isBoundedMode ? 3 : 6,
     });
 

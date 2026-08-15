@@ -472,6 +472,10 @@ export class TextPreprocessingService {
       );
     }
 
+    this.logger.debug(
+      `NLP evidence funnel | received=${inputs.length} | sampled=${selectedInputs.length} | nonEmpty=${nonEmptyItems.length} | unique=${uniqueItems.length} | languageResolved=${languageResolvedItems.length} | contentFiltered=${contentFilteredItems.length} | relevantFinal=${relevantTexts.length}.`,
+    );
+
     return {
       texts: relevantTexts,
       emptyTextsRemoved,
@@ -500,7 +504,7 @@ export class TextPreprocessingService {
     }
 
     const evidencePattern =
-      /\b(?:cannot|can't|unable|missing|unavailable|difficult|confusing|slow|lag|latency|crash|freeze|error|fails?|failed|broken|problem|issue|bug|blocked|inaccurate|wrong|hallucinat(?:e|es|ed|ion)|unsafe|security|privacy|need|needs|should|please add|feature request|wish)\b/iu;
+      /\b(?:cannot|can't|unable|missing|unavailable|difficult|confusing|slow|lag|latency|crash|freeze|error|fails?|failed|broken|problem|issue|bug|blocked|inaccurate|wrong|hallucinat(?:e|es|ed|ion)|unsafe|security|privacy|need|needs|should|please add|feature request|wish|invoice|expense|payroll|procurement|reconciliation|approval|bookkeeping|accounting|cash flow|manual entry|administrative|back office)\b/iu;
 
     const ranked = inputs
       .map((input, index) => {
@@ -511,11 +515,6 @@ export class TextPreprocessingService {
             : evidencePattern.test(contextualText)
               ? 120
               : 0;
-        /*
-         * Complaint comments receive priority over generic post titles. Posts
-         * still remain represented so every retained comment keeps context and
-         * the NLP stage does not become comment-only.
-         */
         const sourceBonus = input.sourceType === 'COMMENT' ? 55 : 35;
         const engagement =
           Math.min(Math.max(input.likesCount ?? 0, 0), 25) +
@@ -524,6 +523,7 @@ export class TextPreprocessingService {
         return {
           input,
           index,
+          sourceKey: this.getInputSourceKey(input),
           score: evidenceBonus + sourceBonus + engagement,
         };
       })
@@ -534,41 +534,118 @@ export class TextPreprocessingService {
 
     const selected: IntelligentTextInput[] = [];
     const selectedIds = new Set<string>();
+    const sourceCounts = new Map<string, number>();
+    const concreteSources = [
+      ...new Set(
+        ranked
+          .map((entry) => entry.sourceKey)
+          .filter((sourceKey) => sourceKey !== 'unknown'),
+      ),
+    ];
+    const sourceCap =
+      concreteSources.length >= 2
+        ? Math.ceil(TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS * 0.65)
+        : TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS;
 
-    const take = (sourceType: 'POST' | 'COMMENT', limit: number): void => {
-      for (const entry of ranked) {
-        if (selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS) {
-          break;
-        }
-        if (
-          entry.input.sourceType !== sourceType ||
-          selectedIds.has(entry.input.id)
-        ) {
-          continue;
-        }
-        const currentCount = selected.filter(
-          (item) => item.sourceType === sourceType,
-        ).length;
-        if (currentCount >= limit) break;
-        selected.push(entry.input);
-        selectedIds.add(entry.input.id);
+    const tryAdd = (
+      entry: (typeof ranked)[number],
+      typeLimit?: { type: 'POST' | 'COMMENT'; limit: number },
+      enforceSourceCap = true,
+    ): boolean => {
+      if (
+        selectedIds.has(entry.input.id) ||
+        selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS
+      ) {
+        return false;
       }
+
+      if (typeLimit) {
+        const currentTypeCount = selected.filter(
+          (item) => item.sourceType === typeLimit.type,
+        ).length;
+
+        if (
+          entry.input.sourceType !== typeLimit.type ||
+          currentTypeCount >= typeLimit.limit
+        ) {
+          return false;
+        }
+      }
+
+      const currentSourceCount = sourceCounts.get(entry.sourceKey) ?? 0;
+
+      if (
+        enforceSourceCap &&
+        entry.sourceKey !== 'unknown' &&
+        currentSourceCount >= sourceCap
+      ) {
+        return false;
+      }
+
+      selected.push(entry.input);
+      selectedIds.add(entry.input.id);
+      sourceCounts.set(entry.sourceKey, currentSourceCount + 1);
+      return true;
     };
 
-    take('COMMENT', 20);
-    take('POST', 10);
+    for (const sourceKey of concreteSources) {
+      let retainedForSource = 0;
+
+      for (const entry of ranked) {
+        if (entry.sourceKey !== sourceKey) {
+          continue;
+        }
+
+        if (tryAdd(entry)) {
+          retainedForSource += 1;
+        }
+
+        if (
+          retainedForSource >= 2 ||
+          selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS
+        ) {
+          break;
+        }
+      }
+    }
 
     for (const entry of ranked) {
       if (selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS) {
         break;
       }
-      if (!selectedIds.has(entry.input.id)) {
-        selected.push(entry.input);
-        selectedIds.add(entry.input.id);
+
+      tryAdd(entry, { type: 'COMMENT', limit: 20 });
+    }
+
+    for (const entry of ranked) {
+      if (selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS) {
+        break;
       }
+
+      tryAdd(entry, { type: 'POST', limit: 10 });
+    }
+
+    for (const entry of ranked) {
+      if (selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS) {
+        break;
+      }
+
+      tryAdd(entry, undefined, false);
     }
 
     return selected;
+  }
+
+  private getInputSourceKey(input: IntelligentTextInput): string {
+    const fromId = input.id.match(/^([^:]+):(?:post|comment):/u)?.[1];
+
+    if (fromId) {
+      return fromId.toLowerCase();
+    }
+
+    const fromPostId = input.postId?.match(/^([^:]+):post:/u)?.[1];
+
+    return fromPostId?.toLowerCase() ?? 'unknown';
   }
 
   /**
@@ -601,7 +678,7 @@ export class TextPreprocessingService {
     }
 
     const explicitPainOrRequest =
-      /\b(?:cannot|can'?t|cant|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|cost|billing|bill|charged|confusing|difficult|frustrating|struggle|please add|feature request|should add|why can'?t i|how can i)\b/iu.test(normalized) ||
+      /\b(?:cannot|can'?t|cant|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|cost|billing|bill|charged|invoice|expense|payroll|procurement|reconciliation|approval|bookkeeping|accounting|cash flow|manual entry|administrative|back office|confusing|difficult|frustrating|struggle|please add|feature request|should add|why can'?t i|how can i)\b/iu.test(normalized) ||
       /\b(?:i|we|my|our|user|users|customer|customers|operator|operators|learner|learners)\b[^.!?]{0,60}\b(?:need|needs)\b/iu.test(normalized) ||
       /\bi wish\b[^.!?]{0,80}\b(?:app|platform|service|feature|option|setting|support|allow|let|could|would|had|add|include)\b/iu.test(normalized);
 
@@ -681,6 +758,18 @@ export class TextPreprocessingService {
       'slow',
       'lag',
       'latency',
+      'invoice',
+      'expense',
+      'payroll',
+      'procurement',
+      'reconciliation',
+      'approval',
+      'bookkeeping',
+      'accounting',
+      'cash flow',
+      'manual entry',
+      'administrative',
+      'back office',
       'privacy',
       'security',
       'inaccurate',
@@ -766,7 +855,7 @@ export class TextPreprocessingService {
     const normalized = `${text.title ?? ''} ${text.content}`
       .replace(/\s+/gu, ' ')
       .toLowerCase();
-    const concreteSignal = /\b(?:cannot|can't|unable|not working|does not work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|deleted|inaccurate|wrong|hallucinat(?:e|es|ed|ion)|unsafe|security|privacy|permission|history|need|needs|should|please add|please improve|feature request|wish|frustrat(?:e|ed|ing))\b/iu.test(normalized);
+    const concreteSignal = /\b(?:cannot|can't|unable|not working|does not work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|deleted|inaccurate|wrong|hallucinat(?:e|es|ed|ion)|unsafe|security|privacy|permission|history|invoice|expense|payroll|procurement|reconciliation|approval|bookkeeping|accounting|cash flow|manual entry|administrative|back office|need|needs|should|please add|please improve|feature request|wish|frustrat(?:e|ed|ing))\b/iu.test(normalized);
     if (!concreteSignal) return false;
 
     if (text.sourceType === 'COMMENT' && this.isDirectUserCommentEvidence(text.content)) {
@@ -791,7 +880,9 @@ export class TextPreprocessingService {
     texts: ReadonlyArray<PreprocessedTextInput>,
     limit: number,
   ): PreprocessedTextInput[] {
-    if (texts.length <= limit) return [...texts];
+    if (texts.length <= limit) {
+      return [...texts];
+    }
 
     const ranked = [...texts].sort(
       (first, second) =>
@@ -803,48 +894,139 @@ export class TextPreprocessingService {
     const selectedIds = new Set<string>();
     const threadCounts = new Map<string, number>();
     const familyCounts = new Map<string, number>();
+    const sourceCounts = new Map<string, number>();
+    const concreteSources = [
+      ...new Set(
+        ranked
+          .map((text) => this.getInputSourceKey(text))
+          .filter((sourceKey) => sourceKey !== 'unknown'),
+      ),
+    ];
+    const sourceCap =
+      concreteSources.length >= 2 ? Math.ceil(limit * 0.65) : limit;
 
     const familyOf = (text: PreprocessedTextInput): string => {
       const value = `${text.title ?? ''} ${text.content}`.toLowerCase();
-      if (/privacy|permission|consent|deleted.*history|data exposure/iu.test(value)) return 'privacy';
-      if (/slow|lag|latency|timeout|performance/iu.test(value)) return 'performance';
-      if (/crash|freeze|broken|not working|fail|error|stability|reliab/iu.test(value)) return 'reliability';
-      if (/inaccurate|wrong|hallucinat|incorrect|quality/iu.test(value)) return 'accuracy';
-      if (/feature request|please add|please improve|wish|need|should/iu.test(value)) return 'request';
+
+      if (
+        /invoice|expense|payroll|procurement|reconciliation|bookkeeping|accounting|cash flow|approval workflow|administrative|back office|manual entry/iu.test(
+          value,
+        )
+      ) {
+        return 'finance-admin';
+      }
+
+      if (/privacy|permission|consent|deleted.*history|data exposure/iu.test(value)) {
+        return 'privacy';
+      }
+
+      if (/slow|lag|latency|timeout|performance/iu.test(value)) {
+        return 'performance';
+      }
+
+      if (/crash|freeze|broken|not working|fail|error|stability|reliab/iu.test(value)) {
+        return 'reliability';
+      }
+
+      if (/inaccurate|wrong|hallucinat|incorrect|quality/iu.test(value)) {
+        return 'accuracy';
+      }
+
+      if (/feature request|please add|please improve|wish|need|should/iu.test(value)) {
+        return 'request';
+      }
+
       return 'other';
     };
 
-    const tryAdd = (text: PreprocessedTextInput, enforceFamilyCap: boolean): boolean => {
-      if (selectedIds.has(text.id) || selected.length >= limit) return false;
-      const threadKey = text.postId ?? (text.sourceType === 'POST' ? text.id : 'orphan-comment');
+    const tryAdd = (
+      text: PreprocessedTextInput,
+      enforceFamilyCap: boolean,
+      enforceSourceCap = true,
+    ): boolean => {
+      if (selectedIds.has(text.id) || selected.length >= limit) {
+        return false;
+      }
+
+      const threadKey =
+        text.postId ?? (text.sourceType === 'POST' ? text.id : 'orphan-comment');
       const threadCount = threadCounts.get(threadKey) ?? 0;
-      if (threadCount >= 2) return false;
+
+      if (threadCount >= 2) {
+        return false;
+      }
+
+      const sourceKey = this.getInputSourceKey(text);
+      const sourceCount = sourceCounts.get(sourceKey) ?? 0;
+
+      if (
+        enforceSourceCap &&
+        sourceKey !== 'unknown' &&
+        sourceCount >= sourceCap
+      ) {
+        return false;
+      }
+
       const family = familyOf(text);
       const familyCount = familyCounts.get(family) ?? 0;
-      if (enforceFamilyCap && familyCount >= 4) return false;
+
+      if (enforceFamilyCap && familyCount >= 4) {
+        return false;
+      }
+
       selected.push(text);
       selectedIds.add(text.id);
       threadCounts.set(threadKey, threadCount + 1);
       familyCounts.set(family, familyCount + 1);
+      sourceCounts.set(sourceKey, sourceCount + 1);
       return true;
     };
 
-    for (const family of ['reliability', 'privacy', 'performance', 'accuracy', 'request', 'other']) {
+    for (const sourceKey of concreteSources) {
+      for (const text of ranked) {
+        if (this.getInputSourceKey(text) === sourceKey && tryAdd(text, true)) {
+          break;
+        }
+      }
+    }
+
+    for (const family of [
+      'finance-admin',
+      'reliability',
+      'privacy',
+      'performance',
+      'accuracy',
+      'request',
+      'other',
+    ]) {
       for (const text of ranked) {
         if (familyOf(text) === family) {
           tryAdd(text, true);
-          if ((familyCounts.get(family) ?? 0) >= 2 || selected.length >= limit) break;
+
+          if (
+            (familyCounts.get(family) ?? 0) >= 2 ||
+            selected.length >= limit
+          ) {
+            break;
+          }
         }
       }
     }
 
     for (const text of ranked) {
-      if (selected.length >= limit) break;
+      if (selected.length >= limit) {
+        break;
+      }
+
       tryAdd(text, true);
     }
+
     for (const text of ranked) {
-      if (selected.length >= limit) break;
-      tryAdd(text, false);
+      if (selected.length >= limit) {
+        break;
+      }
+
+      tryAdd(text, false, false);
     }
 
     return selected;

@@ -41,6 +41,10 @@ class _PublicPublicationDetailsPageState
   String _guestVote = '';
   String _savedFeedback = '';
 
+  int _ratingRevision = 0;
+  int _voteRevision = 0;
+  int _feedbackRevision = 0;
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +110,10 @@ class _PublicPublicationDetailsPageState
       return;
     }
 
+    final ratingRevision = _ratingRevision;
+    final voteRevision = _voteRevision;
+    final feedbackRevision = _feedbackRevision;
+
     setState(() {
       _isLoadingInteractions = true;
     });
@@ -133,12 +141,17 @@ class _PublicPublicationDetailsPageState
       final vote = results[1] as String;
       final feedback = results[2] as String;
 
-      _feedbackController.text = feedback;
-
       setState(() {
-        _guestRating = rating;
-        _guestVote = vote;
-        _savedFeedback = feedback;
+        if (ratingRevision == _ratingRevision) {
+          _guestRating = rating;
+        }
+        if (voteRevision == _voteRevision) {
+          _guestVote = vote;
+        }
+        if (feedbackRevision == _feedbackRevision) {
+          _savedFeedback = feedback;
+          _feedbackController.text = feedback;
+        }
         _isLoadingInteractions = false;
       });
     } catch (_) {
@@ -162,6 +175,7 @@ class _PublicPublicationDetailsPageState
     }
 
     final previousRating = _guestRating;
+    final revision = ++_ratingRevision;
 
     setState(() {
       _guestRating = value;
@@ -172,14 +186,14 @@ class _PublicPublicationDetailsPageState
       await HomePublicApi.instance.ensureGuestSession();
       await HomePublicApi.instance.setGuestRating(publication.id, value);
 
-      if (!mounted) {
+      if (!mounted || revision != _ratingRevision) {
         return;
       }
 
       setState(() => _isSubmittingRating = false);
       _showMessage('Your rating was saved.');
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || revision != _ratingRevision) {
         return;
       }
 
@@ -205,6 +219,7 @@ class _PublicPublicationDetailsPageState
     }
 
     final previousVote = _guestVote;
+    final revision = ++_voteRevision;
 
     setState(() {
       _guestVote = value;
@@ -215,14 +230,14 @@ class _PublicPublicationDetailsPageState
       await HomePublicApi.instance.ensureGuestSession();
       await HomePublicApi.instance.setGuestVote(publication.id, value);
 
-      if (!mounted) {
+      if (!mounted || revision != _voteRevision) {
         return;
       }
 
       setState(() => _isSubmittingVote = false);
       _showMessage('Your vote was saved.');
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || revision != _voteRevision) {
         return;
       }
 
@@ -253,11 +268,11 @@ class _PublicPublicationDetailsPageState
 
     if (comment.isEmpty) {
       _showMessage('Please write your feedback first.', error: true);
-
       return;
     }
 
     final previousFeedback = _savedFeedback;
+    final revision = ++_feedbackRevision;
 
     setState(() {
       _savedFeedback = comment;
@@ -268,14 +283,14 @@ class _PublicPublicationDetailsPageState
       await HomePublicApi.instance.ensureGuestSession();
       await HomePublicApi.instance.setGuestFeedback(publication.id, comment);
 
-      if (!mounted) {
+      if (!mounted || revision != _feedbackRevision) {
         return;
       }
 
       setState(() => _isSubmittingFeedback = false);
       _showMessage('Your feedback was saved.');
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || revision != _feedbackRevision) {
         return;
       }
 
@@ -678,16 +693,15 @@ class _PublicPublicationDetailsPageState
           ),
 
           if (_isLoadingInteractions) ...[
-            const SizedBox(height: 18),
-
-            const Center(
-              child: CircularProgressIndicator(
-                color: AppColors.primary,
-                strokeWidth: 2.5,
-              ),
+            const SizedBox(height: 14),
+            const LinearProgressIndicator(
+              minHeight: 2,
+              color: AppColors.primary,
+              backgroundColor: Color(0xFFE8F0EC),
             ),
-          ] else ...[
-            if (publication.allowRatings) ...[
+          ],
+
+          if (publication.allowRatings) ...[
               const SizedBox(height: 20),
 
               const Text(
@@ -839,7 +853,6 @@ class _PublicPublicationDetailsPageState
                 ),
               ),
             ],
-          ],
         ],
       ),
     );

@@ -14,7 +14,7 @@ export const DIRECT_COMMUNITY_COMPLAINT_PATTERNS: readonly RegExp[] = [
   /\bnot helpful\b/iu,
   /\bdoes(?:n['’]?t| not) work\b/iu,
   /\bdid(?:n['’]?t| not) work\b/iu,
-  /\b(?:can(?:not|['’]?t)|can\s+not)\b/iu,
+  /\b(?:can(?:not|['’]?t)|can\s+not)\s+(?:access|use|open|start|login|log in|connect|sync|find|download|install|save|submit|approve|pay|send|receive|complete|finish|proceed|manage|process)\b/iu,
   /\bcould(?:n['’]?t| not)\b/iu,
   /\bunable to\b/iu,
   /\bnever (?:receive|received|get|got|arrive|arrived)\b/iu,
@@ -26,6 +26,8 @@ export const DIRECT_COMMUNITY_COMPLAINT_PATTERNS: readonly RegExp[] = [
   /\b(?:hard|difficult|confusing) to (?:use|navigate|access|find|download|install|login|log in)\b/iu,
   /\b(?:terrible|disappointing|disappointed|frustrating|frustrated|dysfunctional|janky|horrible)\b/iu,
   /\b(?:too expensive|paywall|have to pay|gotta pay|limited unless paid)\b/iu,
+  /\b(?:invoice|expense|payroll|procurement|reconciliation|bookkeeping|accounting|cash flow|approval workflow|administrative workflow|back office|manual entry|manual data entry)\b[^.!?]{0,120}\b(?:wrong|incorrect|missing|duplicate|delayed|blocked|failed|failing|error|problem|issue|takes too long|manual|confusing|difficult)\b/iu,
+  /\b(?:wrong|incorrect|missing|duplicate|delayed|blocked|failed|failing|error|problem|issue|takes too long|confusing|difficult)\b[^.!?]{0,120}\b(?:invoice|expense|payroll|procurement|reconciliation|bookkeeping|accounting|cash flow|approval|administrative process|back office)\b/iu,
   /(?:غير مفيد|لا يعمل|ما بشتغل|مش شغال|لا أستطيع|لا يمكن|لم يصل|ما وصل|فقدت|اختفت|تعطل|يتعطل|خطأ|مشكلة كبيرة|صعب التنقل|واجهة مربكة)/iu,
 ];
 
@@ -95,6 +97,8 @@ const SYSTEMIC_COMMUNITY_PROBLEM_PATTERNS: readonly RegExp[] = [
   /\b(?:major|serious|significant|constant|chronic)\s+(?:bottleneck|delay|congestion|problem|issue|failure)\b/iu,
   /\b(?:unreliable|unreliability|inconsistent|inconsistency)\b[^.!?]{0,100}\b(?:worse|delay|fail|problem|issue|service|connection|arrival|route|data)\b/iu,
   /\b(?:takes?|taking)\s+(?:too long|forever|hours?)\b/iu,
+  /\b(?:manual|spreadsheet[- ]based)\s+(?:invoice|expense|payroll|reconciliation|approval|procurement|administrative|finance|accounting)\b[^.!?]{0,120}\b(?:slow|delay|error|mistake|duplicate|bottleneck|work|workload|process)\b/iu,
+  /\b(?:invoice|expense|payroll|reconciliation|approval|procurement|administrative|finance|accounting)\b[^.!?]{0,120}\b(?:bottleneck|backlog|delay|delays|mismatch|duplicate|manual work|rework|error|errors)\b/iu,
   /\b(?:no|poor|insufficient|limited)\s+(?:access|coverage|service|connectivity|availability|reliability)\b/iu,
   /\b(?:keeps?|constantly|repeatedly)\s+(?:failing|breaking|disconnecting|delaying|cancelling|canceling|changing)\b/iu,
   /\b(?:for no good reason|makes? (?:it|things?|the situation) (?:even )?worse)\b/iu,
@@ -178,7 +182,12 @@ export function classifyDirectCommunityEvidence(
  * Returns true when the supplied value contains an explicit user complaint.
  */
 export function hasDirectCommunityComplaint(value: string): boolean {
-  const normalized = normalizeCommunityText(value);
+  const normalized = normalizeCommunityText(value)
+    .replace(/\bcannot help but\b/giu, ' ')
+    .replace(/\bcan['’]?t help but\b/giu, ' ')
+    .replace(/\bcouldn['’]?t help but\b/giu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
 
   return DIRECT_COMMUNITY_COMPLAINT_PATTERNS.some((pattern) =>
     pattern.test(normalized),
@@ -198,6 +207,8 @@ export function isLikelyPromotionalEvidence(value: string): boolean {
 
   const strongReleaseNotePattern =
     /\b(?:continuous updates?(?:\s*&\s*support)?|we(?:'re| are) constantly improving|new features?,? bug fixes?|enhanced analytics|download .* today|free to start|perfect for)\b/iu;
+  const strongPositiveTestimonialPattern =
+    /\b(?:game[- ]changer|blew my mind|significantly improved|greatly improved|love that|awesome|highly recommend|works great|working great|has been amazing|excellent tool|improved my campaigns?)\b/iu;
   const complaintSentences = normalized
     .split(/(?<=[.!?؟])\s+/u)
     .map((sentence) => sentence.trim())
@@ -220,7 +231,8 @@ export function isLikelyPromotionalEvidence(value: string): boolean {
   const containsIndependentComplaint = complaintSentences.length > 0;
 
   return (
-    (strongReleaseNotePattern.test(normalized) &&
+    ((strongReleaseNotePattern.test(normalized) ||
+      strongPositiveTestimonialPattern.test(normalized)) &&
       !containsIndependentComplaint) ||
     (marketingSignalCount >= 2 &&
       !hasFirstPersonComplaint &&
