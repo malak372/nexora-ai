@@ -813,10 +813,18 @@
   text-overflow: ellipsis;
 }
 
+.admin-ds-row-actions {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .admin-ds-manage {
   width: 36px;
   height: 36px;
-  margin-left: auto;
+  margin-left: 0;
   padding: 0;
   display: inline-grid;
   place-items: center;
@@ -840,6 +848,40 @@
   color: #286c67;
   background: #e4f4f0;
   box-shadow: 0 7px 16px rgba(47, 119, 116, .08);
+}
+
+.admin-ds-delete {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(190, 91, 108, .13);
+  border-radius: 11px;
+  color: #b65f70;
+  background: #fff5f6;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: .15s ease;
+}
+
+.admin-ds-delete span {
+  display: none;
+}
+
+.admin-ds-delete:hover:not(:disabled) {
+  transform: translateY(-1px);
+  color: #a94f62;
+  background: #fdecee;
+  border-color: rgba(190, 91, 108, .2);
+  box-shadow: 0 7px 16px rgba(168, 78, 96, .08);
+}
+
+.admin-ds-delete:disabled {
+  opacity: .55;
+  cursor: wait;
 }
 
 @media (max-width: 1180px) {

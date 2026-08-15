@@ -1237,12 +1237,6 @@
     }
 }
 
-/* =========================================================
-   Command Center activity redesign
-   Visual-only overrides: no data, API, state, or logic changes
-   ========================================================= */
-
-/* Shared activity panel polish */
 .admin-dashboard-grid--activity>.admin-panel {
     min-height: 0;
     overflow: hidden;
@@ -1263,9 +1257,6 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
 }
 
-/* ---------------------------------------------------------
-   Recent users: clean compact profile list
-   --------------------------------------------------------- */
 .admin-dashboard-grid--activity>.admin-panel:first-child .admin-activity {
     padding: 6px 22px 22px;
     gap: 0;
@@ -1356,9 +1347,6 @@
     white-space: nowrap;
 }
 
-/* ---------------------------------------------------------
-   Recent system activity: real vertical timeline
-   --------------------------------------------------------- */
 .admin-dashboard-grid--activity>.admin-panel:last-child .admin-activity--timeline {
     position: relative;
     padding: 7px 24px 22px 31px;
@@ -1504,11 +1492,6 @@
     }
 }
 
-/* =========================================================
-   Activity panels V3 — compact editorial cards
-   Visual-only. No JSX / API / state / data changes.
-   ========================================================= */
-
 .admin-dashboard-grid--activity {
     align-items: start;
 }
@@ -1537,7 +1520,6 @@
     box-shadow: 0 10px 24px rgba(47, 119, 116, .055), inset 0 1px 0 rgba(255, 255, 255, .95);
 }
 
-/* ---------- Recent users: mini profile tiles ---------- */
 .admin-dashboard-grid--activity>.admin-panel:first-child .admin-activity {
     padding: 10px 18px 20px;
     display: grid;
@@ -1649,7 +1631,6 @@
     text-overflow: ellipsis;
 }
 
-/* ---------- System activity: categorized compact cards ---------- */
 .admin-dashboard-grid--activity>.admin-panel:last-child .admin-activity--timeline {
     position: relative;
     padding: 10px 18px 20px;
@@ -1816,7 +1797,6 @@
     }
 }
 
-/* === Command center activity lists: stacked elegant layout (v4) === */
 .admin-dashboard-grid--activity>.admin-panel:first-child .admin-activity,
 .admin-dashboard-grid--activity>.admin-panel:last-child .admin-activity--timeline {
     display: flex !important;
@@ -2015,7 +1995,6 @@
     }
 }
 
-/* === Command center activity cards refinement (v5): equal sizes + cleaner look === */
 .admin-dashboard-grid--activity>.admin-panel:first-child .admin-activity,
 .admin-dashboard-grid--activity>.admin-panel:last-child .admin-activity--timeline {
     padding: 6px 18px 18px !important;
@@ -2150,7 +2129,6 @@
     }
 }
 
-/* === Command center activity cards refinement : remove side line and decorative circles === */
 .admin-dashboard-grid--activity>.admin-panel:first-child .admin-activity__item::before,
 .admin-dashboard-grid--activity>.admin-panel:first-child .admin-activity__item::after,
 .admin-dashboard-grid--activity>.admin-panel:first-child .admin-activity__dot::before,
@@ -2174,4 +2152,197 @@
 .admin-dashboard-grid--activity>.admin-panel:last-child .admin-activity__dot {
     position: relative;
     z-index: 1;
+}
+
+.admin-overview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 4px;
+}
+
+.admin-overview-head__title {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.admin-overview-head__icon {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(92, 189, 185, .18);
+    border-radius: 50%;
+    color: var(--admin-teal-deep);
+    background: linear-gradient(145deg, rgba(230, 245, 241, .96), rgba(255, 255, 255, .96));
+    box-shadow: 0 10px 24px rgba(47, 119, 116, .06);
+}
+
+.admin-overview-head__title h3 {
+    margin: 0;
+    color: var(--admin-text);
+    font-size: 21px;
+    line-height: 1;
+    letter-spacing: -.035em;
+}
+
+.admin-overview-head__title p {
+    margin: 6px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.admin-overview-period {
+    position: relative;
+    min-width: 158px;
+    flex: 0 0 auto;
+    z-index: 20;
+}
+
+.admin-overview-period__trigger {
+    width: 100%;
+    height: 42px;
+    padding: 0 13px 0 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 1px solid rgba(92, 189, 185, .24);
+    border-radius: 16px;
+    color: var(--admin-teal-deep);
+    background: rgba(255, 255, 255, .94);
+    box-shadow: 0 8px 20px rgba(47, 119, 116, .045);
+    cursor: pointer;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 800;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.admin-overview-period__trigger:hover,
+.admin-overview-period__trigger:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(92, 189, 185, .36);
+    background: rgba(255, 255, 255, .98);
+    box-shadow: 0 11px 24px rgba(47, 119, 116, .065);
+    outline: none;
+}
+
+.admin-overview-period__trigger span {
+    color: #62766f;
+}
+
+.admin-overview-period__trigger svg {
+    flex: 0 0 auto;
+    color: #337f7b;
+    transition: transform .18s ease;
+}
+
+.admin-overview-period.is-open .admin-overview-period__trigger {
+    border-color: rgba(92, 189, 185, .38);
+    background: rgba(255, 255, 255, .99);
+    box-shadow: 0 10px 26px rgba(47, 119, 116, .075);
+}
+
+.admin-overview-period.is-open .admin-overview-period__trigger svg {
+    transform: rotate(180deg);
+}
+
+.admin-overview-period__menu {
+    position: absolute;
+    top: calc(100% + 7px);
+    left: 0;
+    right: 0;
+    z-index: 40;
+    overflow: hidden;
+    padding: 6px;
+    border: 1px solid rgba(92, 189, 185, .15);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, .975);
+    box-shadow: 0 16px 38px rgba(47, 119, 116, .095);
+    backdrop-filter: blur(12px);
+    animation: adminOverviewMenuIn .16s ease both;
+}
+
+.admin-overview-period__option {
+    width: 100%;
+    min-height: 36px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    border: 0;
+    border-radius: 10px;
+    color: #6c7f79;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 760;
+    text-align: left;
+    transition: background .16s ease, color .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+
+.admin-overview-period__option:hover {
+    color: var(--admin-teal-deep);
+    background: rgba(220, 232, 226, .50);
+}
+
+.admin-overview-period__option.is-active {
+    color: #ffffff;
+    background: linear-gradient(135deg, #68bbb6 0%, #72aaa2 100%);
+    box-shadow: 0 6px 14px rgba(92, 189, 185, .17);
+}
+
+.admin-overview-period__option.is-active:hover {
+    color: #ffffff;
+    background: linear-gradient(135deg, #63b5b0 0%, #6da49d 100%);
+}
+
+.admin-overview-period.is-loading {
+    opacity: .68;
+}
+
+.admin-overview-period.is-loading .admin-overview-period__trigger {
+    cursor: progress;
+}
+
+@keyframes adminOverviewMenuIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px) scale(.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (max-width: 520px) {
+    .admin-overview-head {
+        align-items: flex-start;
+    }
+
+    .admin-overview-head__icon {
+        width: 38px;
+        height: 38px;
+    }
+
+    .admin-overview-head__title h3 {
+        font-size: 19px;
+    }
+
+    .admin-overview-period {
+        min-width: 146px;
+    }
+
+    .admin-overview-period__trigger {
+        height: 40px;
+        border-radius: 15px;
+    }
 }

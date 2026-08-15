@@ -545,15 +545,17 @@ export default function AdminDomainsPage() {
     search: debouncedSearch || undefined,
   }), [debouncedSearch]);
 
-  const load = useCallback(async ({ silent = false } = {}) => {
+  const load = useCallback(async ({ silent = false, fresh = false } = {}) => {
     if (silent) setRefreshing(true);
     else setLoading(true);
     setError('');
 
     try {
+      const listLoader = fresh ? adminApi.domains.listFresh : adminApi.domains.list;
+      const summaryLoader = fresh ? adminApi.domains.summaryFresh : adminApi.domains.summary;
       const [listPayload, summaryPayload] = await Promise.all([
-        adminApi.domains.list(listParams),
-        adminApi.domains.summary(summaryParams),
+        listLoader(listParams),
+        summaryLoader(summaryParams),
       ]);
       const nextRows = unwrapRows(listPayload);
       setRows(nextRows);
@@ -625,7 +627,7 @@ export default function AdminDomainsPage() {
           </div>
           <div className="admin-domain-panel__actions">
             <span className="admin-domain-live"><i /> Live configuration</span>
-            <button type="button" className="admin-domain-btn admin-domain-btn--refresh" onClick={() => load({ silent: true })} disabled={refreshing}>
+            <button type="button" className="admin-domain-btn admin-domain-btn--refresh" onClick={() => load({ silent: true, fresh: true })} disabled={refreshing}>
               <RefreshCw size={15} className={refreshing ? 'admin-spin' : ''} /> Refresh
             </button>
             <button type="button" className="admin-domain-btn admin-domain-btn--primary" onClick={openCreate}>

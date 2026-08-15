@@ -214,10 +214,11 @@ export default function AdminPublicationReportsPage() {
     return value;
   }, [page, search, sortBy, sortOrder, status]);
 
-  const loadSummary = useCallback(async () => {
+  const loadSummary = useCallback(async ({ fresh = false } = {}) => {
     setSummaryLoading(true);
     try {
-      const payload = await adminApi.publicationReports.summary();
+      const summaryLoader = fresh ? adminApi.publicationReports.summaryFresh : adminApi.publicationReports.summary;
+      const payload = await summaryLoader();
       setSummary(payload);
     } catch {
     } finally {
@@ -225,12 +226,13 @@ export default function AdminPublicationReportsPage() {
     }
   }, []);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({ quiet = false, fresh = false } = {}) => {
     if (!quiet) setLoading(true);
     setError('');
 
     try {
-      const payload = await adminApi.publicationReports.list(params);
+      const listLoader = fresh ? adminApi.publicationReports.listFresh : adminApi.publicationReports.list;
+      const payload = await listLoader(params);
       const nextRows = getItems(payload);
       setRows(nextRows);
       setMeta(getMeta(payload, nextRows.length));
@@ -365,15 +367,15 @@ export default function AdminPublicationReportsPage() {
         titleCase(moderationAction);
       const publisherWasNotified = Boolean(
         reviewResult?.publisherNotifiedThisReview ??
-          reviewResult?.data?.publisherNotifiedThisReview ??
-          reviewResult?.publisherNotified ??
-          reviewResult?.data?.publisherNotified,
+        reviewResult?.data?.publisherNotifiedThisReview ??
+        reviewResult?.publisherNotified ??
+        reviewResult?.data?.publisherNotified,
       );
       const reporterWasNotified = Boolean(
         reviewResult?.reporterNotifiedThisReview ??
-          reviewResult?.data?.reporterNotifiedThisReview ??
-          reviewResult?.reporterNotified ??
-          reviewResult?.data?.reporterNotified,
+        reviewResult?.data?.reporterNotifiedThisReview ??
+        reviewResult?.reporterNotified ??
+        reviewResult?.data?.reporterNotified,
       );
 
       setNotice(
@@ -446,22 +448,22 @@ export default function AdminPublicationReportsPage() {
             <h3>Reports</h3>
             <p>{meta.total} matching reports</p>
           </div>
-          <button type="button" onClick={() => load({ quiet: true })}>
+          <button type="button" onClick={() => { void load({ quiet: true, fresh: true }); void loadSummary({ fresh: true }); }}>
             <RefreshCw size={14} /> Refresh
           </button>
         </header>
 
         {notice
           ? createPortal(
-              <div className="admin-publication-reports-toast" role="status">
-                <BadgeCheck size={17} />
-                <div>
-                  <strong>Moderation updated</strong>
-                  <span>{notice}</span>
-                </div>
-              </div>,
-              document.body,
-            )
+            <div className="admin-publication-reports-toast" role="status">
+              <BadgeCheck size={17} />
+              <div>
+                <strong>Moderation updated</strong>
+                <span>{notice}</span>
+              </div>
+            </div>,
+            document.body,
+          )
           : null}
 
         <div className="admin-publication-reports-controls">

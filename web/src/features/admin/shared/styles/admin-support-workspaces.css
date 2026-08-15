@@ -580,6 +580,19 @@
   text-align: right;
 }
 
+.admin-support-table--complaints th:nth-child(6),
+.admin-support-table--complaints td:nth-child(6) {
+  width: 12%;
+}
+
+.admin-support-table--complaints th:nth-child(7),
+.admin-support-table--complaints td:nth-child(7) {
+  width: 10%;
+  padding-left: 4px;
+  padding-right: 13px;
+  text-align: left;
+}
+
 .admin-support-primary-cell {
   min-width: 0;
   display: flex;

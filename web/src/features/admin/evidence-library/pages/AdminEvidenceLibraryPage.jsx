@@ -187,12 +187,12 @@ function formatDate(value, compact = false) {
   return compact
     ? parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
     : parsed.toLocaleString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      });
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
 }
 
 function latestCollection(rows, summary) {
@@ -588,7 +588,7 @@ export default function AdminEvidenceLibraryPage() {
     };
   }, []);
 
-  const loadData = useCallback(async ({ quiet = false } = {}) => {
+  const loadData = useCallback(async ({ quiet = false, fresh = false } = {}) => {
     const requestId = ++requestIdRef.current;
     if (quiet) setRefreshing(true);
     else setLoading(true);
@@ -604,7 +604,9 @@ export default function AdminEvidenceLibraryPage() {
         ...(dataSourceId ? { dataSourceId } : {}),
       };
 
-      const listPayload = await adminApi.evidence.list(params);
+      const listLoader = fresh ? adminApi.evidence.listFresh : adminApi.evidence.list;
+      const summaryLoader = fresh ? adminApi.evidence.summaryFresh : adminApi.evidence.summary;
+      const listPayload = await listLoader(params);
       if (requestId !== requestIdRef.current) return;
 
       const nextRows = unwrapRows(listPayload);
@@ -612,7 +614,7 @@ export default function AdminEvidenceLibraryPage() {
       setMeta(unwrapMeta(listPayload, nextRows.length));
       if (!quiet) setLoading(false);
 
-      adminApi.evidence.summary({
+      summaryLoader({
         ...(search ? { search } : {}),
         ...(dataSourceId ? { dataSourceId } : {}),
       })
@@ -701,7 +703,7 @@ export default function AdminEvidenceLibraryPage() {
               type="button"
               className="admin-btn"
               disabled={refreshing}
-              onClick={() => loadData({ quiet: true })}
+              onClick={() => loadData({ quiet: true, fresh: true })}
             >
               <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} /> Refresh
             </button>
