@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -43,19 +44,16 @@ type AuthenticatedAdmin = {
  * - Activate and deactivate sources.
  * - Synchronize implementation state with CollectorsFactory.
  *
- * Permanent deletion is intentionally not exposed because
- * historical jobs and collected posts may reference the source.
- *
  * Base route:
  * /admin/data-sources
  *
- * @author Malak
+ * @author Eman
  */
 @Controller('admin/data-sources')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminDataSourcesController {
-  constructor(private readonly dataSourcesService: DataSourcesService) {}
+  constructor(private readonly dataSourcesService: DataSourcesService) { }
 
   /**
    * Creates a data-source record.
@@ -144,5 +142,17 @@ export class AdminDataSourcesController {
     admin: AuthenticatedAdmin,
   ) {
     return this.dataSourcesService.updateStatus(id, dto, admin.id);
+  }
+
+  /**
+   * Deletes a data source when it is safe to remove it permanently.
+   * Historical collection or evidence references are validated by the service.
+   */
+  @Delete(':id')
+  remove(
+    @Param('id', ParseUUIDPipe)
+    id: string,
+  ) {
+    return this.dataSourcesService.remove(id);
   }
 }

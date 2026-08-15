@@ -545,7 +545,7 @@ export default function AdminCollectionRunsPage() {
     return () => window.removeEventListener('voxidence:admin-search', onWorkspaceSearch);
   }, []);
 
-  const loadData = useCallback(async ({ quiet = false } = {}) => {
+  const loadData = useCallback(async ({ quiet = false, fresh = false } = {}) => {
     const requestId = ++requestRef.current;
     if (quiet) setRefreshing(true);
     else setLoading(true);
@@ -562,13 +562,15 @@ export default function AdminCollectionRunsPage() {
         ...(sourceFilter !== 'all' ? { dataSourceKey: sourceFilter } : {}),
       };
 
-      const listPayload = await adminApi.collection.list(params);
+      const listLoader = fresh ? adminApi.collection.listFresh : adminApi.collection.list;
+      const statusLoader = fresh ? adminApi.collection.statusFresh : adminApi.collection.status;
+      const listPayload = await listLoader(params);
       if (requestId !== requestRef.current) return;
       const nextRows = unwrapRows(listPayload);
       setRows(nextRows);
       setMeta(unwrapMeta(listPayload, nextRows.length));
 
-      adminApi.collection.status()
+      statusLoader()
         .then((payload) => {
           if (requestId === requestRef.current) setStatusPayload(unwrapStatus(payload));
         })
@@ -645,7 +647,7 @@ export default function AdminCollectionRunsPage() {
           </div>
           <div className="admin-cr-head-state">
             <span className={`admin-cr-live ${statusPayload?.available === false ? 'is-offline' : ''}`}><i /> {statusPayload?.available === false ? 'Pipeline unavailable' : 'Live pipeline'}</span>
-            <button type="button" className="admin-cr-refresh" onClick={() => loadData({ quiet: true })} disabled={refreshing}>
+            <button type="button" className="admin-cr-refresh" onClick={() => loadData({ quiet: true, fresh: true })} disabled={refreshing}>
               <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} /> Refresh
             </button>
           </div>

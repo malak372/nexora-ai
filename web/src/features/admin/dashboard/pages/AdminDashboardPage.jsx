@@ -1,8 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+/**
+ * Administrator overview dashboard for the web application.
+ *
+ * The existing overview period selector supports day, week, month, year, and
+ * all-time views while retaining the dashboard's current UI and data flow.
+ *
+ * @author Eman
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
   BrainCircuit,
+  CalendarDays,
+  ChevronDown,
   CircleDollarSign,
   Coins,
   Lightbulb,
@@ -30,18 +40,29 @@ const fmt = (value) => nf.format(Number(value || 0));
 const shortDate = (value) =>
   value
     ? new Date(value).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-      })
+      month: 'short',
+      day: 'numeric',
+    })
     : '—';
 
 
 const DASHBOARD_SESSION_KEY = 'voxidence:admin-dashboard:snapshot';
 const DASHBOARD_SESSION_TTL_MS = 120000;
+const DEFAULT_OVERVIEW_PERIOD = 'week';
+/** Available administrator overview periods displayed by the existing selector. */
+const OVERVIEW_PERIOD_OPTIONS = [
+  { value: 'day', label: 'This day' },
+  { value: 'week', label: 'This week' },
+  { value: 'month', label: 'This month' },
+  { value: 'year', label: 'This year' },
+  { value: 'all', label: 'All time' },
+];
 
-function readDashboardSnapshot() {
+const dashboardSessionKey = (period) => `${DASHBOARD_SESSION_KEY}:${period}`;
+
+function readDashboardSnapshot(period = DEFAULT_OVERVIEW_PERIOD) {
   try {
-    const raw = window.sessionStorage.getItem(DASHBOARD_SESSION_KEY);
+    const raw = window.sessionStorage.getItem(dashboardSessionKey(period));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.data || !parsed?.savedAt) return null;
@@ -51,11 +72,10 @@ function readDashboardSnapshot() {
   }
 }
 
-function writeDashboardSnapshot(data) {
+function writeDashboardSnapshot(data, period = DEFAULT_OVERVIEW_PERIOD) {
   try {
-    window.sessionStorage.setItem(DASHBOARD_SESSION_KEY, JSON.stringify({ data, savedAt: Date.now() }));
+    window.sessionStorage.setItem(dashboardSessionKey(period), JSON.stringify({ data, savedAt: Date.now() }));
   } catch {
-    // Storage is a performance enhancement only.
   }
 }
 
@@ -101,6 +121,96 @@ function ActivityItem({ icon: Icon, title, meta, tone = 'mint' }) {
   );
 }
 
+function OverviewHeader({ period, onChange, loading }) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const activeOption =
+    OVERVIEW_PERIOD_OPTIONS.find((option) => option.value === period) ||
+    OVERVIEW_PERIOD_OPTIONS[1];
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handleClickOutside = (event) => {
+      if (!dropdownRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  const handleSelect = (value) => {
+    setOpen(false);
+    if (value !== period) {
+      onChange(value);
+    }
+  };
+
+  return (
+    <section className="admin-overview-head">
+      <div className="admin-overview-head__title">
+        <span className="admin-overview-head__icon">
+          <CalendarDays size={18} />
+        </span>
+        <div>
+          <h3>Overview</h3>
+          <p>Core platform numbers</p>
+        </div>
+      </div>
+
+      <div
+        ref={dropdownRef}
+        className={`admin-overview-period ${loading ? 'is-loading' : ''} ${open ? 'is-open' : ''}`}
+      >
+        <button
+          type="button"
+          className="admin-overview-period__trigger"
+          onClick={() => !loading && setOpen((current) => !current)}
+          disabled={loading}
+          aria-label="Change overview period"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+        >
+          <span>{activeOption.label}</span>
+          <ChevronDown size={17} aria-hidden="true" />
+        </button>
+
+        {open ? (
+          <div className="admin-overview-period__menu" role="listbox">
+            {OVERVIEW_PERIOD_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={period === option.value}
+                className={`admin-overview-period__option ${period === option.value ? 'is-active' : ''
+                  }`}
+                onClick={() => handleSelect(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function DashboardError({ message, onRetry, retrying }) {
   return (
     <section className="admin-dashboard-error" role="alert">
@@ -126,22 +236,31 @@ function DashboardError({ message, onRetry, retrying }) {
 }
 
 export default function AdminDashboardPage() {
-  const initialSnapshot = useMemo(() => readDashboardSnapshot(), []);
+  const initialSnapshot = useMemo(() => readDashboardSnapshot(DEFAULT_OVERVIEW_PERIOD), []);
+  const requestIdRef = useRef(0);
+  const overviewPeriodRef = useRef(DEFAULT_OVERVIEW_PERIOD);
   const [data, setData] = useState(initialSnapshot?.data || null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(!initialSnapshot?.data);
+  const [overviewPeriod, setOverviewPeriod] = useState(DEFAULT_OVERVIEW_PERIOD);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(initialSnapshot?.savedAt ? new Date(initialSnapshot.savedAt) : null);
 
-  const load = useCallback(async ({ background = false } = {}) => {
+  const load = useCallback(async ({ background = false, period, fresh = false } = {}) => {
+    const requestedPeriod = period || overviewPeriodRef.current;
+    const requestId = ++requestIdRef.current;
+
     if (!background) setLoading(true);
     setError('');
 
     try {
-      const response = await adminApi.getDashboard();
+      const dashboardLoader = fresh ? adminApi.getDashboardFresh : adminApi.getDashboard;
+      const response = await dashboardLoader(requestedPeriod);
+      if (requestId !== requestIdRef.current) return;
       setData(response);
       setLastUpdatedAt(new Date());
-      writeDashboardSnapshot(response);
+      writeDashboardSnapshot(response, requestedPeriod);
     } catch (requestError) {
+      if (requestId !== requestIdRef.current) return;
       const isTimeout =
         requestError?.code === 'ECONNABORTED' ||
         /timeout/i.test(requestError?.message || '');
@@ -152,13 +271,36 @@ export default function AdminDashboardPage() {
           : getApiErrorMessage(requestError, 'Could not load the admin dashboard.'),
       );
     } finally {
-      if (!background) setLoading(false);
+      if (requestId === requestIdRef.current && !background) setLoading(false);
     }
   }, []);
 
+  const changeOverviewPeriod = useCallback((period) => {
+    if (period === overviewPeriodRef.current || loading) return;
+
+    overviewPeriodRef.current = period;
+    setOverviewPeriod(period);
+    setError('');
+
+    const snapshot = readDashboardSnapshot(period);
+    if (snapshot?.data) {
+      setData(snapshot.data);
+      setLastUpdatedAt(snapshot.savedAt ? new Date(snapshot.savedAt) : null);
+    }
+
+    const snapshotAge = snapshot?.savedAt ? Date.now() - snapshot.savedAt : Infinity;
+    load({
+      background: Boolean(snapshot?.data) && snapshotAge < DASHBOARD_SESSION_TTL_MS,
+      period,
+    });
+  }, [load, loading]);
+
   useEffect(() => {
     const snapshotAge = initialSnapshot?.savedAt ? Date.now() - initialSnapshot.savedAt : Infinity;
-    load({ background: Boolean(initialSnapshot?.data) && snapshotAge < DASHBOARD_SESSION_TTL_MS });
+    load({
+      background: Boolean(initialSnapshot?.data) && snapshotAge < DASHBOARD_SESSION_TTL_MS,
+      period: DEFAULT_OVERVIEW_PERIOD,
+    });
   }, [initialSnapshot, load]);
 
   const chart = useMemo(
@@ -211,16 +353,22 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
-      {error && !hasData ? <DashboardError message={error} onRetry={load} retrying={loading} /> : null}
+      {error && !hasData ? <DashboardError message={error} onRetry={() => load({ fresh: true })} retrying={loading} /> : null}
 
       {error && hasData ? (
         <div className="admin-error admin-error--inline-refresh">
           <span>{error}</span>
-          <button type="button" className="admin-btn" onClick={load}>
+          <button type="button" className="admin-btn" onClick={() => load({ fresh: true })}>
             <RefreshCw size={13} /> Try again
           </button>
         </div>
       ) : null}
+
+      <OverviewHeader
+        period={overviewPeriod}
+        onChange={changeOverviewPeriod}
+        loading={loading}
+      />
 
       {!hasData && loading ? (
         <section className="admin-stat-grid" aria-label="Loading dashboard">
@@ -255,7 +403,7 @@ export default function AdminDashboardPage() {
                       Updated {lastUpdatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   ) : null}
-                  <button type="button" className="admin-btn admin-btn--soft" onClick={load} disabled={loading}>
+                  <button type="button" className="admin-btn admin-btn--soft" onClick={() => load({ fresh: true })} disabled={loading}>
                     <RefreshCw size={14} className={loading ? 'is-spinning' : ''} />
                     {loading ? 'Refreshing…' : 'Refresh'}
                   </button>
