@@ -275,8 +275,8 @@ export class DataSourcesService implements OnModuleInit {
       throw new NotFoundException('Data source was not found.');
     }
 
-    const collectionJobs = existing._count.collectionJobSources;
-    const socialPosts = existing._count.socialPosts;
+    const collectionJobs = existing._count?.collectionJobSources ?? 0;
+    const socialPosts = existing._count?.socialPosts ?? 0;
 
     if (collectionJobs > 0 || socialPosts > 0) {
       throw new ConflictException(
@@ -402,58 +402,6 @@ export class DataSourcesService implements OnModuleInit {
     });
 
     return this.mapDataSourceResponse(updated);
-  }
-
-  /**
-   * Permanently removes a data source only when no historical collection jobs
-   * or evidence posts reference it. Referenced sources must be deactivated
-   * instead so existing historical data remains valid.
-   *
-   * @param id Data-source identifier to remove.
-   */
-  async remove(
-    id: string,
-  ) {
-    const existing =
-      await this.prisma.dataSource.findUnique({
-        where: {
-          id,
-        },
-        include: {
-          _count: {
-            select: {
-              collectionJobSources: true,
-              socialPosts: true,
-            },
-          },
-        },
-      });
-
-    if (!existing) {
-      throw new NotFoundException(
-        'Data source was not found.',
-      );
-    }
-
-    if (
-      existing._count.collectionJobSources > 0 ||
-      existing._count.socialPosts > 0
-    ) {
-      throw new ConflictException(
-        'This data source cannot be deleted because historical collection jobs or evidence posts reference it. Deactivate it instead.',
-      );
-    }
-
-    await this.prisma.dataSource.delete({
-      where: {
-        id,
-      },
-    });
-
-    return {
-      id,
-      deleted: true,
-    };
   }
 
   async updateStatus(

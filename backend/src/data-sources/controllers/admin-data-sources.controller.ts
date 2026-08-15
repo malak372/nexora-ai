@@ -25,39 +25,19 @@ import { GetDataSourcesQueryDto } from '../dto/get-data-sources-query.dto';
 import { UpdateDataSourceStatusDto } from '../dto/update-data-source-status.dto';
 import { UpdateDataSourceDto } from '../dto/update-data-source.dto';
 
-/**
- * Minimal authenticated administrator representation.
- */
 type AuthenticatedAdmin = {
   id: string;
   role: UserRole;
 };
 
-/**
- * Administrative endpoints for managing data sources.
- *
- * Administrators can:
- * - Create source metadata.
- * - List all sources.
- * - View source details.
- * - Update source metadata.
- * - Activate and deactivate sources.
- * - Synchronize implementation state with CollectorsFactory.
- *
- * Base route:
- * /admin/data-sources
- *
- * @author Eman
- */
 @Controller('admin/data-sources')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminDataSourcesController {
-  constructor(private readonly dataSourcesService: DataSourcesService) { }
+  constructor(
+    private readonly dataSourcesService: DataSourcesService,
+  ) {}
 
-  /**
-   * Creates a data-source record.
-   */
   @Post()
   create(
     @Body()
@@ -69,17 +49,11 @@ export class AdminDataSourcesController {
     return this.dataSourcesService.create(dto, admin.id);
   }
 
-  /**
-   * Returns global administrative data-source counters.
-   */
   @Get('summary')
   getSummary() {
     return this.dataSourcesService.getAdminSummary();
   }
 
-  /**
-   * Returns a paginated administrative source list.
-   */
   @Get()
   findAll(
     @Query()
@@ -88,41 +62,17 @@ export class AdminDataSourcesController {
     return this.dataSourcesService.findAllForAdmin(query);
   }
 
-  /**
-   * Synchronizes safety state with the deployed collector registry.
-   *
-   * Sources without operational collectors are disabled and deactivated.
-   * Administrator-disabled implementations are never turned back on here.
-   */
   @Post('synchronize')
   synchronize() {
     return this.dataSourcesService.synchronizeImplementationStates();
   }
 
-  /**
-   * Returns one source with usage totals.
-   */
   @Get(':id')
   findOne(
     @Param('id', ParseUUIDPipe)
     id: string,
   ) {
     return this.dataSourcesService.findOneForAdmin(id);
-  }
-
-  /**
-   * Updates editable source metadata.
-   */
-
-  @Delete(':id')
-  remove(
-    @Param('id', ParseUUIDPipe)
-    id: string,
-
-    @CurrentUser()
-    admin: AuthenticatedAdmin,
-  ) {
-    return this.dataSourcesService.remove(id, admin.id);
   }
 
   @Patch(':id')
@@ -136,12 +86,13 @@ export class AdminDataSourcesController {
     @CurrentUser()
     admin: AuthenticatedAdmin,
   ) {
-    return this.dataSourcesService.update(id, dto, admin.id);
+    return this.dataSourcesService.update(
+      id,
+      dto,
+      admin.id,
+    );
   }
 
-  /**
-   * Activates or deactivates a source.
-   */
   @Patch(':id/status')
   updateStatus(
     @Param('id', ParseUUIDPipe)
@@ -153,18 +104,24 @@ export class AdminDataSourcesController {
     @CurrentUser()
     admin: AuthenticatedAdmin,
   ) {
-    return this.dataSourcesService.updateStatus(id, dto, admin.id);
+    return this.dataSourcesService.updateStatus(
+      id,
+      dto,
+      admin.id,
+    );
   }
 
-  /**
-   * Deletes a data source when it is safe to remove it permanently.
-   * Historical collection or evidence references are validated by the service.
-   */
   @Delete(':id')
   remove(
     @Param('id', ParseUUIDPipe)
     id: string,
+
+    @CurrentUser()
+    admin: AuthenticatedAdmin,
   ) {
-    return this.dataSourcesService.remove(id);
+    return this.dataSourcesService.remove(
+      id,
+      admin.id,
+    );
   }
 }
