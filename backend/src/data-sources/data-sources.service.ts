@@ -34,7 +34,7 @@ import { UpdateDataSourceDto } from './dto/update-data-source.dto';
  * runtimeImplemented is always derived from CollectorsFactory and is returned
  * separately to the frontend.
  *
- * @author Malak
+ * @author Eman
  */
 @Injectable()
 export class DataSourcesService implements OnModuleInit {
@@ -42,7 +42,7 @@ export class DataSourcesService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly collectorsFactory: CollectorsFactory,
     private readonly auditService: AuditService,
-  ) {}
+  ) { }
 
   async onModuleInit(): Promise<void> {
     await this.synchronizeImplementationStates();
@@ -402,6 +402,58 @@ export class DataSourcesService implements OnModuleInit {
     });
 
     return this.mapDataSourceResponse(updated);
+  }
+
+  /**
+   * Permanently removes a data source only when no historical collection jobs
+   * or evidence posts reference it. Referenced sources must be deactivated
+   * instead so existing historical data remains valid.
+   *
+   * @param id Data-source identifier to remove.
+   */
+  async remove(
+    id: string,
+  ) {
+    const existing =
+      await this.prisma.dataSource.findUnique({
+        where: {
+          id,
+        },
+        include: {
+          _count: {
+            select: {
+              collectionJobSources: true,
+              socialPosts: true,
+            },
+          },
+        },
+      });
+
+    if (!existing) {
+      throw new NotFoundException(
+        'Data source was not found.',
+      );
+    }
+
+    if (
+      existing._count.collectionJobSources > 0 ||
+      existing._count.socialPosts > 0
+    ) {
+      throw new ConflictException(
+        'This data source cannot be deleted because historical collection jobs or evidence posts reference it. Deactivate it instead.',
+      );
+    }
+
+    await this.prisma.dataSource.delete({
+      where: {
+        id,
+      },
+    });
+
+    return {
+      id,
+      deleted: true,
+    };
   }
 
   async updateStatus(

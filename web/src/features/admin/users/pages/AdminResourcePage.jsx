@@ -38,6 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
+import { resolveMediaUrl } from '../../../../utils/mediaUrl';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-users.css';
 import '../styles/admin-user-modals.css';
@@ -384,6 +385,13 @@ function CellValue({ value, column }) {
  * prevents a display-only column name from accidentally becoming an invalid
  * Prisma orderBy field.
  */
+const USER_STATUS_OPTIONS = [
+  { key: '', label: 'All users', icon: UsersRound },
+  { key: 'ACTIVE', label: 'Active', icon: UserCheck },
+  { key: 'INACTIVE', label: 'Inactive', icon: Ban },
+  { key: 'DELETED', label: 'Deleted', icon: Trash2 },
+];
+
 const USER_SORT_OPTIONS = [
   { key: 'createdAt', label: 'Joined date' },
   { key: 'fullName', label: 'Name' },
@@ -404,6 +412,30 @@ const USER_COLUMN_SORT_FIELD = {
   userType: 'userType',
   createdAt: 'createdAt',
 };
+
+function UserAvatar({ user, name, className = 'admin-user-identity-cell__avatar' }) {
+  const avatarPath = firstDefined(
+    user,
+    ['avatarUrl', 'profileImageUrl', 'profileImage', 'avatar'],
+    '',
+  );
+  const avatarUrl = resolveMediaUrl(String(avatarPath || '').trim());
+  const initial = String(name || 'U').trim().charAt(0).toUpperCase() || 'U';
+
+  return (
+    <span className={className}>
+      <span className="admin-user-avatar__fallback">{initial}</span>
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          loading="lazy"
+          onError={(event) => { event.currentTarget.style.display = 'none'; }}
+        />
+      ) : null}
+    </span>
+  );
+}
 
 function UserSortHeader({ column, sortBy, sortOrder, onSort }) {
   const field = USER_COLUMN_SORT_FIELD[column];
@@ -436,6 +468,51 @@ function UserSortHeader({ column, sortBy, sortOrder, onSort }) {
   );
 }
 
+
+function AdminUserStatusPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const current = USER_STATUS_OPTIONS.find((option) => option.key === value) || USER_STATUS_OPTIONS[0];
+  const CurrentIcon = current.icon;
+
+  return (
+    <div className={`admin-user-status-filter ${open ? 'is-open' : ''}`}>
+      <button
+        type="button"
+        className="admin-user-status-filter__trigger"
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+      >
+        <CurrentIcon size={14} />
+        <span>
+          <small>Filter users</small>
+          <strong>{current.label}</strong>
+        </span>
+        <ChevronDown size={14} />
+      </button>
+      {open ? (
+        <div className="admin-user-status-filter__menu">
+          {USER_STATUS_OPTIONS.map((option) => {
+            const OptionIcon = option.icon;
+            return (
+              <button
+                type="button"
+                key={option.key || 'ALL'}
+                className={option.key === value ? 'is-active' : ''}
+                onClick={() => {
+                  onChange(option.key);
+                  setOpen(false);
+                }}
+              >
+                <OptionIcon size={14} />
+                <span>{option.label}</span>
+                {option.key === value ? <CheckCircle2 size={13} /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function AdminSortPicker({ options, value, order, onChange, onToggleOrder, label = 'Sort' }) {
   const [open, setOpen] = useState(false);
@@ -492,9 +569,11 @@ export default function AdminResourcePage({ section }) {
   const [search, setSearch] = useState('');
   const [userSortBy, setUserSortBy] = useState('createdAt');
   const [userSortOrder, setUserSortOrder] = useState('desc');
+  const [userStatus, setUserStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [openUserActionMenu, setOpenUserActionMenu] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -522,6 +601,13 @@ export default function AdminResourcePage({ section }) {
   }, [searchInput]);
 
   useEffect(() => {
+    if (!notice) return undefined;
+
+    const timer = window.setTimeout(() => setNotice(''), 3600);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
     if (!openUserActionMenu) return undefined;
 
     const closeMenu = () => setOpenUserActionMenu(null);
@@ -541,7 +627,7 @@ export default function AdminResourcePage({ section }) {
   }, [openUserActionMenu]);
 
   const loadData = useCallback(
-    async ({ quiet = false } = {}) => {
+    async ({ quiet = false, fresh = false } = {}) => {
       const requestId = ++requestIdRef.current;
       if (quiet) setRefreshing(true);
       else setLoading(true);
@@ -553,13 +639,20 @@ export default function AdminResourcePage({ section }) {
           limit: PAGE_SIZE,
           ...(search ? { search } : {}),
           ...(section === 'users'
-            ? { sortBy: userSortBy, sortOrder: userSortOrder }
+            ? {
+              sortBy: userSortBy,
+              sortOrder: userSortOrder,
+              ...(userStatus === 'ACTIVE' ? { isActive: true } : {}),
+              ...(userStatus === 'INACTIVE' ? { isActive: false } : {}),
+              ...(userStatus === 'DELETED' ? { deletedOnly: true } : {}),
+            }
             : {}),
         };
 
         // Paint the directory as soon as the list arrives. Summary cards are supportive
         // UI and should never hold the whole page behind several aggregate DB queries.
-        const listPayload = config.api?.list ? await config.api.list(params) : [];
+        const listLoader = fresh && config.api?.listFresh ? config.api.listFresh : config.api?.list;
+        const listPayload = listLoader ? await listLoader(params) : [];
         if (requestId !== requestIdRef.current) return;
 
         const nextRows = getItems(listPayload);
@@ -571,7 +664,8 @@ export default function AdminResourcePage({ section }) {
           const summaryParams = { ...params };
           delete summaryParams.page;
           delete summaryParams.limit;
-          config.api.summary(summaryParams)
+          const summaryLoader = fresh && config.api?.summaryFresh ? config.api.summaryFresh : config.api.summary;
+          summaryLoader(summaryParams)
             .then((summaryPayload) => {
               if (requestId === requestIdRef.current) setSummary(summaryPayload);
             })
@@ -588,7 +682,7 @@ export default function AdminResourcePage({ section }) {
         }
       }
     },
-    [config, page, search, section, userSortBy, userSortOrder],
+    [config, page, search, section, userSortBy, userSortOrder, userStatus],
   );
 
   useEffect(() => {
@@ -598,9 +692,11 @@ export default function AdminResourcePage({ section }) {
     setSelected(null);
     setUserModalMode('view');
     setModalError('');
+    setNotice('');
     if (section === 'users') {
       setUserSortBy('createdAt');
       setUserSortOrder('desc');
+      setUserStatus('');
     }
   }, [section]);
 
@@ -610,6 +706,7 @@ export default function AdminResourcePage({ section }) {
 
   const columns = useMemo(() => selectColumns(rows, section), [rows, section]);
   const stats = useMemo(() => normalizeSummary(summary, rows, section), [summary, rows, section]);
+  const selectedIsDeleted = Boolean(selected?.deletedAt);
 
 
   const applyUserSort = (field) => {
@@ -629,7 +726,15 @@ export default function AdminResourcePage({ section }) {
       setRefreshing(true);
       await config.api.exportCsv({
         ...(search ? { search } : {}),
-        ...(section === 'users' ? { sortBy: userSortBy, sortOrder: userSortOrder } : {}),
+        ...(section === 'users'
+          ? {
+            sortBy: userSortBy,
+            sortOrder: userSortOrder,
+            ...(userStatus === 'ACTIVE' ? { isActive: true } : {}),
+            ...(userStatus === 'INACTIVE' ? { isActive: false } : {}),
+            ...(userStatus === 'DELETED' ? { deletedOnly: true } : {}),
+          }
+          : {}),
       });
     } catch (exportError) {
       setError(getApiErrorMessage(exportError, 'CSV export failed.'));
@@ -638,11 +743,15 @@ export default function AdminResourcePage({ section }) {
     }
   };
 
-  const runMutation = async (id, operation) => {
+  const runMutation = async (id, operation, successMessage = '') => {
     setBusyId(id);
     setError('');
+    setNotice('');
     try {
-      await operation();
+      const result = await operation();
+      if (successMessage) {
+        setNotice(result?.message || successMessage);
+      }
       await loadData({ quiet: true });
     } catch (mutationError) {
       setError(getApiErrorMessage(mutationError, 'The requested action could not be completed.'));
@@ -790,7 +899,9 @@ export default function AdminResourcePage({ section }) {
     const id = item?.id || item?.userId;
     if (!id) return null;
 
+    const isDeleted = Boolean(item?.deletedAt);
     const active =
+      !isDeleted &&
       item?.isActive !== false &&
       String(item?.status || '').toUpperCase() !== 'INACTIVE';
 
@@ -821,11 +932,11 @@ export default function AdminResourcePage({ section }) {
         current?.id === id
           ? null
           : {
-              id,
-              item,
-              top,
-              left,
-            },
+            id,
+            item,
+            top,
+            left,
+          },
       );
     };
 
@@ -848,7 +959,7 @@ export default function AdminResourcePage({ section }) {
           <span>View</span>
         </button>
 
-        {config.api?.update ? (
+        {!isDeleted && config.api?.update ? (
           <button
             type="button"
             className="admin-user-action-btn"
@@ -864,7 +975,7 @@ export default function AdminResourcePage({ section }) {
           </button>
         ) : null}
 
-        {config.api?.status ? (
+        {!isDeleted && config.api?.status ? (
           <button
             type="button"
             className={`admin-user-action-icon ${active ? 'is-deactivate' : 'is-activate'}`}
@@ -886,16 +997,20 @@ export default function AdminResourcePage({ section }) {
           </button>
         ) : null}
 
-        <button
-          type="button"
-          className={`admin-user-more__trigger ${menuOpen ? 'is-active' : ''}`}
-          title="More actions"
-          aria-label="More user actions"
-          aria-expanded={menuOpen}
-          onClick={openMoreMenu}
-        >
-          <MoreHorizontal size={16} />
-        </button>
+        {!isDeleted ? (
+          <button
+            type="button"
+            className={`admin-user-more__trigger ${menuOpen ? 'is-active' : ''}`}
+            title="More actions"
+            aria-label="More user actions"
+            aria-expanded={menuOpen}
+            onClick={openMoreMenu}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+        ) : (
+          <span className="admin-user-deleted-action">Deleted</span>
+        )}
       </div>
     );
   };
@@ -909,15 +1024,13 @@ export default function AdminResourcePage({ section }) {
     if (column === 'identity') {
       const name = String(
         firstDefined(item, ['fullName', 'name', 'displayName'], 'Unnamed user') ||
-          'Unnamed user',
+        'Unnamed user',
       );
       const email = String(firstDefined(item, ['email'], '') || '');
 
       return (
         <div className="admin-user-identity-cell">
-          <span className="admin-user-identity-cell__avatar">
-            {name.charAt(0).toUpperCase()}
-          </span>
+          <UserAvatar user={item} name={name} />
           <div>
             <strong>{name}</strong>
             <small>{email || 'No email'}</small>
@@ -953,14 +1066,15 @@ export default function AdminResourcePage({ section }) {
     }
 
     if (column === 'accountHealth') {
-      const active = item?.isActive !== false;
+      const isDeleted = Boolean(item?.deletedAt);
+      const active = !isDeleted && item?.isActive !== false;
       const verified = Boolean(item?.isVerified ?? item?.emailVerified);
 
       return (
         <div className="admin-user-health-cell">
-          <span className={active ? 'is-positive' : 'is-negative'}>
-            {active ? <BadgeCheck size={12} /> : <XCircle size={12} />}
-            {active ? 'Active' : 'Inactive'}
+          <span className={isDeleted ? 'is-muted' : active ? 'is-positive' : 'is-negative'}>
+            {isDeleted ? <Trash2 size={12} /> : active ? <BadgeCheck size={12} /> : <XCircle size={12} />}
+            {isDeleted ? 'Deleted' : active ? 'Active' : 'Inactive'}
           </span>
           <span className={verified ? 'is-positive' : 'is-muted'}>
             {verified ? <BadgeCheck size={12} /> : <XCircle size={12} />}
@@ -987,10 +1101,10 @@ export default function AdminResourcePage({ section }) {
           {Number.isNaN(date.getTime())
             ? String(value)
             : date.toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}
         </span>
       );
     }
@@ -1025,7 +1139,7 @@ export default function AdminResourcePage({ section }) {
               type="button"
               className="admin-btn"
               disabled={refreshing}
-              onClick={() => loadData({ quiet: true })}
+              onClick={() => loadData({ quiet: true, fresh: true })}
             >
               <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} />
               Refresh
@@ -1072,6 +1186,15 @@ export default function AdminResourcePage({ section }) {
 
         <div className={`admin-filterbar ${section === 'users' ? 'admin-users-filterbar' : ''}`}>
           {section === 'users' && (
+            <AdminUserStatusPicker
+              value={userStatus}
+              onChange={(value) => {
+                setPage(1);
+                setUserStatus(value);
+              }}
+            />
+          )}
+          {section === 'users' && (
             <AdminSortPicker
               options={USER_SORT_OPTIONS}
               value={userSortBy}
@@ -1101,6 +1224,26 @@ export default function AdminResourcePage({ section }) {
             </label>
           )}
         </div>
+
+        {notice && section === 'users' && (
+          <div className="admin-users-success-toast" role="status" aria-live="polite">
+            <span className="admin-users-success-toast__icon">
+              <CheckCircle2 size={18} />
+            </span>
+            <div className="admin-users-success-toast__content">
+              <strong>Email sent successfully</strong>
+              <span>{notice}</span>
+            </div>
+            <button
+              type="button"
+              className="admin-users-success-toast__close"
+              onClick={() => setNotice('')}
+              aria-label="Dismiss success message"
+            >
+              <XCircle size={17} />
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="admin-resource-error">
@@ -1189,15 +1332,15 @@ export default function AdminResourcePage({ section }) {
           onClick={(event) => event.stopPropagation()}
         >
           <div className="admin-user-actions-popover__head">
-            <span className="admin-user-actions-popover__avatar">
-              {String(
-                firstDefined(
-                  openUserActionMenu.item,
-                  ['fullName', 'name', 'displayName', 'email'],
-                  'U',
-                ),
-              ).trim().charAt(0).toUpperCase()}
-            </span>
+            <UserAvatar
+              user={openUserActionMenu.item}
+              name={firstDefined(
+                openUserActionMenu.item,
+                ['fullName', 'name', 'displayName', 'email'],
+                'U',
+              )}
+              className="admin-user-actions-popover__avatar"
+            />
             <span>
               <small>More actions</small>
               <strong>
@@ -1219,7 +1362,11 @@ export default function AdminResourcePage({ section }) {
                 onClick={() => {
                   const id = openUserActionMenu.id;
                   setOpenUserActionMenu(null);
-                  runMutation(id, () => config.api.resetPassword(id));
+                  runMutation(
+                    id,
+                    () => config.api.resetPassword(id),
+                    'Password reset email sent successfully.',
+                  );
                 }}
               >
                 <span className="admin-user-actions-popover__icon">
@@ -1292,8 +1439,12 @@ export default function AdminResourcePage({ section }) {
               <div className="admin-user-modal__content admin-user-view">
                 <section className="admin-user-view__hero">
                   <div className="admin-user-view__avatar-wrap">
-                    <div className="admin-user-view__avatar">{String(firstDefined(selected, ['name', 'fullName', 'displayName', 'email'], 'U')).trim().charAt(0).toUpperCase()}</div>
-                    <i className={selected?.isActive === false ? 'is-offline' : ''} />
+                    <UserAvatar
+                      user={selected}
+                      name={firstDefined(selected, ['name', 'fullName', 'displayName', 'email'], 'U')}
+                      className="admin-user-view__avatar"
+                    />
+                    <i className={selectedIsDeleted || selected?.isActive === false ? 'is-offline' : ''} />
                   </div>
                   <div className="admin-user-view__identity">
                     <small>Voxidence member</small>
@@ -1302,13 +1453,15 @@ export default function AdminResourcePage({ section }) {
                     <div className="admin-user-view__chips">
                       <span>{firstDefined(selected, ['role'], 'User')}</span>
                       <span>{firstDefined(selected, ['plan', 'tier', 'accountPlan'], 'Normal')}</span>
-                      <span className={selected?.isActive === false ? 'is-danger' : 'is-success'}>{selected?.isActive === false ? 'Inactive' : 'Active'}</span>
+                      <span className={selectedIsDeleted || selected?.isActive === false ? 'is-danger' : 'is-success'}>{selectedIsDeleted ? 'Deleted' : selected?.isActive === false ? 'Inactive' : 'Active'}</span>
                       <span className={(selected?.isVerified || selected?.emailVerified) ? 'is-success' : ''}>{(selected?.isVerified || selected?.emailVerified) ? 'Verified' : 'Unverified'}</span>
                     </div>
                   </div>
-                  <button type="button" className="admin-user-view__edit-cta" onClick={() => setUserModalMode('edit')}>
-                    <Pencil size={15} /> Edit profile
-                  </button>
+                  {!selectedIsDeleted ? (
+                    <button type="button" className="admin-user-view__edit-cta" onClick={() => setUserModalMode('edit')}>
+                      <Pencil size={15} /> Edit profile
+                    </button>
+                  ) : null}
                 </section>
 
                 <section className="admin-user-view__metrics">
@@ -1440,12 +1593,12 @@ export default function AdminResourcePage({ section }) {
                   <div className="admin-user-edit__actions">
                     <button type="button" className="admin-user-edit__cancel" onClick={() => setUserModalMode('view')} disabled={savingUser}>Cancel</button>
                     <button type="button" className="admin-user-edit__save" onClick={handleSaveUser} disabled={
-                        savingUser ||
-                        !userForm.fullName.trim() ||
-                        Number(userForm.freeGenerationsUsed) < 0 ||
-                        Number(userForm.freeGenerationLimit) < Number(userForm.freeGenerationsUsed) ||
-                        Number(userForm.creditBalance) < 0
-                      }>
+                      savingUser ||
+                      !userForm.fullName.trim() ||
+                      Number(userForm.freeGenerationsUsed) < 0 ||
+                      Number(userForm.freeGenerationLimit) < Number(userForm.freeGenerationsUsed) ||
+                      Number(userForm.creditBalance) < 0
+                    }>
                       {savingUser ? <LoaderCircle size={16} className="admin-spin" /> : <Save size={16} />}
                       {savingUser ? 'Saving…' : 'Save changes'}
                     </button>

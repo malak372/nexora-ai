@@ -1,3 +1,9 @@
+/// Administrator dashboard page for the mobile application.
+///
+/// The existing overview selector supports day, week, month, year, and all-time
+/// periods without changing the dashboard's established presentation or flow.
+///
+/// @author Eman
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -164,7 +170,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       final payload = envelope['data'];
 
       if (currentUserId.isEmpty || savedUserId != currentUserId) return null;
-      if (savedAt == null || DateTime.now().difference(savedAt) > _snapshotMaxAge) {
+      if (savedAt == null ||
+          DateTime.now().difference(savedAt) > _snapshotMaxAge) {
         return null;
       }
       if (payload is! Map) return null;
@@ -978,10 +985,7 @@ class _TodayMetricItem extends StatelessWidget {
 }
 
 class _OverviewHeader extends StatelessWidget {
-  const _OverviewHeader({
-    required this.period,
-    required this.onChanged,
-  });
+  const _OverviewHeader({required this.period, required this.onChanged});
 
   final String period;
   final ValueChanged<String> onChanged;
@@ -1067,6 +1071,13 @@ class _OverviewHeader extends StatelessWidget {
               ),
             ),
             PopupMenuItem(
+              value: 'year',
+              child: _OverviewPeriodMenuItem(
+                icon: Icons.calendar_today_outlined,
+                label: 'This year',
+              ),
+            ),
+            PopupMenuItem(
               value: 'all',
               child: _OverviewPeriodMenuItem(
                 icon: Icons.all_inclusive_rounded,
@@ -1108,10 +1119,7 @@ class _OverviewHeader extends StatelessWidget {
 }
 
 class _OverviewPeriodMenuItem extends StatelessWidget {
-  const _OverviewPeriodMenuItem({
-    required this.icon,
-    required this.label,
-  });
+  const _OverviewPeriodMenuItem({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
@@ -1144,10 +1152,12 @@ class _OverviewPeriodMenuItem extends StatelessWidget {
   }
 }
 
+/// Converts the stored overview period value into the label shown to admins.
 String _overviewPeriodLabel(String value) {
   return switch (value) {
     'day' => 'This day',
     'month' => 'This month',
+    'year' => 'This year',
     'all' => 'All time',
     _ => 'This week',
   };
@@ -1948,25 +1958,31 @@ class _RecentSystemActivityCard extends StatelessWidget {
 
     final rows = <_RecentActivityData>[];
 
-    final recentPayments = _list(activity['recentPayments'])
-        .map(_map)
-        .toList();
+    final recentPayments = _list(activity['recentPayments']).map(_map).toList();
     final finalizedPaymentTargets = <String>{};
 
     for (final item in recentPayments) {
-      final status = _safeText(item['status'], fallback: 'UNKNOWN').toUpperCase();
+      final status = _safeText(
+        item['status'],
+        fallback: 'UNKNOWN',
+      ).toUpperCase();
       final key = _paymentActivityTargetKey(item);
       if (key.isNotEmpty && status == 'SUCCEEDED') {
         finalizedPaymentTargets.add(key);
       }
     }
 
-    final visiblePayments = recentPayments.where((item) {
-      final status = _safeText(item['status'], fallback: 'UNKNOWN').toUpperCase();
-      if (status != 'PENDING') return true;
-      final key = _paymentActivityTargetKey(item);
-      return key.isEmpty || !finalizedPaymentTargets.contains(key);
-    }).take(2);
+    final visiblePayments = recentPayments
+        .where((item) {
+          final status = _safeText(
+            item['status'],
+            fallback: 'UNKNOWN',
+          ).toUpperCase();
+          if (status != 'PENDING') return true;
+          final key = _paymentActivityTargetKey(item);
+          return key.isEmpty || !finalizedPaymentTargets.contains(key);
+        })
+        .take(2);
 
     for (final item in visiblePayments) {
       final user = _map(item['user']);

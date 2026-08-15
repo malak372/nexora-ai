@@ -334,13 +334,15 @@ export default function AdminComplaintsPage() {
 
   const summaryQuery = useMemo(() => ({ search: search || undefined }), [search]);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({ quiet = false, fresh = false } = {}) => {
     if (!quiet) setLoading(true);
     setError('');
     try {
+      const listLoader = fresh ? adminApi.complaints.listFresh : adminApi.complaints.list;
+      const summaryLoader = fresh ? adminApi.complaints.summaryFresh : adminApi.complaints.summary;
       const [listPayload, summaryPayload] = await Promise.all([
-        adminApi.complaints.list(query),
-        adminApi.complaints.summary(summaryQuery),
+        listLoader(query),
+        summaryLoader(summaryQuery),
       ]);
       const nextRows = rowsFrom(listPayload);
       setItems(Array.isArray(nextRows) ? nextRows : []);
@@ -442,7 +444,7 @@ export default function AdminComplaintsPage() {
           </div>
           <div className="admin-support-header-actions">
             <span className="admin-support-live-chip"><i /> Live queue</span>
-            <button type="button" onClick={() => load()} disabled={loading}><RefreshCw size={15} /> Refresh</button>
+            <button type="button" onClick={() => load({ fresh: true })} disabled={loading}><RefreshCw size={15} /> Refresh</button>
             <button type="button" onClick={exportCsv} disabled={exporting}>{exporting ? <LoaderCircle className="is-spinning" size={15} /> : <Download size={15} />} Export CSV</button>
           </div>
         </header>
@@ -474,7 +476,7 @@ export default function AdminComplaintsPage() {
         {notice ? <div className="admin-support-toast"><CheckCircle2 size={16} />{notice}</div> : null}
 
         <div className="admin-support-table-wrap">
-          <table className="admin-support-table">
+          <table className="admin-support-table admin-support-table--complaints">
             <thead><tr><th>Complaint</th><th>Submitter</th><th>Related idea</th><th>Priority</th><th>Status</th><th>Last activity</th><th>Action</th></tr></thead>
             <tbody>
               {loading ? (

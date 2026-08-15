@@ -1,3 +1,11 @@
+/**
+ * Administrator data-source management page for the web application.
+ *
+ * Supports the existing create, edit, activation, synchronization, filtering,
+ * and listing flows, plus safe data-source deletion from the table actions and management dialog.
+ *
+ * @author Eman
+ */
 import {
   ArrowDown,
   ArrowUp,
@@ -20,6 +28,7 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  Trash2,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -368,6 +377,35 @@ function DataSourceModal({ mode, source, onClose, onSaved }) {
   };
 
   const editing = mode === 'edit';
+
+  /**
+   * Requests permanent deletion of the selected data source after confirmation.
+   * Backend validation prevents deletion when historical records reference it.
+   */
+  const removeSource = async () => {
+    if (!editing || saving) return;
+
+    const sourceName = source?.displayName || source?.key || 'this data source';
+    const confirmed = window.confirm(
+      `Delete "${sourceName}"? This is only allowed when the source has no historical collection jobs or evidence posts.`,
+    );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError('');
+
+    try {
+      await adminApi.dataSources.remove(source.id);
+      await onSaved('Data source deleted successfully.');
+      onClose();
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, 'Could not delete the data source.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const runtimeBlocked = editing && form.runtimeImplemented === false;
 
   return createPortal(
@@ -566,6 +604,11 @@ function DataSourceModal({ mode, source, onClose, onSaved }) {
             </span>
           </div>
           <div className="admin-ds-modal__actions">
+            {editing && (
+              <button type="button" className="admin-ds-action admin-ds-action--cancel" onClick={removeSource} disabled={saving}>
+                <Trash2 size={15} /> Delete
+              </button>
+            )}
             <button type="button" className="admin-ds-action admin-ds-action--cancel" onClick={onClose} disabled={saving}>
               <X size={15} /> Cancel
             </button>
@@ -597,6 +640,7 @@ export default function AdminDataSourcesPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -613,7 +657,7 @@ export default function AdminDataSourcesPage() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  const loadData = useCallback(async ({ quiet = false } = {}) => {
+  const loadData = useCallback(async ({ quiet = false, fresh = false } = {}) => {
     const requestId = ++requestIdRef.current;
     if (quiet) setRefreshing(true);
     else setLoading(true);
@@ -629,14 +673,16 @@ export default function AdminDataSourcesPage() {
         ...filterParams(filter),
       };
 
-      const listPayload = await adminApi.dataSources.list(params);
+      const listLoader = fresh ? adminApi.dataSources.listFresh : adminApi.dataSources.list;
+      const summaryLoader = fresh ? adminApi.dataSources.summaryFresh : adminApi.dataSources.summary;
+      const listPayload = await listLoader(params);
       if (requestId !== requestIdRef.current) return;
 
       const nextRows = unwrapRows(listPayload);
       setRows(nextRows);
       setMeta(unwrapMeta(listPayload, nextRows.length));
 
-      adminApi.dataSources.summary()
+      summaryLoader()
         .then((payload) => {
           if (requestId === requestIdRef.current) setSummary(unwrapSummary(payload));
         })
@@ -681,6 +727,34 @@ export default function AdminDataSourcesPage() {
       setModal({ mode: 'edit', source: isObject(detail?.data) ? detail.data : detail });
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'Could not open this data source.'));
+    }
+  };
+
+  /**
+   * Permanently deletes a source from the table after explicit confirmation.
+   * Historical-reference validation remains enforced by the backend service.
+   */
+  const deleteSource = async (row) => {
+    if (!row?.id || deletingId) return;
+
+    const sourceName = row.displayName || row.key || 'this data source';
+    const confirmed = window.confirm(
+      `Delete "${sourceName}"? This is only allowed when the source has no historical collection jobs or evidence posts.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingId(row.id);
+    setError('');
+
+    try {
+      await adminApi.dataSources.remove(row.id);
+      setNotice('Data source deleted successfully.');
+      await loadData({ quiet: true, fresh: true });
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, 'Could not delete the data source.'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -784,7 +858,7 @@ export default function AdminDataSourcesPage() {
             )}
           </label>
 
-          <button type="button" className="admin-ds-refresh" onClick={() => loadData({ quiet: true })} disabled={refreshing}>
+          <button type="button" className="admin-ds-refresh" onClick={() => loadData({ quiet: true, fresh: true })} disabled={refreshing}>
             <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} /> Refresh
           </button>
         </div>
@@ -871,9 +945,28 @@ export default function AdminDataSourcesPage() {
                   </td>
 
                   <td className="admin-ds-actions-cell">
-                    <button type="button" className="admin-ds-manage" onClick={() => openEdit(row)}>
-                      <Pencil size={13} /> <span>Manage</span>
-                    </button>
+                    <div className="admin-ds-row-actions">
+                      <button
+                        type="button"
+                        className="admin-ds-manage"
+                        onClick={() => openEdit(row)}
+                        aria-label={`Manage ${row.displayName || row.key || 'data source'}`}
+                        title="Manage source"
+                      >
+                        <Pencil size={13} /> <span>Manage</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-ds-delete"
+                        onClick={() => deleteSource(row)}
+                        disabled={deletingId === row.id}
+                        aria-label={`Delete ${row.displayName || row.key || 'data source'}`}
+                        title="Delete source"
+                      >
+                        {deletingId === row.id ? <LoaderCircle size={14} className="admin-spin" /> : <Trash2 size={13.5} />}
+                        <span>Delete</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

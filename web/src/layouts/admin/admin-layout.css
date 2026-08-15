@@ -382,6 +382,7 @@
         font-size: 18px
     }
 }
+
 /* Refined admin atmosphere: lightweight CSS only, no image requests. */
 .admin-shell__backdrop::before,
 .admin-shell__backdrop::after {
@@ -420,9 +421,10 @@
         linear-gradient(rgba(73, 83, 79, .032) 1px, transparent 1px),
         linear-gradient(90deg, rgba(73, 83, 79, .032) 1px, transparent 1px);
     background-size: 32px 32px;
-    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.72), transparent 78%);
-    mask-image: linear-gradient(to bottom, rgba(0,0,0,.72), transparent 78%);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .72), transparent 78%);
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .72), transparent 78%);
 }
+
 /* Admin owns the entire viewport background, even when the public theme has
    another body color active. */
 html:has(.admin-shell),
@@ -458,6 +460,7 @@ body:has(.admin-shell),
     opacity: .42;
     background: radial-gradient(circle, rgba(243, 201, 211, .13) 0%, rgba(250, 249, 246, .06) 54%, transparent 75%);
 }
+
 /* ========================================================================
    Admin viewport containment
    Prevent resource tables from widening the whole document.
@@ -500,6 +503,7 @@ body:has(.admin-shell),
 }
 
 @media (max-width: 1050px) {
+
     .admin-workspace,
     .admin-shell.is-collapsed .admin-workspace {
         width: calc(100% - 20px);
@@ -508,6 +512,7 @@ body:has(.admin-shell),
 }
 
 @media (max-width: 720px) {
+
     .admin-workspace,
     .admin-shell.is-collapsed .admin-workspace {
         width: calc(100% - 12px);

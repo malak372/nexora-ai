@@ -1,3 +1,12 @@
+/**
+ * Provides aggregated administrator dashboard metrics and time-period filtering.
+ *
+ * Supported overview periods are day, week, month, year, and all time.
+ * Dashboard responses are cached briefly to reduce repeated database work while
+ * preserving the existing dashboard behavior.
+ *
+ * @author Eman
+ */
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import {
   AccountStatus,
@@ -31,7 +40,7 @@ export class DashboardService implements OnModuleInit {
 
   private readonly inFlight = new Map<string, Promise<DashboardResponseDto>>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   onModuleInit(): void {
     void this.getDashboard('all')
@@ -45,6 +54,10 @@ export class DashboardService implements OnModuleInit {
       .catch(() => undefined);
   }
 
+  /**
+   * Returns the administrator dashboard for the requested overview period.
+   * Accepted period values are day, week, month, year, and all.
+   */
   async getDashboard(periodInput?: string): Promise<DashboardResponseDto> {
     const period = this.normalizePeriod(periodInput);
     const now = Date.now();
@@ -83,6 +96,7 @@ export class DashboardService implements OnModuleInit {
       now.getDate(),
     );
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
     const startOfWeek = new Date(startOfToday);
     const weekday = startOfWeek.getDay();
     const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
@@ -95,7 +109,9 @@ export class DashboardService implements OnModuleInit {
           ? startOfWeek
           : period === 'month'
             ? startOfMonth
-            : null;
+            : period === 'year'
+              ? startOfYear
+              : null;
 
     const createdAtFilter: { createdAt?: { gte: Date } } = periodStart
       ? { createdAt: { gte: periodStart } }
@@ -550,13 +566,18 @@ export class DashboardService implements OnModuleInit {
     };
   }
 
+  /**
+   * Normalizes a dashboard period supplied by the client.
+   * Unknown or empty values fall back to the all-time dashboard.
+   */
   private normalizePeriod(value?: string): string {
     const normalized = value?.trim().toLowerCase();
 
     if (
       normalized === 'day' ||
       normalized === 'week' ||
-      normalized === 'month'
+      normalized === 'month' ||
+      normalized === 'year'
     ) {
       return normalized;
     }

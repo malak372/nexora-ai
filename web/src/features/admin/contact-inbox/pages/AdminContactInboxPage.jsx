@@ -317,13 +317,15 @@ export default function AdminContactInboxPage() {
 
   const summaryQuery = useMemo(() => ({ search: search || undefined }), [search]);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({ quiet = false, fresh = false } = {}) => {
     if (!quiet) setLoading(true);
     setError('');
     try {
+      const listLoader = fresh ? adminApi.contactMessages.listFresh : adminApi.contactMessages.list;
+      const summaryLoader = fresh ? adminApi.contactMessages.summaryFresh : adminApi.contactMessages.summary;
       const [listPayload, summaryPayload] = await Promise.all([
-        adminApi.contactMessages.list(query),
-        adminApi.contactMessages.summary(summaryQuery),
+        listLoader(query),
+        summaryLoader(summaryQuery),
       ]);
       const nextRows = rowsFrom(listPayload);
       setItems(Array.isArray(nextRows) ? nextRows : []);
@@ -395,7 +397,7 @@ export default function AdminContactInboxPage() {
   };
 
   return (
-    <div className="admin-page admin-support-page">
+    <div className="admin-page admin-support-page admin-support-page--contact">
       <section className="admin-support-hero admin-support-hero--contact">
         <div>
           <span><Mail size={16} /> Support operations</span>
@@ -425,7 +427,7 @@ export default function AdminContactInboxPage() {
           </div>
           <div className="admin-support-header-actions">
             <span className="admin-support-live-chip"><i /> Live inbox</span>
-            <button type="button" onClick={() => load()} disabled={loading}><RefreshCw size={15} /> Refresh</button>
+            <button type="button" onClick={() => load({ fresh: true })} disabled={loading}><RefreshCw size={15} /> Refresh</button>
             <button type="button" onClick={exportCsv} disabled={exporting}>{exporting ? <LoaderCircle className="is-spinning" size={15} /> : <Download size={15} />} Export CSV</button>
           </div>
         </header>
