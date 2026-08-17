@@ -90,6 +90,9 @@ model User {
   auditLogs                    AuditLog[]                    @relation("AuditLogs")
   adminCommunicationsSent      AdminCommunication[]          @relation("AdminCommunicationsSent")
   adminCommunicationRecipients AdminCommunicationRecipient[] @relation("AdminCommunicationRecipientUser")
+  adminConversationsCreated    AdminConversation[]           @relation("AdminConversationCreator")
+  adminConversationMemberships AdminConversationMember[]     @relation("AdminConversationMemberUser")
+  adminChatMessagesSent        AdminChatMessage[]            @relation("AdminChatMessageSender")
   authenticationLogs           AuthenticationLog[]
   chatSessions                 ChatSession[]
   emailChangeRequests          EmailChangeRequest[]
@@ -519,6 +522,57 @@ model Alert {
   @@index([userId, isRead])
   @@index([createdAt])
   @@map("alerts")
+}
+
+model AdminConversation {
+  id            String                @id @default(uuid())
+  title         String?
+  type          AdminConversationType @default(DIRECT)
+  directKey     String?               @unique @map("direct_key")
+  createdById   String                @map("created_by_id")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+  lastMessageAt DateTime?             @map("last_message_at")
+
+  createdBy User                      @relation("AdminConversationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  members   AdminConversationMember[]
+  messages  AdminChatMessage[]
+
+  @@index([lastMessageAt])
+  @@index([createdById])
+  @@map("admin_conversations")
+}
+
+model AdminConversationMember {
+  id             String    @id @default(uuid())
+  conversationId String    @map("conversation_id")
+  userId         String    @map("user_id")
+  joinedAt       DateTime  @default(now()) @map("joined_at")
+  lastReadAt     DateTime? @map("last_read_at")
+
+  conversation AdminConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User              @relation("AdminConversationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("admin_conversation_members")
+}
+
+model AdminChatMessage {
+  id             String    @id @default(uuid())
+  conversationId String    @map("conversation_id")
+  senderId       String    @map("sender_id")
+  content        String    @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  editedAt       DateTime? @map("edited_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  conversation AdminConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User              @relation("AdminChatMessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+  @@map("admin_chat_messages")
 }
 
 model AdminCommunication {
@@ -1551,6 +1605,11 @@ enum IdeaGenerationStageStatus {
   COMPLETED
   FAILED
   SKIPPED
+}
+
+enum AdminConversationType {
+  DIRECT
+  GROUP
 }
 
 enum UserRole {

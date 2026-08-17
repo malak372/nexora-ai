@@ -966,15 +966,6 @@ export default function AdminAuditLogsPage() {
             </div>
           ) : (
             <table className="admin-audit-table">
-              <colgroup>
-                <col className="admin-audit-col-event" />
-                <col className="admin-audit-col-actor" />
-                <col className="admin-audit-col-target" />
-                <col className="admin-audit-col-change" />
-                <col className="admin-audit-col-created" />
-                <col className="admin-audit-col-actions" />
-              </colgroup>
-
               <thead>
                 <tr>
                   <th>EVENT</th>

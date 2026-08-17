@@ -4,6 +4,7 @@ import AdminLayout from '../layouts/admin/AdminLayout';
 
 const AdminDashboardPage = lazy(() => import('../features/admin/dashboard/pages/AdminDashboardPage'));
 const AdminAdministratorsPage = lazy(() => import('../features/admin/administrators/pages/AdminAdministratorsPage'));
+const AdminTeamChatPage = lazy(() => import('../features/admin/team-chat/pages/AdminTeamChatPage'));
 const AdminResourcePage = lazy(() => import('../features/admin/users/pages/AdminResourcePage'));
 const AdminIdeasPage = lazy(() => import('../features/admin/ideas/pages/AdminIdeasPage'));
 const AdminPublicationReportsPage = lazy(() => import('../features/admin/publication-reports/pages/AdminPublicationReportsPage'));
@@ -30,6 +31,7 @@ export const adminRoutes = (
     <Route index element={<Navigate to="dashboard" replace />} />
     <Route path="dashboard" element={<AdminDashboardPage />} />
     <Route path="administrators" element={<AdminAdministratorsPage />} />
+    <Route path="team-chat" element={<AdminTeamChatPage />} />
     <Route path="users" element={<AdminResourcePage section="users" />} />
     <Route path="ideas" element={<AdminIdeasPage />} />
     <Route path="payments" element={<AdminPaymentsPage />} />

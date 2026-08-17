@@ -1,0 +1,63 @@
+/* Complaints identity — Data Sources card language with a muted rose focus. */
+.admin-support-page--complaints {
+    --complaint-accent: #c37f90;
+    --complaint-accent-deep: #9d6573;
+    --complaint-soft: #fbf0f3;
+    --complaint-line: rgba(195, 127, 144, .18);
+}
+
+.admin-support-page--complaints .admin-support-hero {
+    border-color: var(--complaint-line);
+    background:
+        radial-gradient(circle at 88% 14%, rgba(195, 127, 144, .15), transparent 26%),
+        radial-gradient(circle at 70% 100%, rgba(169, 190, 180, .14), transparent 30%),
+        linear-gradient(125deg, #fffdfc 0%, #fbf4f5 58%, #f2f8f5 100%);
+    box-shadow: 0 18px 50px rgba(157, 101, 115, .07);
+}
+
+.admin-support-page--complaints .admin-support-hero::before {
+    border-color: rgba(195, 127, 144, .09);
+}
+
+.admin-support-page--complaints .admin-support-hero>div:first-child>span,
+.admin-support-page--complaints .admin-support-hero__pulse,
+.admin-support-page--complaints .admin-support-panel__kicker {
+    color: var(--complaint-accent-deep);
+}
+
+.admin-support-page--complaints .admin-support-hero__pulse,
+.admin-support-page--complaints .admin-support-panel,
+.admin-support-page--complaints .admin-support-metric {
+    border-color: var(--complaint-line);
+}
+
+.admin-support-page--complaints .admin-support-panel {
+    background:
+        radial-gradient(circle at 4% 0%, rgba(195, 127, 144, .055), transparent 20%),
+        radial-gradient(circle at 98% 0%, rgba(92, 189, 185, .05), transparent 18%),
+        rgba(255, 253, 252, .96);
+    box-shadow: 0 18px 48px rgba(157, 101, 115, .065);
+}
+
+.admin-support-page--complaints .admin-support-panel::before {
+    background: linear-gradient(90deg, var(--complaint-accent), #d8a6b2 46%, #9cc9bf 100%);
+}
+
+.admin-support-page--complaints .admin-support-metric {
+    --support-accent: var(--complaint-accent);
+    background: linear-gradient(145deg, rgba(255, 255, 255, .9), rgba(253, 247, 248, .92));
+}
+
+.admin-support-page--complaints .admin-support-metric__icon,
+.admin-support-page--complaints .admin-support-row-icon {
+    color: var(--complaint-accent-deep);
+    background: linear-gradient(145deg, #fae9ee, #fff9fa);
+}
+
+.admin-support-page--complaints .admin-support-view-button:hover,
+.admin-support-page--complaints .admin-support-primary-button {
+    border-color: transparent;
+    color: #fff;
+    background: linear-gradient(135deg, #cf8999, #b97383);
+    box-shadow: 0 9px 20px rgba(185, 115, 131, .18);
+}

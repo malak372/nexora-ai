@@ -9,7 +9,6 @@
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpDown,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -213,23 +212,6 @@ function SortPicker({ value, order, onChange, onToggleOrder }) {
         {order === 'asc' ? <ArrowUp size={15} /> : <ArrowDown size={15} />}
       </button>
     </div>
-  );
-}
-
-function SortHeader({ field, label, sortBy, sortOrder, onSort }) {
-  const active = sortBy === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
-
-  return (
-    <th aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button
-        type="button"
-        className={`admin-ds-sort-head ${active ? 'is-active' : ''}`}
-        onClick={() => onSort(field)}
-      >
-        {label} <Icon size={11} />
-      </button>
-    </th>
   );
 }
 
@@ -710,15 +692,7 @@ export default function AdminDataSourcesPage() {
     available: metricValue(summary, 'available', rows.filter((row) => row.isAvailable).length),
   }), [meta.total, rows, summary]);
 
-  const changeSort = (field) => {
-    setPage(1);
-    if (sortBy === field) {
-      setSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'));
-      return;
-    }
-    setSortBy(field);
-    setSortOrder(field === 'displayName' || field === 'key' ? 'asc' : 'desc');
-  };
+
 
   const openEdit = async (row) => {
     setError('');
@@ -866,112 +840,97 @@ export default function AdminDataSourcesPage() {
         {notice && <div className="admin-ds-notice"><CheckCircle2 size={15} /> {notice}</div>}
         {error && <div className="admin-ds-error">{error}</div>}
 
-        <div className="admin-ds-table-wrap">
-          <table className="admin-ds-table">
-            <thead>
-              <tr>
-                <SortHeader field="displayName" label="Source" sortBy={sortBy} sortOrder={sortOrder} onSort={changeSort} />
-                <th>Pipeline</th>
-                <th>Capabilities</th>
-                <SortHeader field="updatedAt" label="Activity" sortBy={sortBy} sortOrder={sortOrder} onSort={changeSort} />
-                <th className="admin-ds-actions-head">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr><td colSpan="5"><div className="admin-ds-empty"><LoaderCircle className="admin-spin" size={22} /><strong>Loading data sources…</strong></div></td></tr>
-              )}
+        <div className="admin-ds-card-shell">
+          {loading ? (
+            <div className="admin-ds-empty admin-ds-empty--cards"><LoaderCircle className="admin-spin" size={22} /><strong>Loading data sources…</strong></div>
+          ) : !error && rows.length === 0 ? (
+            <div className="admin-ds-empty admin-ds-empty--cards"><Database size={24} /><strong>No data sources match this view.</strong><span>Try another filter or add a new source.</span></div>
+          ) : (
+            <div className="admin-ds-card-grid">
+              {rows.map((row) => (
+                <article className={`admin-ds-source-card ${row.isAvailable ? 'is-available' : 'is-unavailable'}`} key={row.id}>
+                  <div className="admin-ds-source-card__visual">
+                    <span className="admin-ds-source-card__pattern" aria-hidden="true" />
+                    <span className="admin-ds-source-card__mark">{sourceInitial(row)}</span>
+                    <div className="admin-ds-source-card__visual-copy">
+                      <small>Evidence source</small>
+                      <strong>{row.displayName || row.key}</strong>
+                      <span className={`admin-ds-source-card__availability ${row.isAvailable ? 'is-on' : 'is-off'}`}>
+                        {row.isAvailable ? <CheckCircle2 size={12} /> : <CircleOff size={12} />}
+                        {row.isAvailable ? 'Operational' : 'Unavailable'}
+                      </span>
+                    </div>
+                  </div>
 
-              {!loading && !error && rows.length === 0 && (
-                <tr><td colSpan="5"><div className="admin-ds-empty"><Database size={24} /><strong>No data sources match this view.</strong><span>Try another filter or add a new source.</span></div></td></tr>
-              )}
-
-              {!loading && rows.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <div className="admin-ds-source-cell">
-                      <span className="admin-ds-source-mark">{sourceInitial(row)}</span>
-                      <div className="admin-ds-source-copy">
-                        <strong>{row.displayName || row.key}</strong>
-                        <small>{compactText(row.description, 92)}</small>
+                  <div className="admin-ds-source-card__body">
+                    <div className="admin-ds-source-card__head">
+                      <div>
                         <span className="admin-ds-source-key"><KeyRound size={10} /> {row.key}</span>
+                        <p>{compactText(row.description, 118)}</p>
+                      </div>
+                      <div className="admin-ds-source-card__actions">
+                        <button
+                          type="button"
+                          className="admin-ds-manage"
+                          onClick={() => openEdit(row)}
+                          aria-label={`Manage ${row.displayName || row.key || 'data source'}`}
+                          title="Manage source"
+                        >
+                          <Pencil size={13} /> <span>Manage</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-ds-delete"
+                          onClick={() => deleteSource(row)}
+                          disabled={deletingId === row.id}
+                          aria-label={`Delete ${row.displayName || row.key || 'data source'}`}
+                          title="Delete source"
+                        >
+                          {deletingId === row.id ? <LoaderCircle size={14} className="admin-spin" /> : <Trash2 size={13.5} />}
+                          <span>Delete</span>
+                        </button>
                       </div>
                     </div>
-                  </td>
 
-                  <td>
-                    <div className="admin-ds-pipeline-cell">
-                      <div className={`admin-ds-health ${row.isAvailable ? 'is-available' : 'is-unavailable'}`}>
-                        <span className="admin-ds-health__icon">
-                          {row.isAvailable ? <CheckCircle2 size={15} /> : <CircleOff size={15} />}
-                        </span>
-                        <span>
-                          <strong>{row.isAvailable ? 'Operational' : 'Unavailable'}</strong>
-                          <small>{row.isAvailable ? 'Ready for collection' : 'Review source state'}</small>
-                        </span>
-                      </div>
-                      <div className="admin-ds-pipeline-flags">
-                        <span title={row.isActive ? 'Source is active' : 'Source is inactive'} className={row.isActive ? 'is-on' : 'is-off'}>
-                          <i /> Active
-                        </span>
-                        <span title={row.isImplemented ? 'Implementation enabled' : 'Implementation disabled'} className={row.isImplemented ? 'is-on' : 'is-off'}>
-                          <i /> Build
-                        </span>
-                        <span title={row.runtimeImplemented ? 'Runtime collector deployed' : 'Runtime collector missing'} className={row.runtimeImplemented ? 'is-on' : 'is-off'}>
-                          <i /> Runtime
-                        </span>
-                      </div>
+                    <div className="admin-ds-source-card__status-row">
+                      <span className={row.isActive ? 'is-on' : 'is-off'}><i /> Active</span>
+                      <span className={row.isImplemented ? 'is-on' : 'is-off'}><i /> Build</span>
+                      <span className={row.runtimeImplemented ? 'is-on' : 'is-off'}><i /> Runtime</span>
                     </div>
-                  </td>
 
-                  <td>
-                    <div className="admin-ds-capability-chips">
-                      {row.supportsPosts && <span title="Supports posts"><FileText size={12} /><b>Posts</b></span>}
-                      {row.supportsComments && <span title="Supports comments"><MessageSquare size={12} /><b>Comments</b></span>}
-                      {row.supportsRegion && <span title="Supports region filtering"><MapPin size={12} /><b>Region</b></span>}
-                      {row.supportsLanguage && <span title="Supports language filtering"><Languages size={12} /><b>Language</b></span>}
-                      {!row.supportsPosts && !row.supportsComments && !row.supportsRegion && !row.supportsLanguage && <em>No special capabilities</em>}
-                    </div>
-                  </td>
+                    <div className="admin-ds-source-card__details">
+                      <section>
+                        <small>Capabilities</small>
+                        <div className="admin-ds-capability-chips">
+                          {row.supportsPosts && <span title="Supports posts"><FileText size={12} /><b>Posts</b></span>}
+                          {row.supportsComments && <span title="Supports comments"><MessageSquare size={12} /><b>Comments</b></span>}
+                          {row.supportsRegion && <span title="Supports region filtering"><MapPin size={12} /><b>Region</b></span>}
+                          {row.supportsLanguage && <span title="Supports language filtering"><Languages size={12} /><b>Language</b></span>}
+                          {!row.supportsPosts && !row.supportsComments && !row.supportsRegion && !row.supportsLanguage && <em>No special capabilities</em>}
+                        </div>
+                      </section>
 
-                  <td>
-                    <div className="admin-ds-activity-cell">
-                      <div className="admin-ds-usage-cell">
-                        <span><strong>{Number(row?.usage?.collectionJobs || 0).toLocaleString()}</strong><small>jobs</small></span>
-                        <span><strong>{Number(row?.usage?.socialPosts || 0).toLocaleString()}</strong><small>evidence</small></span>
-                      </div>
-                      <span className="admin-ds-date">Updated {formatDate(row.updatedAt)}</span>
+                      <section>
+                        <small>Activity</small>
+                        <div className="admin-ds-source-card__usage">
+                          <span><strong>{Number(row?.usage?.collectionJobs || 0).toLocaleString()}</strong><small>jobs</small></span>
+                          <span><strong>{Number(row?.usage?.socialPosts || 0).toLocaleString()}</strong><small>evidence</small></span>
+                        </div>
+                      </section>
                     </div>
-                  </td>
 
-                  <td className="admin-ds-actions-cell">
-                    <div className="admin-ds-row-actions">
-                      <button
-                        type="button"
-                        className="admin-ds-manage"
-                        onClick={() => openEdit(row)}
-                        aria-label={`Manage ${row.displayName || row.key || 'data source'}`}
-                        title="Manage source"
-                      >
-                        <Pencil size={13} /> <span>Manage</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-ds-delete"
-                        onClick={() => deleteSource(row)}
-                        disabled={deletingId === row.id}
-                        aria-label={`Delete ${row.displayName || row.key || 'data source'}`}
-                        title="Delete source"
-                      >
-                        {deletingId === row.id ? <LoaderCircle size={14} className="admin-spin" /> : <Trash2 size={13.5} />}
-                        <span>Delete</span>
-                      </button>
+                    <div className="admin-ds-source-card__footer">
+                      <span><RefreshCw size={11} /> Updated {formatDate(row.updatedAt)}</span>
+                      <span className={row.isAvailable ? 'is-ready' : 'is-review'}>
+                        {row.isAvailable ? <CheckCircle2 size={11} /> : <CircleOff size={11} />}
+                        {row.isAvailable ? 'Ready for collection' : 'Review source state'}
+                      </span>
                     </div>
-                  </td>
-                </tr>
+                  </div>
+                </article>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
 
         <footer className="admin-ds-pagination">

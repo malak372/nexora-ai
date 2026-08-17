@@ -1,96 +1,221 @@
-import { adminApi } from '../features/admin/shared/api/adminApi';
+/**
+ * Lazy route preload helpers for the administrator workspace.
+ *
+ * These helpers allow the admin navigation to start loading
+ * route chunks before the user actually navigates to them.
+ *
+ * @author Eman
+ */
 
-const adminRouteChunkPreloaders = {
-  '/admin/dashboard': () => import('../features/admin/dashboard/pages/AdminDashboardPage'),
-  '/admin/administrators': () => import('../features/admin/administrators/pages/AdminAdministratorsPage'),
-  '/admin/users': () => import('../features/admin/users/pages/AdminResourcePage'),
-  '/admin/ideas': () => import('../features/admin/ideas/pages/AdminIdeasPage'),
-  '/admin/publication-reports': () => import('../features/admin/publication-reports/pages/AdminPublicationReportsPage'),
-  '/admin/evidence': () => import('../features/admin/evidence-library/pages/AdminEvidenceLibraryPage'),
-  '/admin/data-sources': () => import('../features/admin/data-sources/pages/AdminDataSourcesPage'),
-  '/admin/collection': () => import('../features/admin/data-collection/pages/AdminCollectionRunsPage'),
-  '/admin/domains': () => import('../features/admin/domains/pages/AdminDomainsPage'),
-  '/admin/payments': () => import('../features/admin/payments/pages/AdminPaymentsPage'),
-  '/admin/credits': () => import('../features/admin/credits/pages/AdminCreditsPage'),
-  '/admin/complaints': () => import('../features/admin/complaints/pages/AdminComplaintsPage'),
-  '/admin/contact-messages': () => import('../features/admin/contact-inbox/pages/AdminContactInboxPage'),
-  '/admin/settings': () => import('../features/admin/system-settings/pages/AdminSettingsPage'),
-  '/admin/prompts': () => import('../features/admin/prompt-control/pages/AdminPromptsPage'),
-  '/admin/ai-analytics': () => import('../features/admin/ai-analytics/pages/AdminAiAnalyticsPage'),
-  '/admin/ai-monitoring': () => import('../features/admin/ai-monitoring/pages/AdminAiMonitoringPage'),
-  '/admin/ai-models': () => import('../features/admin/ai-models/pages/AdminAiModelsPage'),
-  '/admin/account': () => import('../features/admin/account/pages/AdminAccountPage'),
-  '/admin/alerts': () => import('../features/admin/alerts/pages/AdminAlertsPage'),
-  '/admin/audit-logs': () => import('../features/admin/audit-trail/pages/AdminAuditLogsPage'),
-  '/admin/auth-audit': () => import('../features/admin/auth-security/pages/AdminAuthSecurityPage'),
+export const preloadAdminDashboardPage = () =>
+  import('../features/admin/dashboard/pages/AdminDashboardPage');
+
+export const preloadAdminUsersPage = () =>
+  import('../features/admin/users/pages/AdminResourcePage');
+
+export const preloadAdminAdministratorsPage = () =>
+  import('../features/admin/administrators/pages/AdminAdministratorsPage');
+
+export const preloadAdminTeamChatPage = () =>
+  import('../features/admin/team-chat/pages/AdminTeamChatPage');
+
+export const preloadAdminIdeasPage = () =>
+  import('../features/admin/ideas/pages/AdminIdeasPage');
+
+export const preloadAdminPublicationReportsPage = () =>
+  import(
+    '../features/admin/publication-reports/pages/AdminPublicationReportsPage'
+  );
+
+export const preloadAdminComplaintsPage = () =>
+  import('../features/admin/complaints/pages/AdminComplaintsPage');
+
+export const preloadAdminContactInboxPage = () =>
+  import('../features/admin/contact-inbox/pages/AdminContactInboxPage');
+
+export const preloadAdminEvidenceLibraryPage = () =>
+  import('../features/admin/evidence-library/pages/AdminEvidenceLibraryPage');
+
+export const preloadAdminDataSourcesPage = () =>
+  import('../features/admin/data-sources/pages/AdminDataSourcesPage');
+
+export const preloadAdminCollectionRunsPage = () =>
+  import(
+    '../features/admin/data-collection/pages/AdminCollectionRunsPage'
+  );
+
+export const preloadAdminDomainsPage = () =>
+  import('../features/admin/domains/pages/AdminDomainsPage');
+
+export const preloadAdminPaymentsPage = () =>
+  import('../features/admin/payments/pages/AdminPaymentsPage');
+
+export const preloadAdminCreditsPage = () =>
+  import('../features/admin/credits/pages/AdminCreditsPage');
+
+export const preloadAdminAiMonitorPage = () =>
+  import('../features/admin/ai-monitoring/pages/AdminAiMonitoringPage');
+
+export const preloadAdminAiAnalyticsPage = () =>
+  import('../features/admin/ai-analytics/pages/AdminAiAnalyticsPage');
+
+export const preloadAdminAiModelsPage = () =>
+  import('../features/admin/ai-models/pages/AdminAiModelsPage');
+
+export const preloadAdminPromptsPage = () =>
+  import('../features/admin/prompt-control/pages/AdminPromptsPage');
+
+export const preloadAdminAlertsPage = () =>
+  import('../features/admin/alerts/pages/AdminAlertsPage');
+
+export const preloadAdminAuditLogPage = () =>
+  import('../features/admin/audit-trail/pages/AdminAuditLogsPage');
+
+export const preloadAdminAuthenticationPage = () =>
+  import('../features/admin/auth-security/pages/AdminAuthSecurityPage');
+
+export const preloadAdminSystemSettingsPage = () =>
+  import('../features/admin/system-settings/pages/AdminSettingsPage');
+
+export const preloadAdminAccountPage = () =>
+  import('../features/admin/account/pages/AdminAccountPage');
+
+/**
+ * Maps administrator routes to their lazy preload functions.
+ *
+ * This keeps AdminLayout independent from page import paths and lets
+ * navigation items preload by passing their route string.
+ *
+ * @author Eman
+ */
+const adminRoutePreloaders = {
+  '/admin/dashboard': preloadAdminDashboardPage,
+
+  '/admin/administrators': preloadAdminAdministratorsPage,
+
+  '/admin/team-chat': preloadAdminTeamChatPage,
+
+  '/admin/users': preloadAdminUsersPage,
+
+  '/admin/ideas': preloadAdminIdeasPage,
+
+  '/admin/publication-reports': preloadAdminPublicationReportsPage,
+
+  '/admin/complaints': preloadAdminComplaintsPage,
+
+  '/admin/contact-messages': preloadAdminContactInboxPage,
+
+  '/admin/alerts': preloadAdminAlertsPage,
+
+  '/admin/evidence': preloadAdminEvidenceLibraryPage,
+
+  '/admin/data-sources': preloadAdminDataSourcesPage,
+
+  '/admin/collection': preloadAdminCollectionRunsPage,
+
+  '/admin/domains': preloadAdminDomainsPage,
+
+  '/admin/ai-monitoring': preloadAdminAiMonitorPage,
+
+  '/admin/ai-analytics': preloadAdminAiAnalyticsPage,
+
+  '/admin/ai-models': preloadAdminAiModelsPage,
+
+  '/admin/prompts': preloadAdminPromptsPage,
+
+  '/admin/payments': preloadAdminPaymentsPage,
+
+  '/admin/credits': preloadAdminCreditsPage,
+
+  '/admin/auth-audit': preloadAdminAuthenticationPage,
+
+  '/admin/audit-logs': preloadAdminAuditLogPage,
+
+  '/admin/settings': preloadAdminSystemSettingsPage,
+
+  '/admin/account': preloadAdminAccountPage,
 };
 
-function normalizePath(path = '') {
-  return String(path).split('?')[0].replace(/\/$/, '') || '/';
-}
-
-function canWarmInBackground() {
-  if (typeof navigator === 'undefined') return false;
-
-  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-  if (!connection) return true;
-  if (connection.saveData) return false;
-
-  const effectiveType = String(connection.effectiveType || '').toLowerCase();
-  return effectiveType !== 'slow-2g' && effectiveType !== '2g';
-}
-
-export function preloadAdminRoute(path) {
-  const normalized = normalizePath(path);
-  const chunkPreloader = adminRouteChunkPreloaders[normalized];
-
-  if (chunkPreloader) {
-    void chunkPreloader().catch(() => undefined);
+/**
+ * Resolves a route string to its registered lazy preload function.
+ *
+ * Nested administrator URLs are supported by matching the nearest
+ * registered parent route.
+ *
+ * @param {string} route Administrator route.
+ * @returns {Function|null} Matching preload function, if available.
+ *
+ * @author Eman
+ */
+function resolveAdminRoutePreloader(route) {
+  if (typeof route !== 'string') {
+    return null;
   }
 
-  adminApi.prefetchRoute?.(normalized);
+  const cleanRoute = route
+    .split('?')[0]
+    .split('#')[0]
+    .replace(/\/$/, '');
+
+  if (adminRoutePreloaders[cleanRoute]) {
+    return adminRoutePreloaders[cleanRoute];
+  }
+
+  const matchingRoute = Object.keys(adminRoutePreloaders)
+    .sort((left, right) => right.length - left.length)
+    .find((candidate) =>
+      cleanRoute.startsWith(`${candidate}/`)
+    );
+
+  return matchingRoute
+    ? adminRoutePreloaders[matchingRoute]
+    : null;
 }
 
-export function preloadPrimaryAdminRoutes() {
-  if (typeof window === 'undefined' || !canWarmInBackground()) return () => {};
+/**
+ * Starts loading an administrator route without waiting for completion.
+ *
+ * The function accepts either a route string or a preload function to remain
+ * compatible with existing callers. Preloading is best-effort only; route
+ * navigation still handles any real lazy-loading failure.
+ *
+ * @param {string|Function} routeOrPreloader Route path or preload function.
+ * @returns {void}
+ *
+ * @author Eman
+ */
+export function preloadAdminRoute(routeOrPreloader) {
+  const preloader =
+    typeof routeOrPreloader === 'function'
+      ? routeOrPreloader
+      : resolveAdminRoutePreloader(routeOrPreloader);
 
-  const routesToWarm = [
-    '/admin/users',
-    '/admin/ideas',
-    '/admin/publication-reports',
-    '/admin/payments',
-    '/admin/credits',
-    '/admin/complaints',
-    '/admin/ai-monitoring',
-  ];
+  if (typeof preloader !== 'function') {
+    return;
+  }
 
-  let cancelled = false;
-  const timers = [];
-
-  const warmChunks = () => {
-    routesToWarm.forEach((route, index) => {
-      const timer = window.setTimeout(() => {
-        if (cancelled) return;
-        const loader = adminRouteChunkPreloaders[route];
-        if (loader) void loader().catch(() => undefined);
-      }, index * 300);
-      timers.push(timer);
+  Promise.resolve()
+    .then(() => preloader())
+    .catch(() => {
+      // Route navigation will retry the lazy import when needed.
     });
-  };
+}
 
-  if ('requestIdleCallback' in window) {
-    const idleId = window.requestIdleCallback(warmChunks, { timeout: 2500 });
-    return () => {
-      cancelled = true;
-      window.cancelIdleCallback?.(idleId);
-      timers.forEach((timer) => window.clearTimeout(timer));
-    };
-  }
-
-  const timer = window.setTimeout(warmChunks, 1200);
-  return () => {
-    cancelled = true;
-    window.clearTimeout(timer);
-    timers.forEach((entry) => window.clearTimeout(entry));
-  };
+/**
+ * Warms the most frequently used administrator route chunks after the admin
+ * layout mounts. This improves first navigation without blocking rendering.
+ *
+ * @returns {void}
+ *
+ * @author Eman
+ */
+export function preloadPrimaryAdminRoutes() {
+  [
+    preloadAdminDashboardPage,
+    preloadAdminUsersPage,
+    preloadAdminAlertsPage,
+    preloadAdminDataSourcesPage,
+  ].forEach((preloader) =>
+    preloadAdminRoute(preloader)
+  );
 }

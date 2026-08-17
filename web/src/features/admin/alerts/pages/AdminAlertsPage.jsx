@@ -1,3 +1,12 @@
+/**
+ * Administrator alerts and messaging workspace.
+ *
+ * Keeps the existing alert, recipient, filtering, history, inspection, and
+ * sending logic while presenting notification and communication records as
+ * responsive cards that match the Data Sources visual language.
+ *
+ * @author Eman
+ */
 import {
   ArrowDown,
   ArrowUp,
@@ -1457,9 +1466,9 @@ export default function AdminAlertsPage() {
           </label>
         </div>
 
-        <div className="admin-alert-table-wrap">
+        <div className="admin-alert-card-shell">
           {activeLoading ? (
-            <div className="admin-alert-table-state">
+            <div className="admin-alert-table-state admin-alert-card-state">
               <LoaderCircle className="admin-alert-spin" size={24} />
               <strong>
                 {ledgerMode === 'activity'
@@ -1468,7 +1477,7 @@ export default function AdminAlertsPage() {
               </strong>
             </div>
           ) : activeRows.length === 0 ? (
-            <div className="admin-alert-table-state">
+            <div className="admin-alert-table-state admin-alert-card-state">
               {ledgerMode === 'activity' ? <Bell size={26} /> : <Send size={26} />}
               <strong>
                 {ledgerMode === 'activity'
@@ -1478,187 +1487,145 @@ export default function AdminAlertsPage() {
               <span>Try another filter, date range or search phrase.</span>
             </div>
           ) : ledgerMode === 'activity' ? (
-            <table className="admin-alert-table">
-              <colgroup>
-                <col className="admin-alert-col-alert" />
-                <col className="admin-alert-col-recipient" />
-                <col className="admin-alert-col-category" />
-                <col className="admin-alert-col-status" />
-                <col className="admin-alert-col-created" />
-                <col className="admin-alert-col-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>ALERT</th>
-                  <th>RECIPIENT</th>
-                  <th>CATEGORY</th>
-                  <th>STATUS</th>
-                  <th>CREATED</th>
-                  <th className="is-actions">ACTIONS</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {rows.map((alert) => (
-                  <tr key={alert.id}>
-                    <td>
-                      <div className="admin-alert-record">
-                        <span className={`admin-alert-record__icon is-${alertTone(alert.type)}`}>
-                          <MessageSquareText size={17} />
-                          <i aria-hidden="true" />
-                        </span>
-                        <div>
-                          <strong title={alert.title}>{alert.title}</strong>
-                          <span title={alert.message}>{alert.message}</span>
-                          <small>In-app notification</small>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td>
-                      <div className="admin-alert-recipient">
-                        <span>{String(alert.user?.fullName || alert.user?.email || 'U').charAt(0).toUpperCase()}</span>
-                        <div>
-                          <strong>{alert.user?.fullName || 'Platform user'}</strong>
-                          <small>{alert.user?.email || '—'}</small>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td>
-                      <span className={`admin-alert-type-badge is-${alertTone(alert.type)}`}>
-                        <Bell size={12} />
-                        {titleCase(alert.type)}
+            <div className="admin-alert-card-grid">
+              {rows.map((alert) => (
+                <article
+                  className={`admin-alert-card is-${alertTone(alert.type)} ${alert.isRead ? 'is-read' : 'is-unread'}`}
+                  key={alert.id}
+                >
+                  <div className="admin-alert-card__visual">
+                    <span className="admin-alert-card__pattern" aria-hidden="true" />
+                    <span className={`admin-alert-record__icon is-${alertTone(alert.type)}`}>
+                      <MessageSquareText size={18} />
+                      <i aria-hidden="true" />
+                    </span>
+                    <div className="admin-alert-card__visual-copy">
+                      <small>In-app notification</small>
+                      <strong>{alert.title || 'Untitled alert'}</strong>
+                      <span className={alert.isRead ? 'is-read' : 'is-unread'}>
+                        {alert.isRead ? <CheckCircle2 size={12} /> : <Inbox size={12} />}
+                        {alert.isRead ? 'Read' : 'Unread'}
                       </span>
-                    </td>
+                    </div>
+                  </div>
 
-                    <td>
-                      <div className="admin-alert-read-state">
-                        <span className={alert.isRead ? 'is-read' : 'is-unread'}>
-                          {alert.isRead ? <CheckCircle2 size={12} /> : <Inbox size={12} />}
-                          {alert.isRead ? 'Read' : 'Unread'}
+                  <div className="admin-alert-card__body">
+                    <p className="admin-alert-card__message">{alert.message || 'No message content.'}</p>
+
+                    <div className="admin-alert-card__meta-grid">
+                      <section>
+                        <small>Recipient</small>
+                        <div className="admin-alert-recipient admin-alert-recipient--card">
+                          <span>{String(alert.user?.fullName || alert.user?.email || 'U').charAt(0).toUpperCase()}</span>
+                          <div>
+                            <strong>{alert.user?.fullName || 'Platform user'}</strong>
+                            <small>{alert.user?.email || '—'}</small>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section>
+                        <small>Category</small>
+                        <span className={`admin-alert-type-badge is-${alertTone(alert.type)}`}>
+                          <Bell size={12} />
+                          {titleCase(alert.type)}
                         </span>
-                        <small>{alert.isRead ? 'Opened by user' : 'Awaiting user'}</small>
-                      </div>
-                    </td>
+                      </section>
+                    </div>
 
-                    <td>
+                    <div className="admin-alert-card__footer">
                       <div className="admin-alert-created">
                         <strong>{formatShortDate(alert.createdAt)}</strong>
                         <span><Clock3 size={11} /> {formatTime(alert.createdAt)}</span>
                       </div>
-                    </td>
 
-                    <td className="is-actions">
                       <button type="button" className="admin-alert-inspect-button" onClick={() => setSelectedAlert(alert)}>
                         <Eye size={15} />
-                        View
+                        View alert
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
           ) : (
-            <table className="admin-alert-table admin-alert-sent-table">
-              <colgroup>
-                <col className="admin-alert-sent-col-message" />
-                <col className="admin-alert-sent-col-audience" />
-                <col className="admin-alert-sent-col-channel" />
-                <col className="admin-alert-sent-col-delivery" />
-                <col className="admin-alert-sent-col-created" />
-                <col className="admin-alert-sent-col-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>COMMUNICATION</th>
-                  <th>AUDIENCE</th>
-                  <th>CHANNELS</th>
-                  <th>DELIVERY</th>
-                  <th>SENT</th>
-                  <th className="is-actions">ACTIONS</th>
-                </tr>
-              </thead>
+            <div className="admin-alert-card-grid">
+              {sentRows.map((communication) => {
+                const state = communicationStatus(communication);
 
-              <tbody>
-                {sentRows.map((communication) => {
-                  const state = communicationStatus(communication);
+                return (
+                  <article className={`admin-alert-card admin-alert-card--sent is-${state.tone}`} key={communication.id}>
+                    <div className="admin-alert-card__visual">
+                      <span className="admin-alert-card__pattern" aria-hidden="true" />
+                      <span className="admin-alert-record__icon is-admin">
+                        <Send size={17} />
+                        <i aria-hidden="true" />
+                      </span>
+                      <div className="admin-alert-card__visual-copy">
+                        <small>Administrator communication</small>
+                        <strong>{communication.title || 'Untitled communication'}</strong>
+                        <span className={`is-${state.tone}`}>
+                          {state.tone === 'delivered'
+                            ? <CheckCircle2 size={12} />
+                            : state.tone === 'pending'
+                              ? <Clock3 size={12} />
+                              : <CircleAlert size={12} />}
+                          {state.label}
+                        </span>
+                      </div>
+                    </div>
 
-                  return (
-                    <tr key={communication.id}>
-                      <td>
-                        <div className="admin-alert-record">
-                          <span className="admin-alert-record__icon is-admin">
-                            <Send size={16} />
-                            <i aria-hidden="true" />
-                          </span>
-                          <div>
-                            <strong title={communication.title}>{communication.title}</strong>
-                            <span title={communication.message}>{communication.message}</span>
-                            <small>
-                              Sent by {communication.actor?.fullName || communication.actor?.email || 'Administrator'}
-                            </small>
+                    <div className="admin-alert-card__body">
+                      <p className="admin-alert-card__message">{communication.message || 'No message content.'}</p>
+
+                      <div className="admin-alert-card__meta-grid admin-alert-card__meta-grid--sent">
+                        <section>
+                          <small>Audience</small>
+                          <div className="admin-alert-sent-audience">
+                            <span>{communication.scope === 'BROADCAST' ? <UsersRound size={14} /> : <UserRound size={14} />}</span>
+                            <div>
+                              <strong>{audienceLabel(communication)}</strong>
+                              <small>{communication.recipientCount} recipients</small>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </section>
 
-                      <td>
-                        <div className="admin-alert-sent-audience">
-                          <span>{communication.scope === 'BROADCAST' ? <UsersRound size={14} /> : <UserRound size={14} />}</span>
-                          <div>
-                            <strong>{audienceLabel(communication)}</strong>
-                            <small>{communication.recipientCount} recipients</small>
+                        <section>
+                          <small>Channels</small>
+                          <div className="admin-alert-channel-badges">
+                            {communication.channels?.inApp && <span><Bell size={12} /> In-app</span>}
+                            {communication.channels?.email && <span><Mail size={12} /> Email</span>}
                           </div>
-                        </div>
-                      </td>
+                        </section>
+                      </div>
 
-                      <td>
-                        <div className="admin-alert-channel-badges">
-                          {communication.channels?.inApp && (
-                            <span><Bell size={12} /> In-app</span>
-                          )}
-                          {communication.channels?.email && (
-                            <span><Mail size={12} /> Email</span>
-                          )}
-                        </div>
-                      </td>
+                      <div className="admin-alert-card__sender">
+                        <ShieldCheck size={13} />
+                        Sent by {communication.actor?.fullName || communication.actor?.email || 'Administrator'}
+                        <span>·</span>
+                        {channelLabel(communication)}
+                      </div>
 
-                      <td>
-                        <div className="admin-alert-delivery-state">
-                          <span className={`is-${state.tone}`}>
-                            {state.tone === 'delivered'
-                              ? <CheckCircle2 size={12} />
-                              : state.tone === 'pending'
-                                ? <Clock3 size={12} />
-                                : <CircleAlert size={12} />}
-                            {state.label}
-                          </span>
-                          <small>{channelLabel(communication)}</small>
-                        </div>
-                      </td>
-
-                      <td>
+                      <div className="admin-alert-card__footer">
                         <div className="admin-alert-created">
                           <strong>{formatShortDate(communication.createdAt)}</strong>
                           <span><Clock3 size={11} /> {formatTime(communication.createdAt)}</span>
                         </div>
-                      </td>
 
-                      <td className="is-actions">
                         <button
                           type="button"
                           className="admin-alert-inspect-button"
                           onClick={() => setSelectedCommunication(communication)}
                         >
                           <Eye size={15} />
-                          View
+                          View message
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           )}
         </div>
 

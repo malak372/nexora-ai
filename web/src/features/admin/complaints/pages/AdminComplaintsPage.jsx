@@ -33,6 +33,7 @@ import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import AdminSupportSelect from '../../shared/components/AdminSupportSelect';
 import '../../shared/styles/admin-pages.css';
 import '../../shared/styles/admin-support-workspaces.css';
+import '../styles/admin-complaints.css';
 
 const PAGE_SIZE = 20;
 
@@ -413,7 +414,7 @@ export default function AdminComplaintsPage() {
   };
 
   return (
-    <div className="admin-page admin-support-page">
+    <div className="admin-page admin-support-page admin-support-page--complaints">
       <section className="admin-support-hero">
         <div>
           <span><ShieldCheck size={16} /> Trust & safety</span>
