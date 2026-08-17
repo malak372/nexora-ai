@@ -33,6 +33,7 @@ import 'admin_resource_page.dart';
 import 'admin_sensitive_workspace_page.dart';
 import 'admin_support_queue_page.dart';
 import 'admin_system_settings_page.dart';
+import 'admin_team_chat_page.dart';
 
 class AdminShell extends StatefulWidget {
   const AdminShell({super.key, this.initialIndex = 0});
@@ -62,15 +63,15 @@ class _AdminShellState extends State<AdminShell> {
     return switch (index) {
       0 => AdminDashboardPage(onOpen: _open),
       1 => const AdminResourcePage(
-          resource: AdminResources.users,
-          embedded: true,
-        ),
+        resource: AdminResources.users,
+        embedded: true,
+      ),
       2 => const AdminPublicationReportsPage(embedded: true),
       3 => AdminMorePage(
-          onOpen: _open,
-          onOpenMenu: _openAdminMenu,
-          onSignOut: _signOut,
-        ),
+        onOpen: _open,
+        onOpenMenu: _openAdminMenu,
+        onSignOut: _signOut,
+      ),
       _ => const SizedBox.shrink(),
     };
   }
@@ -171,8 +172,7 @@ class _AdminShellState extends State<AdminShell> {
         ),
         _api.getSummary('/admin/ideas/summary'),
       ]);
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   Future<void> _warmComplaintsWorkspace() async {
@@ -187,8 +187,7 @@ class _AdminShellState extends State<AdminShell> {
         ),
         _api.getSummary('/admin/complaints/summary'),
       ]);
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   Future<void> _warmEvidenceWorkspace() async {
@@ -251,7 +250,6 @@ class _AdminShellState extends State<AdminShell> {
       ]);
     } catch (_) {}
   }
-
 
   Future<void> _warmAiMonitoringWorkspace() async {
     try {
@@ -410,6 +408,8 @@ class _AdminShellState extends State<AdminShell> {
     } else if (id == 'audit-logs') {
       unawaited(_warmSecurityReadOnlyWorkspaces());
       page = const AdminAuditTrailPage();
+    } else if (id == 'team-chat') {
+      page = const AdminTeamChatPage();
     } else if (id == 'administrators') {
       page = const AdminSensitiveWorkspacePage(
         scope: 'ADMINISTRATORS',
@@ -433,9 +433,9 @@ class _AdminShellState extends State<AdminShell> {
 
     if (page == null || !mounted) return;
 
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => page!),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => page!));
 
     if (id == 'account' && mounted) {
       setState(() {
@@ -458,8 +458,7 @@ class _AdminShellState extends State<AdminShell> {
         if (resource.summaryPath != null)
           _api.getSummary(resource.summaryPath!),
       ]);
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   Future<void> _warmSecurityReadOnlyWorkspaces() async {
@@ -559,7 +558,6 @@ class _AdminShellState extends State<AdminShell> {
       _index = index;
     });
   }
-
 }
 
 class _AdminTopBar extends StatelessWidget {
@@ -765,7 +763,8 @@ class _AdminDirectorySheet extends StatelessWidget {
                       ),
                     ),
                     child: ExpansionTile(
-                      initiallyExpanded: group.label == 'People & access' ||
+                      initiallyExpanded:
+                          group.label == 'People & access' ||
                           group.label == 'Community & support',
                       tilePadding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -908,45 +907,45 @@ class _DirectoryGroupVisual {
 _DirectoryGroupVisual _directoryGroupVisual(String label) {
   return switch (label) {
     'People & access' => const _DirectoryGroupVisual(
-        icon: Icons.groups_2_outlined,
-        accent: AppColors.primary,
-        tone: Color(0xFFECF8F5),
-      ),
+      icon: Icons.groups_2_outlined,
+      accent: AppColors.primary,
+      tone: Color(0xFFECF8F5),
+    ),
     'Community & support' => const _DirectoryGroupVisual(
-        icon: Icons.forum_outlined,
-        accent: AppColors.pinkDeep,
-        tone: Color(0xFFFFF3F6),
-      ),
+      icon: Icons.forum_outlined,
+      accent: AppColors.pinkDeep,
+      tone: Color(0xFFFFF3F6),
+    ),
     'Data & evidence' => const _DirectoryGroupVisual(
-        icon: Icons.dataset_outlined,
-        accent: AppColors.primary,
-        tone: Color(0xFFEAF7F4),
-      ),
+      icon: Icons.dataset_outlined,
+      accent: AppColors.primary,
+      tone: Color(0xFFEAF7F4),
+    ),
     'Intelligence' => const _DirectoryGroupVisual(
-        icon: Icons.psychology_alt_outlined,
-        accent: AppColors.primary,
-        tone: Color(0xFFE8F7F5),
-      ),
+      icon: Icons.psychology_alt_outlined,
+      accent: AppColors.primary,
+      tone: Color(0xFFE8F7F5),
+    ),
     'Finance' => const _DirectoryGroupVisual(
-        icon: Icons.account_balance_wallet_outlined,
-        accent: AppColors.primary,
-        tone: Color(0xFFF0F8F3),
-      ),
+      icon: Icons.account_balance_wallet_outlined,
+      accent: AppColors.primary,
+      tone: Color(0xFFF0F8F3),
+    ),
     'Security & system' => const _DirectoryGroupVisual(
-        icon: Icons.security_outlined,
-        accent: AppColors.primary,
-        tone: Color(0xFFEAF7F4),
-      ),
+      icon: Icons.security_outlined,
+      accent: AppColors.primary,
+      tone: Color(0xFFEAF7F4),
+    ),
     'My account' => const _DirectoryGroupVisual(
-        icon: Icons.person_outline_rounded,
-        accent: AppColors.primary,
-        tone: Color(0xFFEEF8F6),
-      ),
+      icon: Icons.person_outline_rounded,
+      accent: AppColors.primary,
+      tone: Color(0xFFEEF8F6),
+    ),
     _ => const _DirectoryGroupVisual(
-        icon: Icons.space_dashboard_outlined,
-        accent: AppColors.primary,
-        tone: Color(0xFFEEF8F6),
-      ),
+      icon: Icons.space_dashboard_outlined,
+      accent: AppColors.primary,
+      tone: Color(0xFFEEF8F6),
+    ),
   };
 }
 

@@ -51,6 +51,12 @@ abstract final class AdminNavigation {
           icon: Icons.admin_panel_settings_outlined,
         ),
         AdminNavigationDestination(
+          id: 'team-chat',
+          label: 'Team chat',
+          subtitle: 'Private administrator conversations',
+          icon: Icons.forum_outlined,
+        ),
+        AdminNavigationDestination(
           id: 'users',
           label: 'Users',
           subtitle: 'Customer accounts, access and usage',

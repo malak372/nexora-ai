@@ -52,6 +52,75 @@ class AdminApi {
     return _map(response);
   }
 
+  Future<List<Map<String, dynamic>>> getTeamChatAdministrators() async {
+    final raw = await _api.get('/admin/team-chat/administrators', force: true);
+
+    return _asMapList(raw);
+  }
+
+  Future<List<Map<String, dynamic>>> getTeamChatConversations({
+    bool force = false,
+  }) async {
+    final raw = await _api.get('/admin/team-chat/conversations', force: force);
+
+    return _asMapList(raw);
+  }
+
+  Future<Map<String, dynamic>> createDirectAdminConversation(
+    String adminId,
+  ) async {
+    final value = _map(await _api.post('/admin/team-chat/direct/$adminId'));
+    _api.invalidate('/admin/team-chat/conversations');
+    return value;
+  }
+
+  Future<Map<String, dynamic>> createAdminGroupConversation({
+    required String title,
+    required List<String> memberIds,
+  }) async {
+    final value = _map(
+      await _api.post(
+        '/admin/team-chat/conversations',
+        data: {'title': title.trim(), 'memberIds': memberIds},
+      ),
+    );
+    _api.invalidate('/admin/team-chat/conversations');
+    return value;
+  }
+
+  Future<Map<String, dynamic>> getAdminConversationMessages(
+    String conversationId,
+  ) async {
+    return _map(
+      await _api.get(
+        '/admin/team-chat/conversations/$conversationId/messages',
+        force: true,
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> sendAdminChatMessage(
+    String conversationId,
+    String content,
+  ) async {
+    final value = _map(
+      await _api.post(
+        '/admin/team-chat/conversations/$conversationId/messages',
+        data: {'content': content.trim()},
+      ),
+    );
+    _api.invalidate('/admin/team-chat/conversations');
+    return value;
+  }
+
+  Future<void> markAdminConversationRead(String conversationId) async {
+    await _api.patch(
+      '/admin/team-chat/conversations/$conversationId/read',
+      data: const {},
+    );
+    _api.invalidate('/admin/team-chat/conversations');
+  }
+
   Future<Map<String, dynamic>> patchSensitive(
     String path,
     Map<String, dynamic> body,
@@ -529,9 +598,7 @@ class AdminApi {
   Future<Map<String, dynamic>> createDataSource(
     Map<String, dynamic> body,
   ) async {
-    final value = _map(
-      await _api.post('/admin/data-sources', data: body),
-    );
+    final value = _map(await _api.post('/admin/data-sources', data: body));
 
     _invalidateDataSources();
 
@@ -542,9 +609,7 @@ class AdminApi {
     String id,
     Map<String, dynamic> body,
   ) async {
-    final value = _map(
-      await _api.patch('/admin/data-sources/$id', data: body),
-    );
+    final value = _map(await _api.patch('/admin/data-sources/$id', data: body));
 
     _invalidateDataSources();
 
@@ -552,9 +617,7 @@ class AdminApi {
   }
 
   Future<Map<String, dynamic>> deleteDataSource(String id) async {
-    final value = _map(
-      await _api.delete('/admin/data-sources/$id'),
-    );
+    final value = _map(await _api.delete('/admin/data-sources/$id'));
 
     _invalidateDataSources();
 
@@ -622,6 +685,23 @@ class AdminApi {
     _api.invalidate('/admin/publication-reports');
 
     _api.invalidate('/admin/dashboard');
+  }
+
+  List<Map<String, dynamic>> _asMapList(dynamic raw) {
+    dynamic value = raw;
+
+    if (value is Map && value['data'] is List) {
+      value = value['data'];
+    }
+
+    if (value is! List) {
+      return const [];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   Map<String, dynamic> _normalizeList(dynamic raw) {

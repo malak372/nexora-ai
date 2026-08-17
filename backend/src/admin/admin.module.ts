@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 
 import { AuditModule } from '../audit-logs/audit-logs.module';
 import { MailModule } from '../mail/mail.module';
@@ -14,31 +16,70 @@ import { DashboardController } from './dashboard/dashboard.controller';
 import { DashboardService } from './dashboard/dashboard.service';
 import { AdminSensitiveAccessController } from './sensitive-access/admin-sensitive-access.controller';
 import { AdminSensitiveAccessService } from './sensitive-access/admin-sensitive-access.service';
+import { AdminTeamChatController } from './team-chat/controllers/admin-team-chat.controller';
+import {
+  AdminTeamChatGateway,
+  AdminTeamChatSocketAuthService,
+} from './team-chat/gateways/admin-team-chat.gateway';
+import { AdminTeamChatService } from './team-chat/services/admin-team-chat.service';
 import { SettingsController } from './settings/settings.controller';
 import { SettingsService } from './settings/settings.service';
 import { UsersController } from './users/users.controller';
 import { UsersService } from './users/users.service';
 
+/**
+ * Groups all administrator-only features.
+ *
+ * @author Eman
+ */
 @Module({
-  imports: [PrismaModule, MailModule, AuditModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    MailModule,
+    AuditModule,
+
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret:
+          configService.getOrThrow<string>(
+            'JWT_ACCESS_SECRET',
+          ),
+      }),
+    }),
+  ],
+
   controllers: [
-    AdminSensitiveAccessController,
-    AdministratorsController,
-    AdminInvitationAcceptanceController,
     DashboardController,
     AiMonitoringController,
     UsersController,
     SettingsController,
     CommentsController,
+
+    AdministratorsController,
+    AdminInvitationAcceptanceController,
+
+    AdminSensitiveAccessController,
+
+    AdminTeamChatController,
   ],
+
   providers: [
-    AdminSensitiveAccessService,
-    AdministratorsService,
     DashboardService,
     AiMonitoringService,
     UsersService,
     SettingsService,
     CommentsService,
+
+    AdministratorsService,
+
+    AdminSensitiveAccessService,
+
+    AdminTeamChatService,
+    AdminTeamChatSocketAuthService,
+    AdminTeamChatGateway,
   ],
 })
-export class AdminModule {}
+export class AdminModule { }

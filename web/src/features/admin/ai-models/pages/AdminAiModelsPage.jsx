@@ -1095,7 +1095,7 @@ export default function AdminAiModelsPage() {
           </label>
         </div>
 
-        <div className="admin-model-table-wrap">
+        <div className="admin-model-card-shell">
           {loading ? (
             <div className="admin-model-state">
               <LoaderCircle className="admin-model-spin" size={24} />
@@ -1108,111 +1108,70 @@ export default function AdminAiModelsPage() {
               <span>Clear filters or add a new model configuration.</span>
             </div>
           ) : (
-            <table className="admin-model-table">
-              <colgroup>
-                <col className="admin-model-col-model" />
-                <col className="admin-model-col-provider" />
-                <col className="admin-model-col-routing" />
-                <col className="admin-model-col-health" />
-                <col className="admin-model-col-capabilities" />
-                <col className="admin-model-col-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>MODEL</th>
-                  <th>PROVIDER</th>
-                  <th>ROUTING</th>
-                  <th>HEALTH</th>
-                  <th>CAPABILITIES</th>
-                  <th className="is-actions">ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((model) => (
-                  <tr key={model.id}>
-                    <td>
-                      <div className="admin-model-identity">
-                        <span className={`admin-model-avatar ${model.isActive ? 'is-active' : 'is-inactive'}`}>
-                          <BrainCircuit size={19} />
-                          <i aria-hidden="true" />
-                        </span>
-                        <div>
-                          <strong title={model.displayName || model.modelName}>
-                            {model.displayName || model.modelName}
-                          </strong>
-                          <span title={model.apiModelId}>{model.apiModelId}</span>
-                          <small>{model.modelName}</small>
-                        </div>
-                      </div>
-                    </td>
+            <div className="admin-model-card-grid">
+              {rows.map((model) => (
+                <article className={`admin-model-registry-card ${model.isActive ? 'is-active' : 'is-inactive'}`} key={model.id}>
+                  <div className="admin-model-registry-card__visual">
+                    <span className="admin-model-registry-card__pattern" aria-hidden="true" />
+                    <span className="admin-model-registry-card__icon"><BrainCircuit size={28} /></span>
+                    <span className="admin-model-registry-card__provider-initial">{providerInitial(model)}</span>
+                    <div>
+                      <small>{providers.find((provider) => provider.key === model.providerKey)?.displayName || model.providerKey}</small>
+                      <strong title={model.displayName || model.modelName}>{model.displayName || model.modelName}</strong>
+                      <span className={`admin-model-active-label ${model.isActive ? 'is-on' : 'is-off'}`}>
+                        {model.isActive ? <CheckCircle2 size={12} /> : <CircleOff size={12} />}
+                        {model.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                  </div>
 
-                    <td>
-                      <div className="admin-model-provider">
-                        <span>{providerInitial(model)}</span>
-                        <div>
-                          <strong>{providers.find((provider) => provider.key === model.providerKey)?.displayName || model.providerKey}</strong>
-                          <small>{model.providerKey}</small>
-                        </div>
+                  <div className="admin-model-registry-card__body">
+                    <div className="admin-model-registry-card__head">
+                      <div>
+                        <span>{model.apiModelId}</span>
+                        <small>{model.modelName}</small>
                       </div>
-                    </td>
-
-                    <td>
-                      <div className="admin-model-routing">
-                        <span className="admin-model-routing__priority">
-                          <Gauge size={13} />
-                          <strong>{numberValue(model.priority)}</strong>
-                          <small>priority</small>
-                        </span>
-                        <span className="admin-model-routing__weight">
-                          <Zap size={12} />
-                          weight {numberValue(model.weight, 1)}
-                        </span>
-                        {model.isDefault && (
-                          <span className="admin-model-default-badge"><Star size={12} /> Default</span>
-                        )}
-                      </div>
-                    </td>
-
-                    <td>
-                      <div className="admin-model-health">
-                        <span className={`admin-model-health__badge is-${healthTone(model.healthStatus)}`}>
-                          <i />
-                          {healthLabel(model.healthStatus)}
-                        </span>
-                        <small>
-                          {numberValue(model.consecutiveFailures)} consecutive {numberValue(model.consecutiveFailures) === 1 ? 'failure' : 'failures'}
-                        </small>
-                        <span className={`admin-model-active-label ${model.isActive ? 'is-on' : 'is-off'}`}>
-                          {model.isActive ? <CheckCircle2 size={12} /> : <CircleOff size={12} />}
-                          {model.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </div>
-                    </td>
-
-                    <td>
-                      <div className="admin-model-capability-cell">
-                        <div>
-                          <CapabilityChip active={model.supportsJsonOutput} icon={ShieldCheck} label="JSON" />
-                          <CapabilityChip active={model.supportsTools} icon={Zap} label="Tools" />
-                          <CapabilityChip active={model.supportsVision} icon={Eye} label="Vision" />
-                        </div>
-                        <small>
-                          {compactNumber(model.maxOutputTokens)} output
-                          {model.contextWindow ? ` · ${compactNumber(model.contextWindow)} context` : ''}
-                        </small>
-                      </div>
-                    </td>
-
-                    <td className="is-actions">
                       <button type="button" className="admin-model-manage" onClick={() => openEdit(model)}>
-                        <Pencil size={15} />
-                        Manage
+                        <Pencil size={15} /> Manage
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+
+                    <div className="admin-model-registry-card__status">
+                      <span className={`admin-model-health__badge is-${healthTone(model.healthStatus)}`}>
+                        <i /> {healthLabel(model.healthStatus)}
+                      </span>
+                      {model.isDefault && <span className="admin-model-default-badge"><Star size={12} /> Default</span>}
+                      <small>{numberValue(model.consecutiveFailures)} consecutive {numberValue(model.consecutiveFailures) === 1 ? 'failure' : 'failures'}</small>
+                    </div>
+
+                    <div className="admin-model-registry-card__metrics">
+                      <div>
+                        <small>Priority</small>
+                        <strong>{numberValue(model.priority)}</strong>
+                        <span><Gauge size={12} /> routing priority</span>
+                      </div>
+                      <div>
+                        <small>Weight</small>
+                        <strong>{numberValue(model.weight, 1)}</strong>
+                        <span><Zap size={12} /> routing weight</span>
+                      </div>
+                    </div>
+
+                    <div className="admin-model-registry-card__capabilities">
+                      <div>
+                        <CapabilityChip active={model.supportsJsonOutput} icon={ShieldCheck} label="JSON" />
+                        <CapabilityChip active={model.supportsTools} icon={Zap} label="Tools" />
+                        <CapabilityChip active={model.supportsVision} icon={Eye} label="Vision" />
+                      </div>
+                      <small>
+                        {compactNumber(model.maxOutputTokens)} output
+                        {model.contextWindow ? ` · ${compactNumber(model.contextWindow)} context` : ''}
+                      </small>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
           )}
         </div>
 

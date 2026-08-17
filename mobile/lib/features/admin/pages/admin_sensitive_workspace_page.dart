@@ -4,6 +4,7 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/admin_api.dart';
 import '../widgets/admin_ui.dart';
+import 'admin_team_chat_page.dart';
 
 /// Displays a protected administrative workspace that requires
 /// additional identity verification before sensitive information
@@ -220,7 +221,8 @@ class _AdminSensitiveWorkspacePageState
   String _pricingCurrencyFrom(Map<String, dynamic> data) {
     final nested = data['settings'];
     final source = nested is Map ? Map<String, dynamic>.from(nested) : data;
-    final value = source['pricingCurrency']?.toString().trim().toUpperCase() ?? '';
+    final value =
+        source['pricingCurrency']?.toString().trim().toUpperCase() ?? '';
     const supported = {'USD', 'EUR', 'GBP', 'ILS', 'AED'};
     return supported.contains(value) ? value : 'USD';
   }
@@ -239,11 +241,9 @@ class _AdminSensitiveWorkspacePageState
     });
 
     try {
-      final result = await _api.patchSensitive(
-        widget.path,
-        {'pricingCurrency': _pricingCurrencyDraft},
-        _accessToken,
-      );
+      final result = await _api.patchSensitive(widget.path, {
+        'pricingCurrency': _pricingCurrencyDraft,
+      }, _accessToken);
 
       final rawSettings = result['settings'];
       final settings = rawSettings is Map
@@ -295,6 +295,39 @@ class _AdminSensitiveWorkspacePageState
   ///
   /// The action is available only in the protected
   /// administrators workspace.
+  Future<void> _openAdministratorChat(
+    Map<String, dynamic> administrator,
+  ) async {
+    final adminId = administrator['id']?.toString().trim() ?? '';
+    if (adminId.isEmpty || administrator['isCurrent'] == true || !mounted) {
+      return;
+    }
+
+    try {
+      final conversation = await _api.createDirectAdminConversation(adminId);
+      if (!mounted) return;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AdminTeamChatPage(
+            initialAdminId: adminId,
+            initialConversation: conversation,
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the conversation.')),
+      );
+    }
+  }
+
   Future<void> _openAdministratorInvite() async {
     if (_accessToken.isEmpty || _busy || widget.scope != 'ADMINISTRATORS') {
       return;
@@ -442,6 +475,7 @@ class _AdminSensitiveWorkspacePageState
                           data: _data ?? const {},
                           busy: _busy,
                           onInvite: _openAdministratorInvite,
+                          onMessage: _openAdministratorChat,
                         )
                       else if (widget.scope == 'SYSTEM_SETTINGS')
                         _SystemSettingsWorkspaceContent(
@@ -616,7 +650,8 @@ class _SystemSettingsWorkspaceContent extends StatelessWidget {
               ),
               _PricingSettingRow(
                 label: 'Publication advanced',
-                value: '${_number('normalPublicationAdvancedPrice')} $savedCurrency',
+                value:
+                    '${_number('normalPublicationAdvancedPrice')} $savedCurrency',
                 divider: false,
               ),
             ],
@@ -819,6 +854,7 @@ class _AdministratorsWorkspaceContent extends StatelessWidget {
     required this.data,
     required this.busy,
     required this.onInvite,
+    required this.onMessage,
   });
 
   final Map<String, dynamic> data;
@@ -826,6 +862,8 @@ class _AdministratorsWorkspaceContent extends StatelessWidget {
   final bool busy;
 
   final VoidCallback onInvite;
+
+  final ValueChanged<Map<String, dynamic>> onMessage;
 
   /// Reads a top-level workspace property in a
   /// case-insensitive manner.
@@ -1016,8 +1054,10 @@ class _AdministratorsWorkspaceContent extends StatelessWidget {
                 )
               else
                 ...administrators.map(
-                  (administrator) =>
-                      _AdministratorRow(administrator: administrator),
+                  (administrator) => _AdministratorRow(
+                    administrator: administrator,
+                    onMessage: onMessage,
+                  ),
                 ),
 
               /// Soft divider between administrators
@@ -1203,9 +1243,14 @@ class _AdminMiniStat extends StatelessWidget {
 ///
 /// @author Eman
 class _AdministratorRow extends StatelessWidget {
-  const _AdministratorRow({required this.administrator});
+  const _AdministratorRow({
+    required this.administrator,
+    required this.onMessage,
+  });
 
   final Map<String, dynamic> administrator;
+
+  final ValueChanged<Map<String, dynamic>> onMessage;
 
   String get _name =>
       (administrator['fullName'] ??
@@ -1309,21 +1354,42 @@ class _AdministratorRow extends StatelessWidget {
 
           const SizedBox(width: 8),
 
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.primarySoft.withValues(alpha: .65),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: const Text(
-              'Admin',
-              style: TextStyle(
-                color: AppColors.primaryDark,
-                fontSize: 7.7,
-                fontWeight: FontWeight.w900,
+          if (administrator['isCurrent'] == true)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft.withValues(alpha: .65),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text(
+                'You',
+                style: TextStyle(
+                  color: AppColors.primaryDark,
+                  fontSize: 7.7,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              height: 32,
+              child: OutlinedButton.icon(
+                onPressed: () => onMessage(administrator),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryDark,
+                  side: const BorderSide(color: AppColors.borderStrong),
+                  padding: const EdgeInsets.symmetric(horizontal: 9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                ),
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 13),
+                label: const Text(
+                  'Message',
+                  style: TextStyle(fontSize: 8.2, fontWeight: FontWeight.w900),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

@@ -683,79 +683,77 @@ export default function AdminDomainsPage() {
         {notice && <div className="admin-domain-notice"><CheckCircle2 size={15} /> {notice}</div>}
         {error && <div className="admin-domain-error">{error}</div>}
 
-        <div className="admin-domain-table-shell">
-          <table className="admin-domain-table">
-            <thead>
-              <tr>
-                <th>Domain</th>
-                <th>Status</th>
-                <th>Discovery keywords</th>
-                <th>Idea usage</th>
-                <th>Updated</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan="6"><div className="admin-domain-state"><LoaderCircle size={20} className="admin-spin" /> Loading domains...</div></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan="6"><div className="admin-domain-state"><Database size={20} /> No domains match these filters.</div></td></tr>
-              ) : rows.map((domain) => {
+        <div className="admin-domain-card-shell">
+          {loading ? (
+            <div className="admin-domain-state admin-domain-state--cards"><LoaderCircle size={20} className="admin-spin" /> Loading domains...</div>
+          ) : rows.length === 0 ? (
+            <div className="admin-domain-state admin-domain-state--cards"><Database size={20} /> No domains match these filters.</div>
+          ) : (
+            <div className="admin-domain-card-grid">
+              {rows.map((domain) => {
                 const keywords = Array.isArray(domain.domainKeywords) ? domain.domainKeywords : [];
                 const ideas = Number(domain?._count?.ideas || 0);
                 return (
-                  <tr key={domain.id}>
-                    <td>
-                      <div className="admin-domain-name-cell">
-                        <span className="admin-domain-avatar">{domainInitial(domain)}</span>
-                        <div>
-                          <strong>{domain.name || 'Unnamed domain'}</strong>
-                          <small>Created {formatShortDate(domain.createdAt)}</small>
-                        </div>
+                  <article className={`admin-domain-card ${domain.isActive ? 'is-active' : 'is-inactive'}`} key={domain.id}>
+                    <div className="admin-domain-card__visual">
+                      <span className="admin-domain-card__pattern" aria-hidden="true" />
+                      <span className="admin-domain-card__avatar">{domainInitial(domain)}</span>
+                      <div>
+                        <small>Discovery domain</small>
+                        <strong>{domain.name || 'Unnamed domain'}</strong>
+                        <span className={`admin-domain-status ${domain.isActive ? 'is-active' : 'is-inactive'}`}>
+                          {domain.isActive ? <CheckCircle2 size={12} /> : <CircleOff size={12} />}
+                          {domain.isActive ? 'Active' : 'Inactive'}
+                        </span>
                       </div>
-                    </td>
-                    <td>
-                      <span className={`admin-domain-status ${domain.isActive ? 'is-active' : 'is-inactive'}`}>
-                        {domain.isActive ? <CheckCircle2 size={13} /> : <CircleOff size={13} />}
-                        {domain.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="admin-domain-keyword-cell">
-                        <div className="admin-domain-keyword-cell__chips">
-                          {keywords.slice(0, 2).map((keyword) => (
+                    </div>
+
+                    <div className="admin-domain-card__body">
+                      <div className="admin-domain-card__head">
+                        <div>
+                          <small>Created {formatShortDate(domain.createdAt)}</small>
+                          <h4>{domain.name || 'Unnamed domain'}</h4>
+                        </div>
+                        <button type="button" className="admin-domain-manage" onClick={() => openEdit(domain)}>
+                          <Pencil size={14} /> Manage
+                        </button>
+                      </div>
+
+                      <div className="admin-domain-card__section">
+                        <div className="admin-domain-card__section-title">
+                          <span>Discovery keywords</span>
+                          <strong>{keywords.length.toLocaleString()}</strong>
+                        </div>
+                        <div className="admin-domain-card__keywords">
+                          {keywords.slice(0, 4).map((keyword) => (
                             <span key={keyword.id || `${keyword.keyword}-${keyword.language}`}>
                               {keyword.keyword}
                               <small>{keyword.language}</small>
                             </span>
                           ))}
-                          {keywords.length > 2 && <em>+{keywords.length - 2}</em>}
+                          {keywords.length > 4 && <em>+{keywords.length - 4} more</em>}
+                          {keywords.length === 0 && <em>No keywords configured</em>}
                         </div>
-                        <small>{keywords.length.toLocaleString()} keyword{keywords.length === 1 ? '' : 's'}</small>
                       </div>
-                    </td>
-                    <td>
-                      <div className="admin-domain-usage-cell">
-                        <strong>{ideas.toLocaleString()}</strong>
-                        <small>generated idea{ideas === 1 ? '' : 's'}</small>
+
+                      <div className="admin-domain-card__stats">
+                        <div>
+                          <small>Idea usage</small>
+                          <strong>{ideas.toLocaleString()}</strong>
+                          <span>generated idea{ideas === 1 ? '' : 's'}</span>
+                        </div>
+                        <div>
+                          <small>Last updated</small>
+                          <strong>{formatShortDate(domain.updatedAt)}</strong>
+                          <span>{formatDate(domain.updatedAt)}</span>
+                        </div>
                       </div>
-                    </td>
-                    <td>
-                      <div className="admin-domain-date-cell">
-                        <strong>{formatShortDate(domain.updatedAt)}</strong>
-                        <small>{formatDate(domain.updatedAt)}</small>
-                      </div>
-                    </td>
-                    <td>
-                      <button type="button" className="admin-domain-manage" onClick={() => openEdit(domain)}>
-                        <Pencil size={14} /> Manage
-                      </button>
-                    </td>
-                  </tr>
+                    </div>
+                  </article>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
 
         <footer className="admin-domain-pagination">

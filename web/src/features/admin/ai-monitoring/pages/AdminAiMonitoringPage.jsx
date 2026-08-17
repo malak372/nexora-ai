@@ -792,83 +792,93 @@ export default function AdminAiMonitoringPage() {
         {loading ? (
           <div className="admin-ai-monitor-loading"><LoaderCircle size={24} className="is-spinning" /><span>Loading AI request diagnostics…</span></div>
         ) : rows.length ? (
-          <div className="admin-ai-monitor-table-shell">
-            <table className="admin-ai-monitor-table">
-              <colgroup>
-                <col className="is-request" />
-                <col className="is-provider" />
-                <col className="is-outcome" />
-                <col className="is-performance" />
-                <col className="is-context" />
-                <col className="is-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Request</th>
-                  <th>Provider & model</th>
-                  <th>Outcome</th>
-                  <th>Performance</th>
-                  <th>Context</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const modelName = row.aiModel?.displayName || row.aiModel?.modelName || row.apiModelId || 'Unmapped model';
-                  const tokens = Number(row.inputTokens || 0) + Number(row.outputTokens || 0);
-                  return (
-                    <tr key={row.id}>
-                      <td>
-                        <div className="admin-ai-monitor-request-cell">
-                          <span className={`admin-ai-monitor-request-icon ${row.isSuccess ? 'is-success' : 'is-failed'}`}>
-                            <Bot size={17} />
-                            <i aria-hidden="true" />
-                          </span>
-                          <div className="admin-ai-monitor-request-copy">
-                            <strong>{requestTypeLabel(row.requestType)}</strong>
-                            <span>Op {shortId(row.operationId || row.id, 9)} · Attempt {row.attemptNumber || 1}</span>
-                            <small>{formatDate(row.createdAt, true)}</small>
-                          </div>
+          <div className="admin-ai-monitor-card-shell">
+            <div className="admin-ai-monitor-card-grid">
+              {rows.map((row) => {
+                const modelName = row.aiModel?.displayName || row.aiModel?.modelName || row.apiModelId || 'Unmapped model';
+                const tokens = Number(row.inputTokens || 0) + Number(row.outputTokens || 0);
+                return (
+                  <article
+                    className={`admin-ai-monitor-run-card ${row.isSuccess ? 'is-success' : 'is-failed'}`}
+                    key={row.id}
+                  >
+                    <div className="admin-ai-monitor-run-card__visual">
+                      <span className="admin-ai-monitor-run-card__pattern" aria-hidden="true" />
+                      <span className="admin-ai-monitor-run-card__icon"><Bot size={28} /></span>
+                      <span className="admin-ai-monitor-run-card__provider-initial">
+                        {String(row.providerKey || 'A').trim().charAt(0).toUpperCase() || 'A'}
+                      </span>
+                      <div className="admin-ai-monitor-run-card__visual-copy">
+                        <small>{titleCase(row.providerKey || 'Unknown')}</small>
+                        <strong title={modelName}>{modelName}</strong>
+                        <span className={`admin-ai-monitor-run-card__state ${row.isSuccess ? 'is-success' : 'is-failed'}`}>
+                          {row.isSuccess ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                          {row.isSuccess ? 'Successful' : 'Failed'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="admin-ai-monitor-run-card__body">
+                      <div className="admin-ai-monitor-run-card__head">
+                        <div>
+                          <strong>{requestTypeLabel(row.requestType)}</strong>
+                          <span>Op {shortId(row.operationId || row.id, 9)} · Attempt {row.attemptNumber || 1}</span>
+                          <small>{formatDate(row.createdAt, true)}</small>
                         </div>
-                      </td>
-                      <td>
-                        <div className="admin-ai-monitor-provider-cell">
-                          <strong>{titleCase(row.providerKey || 'Unknown')}</strong>
-                          <span>{modelName}</span>
-                          <small>{row.apiModelId || '—'}</small>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="admin-ai-monitor-outcome-cell">
-                          <OutcomeBadge success={row.isSuccess} retryable={row.isRetryable} />
-                          <span className="admin-ai-monitor-status-code">HTTP {row.statusCode ?? '—'}</span>
-                          {row.fallbackUsed && <small><GitBranch size={11} /> Fallback path</small>}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="admin-ai-monitor-performance-cell">
-                          <strong>{number(row.responseTimeMs)} ms</strong>
-                          <span><Zap size={11} /> {number(tokens)} tokens</span>
-                          <small>{money(row.costEstimate)}</small>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="admin-ai-monitor-context-cell">
-                          <strong>{row.user?.fullName || row.user?.email || 'System operation'}</strong>
-                          <span>{row.idea?.title || row.endpoint || 'No idea context'}</span>
-                          {!row.isSuccess && row.errorCode && <small className="is-error"><TriangleAlert size={11} /> {row.errorCode}</small>}
-                        </div>
-                      </td>
-                      <td>
                         <button type="button" className="admin-ai-monitor-inspect" onClick={() => openDetails(row)}>
                           <Eye size={15} /> <span>Inspect</span>
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+
+                      <div className="admin-ai-monitor-run-card__status">
+                        <OutcomeBadge success={row.isSuccess} retryable={row.isRetryable} />
+                        <span className="admin-ai-monitor-status-code">HTTP {row.statusCode ?? '—'}</span>
+                        {row.fallbackUsed && <small><GitBranch size={11} /> Fallback path</small>}
+                      </div>
+
+                      <div className="admin-ai-monitor-run-card__metrics">
+                        <div>
+                          <small>Performance</small>
+                          <strong>{number(row.responseTimeMs)} ms</strong>
+                          <span><Gauge size={12} /> response time</span>
+                        </div>
+                        <div>
+                          <small>Tokens</small>
+                          <strong>{number(tokens)}</strong>
+                          <span><Zap size={12} /> total tokens</span>
+                        </div>
+                        <div>
+                          <small>Cost</small>
+                          <strong>{money(row.costEstimate)}</strong>
+                          <span><Cpu size={12} /> estimated cost</span>
+                        </div>
+                        <div>
+                          <small>Context</small>
+                          <strong title={row.user?.fullName || row.user?.email || 'System operation'}>
+                            {row.user?.fullName || row.user?.email || 'System operation'}
+                          </strong>
+                          <span title={row.idea?.title || row.endpoint || 'No idea context'}>
+                            {row.idea?.title || row.endpoint || 'No idea context'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="admin-ai-monitor-run-card__footer">
+                        <div>
+                          <span className="admin-ai-monitor-run-card__chip"><ServerCog size={12} /> {row.apiModelId || '—'}</span>
+                          {row.fallbackUsed && <span className="admin-ai-monitor-run-card__chip"><GitBranch size={12} /> Fallback</span>}
+                        </div>
+                        {!row.isSuccess && row.errorCode && (
+                          <small className="admin-ai-monitor-run-card__error">
+                            <TriangleAlert size={12} /> {row.errorCode}
+                          </small>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className="admin-ai-monitor-empty">
