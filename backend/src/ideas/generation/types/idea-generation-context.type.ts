@@ -302,9 +302,10 @@ export type IdeaGenerationNoResultOutcome = {
 
 
 /**
- * Explainability metadata describing how the primary generation domain was
- * resolved. This is observability-only data and must never alter downstream
- * collection, ranking, benchmark, or persistence decisions.
+ * Metadata describing how the primary generation domain was resolved.
+ * The orchestrator may use its bounded candidates to expand the search scope,
+ * and ranking may use USER_SELECTED to preserve an explicit domain when a
+ * supplied description points to a different domain.
  */
 export type IdeaGenerationDomainResolutionTrace = {
   readonly source: string;
@@ -412,8 +413,8 @@ export type IdeaGenerationContext = {
 
   /**
    * Trace explaining why the primary domain was selected.
-   * This is persisted in the run context for auditing/personalization evidence
-   * and is intentionally ignored by downstream generation stages.
+   * It is persisted for auditing and also preserves whether the primary domain
+   * was explicitly selected so downstream intent gating cannot silently drop it.
    */
   domainResolution: IdeaGenerationDomainResolutionTrace | null;
 

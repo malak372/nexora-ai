@@ -28,9 +28,9 @@ export class CommunityAiAnalysisPromptService {
     return {
       systemInstruction: this.buildSystemInstruction(),
       userPrompt: JSON.stringify({
-        task: `When related recurring problems can be solved by one coherent product, merge them into one compound opportunity and preserve evidence for every component. Never merge unrelated problems. Every opportunities item must be a JSON object, never a string.
+        task: `Keep each opportunity tied to one atomic problem. Do not merge distinct failures, requests, or workflow gaps merely because one product could address them; preserve them as separate opportunities so a later stage can combine compatible directions if justified. Every opportunities item must be a JSON object, never a string.
 
-Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} concise, non-duplicated software opportunities. Opportunities may belong to different domains. When two or more domains contribute to one connected workflow, preserve them as compatible components that a later stage can combine into one cross-domain product. Return fewer rather than inventing unsupported opportunities.`,
+Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} concise, non-duplicated software opportunities. Opportunities may belong to different domains. When two or more domains contribute to one connected workflow, preserve them as separate evidence-grounded components that a later stage can combine into one cross-domain product. Return fewer rather than inventing unsupported opportunities.`,
         primaryDomain: { id: context.domainId, name: context.domainName },
         requestDescription: context.requestDescription,
         selectedDomains: context.selectedDomains.map((domain) => ({
@@ -59,6 +59,8 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
           scoresArePreliminaryEstimates: true,
           requireDistinctProblemFamilies: true,
           requireDomainCoverageWhenEvidenceSupportsIt: true,
+          semanticallyRefineRetainedNlpCandidatesFirst: true,
+          evidenceQuoteWordingMayDifferFromOpportunityWording: true,
         },
         /*
          * Keep the online enrichment prompt small. The verbatim evidence is
@@ -119,7 +121,11 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
       'Treat cleanedCommunitySamples.canonicalEvidence as the authoritative richest quotes. If a shorter fragment is repeated elsewhere, use the canonical full quote instead.',
       'Prefer complete evidence that contains both the cause/context and the user impact over short fragments from the same report.',
       'Every opportunity must include at least one verbatim evidenceSamples item copied exactly from supplied evidence.',
-      'One evidence quote may ground only one opportunity. Merge equivalent complaints and keep unrelated problems separate.',
+      'Treat nlpSummary.featureRequests, recurringProblems, extractedNeeds, and existingOpportunities as high-priority semantic anchors when they already contain retained evidence. Refine those grounded signals into professional opportunity wording instead of replacing them with unrelated ideas.',
+      'The opportunity title/problem may paraphrase the evidence semantically, but evidenceSamples itself must remain a verbatim supplied quote. For example, long-term rental discovery friction may be grounded by a lease-term filtering request when both describe the same rental-duration problem.',
+      'One evidence quote may ground only one atomic opportunity. Merge only semantically equivalent reports of the same atomic problem; keep distinct causes, symptoms, failures, and requests separate even if one future product could address them.',
+      'Respect explicit negation. Phrases such as "not crashing", "never crashes", "without crashing", or "no crash" are not crash evidence. A keyboard that only appears frozen because focus is trapped or keystrokes are captured is a navigation/accessibility problem, not a runtime crash.',
+      'Do not introduce authentication, credentials, passwords, or account-management claims unless the retained evidence itself describes login, authentication, credentials, passwords, or account access. Life-event record updates across agencies are record-update coordination, not credential management.',
       'For every selected domain with at least one supplied direct evidence sample, return at least one opportunity for that domain when the configured opportunity limit allows it.',
       'Treat the requester problem-scope as a mandatory selection constraint whenever requestDescription is present. An opportunity that does not materially address that described workflow may be returned only as a fallback diagnostic and must not be presented as the primary requested opportunity.',
       'Specific requester anchors such as homework/assignment, login/authentication, checkout/payment, or another named workflow/object must remain present in the selected problem when they are part of requestDescription; a merely same-domain problem is not sufficient.',

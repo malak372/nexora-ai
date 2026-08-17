@@ -27,7 +27,7 @@ export type DomainResolutionTrace = {
   /** Saved preferences that directly participated in domain resolution. */
   readonly matchedInterests: readonly string[];
 
-  /** Bounded ranked alternatives captured for observability only. */
+  /** Bounded ranked alternatives used for explainability and cross-domain scope expansion. */
   readonly candidates: readonly DomainResolutionCandidate[];
 };
 
@@ -88,12 +88,12 @@ type HistoricalDomainScore = {
  * Resolves exactly one active, concrete domain for an idea-generation request.
  *
  * Resolution priority:
- * 1. Explicit concrete domain selected by the requester.
+ * 1. Explicit concrete domain selected by the requester, while the current
+ *    description may add strongly matched cross-domain search candidates.
  * 2. Description and keywords supplied with the current request.
- * 3. Saved domain preferences of the authenticated user.
- * 4. The user's favorite-idea history.
- * 5. The user's recent generated-idea history.
- * 6. A deterministic system-wide domain fallback.
+ * 3. A weighted blend of saved domain preferences, favorite ideas, and recent
+ *    generation history when the request contains no current domain/description.
+ * 4. A deterministic system-wide domain fallback.
  *
  * The final fallback selects the least-used active concrete domain rather than
  * choosing randomly. This keeps results reproducible and improves domain
@@ -116,19 +116,59 @@ export class DomainResolutionService {
    * resolution rather than as a concrete generation domain.
    */
   async resolve(input: ResolveDomainInput): Promise<DomainResolutionResult> {
-    const selectedDomainResult = await this.resolveSelectedDomain(
-      input.domainId,
-    );
-
-    if (selectedDomainResult) {
-      return selectedDomainResult;
-    }
-
-    const domains = await this.loadConcreteDomains(input.language);
     const hasCurrentRequest = this.hasRequestSearchInput(
       input.description,
       input.keywords,
     );
+    const [selectedDomainResult, currentRequestDomains] = await Promise.all([
+      this.resolveSelectedDomain(input.domainId),
+      hasCurrentRequest
+        ? this.loadConcreteDomains(input.language)
+        : Promise.resolve(null),
+    ]);
+
+    if (selectedDomainResult) {
+      if (!hasCurrentRequest || !currentRequestDomains) {
+        return selectedDomainResult;
+      }
+
+      const requestMatch = this.resolveByKeywords(
+        currentRequestDomains,
+        input.description,
+        input.keywords,
+      );
+
+      if (!requestMatch) {
+        return selectedDomainResult;
+      }
+
+      const mergedCandidates = [
+        ...requestMatch.trace.candidates,
+        ...selectedDomainResult.trace.candidates,
+      ]
+        .filter(
+          (candidate, index, candidates) =>
+            candidates.findIndex(
+              (item) => item.domainId === candidate.domainId,
+            ) === index,
+        )
+        .slice(0, 3);
+
+      return {
+        ...selectedDomainResult,
+        trace: {
+          reasons: [
+            ...selectedDomainResult.trace.reasons,
+            'The current description was also analyzed so strongly matched additional domains can participate as cross-domain search constraints without replacing the explicitly selected primary domain.',
+          ],
+          matchedInterests: [],
+          candidates: mergedCandidates,
+        },
+      };
+    }
+
+    const domains =
+      currentRequestDomains ?? (await this.loadConcreteDomains(input.language));
 
     /*
      * Explicit request text has priority over stored personalization because it
@@ -163,8 +203,8 @@ export class DomainResolutionService {
 
     /*
      * These personalization reads are independent. Load them in one database
-     * latency window, then apply the deterministic priority order in memory:
-     * saved preferences -> favorites -> recent generation history.
+     * latency window, then blend their normalized scores in memory. This keeps
+     * the no-input path personalized without adding sequential database latency.
      */
     const [
       preferredDomainResult,
@@ -176,9 +216,16 @@ export class DomainResolutionService {
       this.resolveFromGeneratedHistory(input.userId, domains),
     ]);
 
-    if (preferredDomainResult) return preferredDomainResult;
-    if (favoriteDomainResult) return favoriteDomainResult;
-    if (historicalDomainResult) return historicalDomainResult;
+    const personalizedDomainResult = this.combinePersonalizationSignals(
+      domains,
+      preferredDomainResult,
+      favoriteDomainResult,
+      historicalDomainResult,
+    );
+
+    if (personalizedDomainResult) {
+      return personalizedDomainResult;
+    }
 
     return this.resolveSystemFallback(domains);
   }
@@ -262,6 +309,151 @@ export class DomainResolutionService {
             reasons: ['Explicit requester selection'],
           },
         ],
+      },
+    };
+  }
+
+  /**
+   * Blends the user's long-lived personalization signals instead of stopping at
+   * the first source that returns a value. Saved preferences remain the strongest
+   * signal, favorites refine ties and durable intent, and recent generation
+   * history supplies a smaller behavioral prior.
+   *
+   * Each source is normalized independently before weighting so a user with many
+   * historical ideas cannot numerically overwhelm an explicit saved preference.
+   * The method is in-memory only and therefore adds no database latency beyond
+   * the three reads that already execute in parallel.
+   */
+  private combinePersonalizationSignals(
+    domains: readonly DomainCandidate[],
+    preferredDomainResult: DomainResolutionResult | null,
+    favoriteDomainResult: DomainResolutionResult | null,
+    historicalDomainResult: DomainResolutionResult | null,
+  ): DomainResolutionResult | null {
+    const signals = [
+      {
+        key: 'saved preferences',
+        weight: 0.5,
+        result: preferredDomainResult,
+      },
+      {
+        key: 'favorite ideas',
+        weight: 0.3,
+        result: favoriteDomainResult,
+      },
+      {
+        key: 'recent generation history',
+        weight: 0.2,
+        result: historicalDomainResult,
+      },
+    ] as const;
+
+    const totals = new Map<
+      string,
+      {
+        score: number;
+        reasons: string[];
+        matchedInterests: string[];
+        sources: Set<string>;
+      }
+    >();
+
+    for (const signal of signals) {
+      const candidates = signal.result?.trace.candidates ?? [];
+      const maxScore = Math.max(
+        0,
+        ...candidates.map((candidate) => candidate.score),
+      );
+
+      if (maxScore <= 0) {
+        continue;
+      }
+
+      for (const candidate of candidates) {
+        const contribution =
+          signal.weight * Math.max(0, candidate.score) / maxScore;
+        if (contribution <= 0) {
+          continue;
+        }
+
+        const current = totals.get(candidate.domainId) ?? {
+          score: 0,
+          reasons: [],
+          matchedInterests: [],
+          sources: new Set<string>(),
+        };
+
+        current.score += contribution;
+        current.sources.add(signal.key);
+        current.reasons.push(
+          `${signal.key} contributed ${(contribution * 100).toFixed(1)} weighted points.`,
+        );
+
+        if (
+          signal.result?.domainId === candidate.domainId &&
+          signal.result.trace.matchedInterests.length > 0
+        ) {
+          current.matchedInterests.push(
+            ...signal.result.trace.matchedInterests,
+          );
+        }
+
+        totals.set(candidate.domainId, current);
+      }
+    }
+
+    const domainById = new Map(domains.map((domain) => [domain.id, domain]));
+    const ordered = [...totals.entries()]
+      .map(([domainId, value]) => ({
+        domainId,
+        domainName: domainById.get(domainId)?.name ?? domainId,
+        score: value.score,
+        reasons: value.reasons,
+        matchedInterests: value.matchedInterests,
+        sources: value.sources,
+      }))
+      .filter((candidate) => domainById.has(candidate.domainId))
+      .sort(
+        (first, second) =>
+          second.score - first.score ||
+          first.domainName.localeCompare(second.domainName),
+      );
+
+    const winner = ordered[0];
+    if (!winner) {
+      return null;
+    }
+
+    const runnerUpScore = ordered[1]?.score ?? 0;
+    const margin = Math.max(0, winner.score - runnerUpScore);
+    const confidence = Math.min(
+      0.95,
+      0.68 + Math.min(0.2, winner.score * 0.2) + Math.min(0.07, margin * 0.2),
+    );
+    const preferenceBacked =
+      preferredDomainResult?.trace.candidates.some(
+        (candidate) => candidate.domainId === winner.domainId,
+      ) ?? false;
+
+    return {
+      domainId: winner.domainId,
+      domainName: winner.domainName,
+      source: preferenceBacked
+        ? DomainResolutionSource.USER_PREFERENCE
+        : DomainResolutionSource.USER_HISTORY,
+      confidence,
+      trace: {
+        reasons: [
+          `Selected from blended personalization signals: ${[...winner.sources].join(', ')}.`,
+          'Saved preferences, favorites, and recent generation history are normalized independently so no high-volume history source can overwhelm explicit user intent.',
+        ],
+        matchedInterests: [...new Set(winner.matchedInterests)],
+        candidates: ordered.slice(0, 3).map((candidate) => ({
+          domainId: candidate.domainId,
+          domainName: candidate.domainName,
+          score: Number(candidate.score.toFixed(4)),
+          reasons: [...new Set(candidate.reasons)],
+        })),
       },
     };
   }
@@ -551,6 +743,22 @@ export class DomainResolutionService {
     const searchTokens = new Set(
       normalizedSearchText.split(/\s+/).filter(Boolean),
     );
+    const genericTokens = new Set([
+      'management',
+      'operations',
+      'operation',
+      'business',
+      'company',
+      'system',
+      'platform',
+      'software',
+      'application',
+      'workflow',
+      'service',
+      'services',
+      'data',
+      'digital',
+    ]);
 
     const rankedDomains = domains
       .map((domain) => {
@@ -584,9 +792,12 @@ export class DomainResolutionService {
           }
 
           if (
-            termTokens.length > 1 &&
-            matchedTokens.length === 1 &&
-            matchedTokens[0] === 'ai'
+            matchedTokens.every((token) => genericTokens.has(token)) ||
+            (
+              termTokens.length > 1 &&
+              matchedTokens.length === 1 &&
+              matchedTokens[0] === 'ai'
+            )
           ) {
             continue;
           }
@@ -674,6 +885,25 @@ export class DomainResolutionService {
       payments: 'payment',
       payrolls: 'payroll',
       procurements: 'procurement',
+      employees: 'employee',
+      workers: 'worker',
+      recruiters: 'recruiter',
+      recruiting: 'recruitment',
+      hires: 'hiring',
+      hired: 'hiring',
+      workloads: 'workload',
+      costs: 'cost',
+      spending: 'expense',
+      expenditures: 'expense',
+      records: 'record',
+      feedbacks: 'feedback',
+      breaches: 'breach',
+      threats: 'threat',
+      attacks: 'attack',
+      alerts: 'alert',
+      incidents: 'incident',
+      credentials: 'credential',
+      vulnerabilities: 'vulnerability',
     };
 
     return value
@@ -723,6 +953,74 @@ export class DomainResolutionService {
         'internal operations',
         'manual administration',
         'workflow bottleneck',
+      ];
+    }
+
+    if (
+      normalizedDomain === 'hr recruitment' ||
+      normalizedDomain === 'human resources' ||
+      normalizedDomain === 'human resources recruitment'
+    ) {
+      return [
+        'human resources',
+        'hr',
+        'recruitment',
+        'hiring',
+        'employee',
+        'employees',
+        'workforce',
+        'worker',
+        'staff',
+        'employee burnout',
+        'workplace burnout',
+        'employee turnover',
+        'staff turnover',
+        'retention',
+        'candidate screening',
+        'applicant tracking',
+        'talent acquisition',
+        'employee onboarding',
+        'employee feedback',
+        'hr records',
+        'workforce management',
+        'workload',
+      ];
+    }
+
+    if (
+      normalizedDomain === 'cybersecurity' ||
+      normalizedDomain === 'cyber security' ||
+      normalizedDomain === 'information security'
+    ) {
+      return [
+        'cybersecurity',
+        'cyber security',
+        'information security',
+        'security',
+        'data security',
+        'patient data security',
+        'unauthorized access',
+        'unauthorised access',
+        'access control',
+        'data breach',
+        'security breach',
+        'suspicious activity',
+        'security alert',
+        'security alerts',
+        'threat detection',
+        'security monitoring',
+        'incident response',
+        'cyber attack',
+        'cyberattack',
+        'malware',
+        'ransomware',
+        'phishing',
+        'vulnerability',
+        'credential theft',
+        'identity access',
+        'authentication security',
+        'privacy breach',
+        'sensitive data',
       ];
     }
 
@@ -993,6 +1291,10 @@ export class DomainResolutionService {
       {
         name: 'Healthcare',
         pattern: /\b(?:healthcare|medical|patient|patients|clinic|hospital|doctor|nurse|pharmacy)\b/u,
+      },
+      {
+        name: 'HR & Recruitment',
+        pattern: /\b(?:human resources|hr|recruitment|recruiting|hiring|employee|employees|workforce|burnout|turnover|retention|candidate|applicant|talent acquisition|onboarding)\b/u,
       },
       {
         name: 'Finance',

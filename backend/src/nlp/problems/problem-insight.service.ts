@@ -4,10 +4,11 @@ import { LanguageCode, NlpLexiconType } from '@prisma/client';
 import { Sentiment } from '../common/enums/sentiment.enum';
 import {
   buildCommunityEvidenceExcerpt,
-  hasDirectCommunityComplaint,
+  classifyDirectCommunityEvidence,
   isLikelyProductDescription,
   isWeakCommunityEvidence,
   scoreCommunityEvidenceQuality,
+  segmentCommunityEvidenceIssues,
 } from '../common/utils/community-evidence.util';
 import type { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
 import type { IntelligentAnalysisOutput } from '../pipeline/types/intelligent-analysis.types';
@@ -65,56 +66,60 @@ export class ProblemInsightService {
         continue;
       }
 
-      const problemTerms = [
-        ...this.extractSpecificLexiconTerms(text),
-        ...this.inferConcreteProblemTerms(text.originalText, text.language),
-      ];
+      const issueTexts = segmentCommunityEvidenceIssues(text.originalText);
 
-      const normalizedProblems = new Set(
-        problemTerms
-          .map((term) =>
-            this.problemNormalizerService.normalize(term, text.language),
-          )
-          .filter(Boolean)
-          .filter((title) =>
-            this.isEvidenceAlignedWithProblemTitle(text.originalText, title),
-          ),
-      );
+      for (const issueText of issueTexts) {
+        const problemTerms = [
+          ...this.inferConcreteProblemTerms(issueText, text.language),
+        ];
 
-      for (const title of normalizedProblems) {
-        const current = problemMap.get(title) ?? this.createAccumulator();
+        if (issueTexts.length === 1) {
+          problemTerms.push(...this.extractSpecificLexiconTerms(text));
+        }
 
-        const evidenceQuality = scoreCommunityEvidenceQuality(
-          text.originalText,
+        const normalizedProblems = new Set(
+          problemTerms
+            .map((term) =>
+              this.problemNormalizerService.normalize(term, text.language),
+            )
+            .filter(Boolean)
+            .filter((title) =>
+              this.isEvidenceAlignedWithProblemTitle(issueText, title),
+            ),
         );
 
-        current.frequency += 1;
-        current.evidenceQualityTotal += evidenceQuality;
-        current.evidenceQualityCount += 1;
+        for (const title of normalizedProblems) {
+          const current = problemMap.get(title) ?? this.createAccumulator();
+          const evidenceQuality = scoreCommunityEvidenceQuality(issueText);
 
-        if (text.sentiment === Sentiment.NEGATIVE && evidenceQuality >= 0.45) {
-          current.negativeSignals += 1;
+          current.frequency += 1;
+          current.evidenceQualityTotal += evidenceQuality;
+          current.evidenceQualityCount += 1;
+
+          if (text.sentiment === Sentiment.NEGATIVE && evidenceQuality >= 0.45) {
+            current.negativeSignals += 1;
+          }
+
+          if (this.hasUrgencySignal(text) && evidenceQuality >= 0.45) {
+            current.urgencySignals += 1;
+          }
+
+          if (this.hasBlockingFailureSignal(issueText)) {
+            current.blockingSignals += 1;
+          }
+
+          if (this.hasCriticalOperationalSignal(issueText)) {
+            current.criticalOperationalSignals += 1;
+          }
+
+          this.addEvidenceSample(
+            current.evidenceSamples,
+            this.buildEvidenceExcerpt(issueText, title),
+            evidenceQuality,
+          );
+
+          problemMap.set(title, current);
         }
-
-        if (this.hasUrgencySignal(text) && evidenceQuality >= 0.45) {
-          current.urgencySignals += 1;
-        }
-
-        if (this.hasBlockingFailureSignal(text.originalText)) {
-          current.blockingSignals += 1;
-        }
-
-        if (this.hasCriticalOperationalSignal(text.originalText)) {
-          current.criticalOperationalSignals += 1;
-        }
-
-        this.addEvidenceSample(
-          current.evidenceSamples,
-          this.buildEvidenceExcerpt(text.originalText, title),
-          evidenceQuality,
-        );
-
-        problemMap.set(title, current);
       }
     }
 
@@ -167,19 +172,26 @@ export class ProblemInsightService {
       return false;
     }
 
-    const hasDirectComplaint = hasDirectCommunityComplaint(text.originalText);
+    const evidenceKind = classifyDirectCommunityEvidence(
+      text.originalText,
+      text.sourceType,
+    );
+    const hasActionableDirectEvidence =
+      evidenceKind === 'USER_COMPLAINT' || evidenceKind === 'FEATURE_REQUEST';
     const hasComplaintLexicon =
       this.hasLexiconMatches(text, NlpLexiconType.COMPLAINT) ||
       this.hasLexiconMatches(text, NlpLexiconType.PROBLEM);
 
     if (text.sourceType === 'COMMENT') {
       return (
-        hasDirectComplaint ||
-        (text.sentiment === Sentiment.NEGATIVE && hasComplaintLexicon)
+        hasActionableDirectEvidence ||
+        (evidenceKind !== 'NONE' &&
+          text.sentiment === Sentiment.NEGATIVE &&
+          hasComplaintLexicon)
       );
     }
 
-    return hasDirectComplaint;
+    return hasActionableDirectEvidence;
   }
 
   /** Extracts only category-specific lexicon terms, not generic triggers. */
@@ -230,9 +242,7 @@ export class ProblemInsightService {
       }
 
       const hasExplicitCrashOrFreeze =
-        /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
-          normalizedEvidence,
-        );
+        this.hasActualSoftwareRuntimeFailure(normalizedEvidence);
       const hasStrongRuntimeFailure =
         /(?:bug|glitch|unstable|unreliable|doesn['’]?t work|not working|fails? to submit|submission failed)/iu.test(
           normalizedEvidence,
@@ -313,7 +323,29 @@ export class ProblemInsightService {
       terms.push('activation email');
     }
 
+    const hasScriptExecutionPolicyFailure =
+      /\b(?:powershell|execution polic(?:y|ies)|pssecurityexception|\.ps1|running scripts is disabled|script execution (?:is )?disabled|unauthorizedaccess)\b/iu.test(
+        text,
+      ) &&
+      /\b(?:disabled|blocked|cannot be loaded|can['’]?t be loaded|unauthorized|securityerror|pssecurityexception)\b/iu.test(
+        text,
+      );
+
+    if (hasScriptExecutionPolicyFailure) {
+      terms.push('script execution policy failure');
+    }
+
     if (
+      /\b(?:insufficient funds|insufficient balance|not enough funds)\b/iu.test(text) &&
+      /\b(?:transaction|swap|transfer|wallet|fee|gas|rent|sol|token|bitcoin|blockchain|jupiter)\b/iu.test(
+        text,
+      )
+    ) {
+      terms.push('blockchain transaction insufficient funds');
+    }
+
+    if (
+      !hasScriptExecutionPolicyFailure &&
       /(?:download|document|syllabus|file|link).{0,80}(?:error|fail|broken|null|(?:can(?:not|['’]?t)|can\s+not)|won['’]?t|does(?:n['’]?t| not) open)|(?:error|null).{0,60}(?:download|document|file|syllabus)/iu.test(
         text,
       )
@@ -327,6 +359,78 @@ export class ProblemInsightService {
       )
     ) {
       terms.push('data loss');
+    }
+
+    if (
+      /(?:rental length|lease term|lease duration|short[- ]term rentals?|long[- ]term rentals?).{0,120}(?:filter|exclude|include)|(?:filter|exclude|include).{0,120}(?:rental length|lease term|lease duration|short[- ]term rentals?|long[- ]term rentals?)/iu.test(
+        text,
+      )
+    ) {
+      terms.push('rental lease term filtering');
+    }
+
+    if (
+      /(?:old notes?|old data|previous notes?).{0,100}(?:re-appear|reappear|return|come back)|(?:updated|updating|saved|saving).{0,100}(?:old notes?|old data|re-appear|reappear|not retained)/iu.test(
+        text,
+      )
+    ) {
+      terms.push('rental application data persistence');
+    }
+
+    if (
+      /(?:keep getting logged out|keeps? logging (?:me|us) out|repeated(?:ly)? logged out|unexpected logout|session (?:expires?|drops?|ends?))/iu.test(
+        text,
+      )
+    ) {
+      terms.push('repeated session logout');
+    }
+
+    if (
+      /(?:favorites?|favourites?|saved homes?|saved listings?).{0,120}(?:location|area|region).{0,80}(?:filter|search)|(?:filter|search).{0,120}(?:favorites?|favourites?).{0,80}(?:location|area|region)/iu.test(
+        text,
+      )
+    ) {
+      terms.push('favorites location filtering');
+    }
+
+    if (
+      /(?:multiport|multiple filters?|two filters?|2 filters?|multiple criteria|house size and lot size).{0,120}(?:simultaneously|at once|together|filter)/iu.test(
+        text,
+      )
+    ) {
+      terms.push('multi criteria property filtering');
+    }
+
+    if (
+      /(?:tags?|custom tags?|user[- ]defined tags?).{0,120}(?:vanish(?:ed)?|disappear(?:ed)?|gone|missing|removed|deleted)/iu.test(
+        text,
+      )
+    ) {
+      terms.push('property tag persistence');
+    }
+
+    if (
+      /(?:announce|notify|notification|communicat).{0,140}(?:feature|functionality|change|remove|removed|vanish|disappear|alternative)|(?:feature|functionality).{0,120}(?:remove|removed|vanish|disappear).{0,120}(?:announce|notify|communication|alternative)/iu.test(
+        text,
+      )
+    ) {
+      terms.push('feature change notification');
+    }
+
+    if (
+      /(?:ada|accessibility|mobility|wheelchair|stairs?).{0,140}(?:listing|rental|property|information|included|metadata)|(?:listing|rental|property).{0,140}(?:ada|accessibility|mobility|wheelchair|stairs?)/iu.test(
+        text,
+      )
+    ) {
+      terms.push('rental accessibility information');
+    }
+
+    if (
+      /(?:cannot access|can['’]?t access|unable to access).{0,100}(?:customer service|support)|(?:no customer service|no support).{0,100}(?:access|application|app)/iu.test(
+        text,
+      )
+    ) {
+      terms.push('application access support');
     }
 
     if (
@@ -345,10 +449,7 @@ export class ProblemInsightService {
       terms.push('login failure');
     }
 
-    const hasExplicitCrashOrFreeze =
-      /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
-        text,
-      );
+    const hasExplicitCrashOrFreeze = this.hasActualSoftwareRuntimeFailure(text);
     const hasOperationalReliabilityFailure =
       /(?:bug|glitch)/iu.test(text) &&
       /(?:app|application|software|screen|submission|upload|save|work)/iu.test(
@@ -402,6 +503,28 @@ export class ProblemInsightService {
         text,
       );
 
+    if (/script execution|execution policy|local tool permission|powershell/iu.test(normalizedTitle)) {
+      return (
+        /\b(?:powershell|execution polic(?:y|ies)|pssecurityexception|\.ps1|running scripts is disabled|unauthorizedaccess)\b/iu.test(
+          text,
+        ) &&
+        /\b(?:disabled|blocked|cannot be loaded|can['’]?t be loaded|unauthorized|securityerror|pssecurityexception)\b/iu.test(
+          text,
+        )
+      );
+    }
+
+    if (/transaction balance|insufficient funds|wallet balance/iu.test(normalizedTitle)) {
+      return (
+        /\b(?:insufficient funds|insufficient balance|not enough funds)\b/iu.test(
+          text,
+        ) &&
+        /\b(?:transaction|swap|transfer|wallet|fee|gas|rent|sol|token|bitcoin|blockchain|jupiter)\b/iu.test(
+          text,
+        )
+      );
+    }
+
     if (/document|download|syllabus|file/iu.test(normalizedTitle)) {
       return (
         /(?:document|download|syllabus|pdf|attachment|file|link)/iu.test(
@@ -410,7 +533,8 @@ export class ProblemInsightService {
         /(?:cannot|can['’]?t|unable|won['’]?t|doesn['’]?t|fail|failed|broken|error|null|not open|open)/iu.test(
           text,
         ) &&
-        !hasAuthenticationContext
+        !hasAuthenticationContext &&
+        !/\b(?:powershell|execution polic(?:y|ies)|pssecurityexception|\.ps1|running scripts is disabled|unauthorizedaccess)\b/iu.test(text)
       );
     }
 
@@ -425,10 +549,7 @@ export class ProblemInsightService {
     }
 
     if (/reliability|crash|تعطل/iu.test(normalizedTitle)) {
-      const hasExplicitRuntimeFailure =
-        /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
-          text,
-        );
+      const hasExplicitRuntimeFailure = this.hasActualSoftwareRuntimeFailure(text);
       const hasNonAuthOperationalFailure =
         /(?:bug|glitch|submission failed|fails? to submit|upload failed|doesn['’]?t work|not working)/iu.test(
           text,
@@ -441,6 +562,25 @@ export class ProblemInsightService {
     }
 
     return true;
+  }
+
+  private hasActualSoftwareRuntimeFailure(value: string): boolean {
+    const normalized = this.normalizeText(value).replace(
+      /\bcrash[- ]course\b/giu,
+      ' ',
+    );
+
+    return (
+      /\b(?:app|application|platform|software|website|system|process|service|server|client)\b[^.!?\n]{0,100}\b(?:crash(?:es|ed|ing)?|freeze|freezes|frozen|unresponsive|exception|segfault|terminated unexpectedly|white screen)\b/iu.test(
+        normalized,
+      ) ||
+      /\b(?:crash(?:es|ed|ing)?|freeze|freezes|frozen|unresponsive|exception|segfault|terminated unexpectedly|white screen)\b[^.!?\n]{0,100}\b(?:app|application|platform|software|website|system|process|service|server|client)\b/iu.test(
+        normalized,
+      ) ||
+      /\b(?:the app|this app|my app|the application|this application)\b[^.!?\n]{0,140}\b(?:loading and loading|not responding|closes unexpectedly|keeps closing)\b/iu.test(
+        normalized,
+      )
+    );
   }
 
   /** Builds category-specific evidence for one normalized problem title. */
@@ -456,6 +596,20 @@ export class ProblemInsightService {
     const normalizedTitle = title.toLocaleLowerCase();
 
     // Match concrete workflows before the generic word "failure".
+    if (/script execution|execution policy|local tool permission|powershell/iu.test(normalizedTitle)) {
+      return [
+        /\b(?:powershell|execution polic(?:y|ies)|pssecurityexception|\.ps1|running scripts is disabled|unauthorizedaccess)\b/iu,
+        /\b(?:disabled|blocked|cannot be loaded|can['’]?t be loaded|securityerror|pssecurityexception)\b/iu,
+      ];
+    }
+
+    if (/transaction balance|insufficient funds|wallet balance/iu.test(normalizedTitle)) {
+      return [
+        /\b(?:insufficient funds|insufficient balance|not enough funds)\b/iu,
+        /\b(?:transaction|swap|transfer|wallet|fee|gas|rent|sol|token|bitcoin|blockchain|jupiter)\b/iu,
+      ];
+    }
+
     if (/document|download|file|syllabus|تنزيل|ملفات/iu.test(normalizedTitle)) {
       return [
         /\b(?:download|document|syllabus|file|broken link|null error|cannot open)\b/iu,

@@ -318,14 +318,21 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     domains: readonly SelectedGenerationDomain[],
   ): string[] {
     const balanced: string[] = [];
+    const environmentSelected = domains.some(
+      (domain) => this.normalizeTerm(domain.name) === 'environment',
+    );
     const addUnique = (value: string | null | undefined) => {
-      const trimmed = value?.trim();
+      let trimmed = value?.trim();
 
       if (!trimmed) {
         return;
       }
 
-      const normalized = this.normalizeTerm(trimmed);
+      let normalized = this.normalizeTerm(trimmed);
+      if (environmentSelected && normalized === 'environment') {
+        trimmed = 'environmental monitoring';
+        normalized = 'environmental monitoring';
+      }
 
       if (
         !balanced.some(
@@ -397,7 +404,10 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
   ): string[] {
     const output: string[] = [];
     const seen = new Set<string>();
-    const buckets = domains.map((domain) => [domain.name, ...domain.keywords]);
+    const buckets = domains.map((domain) => [
+      this.resolveCollectionDomainAnchor(domain),
+      ...domain.keywords,
+    ]);
 
     for (let index = 0; output.length < 24; index += 1) {
       let added = false;
@@ -778,12 +788,24 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     const postId =
       typeof record.postId === 'string' ? record.postId.trim() : '';
 
+    const normalizeExternalId = (raw: string): string =>
+      raw
+        .toLowerCase()
+        .replace(/^[a-z0-9-]+:(?:post|comment):/u, '')
+        .replace(/^(?:post|comment):/u, '')
+        .trim();
+
     if (id && !id.startsWith('nlp:')) {
-      return `id:${id.toLowerCase()}`;
+      const normalizedId = normalizeExternalId(id);
+      const normalizedPostId = postId ? normalizeExternalId(postId) : '';
+      const looksLikeComment =
+        /:comment:/iu.test(id) ||
+        (normalizedPostId.length > 0 && normalizedPostId !== normalizedId);
+      return `${looksLikeComment ? 'comment' : 'post'}:${normalizedId}`;
     }
 
     if (postId && !postId.startsWith('nlp:')) {
-      return `post:${postId.toLowerCase()}`;
+      return `post:${normalizeExternalId(postId)}`;
     }
 
     return null;
@@ -796,8 +818,11 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       .replace(/^.*?\bCommunity comment:\s*/isu, '')
       .trim();
     const contextBonus = /\bCommunity comment:\s*/iu.test(normalized) ? 120 : 0;
+    const directKind = classifyDirectCommunityEvidence(directBody, 'COMMENT');
     const problemBonus =
-      classifyDirectCommunityEvidence(directBody, 'COMMENT') !== 'NONE' ? 80 : 0;
+      directKind === 'USER_COMPLAINT' || directKind === 'FEATURE_REQUEST'
+        ? 80
+        : 0;
     const detailBonus = Math.min(120, directBody.split(/\s+/u).length * 3);
 
     return normalized.length + contextBonus + problemBonus + detailBonus;
@@ -893,12 +918,11 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       ? fullText.slice((match.index ?? 0) + match[0].length).trim()
       : fullText;
 
-    return (
-      classifyDirectCommunityEvidence(
-        evidenceText,
-        match ? 'COMMENT' : 'POST',
-      ) !== 'NONE'
+    const kind = classifyDirectCommunityEvidence(
+      evidenceText,
+      match ? 'COMMENT' : 'POST',
     );
+    return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
   }
 
   /**
@@ -960,6 +984,62 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
+
+    if (/^(?:environment|environmental)$/u.test(domainName)) {
+      const environmentalAnchor = /\b(?:environmental monitoring|environmental compliance|pollution|air quality|water quality|waste management|recycling|emissions?|carbon footprint|sustainability|ecosystem|conservation|biodiversity|environmental impact|climate risk|climate adaptation)\b/iu.test(
+        text,
+      );
+      if (!environmentalAnchor) {
+        return 0;
+      }
+    }
+
+    if (/^manufacturing$/u.test(domainName)) {
+      const strongIndustrialAnchors = [
+        'factory',
+        'assembly line',
+        'machinery',
+        'production line',
+        'plant floor',
+        'shop floor',
+        'predictive maintenance',
+        'machine maintenance',
+        'manufacturing supply chain',
+        'warehouse operations',
+        'machine downtime',
+        'industrial equipment',
+        'factory automation',
+        'throughput',
+      ];
+      const supportingIndustrialAnchors = [
+        'assembly',
+        'equipment',
+        'production planning',
+        'quality control',
+        'supply chain',
+        'maintenance',
+        'industrial',
+        'production scheduling',
+      ];
+      const strongMatches = strongIndustrialAnchors.filter((anchor) =>
+        this.containsSemanticTerm(text, anchor),
+      ).length;
+      const supportingMatches = supportingIndustrialAnchors.filter((anchor) =>
+        this.containsSemanticTerm(text, anchor),
+      ).length;
+      const nonIndustrialManufacturingUse =
+        /\b(?:manufactur(?:e|ed|ing)|fabricat(?:e|ed|ing))\s+(?:evidence|claim|story|result|report|proof|test|red)\b/iu.test(
+          text,
+        );
+
+      if (
+        strongMatches === 0 &&
+        (supportingMatches < 2 || nonIndustrialManufacturingUse)
+      ) {
+        return 0;
+      }
+    }
+
     if (domainName.length >= 3 && this.containsSemanticTerm(text, domainName)) {
       return 1;
     }
@@ -1043,6 +1123,25 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       );
     }
 
+    if (/^(?:environment|environmental)$/u.test(normalizedName)) {
+      aliases.push(
+        'environmental monitoring',
+        'environmental compliance',
+        'pollution monitoring',
+        'air quality',
+        'water quality',
+        'waste management',
+        'recycling',
+        'emissions',
+        'carbon footprint',
+        'sustainability',
+        'ecosystem monitoring',
+        'conservation',
+        'biodiversity',
+        'environmental impact',
+      );
+    }
+
     const generic = new Set([
       'platform',
       'system',
@@ -1068,6 +1167,14 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
           .trim(),
       )
       .filter((term) => term.length >= 3 && !generic.has(term));
+  }
+
+  private resolveCollectionDomainAnchor(
+    domain: SelectedGenerationDomain,
+  ): string {
+    return this.normalizeTerm(domain.name) === 'environment'
+      ? 'environmental monitoring'
+      : domain.name;
   }
 
   private containsSemanticTerm(text: string, term: string): boolean {

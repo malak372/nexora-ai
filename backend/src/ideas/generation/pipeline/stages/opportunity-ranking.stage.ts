@@ -190,7 +190,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ? [ranking.selected, ...ranking.alternatives]
       : [];
     const hasVerifiedDirectEvidence = rankedCandidates.some(
-      (candidate) => (candidate.verifiedIndependentEvidenceCount ?? 0) > 0,
+      (candidate) =>
+        (candidate.verifiedProblemMatchedDirectUserEvidenceCount ??
+          candidate.verifiedIndependentEvidenceCount ??
+          0) > 0,
     );
     const hasRetainedDirectEvidence = rankedCandidates.some((candidate) =>
       candidate.evidenceSamples.some((sample) =>
@@ -243,10 +246,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
      * same empty outcome. Continue immediately with a clearly qualified
      * preliminary fallback instead of spending 40-60 extra seconds.
      */
-    const primaryTextCount =
-      (context.nlp?.totalTextsAnalyzed ?? 0) +
+    const primaryTextCount = Math.max(
+      context.nlp?.totalTextsAnalyzed ?? 0,
       (context.nlp?.totalPostsAnalyzed ?? 0) +
-      (context.nlp?.totalCommentsAnalyzed ?? 0);
+        (context.nlp?.totalCommentsAnalyzed ?? 0),
+    );
 
     const representativeEvidenceCount = context.domainEvidence.reduce(
       (total, domain) =>
@@ -287,7 +291,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const selectedIsInDomain =
       !ranking.selected.disqualificationReasons.includes('OFF_SELECTED_DOMAIN');
     const selectedHasVerifiedEvidence =
-      (ranking.selected.verifiedIndependentEvidenceCount ?? 0) > 0;
+      (ranking.selected.verifiedProblemMatchedEvidenceCount ??
+        ranking.selected.verifiedIndependentEvidenceCount ??
+        0) > 0;
     const selectedHasDirectEvidence = ranking.selected.evidenceSamples.some(
       (sample) => this.looksLikeDirectProblemEvidence(sample),
     );
@@ -318,6 +324,45 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ) &&
       context.evidenceRecoveryAttempts === 0
     ) {
+      const coveredDomainCount = context.domainEvidence.filter(
+        (entry) => entry.totalTextsAnalyzed > 0,
+      ).length;
+      const hasBroadMultiDomainCoverage =
+        context.selectedDomains.length > 1 &&
+        primaryTextCount >= 8 &&
+        coveredDomainCount >= Math.min(2, context.selectedDomains.length);
+      const requesterDescriptionWordCount = context.requestDescription
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean).length;
+      const hasRichRequesterDescription =
+        requesterDescriptionWordCount >= 18 ||
+        context.requestDescription.trim().length >= 140;
+      const hasAdequateSingleDomainCoverage =
+        context.selectedDomains.length === 1 &&
+        primaryTextCount >= 5 &&
+        representativeEvidenceCount >= 2 &&
+        (context.nlp?.confidence ?? 0) >= 0.4 &&
+        context.communityAiAnalysis?.aiSucceeded === true &&
+        context.communityAiAnalysis.fallbackUsed === false;
+
+      /*
+       * A second recovery pass is low-value when a detailed requester description
+       * already drove a healthy first collection and grounded Community-AI pass,
+       * but none of the retained evidence matched the requested problem. In that
+       * state, another search commonly rediscovers same-domain but different
+       * problems and adds 20-30 seconds without improving claim honesty. Preserve
+       * the requester-defined hypothesis immediately. Short/vague descriptions,
+       * tiny corpora, failed AI analysis, and genuinely empty collections still
+       * receive the one bounded targeted recovery pass.
+       */
+      if (
+        hasBroadMultiDomainCoverage ||
+        (hasRichRequesterDescription && hasAdequateSingleDomainCoverage)
+      ) {
+        return false;
+      }
+
       return true;
     }
 
@@ -369,7 +414,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
    */
   private hasDirectUsableEvidence(ranking: IdeaOpportunityRanking): boolean {
     return [ranking.selected, ...ranking.alternatives].some((candidate) => {
-      if ((candidate.verifiedIndependentEvidenceCount ?? 0) > 0) {
+      if (
+        (candidate.verifiedProblemMatchedEvidenceCount ??
+          candidate.verifiedIndependentEvidenceCount ??
+          0) > 0
+      ) {
         return true;
       }
 
@@ -406,12 +455,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const commentMatch = normalized.match(/\bCommunity comment:\s*(.+)$/iu);
     const evidenceText = commentMatch?.[1]?.trim() ?? normalized;
 
-    return (
-      classifyDirectCommunityEvidence(
-        evidenceText,
-        commentMatch ? 'COMMENT' : 'POST',
-      ) !== 'NONE'
+    const kind = classifyDirectCommunityEvidence(
+      evidenceText,
+      commentMatch ? 'COMMENT' : 'POST',
     );
+    return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
   }
 
   /**
@@ -479,36 +527,77 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         return false;
       }
 
-      const hasVerifiedQualifyingEvidence =
+      const hasVerifiedRetainedEvidence =
         candidate.independentEvidence?.some(
           (evidence) =>
-            evidence.qualifiesForRecurrence &&
-            evidence.evidenceKind !== 'UNKNOWN',
+            evidence.evidenceKind !== 'UNKNOWN' &&
+            evidence.evidenceKind !== 'SPECIFICATION',
         ) ?? false;
       const hasDirectProblemSample = candidate.evidenceSamples.some((sample) =>
         this.looksLikeDirectProblemEvidence(sample),
       );
 
-      return hasVerifiedQualifyingEvidence || hasDirectProblemSample;
+      return hasVerifiedRetainedEvidence || hasDirectProblemSample;
     });
 
     if (directCandidate) {
       const directEvidenceCount = directCandidate.evidenceSamples.filter(
         (sample) => this.looksLikeDirectProblemEvidence(sample),
       ).length;
+      const verifiedDirectEvidenceCount =
+        directCandidate.verifiedProblemMatchedDirectUserEvidenceCount ??
+        directCandidate.verifiedDirectUserEvidenceCount ??
+        directCandidate.verifiedIndependentEvidenceCount ??
+        0;
+      const verifiedSecondaryEvidenceCount =
+        directCandidate.verifiedProblemMatchedSecondaryEvidenceCount ??
+        directCandidate.verifiedSecondaryEvidenceCount ??
+        0;
+      const verifiedTechnicalEvidenceCount =
+        directCandidate.verifiedProblemMatchedTechnicalEvidenceCount ??
+        directCandidate.verifiedTechnicalEvidenceCount ??
+        0;
+      const verifiedFeatureRequestEvidenceCount =
+        directCandidate.verifiedProblemMatchedFeatureRequestEvidenceCount ??
+        directCandidate.verifiedFeatureRequestEvidenceCount ??
+        0;
+      const verifiedComplaintEvidenceCount =
+        directCandidate.verifiedProblemMatchedComplaintEvidenceCount ??
+        directCandidate.verifiedComplaintEvidenceCount ??
+        0;
+      const featureRequestOnly =
+        verifiedDirectEvidenceCount > 0 &&
+        verifiedComplaintEvidenceCount === 0 &&
+        verifiedFeatureRequestEvidenceCount === verifiedDirectEvidenceCount;
       const verifiedEvidenceCount =
-        directCandidate.verifiedIndependentEvidenceCount ?? 0;
+        directCandidate.verifiedProblemMatchedEvidenceCount ??
+        directCandidate.verifiedEvidenceCount ??
+        Math.max(
+          directEvidenceCount,
+          verifiedDirectEvidenceCount +
+            verifiedSecondaryEvidenceCount +
+            verifiedTechnicalEvidenceCount,
+        );
+      const verifiedDirectSourceCount =
+        directCandidate.verifiedProblemMatchedSourceCount ??
+        directCandidate.verifiedIndependentSourceCount ??
+        0;
       const verifiedSourceCount =
-        directCandidate.verifiedIndependentSourceCount ?? 0;
-      const retainedDirectEvidenceCount = Math.max(
-        directEvidenceCount,
-        verifiedEvidenceCount,
-      );
+        directCandidate.verifiedProblemMatchedEvidenceSourceCount ??
+        directCandidate.verifiedEvidenceSourceCount ??
+        verifiedDirectSourceCount;
 
-      const selectionReason =
-        directCandidate.selectionEligible
-          ? `Selected the strongest evidence-backed opportunity after verifying ${Math.max(1, verifiedEvidenceCount)} independent community report(s) across ${Math.max(1, verifiedSourceCount)} independent source(s).`
-          : `${retainedDirectEvidenceCount === 1 ? 'One direct grounded community report was retained' : `${retainedDirectEvidenceCount} direct grounded community reports were retained`}, but the evidence does not yet satisfy the independent recurrence requirement of at least 3 verified reports across 2 independent sources.`;
+      const selectionReason = directCandidate.selectionEligible
+        ? featureRequestOnly
+          ? `Selected the strongest evidence-backed preliminary opportunity after retaining ${verifiedFeatureRequestEvidenceCount} verified feature request(s) across ${Math.max(1, verifiedDirectSourceCount)} source(s). Feature requests are direct demand signals but do not by themselves establish complaint recurrence.`
+          : verifiedDirectEvidenceCount > 0
+            ? `Selected the strongest evidence-backed preliminary opportunity after retaining ${verifiedDirectEvidenceCount} verified direct user report(s) across ${Math.max(1, verifiedDirectSourceCount)} direct source(s). Recurrence is not established unless at least 3 direct reports span 2 independent sources.`
+            : verifiedSecondaryEvidenceCount > 0
+            ? `Selected the strongest evidence-backed preliminary opportunity from ${verifiedSecondaryEvidenceCount} retained secondary report(s) across ${Math.max(1, verifiedSourceCount)} retained source(s); no verified direct user complaint establishes recurrence.`
+            : verifiedTechnicalEvidenceCount > 0
+              ? `Selected the strongest evidence-backed preliminary opportunity from ${verifiedTechnicalEvidenceCount} retained technical ticket(s) across ${Math.max(1, verifiedSourceCount)} retained source(s); no verified direct user complaint establishes recurrence.`
+              : `Selected the strongest available domain-aligned preliminary opportunity from retained evidence; no verified direct user complaint establishes recurrence.`
+        : `${verifiedEvidenceCount === 1 ? 'One problem-matched evidence item was retained' : `${verifiedEvidenceCount} problem-matched evidence items were retained`}, but the evidence does not yet satisfy the independent recurrence requirement of at least 3 verified direct reports across 2 independent sources.`;
 
       const ordered = [
         directCandidate,
@@ -523,48 +612,12 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       };
     }
 
-    const primaryDomainName =
-      context.domainName?.trim() ||
-      context.selectedDomains[0]?.name?.trim() ||
-      'Selected domain';
-
-    const primaryCandidate = candidates.find(
-      (candidate) =>
-        this.readCandidateDomainName(candidate.raw).toLowerCase() ===
-        primaryDomainName.toLowerCase(),
-    );
-
-    if (
-      primaryCandidate &&
-      primaryCandidate.problem !== null &&
-      !this.isMissingEvidencePlaceholder(primaryCandidate.problem)
-    ) {
-      const selected = { ...primaryCandidate, rank: 1 };
-      const retainedDirectEvidenceCount = Math.max(
-        primaryCandidate.evidenceSamples.length,
-        primaryCandidate.independentEvidence?.length ?? 0,
-        primaryCandidate.verifiedIndependentEvidenceCount ?? 0,
-      );
-      const selectionReason =
-        retainedDirectEvidenceCount > 0
-          ? `${retainedDirectEvidenceCount === 1 ? 'One direct grounded community report was retained' : `${retainedDirectEvidenceCount} direct grounded community reports were retained`}, but the evidence does not yet satisfy the independent recurrence requirement of at least 3 verified reports across 2 independent sources.`
-          : `No direct community evidence was retained, so the preliminary direction remains in the user-selected primary domain "${primaryDomainName}".`;
-
-      return {
-        ...ranking,
-        selected,
-        alternatives: candidates
-          .filter((candidate) => candidate !== primaryCandidate)
-          .filter(
-            (candidate) =>
-              this.readCandidateDomainName(candidate.raw).toLowerCase() ===
-              primaryDomainName.toLowerCase(),
-          )
-          .map((candidate, index) => ({ ...candidate, rank: index + 2 })),
-        selectionReason,
-      };
-    }
-
+    /*
+     * No selected-domain candidate retained independently verifiable evidence.
+     * Do not force a weak or synthetic candidate from the first selected domain.
+     * The validation fallback preserves the complete selected-domain scope and,
+     * when a request description exists, preserves that exact requester intent.
+     */
     return this.buildPrimaryDomainHypothesisRanking(context);
   }
 
@@ -590,30 +643,56 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   private buildPrimaryDomainHypothesisRanking(
     context: IdeaGenerationContext,
   ): IdeaOpportunityRanking {
-    const domainName =
-      context.domainName?.trim() ||
-      context.selectedDomains[0]?.name?.trim() ||
-      'Selected domain';
+    const selectedDomainNames = [
+      ...new Set(
+        context.selectedDomains
+          .map((domain) => domain.name?.trim())
+          .filter((name): name is string => Boolean(name)),
+      ),
+    ];
+    if (selectedDomainNames.length === 0) {
+      const fallbackDomainName = context.domainName?.trim();
+      if (fallbackDomainName) {
+        selectedDomainNames.push(fallbackDomainName);
+      }
+    }
+    if (selectedDomainNames.length === 0) {
+      selectedDomainNames.push('Selected domain');
+    }
 
+    const domainLabel = selectedDomainNames.join(' + ');
     const requestDescription = context.requestDescription?.trim() ?? '';
+    const isCrossDomain = selectedDomainNames.length > 1;
     const title = requestDescription
-      ? `${domainName} Request Validation Pilot`
-      : `${domainName} Evidence Validation Workflow`;
+      ? 'Requester-Defined Workflow Opportunity'
+      : isCrossDomain
+        ? 'Connected Workflow Opportunity Discovery'
+        : `${domainLabel} Opportunity Discovery`;
     const problem = requestDescription
-      ? `The requester wants to address this specific problem in ${domainName}: "${requestDescription}". Direct community evidence was not strong enough inside the bounded fast-search budget, so the first product direction must validate this exact workflow instead of substituting a different well-evidenced problem.`
-      : `The pilot will test whether teams working in ${domainName} need a structured, low-cost workflow for collecting, classifying, and validating operational-friction reports before committing to a full software implementation.`;
+      ? `The requester wants to address this specific problem across the resolved generation scope (${domainLabel}): "${requestDescription}". Direct community evidence was not sufficiently aligned inside the bounded fast-search budget, so the generated direction must validate this exact requester workflow instead of substituting a different well-evidenced problem.`
+      : isCrossDomain
+        ? `The pilot will test which concrete connected workflow across ${domainLabel} has enough real user evidence to justify implementation. The selected domains are treated as an explicit search space, and the pilot may validate one domain-specific problem or a genuinely connected cross-domain problem without privileging the first domain merely because it owns persistence.`
+        : `The pilot will test whether teams working in ${domainLabel} need a structured, low-cost workflow for collecting, classifying, and validating operational-friction reports before committing to a full software implementation.`;
     const need = requestDescription
-      ? `A bounded validation workflow that tests the requester-described problem with real target users, captures direct evidence, and measures whether a focused implementation is justified.`
-      : `A bounded pilot that captures real user reports, groups recurring workflow problems, and measures which problem family is strong enough to justify implementation.`;
+      ? `A bounded validation workflow that preserves the requester-described problem, tests it with real target users across the relevant selected domains, captures direct evidence, and measures whether a focused implementation is justified.`
+      : isCrossDomain
+        ? `A bounded evidence-discovery pilot that compares real problem signals across the selected domains and validates a coherent single-domain or cross-domain implementation direction.`
+        : `A bounded pilot that captures real user reports, groups recurring workflow problems, and measures which problem family is strong enough to justify implementation.`;
+    const solutionArea = requestDescription
+      ? 'Requester-intent validation, cross-domain evidence capture, and bounded pilot workflow'
+      : isCrossDomain
+        ? 'Cross-domain evidence intake, problem-family comparison, and pilot validation workflow'
+        : 'User-feedback intake, evidence classification, and pilot validation workflow';
+    const domainRelevanceScores = Object.fromEntries(
+      selectedDomainNames.map((name) => [name, 1]),
+    );
 
     const selected: IdeaOpportunityRanking['selected'] = {
       rank: 1,
       title,
       problem,
       need,
-      solutionArea: requestDescription
-        ? 'Requester-intent validation, direct evidence capture, and bounded pilot workflow'
-        : 'User-feedback intake, evidence classification, and pilot validation workflow',
+      solutionArea,
       evidenceType: 'OPPORTUNITY',
       sourceIndex: 0,
       frequency: 0,
@@ -624,7 +703,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       evidenceScore: 0,
       evidenceReliabilityScore: 0.1,
       weakEvidencePenalty: 0.26,
-      specificityScore: 0.72,
+      specificityScore: requestDescription ? 0.9 : 0.72,
       feasibilityScore: 0.88,
       localRelevanceScore: 0.25,
       noveltyScore: 0.62,
@@ -636,9 +715,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       nlpConfidenceScore: context.nlp?.confidence ?? 0.2,
       baseScore: 0.24,
       confidencePenalty: 0.16,
-      finalScore: 0.08,
-      matchedDomainNames: [domainName],
-      domainRelevanceScores: { [domainName]: 1 },
+      finalScore: requestDescription ? 0.18 : 0.08,
+      matchedDomainNames: selectedDomainNames,
+      domainRelevanceScores,
       selectionEligible: false,
       disqualificationReasons: [
         'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
@@ -648,15 +727,16 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       verifiedIndependentEvidenceCount: 0,
       verifiedIndependentSourceCount: 0,
       independentEvidence: [],
+      requestIntentAlignmentScore: requestDescription ? 1 : undefined,
+      requestIntentAdjustedScore: requestDescription ? 0.18 : undefined,
       raw: {
         source: 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
-        domainName,
+        domainName: selectedDomainNames[0],
+        domainNames: selectedDomainNames,
         title,
         problem,
         unmetNeed: need,
-        solutionArea: requestDescription
-          ? 'Requester-intent validation, direct evidence capture, and bounded pilot workflow'
-          : 'User-feedback intake, evidence classification, and pilot validation workflow',
+        solutionArea,
         requestDescription: requestDescription || null,
         requestIntentAlignmentScore: requestDescription ? 1 : null,
         evidenceSamples: [],
@@ -669,12 +749,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       evaluatedCount: 1,
       evidenceCoverage: 0,
       selectionReason: requestDescription
-        ? `No sufficiently request-aligned direct community problem was retained within the fast collection budget. The run stays anchored to the explicit requester problem in "${domainName}" and uses a validation pilot rather than switching to an unrelated high-evidence problem.`
-        : `No direct community problem was retained within the fast collection budget. The run remains anchored to the primary domain "${domainName}" and generates a clearly labeled validation hypothesis instead of switching to an unsupported secondary domain.`,
+        ? `No sufficiently request-aligned direct community problem was retained within the fast collection budget. The run stays anchored to the explicit requester problem across ${domainLabel} and uses a validation pilot rather than switching to an unrelated high-evidence problem.`
+        : isCrossDomain
+          ? `No direct community problem was retained within the fast collection budget. The run keeps all explicitly selected domains (${domainLabel}) in the validation search space instead of forcing the first domain to win by position.`
+          : `No direct community problem was retained within the fast collection budget. The run remains anchored to "${domainLabel}" and generates a clearly labeled validation hypothesis.`,
       qualityWarnings: [
         requestDescription
-          ? 'No sufficiently request-aligned direct community problem was established. The generated product must validate the requester-described workflow and must not present an unrelated domain problem as the primary opportunity.'
-          : 'No direct community problem was established. The generated product must be presented as a validation workflow, not as a validated market solution.',
+          ? 'No sufficiently request-aligned direct community problem was established. The generated product must validate the requester-described workflow and must not present an unrelated evidence item as the primary opportunity.'
+          : 'No direct community problem was established. The generated product must be presented as a validation workflow, not as validated market demand.',
         'The selected location is a pilot deployment target and is not claimed as evidence origin.',
       ],
     };
@@ -735,7 +817,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ? [ranking.selected, ...ranking.alternatives]
       : [];
     const hasVerifiedEvidence = rankedCandidates.some(
-      (candidate) => (candidate.verifiedIndependentEvidenceCount ?? 0) > 0,
+      (candidate) =>
+        (candidate.verifiedProblemMatchedDirectUserEvidenceCount ??
+          candidate.verifiedIndependentEvidenceCount ??
+          0) > 0,
     );
     const message = hasVerifiedEvidence
       ? 'Collection and evidence recovery completed, and independently verified evidence was found, but no opportunity passed all quality and selection thresholds. No idea was generated and no credit should be consumed.'
@@ -750,7 +835,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           message,
           strongestSignalTitle: strongestSignal?.title ?? null,
           independentEvidenceCount:
-            strongestSignal?.verifiedIndependentEvidenceCount ?? 0,
+            strongestSignal?.verifiedProblemMatchedEvidenceCount ??
+            strongestSignal?.verifiedIndependentEvidenceCount ??
+            0,
           requiredIndependentEvidenceCount:
             MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY,
           recoveryAttempts: context.evidenceRecoveryAttempts,
@@ -763,7 +850,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         strongestSignalTitle: strongestSignal?.title ?? null,
         strongestSignalScore: strongestSignal?.finalScore ?? null,
         independentEvidenceCount:
-          strongestSignal?.verifiedIndependentEvidenceCount ?? 0,
+          strongestSignal?.verifiedProblemMatchedEvidenceCount ??
+          strongestSignal?.verifiedIndependentEvidenceCount ??
+          0,
         requiredIndependentEvidenceCount:
           MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY,
         evidenceRecoveryAttempts: context.evidenceRecoveryAttempts,
@@ -877,6 +966,23 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       return primary;
     }
 
+    const recoveredAttemptOffset = primary.onlineAttemptCount;
+    const attemptDiagnostics = [
+      ...primary.attemptDiagnostics,
+      ...recovered.attemptDiagnostics.map((item) => ({
+        ...item,
+        attempt: recoveredAttemptOffset + item.attempt,
+      })),
+    ];
+    const hypothesisByKey = new Map(
+      [...primary.unvalidatedDomainHypotheses, ...recovered.unvalidatedDomainHypotheses].map(
+        (item) => [
+          `${item.domainName.trim().toLocaleLowerCase()}::${item.title.trim().toLocaleLowerCase()}`,
+          item,
+        ],
+      ),
+    );
+
     return {
       summary:
         `${primary.summary} Supplemental targeted recovery: ${recovered.summary}`.trim(),
@@ -901,6 +1007,19 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       modelId: recovered.modelId ?? primary.modelId,
       apiModelId: recovered.apiModelId ?? primary.apiModelId,
       attemptCount: primary.attemptCount + recovered.attemptCount,
+      aiAttempted: primary.aiAttempted || recovered.aiAttempted,
+      aiSucceeded: primary.aiSucceeded || recovered.aiSucceeded,
+      fallbackUsed: primary.fallbackUsed || recovered.fallbackUsed,
+      onlineAttemptCount:
+        primary.onlineAttemptCount + recovered.onlineAttemptCount,
+      executionFailureCount:
+        primary.executionFailureCount + recovered.executionFailureCount,
+      validationRejectedCount:
+        primary.validationRejectedCount + recovered.validationRejectedCount,
+      fallbackReason:
+        recovered.fallbackReason ?? primary.fallbackReason ?? null,
+      attemptDiagnostics,
+      unvalidatedDomainHypotheses: [...hypothesisByKey.values()],
     };
   }
 
@@ -1201,6 +1320,29 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     };
 
     for (const domain of context.domainEvidence) {
+      if (Array.isArray(domain.samplePosts)) {
+        for (const raw of domain.samplePosts) {
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+          const item = raw as Prisma.JsonObject;
+          const id = typeof item.id === 'string' ? item.id : '';
+          const text = typeof item.text === 'string' ? item.text.trim() : '';
+          if (!text) continue;
+
+          const post = parseId(id, 'post');
+          if (!post) continue;
+
+          const key = `${post.sourceKey}|${post.externalId}|`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          hints.push({
+            text,
+            sourceKey: post.sourceKey,
+            postExternalId: post.externalId,
+            commentExternalId: null,
+          });
+        }
+      }
+
       if (!Array.isArray(domain.sampleComments)) continue;
 
       for (const raw of domain.sampleComments) {
@@ -1288,7 +1430,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
       const verifiedHasDirectEvidence =
         verifiedRanking.selected.evidenceSamples.length > 0 ||
-        (verifiedRanking.selected.verifiedIndependentEvidenceCount ?? 0) > 0;
+        (verifiedRanking.selected.verifiedProblemMatchedEvidenceCount ??
+          verifiedRanking.selected.verifiedIndependentEvidenceCount ??
+          0) > 0;
 
       if (verifiedHasDirectEvidence) {
         return verifiedRanking;
@@ -1322,7 +1466,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         );
       const fallbackHasDirectEvidence =
         verifiedCommunityFallback.selected.evidenceSamples.length > 0 ||
-        (verifiedCommunityFallback.selected.verifiedIndependentEvidenceCount ??
+        (verifiedCommunityFallback.selected.verifiedProblemMatchedEvidenceCount ??
+          verifiedCommunityFallback.selected.verifiedIndependentEvidenceCount ??
           0) > 0;
 
       if (fallbackHasDirectEvidence) {
@@ -1675,6 +1820,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   ): string[] {
     const collectionJobIds = [
       context.collection?.collectionJobId,
+      ...context.domainEvidence.map((entry) => entry.collectionJobId),
       ...context.evidenceRecoveryCollectionJobIds,
     ];
 
@@ -1716,10 +1862,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const directEvidenceCount = Math.max(
       selected.evidenceSamples.length,
       selected.independentEvidence?.length ?? 0,
-      selected.verifiedIndependentEvidenceCount ?? 0,
+      selected.verifiedProblemMatchedDirectUserEvidenceCount ??
+        selected.verifiedIndependentEvidenceCount ??
+        0,
     );
     const independentSourceCount = Math.max(
-      selected.verifiedIndependentSourceCount ?? 0,
+      selected.verifiedProblemMatchedSourceCount ??
+        selected.verifiedIndependentSourceCount ??
+        0,
       new Set(
         (selected.independentEvidence ?? [])
           .map((evidence) => evidence.sourceKey)
@@ -1798,15 +1948,34 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           : Math.max(
                 normalizedRanking.selected.evidenceSamples.length,
                 normalizedRanking.selected.independentEvidence?.length ?? 0,
-                normalizedRanking.selected.verifiedIndependentEvidenceCount ?? 0,
+                normalizedRanking.selected.verifiedProblemMatchedEvidenceCount ??
+                  normalizedRanking.selected.verifiedEvidenceCount ??
+                  0,
               ) > 0
-            ? `Selected the strongest available domain-aligned signal "${normalizedRanking.selected.title}" as a controlled preliminary pilot from retained direct evidence. The evidence is insufficient for independent recurrence, so claims remain explicitly qualified.`
-            : `Selected a controlled primary-domain validation hypothesis "${normalizedRanking.selected.title}" because no direct community evidence was retained. The generated idea must remain explicitly unvalidated.`,
+            ? (normalizedRanking.selected.verifiedProblemMatchedDirectUserEvidenceCount ??
+                normalizedRanking.selected.verifiedDirectUserEvidenceCount ??
+                normalizedRanking.selected.verifiedIndependentEvidenceCount ??
+                0) > 0
+              ? `Selected the strongest available domain-aligned signal "${normalizedRanking.selected.title}" as a controlled preliminary pilot from retained direct-user evidence. The evidence is insufficient for independent recurrence, so claims remain explicitly qualified.`
+              : (normalizedRanking.selected.verifiedProblemMatchedSecondaryEvidenceCount ??
+                  normalizedRanking.selected.verifiedSecondaryEvidenceCount ??
+                  0) > 0
+                ? `Selected the strongest available domain-aligned signal "${normalizedRanking.selected.title}" as a controlled preliminary pilot from retained secondary evidence. No verified direct user complaint establishes recurrence, so claims remain explicitly qualified.`
+                : (normalizedRanking.selected.verifiedProblemMatchedTechnicalEvidenceCount ??
+                    normalizedRanking.selected.verifiedTechnicalEvidenceCount ??
+                    0) > 0
+                  ? `Selected the strongest available domain-aligned signal "${normalizedRanking.selected.title}" as a controlled preliminary pilot from retained technical evidence. No verified direct user complaint establishes recurrence, so claims remain explicitly qualified.`
+                  : `Selected the strongest available domain-aligned signal "${normalizedRanking.selected.title}" as a controlled preliminary pilot from retained evidence. No verified direct user complaint establishes recurrence, so claims remain explicitly qualified.`
+            : `Selected a controlled primary-domain validation hypothesis "${normalizedRanking.selected.title}" because no problem-matched retained evidence was verified. The generated idea must remain explicitly unvalidated.`,
       metadata: {
         selectedTitle: normalizedRanking.selected.title,
         selectedScore: normalizedRanking.selected.finalScore,
         selectedEligible: normalizedRanking.selected.selectionEligible,
         matchedDomainNames: normalizedRanking.selected.matchedDomainNames ?? [],
+        problemDomainNames: normalizedRanking.selected.problemDomainNames ?? [],
+        workflowDomainNames: normalizedRanking.selected.workflowDomainNames ?? [],
+        primaryMatchedDomainName:
+          normalizedRanking.selected.primaryMatchedDomainName ?? null,
         evidenceRecoveryApplied: recoveryApplied,
         evidenceRecoveryAttempts: updatedContext.evidenceRecoveryAttempts,
         evidenceRecovery: recoveryMetadata,
@@ -1824,7 +1993,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           confidencePenalty: opportunity.confidencePenalty,
           selectionEligible: opportunity.selectionEligible,
           matchedDomainNames: opportunity.matchedDomainNames ?? [],
+          problemDomainNames: opportunity.problemDomainNames ?? [],
+          workflowDomainNames: opportunity.workflowDomainNames ?? [],
+          primaryMatchedDomainName: opportunity.primaryMatchedDomainName ?? null,
           domainRelevanceScores: opportunity.domainRelevanceScores ?? {},
+          problemDomainRelevanceScores:
+            opportunity.problemDomainRelevanceScores ?? {},
+          workflowDomainRelevanceScores:
+            opportunity.workflowDomainRelevanceScores ?? {},
           disqualificationReasons: opportunity.disqualificationReasons,
         })),
         selectionReason: normalizedRanking.selectionReason,
@@ -1856,8 +2032,13 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
      * effectively zero. The lower band remains usable as a preliminary,
      * explicitly warned fallback so sparse data does not turn into FAILED.
      */
-    const STRONG_INTENT_ALIGNMENT = 0.36;
-    const PRELIMINARY_INTENT_ALIGNMENT = 0.16;
+    const normalizedDescription = this.normalizeIntentText(description);
+    const intentConceptCount =
+      this.resolveIntentConceptGroups(normalizedDescription).length;
+    const STRONG_INTENT_ALIGNMENT =
+      intentConceptCount >= 3 ? 0.58 : intentConceptCount === 2 ? 0.52 : 0.45;
+    const PRELIMINARY_INTENT_ALIGNMENT =
+      intentConceptCount >= 3 ? 0.46 : intentConceptCount === 2 ? 0.36 : 0.28;
     const originalCandidates = [ranking.selected, ...ranking.alternatives];
 
     const scored = originalCandidates.map((candidate) => {
@@ -1943,6 +2124,38 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
 
     const winner = strongEligible[0] ?? preliminaryAligned[0];
+    const explicitPrimaryDomain =
+      context.domainResolution?.source === 'USER_SELECTED'
+        ? context.domainResolution.selectedDomain.name.trim()
+        : '';
+    const winnerClaimDomains = new Set(
+      (winner.matchedDomainNames ?? [])
+        .map((name) => name.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+
+    if (
+      explicitPrimaryDomain &&
+      !winnerClaimDomains.has(explicitPrimaryDomain.toLocaleLowerCase())
+    ) {
+      const fallback = this.buildPrimaryDomainHypothesisRanking(context);
+      const diagnosticAlternatives = scored
+        .sort((left, right) => right.finalScore - left.finalScore)
+        .slice(0, 4)
+        .map((candidate, index) => ({ ...candidate, rank: index + 2 }));
+
+      return {
+        ...fallback,
+        alternatives: diagnosticAlternatives,
+        evaluatedCount: Math.max(fallback.evaluatedCount, ranking.evaluatedCount),
+        qualityWarnings: [
+          `The strongest request-aligned evidence did not include the explicitly selected domain "${explicitPrimaryDomain}". The final direction therefore remains a cross-domain validation hypothesis instead of silently dropping the user's selected domain or inventing unsupported cross-domain evidence.`,
+          ...fallback.qualityWarnings,
+        ],
+        selectionReason: `The requester explicitly selected "${explicitPrimaryDomain}" and supplied a description whose strongest retained evidence pointed elsewhere. Because no verified coherent bundle connected both sides, the pipeline preserved both as a cross-domain validation scope rather than ignoring either input.`,
+      };
+    }
+
     const ordered = [winner, ...scored.filter((candidate) => candidate !== winner)]
       .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
     const isPreliminaryWinner = !winner.selectionEligible;
@@ -1984,6 +2197,13 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         candidate.need ?? '',
         candidate.solutionArea ?? '',
         ...candidate.evidenceSamples,
+        ...(candidate.relatedOpportunityBundle ?? []).flatMap((item) => [
+          item.title,
+          item.problem ?? '',
+          item.need ?? '',
+          item.solutionArea ?? '',
+          ...item.evidenceSamples,
+        ]),
       ].join(' '),
     );
     const requestText = this.normalizeIntentText(description);
@@ -2048,6 +2268,114 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ]);
     }
 
+    if (
+      /\b(?:cybersecurity|cyber security|security|unauthorized access|unauthorised access|data breach|security breach|suspicious activity|security alert|threat|attack|incident response|malware|ransomware|phishing|vulnerability|credential|access control)\b/u.test(
+        requestText,
+      )
+    ) {
+      anchors.push([
+        'cybersecurity',
+        'cyber security',
+        'security',
+        'unauthorized access',
+        'unauthorised access',
+        'data breach',
+        'security breach',
+        'suspicious activity',
+        'security alert',
+        'threat',
+        'attack',
+        'incident response',
+        'malware',
+        'ransomware',
+        'phishing',
+        'vulnerability',
+        'credential',
+        'access control',
+        'authentication',
+        'privacy',
+      ]);
+    }
+
+    if (/\b(?:employee|employees|workforce|staff|burnout|turnover|retention|workload)\b/u.test(requestText)) {
+      anchors.push([
+        'employee',
+        'employees',
+        'workforce',
+        'staff',
+        'burnout',
+        'turnover',
+        'retention',
+        'workload',
+        'wellbeing',
+        'well being',
+      ]);
+    }
+
+    if (/\b(?:recruitment|recruiting|hiring|candidate|candidates|applicant|applicants|talent acquisition)\b/u.test(requestText)) {
+      anchors.push([
+        'recruitment',
+        'recruiting',
+        'hiring',
+        'candidate',
+        'candidates',
+        'applicant',
+        'applicants',
+        'talent acquisition',
+      ]);
+    }
+
+    if (/\b(?:expense|expenses|cost|costs|spending|budget|waste|wasted|financial|finance)\b/u.test(requestText)) {
+      anchors.push([
+        'expense',
+        'expenses',
+        'cost',
+        'costs',
+        'spending',
+        'budget',
+        'waste',
+        'wasted',
+        'financial',
+        'finance',
+        'money',
+      ]);
+    }
+
+    if (/\b(?:administrative|administration|admin work|paperwork|back office|repetitive task|repetitive tasks)\b/u.test(requestText)) {
+      anchors.push([
+        'administrative',
+        'administration',
+        'admin',
+        'paperwork',
+        'back office',
+        'repetitive task',
+        'repetitive tasks',
+        'automation',
+      ]);
+    }
+
+    if (/\b(?:detect|identify|early|emerging|analyze|analyse|analytics|insight|insights|scattered|fragmented|feedback|records|data)\b/u.test(requestText)) {
+      anchors.push([
+        'detect',
+        'detection',
+        'identify',
+        'early',
+        'emerging',
+        'analyze',
+        'analyse',
+        'analytics',
+        'insight',
+        'insights',
+        'feedback',
+        'record',
+        'records',
+        'data',
+        'trend',
+        'warning',
+        'anomaly',
+      ]);
+    }
+
     return anchors;
   }
 
@@ -2067,12 +2395,53 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         terms: ['login', 'log in', 'sign in', 'signin', 'authentication', 'authenticate', 'oauth', 'password', 'account access'],
       },
       {
+        trigger: /\b(?:cybersecurity|cyber security|security|unauthorized access|unauthorised access|data breach|security breach|suspicious activity|security alert|threat|attack|incident response|malware|ransomware|phishing|vulnerability|credential|access control)\b/u,
+        terms: [
+          'cybersecurity',
+          'cyber security',
+          'security',
+          'unauthorized access',
+          'unauthorised access',
+          'data breach',
+          'security breach',
+          'suspicious activity',
+          'security alert',
+          'threat',
+          'attack',
+          'incident response',
+          'malware',
+          'ransomware',
+          'phishing',
+          'vulnerability',
+          'credential',
+          'access control',
+          'authentication',
+          'privacy',
+        ],
+      },
+      {
         trigger: /\b(?:admin|administration|administrative|back office|operations?)\b/u,
         terms: ['admin', 'administration', 'administrative', 'back office', 'operations', 'approval', 'workflow', 'paperwork'],
       },
       {
         trigger: /\b(?:financ|financial|accounting|budget|expense|invoice|payroll|procurement|reconcil|cash flow|payment)\w*\b/u,
         terms: ['finance', 'financial', 'accounting', 'budget', 'expense', 'invoice', 'payroll', 'procurement', 'reconciliation', 'cash flow', 'payment'],
+      },
+      {
+        trigger: /\b(?:employee|employees|workforce|staff|burnout|turnover|retention|workload)\b/u,
+        terms: ['employee', 'employees', 'workforce', 'staff', 'burnout', 'turnover', 'retention', 'workload', 'wellbeing'],
+      },
+      {
+        trigger: /\b(?:recruitment|recruiting|hiring|candidate|candidates|applicant|applicants|talent acquisition)\b/u,
+        terms: ['recruitment', 'recruiting', 'hiring', 'candidate', 'candidates', 'applicant', 'applicants', 'talent acquisition'],
+      },
+      {
+        trigger: /\b(?:cost|costs|expense|expenses|spending|waste|wasted|budget)\b/u,
+        terms: ['cost', 'costs', 'expense', 'expenses', 'spending', 'waste', 'wasted', 'budget', 'money'],
+      },
+      {
+        trigger: /\b(?:detect|identify|early|emerging|analyze|analyse|analytics|insight|insights|scattered|fragmented|feedback|records|data)\b/u,
+        terms: ['detect', 'detection', 'identify', 'early', 'emerging', 'analyze', 'analyse', 'analytics', 'insight', 'insights', 'feedback', 'record', 'records', 'data', 'trend', 'warning', 'anomaly'],
       },
       {
         trigger: /\b(?:company|business|organization|organisation|enterprise|department|office|staff|team)\b/u,
@@ -2106,6 +2475,23 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ['assignments', 'assignment'],
       ['homeworks', 'homework'],
       ['submissions', 'submission'],
+      ['employees', 'employee'],
+      ['workers', 'workforce'],
+      ['recruiting', 'recruitment'],
+      ['recruiters', 'recruitment'],
+      ['candidates', 'candidate'],
+      ['applicants', 'applicant'],
+      ['expenses', 'expense'],
+      ['costs', 'cost'],
+      ['records', 'record'],
+      ['insights', 'insight'],
+      ['breaches', 'breach'],
+      ['threats', 'threat'],
+      ['attacks', 'attack'],
+      ['alerts', 'alert'],
+      ['incidents', 'incident'],
+      ['credentials', 'credential'],
+      ['vulnerabilities', 'vulnerability'],
     ]);
     return new Set(
       value
@@ -2131,21 +2517,47 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       return ranking;
     }
 
-    const verifiedCount =
-      ranking.selected.verifiedIndependentEvidenceCount ?? 0;
-    if (verifiedCount <= 0) {
+    const verifiedDirectCount =
+      ranking.selected.verifiedProblemMatchedDirectUserEvidenceCount ??
+      ranking.selected.verifiedDirectUserEvidenceCount ??
+      ranking.selected.verifiedIndependentEvidenceCount ??
+      0;
+    const verifiedSecondaryCount =
+      ranking.selected.verifiedProblemMatchedSecondaryEvidenceCount ??
+      ranking.selected.verifiedSecondaryEvidenceCount ??
+      0;
+    const verifiedFeatureRequestCount =
+      ranking.selected.verifiedProblemMatchedFeatureRequestEvidenceCount ??
+      ranking.selected.verifiedFeatureRequestEvidenceCount ??
+      0;
+    const verifiedComplaintCount =
+      ranking.selected.verifiedProblemMatchedComplaintEvidenceCount ??
+      ranking.selected.verifiedComplaintEvidenceCount ??
+      0;
+    const featureRequestOnly =
+      verifiedDirectCount > 0 &&
+      verifiedComplaintCount === 0 &&
+      verifiedFeatureRequestCount === verifiedDirectCount;
+    const verifiedEvidenceCount =
+      ranking.selected.verifiedProblemMatchedEvidenceCount ??
+      ranking.selected.verifiedEvidenceCount ??
+      verifiedDirectCount + verifiedSecondaryCount;
+    if (verifiedEvidenceCount <= 0) {
       return ranking;
     }
 
     const staleFallbackWarning =
-      /^(?:No opportunity reached the strict minimum score|No opportunity passed the strict selection gate)/iu;
+      /^(?:No opportunity reached the strict minimum score|No opportunity passed the strict selection gate|The selected opportunity is supported by .*verified direct community report)/iu;
     const cleanedWarnings = ranking.qualityWarnings.filter(
       (warning) => !staleFallbackWarning.test(warning),
     );
 
     const preliminaryWarning =
-      `The selected opportunity is supported by ${verifiedCount} verified direct community report(s). ` +
-      `It is eligible for a preliminary pilot, while recurrence and market-wide claims remain unproven.`;
+      featureRequestOnly
+        ? `The selected opportunity is supported by ${verifiedFeatureRequestCount} verified feature request(s). It is eligible for a preliminary pilot, but feature requests do not by themselves establish complaint recurrence or market-wide prevalence.`
+        : verifiedDirectCount === 0 && verifiedSecondaryCount > 0
+          ? `The selected opportunity is supported by ${verifiedSecondaryCount} secondary retained report(s) and no verified direct user complaint. It is eligible only for a preliminary pilot; recurrence and market-wide claims remain unproven.`
+          : `The selected opportunity is supported by ${verifiedDirectCount} verified direct user report(s). It is eligible for a preliminary pilot, while recurrence and market-wide claims remain unproven.`;
 
     if (!cleanedWarnings.includes(preliminaryWarning)) {
       cleanedWarnings.unshift(preliminaryWarning);
@@ -2162,7 +2574,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   ): IdeaOpportunityRanking {
     const retainedEvidenceCount = Math.max(
       ranking.selected.evidenceSamples.length,
-      ranking.selected.verifiedIndependentEvidenceCount ?? 0,
+      ranking.selected.verifiedProblemMatchedEvidenceCount ??
+        ranking.selected.verifiedIndependentEvidenceCount ??
+        0,
     );
     const normalizedCoverage = Math.max(
       ranking.evidenceCoverage,
@@ -2187,7 +2601,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   ): { readonly id: string; readonly name: string } | null {
     const matchedNames = ranking.selected.matchedDomainNames ?? [];
     const rawDomainName = this.readCandidateDomainName(ranking.selected.raw);
-    const candidateNames = [...matchedNames, rawDomainName].filter(Boolean);
+    const candidateNames = [
+      ranking.selected.primaryMatchedDomainName ?? '',
+      ...matchedNames,
+      rawDomainName,
+    ].filter(Boolean);
 
     for (const candidateName of candidateNames) {
       const normalized = candidateName.trim().toLocaleLowerCase();
@@ -2214,6 +2632,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     ranking: IdeaOpportunityRanking,
   ): IdeaGenerationContext['domainEvidence'] {
     const selectedDomainName = (
+      ranking.selected.primaryMatchedDomainName ??
       ranking.selected.matchedDomainNames?.[0] ??
       this.readCandidateDomainName(ranking.selected.raw) ??
       context.domainName ??

@@ -156,6 +156,9 @@ export class IdeaEvidenceRecoveryService {
       };
     }
 
+    const resolvedDomain =
+      context.selectedDomains.find((domain) => domain.id === context.domainId) ??
+      context.selectedDomains[0];
     const result = await this.collectionJobResolver.resolve({
       userId:
         context.owner.type === IDEA_OWNER_TYPES.USER
@@ -172,6 +175,23 @@ export class IdeaEvidenceRecoveryService {
       forceRefresh: true,
       collectionMode: 'TARGETED_RECOVERY',
       collectorLimits: this.resolveRecoveryCollectorLimits(),
+      ...(resolvedDomain
+        ? {
+            resolvedDomain: {
+              id: resolvedDomain.id,
+              name: resolvedDomain.name,
+              keywords: [
+                ...(resolvedDomain.effectiveSearchKeywords ?? []),
+                ...resolvedDomain.keywords,
+              ],
+            },
+          }
+        : {}),
+      resolvedDataSources: recoverySources.map((source) => ({
+        id: source.id,
+        key: source.key,
+        displayName: source.displayName,
+      })),
     });
 
     const nlp = this.mapNlpContext(
@@ -295,15 +315,15 @@ export class IdeaEvidenceRecoveryService {
     const postTexts = this.readTextEntries(nlp.samplePosts);
     const commentTexts = this.readTextEntries(nlp.sampleComments);
 
-    const directPosts = postTexts.filter(
-      (text) => classifyDirectCommunityEvidence(text, 'POST') !== 'NONE',
-    ).length;
+    const directPosts = postTexts.filter((text) => {
+      const kind = classifyDirectCommunityEvidence(text, 'POST');
+      return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
+    }).length;
     const directComments = commentTexts.filter((text) => {
       const commentBody =
         text.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? text;
-      return (
-        classifyDirectCommunityEvidence(commentBody, 'COMMENT') !== 'NONE'
-      );
+      const kind = classifyDirectCommunityEvidence(commentBody, 'COMMENT');
+      return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
     }).length;
 
     return directPosts + directComments;
@@ -470,6 +490,7 @@ export class IdeaEvidenceRecoveryService {
   ): string[] {
     const domain = (context.domainName ?? '').trim();
     const domainTerm = domain || context.keywords[0]?.trim() || 'software';
+    const requestIntentTerms = this.buildRequestIntentRecoveryQueries(context);
     const opportunityTerms = this.buildOpportunityTerms(
       domainTerm,
       selectedOpportunity,
@@ -488,6 +509,7 @@ export class IdeaEvidenceRecoveryService {
 
     return [
       ...new Set([
+        ...requestIntentTerms,
         ...opportunityTerms,
         ...familyTerms,
         ...genericComplaintTerms,
@@ -497,6 +519,53 @@ export class IdeaEvidenceRecoveryService {
       .map((value) => value.replace(/\s+/gu, ' ').trim())
       .filter(Boolean)
       .slice(0, this.maximumRecoveryKeywords);
+  }
+
+  /**
+   * Uses the application-built request-intent keywords before generic recovery
+   * phrases. These terms already encode the user's concrete workflow (for
+   * example workforce turnover, security-alert triage, or expense anomalies),
+   * so they are much more precise than searching for "the requester wants...".
+   */
+  private buildRequestIntentRecoveryQueries(
+    context: IdeaGenerationContext,
+  ): string[] {
+    if (!context.requestDescription?.trim()) {
+      return [];
+    }
+
+    const domainNames = new Set(
+      context.selectedDomains.map((domain) =>
+        domain.name.toLocaleLowerCase().replace(/\s+/gu, ' ').trim(),
+      ),
+    );
+    const issueSignal =
+      /\b(?:access|alerts?|anomal\w*|breach\w*|burnout|cost\w*|delay\w*|expense\w*|fail\w*|fraud\w*|friction|hiring|incident\w*|inefficien\w*|missing|outage\w*|recruit\w*|risk\w*|security|suspicious|threat\w*|turnover|waste\w*|workload|errors?|unable|cannot|sync\w*)\b/iu;
+    const genericPhrase =
+      /\b(?:coherent cross-domain workflow|management decision support|platform|system|software|application|workflow)\b/iu;
+
+    const candidates: string[] = context.keywords
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.replace(/\s+/gu, ' ').trim())
+      .filter((value) => value.length >= 5 && value.length <= 80)
+      .filter((value) => value.split(/\s+/u).length >= 2)
+      .filter((value) => !domainNames.has(value.toLocaleLowerCase()))
+      .filter((value) => !genericPhrase.test(value))
+      .map((value, index) => ({
+        value,
+        index,
+        score:
+          (issueSignal.test(value) ? 4 : 0) +
+          (value.split(/\s+/u).length <= 5 ? 2 : 0) +
+          (/[&+/]/u.test(value) ? -1 : 0),
+      }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)
+      .map((entry) => entry.value);
+
+    return Array.from(new Set<string>(candidates)).slice(
+      0,
+      this.maximumRecoveryKeywords,
+    );
   }
 
   /**
@@ -807,6 +876,16 @@ export class IdeaEvidenceRecoveryService {
       modelId: null,
       apiModelId: null,
       attemptCount: 0,
+      aiAttempted: false,
+      aiSucceeded: false,
+      fallbackUsed: true,
+      onlineAttemptCount: 0,
+      executionFailureCount: 0,
+      validationRejectedCount: 0,
+      fallbackReason:
+        'Targeted evidence recovery constructed this opportunity deterministically after Community AI recovery was unavailable.',
+      attemptDiagnostics: [],
+      unvalidatedDomainHypotheses: [],
     };
   }
 
@@ -1208,19 +1287,19 @@ export class IdeaEvidenceRecoveryService {
   } {
     return {
       maxFetchedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 8),
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 6),
         20,
       ),
       maxSavedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 5),
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 4),
         12,
       ),
       maxFetchedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 12),
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 8),
         30,
       ),
       maxSavedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 8),
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 6),
         20,
       ),
     };

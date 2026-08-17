@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { NlpLexiconType } from '@prisma/client';
 
+import {
+  classifyDirectCommunityEvidence,
+  segmentCommunityEvidenceIssues,
+} from '../common/utils/community-evidence.util';
 import { toTitleCase } from '../common/utils/text-formatting.util';
 
 import type { TextAnalysisResult } from '../pipeline/types/intelligent-analysis.types';
@@ -89,36 +93,60 @@ export class FeatureRequestExtractionService {
     const requestMap = new Map<string, FeatureRequestAggregation>();
 
     for (const text of analyzedTexts) {
-      const matchedRequests =
+      const lexiconRequests =
         text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? [];
+      const issueTexts = segmentCommunityEvidenceIssues(text.originalText);
+      const evidenceUnits =
+        issueTexts.length > 1 ? issueTexts : [text.originalText];
+      const requestsSeenInSourceText = new Set<string>();
 
-      const uniqueRequestsForText = this.normalizeUniqueRequests(
-        matchedRequests,
-        text.originalText,
-      );
+      for (const evidenceUnit of evidenceUnits) {
+        const directKind = classifyDirectCommunityEvidence(
+          evidenceUnit,
+          text.sourceType,
+        );
 
-      for (const normalizedRequest of uniqueRequestsForText) {
-        const aggregationKey = normalizedRequest.toLocaleLowerCase();
-
-        const current = requestMap.get(aggregationKey);
-
-        if (current) {
-          current.frequency += 1;
-
-          this.addEvidenceSample(current.evidenceSamples, text.originalText);
-
+        if (directKind !== 'FEATURE_REQUEST') {
           continue;
         }
 
-        const aggregation: FeatureRequestAggregation = {
-          feature: toTitleCase(normalizedRequest),
-          frequency: 1,
-          evidenceSamples: [],
-        };
+        const matchedRequests =
+          evidenceUnits.length > 1
+            ? ['feature request']
+            : lexiconRequests.length === 0
+              ? ['feature request']
+              : lexiconRequests;
 
-        this.addEvidenceSample(aggregation.evidenceSamples, text.originalText);
+        const uniqueRequestsForUnit = this.normalizeUniqueRequests(
+          matchedRequests,
+          evidenceUnit,
+        );
 
-        requestMap.set(aggregationKey, aggregation);
+        for (const normalizedRequest of uniqueRequestsForUnit) {
+          const aggregationKey = normalizedRequest.toLocaleLowerCase();
+
+          if (requestsSeenInSourceText.has(aggregationKey)) {
+            continue;
+          }
+          requestsSeenInSourceText.add(aggregationKey);
+
+          const current = requestMap.get(aggregationKey);
+
+          if (current) {
+            current.frequency += 1;
+            this.addEvidenceSample(current.evidenceSamples, evidenceUnit);
+            continue;
+          }
+
+          const aggregation: FeatureRequestAggregation = {
+            feature: toTitleCase(normalizedRequest),
+            frequency: 1,
+            evidenceSamples: [],
+          };
+
+          this.addEvidenceSample(aggregation.evidenceSamples, evidenceUnit);
+          requestMap.set(aggregationKey, aggregation);
+        }
       }
     }
 
@@ -213,8 +241,89 @@ export class FeatureRequestExtractionService {
       return 'Assignment and Deadline Notifications';
     }
 
+    if (
+      /(?:average|estimated|typical)\s+(?:shipment\s+|delivery\s+)?transit\s+time|(?:shipment|delivery)\s+transit\s+(?:time|duration)|transit\s+time\s+(?:metric|metrics|average|analytics|visibility)/iu.test(
+        text,
+      )
+    ) {
+      return 'Average Shipment Transit-Time Metrics';
+    }
+
+    if (
+      /(?:rental length|lease term|lease duration|short[- ]term rentals?|long[- ]term rentals?).{0,120}(?:filter|exclude|include)|(?:filter|exclude|include).{0,120}(?:rental length|lease term|lease duration|short[- ]term rentals?|long[- ]term rentals?)/iu.test(
+        text,
+      )
+    ) {
+      return 'Lease-Term and Rental Duration Filters';
+    }
+
+    if (/roku(?: tv)? app|app for (?:roku|smart tv)/iu.test(text)) {
+      return 'Roku TV App Support';
+    }
+
+    if (/clear (?:the )?cache|cache clearing|clear cached data/iu.test(text)) {
+      return 'Application Cache Management Control';
+    }
+
     if (/desktop|laptop|computer|web version|cross[- ]platform/iu.test(text)) {
       return 'Cross-Platform Feature Parity';
+    }
+
+    if (
+      /(?:announce|notify|notification|communicat).{0,120}(?:feature|functionality|change|remove|removed|vanish|disappear)|(?:feature|functionality).{0,120}(?:remove|removed|vanish|disappear).{0,120}(?:announce|notify|communication|alternative)/iu.test(
+        text,
+      )
+    ) {
+      return 'Feature Removal and Change Notifications';
+    }
+
+    if (
+      /(?:favorites?|favourites?).{0,100}(?:location|area|region).{0,80}(?:filter|search)|(?:filter|search).{0,100}(?:favorites?|favourites?).{0,80}(?:location|area|region)/iu.test(
+        text,
+      )
+    ) {
+      return 'Favorites Location Filtering';
+    }
+
+    if (
+      /(?:multi(?:ple)?|two|2).{0,40}(?:filters?|criteria).{0,100}(?:simultaneously|at once|together)|(?:house size|lot size).{0,100}(?:simultaneously|at once|together)/iu.test(
+        text,
+      )
+    ) {
+      return 'Multi-Criteria Property Filtering';
+    }
+
+    if (
+      /(?:own|custom|user[- ]defined).{0,30}tags?.{0,100}(?:vanish|disappear|gone|removed|deleted)|tags?.{0,100}(?:vanish|disappear|gone|removed|deleted)/iu.test(
+        text,
+      )
+    ) {
+      return 'User-Defined Property Tag Persistence';
+    }
+
+    const requestSentence = evidence
+      .replace(/\s+/gu, ' ')
+      .split(/(?<=[.!?])\s+/u)
+      .find((sentence) =>
+        /\b(?:please(?: also)? add|should(?: also)? add|you should add|would like|would love to|i wish|(?:i['’]?m|i am) looking(?: primarily)? for|i need|we need|do you (?:happen to )?know)\b/iu.test(
+          sentence,
+        ),
+      );
+    const requestPhrase = requestSentence
+      ?.replace(
+        /^.*?\b(?:please(?: also)? add|should(?: also)? add|you should add|would like(?: to)?|would love to|i wish(?: there was| there were| i could| we could)?|(?:i['’]?m|i am) looking(?: primarily)? for|i need|we need|do you (?:happen to )?know)\b\s*/iu,
+        '',
+      )
+      .replace(/\b(?:because|since|so that|which would|that would)\b.*$/iu, '')
+      .replace(/[^\p{L}\p{N} -]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (requestPhrase) {
+      const words = requestPhrase.split(/\s+/u).filter(Boolean).slice(0, 10);
+      if (words.length >= 2) {
+        return toTitleCase(words.join(' '));
+      }
     }
 
     return null;

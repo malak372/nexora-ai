@@ -4,6 +4,7 @@ import { NlpLexiconType } from '@prisma/client';
 import {
   buildCommunityEvidenceExcerpt,
   hasDirectCommunityComplaint,
+  isEducationalContentFeedback,
   isLikelyProductDescription,
   isRepositoryOperationalRecord,
 } from '../common/utils/community-evidence.util';
@@ -167,6 +168,12 @@ export class NeedExtractionService {
     text: LexiconTextAnalysisResult,
   ): ReadonlyMap<string, string> {
     const uniqueNeeds = new Map<string, string>();
+    if (
+      text.sourceType === 'COMMENT' &&
+      isEducationalContentFeedback(text.originalText, 'COMMENT')
+    ) {
+      return uniqueNeeds;
+    }
     const matchedTerms = [
       ...(text.matchedLexicons[NlpLexiconType.NEED] ?? []),
       ...(text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? []),
@@ -247,9 +254,29 @@ export class NeedExtractionService {
       needs.push('reliable connectivity and service availability');
     }
 
+    const runtimeSafeText = this.removeNonRuntimeFailureLanguage(text);
+    if (
+      /\bstreaming\b.{0,60}\b(?:pipeline|data|payload|feed)\b|\b(?:pipeline|data)\b.{0,60}\bstreaming\b/iu.test(
+        text,
+      ) &&
+      /\b(?:stale|skewed|incorrect|wrong|corrupt(?:ed|ion)?|silent(?:ly)?\s+(?:serving|returning|producing))\b/iu.test(
+        text,
+      )
+    ) {
+      needs.push('streaming data integrity and staleness monitoring');
+    }
+
+    if (
+      /\b(?:keyboard\s+(?:appears?|feels?)\s+frozen|focus\s+(?:remains|stays|is)\s+(?:on|trapped|stuck)|keystrokes?\s+(?:are\s+)?(?:captured|consumed)|keyboard\s+input\s+(?:is\s+)?(?:captured|consumed)|type[- ]ahead|screen reader|no visible candidate)\b/iu.test(
+        text,
+      )
+    ) {
+      needs.push('accessible focus and keyboard navigation recovery');
+    }
+
     const hasExplicitCrashOrFreeze =
       /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
-        text,
+        runtimeSafeText,
       );
     const hasOperationalReliabilityFailure =
       /(?:bug|glitch)/iu.test(text) &&
@@ -436,6 +463,18 @@ export class NeedExtractionService {
       ];
     }
 
+    if (/streaming data integrity|staleness monitoring/iu.test(normalizedNeed)) {
+      return [
+        /\b(?:streaming|pipeline|stale|skewed|incorrect|wrong|corrupt|payload|data)\b/iu,
+      ];
+    }
+
+    if (/accessible focus|keyboard navigation|focus recovery/iu.test(normalizedNeed)) {
+      return [
+        /\b(?:keyboard|focus|captured|consumed|type[- ]ahead|screen reader|navigation)\b/iu,
+      ];
+    }
+
     if (
       /connectivity|service availability|server|network/iu.test(normalizedNeed)
     ) {
@@ -474,6 +513,14 @@ export class NeedExtractionService {
       return 'Account Activation and Login Failures';
     }
 
+    if (/streaming data integrity|staleness monitoring/iu.test(normalizedNeed)) {
+      return 'Streaming Data Integrity and Staleness Failures';
+    }
+
+    if (/accessible focus|keyboard navigation|focus recovery/iu.test(normalizedNeed)) {
+      return 'Accessibility Focus and Keyboard Navigation Failures';
+    }
+
     if (/synchronization|recovery|data/iu.test(normalizedNeed)) {
       return 'Data Loss and Synchronization Failures';
     }
@@ -501,6 +548,19 @@ export class NeedExtractionService {
     }
 
     return undefined;
+  }
+
+  private removeNonRuntimeFailureLanguage(value: string): string {
+    return value
+      .replace(/\bcrash[- ]course\b/giu, ' ')
+      .replace(
+        /\b(?:not|never|without|no)\s+(?:actually\s+)?(?:crash(?:es|ed|ing)?|freez(?:e|es|ing)|frozen)\b/giu,
+        ' ',
+      )
+      .replace(
+        /\b(?:keyboard\s+(?:appears?|feels?)\s+frozen|focus\s+(?:remains|stays|is)\s+(?:on|trapped|stuck)|keystrokes?\s+(?:are\s+)?(?:captured|consumed)|keyboard\s+input\s+(?:is\s+)?(?:captured|consumed)|type[- ]ahead|screen reader|no visible candidate)\b/giu,
+        ' ',
+      );
   }
 
   /** Ensures evidence describes the same workflow as the normalized need. */
@@ -533,6 +593,21 @@ export class NeedExtractionService {
       return hasDocumentObject && hasDocumentFailure && !isAuthenticationOnly;
     }
 
+    if (/streaming data integrity|staleness monitoring/iu.test(normalizedNeed)) {
+      return (
+        /\b(?:streaming|pipeline|payload|feed)\b/iu.test(text) &&
+        /\b(?:stale|skewed|incorrect|wrong|corrupt(?:ed|ion)?|silent(?:ly)?)\b/iu.test(
+          text,
+        )
+      );
+    }
+
+    if (/accessible focus|keyboard navigation|focus recovery/iu.test(normalizedNeed)) {
+      return /\b(?:keyboard|focus|keystrokes?|captured|consumed|type[- ]ahead|screen reader|no visible candidate)\b/iu.test(
+        text,
+      );
+    }
+
     if (/synchronization|recovery|data|lost progress/iu.test(normalizedNeed)) {
       return /(?:data|sync|synchronization|history|progress|work|draft|save|saved|missing|lost|gone|deleted)/iu.test(
         text,
@@ -556,13 +631,14 @@ export class NeedExtractionService {
     if (
       /crash|stable|reliable application|performance/iu.test(normalizedNeed)
     ) {
+      const runtimeSafeText = this.removeNonRuntimeFailureLanguage(text);
       const hasExplicitCrash =
         /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
-          text,
+          runtimeSafeText,
         );
       const hasOperationalFailure =
         /(?:bug|glitch|fails? to submit|submission failed|upload failed|not working|doesn['’]?t work)/iu.test(
-          text,
+          runtimeSafeText,
         ) &&
         !/(?:login|log in|sign in|authentication|verification|activation|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
           text,

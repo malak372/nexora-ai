@@ -87,6 +87,46 @@ export class ProblemNormalizerService {
         ],
       },
       {
+        title: 'Login and Account Access Failures',
+        terms: [
+          'cannot access my account',
+          'cant access my account',
+          'can t access my account',
+          'unable to access my account',
+          'cannot access account',
+          'unable to access account',
+          'locked out of my account',
+          'locked out of account',
+          'cannot log in',
+          'cant log in',
+          'can t log in',
+          'unable to log in',
+          'cannot sign in',
+          'unable to sign in',
+          'account access failure',
+        ],
+      },
+      {
+        title: 'Script Execution Policy and Local Tool Permission Failures',
+        terms: [
+          'script execution policy failure',
+          'powershell script execution restriction',
+          'local tool permission failure',
+          'script execution disabled',
+          'pssecurityexception',
+        ],
+      },
+      {
+        title: 'Blockchain Transaction Balance Validation Failures',
+        terms: [
+          'blockchain transaction insufficient funds',
+          'transaction balance validation failure',
+          'unexpected insufficient funds',
+          'swap insufficient funds',
+          'wallet balance validation failure',
+        ],
+      },
+      {
         title: 'Document Access and Download Failures',
         terms: [
           'document download failure',
@@ -107,6 +147,107 @@ export class ProblemNormalizerService {
           'sync failure',
           'synchronization failure',
           'deleted classes',
+        ],
+      },
+      {
+        title: 'Rental Lease-Term Filtering Limitations',
+        terms: [
+          'rental lease term filtering',
+          'rental duration filtering',
+          'short term rental exclusion',
+          'lease duration filter',
+        ],
+      },
+      {
+        title: 'Rental Application Data Persistence Failures',
+        terms: [
+          'rental application data persistence',
+          'stale rental application data',
+          'old rental application notes',
+        ],
+      },
+      {
+        title: 'Repeated Session Logout Failures',
+        terms: [
+          'repeated session logout',
+          'unexpected logout',
+          'session persistence failure',
+        ],
+      },
+      {
+        title: 'Favorites Location Filtering Gaps',
+        terms: [
+          'favorites location filtering',
+          'saved homes location filtering',
+          'favorites filter gap',
+        ],
+      },
+      {
+        title: 'Multi-Criteria Property Filtering Limitations',
+        terms: [
+          'multi criteria property filtering',
+          'multiple property filters',
+          'simultaneous property filters',
+        ],
+      },
+      {
+        title: 'User-Defined Property Tag Persistence Failures',
+        terms: [
+          'property tag persistence',
+          'custom tag persistence',
+          'user defined tag persistence',
+        ],
+      },
+      {
+        title: 'Feature Removal and Change Notification Gaps',
+        terms: [
+          'feature change notification',
+          'feature removal notification',
+          'functionality change notification',
+        ],
+      },
+      {
+        title: 'Rental Accessibility Information Gaps',
+        terms: [
+          'rental accessibility information',
+          'housing accessibility metadata',
+          'rental ada information',
+        ],
+      },
+      {
+        title: 'Application Access and Support Failures',
+        terms: [
+          'application access support',
+          'cannot access application and no support',
+          'customer support access failure',
+        ],
+      },
+      {
+        title: 'Streaming Data Integrity and Staleness Failures',
+        terms: [
+          'streaming data integrity',
+          'streaming pipeline integrity',
+          'streaming pipeline stale data',
+          'stale streaming data',
+          'skewed streaming data',
+          'incorrect streaming data',
+          'silent data corruption',
+          'silent data quality failure',
+        ],
+      },
+      {
+        title: 'Accessibility Focus and Keyboard Navigation Failures',
+        terms: [
+          'keyboard appears frozen',
+          'keyboard freeze',
+          'focus trap',
+          'focus remains on stale',
+          'focus remains',
+          'keyboard input captured',
+          'keystrokes captured',
+          'type ahead search',
+          'accessible panel missing',
+          'screen reader navigation failure',
         ],
       },
       {
@@ -278,6 +419,36 @@ export class ProblemNormalizerService {
   /** Converts a raw term into a stable language-aware problem title. */
   normalize(term: string, language: LanguageCode): string {
     const normalizedTerm = this.normalizeTerm(term);
+
+    if (/\bcrash[- ]course\b/iu.test(normalizedTerm)) {
+      return '';
+    }
+
+    if (
+      /\b(?:streaming|stream)\s+pipelines?\b/iu.test(normalizedTerm) &&
+      /\b(?:stale|skewed|incorrect|wrong|corrupt(?:ed|ion)?|silent)\b/iu.test(
+        normalizedTerm,
+      )
+    ) {
+      return 'Streaming Data Integrity and Staleness Failures';
+    }
+
+    if (
+      /\b(?:keyboard (?:appears? )?(?:frozen|freeze)|focus (?:remains|stays|trapped|stuck)|focus trap|keyboard input captured|keystrokes captured|type ahead|screen reader)\b/iu.test(
+        normalizedTerm,
+      )
+    ) {
+      return 'Accessibility Focus and Keyboard Navigation Failures';
+    }
+
+    if (
+      /\b(?:cannot|can t|cant|unable to)\s+(?:log in|login|sign in|access)\s+(?:(?:to\s+)?(?:my|the|this|an?)\s+)?account\b/iu.test(
+        normalizedTerm,
+      ) ||
+      /\blocked out of (?:my|the|this)?\s*account\b/iu.test(normalizedTerm)
+    ) {
+      return 'Login and Account Access Failures';
+    }
 
     if (
       normalizedTerm.length === 0 ||

@@ -26,6 +26,8 @@ export const DIRECT_COMMUNITY_COMPLAINT_PATTERNS: readonly RegExp[] = [
   /\b(?:hard|difficult|confusing) to (?:use|navigate|access|find|download|install|login|log in)\b/iu,
   /\b(?:terrible|disappointing|disappointed|frustrating|frustrated|dysfunctional|janky|horrible)\b/iu,
   /\b(?:too expensive|paywall|have to pay|gotta pay|limited unless paid)\b/iu,
+  /\b(?:i|we)\b[^.!?]{0,80}\b(?:can(?:not|['’]?t)|unable to)\b[^.!?]{0,100}\b(?:afford|take|schedule|access)\b[^.!?]{0,100}\b(?:time off|mental health|therapy|treatment|care|break|recovery)\b/iu,
+  /\b(?:i|we)\b[^.!?]{0,80}\b(?:can(?:not|['’]?t) afford|struggle to afford|cannot take|can['’]?t take)\b[^.!?]{0,100}\b(?:mental health|time off|therapy|treatment|care|break|recovery)\b/iu,
   /\b(?:invoice|expense|payroll|procurement|reconciliation|bookkeeping|accounting|cash flow|approval workflow|administrative workflow|back office|manual entry|manual data entry)\b[^.!?]{0,120}\b(?:wrong|incorrect|missing|duplicate|delayed|blocked|failed|failing|error|problem|issue|takes too long|manual|confusing|difficult)\b/iu,
   /\b(?:wrong|incorrect|missing|duplicate|delayed|blocked|failed|failing|error|problem|issue|takes too long|confusing|difficult)\b[^.!?]{0,120}\b(?:invoice|expense|payroll|procurement|reconciliation|bookkeeping|accounting|cash flow|approval|administrative process|back office)\b/iu,
   /(?:غير مفيد|لا يعمل|ما بشتغل|مش شغال|لا أستطيع|لا يمكن|لم يصل|ما وصل|فقدت|اختفت|تعطل|يتعطل|خطأ|مشكلة كبيرة|صعب التنقل|واجهة مربكة)/iu,
@@ -79,6 +81,8 @@ export function normalizeCommunityText(value: string): string {
 
 export type DirectCommunityEvidenceKind =
   | 'USER_COMPLAINT'
+  | 'USER_QUESTION'
+  | 'GENERAL_COMMENTARY'
   | 'FEATURE_REQUEST'
   | 'NONE';
 
@@ -100,16 +104,197 @@ const SYSTEMIC_COMMUNITY_PROBLEM_PATTERNS: readonly RegExp[] = [
   /\b(?:manual|spreadsheet[- ]based)\s+(?:invoice|expense|payroll|reconciliation|approval|procurement|administrative|finance|accounting)\b[^.!?]{0,120}\b(?:slow|delay|error|mistake|duplicate|bottleneck|work|workload|process)\b/iu,
   /\b(?:invoice|expense|payroll|reconciliation|approval|procurement|administrative|finance|accounting)\b[^.!?]{0,120}\b(?:bottleneck|backlog|delay|delays|mismatch|duplicate|manual work|rework|error|errors)\b/iu,
   /\b(?:no|poor|insufficient|limited)\s+(?:access|coverage|service|connectivity|availability|reliability)\b/iu,
+  /\b(?:lack of|missing|no)\s+(?:customer service|support|compliance|accessibility info(?:rmation)?|lease[- ]term controls?|filtering controls?)\b/iu,
   /\b(?:keeps?|constantly|repeatedly)\s+(?:failing|breaking|disconnecting|delaying|cancelling|canceling|changing)\b/iu,
   /\b(?:for no good reason|makes? (?:it|things?|the situation) (?:even )?worse)\b/iu,
   /(?:ازدحام شديد|عالق(?:ون)? في الازدحام|تأخير مستمر|خدمة غير موثوقة|انقطاع متكرر|مشكلة متكررة)/iu,
 ];
 
 const FEATURE_REQUEST_EVIDENCE_PATTERNS: readonly RegExp[] = [
-  /\b(?:feature request|please add|please support|should add|would like|requesting support for)\b/iu,
+  /\b(?:feature request|please(?: also)? add|please(?: also)? support|should(?: also)? add|you should add|would like|would love to|requesting support for)\b/iu,
+  /\bis there any\b[^.!?]{0,140}\b(?:that can|which can|with (?:a )?(?:feature|option|capability)|supporting)\b/iu,
   /\bi wish\b[^.!?]{0,100}\b(?:app|platform|service|feature|option|setting|support|allow|let|could|would|had|add|include)\b/iu,
+  /\b(?:i['’]?m|i am) looking(?: primarily)? for\b[^.!?]{0,120}\b(?:app|application|tool|service|platform|feature|option|capability)\b[^.!?]{0,140}\b(?:that|which|with|shows?|provides?|supports?|lets?|allows?)\b/iu,
+  /\b(?:i need|we need)\b[^.!?]{0,80}\b(?:an? )?(?:app|application|tool|service|platform|feature|option|capability)\b[^.!?]{0,140}\b(?:that|which|with|shows?|provides?|supports?|lets?|allows?)\b/iu,
+  /\bdo you (?:happen to )?know\b[^.!?]{0,80}\b(?:an? )?(?:app|application|tool|service|platform|alternative)\b[^.!?]{0,140}\b(?:that|which|with|shows?|provides?|supports?)\b/iu,
   /(?:أرجو إضافة|يرجى إضافة|نحتاج ميزة|أتمنى إضافة|اقتراح ميزة|طلب ميزة)/iu,
 ];
+
+const THIRD_PARTY_SCENARIO_QUESTION_PATTERNS: readonly RegExp[] = [
+  /^\s*(?:what about|what if|how about)\b/iu,
+  /^\s*(?:does|do|can|could|should|would|is|are)\s+(?:anyone|someone|people|users|managers|employees|workers|customers|drivers|tenants|students|patients)\b/iu,
+  /\bwhat about\s+(?:managers|employees|workers|people|users|customers|drivers|tenants|students|patients)\b/iu,
+];
+
+export function isNonActionableCommunityBanter(
+  value: string,
+  sourceType: TextSourceType,
+): boolean {
+  if (sourceType !== 'COMMENT') return false;
+
+  const normalized = normalizeCommunityText(value);
+  if (!normalized) return false;
+
+  const humorOrBanter =
+    /(?:\b(?:lol|lmao|rofl|haha|hehe|xd)\b|[😂🤣😆😅])/iu.test(normalized) ||
+    /\b(?:keep it real|or she['’]?ll|or he['’]?ll|no access to atms?|take all of it)\b/iu.test(normalized);
+  if (!humorOrBanter) return false;
+
+  const firstPersonFailure =
+    /\b(?:i|i['’]?m|i['’]?ve|my|me|we|we['’]?ve|our)\b[^.!?]{0,120}\b(?:cannot|can['’]?t|unable|failed|broken|error|bug|crash(?:ed|ing)?|freeze|stuck|lost|missing|charged|blocked|access)\b/iu.test(
+      normalized,
+    );
+  const explicitProductRequest =
+    /\b(?:please add|please support|feature request|i need|we need|would like (?:the|an?|to have)|i wish (?:the )?(?:app|platform|service))\b/iu.test(
+      normalized,
+    );
+
+  return !firstPersonFailure && !explicitProductRequest;
+}
+
+export function isEducationalContentFeedback(
+  value: string,
+  sourceType: TextSourceType,
+): boolean {
+  if (sourceType !== 'COMMENT') return false;
+
+  const normalized = normalizeCommunityText(value);
+  if (!normalized) return false;
+
+  const contentFeedback =
+    /\bone thing i would like to see\s+(?:stressed|emphasized|explained|covered|mentioned)\b/iu.test(normalized) ||
+    /\b(?:the video|this video|the course|this course|the lesson|this lesson|the explanation|this explanation)\b[^.!?]{0,140}\b(?:should|could|would|needs? to|missing|cover|explain|stress|emphasize|mention)\b/iu.test(
+      normalized,
+    );
+  if (!contentFeedback) return false;
+
+  const productCapabilityRequest =
+    /\b(?:app|application|platform|software|system|service|tool|portal|dashboard)\b[^.!?]{0,140}\b(?:add|support|allow|enable|feature|option|capability)\b/iu.test(
+      normalized,
+    );
+
+  return !productCapabilityRequest;
+}
+
+const GENERAL_COMMENTARY_PATTERNS: readonly RegExp[] = [
+  /\b(?:failure rate|success rate) of (?:startups?|businesses?|companies?)\b/iu,
+  /\bmajority (?:of )?(?:people|users|startups?|companies|businesses)?\s*(?:want|wants|think|thinks|try|tries|fail|fails)\b/iu,
+  /\b(?:in general|generally|overall|industry[- ]wide|across the industry|most startups?|many startups?)\b/iu,
+  /\b(?:this is why|that is why|there['’]?s a reason|there is a reason)\b[^.!?]{0,120}\b(?:startups?|businesses?|companies|industry|market)\b/iu,
+  /\b(?:startup|business|company)\s+(?:ideas?|failure|success|growth)\b[^.!?]{0,120}\b(?:traction|limits?|market|born|grow|growth)\b/iu,
+  /\b(?:many|most|some|a lot of|lots of)\s+(?:people|individuals|workers|employees|professionals|patients|students|users|families|parents|customers)\b[^.!?]{0,180}\b(?:cannot|can['’]?t|struggle|lack|need|have to|are unable|is a luxury|is difficult|is hard|cannot afford|can['’]?t afford)\b/iu,
+  /\b(?:people|individuals|workers|employees|professionals|patients|students|users|families|customers)\s+(?:generally|typically|often|commonly)?\s*(?:cannot|can['’]?t|struggle|lack|are unable|cannot afford|can['’]?t afford)\b/iu,
+  /\b(?:society|our society|the public|the workforce|the industry)\b[^.!?]{0,180}\b(?:cannot|can['’]?t|struggle|lack|problem|issue|barrier|luxury|afford)\b/iu,
+];
+
+export function isTechnicalTroubleshootingReply(
+  value: string,
+  sourceType: TextSourceType,
+): boolean {
+  if (sourceType !== 'COMMENT') return false;
+
+  const normalized = normalizeCommunityText(value);
+  if (!normalized) return false;
+
+  const explicitFirstPersonFailure =
+    /\b(?:i|i['’]?m|i['’]?ve|my|me|we|we['’]?ve|our)\b[^.!?]{0,160}\b(?:cannot|can['’]?t|unable|failed|fails?|error|bug|crash(?:ed|ing)?|freeze|stuck|lost|missing|charged|blocked|insufficient funds|not working|doesn['’]?t work)\b/iu.test(
+      normalized,
+    );
+  if (explicitFirstPersonFailure) return false;
+
+  const diagnosticQuestion =
+    /\b(?:is this your case|does this happen to you|what is the value of|what(?:'s| is) the value of|have you (?:tried|checked|verified|confirmed)|did you (?:try|check|verify|confirm)|can you (?:share|provide|check|confirm)|could you (?:share|provide|check|confirm))\b/iu.test(
+      normalized,
+    );
+  const troubleshootingInstruction =
+    /^(?:please\s+)?(?:try|check|verify|confirm|share|provide|post|run|inspect|look at|make sure)\b/iu.test(
+      normalized,
+    );
+  const thirdPartyReference =
+    /\baccording to\b[^.!?]{0,100}\b(?:comment|github|issue|docs?|documentation|answer|thread)\b/iu.test(
+      normalized,
+    ) ||
+    /\bone of the cases? that (?:return|returns|cause|causes|produce|produces) this error\b/iu.test(
+      normalized,
+    );
+
+  return diagnosticQuestion || troubleshootingInstruction || thirdPartyReference;
+}
+
+function isGeneralCommentaryWithoutUserProblem(
+  value: string,
+  sourceType: TextSourceType,
+): boolean {
+  if (sourceType !== 'COMMENT') return false;
+
+  const normalized = normalizeCommunityText(value);
+  if (!normalized) return false;
+
+  const commentarySignal = GENERAL_COMMENTARY_PATTERNS.some((pattern) =>
+    pattern.test(normalized),
+  );
+  if (!commentarySignal) return false;
+
+  const firstPersonExperience =
+    /\b(?:i|i['’]?m|i['’]?ve|i had|i paid|i used|i tried|my|me|we|we['’]?ve|our)\b/iu.test(
+      normalized,
+    ) &&
+    /\b(?:cannot|can['’]?t|unable|failed|broken|error|bug|charged|lost|missing|delayed|stuck|refund|payment|delivery|login|account|app|service|afford|time off|mental health|access|treatment)\b/iu.test(
+      normalized,
+    );
+
+  return !firstPersonExperience;
+}
+
+function isThirdPartyScenarioQuestion(
+  value: string,
+  sourceType: TextSourceType,
+): boolean {
+  if (sourceType !== 'COMMENT') return false;
+
+  const normalized = normalizeCommunityText(value);
+  if (!normalized) return false;
+
+  if (/\b(?:i|i['’]?m|i['’]?ve|my|me|we|we['’]?ve|our)\b/iu.test(normalized)) {
+    return false;
+  }
+
+  return THIRD_PARTY_SCENARIO_QUESTION_PATTERNS.some((pattern) =>
+    pattern.test(normalized),
+  );
+}
+
+
+export function isPositiveFeedbackWithoutProblem(value: string): boolean {
+  const normalized = normalizeCommunityText(value);
+  if (!normalized) return false;
+
+  const positiveSignal =
+    /\b(?:thank you|thanks|thank u|helped me|very helpful|so helpful|exactly what i needed|piece i was missing|love this|love it|works great|working great|great explanation|great video|excellent|awesome|amazing)\b/iu.test(
+      normalized,
+    );
+  if (!positiveSignal) return false;
+
+  const explicitRequest = FEATURE_REQUEST_EVIDENCE_PATTERNS.some((pattern) =>
+    pattern.test(normalized),
+  );
+  if (explicitRequest) return false;
+
+  const concreteFailure =
+    /\b(?:cannot|can['’]?t|unable to|doesn['’]?t work|didn['’]?t work|failed to|fails to|error|bug|crash(?:es|ed|ing)?|freeze|frozen|broken|blocked|unavailable|frustrating|too expensive|paywall|looping|wrong|incorrect)\b/iu.test(
+      normalized,
+    );
+
+  const missingObjectProblem =
+    /\b(?:data|history|file|files|record|records|progress|draft|drafts|saved item|saved items|favorite|favorites|note|notes|profile|profiles|state|memory|voice|voices|asset|assets)\b[^.!?]{0,45}\b(?:missing|gone|deleted|lost|disappeared)\b/iu.test(
+      normalized,
+    ) ||
+    /\b(?:missing|gone|deleted|lost|disappeared)\b[^.!?]{0,45}\b(?:data|history|file|files|record|records|progress|draft|drafts|saved item|saved items|favorite|favorites|note|notes|profile|profiles|state|memory|voice|voices|asset|assets)\b/iu.test(
+      normalized,
+    );
+
+  return !concreteFailure && !missingObjectProblem;
+}
 
 /**
  * Detects proposals to deliberately cause a failure, disruption, overload,
@@ -143,39 +328,113 @@ export function classifyDirectCommunityEvidence(
 ): DirectCommunityEvidenceKind {
   const normalized = normalizeCommunityText(value);
   if (!normalized || normalized.length < 8) return 'NONE';
+  const semanticNormalized = normalized
+    .replace(/\bcrash[- ]course\b/giu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
 
   if (
-    isProposedAdversarialAction(normalized) ||
-    isLikelyPromotionalEvidence(normalized) ||
-    isLikelyProductDescription(normalized, sourceType) ||
-    isLikelyGamingEvidence(normalized)
+    isProposedAdversarialAction(semanticNormalized) ||
+    isLikelyPromotionalEvidence(semanticNormalized) ||
+    isLikelyProductDescription(semanticNormalized, sourceType) ||
+    isLikelyGamingEvidence(semanticNormalized) ||
+    isNonActionableCommunityBanter(normalized, sourceType)
   ) {
     return 'NONE';
   }
 
+  if (isPositiveFeedbackWithoutProblem(semanticNormalized)) {
+    return 'NONE';
+  }
+
+  if (
+    isThirdPartyScenarioQuestion(semanticNormalized, sourceType) ||
+    isTechnicalTroubleshootingReply(semanticNormalized, sourceType)
+  ) {
+    return 'USER_QUESTION';
+  }
+
+  if (isGeneralCommentaryWithoutUserProblem(semanticNormalized, sourceType)) {
+    return 'GENERAL_COMMENTARY';
+  }
+
+  if (isEducationalContentFeedback(semanticNormalized, sourceType)) {
+    return 'GENERAL_COMMENTARY';
+  }
+
   const negatedProblemOnly =
-    /\b(?:i|we)\s+(?:do not|don['’]?t|dont|did not|didn['’]?t|didnt)\s+(?:have|see|find|experience)\s+(?:a\s+)?(?:problem|issue|difficulty)\b/iu.test(normalized) &&
-    !/\b(?:but|however|except|although)\b[^.!?]{0,120}\b(?:cannot|can['’]?t|unable|failed|failure|error|bug|wrong|incorrect|missing|issue|problem|difficulty|struggle|need|request)\b/iu.test(normalized);
+    /\b(?:i|we)\s+(?:do not|don['’]?t|dont|did not|didn['’]?t|didnt)\s+(?:have|see|find|experience)\s+(?:a\s+)?(?:problem|issue|difficulty)\b/iu.test(semanticNormalized) &&
+    !/\b(?:but|however|except|although)\b[^.!?]{0,120}\b(?:cannot|can['’]?t|unable|failed|failure|error|bug|wrong|incorrect|missing|issue|problem|difficulty|struggle|need|request)\b/iu.test(semanticNormalized);
   if (negatedProblemOnly) return 'NONE';
 
-  if (FEATURE_REQUEST_EVIDENCE_PATTERNS.some((pattern) => pattern.test(normalized))) {
+  if (FEATURE_REQUEST_EVIDENCE_PATTERNS.some((pattern) => pattern.test(semanticNormalized))) {
     return 'FEATURE_REQUEST';
   }
 
   const contextualUserNeed =
-    /\b(?:i|we|my|our|user|users|customer|customers|operator|operators|learner|learners|student|students|developer|developers|farmer|farmers|seller|sellers|buyer|buyers)\b[^.!?]{0,80}\b(?:need|needs)\b/iu.test(normalized);
+    /\b(?:i|we|my|our|user|users|customer|customers|operator|operators|learner|learners|student|students|developer|developers|farmer|farmers|seller|sellers|buyer|buyers)\b[^.!?]{0,80}\b(?:need|needs)\b/iu.test(semanticNormalized);
 
   const systemicCommunityProblem =
     sourceType === 'COMMENT' &&
     SYSTEMIC_COMMUNITY_PROBLEM_PATTERNS.some((pattern) =>
-      pattern.test(normalized),
+      pattern.test(semanticNormalized),
     );
 
-  return hasDirectCommunityComplaint(normalized) ||
+  return hasDirectCommunityComplaint(semanticNormalized) ||
     contextualUserNeed ||
     systemicCommunityProblem
     ? 'USER_COMPLAINT'
     : 'NONE';
+}
+
+
+export function segmentCommunityEvidenceIssues(value: string): string[] {
+  const normalized = value.replace(/\s+/gu, ' ').trim();
+  if (!normalized) return [];
+
+  const commentMatch = normalized.match(/^(.*?\bCommunity comment:\s*)(.+)$/iu);
+  const prefix = commentMatch?.[1]?.trimEnd() ?? '';
+  const body = commentMatch?.[2]?.trim() ?? normalized;
+  const chunks = body
+    .split(/(?<=[.!?؟])\s+|\s+(?=(?:Worse|Most egregious|Additionally|Another issue|On top of that)\b)/u)
+    .map((chunk) => chunk.replace(/\s+/gu, ' ').trim())
+    .filter(Boolean);
+
+  if (chunks.length < 2) return [normalized];
+
+  const issues = chunks.filter((chunk) => {
+    if (
+      /^(?:this|the)\s+(?:app|application|service|platform)\s+(?:has\s+)?(?:gotten\s+)?(?:so\s+)?(?:terrible|awful|horrible|bad)[.!…]*$/iu.test(
+        chunk,
+      )
+    ) {
+      return false;
+    }
+
+    const kind = classifyDirectCommunityEvidence(chunk, 'COMMENT');
+    if (kind === 'FEATURE_REQUEST') return true;
+
+    const concreteIssueSignal =
+      /\b(?:old notes?|old data|re-appear|reappear|cannot access|can['’]?t access|customer service|support|ada|accessibility|mobility|stairs?|saved|submission|missing|lost|charged|refund|payment|login|logged out|logout|favorites?|favourites?|filters?|multiport|tags?|vanished|disappeared|crash|error|failed)\b/iu.test(
+        chunk,
+      );
+    const explicitOperationalIssue =
+      /\b(?:keep getting logged out|keeps? logging (?:me|us) out|no way to (?:really )?filter|no way to multiport|cannot filter|can['’]?t filter|unable to filter|tags? (?:vanished|disappeared|are gone|went missing)|favorites? via location)\b/iu.test(
+        chunk,
+      );
+
+    if (kind !== 'USER_COMPLAINT' && !explicitOperationalIssue) return false;
+    if (isWeakCommunityEvidence(chunk) && !concreteIssueSignal) return false;
+
+    const wordCount = chunk.split(/\s+/u).filter(Boolean).length;
+    return explicitOperationalIssue ? wordCount >= 4 : wordCount >= 6;
+  });
+
+  if (issues.length < 2) return [normalized];
+
+  return issues.map((issue) =>
+    prefix ? `${prefix} ${issue}`.replace(/\s+/gu, ' ').trim() : issue,
+  );
 }
 
 /**
@@ -426,7 +685,8 @@ export function isDirectCommunityEvidence(
   value: string,
   sourceType: TextSourceType,
 ): boolean {
-  return classifyDirectCommunityEvidence(value, sourceType) !== 'NONE';
+  const kind = classifyDirectCommunityEvidence(value, sourceType);
+  return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
 }
 
 /**

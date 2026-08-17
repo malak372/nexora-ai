@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES } from '../../constants/community-ai-analysis.constants';
@@ -15,6 +15,7 @@ import type {
 import { CommunityAiAnalysisService } from '../../services/community-ai-analysis.service';
 import type {
   CommunityAiAnalysis,
+  CommunityAiDomainHypothesis,
   CommunityAiOpportunity,
 } from '../../types/community-ai-analysis.type';
 import type {
@@ -30,6 +31,7 @@ import { classifyDirectCommunityEvidence } from '../../../../nlp/common/utils/co
  */
 @Injectable()
 export class CommunityAiAnalysisStage implements IdeaGenerationStage {
+  private readonly logger = new Logger(CommunityAiAnalysisStage.name);
   readonly key = IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS;
   readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
@@ -57,11 +59,40 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       };
     }
 
-    const baseAnalysis =
-      context.nlp.totalTextsAnalyzed > 0
-        ? (await this.communityAiAnalysisService.analyze(context)) ??
-          this.buildFallbackAnalysis(context)
-        : this.buildFallbackAnalysis(context);
+    let baseAnalysis: CommunityAiAnalysis;
+    if (context.nlp.totalTextsAnalyzed > 0) {
+      try {
+        baseAnalysis = await this.communityAiAnalysisService.analyze(context);
+      } catch (error: unknown) {
+        const reason =
+          error instanceof Error ? error.message : 'Unknown Community AI failure.';
+        this.logger.error(
+          `Community AI analysis failed unexpectedly; deterministic NLP remains active. error=${reason}`,
+        );
+        const emergencyFallback = this.buildFallbackAnalysis(context);
+        baseAnalysis = {
+          ...emergencyFallback,
+          aiAttempted: true,
+          fallbackReason: `Unexpected Community AI service failure: ${reason}`,
+          attemptDiagnostics: [
+            {
+              attempt: 1,
+              modelId: null,
+              apiModelId: null,
+              providerKey: null,
+              status: 'EXECUTION_FAILED',
+              durationMs: 0,
+              reason,
+            },
+          ],
+          attemptCount: 1,
+          onlineAttemptCount: 1,
+          executionFailureCount: 1,
+        };
+      }
+    } else {
+      baseAnalysis = this.buildFallbackAnalysis(context);
+    }
     const analysis = this.ensureSelectedDomainCoverage(context, baseAnalysis);
 
     const enrichedNlp: IdeaGenerationNlpContext = {
@@ -110,9 +141,20 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           modelId: analysis.modelId,
           apiModelId: analysis.apiModelId,
           attemptCount: analysis.attemptCount,
+          aiAttempted: analysis.aiAttempted,
+          aiSucceeded: analysis.aiSucceeded,
+          fallbackUsed: analysis.fallbackUsed,
+          onlineAttemptCount: analysis.onlineAttemptCount,
+          executionFailureCount: analysis.executionFailureCount,
+          validationRejectedCount: analysis.validationRejectedCount,
+          fallbackReason: analysis.fallbackReason,
+          attemptDiagnostics: analysis.attemptDiagnostics.map((item) => ({ ...item })),
+          unvalidatedDomainHypotheses: analysis.unvalidatedDomainHypotheses.map(
+            (item) => ({ ...item, risks: [...item.risks] }),
+          ),
         },
       ]),
-      aiUsed: true,
+      aiUsed: context.nlp.aiUsed || analysis.aiAttempted || analysis.aiSucceeded,
       confidence: this.mergeConfidence(
         context.nlp.confidence,
         analysis.overallConfidence / 100,
@@ -129,17 +171,17 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         const groundedCount = analysis.opportunities.filter(
           (opportunity) => opportunity.evidenceSamples.length > 0,
         ).length;
-        const hypothesisCount = analysis.opportunities.length - groundedCount;
+        const hypothesisCount = analysis.unvalidatedDomainHypotheses.length;
 
-        if (groundedCount === analysis.opportunities.length) {
+        if (groundedCount > 0 && hypothesisCount === 0) {
           return `Community AI analysis extracted ${groundedCount} evidence-grounded opportunity candidate(s).`;
         }
 
         if (groundedCount > 0) {
-          return `Generated ${analysis.opportunities.length} opportunity candidate(s): ${groundedCount} grounded by retained evidence and ${hypothesisCount} preliminary hypothesis candidate(s).`;
+          return `Generated ${groundedCount} grounded opportunity candidate(s) and kept ${hypothesisCount} unsupported domain hypothesis candidate(s) separate from evidence ranking.`;
         }
 
-        return `Created ${hypothesisCount} preliminary domain hypothesis candidate(s) because no direct community evidence was retained.`;
+        return `No grounded Community AI opportunity survived validation; ${hypothesisCount} unvalidated domain hypothesis candidate(s) were kept separate for last-resort use.`;
       })(),
       metadata: {
         analysisLayer: 'IDEA_OPPORTUNITY_ENRICHMENT',
@@ -150,8 +192,17 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         modelId: analysis.modelId,
         apiModelId: analysis.apiModelId,
         attemptCount: analysis.attemptCount,
+        aiAttempted: analysis.aiAttempted,
+        aiSucceeded: analysis.aiSucceeded,
+        fallbackUsed: analysis.fallbackUsed,
+        onlineAttemptCount: analysis.onlineAttemptCount,
+        executionFailureCount: analysis.executionFailureCount,
+        validationRejectedCount: analysis.validationRejectedCount,
+        fallbackReason: analysis.fallbackReason,
+        attemptDiagnostics: analysis.attemptDiagnostics,
         qualityWarnings: analysis.qualityWarnings,
         representedDomains: [...new Set(analysis.opportunities.map((item) => item.domainName))],
+        unvalidatedDomainHypothesisCount: analysis.unvalidatedDomainHypotheses.length,
       },
     };
   }
@@ -173,48 +224,87 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         item.domainName.trim().toLocaleLowerCase(),
       ),
     );
-    const fallback = this.buildFallbackAnalysis(context);
-    const additions = fallback.opportunities.filter((item) => {
-      const key = item.domainName.trim().toLocaleLowerCase();
-      return !represented.has(key) && item.evidenceSamples.length > 0;
-    });
-    const opportunities = [...analysis.opportunities];
-    for (const item of additions) {
-      if (opportunities.length >= COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES) break;
-      opportunities.push(item);
-      represented.add(item.domainName.trim().toLocaleLowerCase());
+    const existingHypotheses = new Map(
+      analysis.unvalidatedDomainHypotheses.map((item) => [
+        item.domainName.trim().toLocaleLowerCase(),
+        item,
+      ]),
+    );
+    const missingEvidenceDomains: string[] = [];
+    const hypotheses: CommunityAiDomainHypothesis[] = [
+      ...analysis.unvalidatedDomainHypotheses,
+    ];
+
+    for (const domain of context.selectedDomains) {
+      const key = domain.name.trim().toLocaleLowerCase();
+      if (represented.has(key)) continue;
+
+      const hasRetainedEvidence = this.hasRetainedDomainEvidence(
+        context,
+        domain.id,
+      );
+
+      if (hasRetainedEvidence) {
+        continue;
+      }
+
+      missingEvidenceDomains.push(domain.name);
+
+      if (!existingHypotheses.has(key)) {
+        hypotheses.push({
+          domainName: domain.name,
+          title: `${domain.name} validation-first workflow opportunity`,
+          problem: `A concrete community problem for ${domain.name} was not retained or did not survive semantic evidence validation.`,
+          unmetNeed: `A validation workflow that discovers and tests the highest-value ${domain.name} problem before implementation.`,
+          solutionArea: 'Problem discovery, validation, and configurable pilot workflow',
+          confidence: 15,
+          risks: [
+            'This is an unvalidated domain hypothesis and must not be presented as observed community demand.',
+          ],
+        });
+      }
     }
-    const missingEvidenceDomains = context.selectedDomains
-      .filter((domain) => {
-        const key = domain.name.trim().toLocaleLowerCase();
-        if (represented.has(key)) return false;
-        const profile = context.domainEvidence.find(
-          (item) => item.domainId === domain.id,
-        );
-        const posts = Array.isArray(profile?.samplePosts) ? profile.samplePosts.length : 0;
-        const comments = Array.isArray(profile?.sampleComments) ? profile.sampleComments.length : 0;
-        return posts + comments === 0;
-      })
-      .map((domain) => domain.name);
+
     const qualityWarnings = analysis.qualityWarnings.filter(
       (warning) => !this.isProviderDomainCoverageWarning(warning, context),
     );
 
     return {
       ...analysis,
-      opportunities,
-      dominantProblems: opportunities.map((item) => item.problem),
-      unmetNeeds: opportunities.map((item) => item.unmetNeed),
+      unvalidatedDomainHypotheses: hypotheses,
       qualityWarnings: [
         ...qualityWarnings,
-        ...(additions.length > 0
-          ? [`Added ${additions.length} retained-evidence fallback opportunity candidate(s) so selected domains with direct evidence remain represented.`]
-          : []),
         ...(missingEvidenceDomains.length > 0
           ? [`No direct retained evidence was available for selected domain(s): ${missingEvidenceDomains.join(', ')}.`]
           : []),
       ],
     };
+  }
+
+  private hasRetainedDomainEvidence(
+    context: IdeaGenerationContext,
+    domainId: string,
+  ): boolean {
+    const profile = context.domainEvidence.find(
+      (item) => item.domainId === domainId,
+    );
+
+    if (!profile?.evidenceAvailable) {
+      return false;
+    }
+
+    const totalTexts =
+      typeof profile.totalTextsAnalyzed === 'number'
+        ? profile.totalTextsAnalyzed
+        : 0;
+    const posts = Array.isArray(profile.samplePosts)
+      ? profile.samplePosts.length
+      : 0;
+    const comments = Array.isArray(profile.sampleComments)
+      ? profile.sampleComments.length
+      : 0;
+
+    return totalTexts > 0 || posts + comments > 0;
   }
 
   private isProviderDomainCoverageWarning(
@@ -303,81 +393,42 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             keywords: context.keywords,
           },
         ];
-
-    const opportunities = domains.map((domain): CommunityAiOpportunity => {
-      const evidenceProfile = (context.domainEvidence ?? []).find(
-        (item) => item.domainId === domain.id,
-      );
-      const evidence =
-        this.extractFirstEvidence(
-          evidenceProfile?.sampleComments ?? null,
-          'COMMENT',
-        ) ??
-        this.extractFirstEvidence(
-          evidenceProfile?.samplePosts ?? null,
-          'POST',
-        );
-      const hasEvidence = Boolean(evidence);
-
-      const evidenceProblem = evidence
-        ? this.deriveProblemFromEvidence(evidence, domain.name)
-        : null;
-      const evidenceTitle = evidenceProblem
-        ? this.buildEvidenceOpportunityTitle(evidenceProblem, domain.name)
-        : null;
-
-      return {
+    const hypotheses: CommunityAiDomainHypothesis[] = domains
+      .filter((domain) => !this.hasRetainedDomainEvidence(context, domain.id))
+      .map((domain) => ({
         domainName: domain.name,
-        title: hasEvidence
-          ? evidenceTitle ?? `${domain.name} evidence-led workflow opportunity`
-          : `${domain.name} validation-first workflow opportunity`,
-        problem: hasEvidence
-          ? evidenceProblem ??
-            `Users in ${domain.name} experience a concrete workflow problem retained from community evidence.`
-          : `A concrete community problem for ${domain.name} was not captured within the fast collection budget.`,
-        unmetNeed: hasEvidence
-          ? `A focused software workflow that directly resolves: ${evidenceProblem ?? `the retained ${domain.name} signal`}`
-          : `A rapid validation workflow that discovers and tests the highest-value ${domain.name} problem before full implementation.`,
-        solutionArea: hasEvidence
-          ? this.deriveSolutionArea(evidenceProblem ?? evidence ?? '', domain.name)
-          : 'Problem discovery, validation, and configurable pilot workflow',
-        affectedUsers: hasEvidence
-          ? this.deriveAffectedUsers(evidenceProblem ?? evidence ?? '', domain.name)
-          : [`Users participating in ${domain.name} workflows`],
-        evidenceSamples: evidence ? [evidence] : [],
-        frequency: 1,
-        severity: 'MEDIUM',
-        confidence: hasEvidence ? 38 : 20,
-        problemImportance: hasEvidence ? 45 : 25,
-        localEvidenceAvailable: false,
-        localEvidenceSamples: [],
-        localRelevance: 20,
-        groundingScore: hasEvidence ? 100 : 0,
-        technicalFeasibility: 72,
-        marketPotential: hasEvidence ? 48 : 30,
-        innovationPotential: 55,
+        title: `${domain.name} validation-first workflow opportunity`,
+        problem: `A concrete community problem for ${domain.name} was not retained within the bounded collection window.`,
+        unmetNeed: `A validation workflow that discovers and tests the highest-value ${domain.name} problem before implementation.`,
+        solutionArea: 'Problem discovery, validation, and configurable pilot workflow',
+        confidence: 15,
         risks: [
-          hasEvidence
-            ? 'The preliminary direction is supported by one retained sample and requires broader validation.'
-            : 'No direct community evidence was collected within the fast budget; validate the hypothesis before implementation.',
+          'No retained community evidence grounds this hypothesis; it must not be presented as observed demand.',
         ],
-      };
-    });
+      }));
 
     return {
       summary:
-        'Fast fallback analysis preserved one cautious direction per selected domain so core idea generation can continue.',
-      dominantProblems: opportunities.map((item) => item.problem),
-      unmetNeeds: opportunities.map((item) => item.unmetNeed),
-      opportunities,
-      overallConfidence:
-        opportunities.some((item) => item.evidenceSamples.length > 0) ? 35 : 20,
+        'No retained text was available for Community AI enrichment; unvalidated domain hypotheses were kept separate from evidence-backed opportunities.',
+      dominantProblems: [],
+      unmetNeeds: [],
+      opportunities: [],
+      overallConfidence: 10,
       qualityWarnings: [
-        'Community AI enrichment was unavailable or evidence was sparse; fallback opportunities are preliminary and require validation.',
+        'No retained community text was available for evidence-grounded Community AI analysis.',
       ],
       modelId: null,
       apiModelId: null,
       attemptCount: 0,
+      aiAttempted: false,
+      aiSucceeded: false,
+      fallbackUsed: true,
+      onlineAttemptCount: 0,
+      executionFailureCount: 0,
+      validationRejectedCount: 0,
+      fallbackReason: 'No retained NLP text was available.',
+      attemptDiagnostics: [],
+      unvalidatedDomainHypotheses: hypotheses,
     };
   }
 
@@ -391,7 +442,29 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     evidence: string,
     domainName: string,
   ): string {
-    const normalized = evidence.replace(/\s+/gu, ' ').trim();
+    const compact = evidence.replace(/\s+/gu, ' ').trim();
+    const commentBody = compact.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim();
+    const normalized = commentBody || compact;
+    const semantic = normalized.toLocaleLowerCase();
+
+    if (
+      /\b(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep[- ]link|destination page)\b/iu.test(
+        semantic,
+      )
+    ) {
+      return 'A retained technical issue documents a navigation or routing failure in which a user action reaches a missing or incorrect destination endpoint instead of completing the intended workflow.';
+    }
+
+    if (
+      /\b(?:legal researcher|legal research|law database|law databases|attorney|documentation)\b/iu.test(
+        semantic,
+      ) &&
+      /\b(?:afford|expensive|price|pricing|licensing fee|1500|facts|factual|guardrail|looping|documentation)\b/iu.test(
+        semantic,
+      )
+    ) {
+      return 'An individual legal researcher reports that professional legal-research tools are unaffordable, documentation workload is difficult to manage, and general AI assistance can introduce factual errors or unstable guardrail behavior.';
+    }
 
     const explicitProblem = normalized.match(
       /(?:my problem is|the problem is|problem[:\s]+)([^.!?]{30,360})/iu,
@@ -429,6 +502,38 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
   ): string {
     const normalized = problem.toLowerCase();
 
+    if (
+      /(?:404|not found|missing url|incorrect url|navigation|routing|redirect|destination endpoint)/u.test(
+        normalized,
+      )
+    ) {
+      return 'Navigation and Routing Endpoint Failures';
+    }
+    if (
+      /(?:legal researcher|legal research|legal-research tools|documentation workload)/u.test(
+        normalized,
+      ) &&
+      /(?:unaffordable|factual errors|guardrail|documentation)/u.test(normalized)
+    ) {
+      return 'Legal Research Documentation Cost and AI Reliability Barriers';
+    }
+    if (
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation)/u.test(
+        normalized,
+      )
+    ) {
+      return 'Cash Payment Reconciliation and Duplicate Charge Failures';
+    }
+    if (
+      /(?:international card|foreign card|international number|foreign number|traveling from abroad|travelling from abroad|traveler|traveller)/u.test(
+        normalized,
+      ) &&
+      /(?:otp|verification|card|payment|could not use|cannot use|can t use|not accept)/u.test(
+        normalized,
+      )
+    ) {
+      return 'International Card and OTP Access Barriers for Travelers';
+    }
     if (/b-?spline|piecewise polynomial|spline coefficient/u.test(normalized)) {
       return 'Reliable B-Spline Coefficient Extraction and Validation';
     }
@@ -458,6 +563,21 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     }
     if (/recommendation|recommender/u.test(normalized)) {
       return 'Recommendation quality diagnostics and explainable validation';
+    }
+    if (
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation)/u.test(
+        normalized,
+      )
+    ) {
+      return 'Payment Reconciliation and Duplicate Charge Recovery';
+    }
+    if (
+      /(?:international card|foreign card|international number|foreign number|traveling from abroad|travelling from abroad)/u.test(
+        normalized,
+      ) &&
+      /(?:otp|verification|card|payment)/u.test(normalized)
+    ) {
+      return 'Cross-Border Payment and Verification Recovery';
     }
     if (/connect|integration|api/u.test(normalized)) {
       return 'Integration diagnostics and guided configuration validation';
@@ -545,7 +665,10 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     value: string,
     sourceType: 'POST' | 'COMMENT',
   ): boolean {
-    return classifyDirectCommunityEvidence(value, sourceType) !== 'NONE';
+    const body =
+      value.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? value;
+    const kind = classifyDirectCommunityEvidence(body, sourceType);
+    return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
   }
 
   private scoreFallbackEvidence(

@@ -308,10 +308,15 @@ export class KeywordExtractionService {
   }
 
   private extractCanonicalTerms(value: string): string[] {
-    const keywordSafeValue = this.removeCrashCourseTitlePhrase(value);
+    const keywordSafeValue = this.removeNonRuntimeFailureLanguage(
+      this.removeCrashCourseTitlePhrase(value),
+    );
 
-    return CANONICAL_KEYWORD_DEFINITIONS.filter((definition) =>
-      definition.patterns.some((pattern) => pattern.test(keywordSafeValue)),
+    return CANONICAL_KEYWORD_DEFINITIONS.filter(
+      (definition) =>
+        definition.patterns.some((pattern) => pattern.test(keywordSafeValue)) &&
+        (definition.keyword !== 'application crash' ||
+          this.hasActualApplicationFailureSignal(keywordSafeValue)),
     ).map((definition) => definition.keyword);
   }
 
@@ -344,7 +349,25 @@ export class KeywordExtractionService {
    * reliability detection.
    */
   private removeCrashCourseTitlePhrase(value: string): string {
-    return value.replace(/\bcrash course\b/giu, ' ');
+    return value.replace(/\bcrash[- ]course\b/giu, ' ');
+  }
+
+  private removeNonRuntimeFailureLanguage(value: string): string {
+    return value
+      .replace(
+        /\b(?:not|never|without|no)\s+(?:actually\s+)?crash(?:es|ed|ing)?\b/giu,
+        ' ',
+      )
+      .replace(
+        /\bkeyboard\s+(?:appears?\s+|feels?\s+)?(?:frozen|freeze(?:s|d|ing)?)\b/giu,
+        ' ',
+      )
+      .replace(
+        /\b(?:focus|keystrokes?|keyboard input)\b[^.!?\n]{0,90}\b(?:captured|consumed|trapped|stuck|frozen|type[- ]ahead)\b/giu,
+        ' ',
+      )
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   /**
@@ -353,7 +376,9 @@ export class KeywordExtractionService {
    * from bypassing the canonical "Crash Course" safeguard.
    */
   private hasActualApplicationFailureSignal(value: string): boolean {
-    const keywordSafeValue = this.removeCrashCourseTitlePhrase(value);
+    const keywordSafeValue = this.removeNonRuntimeFailureLanguage(
+      this.removeCrashCourseTitlePhrase(value),
+    );
 
     return (
       /\b(?:app|application|platform|software|website|system)\b[^.!?\n]{0,60}\b(?:crash|crashes|crashed|crashing|freeze|freezes|frozen)\b/iu.test(

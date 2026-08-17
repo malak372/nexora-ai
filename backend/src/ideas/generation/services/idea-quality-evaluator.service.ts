@@ -214,9 +214,13 @@ export class IdeaQualityEvaluatorService {
       ].join(' '),
     );
 
-    const genericTitle = this.GENERIC_TITLE_PATTERNS.some((pattern) =>
-      pattern.test(title),
-    );
+    const pipelineScaffoldTitle =
+      /\b(?:cross[- ]domain|multi[- ]domain|request validation|validation pilot|evidence validation|opportunity discovery|requester[- ]defined workflow opportunity|connected workflow opportunity discovery|primary domain|preliminary pilot|validation)\b|\s\+\s/iu.test(
+        title,
+      );
+    const genericTitle =
+      pipelineScaffoldTitle ||
+      this.GENERIC_TITLE_PATTERNS.some((pattern) => pattern.test(title));
     const actionableObjectives = objectives.filter((objective) =>
       this.containsAny(objective, this.ACTIONABILITY_TERMS),
     ).length;
@@ -260,7 +264,7 @@ export class IdeaQualityEvaluatorService {
       issues.push({
         code: 'GENERIC_TITLE',
         message:
-          'Use a distinctive title that communicates the unique product value instead of only naming a generic system category.',
+          'Use a distinctive public-facing product title that communicates the product value. Do not expose internal pipeline labels such as Cross-Domain, Validation, Request Validation, Validation Pilot, Evidence Validation, Opportunity Discovery, or a plus-sign-joined domain list.',
         penalty: 14,
       });
     }
@@ -497,7 +501,7 @@ export class IdeaQualityEvaluatorService {
       issues.push({
         code: 'SECONDARY_DOMAIN_LEAKAGE',
         message:
-          'With zero retained evidence, keep the fallback strictly inside the selected primary domain and remove secondary-domain claims.',
+          'With zero retained evidence, keep the fallback strictly inside the authoritative final claim-domain set and remove only selected domains that are outside that set.',
         penalty: 20,
       });
     }
@@ -603,9 +607,9 @@ export class IdeaQualityEvaluatorService {
     );
 
     return (
-      /commonly\s+navigation\s+friction/iu.test(text) ||
-      /implement\s+one\s+primary\s+user\s+workflow/iu.test(text) ||
-      /one\s+primary\s+workflow\s+(?:featuring|including|covering)\s+(?:[^,.]+,\s*){2,}/iu.test(
+      /\bcommonly\s+navigation\s+friction\b/iu.test(text) ||
+      /\bimplement\s+one\s+primary\s+user\s+workflow\b/iu.test(text) ||
+      /\bone\s+primary\s+workflow\s+(?:featuring|including|covering)\s+(?:[^,.]+,\s*){2,}/iu.test(
         text,
       )
     );
