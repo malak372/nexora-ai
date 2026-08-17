@@ -364,15 +364,55 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
    */
   private async buildCrossDomainProfile(
     dto: GenerateIdeaDto,
-    primaryDomainId: string,
+    resolvedDomain: Awaited<ReturnType<DomainResolutionService['resolve']>>,
   ): Promise<{
     readonly selectedDomains: SelectedGenerationDomain[];
     readonly keywords: string[];
   }> {
-    const requestedIds = [...new Set([
-      primaryDomainId,
-      ...(dto.domainIds ?? []),
-    ].filter(Boolean))].slice(0, 3);
+    const explicitRequestedIds = [
+      ...new Set(
+        [
+          ...(dto.domainIds ?? []),
+          dto.domainId,
+        ].filter((value): value is string => Boolean(value?.trim())),
+      ),
+    ];
+    const topAutoScore = resolvedDomain.trace.candidates[0]?.score ?? 0;
+    const hasCurrentIntent = Boolean(
+      dto.description?.trim() ||
+      (dto.keywords ?? []).some((keyword) => keyword?.trim()),
+    );
+    const autoIntentDomainIds =
+      hasCurrentIntent && topAutoScore > 0
+        ? resolvedDomain.trace.candidates
+            .filter(
+              (candidate) =>
+                candidate.score >= 3 &&
+                candidate.score >= topAutoScore * 0.2,
+            )
+            .slice(0, 3)
+            .map((candidate) => candidate.domainId)
+        : [];
+    const autoPersonalizationDomainIds =
+      !hasCurrentIntent && explicitRequestedIds.length === 0 && topAutoScore > 0
+        ? resolvedDomain.trace.candidates
+            .filter(
+              (candidate) => candidate.score >= topAutoScore * 0.7,
+            )
+            .slice(0, 2)
+            .map((candidate) => candidate.domainId)
+        : [];
+
+    const requestedIds = [
+      ...new Set(
+        [
+          resolvedDomain.domainId,
+          ...explicitRequestedIds,
+          ...autoIntentDomainIds,
+          ...autoPersonalizationDomainIds,
+        ].filter(Boolean),
+      ),
+    ].slice(0, 3);
 
     const domains = await this.prisma.domain.findMany({
       where: { id: { in: requestedIds }, isActive: true },
@@ -484,11 +524,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         'blockchain security',
       ],
       cybersecurity: [
+        'unauthorized access',
+        'data breach',
+        'suspicious activity',
+        'security alerts',
+        'threat detection',
+        'incident response',
         'authentication security',
         'identity access',
-        'oauth security',
-        'security policy',
-        'threat detection',
+        'access control',
+        'ransomware',
       ],
       'artificial intelligence': [
         'artificial intelligence',
@@ -561,6 +606,31 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         'employee onboarding',
         'talent acquisition',
         'job application',
+        'employee burnout',
+        'employee turnover',
+        'workforce retention',
+        'employee feedback',
+        'workload management',
+      ],
+      'human resources': [
+        'recruitment',
+        'hiring',
+        'employee burnout',
+        'employee turnover',
+        'workforce retention',
+        'employee feedback',
+        'hr records',
+        'workload management',
+      ],
+      'business operations': [
+        'administrative workflow',
+        'back office operations',
+        'approval workflow',
+        'office administration',
+        'repetitive administrative tasks',
+        'operational data',
+        'workflow bottleneck',
+        'process automation',
       ],
       environment: [
         'environmental monitoring',
@@ -692,8 +762,9 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
   /**
    * Converts resolver diagnostics into context-safe JSON metadata.
-   * The trace is observability only: it does not feed collectors, prompts,
-   * opportunity ranking, benchmark scoring, or persistence decisions.
+   * Candidate diagnostics may already have been consumed by the orchestrator
+   * to expand a bounded cross-domain search profile; this persisted copy is
+   * explainability metadata for downstream observability.
    */
   private buildDomainResolutionTrace(
     resolvedDomain: Awaited<ReturnType<DomainResolutionService['resolve']>>,
@@ -736,7 +807,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     };
     const domainProfile = await this.buildCrossDomainProfile(
       input.dto,
-      resolvedDomain.domainId,
+      resolvedDomain,
     );
 
     return this.executeOwnedGeneration({
@@ -862,7 +933,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     ]);
     const domainProfile = await this.buildCrossDomainProfile(
       input.dto,
-      resolvedDomain.domainId,
+      resolvedDomain,
     );
 
     return this.queueOwnedGeneration({
@@ -1598,6 +1669,23 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       payrolls: 'payroll',
       reconciliations: 'reconciliation',
       procurements: 'procurement',
+      employees: 'employee',
+      workers: 'workforce',
+      recruiting: 'recruitment',
+      recruiters: 'recruitment',
+      turnover: 'employee turnover',
+      burnout: 'employee burnout',
+      costs: 'cost',
+      spending: 'expense',
+      records: 'record',
+      feedbacks: 'feedback',
+      breaches: 'data breach',
+      threats: 'security threat',
+      alerts: 'security alert',
+      attacks: 'cyber attack',
+      incidents: 'security incident',
+      credentials: 'credential security',
+      vulnerabilities: 'security vulnerability',
     };
 
     const stopWords = new Set([
@@ -1653,8 +1741,23 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       ['administration', 'administrative', 'operations', 'company'].includes(token),
     );
     const hasFinanceIntent = tokens.some((token) =>
-      ['finance', 'financial', 'accounting', 'budget', 'invoice', 'expense', 'payroll', 'procurement', 'reconciliation'].includes(token),
+      ['finance', 'financial', 'accounting', 'budget', 'invoice', 'expense', 'expenses', 'cost', 'costs', 'payroll', 'procurement', 'reconciliation'].includes(token),
     );
+    const hasHrIntent = tokens.some((token) =>
+      ['hr', 'employee', 'employees', 'workforce', 'recruitment', 'recruiting', 'hiring', 'burnout', 'turnover', 'retention', 'candidate', 'applicant'].includes(token),
+    );
+    const hasCybersecurityIntent =
+      /\b(?:cybersecurity|cyber security|security|unauthori[sz]ed access|data breach|security breach|suspicious activity|security alert|threat|attack|incident response|malware|ransomware|phishing|vulnerab|credential|access control|privacy)\w*\b/iu.test(
+        searchableIntent,
+      );
+    const hasHealthcareIntent =
+      /\b(?:healthcare|health|medical|clinic|hospital|patient)\w*\b/iu.test(
+        searchableIntent,
+      );
+    const hasEarlyDetectionIntent =
+      /\b(?:detect|identify|spot|discover|predict|early|emerging|warning|anomaly|trend)\w*\b/iu.test(searchableIntent);
+    const hasDataAnalysisIntent =
+      /\b(?:data|feedback|record|records|insight|insights|analy[sz]|analytics|scattered|fragmented)\w*\b/iu.test(searchableIntent);
 
     if (hasAdministrationIntent) {
       terms.unshift(
@@ -1675,7 +1778,57 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       );
     }
 
-    return this.normalizeStringArray(terms).slice(0, 12);
+    if (hasHrIntent) {
+      terms.unshift(
+        'employee burnout',
+        'employee turnover',
+        'workforce retention',
+        'employee feedback',
+        'workforce management',
+        'recruitment workflow',
+      );
+    }
+
+    if (hasHrIntent && hasFinanceIntent) {
+      terms.unshift(
+        'workforce cost analytics',
+        'employee expense analysis',
+        'workforce financial insights',
+      );
+    }
+
+    if (hasCybersecurityIntent) {
+      terms.unshift(
+        'unauthorized access',
+        'data breach',
+        'suspicious activity',
+        'security alert triage',
+        'threat detection',
+        'security incident response',
+      );
+    }
+
+    if (hasCybersecurityIntent && hasHealthcareIntent) {
+      terms.unshift(
+        'healthcare cybersecurity',
+        'patient data security',
+        'clinical security monitoring',
+      );
+    }
+
+    if (hasEarlyDetectionIntent && hasDataAnalysisIntent) {
+      terms.unshift(
+        'early problem detection',
+        'operational anomaly detection',
+        'feedback trend detection',
+        'management decision support',
+      );
+    }
+
+    return this.normalizeStringArray([
+      searchableIntent,
+      ...terms.filter((term) => term !== searchableIntent),
+    ]).slice(0, 12);
   }
 
   private stripSolutionPreferencePhrases(value: string): string {

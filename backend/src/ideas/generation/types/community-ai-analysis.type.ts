@@ -30,6 +30,39 @@ export type CommunityAiOpportunity = {
   readonly risks: readonly string[];
 };
 
+
+export type CommunityAiAttemptStatus =
+  | 'ACCEPTED'
+  | 'EXECUTION_FAILED'
+  | 'VALIDATION_REJECTED'
+  | 'ABORTED'
+  | 'TIMEOUT';
+
+export type CommunityAiAttemptDiagnostic = {
+  readonly attempt: number;
+  readonly modelId: string | null;
+  readonly apiModelId: string | null;
+  readonly providerKey: string | null;
+  readonly status: CommunityAiAttemptStatus;
+  readonly durationMs: number;
+  readonly reason: string | null;
+  /** Safe provider-output telemetry; raw evidence and full model text are never persisted here. */
+  readonly providerOpportunityCount?: number;
+  readonly groundedOpportunityCount?: number;
+  readonly candidateTitles?: readonly string[];
+  readonly semanticGroundingRepairCount?: number;
+};
+
+export type CommunityAiDomainHypothesis = {
+  readonly domainName: string;
+  readonly title: string;
+  readonly problem: string;
+  readonly unmetNeed: string;
+  readonly solutionArea: string;
+  readonly confidence: number;
+  readonly risks: readonly string[];
+};
+
 /** Structured result accepted from the community-analysis LLM. */
 export type CommunityAiAnalysis = {
   readonly summary: string;
@@ -47,4 +80,14 @@ export type CommunityAiAnalysis = {
 
   /** Number of domain-level attempts required before acceptance. */
   readonly attemptCount: number;
+
+  readonly aiAttempted: boolean;
+  readonly aiSucceeded: boolean;
+  readonly fallbackUsed: boolean;
+  readonly onlineAttemptCount: number;
+  readonly executionFailureCount: number;
+  readonly validationRejectedCount: number;
+  readonly fallbackReason: string | null;
+  readonly attemptDiagnostics: readonly CommunityAiAttemptDiagnostic[];
+  readonly unvalidatedDomainHypotheses: readonly CommunityAiDomainHypothesis[];
 };

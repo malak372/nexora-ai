@@ -649,6 +649,18 @@ export class AiExecutionService {
       modelAttemptNumber <= totalAttemptsForModel;
       modelAttemptNumber += 1
     ) {
+      if (input.signal?.aborted) {
+        return {
+          success: false,
+          error: new AiProviderError(
+            'AI request was cancelled because another parallel candidate already satisfied the quality threshold.',
+            AiProviderErrorCode.CANCELLED,
+            false,
+            499,
+          ),
+        };
+      }
+
       const outcome = await this.executeModelAttempt(
         provider,
         model,
@@ -665,11 +677,15 @@ export class AiExecutionService {
 
       finalModelError = outcome.error;
 
-      if (!outcome.retrySameModel) {
+      if (!outcome.retrySameModel || input.signal?.aborted) {
         break;
       }
 
       await this.delay(this.calculateRetryDelay(modelAttemptNumber));
+
+      if (input.signal?.aborted) {
+        break;
+      }
     }
 
     const resolvedError =

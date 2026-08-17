@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
 import { Sentiment } from '../common/enums/sentiment.enum';
-import { isRepositoryOperationalRecord } from '../common/utils/community-evidence.util';
+import {
+  classifyDirectCommunityEvidence,
+  isNonActionableCommunityBanter,
+  isRepositoryOperationalRecord,
+} from '../common/utils/community-evidence.util';
 import { DomainRelevanceService } from '../domain-relevance/domain-relevance.service';
 import { LanguageDetectionService } from '../language-detection/language-detection.service';
 import {
@@ -203,7 +207,11 @@ export class TextPreprocessingService {
     domainKeywords: ReadonlyArray<string>,
     fallbackLanguage: LanguageCode = LanguageCode.EN,
   ): TextPreprocessingOutput {
-    const selectedInputs = this.selectFastAnalysisInputs(inputs);
+    const preSampleDeduplication =
+      this.removeDuplicateInputsBeforeSampling(inputs);
+    const selectedInputs = this.selectFastAnalysisInputs(
+      preSampleDeduplication.items,
+    );
 
     const cleanedItems: CleanedTextItem[] = selectedInputs.map((input) => ({
       input,
@@ -224,7 +232,9 @@ export class TextPreprocessingService {
 
     const uniqueItems = this.removeDuplicateItems(nonEmptyItems);
 
-    const duplicateTextsRemoved = nonEmptyItems.length - uniqueItems.length;
+    const duplicateTextsRemoved =
+      preSampleDeduplication.removed +
+      (nonEmptyItems.length - uniqueItems.length);
 
     const languageResolvedItems = this.resolveItemLanguages(
       uniqueItems,
@@ -235,6 +245,13 @@ export class TextPreprocessingService {
       uniqueItems.length - languageResolvedItems.length;
 
     const contentFilteredItems = languageResolvedItems.filter((item) => {
+      if (
+        item.input.sourceType === 'COMMENT' &&
+        isNonActionableCommunityBanter(item.input.content, 'COMMENT')
+      ) {
+        return false;
+      }
+
       const collectorProtectedComment =
         item.input.sourceType === 'COMMENT' &&
         item.input.isComplaintEvidence === true;
@@ -487,6 +504,123 @@ export class TextPreprocessingService {
   }
 
 
+  private removeDuplicateInputsBeforeSampling(
+    inputs: ReadonlyArray<IntelligentTextInput>,
+  ): { items: IntelligentTextInput[]; removed: number } {
+    const parsedIds = inputs.map((input) => {
+      const rawId = input.id.trim().toLowerCase();
+      const match = rawId.match(
+        /^([a-z0-9-]+):(?:post|comment):(.+)$/u,
+      );
+
+      return {
+        input,
+        rawId,
+        sourceKey: match?.[1] ?? null,
+        strippedId: (match?.[2] ?? rawId)
+          .replace(/^(?:post|comment):/u, '')
+          .trim(),
+      };
+    });
+
+    const sourcesByIdentity = new Map<string, Set<string>>();
+    for (const parsed of parsedIds) {
+      if (!parsed.sourceKey || !parsed.strippedId) continue;
+
+      const identity = `${parsed.input.sourceType}:${parsed.strippedId}`;
+      const sources = sourcesByIdentity.get(identity) ?? new Set<string>();
+      sources.add(parsed.sourceKey);
+      sourcesByIdentity.set(identity, sources);
+    }
+
+    const orderedKeys: string[] = [];
+    const bestByKey = new Map<string, IntelligentTextInput>();
+
+    const normalizeExternalId = (value: string | undefined): string => {
+      return (value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/^[a-z0-9-]+:(?:post|comment):/u, '')
+        .replace(/^(?:post|comment):/u, '')
+        .trim();
+    };
+
+    const inferSourceKey = (
+      parsed: (typeof parsedIds)[number],
+    ): string | null => {
+      if (parsed.sourceKey) return parsed.sourceKey;
+
+      const parentMatch = (parsed.input.postId ?? '')
+        .trim()
+        .toLowerCase()
+        .match(/^([a-z0-9-]+):(?:post|comment):/u);
+      if (parentMatch?.[1]) return parentMatch[1];
+
+      const sources = sourcesByIdentity.get(
+        `${parsed.input.sourceType}:${parsed.strippedId}`,
+      );
+      return sources?.size === 1 ? [...sources][0] ?? null : null;
+    };
+
+    const contentKey = (input: IntelligentTextInput): string => {
+      return input.content
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/https?:\/\/\S+/gu, ' ')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+    };
+
+    for (const parsed of parsedIds) {
+      const sourceKey = inferSourceKey(parsed);
+      const parentId = normalizeExternalId(parsed.input.postId);
+      const looksLikeExternalToken =
+        /^[a-z0-9_-]{6,}$/iu.test(parsed.strippedId);
+      const provenanceKey =
+        sourceKey && parsed.strippedId && looksLikeExternalToken
+          ? parsed.input.sourceType === 'COMMENT' && parentId
+            ? `${sourceKey}:COMMENT:${parentId}:${parsed.strippedId}`
+            : `${sourceKey}:${parsed.input.sourceType}:${parsed.strippedId}`
+          : null;
+      const normalizedContent = contentKey(parsed.input);
+      const fallbackKey =
+        normalizedContent.length >= 80
+          ? `text:${normalizedContent.slice(0, 1500)}`
+          : `raw:${parsed.rawId}:${normalizedContent}`;
+      const key = provenanceKey ?? fallbackKey;
+      const existing = bestByKey.get(key);
+
+      if (!existing) {
+        orderedKeys.push(key);
+        bestByKey.set(key, parsed.input);
+        continue;
+      }
+
+      const existingRichness =
+        existing.content.length +
+        (existing.title?.length ?? 0) +
+        (existing.postId?.length ?? 0);
+      const candidateRichness =
+        parsed.input.content.length +
+        (parsed.input.title?.length ?? 0) +
+        (parsed.input.postId?.length ?? 0);
+
+      if (candidateRichness > existingRichness) {
+        bestByKey.set(key, parsed.input);
+      }
+    }
+
+    const items = orderedKeys
+      .map((key) => bestByKey.get(key))
+      .filter((item): item is IntelligentTextInput => Boolean(item));
+
+    return {
+      items,
+      removed: Math.max(inputs.length - items.length, 0),
+    };
+  }
+
   /**
    * Keeps a broad, evidence-ranked corpus for the synchronous evidence-preparation pass
    * pass. This prevents long repository comments and low-signal records from
@@ -672,29 +806,13 @@ export class TextPreprocessingService {
    * metadata cannot suppress useful comment evidence.
    */
   private isDirectUserCommentEvidence(value: string): boolean {
-    const normalized = value.replace(/\s+/gu, ' ').trim().toLowerCase();
-    if (normalized.length < 12) {
-      return false;
-    }
-
-    const explicitPainOrRequest =
-      /\b(?:cannot|can'?t|cant|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|cost|billing|bill|charged|invoice|expense|payroll|procurement|reconciliation|approval|bookkeeping|accounting|cash flow|manual entry|administrative|back office|confusing|difficult|frustrating|struggle|please add|feature request|should add|why can'?t i|how can i)\b/iu.test(normalized) ||
-      /\b(?:i|we|my|our|user|users|customer|customers|operator|operators|learner|learners)\b[^.!?]{0,60}\b(?:need|needs)\b/iu.test(normalized) ||
-      /\bi wish\b[^.!?]{0,80}\b(?:app|platform|service|feature|option|setting|support|allow|let|could|would|had|add|include)\b/iu.test(normalized);
-
-    const comprehensionOrPraiseOnly =
-      /\b(?:i (?:think i )?(?:understand|get it)|makes sense|so much easier|helped me understand|great explanation|thank you|thanks|love this|amazing|awesome)\b/iu.test(normalized) &&
-      !/\b(?:cannot|can'?t|unable|not working|error|fail|broken|bug|missing|wrong|confusing|difficult|frustrating|struggle|need)\b/iu.test(normalized) &&
-      !/\bi wish\b[^.!?]{0,80}\b(?:app|platform|service|feature|option|setting|support|allow|let|could|would|had|add|include)\b/iu.test(normalized);
-    const positiveRecommendationOnly =
-      /\b(?:highly recommend|recommend(?:ed|ing)?|great company|great app|excellent|works great|very satisfied|five stars?|5 stars?|love (?:the|this) app)\b/iu.test(normalized) &&
-      !/\b(?:cannot|can'?t|unable|does(?:n'?t| not) work|not working|error|fail(?:s|ed|ing)?|broken|bug|missing|incorrect|wrong|crash|freeze|slow|confusing|difficult|frustrating|struggle|support|refund|withdraw)\b/iu.test(normalized);
-
-    const purePromotion =
-      /\b(?:check out|download|install|subscribe|link in (?:the )?description|use my code|sponsored|available now|try it|watch the full|app review|review of)\b/iu.test(normalized) &&
-      !explicitPainOrRequest;
-
-    return explicitPainOrRequest && !comprehensionOrPraiseOnly && !positiveRecommendationOnly && !purePromotion;
+    const kind = classifyDirectCommunityEvidence(value, 'COMMENT');
+    return (
+      kind === 'USER_COMPLAINT' ||
+      kind === 'FEATURE_REQUEST' ||
+      kind === 'GENERAL_COMMENTARY' ||
+      kind === 'USER_QUESTION'
+    );
   }
 
   /**
@@ -1094,14 +1212,23 @@ export class TextPreprocessingService {
      * deterministic problem extraction because removing the phrase only from
      * keyword extraction does not prevent a false reliability problem.
      */
-    const isCrashCourseEducationalMedia =
-      /\bcrash course\b/iu.test(normalized) &&
-      /\b(?:sociology|history|biology|chemistry|physics|psychology|economics|literature|education|episode|lesson|today we(?:'ll| will) explore)\b/iu.test(
-        normalized,
-      ) &&
-      !/\b(?:app|application|platform|software|website|system)\b[^.!?\n]{0,80}\b(?:crash(?:es|ed|ing)?|freeze|frozen)\b/iu.test(
-        normalized,
+    const crashCourseSafeText = normalized.replace(/\bcrash[- ]course\b/giu, ' ');
+    const crashCourseCommentBody =
+      normalized.match(/\bcommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? '';
+    const crashCourseCommentKind = crashCourseCommentBody
+      ? classifyDirectCommunityEvidence(crashCourseCommentBody, 'COMMENT')
+      : 'NONE';
+    const hasActualCrashCourseRuntimeFailure =
+      /\b(?:app|application|platform|software|website|system|process|service|server|client)\b[^.!?\n]{0,80}\b(?:crash(?:es|ed|ing)?|freeze|frozen|unresponsive|exception|segfault)\b/iu.test(
+        crashCourseSafeText,
+      ) ||
+      /\b(?:crash(?:es|ed|ing)?|freeze|frozen|unresponsive|exception|segfault)\b[^.!?\n]{0,80}\b(?:app|application|platform|software|website|system|process|service|server|client)\b/iu.test(
+        crashCourseSafeText,
       );
+    const isCrashCourseEducationalMedia =
+      /\bcrash[- ]course\b/iu.test(normalized) &&
+      crashCourseCommentKind === 'NONE' &&
+      !hasActualCrashCourseRuntimeFailure;
 
     /**
      * Rejects repository authorization/checklist receipts that describe
@@ -1706,21 +1833,69 @@ export class TextPreprocessingService {
    * @returns Unique cleaned input items.
    */
   private removeDuplicateItems<
-    T extends Readonly<{ cleaning: CleanTextResult }>,
+    T extends Readonly<{
+      cleaning: CleanTextResult;
+      input: IntelligentTextInput;
+    }>,
   >(items: ReadonlyArray<T>): T[] {
-    const seen = new Set<string>();
+    const orderedKeys: string[] = [];
+    const bestByKey = new Map<string, T>();
 
-    return items.filter((item) => {
-      const key = item.cleaning.cleanedText;
+    for (const item of items) {
+      const rawId = item.input.id.trim().toLowerCase();
+      const strippedId = rawId
+        .replace(/^[a-z0-9-]+:(?:post|comment):/u, '')
+        .replace(/^(?:post|comment):/u, '')
+        .trim();
+      const normalizedPostId = (item.input.postId ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/^[a-z0-9-]+:(?:post|comment):/u, '')
+        .replace(/^(?:post|comment):/u, '')
+        .trim();
+      const looksLikeExternalToken = /^[a-z0-9_-]{8,}$/iu.test(strippedId);
+      const hasCanonicalExternalIdentity =
+        strippedId.length > 0 &&
+        !rawId.startsWith('nlp:') &&
+        (strippedId !== rawId ||
+          /^\d{6,}$/u.test(strippedId) ||
+          (item.input.sourceType === 'COMMENT' &&
+            normalizedPostId.length > 0 &&
+            looksLikeExternalToken));
+      const normalizedText = item.cleaning.cleanedText
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/https?:\/\/\S+/gu, ' ')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      const provenanceKey = hasCanonicalExternalIdentity
+        ? item.input.sourceType === 'COMMENT' && normalizedPostId
+          ? `COMMENT:${normalizedPostId}:${strippedId}`
+          : `${item.input.sourceType}:${strippedId}`
+        : null;
+      const key = provenanceKey ?? `text:${normalizedText.slice(0, 1200)}`;
+      const existing = bestByKey.get(key);
 
-      if (seen.has(key)) {
-        return false;
+      if (!existing) {
+        orderedKeys.push(key);
+        bestByKey.set(key, item);
+        continue;
       }
 
-      seen.add(key);
+      const existingRichness =
+        existing.cleaning.cleanedText.length + existing.input.content.length;
+      const candidateRichness =
+        item.cleaning.cleanedText.length + item.input.content.length;
 
-      return true;
-    });
+      if (candidateRichness > existingRichness) {
+        bestByKey.set(key, item);
+      }
+    }
+
+    return orderedKeys
+      .map((key) => bestByKey.get(key))
+      .filter((item): item is T => item !== undefined);
   }
 
   /**

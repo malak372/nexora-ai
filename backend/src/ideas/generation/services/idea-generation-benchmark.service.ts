@@ -51,6 +51,11 @@ import {
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
 import type { RankedIdeaOpportunity } from '../types/idea-opportunity-ranking.type';
+import {
+  matchEvidenceToAtomicProblem,
+  matchEvidenceToProblemFamily,
+  resolveProblemFamilyKeys,
+} from '../../../nlp/common/utils/problem-family-matching.util';
 import type {
   IdeaJudgeCandidateScore,
   IdeaJudgeEvaluation,
@@ -166,7 +171,7 @@ type AcceptedModelAttempt = {
  * parallel so a slow provider request cannot block a faster quality-approved
  * model behind a full timeout window.
  */
-const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 4;
+const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 2;
 
 @Injectable()
 export class IdeaGenerationBenchmarkService {
@@ -265,7 +270,7 @@ export class IdeaGenerationBenchmarkService {
 
     /*
      * Fast-path policy:
-     * - Up to three ordered online models may be latency-hedged in parallel.
+     * - Up to two ordered online models may be latency-hedged in parallel.
      * - Bounded self-revision remains available for structurally valid weak results.
      * - One accepted candidate is sufficient.
      * - Comparative judging runs only when two candidates finish inside budget.
@@ -493,8 +498,20 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
-    if (successfulCandidates.length === 1) {
-      const onlyCandidate = successfulCandidates[0];
+    const qualityApprovedCandidates = successfulCandidates.filter(
+      (candidate) =>
+        candidate.quality.accepted &&
+        candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE,
+    );
+
+    /*
+     * Strict fast path: comparative judging is meaningful only when at least
+     * two quality-approved candidates survive. Structurally valid fallback
+     * candidates must never force an extra judge request after one strong
+     * candidate has already passed the deterministic gate.
+     */
+    if (qualityApprovedCandidates.length === 1) {
+      const onlyCandidate = qualityApprovedCandidates[0];
 
       const selectedCandidate: IdeaBenchmarkCandidate = {
         ...onlyCandidate,
@@ -507,25 +524,47 @@ export class IdeaGenerationBenchmarkService {
         },
         semanticDiversityAdjustedScore: onlyCandidate.quality.score,
         hybridFinalScore: null,
+        finalScore: onlyCandidate.quality.score,
         selected: true,
       };
 
+      const diagnosticCandidates = successfulCandidates.map((candidate) =>
+        candidate.candidateId === selectedCandidate.candidateId
+          ? selectedCandidate
+          : {
+              ...candidate,
+              semanticDiversityAdjustedScore: candidate.quality.score,
+              hybridFinalScore: null,
+              finalScore: candidate.quality.score,
+              selected: false,
+            },
+      );
+
+      this.logger.log(
+        `Comparative AI judge skipped: exactly one quality-approved candidate remained (${selectedCandidate.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}).`,
+      );
+
       this.persistCandidateDecisionSnapshotInBackground(
         context.runId,
-        [selectedCandidate],
+        diagnosticCandidates,
         selectedCandidate.candidateId,
         null,
       );
 
       return {
         winner: selectedCandidate,
-        candidates: [selectedCandidate],
+        candidates: diagnosticCandidates,
         judgeEvaluation: null,
       };
     }
 
+    const comparisonCandidates =
+      qualityApprovedCandidates.length >= 2
+        ? qualityApprovedCandidates
+        : successfulCandidates;
+
     const diversityScores = this.semanticDiversityService.evaluate(
-      successfulCandidates.map((candidate) => ({
+      comparisonCandidates.map((candidate) => ({
         candidateId: candidate.candidateId,
         parsedOutput: candidate.parsedOutput,
         opportunityTitle: candidate.opportunityTitle,
@@ -539,14 +578,30 @@ export class IdeaGenerationBenchmarkService {
      * JSON risk. Non-shortlisted candidates remain persisted for diagnostics.
      */
     const judgeCandidates = this.buildJudgeShortlist(
-      successfulCandidates,
+      comparisonCandidates,
       IDEA_JUDGE_MAX_CANDIDATES,
     );
     const judgeCandidateIds = new Set(
       judgeCandidates.map((candidate) => candidate.candidateId),
     );
 
-    const judgeEvaluation = IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED
+    const deterministicJudgeOrder = [...judgeCandidates].sort(
+      (first, second) =>
+        second.quality.score - first.quality.score ||
+        first.aiResult.responseTimeMs - second.aiResult.responseTimeMs,
+    );
+    const deterministicJudgeGap =
+      deterministicJudgeOrder.length >= 2
+        ? deterministicJudgeOrder[0].quality.score -
+          deterministicJudgeOrder[1].quality.score
+        : Number.POSITIVE_INFINITY;
+    const shouldRunComparativeJudge =
+      IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED &&
+      qualityApprovedCandidates.length >= 2 &&
+      judgeCandidates.length >= 2 &&
+      deterministicJudgeGap < 6;
+
+    const judgeEvaluation = shouldRunComparativeJudge
       ? await this.candidateJudgeService.evaluate(
           context,
           judgeCandidates.map((candidate) => ({
@@ -556,9 +611,11 @@ export class IdeaGenerationBenchmarkService {
         )
       : null;
 
-    if (!IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED) {
+    if (!shouldRunComparativeJudge) {
       this.logger.debug(
-        'Comparative AI judge skipped in strict fast mode; deterministic quality and semantic-diversity ranking selected the winner.',
+        judgeCandidates.length < 2
+          ? 'Comparative AI judge skipped because fewer than two quality-approved candidates survived.'
+          : `Comparative AI judge skipped because deterministic quality already separated the top candidates by ${deterministicJudgeGap.toFixed(1)} point(s).`,
       );
     }
 
@@ -569,7 +626,7 @@ export class IdeaGenerationBenchmarkService {
 
     const diversityScoresForScoring = diversityScores;
 
-    const scoredCandidates = successfulCandidates.map((candidate) => {
+    const scoredCandidates = comparisonCandidates.map((candidate) => {
       const aiJudge =
         judgeEvaluation?.scores.find(
           (score) => score.candidateId === candidate.candidateId,
@@ -1327,7 +1384,7 @@ export class IdeaGenerationBenchmarkService {
       )
       .replace(/\s+/gu, ' ')
       .trim();
-    const diversifiedTitle = `${baseTitle || 'Primary Domain'} Evidence Validation Pilot`;
+    const diversifiedTitle = `${baseTitle || 'Operational Insight'} Workspace`;
     return {
       ...attempt,
       parsedOutput: {
@@ -1697,6 +1754,8 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
+    this.assertWinnerProblemLock(context, parsedOutput);
+
     const evidenceBackedDomainNames = new Set(
       context.domainEvidence
         .filter((evidence) => evidence.evidenceAvailable)
@@ -1817,6 +1876,69 @@ export class IdeaGenerationBenchmarkService {
   }
 
   /** Normalizes portfolio labels for stable selected-domain comparison. */
+  private assertWinnerProblemLock(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): void {
+    const winner =
+      context.benchmarkWinnerOpportunity ?? context.opportunityRanking?.selected;
+    if (!winner || winner.evidenceSamples.length === 0) {
+      return;
+    }
+
+    const winnerEvidence = winner.evidenceSamples[0]?.trim();
+    if (!winnerEvidence) return;
+
+    const candidateNarrative = [
+      parsedOutput.coreIdea.problemStatement,
+      ...parsedOutput.coreIdea.objectives,
+      parsedOutput.coreIdea.partialAbstract ?? '',
+      parsedOutput.coreIdea.fullAbstract ?? '',
+    ]
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!candidateNarrative) return;
+
+    const winnerDescriptor = [
+      winner.title,
+      winner.problem ?? '',
+      winner.need ?? '',
+      winner.solutionArea ?? '',
+      winnerEvidence,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const familyMatch = matchEvidenceToProblemFamily(
+      winnerDescriptor,
+      candidateNarrative,
+    );
+    const atomicMatch = matchEvidenceToAtomicProblem(
+      winnerEvidence,
+      candidateNarrative,
+    );
+    if (familyMatch.matched || atomicMatch.matched) {
+      return;
+    }
+
+    const winnerFamilies = resolveProblemFamilyKeys(winnerEvidence).filter(
+      (key) => !key.startsWith('lexical:') && key !== 'generic-friction',
+    );
+    const candidateFamilies = resolveProblemFamilyKeys(candidateNarrative).filter(
+      (key) => !key.startsWith('lexical:') && key !== 'generic-friction',
+    );
+    const clearFamilyMismatch =
+      winnerFamilies.length > 0 &&
+      candidateFamilies.length > 0 &&
+      !winnerFamilies.some((key) => candidateFamilies.includes(key));
+
+    if (clearFamilyMismatch) {
+      throw new ServiceUnavailableException(
+        `SELECTED_OPPORTUNITY_MISMATCH: generated candidate solved ${candidateFamilies[0]} instead of immutable winner family ${winnerFamilies[0]}.`,
+      );
+    }
+  }
+
   private normalizePortfolioText(value: string): string {
     return value
       .normalize('NFKC')
@@ -2420,11 +2542,17 @@ export class IdeaGenerationBenchmarkService {
     readonly score: number;
     readonly evidenceSamples: readonly string[];
   }[] {
-    const ranked = [ranking.selected];
+    const selected = ranking.selected;
     const finalClaimDomains = new Set(
-      (ranking.selected.matchedDomainNames ?? [])
+      (selected.matchedDomainNames ?? [])
         .map((name) => name.trim().toLocaleLowerCase())
         .filter(Boolean),
+    );
+    const selectedDomainNames = new Map(
+      context.selectedDomains.map((domain) => [
+        domain.name.trim().toLocaleLowerCase(),
+        domain.name,
+      ]),
     );
     const portfolio: Array<{
       domainName: string;
@@ -2436,59 +2564,111 @@ export class IdeaGenerationBenchmarkService {
       evidenceSamples: readonly string[];
     }> = [];
 
-    for (const domain of context.selectedDomains) {
-      const normalizedDomain = domain.name.trim().toLocaleLowerCase();
+    const pushPortfolioItem = (input: {
+      readonly domainName: string;
+      readonly title: string;
+      readonly problem: string | null;
+      readonly need: string | null;
+      readonly solutionArea: string | null;
+      readonly score: number;
+      readonly evidenceSamples: readonly string[];
+    }): void => {
+      const normalizedDomain = input.domainName.trim().toLocaleLowerCase();
+      if (!normalizedDomain) return;
       if (
         finalClaimDomains.size > 0 &&
         !finalClaimDomains.has(normalizedDomain)
       ) {
-        continue;
+        return;
       }
-      const candidates = ranked
-        .filter((candidate) => {
-          const matchedByRanking = (candidate.matchedDomainNames ?? []).some(
-            (name) => name.trim().toLocaleLowerCase() === normalizedDomain,
-          );
-          const rawDomain = this.isJsonObject(candidate.raw)
-            ? candidate.raw.domainName
-            : null;
-          const matchedByRaw =
-            typeof rawDomain === 'string' &&
-            rawDomain.trim().toLocaleLowerCase() === normalizedDomain;
+      if (
+        portfolio.some(
+          (item) =>
+            item.domainName.trim().toLocaleLowerCase() === normalizedDomain &&
+            item.title === input.title,
+        )
+      ) {
+        return;
+      }
+      portfolio.push(input);
+    };
 
-          return (
-            (matchedByRanking || matchedByRaw) &&
-            this.resolveOpportunityEvidenceSamples(candidate).length > 0
-          );
-        })
-        .sort((left, right) => right.finalScore - left.finalScore);
-      const candidate = candidates[0];
-      if (!candidate) continue;
-      portfolio.push({
-        domainName: domain.name,
-        title: candidate.title,
-        problem: candidate.problem,
-        need: candidate.need,
-        solutionArea: candidate.solutionArea,
-        score: candidate.finalScore,
-        evidenceSamples: this.resolveOpportunityEvidenceSamples(candidate).slice(0, 2),
+    const selectedRawDomain =
+      this.isJsonObject(selected.raw) &&
+      typeof selected.raw.domainName === 'string'
+        ? selected.raw.domainName.trim()
+        : '';
+    const selectedPrimaryDomain =
+      selected.primaryMatchedDomainName?.trim() ||
+      selected.problemDomainNames?.[0]?.trim() ||
+      selectedRawDomain ||
+      selected.matchedDomainNames?.[0]?.trim() ||
+      context.domainName?.trim() ||
+      '';
+
+    if (selectedPrimaryDomain) {
+      pushPortfolioItem({
+        domainName:
+          selectedDomainNames.get(selectedPrimaryDomain.toLocaleLowerCase()) ??
+          selectedPrimaryDomain,
+        title: selected.title,
+        problem: selected.problem,
+        need: selected.need,
+        solutionArea: selected.solutionArea,
+        score: selected.finalScore,
+        evidenceSamples: this.resolveOpportunityEvidenceSamples(selected).slice(
+          0,
+          2,
+        ),
+      });
+    }
+
+    for (const related of selected.relatedOpportunityBundle ?? []) {
+      const bundleDomains = related.matchedDomainNames
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .filter(
+          (name) =>
+            finalClaimDomains.size === 0 ||
+            finalClaimDomains.has(name.toLocaleLowerCase()),
+        );
+      const domainName =
+        bundleDomains.find(
+          (name) =>
+            name.toLocaleLowerCase() !==
+            selectedPrimaryDomain.toLocaleLowerCase(),
+        ) ?? bundleDomains[0];
+      if (!domainName) continue;
+
+      pushPortfolioItem({
+        domainName:
+          selectedDomainNames.get(domainName.toLocaleLowerCase()) ?? domainName,
+        title: related.title,
+        problem: related.problem,
+        need: related.need,
+        solutionArea: related.solutionArea,
+        score: Math.max(0, 1 - related.rank * 0.01),
+        evidenceSamples: related.evidenceSamples.slice(0, 2),
       });
     }
 
     if (portfolio.length === 0) {
+      const fallbackDomain =
+        selected.matchedDomainNames?.[0] ??
+        (selectedRawDomain || undefined) ??
+        context.domainName ??
+        'Selected domain';
       portfolio.push({
-        domainName:
-          ranking.selected.matchedDomainNames?.[0] ??
-          (this.isJsonObject(ranking.selected.raw) &&
-          typeof ranking.selected.raw.domainName === 'string'
-            ? ranking.selected.raw.domainName
-            : context.domainName ?? 'Selected domain'),
-        title: ranking.selected.title,
-        problem: ranking.selected.problem,
-        need: ranking.selected.need,
-        solutionArea: ranking.selected.solutionArea,
-        score: ranking.selected.finalScore,
-        evidenceSamples: this.resolveOpportunityEvidenceSamples(ranking.selected).slice(0, 2),
+        domainName: fallbackDomain,
+        title: selected.title,
+        problem: selected.problem,
+        need: selected.need,
+        solutionArea: selected.solutionArea,
+        score: selected.finalScore,
+        evidenceSamples: this.resolveOpportunityEvidenceSamples(selected).slice(
+          0,
+          2,
+        ),
       });
     }
 
@@ -2516,7 +2696,16 @@ export class IdeaGenerationBenchmarkService {
 
     const winnerDomains =
       context.opportunityRanking?.selected.matchedDomainNames?.filter(Boolean) ?? [];
+    const winnerDomainSet = new Set(
+      winnerDomains.map((name) => name.trim().toLocaleLowerCase()),
+    );
     const primaryDomainName = winnerDomains[0] ?? context.domainName;
+    const forbiddenDomainNames = context.selectedDomains
+      .map((domain) => domain.name.trim())
+      .filter(
+        (name) =>
+          Boolean(name) && !winnerDomainSet.has(name.toLocaleLowerCase()),
+      );
 
     return {
       totalTextsAnalyzed: context.nlp?.totalTextsAnalyzed,
@@ -2529,7 +2718,11 @@ export class IdeaGenerationBenchmarkService {
       localEvidenceVerified: this.hasVerifiedLocalEvidence(context),
       directEvidenceCount: retainedDirectEvidenceCount,
       primaryDomainName,
-      secondaryDomainNames: winnerDomains.slice(1),
+      // This field is a leakage guard: only selected domains outside the
+      // authoritative final claim set are forbidden. Valid multi-domain
+      // validation hypotheses must not be penalized for naming their own
+      // allowed claim domains.
+      secondaryDomainNames: forbiddenDomainNames,
     };
   }
 
@@ -2541,8 +2734,9 @@ export class IdeaGenerationBenchmarkService {
 
     return [
       'Generate one specific, evidence-grounded, differentiated, locally deployable software product.',
+      'Use a natural public-facing product title. Never put Cross-Domain, Multi-Domain, Validation, Request Validation, Validation Pilot, Evidence Validation, Opportunity Discovery, Primary Domain, Preliminary Pilot, or a plus-sign-joined domain list in the title. Keep evidence/validation qualification in the narrative instead.',
       context.requestDescription
-        ? `Requester intent: ${context.requestDescription}. This is a mandatory product-scope constraint for the final idea, but it is never evidence. Keep the selected product directly about the named user problem/workflow and do not substitute an easier same-domain problem. If evidence is weak, build the smallest validation-first product for this exact requester scope. If the wording asks to enhance, improve, automate, or optimize something with AI, treat AI as a preferred solution mechanism rather than a separate problem domain unless Artificial Intelligence is explicitly selected as a domain.`
+        ? `Requester intent: ${context.requestDescription}. This is a mandatory product-scope constraint for the final idea, but it is never evidence. Keep the selected product directly about the named user problem/workflow and do not substitute an easier same-domain problem. Preserve every material pain, operational constraint, named data source, and requested outcome from the description; do not silently drop one merely to simplify the product. Map each material dimension to the problem narrative, a concrete capability/objective, or an explicit pilot measurement/assumption. If evidence is weak, build the smallest validation-first product for this exact requester scope. If the wording asks to enhance, improve, automate, or optimize something with AI, treat AI as a preferred solution mechanism rather than a separate problem domain unless Artificial Intelligence is explicitly selected as a domain.`
         : '',
       'Do not invent statistics, market sizes, legal conclusions, API availability, institutional counts, failure rates, or local facts.',
       'When evidence is not locally verified, describe the discovered problem generally and say that the initial pilot deployment is planned for the target location. Never write that students, faculty, institutions, or residents in the requested city currently face or report the problem.',

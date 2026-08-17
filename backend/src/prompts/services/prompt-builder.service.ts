@@ -461,6 +461,7 @@ export class PromptBuilderService {
       'APPLICATION-ENFORCED REQUEST INTENT:',
       `- Requester problem scope: ${requestDescription}`,
       '- Use this text to prioritize which collected problems are relevant to the requester.',
+      '- Preserve every material user pain, operational constraint, named data source, and requested outcome in the selected product scope. Do not silently drop a major dimension merely to simplify implementation; map each material dimension to the problem narrative, a concrete capability/objective, or an explicit pilot measurement/assumption.',
       '- This text is not community evidence and must never be cited as proof that the problem exists.',
       '- If collected evidence contradicts or does not support the requested scope, keep the output cautious and follow the evidence rather than inventing support.',
     ].join('\n');
@@ -514,24 +515,80 @@ export class PromptBuilderService {
       input.purpose === 'IDEA_GENERATION'
         ? input.opportunityRanking?.selected
         : undefined;
+    const verifiedDirectEvidenceCount =
+      rankedOpportunity?.verifiedProblemMatchedDirectUserEvidenceCount ??
+      rankedOpportunity?.verifiedDirectUserEvidenceCount ??
+      rankedOpportunity?.verifiedIndependentEvidenceCount ??
+      0;
+    const verifiedSecondaryEvidenceCount =
+      rankedOpportunity?.verifiedProblemMatchedSecondaryEvidenceCount ??
+      rankedOpportunity?.verifiedSecondaryEvidenceCount ??
+      0;
+    const verifiedTechnicalEvidenceCount =
+      rankedOpportunity?.verifiedProblemMatchedTechnicalEvidenceCount ??
+      rankedOpportunity?.verifiedTechnicalEvidenceCount ??
+      0;
+    const verifiedQuestionEvidenceCount =
+      rankedOpportunity?.verifiedProblemMatchedQuestionEvidenceCount ??
+      rankedOpportunity?.verifiedQuestionEvidenceCount ??
+      0;
+    const verifiedObservationEvidenceCount =
+      rankedOpportunity?.verifiedProblemMatchedObservationEvidenceCount ??
+      rankedOpportunity?.verifiedObservationEvidenceCount ??
+      0;
     const verifiedEvidenceCount =
-      rankedOpportunity?.verifiedIndependentEvidenceCount ?? 0;
-    const verifiedSourceCount =
-      rankedOpportunity?.verifiedIndependentSourceCount ?? 0;
+      rankedOpportunity?.verifiedProblemMatchedEvidenceCount ??
+      rankedOpportunity?.verifiedEvidenceCount ??
+      verifiedDirectEvidenceCount +
+        verifiedSecondaryEvidenceCount +
+        verifiedTechnicalEvidenceCount +
+        verifiedQuestionEvidenceCount +
+        verifiedObservationEvidenceCount;
+    const verifiedDirectSourceCount =
+      rankedOpportunity?.verifiedProblemMatchedSourceCount ??
+      rankedOpportunity?.verifiedIndependentSourceCount ??
+      0;
+    const verifiedEvidenceSourceCount =
+      rankedOpportunity?.verifiedProblemMatchedEvidenceSourceCount ??
+      rankedOpportunity?.verifiedEvidenceSourceCount ??
+      verifiedDirectSourceCount;
+    const diagnosticCandidateEvidenceCount =
+      rankedOpportunity?.verifiedEvidenceCount ?? verifiedEvidenceCount;
+    const excludedSameDomainEvidenceCount = Math.max(
+      0,
+      diagnosticCandidateEvidenceCount - verifiedEvidenceCount,
+    );
     const strongEvidence =
       Boolean(rankedOpportunity?.selectionEligible) &&
-      verifiedEvidenceCount >= 3 &&
-      verifiedSourceCount >= 2;
+      verifiedDirectEvidenceCount >= 3 &&
+      verifiedDirectSourceCount >= 2;
 
     const evidenceLanguageDirective = strongEvidence
-      ? '- Independent verification passed. Use strong evidence wording only for the exact verified problem.'
-      : `- Independent verification did not pass (${verifiedEvidenceCount} report(s), ${verifiedSourceCount} source(s)). Use preliminary/limited-signal wording in every output; never use evidence-backed, validated, recurring, proven-demand, or equivalent definitive claims.`;
+      ? '- Independent direct-user verification passed. Use strong evidence wording only for the exact verified problem.'
+      : verifiedDirectEvidenceCount === 0 && verifiedSecondaryEvidenceCount > 0
+        ? `- Evidence is secondary only (${verifiedSecondaryEvidenceCount} secondary report(s), ${verifiedEvidenceSourceCount} source(s), 0 verified direct user complaints). Use "secondary report suggests" or equivalent cautious wording. Never write recurring, widespread, validated, evidence-backed demand, users report, or equivalent direct-demand claims.`
+        : verifiedDirectEvidenceCount === 0 && verifiedTechnicalEvidenceCount > 0
+          ? `- Evidence is technical only (${verifiedTechnicalEvidenceCount} technical ticket(s), ${verifiedEvidenceSourceCount} retained source(s), 0 verified direct user complaints). Say "a retained technical issue indicates/documents" or equivalent. Do not write users report, community demand, recurring pattern, widespread, validated demand, or market-wide prevalence.`
+          : verifiedDirectEvidenceCount === 0 && verifiedQuestionEvidenceCount > 0
+            ? `- Evidence is a user scenario question only (${verifiedQuestionEvidenceCount} question(s), ${verifiedEvidenceSourceCount} retained source(s), 0 verified direct user complaints). Treat it as a discovery hypothesis. Do not claim that users experienced the scenario, that demand is validated, or that recurrence exists.`
+          : verifiedDirectEvidenceCount === 0 && verifiedObservationEvidenceCount > 0
+            ? `- Evidence is community observation/commentary only (${verifiedObservationEvidenceCount} observation(s), ${verifiedEvidenceSourceCount} retained source(s), 0 verified direct user complaints). Describe the observed concern cautiously. Separate the observed problem from the proposed product mechanism: the solution must be presented as a pilot hypothesis to test, not as a cause or remedy proven by the evidence. Never claim many users report, often, significant concern, recurrence, prevalence, validated demand, or market-wide need.`
+          : verifiedDirectEvidenceCount > 0
+            ? `- Direct-user recurrence did not pass (${verifiedDirectEvidenceCount} direct report(s), ${verifiedDirectSourceCount} direct source(s); ${verifiedEvidenceCount} total retained evidence item(s)). Use preliminary/limited-signal wording and never claim recurring or market-wide demand.`
+            : `- No verified direct user evidence is available (${verifiedEvidenceCount} retained evidence item(s), ${verifiedEvidenceSourceCount} source(s)). Treat the output as a bounded validation pilot and do not claim user recurrence, validated demand, or market-wide prevalence.`;
+
+    const problemMatchDirective =
+      excludedSameDomainEvidenceCount > 0
+        ? `- ${excludedSameDomainEvidenceCount} additional verified same-domain evidence item(s) were excluded because they do not match the selected problem family. Do not use them to strengthen recurrence, prevalence, or the final problem narrative.`
+        : '- Only problem-matched verified evidence may support recurrence, prevalence, or the final problem narrative.';
 
     return [
       'APPLICATION-ENFORCED OUTPUT QUALITY:',
       `- Trusted analyzed totals: ${analysis.totalTextsAnalyzed} texts, ${analysis.totalPostsAnalyzed} posts, and ${analysis.totalCommentsAnalyzed} comments.`,
       evidenceVolumeDirective,
       evidenceLanguageDirective,
+      problemMatchDirective,
+      '- Keep evidence and intervention logic separate: evidence supports the observed problem only. Any mechanism not explicitly described by retained evidence (for example calendar scheduling, micro-break duration, automation, or a presumed root cause) must be labeled as a bounded pilot hypothesis to test.',
       '- Whenever the NLP executive summary mentions dataset size, it must state all three exact totals above.',
       '- Never describe the comment count as the total number of comments and posts.',
       '- Store listings, feature catalogues, promotional copy, and product descriptions are contextual market material, not direct proof of a complaint or unmet need.',
@@ -650,7 +707,15 @@ export class PromptBuilderService {
       severity: selected.severity,
       score: selected.finalScore,
       matchedDomainNames: selected.matchedDomainNames ?? [],
+      problemDomainNames: selected.problemDomainNames ?? [],
+      workflowDomainNames: selected.workflowDomainNames ?? [],
+      primaryMatchedDomainName: selected.primaryMatchedDomainName ?? null,
       domainRelevanceScores: selected.domainRelevanceScores ?? {},
+      problemDomainRelevanceScores:
+        selected.problemDomainRelevanceScores ?? {},
+      workflowDomainRelevanceScores:
+        selected.workflowDomainRelevanceScores ?? {},
+      relatedOpportunityBundle: selected.relatedOpportunityBundle ?? [],
       evidenceSamples: selected.evidenceSamples
         .slice(0, 2)
         .map((sample) => sample.replace(/\s+/gu, ' ').trim().slice(0, 1_800)),
@@ -661,8 +726,11 @@ export class PromptBuilderService {
       '- The benchmark will generate distinct candidates from the highest-ranked opportunities below.',
       '- The selected opportunity remains the default direction when no candidate-specific assignment is appended.',
       '- Derive a concrete user workflow from the evidence samples. Treat causal explanations as hypotheses unless the supplied evidence explicitly proves causation.',
-      '- Cover the selected opportunity completely. Its verified matchedDomainNames define the only domain claims allowed in the generated candidate.',
-      '- Shortlisted alternatives are diagnostic references only. Do not merge their domains, users, problems, or capabilities into the selected candidate unless a candidate-specific benchmark assignment explicitly selects that alternative instead.',
+      '- Cover the selected opportunity completely. Its matchedDomainNames define the only domain claims allowed in the generated candidate. In normal evidence-backed runs these names must be verified by the selected opportunity or its relatedOpportunityBundle; in validation-fallback runs they define the explicit hypothesis scope and must be described as unvalidated.',
+      '- Treat the assigned opportunity as immutable for this candidate: do not silently switch to a different comment, shortlisted problem, feature request, or evidence item merely because it is easier to solve.',
+      '- problemDomainNames answer what kind of problem is verified; workflowDomainNames answer where that verified problem occurs. When both are present, preserve that distinction instead of forcing every domain to describe the same problem type.',
+      '- primaryMatchedDomainName is the main problem-domain anchor. Workflow domains may shape users, operational context, integrations, and examples only when they are also present in matchedDomainNames.',
+      '- Shortlisted alternatives are diagnostic references only. Do not merge their domains, users, problems, or capabilities into the selected candidate unless the item is explicitly listed in relatedOpportunityBundle or a candidate-specific benchmark assignment selects that alternative.',
       '- A candidate-specific benchmark assignment may intentionally select a lower-ranked shortlisted opportunity to create concept diversity.',
       '- Do not generate a thin middleware, dashboard, wrapper, tracker, or document proxy unless the evidence proves that this is the complete product opportunity and the differentiator is substantial.',
       '- Prefer a defensible end-to-end product capability that measurably improves the affected workflow.',
@@ -703,15 +771,22 @@ export class PromptBuilderService {
 
     return [
       'APPLICATION-ENFORCED MULTI-DOMAIN IDEA NARRATIVE:',
-      '- Return one coherent software product scoped to the selected opportunity. It is cross-domain only when the selected opportunity matchedDomainNames contains more than one verified domain.',
+      '- Return one coherent software product scoped to the selected opportunity. It is cross-domain when matchedDomainNames contains more than one domain backed by verified bundle evidence, or when the selected opportunity is an explicit zero-evidence/request-validation hypothesis whose allowed validation scope contains multiple selected domains.',
+      '- title must be a concise public-facing product or capability name, normally 3-10 words. Never expose pipeline scaffolding in the title: do not use Cross-Domain, Multi-Domain, Validation, Request Validation, Validation Pilot, Evidence Validation, Opportunity Discovery, Primary Domain, Preliminary Pilot, or a plus-sign-joined list of domains. Validation status belongs in the problem/abstract, never in the title.',
       '- problemStatement must be one polished narrative paragraph of 90-180 words. Include only evidence-backed problems that the returned objectives and solution capabilities directly address. Cross-domain and multi-problem ideas are allowed, but every included problem must map to at least one concrete objective, one affected user role, and one product capability.',
       '- Do not add legal, HR, recruitment, compliance, AI, or any other selected-domain module that falls outside the selected opportunity matchedDomainNames, even when a separate shortlisted alternative has evidence for it.',
-      '- When evidence contains unrelated problems, select the strongest coherent problem cluster instead of combining unrelated feature bundles.',
+      '- When evidence contains unrelated problems, select the strongest coherent problem cluster instead of combining unrelated feature bundles. relatedOpportunityBundle is the only exception: its items are separate atomic problems with independent evidence that may be combined only at solution-synthesis time when they form one coherent workflow. Never describe bundle items as recurrence of one problem.',
       '- Do not place solutions, objectives, feature lists, "Solution response", numbered portfolio entries, or implementation instructions inside problemStatement.',
       '- Mention a domain as part of the product claim only when it belongs to the selected opportunity matchedDomainNames. Do not promote evidence from a separate alternative opportunity into the final candidate.',
       ...(winnerDomainNames.length > 0
         ? [
             `- Authoritative final claim domains: ${winnerDomainNames.join(', ')}. The title, problem statement, affected users, objectives, abstracts, features, architecture examples, market discussion, and pilot participants must stay inside this set.`,
+            ...(input.opportunityRanking?.selected.problemDomainNames?.length
+              ? [`- Verified problem-domain semantics: ${input.opportunityRanking.selected.problemDomainNames.join(', ')}.`]
+              : []),
+            ...(input.opportunityRanking?.selected.workflowDomainNames?.length
+              ? [`- Verified workflow-domain context: ${input.opportunityRanking.selected.workflowDomainNames.join(', ')}. Treat these as the operational setting of the winning problem, not as unrelated extra feature bundles.`]
+              : []),
             `- Search-space domains outside the final claim set are forbidden in the generated narrative: ${domainNames.filter((name) => !winnerDomainNames.some((winner) => winner.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase())).join(', ') || 'none'}.`,
             winnerDomainNames.length > 1
               ? `- When referring to the evidence source in prose, use "across ${winnerDomainNames.join(' and ')}" because the selected opportunity itself is verified across those domains.`
@@ -752,7 +827,9 @@ export class PromptBuilderService {
 
     const selected = input.opportunityRanking?.selected;
     const hasDirectEvidence =
-      (selected?.verifiedIndependentEvidenceCount ?? 0) > 0 ||
+      (selected?.verifiedProblemMatchedEvidenceCount ??
+        selected?.verifiedIndependentEvidenceCount ??
+        0) > 0 ||
       (selected?.independentEvidence?.length ?? 0) > 0 ||
       (selected?.evidenceSamples.length ?? 0) > 0 ||
       (input.domainEvidence ?? []).some(
@@ -763,21 +840,47 @@ export class PromptBuilderService {
       return '';
     }
 
-    const primaryDomain =
-      input.selectedDomains?.[0]?.name?.trim() || 'the primary domain';
-    const unsupportedDomains = (input.selectedDomains ?? [])
-      .slice(1)
-      .map((domain) => domain.name)
+    const selectedDomainNames = (input.selectedDomains ?? [])
+      .map((domain) => domain.name.trim())
       .filter(Boolean);
+    const fallbackPrimaryDomain =
+      selectedDomainNames[0] || 'the resolved generation domain';
+    const claimDomains =
+      selected?.matchedDomainNames?.filter(Boolean).length
+        ? [...new Set(selected.matchedDomainNames.filter(Boolean))]
+        : [fallbackPrimaryDomain];
+    const claimDomainSet = new Set(
+      claimDomains.map((name) => name.toLocaleLowerCase()),
+    );
+    const unsupportedDomains = selectedDomainNames.filter(
+      (name) => !claimDomainSet.has(name.toLocaleLowerCase()),
+    );
+    const requestDescription = input.requestDescription?.trim();
+    const isCrossDomain = claimDomains.length > 1;
 
     return [
       'APPLICATION-ENFORCED ZERO-EVIDENCE FALLBACK:',
-      `- No retained direct community evidence exists. Generate only for the primary domain: ${primaryDomain}.`,
-      `- Do not include these secondary domains in the title, problem, objectives, target users, abstracts, features, market, architecture examples, or pilot participants: ${unsupportedDomains.join(', ') || 'none'}.`,
+      `- No retained direct community evidence exists for the final fallback. The allowed validation scope is: ${claimDomains.join(', ')}.`,
+      ...(requestDescription
+        ? [
+            `- The requester description is authoritative for the pilot problem: ${requestDescription}`,
+            '- Preserve that exact problem scope. Do not replace it with a different problem merely because another collected signal looked stronger.',
+            '- Cover every material dimension named by the requester in the pilot design. A validation-first product may prioritize one core workflow, but it must not silently omit another named pain, data source, or desired outcome; represent secondary dimensions as a concrete capability, measurable pilot check, or explicit assumption.',
+          ]
+        : []),
+      ...(isCrossDomain
+        ? [
+            '- This is a cross-domain validation hypothesis. Build one coherent workflow connecting the allowed domains, but do not claim that community evidence already proves the connection or the demand.',
+            '- The product may validate that only one of these domains ultimately contains the strongest problem; the current output must remain explicit that the cross-domain framing is a pilot assumption.',
+          ]
+        : [
+            `- Keep the validation workflow specific to ${claimDomains[0]}.`,
+          ]),
+      `- Do not include unsupported domains in product claims: ${unsupportedDomains.join(', ') || 'none'}.`,
       '- Do not write "community signal reports", "users report", "evidence-based product", "recurring problem", or any equivalent observed-demand claim.',
-      '- Use "unvalidated hypothesis", "evidence-collection and validation workflow", and "pilot assumption" wording.',
+      '- Use "unvalidated hypothesis", "evidence-collection and validation workflow", and "pilot assumption" wording in the narrative when qualification is needed.',
+      '- Keep the public title product-like even in this fallback. Never put Cross-Domain, Validation, Request Validation, Validation Pilot, Evidence Validation, Primary Domain, or other pipeline-state wording in the title.',
       '- The product may collect future evidence, but must not claim that its own proposed intake workflow proves the problem already exists.',
-      '- Keep all user roles, examples, integrations, and measurements specific to the primary domain.',
     ].join('\n');
   }
 

@@ -9,8 +9,16 @@ import {
 } from '../types/idea-opportunity-ranking.type';
 import type { CommunityAiAnalysis } from '../types/community-ai-analysis.type';
 import type { IdeaGenerationNlpContext } from '../types/idea-generation-context.type';
-import { classifyDirectCommunityEvidence } from '../../../nlp/common/utils/community-evidence.util';
-import { clusterEvidenceByProblemFamily } from '../../../nlp/common/utils/problem-family-matching.util';
+import {
+  classifyDirectCommunityEvidence,
+  isNonActionableCommunityBanter,
+  segmentCommunityEvidenceIssues,
+} from '../../../nlp/common/utils/community-evidence.util';
+import {
+  clusterEvidenceByProblemFamily,
+  matchEvidenceToAtomicProblem,
+  matchEvidenceToProblemFamily,
+} from '../../../nlp/common/utils/problem-family-matching.util';
 
 const MAX_EVIDENCE_SAMPLES = 5;
 const MAX_EVIDENCE_SAMPLE_LENGTH = 700;
@@ -176,6 +184,7 @@ export class IdeaOpportunityRankingService {
     const extractedCandidates = [
       ...this.extractEvidenceFirstCandidates(nlp),
       ...this.extractCommunityAiCandidates(communityAiAnalysis),
+      ...this.extractCommunityAiHypothesisCandidates(communityAiAnalysis),
       ...this.extractCandidates(
         nlp.recurringProblems,
         IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM,
@@ -234,35 +243,14 @@ export class IdeaOpportunityRankingService {
 
     const ranked = candidatesToRank
       .sort((first, second) => {
-        /*
-         * Strictly eligible opportunities always outrank preliminary
-         * fallbacks. This prevents a highly specific but weak one-off ticket
-         * from winning over an adequately supported community opportunity.
-         */
         if (first.selectionEligible !== second.selectionEligible) {
           return first.selectionEligible ? -1 : 1;
         }
 
-        const supportDifference = second.supportScore - first.supportScore;
-
-        if (Math.abs(supportDifference) >= 0.12) {
-          return supportDifference;
-        }
-
-        const reliabilityDifference =
-          second.evidenceReliabilityScore - first.evidenceReliabilityScore;
-
-        if (Math.abs(reliabilityDifference) >= 0.12) {
-          return reliabilityDifference;
-        }
-
-        const scoreDifference = second.finalScore - first.finalScore;
-
-        if (scoreDifference !== 0) {
-          return scoreDifference;
-        }
-
         return (
+          second.finalScore - first.finalScore ||
+          second.supportScore - first.supportScore ||
+          second.evidenceReliabilityScore - first.evidenceReliabilityScore ||
           second.evidenceSamples.length - first.evidenceSamples.length ||
           second.frequency - first.frequency ||
           first.title.localeCompare(second.title)
@@ -334,16 +322,16 @@ export class IdeaOpportunityRankingService {
           return first.selectionEligible ? -1 : 1;
         }
 
-        const verifiedDifference =
-          (second.verifiedIndependentEvidenceCount ?? 0) -
-          (first.verifiedIndependentEvidenceCount ?? 0);
-        if (verifiedDifference !== 0) {
-          return verifiedDifference;
-        }
-
         return (
           second.finalScore - first.finalScore ||
+          (second.verifiedProblemMatchedDirectUserEvidenceCount ??
+            second.verifiedIndependentEvidenceCount ??
+            0) -
+            (first.verifiedProblemMatchedDirectUserEvidenceCount ??
+              first.verifiedIndependentEvidenceCount ??
+              0) ||
           second.evidenceReliabilityScore - first.evidenceReliabilityScore ||
+          second.supportScore - first.supportScore ||
           first.title.localeCompare(second.title)
         );
       })
@@ -354,15 +342,207 @@ export class IdeaOpportunityRankingService {
       return ranking;
     }
 
+    const relatedOpportunityBundle = this.buildRelatedOpportunityBundle(
+      selected,
+      alternatives,
+      selectedDomains,
+    );
+    const selectedWithBundle =
+      relatedOpportunityBundle.length > 0
+        ? {
+            ...selected,
+            relatedOpportunityBundle,
+            matchedDomainNames: [
+              ...new Set([
+                ...(selected.matchedDomainNames ?? []),
+                ...relatedOpportunityBundle.flatMap(
+                  (item) => item.matchedDomainNames,
+                ),
+              ]),
+            ],
+          }
+        : selected;
+
     return {
       ...ranking,
-      selected,
+      selected: selectedWithBundle,
       alternatives,
       selectionReason:
         selected.title === previousSelectedTitle
           ? ranking.selectionReason
           : `Selected the strongest verified evidence-backed opportunity after reconciling domain attribution with retained independent evidence: ${selected.title}.`,
     };
+  }
+
+  private buildRelatedOpportunityBundle(
+    selected: RankedIdeaOpportunity,
+    alternatives: readonly RankedIdeaOpportunity[],
+    selectedDomains: readonly SelectedDomainRankingInput[],
+  ): NonNullable<RankedIdeaOpportunity['relatedOpportunityBundle']> {
+    const selectedFamily = this.readRankedFamilyKey(selected);
+    const complementaryFamilies: Readonly<Record<string, readonly string[]>> = {
+      'hr-candidate-pooling': ['hr-client-outreach'],
+      'hr-client-outreach': ['hr-candidate-pooling'],
+    };
+    const allowed = complementaryFamilies[selectedFamily ?? ''] ?? [];
+    const selectedMatchedDomains = new Set(
+      (selected.matchedDomainNames ?? []).map((name) => name.toLocaleLowerCase()),
+    );
+    const allowedSelectedDomains = new Set(
+      selectedDomains.map((domain) => domain.name.toLocaleLowerCase()),
+    );
+
+    const sameDomainComplements = alternatives.filter((candidate) => {
+      if (candidate.disqualificationReasons.includes('OFF_SELECTED_DOMAIN')) {
+        return false;
+      }
+      const family = this.readRankedFamilyKey(candidate);
+      if (!family || !allowed.includes(family)) return false;
+      if ((candidate.verifiedProblemMatchedEvidenceCount ?? 0) < 1) return false;
+      if (
+        candidate.evidenceReliabilityScore < 0.45 ||
+        candidate.supportScore < 0.3
+      ) {
+        return false;
+      }
+      return (candidate.matchedDomainNames ?? []).some((name) =>
+        selectedMatchedDomains.has(name.toLocaleLowerCase()),
+      );
+    });
+
+    const crossDomainComplements = alternatives.filter((candidate) => {
+      if (candidate.disqualificationReasons.includes('OFF_SELECTED_DOMAIN')) {
+        return false;
+      }
+      if ((candidate.verifiedProblemMatchedEvidenceCount ?? 0) < 1) {
+        return false;
+      }
+      if (
+        candidate.evidenceReliabilityScore < 0.45 ||
+        candidate.supportScore < 0.3
+      ) {
+        return false;
+      }
+
+      const candidateDomains = (candidate.matchedDomainNames ?? []).map((name) =>
+        name.toLocaleLowerCase(),
+      );
+      if (
+        candidateDomains.length === 0 ||
+        !candidateDomains.some((name) => allowedSelectedDomains.has(name)) ||
+        candidateDomains.some((name) => selectedMatchedDomains.has(name))
+      ) {
+        return false;
+      }
+
+      return this.calculateOpportunityCoherence(selected, candidate) >= 0.18;
+    });
+
+    const combined = [...sameDomainComplements, ...crossDomainComplements]
+      .filter(
+        (candidate, index, candidates) =>
+          candidates.findIndex((item) => item.title === candidate.title) ===
+          index,
+      )
+      .sort(
+        (first, second) =>
+          this.calculateOpportunityCoherence(selected, second) -
+            this.calculateOpportunityCoherence(selected, first) ||
+          (second.verifiedProblemMatchedEvidenceCount ?? 0) -
+            (first.verifiedProblemMatchedEvidenceCount ?? 0) ||
+          second.finalScore - first.finalScore,
+      )
+      .slice(0, 2);
+
+    return combined.map((candidate) => ({
+      rank: candidate.rank,
+      title: candidate.title,
+      problem: candidate.problem,
+      need: candidate.need,
+      solutionArea: candidate.solutionArea,
+      evidenceType: candidate.evidenceType,
+      evidenceSamples: candidate.evidenceSamples.slice(0, 2),
+      matchedDomainNames: candidate.matchedDomainNames ?? [],
+      verifiedProblemMatchedEvidenceCount:
+        candidate.verifiedProblemMatchedEvidenceCount ?? 0,
+      verifiedProblemMatchedDirectUserEvidenceCount:
+        candidate.verifiedProblemMatchedDirectUserEvidenceCount ?? 0,
+      verifiedProblemMatchedComplaintEvidenceCount:
+        candidate.verifiedProblemMatchedComplaintEvidenceCount ?? 0,
+      verifiedProblemMatchedFeatureRequestEvidenceCount:
+        candidate.verifiedProblemMatchedFeatureRequestEvidenceCount ?? 0,
+    }));
+  }
+
+  private calculateOpportunityCoherence(
+    first: RankedIdeaOpportunity,
+    second: RankedIdeaOpportunity,
+  ): number {
+    const normalize = (value: string): Set<string> => {
+      const stopWords = new Set([
+        'about',
+        'application',
+        'business',
+        'company',
+        'domain',
+        'help',
+        'issue',
+        'management',
+        'need',
+        'needs',
+        'operation',
+        'operations',
+        'platform',
+        'problem',
+        'software',
+        'system',
+        'user',
+        'users',
+        'workflow',
+      ]);
+
+      return new Set(
+        value
+          .normalize('NFKC')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .split(/\s+/u)
+          .filter((token) => token.length >= 4 && !stopWords.has(token)),
+      );
+    };
+
+    const firstTokens = normalize(
+      [
+        first.title,
+        first.problem ?? '',
+        first.need ?? '',
+        first.solutionArea ?? '',
+      ].join(' '),
+    );
+    const secondTokens = normalize(
+      [
+        second.title,
+        second.problem ?? '',
+        second.need ?? '',
+        second.solutionArea ?? '',
+      ].join(' '),
+    );
+
+    if (firstTokens.size === 0 || secondTokens.size === 0) {
+      return 0;
+    }
+
+    const intersection = [...firstTokens].filter((token) =>
+      secondTokens.has(token),
+    ).length;
+    const smaller = Math.min(firstTokens.size, secondTokens.size);
+
+    return intersection / Math.max(1, smaller);
+  }
+
+  private readRankedFamilyKey(candidate: RankedIdeaOpportunity): string | null {
+    if (!this.isJsonObject(candidate.raw)) return null;
+    return this.readString(candidate.raw.familyKey);
   }
 
   private reconcileVerifiedCandidateDomainAttribution(
@@ -377,27 +557,38 @@ export class IdeaOpportunityRankingService {
       return candidate;
     }
 
+    const familyReconciledCandidate = this.reconcileVerifiedProblemFamily(
+      candidate,
+      verifiedEvidenceTexts,
+    );
     const evidenceOnlyCandidate: NormalizedCandidate = {
       title: '',
       problem: null,
       need: null,
       solutionArea: null,
-      evidenceType: candidate.evidenceType,
-      sourceIndex: candidate.sourceIndex,
-      frequency: candidate.frequency,
-      severity: candidate.severity,
+      evidenceType: familyReconciledCandidate.evidenceType,
+      sourceIndex: familyReconciledCandidate.sourceIndex,
+      frequency: familyReconciledCandidate.frequency,
+      severity: familyReconciledCandidate.severity,
       evidenceSamples: verifiedEvidenceTexts,
-      raw: candidate.raw,
+      raw: familyReconciledCandidate.raw,
     };
-    const domainRelevanceScores = this.calculateDomainRelevanceScores(
+    const verifiedDomainAttribution = this.calculateVerifiedDomainAttribution(
       evidenceOnlyCandidate,
       selectedDomains,
     );
-    const matchedDomainNames = Object.entries(domainRelevanceScores)
-      .filter(([, score]) => score >= MIN_SELECTED_DOMAIN_RELEVANCE)
-      .sort((left, right) => right[1] - left[1])
-      .map(([name]) => name);
-    const disqualificationReasons = new Set(candidate.disqualificationReasons);
+    const {
+      matchedDomainNames,
+      problemDomainNames,
+      workflowDomainNames,
+      primaryMatchedDomainName,
+      domainRelevanceScores,
+      problemDomainRelevanceScores,
+      workflowDomainRelevanceScores,
+    } = verifiedDomainAttribution;
+    const disqualificationReasons = new Set(
+      familyReconciledCandidate.disqualificationReasons,
+    );
     disqualificationReasons.delete('OFF_SELECTED_DOMAIN');
 
     if (matchedDomainNames.length === 0) {
@@ -405,13 +596,431 @@ export class IdeaOpportunityRankingService {
     }
 
     return {
-      ...candidate,
+      ...familyReconciledCandidate,
+      evidenceSamples: verifiedEvidenceTexts.slice(0, MAX_EVIDENCE_SAMPLES),
+      frequency: Math.min(
+        Math.max(familyReconciledCandidate.frequency, 1),
+        verifiedEvidenceTexts.length,
+      ),
       matchedDomainNames,
+      problemDomainNames,
+      workflowDomainNames,
+      primaryMatchedDomainName,
       domainRelevanceScores,
+      problemDomainRelevanceScores,
+      workflowDomainRelevanceScores,
       selectionEligible:
-        candidate.selectionEligible && matchedDomainNames.length > 0,
+        familyReconciledCandidate.selectionEligible &&
+        matchedDomainNames.length > 0,
       disqualificationReasons: [...disqualificationReasons],
     };
+  }
+
+  private reconcileVerifiedProblemFamily(
+    candidate: RankedIdeaOpportunity,
+    verifiedEvidenceTexts: readonly string[],
+  ): RankedIdeaOpportunity {
+    const [verifiedCluster] = clusterEvidenceByProblemFamily(
+      verifiedEvidenceTexts,
+    );
+
+    if (!verifiedCluster) {
+      return candidate;
+    }
+
+    const rawObject = this.isJsonObject(candidate.raw) ? candidate.raw : null;
+    const rawSource = rawObject ? this.readString(rawObject.source) : null;
+    const currentDescriptor = [candidate.title, candidate.problem ?? '']
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const currentDescriptorMatches = verifiedEvidenceTexts.some((sample) =>
+      matchEvidenceToProblemFamily(currentDescriptor, sample).matched,
+    );
+    const hasConcreteVerifiedFamily =
+      verifiedCluster.key !== 'generic-friction' &&
+      !verifiedCluster.key.startsWith('lexical:');
+    const shouldRepair =
+      rawSource === 'EVIDENCE_CLUSTER' ||
+      (hasConcreteVerifiedFamily && !currentDescriptorMatches);
+
+    if (!shouldRepair) {
+      return candidate;
+    }
+
+    const repairedTitle = this.deriveVerifiedTitle(
+      verifiedCluster.key,
+      verifiedEvidenceTexts,
+      verifiedCluster.label,
+    );
+    const repairedRaw: Prisma.JsonValue = rawObject
+      ? ({
+          ...rawObject,
+          familyKey: verifiedCluster.key,
+          title: repairedTitle,
+          problem: repairedTitle,
+          evidenceSamples: verifiedEvidenceTexts.slice(0, MAX_EVIDENCE_SAMPLES),
+        } as Prisma.JsonObject)
+      : candidate.raw;
+
+    const repairedSolutionArea = this.deriveVerifiedSolutionArea(
+      verifiedCluster.key,
+      verifiedEvidenceTexts,
+      candidate.solutionArea,
+    );
+
+    return {
+      ...candidate,
+      title: repairedTitle,
+      problem: repairedTitle,
+      need: this.deriveVerifiedNeed(verifiedCluster.key, repairedTitle),
+      solutionArea: repairedSolutionArea,
+      raw: repairedRaw,
+    };
+  }
+
+  private calculateVerifiedDomainAttribution(
+    candidate: NormalizedCandidate,
+    selectedDomains: readonly SelectedDomainRankingInput[],
+  ): {
+    readonly matchedDomainNames: readonly string[];
+    readonly problemDomainNames: readonly string[];
+    readonly workflowDomainNames: readonly string[];
+    readonly primaryMatchedDomainName: string | null;
+    readonly domainRelevanceScores: Readonly<Record<string, number>>;
+    readonly problemDomainRelevanceScores: Readonly<Record<string, number>>;
+    readonly workflowDomainRelevanceScores: Readonly<Record<string, number>>;
+  } {
+    const problemCandidate = this.buildDomainSemanticCandidate(candidate, false);
+    const workflowCandidate = this.buildDomainSemanticCandidate(candidate, true);
+    const problemScores: Record<string, number> = {};
+    const workflowScores: Record<string, number> = {};
+    const combinedScores: Record<string, number> = {};
+
+    for (const domain of selectedDomains) {
+      const terms = this.expandDomainSemanticTerms(domain);
+      const problemScore = this.passesSelectedDomainContextGuard(
+        domain.name,
+        problemCandidate,
+      )
+        ? this.calculateSelectedDomainRelevance(problemCandidate, terms)
+        : 0;
+      const workflowScore = this.passesSelectedDomainContextGuard(
+        domain.name,
+        workflowCandidate,
+      )
+        ? this.calculateSelectedDomainRelevance(workflowCandidate, terms)
+        : 0;
+
+      problemScores[domain.name] = this.round(problemScore);
+      workflowScores[domain.name] = this.round(workflowScore);
+      combinedScores[domain.name] = this.round(
+        Math.max(problemScore, workflowScore * 0.55),
+      );
+    }
+
+    const problemDomainNames = Object.entries(problemScores)
+      .filter(([, score]) => score >= MIN_SELECTED_DOMAIN_RELEVANCE)
+      .sort((left, right) => right[1] - left[1])
+      .map(([name]) => name);
+
+    const workflowDomainNames = Object.entries(workflowScores)
+      .filter(
+        ([name, score]) =>
+          score >= 0.6 && !problemDomainNames.includes(name),
+      )
+      .sort((left, right) => right[1] - left[1])
+      .map(([name]) => name);
+
+    const matchedDomainNames = [
+      ...problemDomainNames,
+      ...workflowDomainNames,
+    ];
+
+    const primaryMatchedDomainName =
+      problemDomainNames[0] ??
+      Object.entries(combinedScores)
+        .filter(([, score]) => score >= MIN_SELECTED_DOMAIN_RELEVANCE)
+        .sort((left, right) => right[1] - left[1])[0]?.[0] ??
+      null;
+
+    return {
+      matchedDomainNames,
+      problemDomainNames,
+      workflowDomainNames,
+      primaryMatchedDomainName,
+      domainRelevanceScores: combinedScores,
+      problemDomainRelevanceScores: problemScores,
+      workflowDomainRelevanceScores: workflowScores,
+    };
+  }
+
+  private deriveVerifiedTitle(
+    familyKey: string,
+    verifiedEvidenceTexts: readonly string[],
+    fallbackLabel: string,
+  ): string {
+    const evidenceText = verifiedEvidenceTexts.join(' ').toLocaleLowerCase();
+
+    if (familyKey === 'ai-model-containment') {
+      return 'AI Model Containment and Sandbox Escape Failures';
+    }
+
+    if (familyKey === 'energy-monitor-installation') {
+      return 'Energy Monitor Sensor Installation and Setup Friction';
+    }
+
+    if (familyKey === 'streaming-data-integrity') {
+      return 'Streaming Data Integrity and Staleness Failures';
+    }
+
+    if (familyKey === 'accessibility-focus-navigation') {
+      return 'Accessibility Focus and Keyboard Navigation Failures';
+    }
+
+    if (familyKey === 'authentication') {
+      return 'Login and Account Access Failures';
+    }
+
+    if (familyKey === 'hr-candidate-pooling') {
+      return 'Candidate Profile Pooling and Reuse for Recurring Hiring';
+    }
+
+    if (familyKey === 'hr-client-outreach') {
+      return 'Client Contact Mass Outreach Gaps in Applicant Tracking Systems';
+    }
+
+    if (familyKey === 'mental-health-time-access') {
+      return 'Workday Mental Health Time-Access Constraints';
+    }
+
+    if (familyKey === 'healthcare-treatment-access') {
+      return 'Cross-Border Treatment Availability and Access Gaps';
+    }
+
+    if (familyKey === 'clinical-sparse-measurements') {
+      return 'Sparse Clinical Measurement and Missing-by-Design Data Gaps';
+    }
+
+    if (
+      familyKey === 'blockchain-wallet-state-sync' ||
+      (/\b(?:wallet|account balance|wallet balance|transactions?|confirmations?)\b/iu.test(
+        evidenceText,
+      ) &&
+        /\b(?:missing|not showing|fail(?:s|ed)? to appear|incorrect|wrong|visibility|synchroni[sz])\b/iu.test(
+          evidenceText,
+        ) &&
+        /\b(?:blockchain|wallet|confirmed|confirmation)\b/iu.test(evidenceText))
+    ) {
+      return 'Wallet Transaction Visibility and State Synchronization Failures';
+    }
+
+    if (
+      familyKey === 'billing-payment' &&
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|payment reconciliation|refund)/iu.test(
+        evidenceText,
+      )
+    ) {
+      return 'Cash Payment Reconciliation and Duplicate Charge Failures';
+    }
+
+    if (
+      familyKey === 'billing-payment' &&
+      /(?:international card|foreign card|international number|foreign number|traveling from abroad|travelling from abroad)/iu.test(
+        evidenceText,
+      ) &&
+      /(?:otp|verification|cannot use|can['’]?t use|could not use|not accept)/iu.test(
+        evidenceText,
+      )
+    ) {
+      return 'International Card and OTP Access Barriers for Travelers';
+    }
+
+    if (familyKey.startsWith('lexical:')) {
+      return 'Specific User Workflow Friction';
+    }
+
+    return fallbackLabel;
+  }
+
+  private deriveVerifiedNeed(familyKey: string, familyLabel: string): string {
+    if (familyKey === 'ai-model-containment') {
+      return 'AI evaluation teams need a controlled way to detect, triage, and review model containment or sandbox-boundary violations during security testing';
+    }
+    if (familyKey === 'energy-monitor-installation') {
+      return 'Energy-monitoring users need a simpler guided setup for installing, mapping, and validating multiple sensors or current transformers without excessive manual configuration';
+    }
+    if (familyKey === 'streaming-data-integrity') {
+      return 'Streaming teams need integrity monitoring that detects stale, skewed, or incorrect payloads even when the pipeline does not crash or emit an error';
+    }
+    if (familyKey === 'accessibility-focus-navigation') {
+      return 'Users need accessible focus recovery and keyboard navigation that cannot be trapped by stale or hidden interface controls';
+    }
+    if (familyKey === 'hr-candidate-pooling') {
+      return 'Recruiters need structured candidate-profile pooling, sorting, and reuse for recurring hiring workflows';
+    }
+    if (familyKey === 'hr-client-outreach') {
+      return 'Recruiters and staffing teams need controlled mass outreach to saved client contacts inside applicant-tracking workflows';
+    }
+    if (familyKey === 'real-estate-session-persistence') {
+      return 'Real-estate search users need stable signed-in sessions that preserve active search and saved-property workflows';
+    }
+    if (familyKey === 'real-estate-favorites-filtering') {
+      return 'Housing seekers need location-aware filtering over saved homes and favorite listings';
+    }
+    if (familyKey === 'real-estate-multi-criteria-filtering') {
+      return 'Housing seekers need to combine multiple property criteria in the same search or saved-list filtering workflow';
+    }
+    if (familyKey === 'real-estate-tag-persistence') {
+      return 'Real-estate users need custom property tags and notes to persist reliably across sessions';
+    }
+    if (familyKey === 'feature-change-notification') {
+      return 'Users need clear notice and migration guidance when important product functionality changes or is removed';
+    }
+    if (familyKey === 'mental-health-time-access') {
+      return 'People need lower-friction ways to protect small periods of mental-health recovery within constrained daily schedules';
+    }
+    if (familyKey === 'healthcare-treatment-access') {
+      return 'Patients and clinicians need clearer ways to identify treatment availability constraints and feasible access pathways across health systems';
+    }
+    if (familyKey === 'clinical-sparse-measurements') {
+      return 'Clinical analytics workflows need explicit handling of sparse and missing-by-design measurements without treating absent observations as persisted-record loss';
+    }
+    if (familyKey === 'blockchain-wallet-state-sync') {
+      return 'Reliable reconciliation between confirmed blockchain transactions and wallet-visible balances, confirmation counts, and transaction history';
+    }
+    if (familyKey === 'billing-payment') {
+      return 'Reliable Payment Reconciliation and Duplicate Charge Recovery';
+    }
+    if (familyKey === 'authentication') {
+      return 'Reliable Login, Authentication, and Account Access Recovery';
+    }
+    if (familyKey === 'navigation-routing') {
+      return 'Reliable Navigation, Redirect, and Endpoint Recovery';
+    }
+    if (familyKey === 'legal-research-access') {
+      return 'Affordable Legal Evidence Documentation with Factuality Review';
+    }
+    if (familyKey === 'therapeutic-continuity') {
+      return 'Stable Therapeutic Persona, Voice, and Interaction Continuity Across Updates';
+    }
+    if (familyKey === 'regional-crypto-access') {
+      return 'Region-Compatible Crypto Access and Clearly Supported Alternative Wallet or Exchange Paths';
+    }
+
+    if (familyKey.startsWith('lexical:')) {
+      return 'Users need a more reliable way to complete the specific workflow described by the retained evidence without the observed friction.';
+    }
+
+    return `Users need a more reliable way to avoid or recover from ${familyLabel.toLowerCase()}.`;
+  }
+
+  private deriveVerifiedSolutionArea(
+    familyKey: string,
+    verifiedEvidenceTexts: readonly string[],
+    fallback: string | null,
+  ): string | null {
+    const evidenceText = verifiedEvidenceTexts.join(' ').toLowerCase();
+
+    if (familyKey === 'ai-model-containment') {
+      return 'AI Model Security, Sandbox Boundary Monitoring, and Human-Reviewed Triage';
+    }
+
+    if (familyKey === 'energy-monitor-installation') {
+      return 'Guided Energy Monitor Sensor Setup, Mapping, and Configuration Diagnostics';
+    }
+
+    if (familyKey === 'streaming-data-integrity') {
+      return 'Streaming Data Integrity, Validation, and Observability';
+    }
+
+    if (familyKey === 'accessibility-focus-navigation') {
+      return 'Accessible Focus Management and Keyboard Navigation Recovery';
+    }
+
+    if (familyKey === 'hr-candidate-pooling') {
+      return 'Candidate Profile Pooling and Recurring Hiring Management';
+    }
+
+    if (familyKey === 'hr-client-outreach') {
+      return 'ATS Client Contact Outreach and Campaign Management';
+    }
+
+    if (familyKey === 'real-estate-session-persistence') {
+      return 'Real Estate Session Reliability and State Preservation';
+    }
+
+    if (familyKey === 'real-estate-favorites-filtering') {
+      return 'Saved Property Search and Location Filtering';
+    }
+
+    if (familyKey === 'real-estate-multi-criteria-filtering') {
+      return 'Composable Property Search and Multi-Criteria Filtering';
+    }
+
+    if (familyKey === 'real-estate-tag-persistence') {
+      return 'Property Tagging, Notes, and Saved-State Persistence';
+    }
+
+    if (familyKey === 'feature-change-notification') {
+      return 'Feature Change Communication and Migration Guidance';
+    }
+
+    if (familyKey === 'mental-health-time-access') {
+      return 'Workday Mental Health Time Access and Recovery Planning';
+    }
+
+    if (familyKey === 'healthcare-treatment-access') {
+      return 'Treatment Availability Navigation and Access Validation';
+    }
+
+    if (familyKey === 'clinical-sparse-measurements') {
+      return 'Sparse Clinical Data Quality and Missingness Diagnostics';
+    }
+
+    if (familyKey === 'blockchain-wallet-state-sync') {
+      return 'Wallet State Reconciliation and Transaction Visibility Diagnostics';
+    }
+
+    if (familyKey === 'billing-payment') {
+      if (
+        /(?:paid .*cash|cash .*paid|charged .*again|double charg|duplicate charg|already paid|payment reconciliation|refund)/iu.test(
+          evidenceText,
+        )
+      ) {
+        return 'Payment Reconciliation and Duplicate Charge Recovery';
+      }
+      if (
+        /(?:connect .*bank|bank .*connect|venmo|payment method|card connected|link(?:ing)? .*card)/iu.test(
+          evidenceText,
+        )
+      ) {
+        return 'Payment Method Linking and Charge Consistency';
+      }
+      return 'Billing and Payment Recovery';
+    }
+
+    if (familyKey === 'authentication') {
+      return 'Authentication Session and Identity Provider Recovery';
+    }
+
+    if (familyKey === 'navigation-routing') {
+      return 'Navigation and Routing Endpoint Recovery';
+    }
+
+    if (familyKey === 'legal-research-access') {
+      return 'Affordable Legal Evidence Documentation and Factuality Review';
+    }
+
+    if (familyKey === 'therapeutic-continuity') {
+      return 'Therapeutic Persona Continuity and Asset Regression Monitoring';
+    }
+
+    if (familyKey === 'regional-crypto-access') {
+      return 'Regional Crypto Access Compatibility and Alternative Platform Guidance';
+    }
+
+    return fallback;
   }
 
   private buildSelectionReason(
@@ -486,6 +1095,32 @@ export class IdeaOpportunityRankingService {
     }));
   }
 
+  private extractCommunityAiHypothesisCandidates(
+    analysis: CommunityAiAnalysis | null,
+  ): NormalizedCandidate[] {
+    if (!analysis || analysis.unvalidatedDomainHypotheses.length === 0) {
+      return [];
+    }
+
+    return analysis.unvalidatedDomainHypotheses.map((hypothesis, sourceIndex) => ({
+      title: hypothesis.title,
+      problem: hypothesis.problem,
+      need: hypothesis.unmetNeed,
+      solutionArea: hypothesis.solutionArea,
+      evidenceType: IDEA_OPPORTUNITY_EVIDENCE_TYPES.OPPORTUNITY,
+      sourceIndex: sourceIndex + 10_000,
+      frequency: 0,
+      severity: 'MEDIUM',
+      evidenceSamples: [],
+      raw: {
+        ...hypothesis,
+        source: 'COMMUNITY_AI_HYPOTHESIS',
+        groundingScore: 0,
+        unvalidatedHypothesis: true,
+      } as unknown as Prisma.JsonValue,
+    }));
+  }
+
   /**
    * Builds opportunity candidates from the retained evidence itself before any
    * Community-AI wording is considered. This makes the evidence cluster the
@@ -498,17 +1133,27 @@ export class IdeaOpportunityRankingService {
     const directEvidence = this.deduplicateEvidenceSamples([
       ...this.readEvidenceTextsFromJson(nlp.sampleComments),
       ...this.readEvidenceTextsFromJson(nlp.samplePosts),
-    ]).filter((sample) => {
-      const commentBody =
-        sample.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? sample;
-      return (
-        classifyDirectCommunityEvidence(commentBody, 'COMMENT') !== 'NONE' ||
-        classifyDirectCommunityEvidence(sample, 'POST') !== 'NONE' ||
-        this.hasDirectComplaintSignal(sample)
-      );
-    });
+    ])
+      .filter((sample) => {
+        const commentBody =
+          sample.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? sample;
+        const commentKind = classifyDirectCommunityEvidence(
+          commentBody,
+          'COMMENT',
+        );
+        const postKind = classifyDirectCommunityEvidence(sample, 'POST');
+        return (
+          commentKind === 'USER_COMPLAINT' ||
+          commentKind === 'FEATURE_REQUEST' ||
+          postKind === 'USER_COMPLAINT' ||
+          postKind === 'FEATURE_REQUEST' ||
+          this.hasDirectComplaintSignal(sample)
+        );
+      })
+      .flatMap((sample) => segmentCommunityEvidenceIssues(sample))
+      .filter((sample) => this.hasDirectComplaintSignal(sample));
 
-    return clusterEvidenceByProblemFamily(directEvidence)
+    return clusterEvidenceByProblemFamily(this.deduplicateEvidenceSamples(directEvidence))
       .slice(0, MAX_RANKED_OPPORTUNITIES)
       .map((cluster, sourceIndex) => ({
         title: cluster.label,
@@ -692,6 +1337,24 @@ export class IdeaOpportunityRankingService {
 
     if (normalized.length > 96 || wordCount > 12) return false;
 
+    const narrativeFragment =
+      /^(?:\d+|one|two|three|four|five)\s+(?:days?|weeks?|months?|years?)\s+ago\b/iu.test(
+        normalized,
+      ) ||
+      /^(?:i|we)\s+(?:am|are|was|were|made|paid|tried|used|have|had|cannot|can['’]?t|could not|couldn['’]?t)\b/iu.test(
+        normalized,
+      );
+
+    if (narrativeFragment) return false;
+
+    if (
+      /^(?:bounded|evidence[- ]grounded) validation workflow\b|^a bounded validation workflow\b/iu.test(
+        normalized,
+      )
+    ) {
+      return false;
+    }
+
     return !/(?:\b20\d{2}\b|\bupdate\b|\bguide\b|\bhere'?s\b|\bfirst time visiting\b|\bhow to\b|[!?]{1,})/iu.test(
       normalized,
     );
@@ -717,6 +1380,72 @@ export class IdeaOpportunityRankingService {
       .join(' ')
       .replace(/\s+/gu, ' ')
       .toLowerCase();
+
+    if (
+      /(?:got married|married|name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name)/iu.test(
+        context,
+      ) &&
+      /(?:government department|government departments|agencies|hmrc|dvla|passport office|dwp|student loans|land registry|record updated)/iu.test(
+        context,
+      )
+    ) {
+      return 'Cross-Agency Life-Event Record Update Coordination';
+    }
+
+    if (
+      /(?:streaming pipeline|streaming data|data pipeline)/iu.test(context) &&
+      /(?:stale|skewed|incorrect|wrong|corrupt|quietly serving|silently serving)/iu.test(
+        context,
+      )
+    ) {
+      return 'Streaming Data Integrity and Staleness Failures';
+    }
+
+    if (
+      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|locked out(?: of)?\s+(?:my|the|this)?\s*account/iu.test(
+        context,
+      )
+    ) {
+      return 'Login and Account Access Failures';
+    }
+
+    if (
+      /\b(?:wallet|account balance|wallet balance|transaction history|transactions?|confirmations?)\b/iu.test(
+        context,
+      ) &&
+      /\b(?:missing|not showing|fail(?:s|ed)? to appear|incorrect|wrong|zero|0|visibility|synchroni[sz])\b/iu.test(
+        context,
+      ) &&
+      /\b(?:blockchain|wallet|confirmed|confirmation)\b/iu.test(context)
+    ) {
+      return 'Wallet Transaction Visibility and State Synchronization Failures';
+    }
+
+    if (
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation|driver|rider)/iu.test(
+        context,
+      )
+    ) {
+      return 'Cash Payment Reconciliation and Duplicate Charge Failures';
+    }
+
+    if (
+      /(?:venmo|bank|payment method|card)/iu.test(context) &&
+      /(?:connect|link|connected|charged|charge)/iu.test(context)
+    ) {
+      return 'Payment Method Linking and Charge Consistency Failures';
+    }
+
+    if (
+      /(?:international card|foreign card|international number|foreign number|traveling from abroad|travelling from abroad|traveler|traveller)/iu.test(
+        context,
+      ) &&
+      /(?:otp|verification|card|payment|cannot use|can['’]?t use|could not use|not accept)/iu.test(
+        context,
+      )
+    ) {
+      return 'International Card and OTP Access Barriers for Travelers';
+    }
 
     if (
       /\b(?:fare|ticket|contactless|tube|bus|transit).{0,100}(?:confus|unclear|difficult|how to pay)|(?:confus|unclear|difficult).{0,100}\b(?:fare|ticket|contactless|transit|bus|tube)\b/iu.test(
@@ -831,7 +1560,11 @@ export class IdeaOpportunityRankingService {
     const corpusEvidence = workingCandidate.evidenceSamples
       .map((sample) => this.normalizeEvidenceSample(sample))
       .filter(Boolean)
-      .filter((sample) => !this.isPromotionalOnlyEvidence(sample));
+      .filter((sample) => !this.isPromotionalOnlyEvidence(sample))
+      .filter((sample) => {
+        const body = sample.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim();
+        return !body || !isNonActionableCommunityBanter(body, 'COMMENT');
+      });
 
     const normalizedEvidence = corpusEvidence.filter(
       (sample) => !this.isNonDiagnosticEvidence(sample),
@@ -1143,6 +1876,58 @@ export class IdeaOpportunityRankingService {
 
     const context = [title, problem].filter(Boolean).join(' ').toLowerCase();
 
+    if (
+      /\b(?:wallet|account balance|wallet balance|transaction history|transactions?|confirmations?)\b/iu.test(
+        context,
+      ) &&
+      /\b(?:missing|not showing|fail(?:s|ed)? to appear|incorrect|wrong|visibility|synchroni[sz])\b/iu.test(
+        context,
+      ) &&
+      /\b(?:blockchain|wallet|confirmed|confirmation)\b/iu.test(context)
+    ) {
+      return {
+        problem: 'Wallet Transaction Visibility and State Synchronization Failures',
+        need: 'Reliable reconciliation between confirmed blockchain transactions and wallet-visible balances, confirmation counts, and transaction history',
+        solutionArea: 'Wallet State Reconciliation and Transaction Visibility Diagnostics',
+      };
+    }
+
+    if (
+      /\b(?:taking time for mental health|time for mental health|mental health time|mental health break|recovery time|self-care time)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem: 'Workday Mental Health Time-Access Constraints',
+        need: 'People need lower-friction ways to protect small periods of mental-health recovery within constrained daily schedules.',
+        solutionArea: 'Workday Mental Health Time Access and Recovery Planning',
+      };
+    }
+
+    if (
+      /\b(?:treatment|care|medicine|therapy)\b[^.!?]{0,160}\b(?:unavailable|not available|another country|one country|cannot access|can['’]?t access)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem: 'Cross-Border Treatment Availability and Access Gaps',
+        need: 'Patients and clinicians need clearer ways to identify treatment availability constraints and feasible access pathways across health systems.',
+        solutionArea: 'Treatment Availability Navigation and Access Validation',
+      };
+    }
+
+    if (
+      /\b(?:missing|null) values?\b|\b(?:imput(?:e|ing|ation)|forward[- ]fill|sparse features?|test results?)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem: 'Sparse Clinical Measurement and Missing-by-Design Data Gaps',
+        need: 'Clinical analytics workflows need explicit handling of sparse and missing-by-design measurements without treating absent observations as persisted-record loss.',
+        solutionArea: 'Sparse Clinical Data Quality and Missingness Diagnostics',
+      };
+    }
+
     // Authentication and subscription recovery are separate workflows.
     // Check authentication first so titles such as "Account Activation and
     // Login Failures" cannot be mislabeled as subscription restoration.
@@ -1159,14 +1944,41 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
+      /\b(?:payment|billing|charged|charge|refund|reconciliation|cash payment|double charge|duplicate charge)\b/iu.test(
+        context,
+      ) &&
+      /\b(?:cash|already paid|charged again|double|duplicate|reconciliation|refund|driver|rider|payment method|bank|card|venmo)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem: title,
+        need: 'Reliable Payment Reconciliation and Duplicate Charge Recovery',
+        solutionArea: 'Payment Reconciliation and Duplicate Charge Recovery',
+      };
+    }
+
+    if (
+      /\b(?:rental lease[- ]term|lease[- ]term|lease term|rental length|lease duration|short[- ]term rental|long[- ]term rental|vacation rental)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem: title,
+        need: 'A rental-search workflow that can include or exclude listings by lease duration and separate long-term housing from short-term rentals.',
+        solutionArea: 'Lease-Term Search Filtering and Rental Relevance',
+      };
+    }
+
+    if (
       /\b(?:subscription|purchase|payment|billing|renewal|receipt|restore purchase|purchase restoration|subscription restoration)\b/iu.test(
         context,
       )
     ) {
       return {
         problem: title,
-        need: 'Reliable Subscription Restoration and Account Access',
-        solutionArea: 'Subscription Verification and Purchase Recovery',
+        need: 'Reliable Billing, Purchase, and Subscription Recovery',
+        solutionArea: 'Billing and Purchase Recovery',
       };
     }
 
@@ -1324,6 +2136,41 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|payment reconciliation|refund)/iu.test(
+        context,
+      )
+    ) {
+      return 'CASH_PAYMENT_RECONCILIATION';
+    }
+
+    if (
+      /(?:international card|foreign card|international number|foreign number|traveling from abroad|travelling from abroad)/iu.test(
+        context,
+      ) &&
+      /(?:otp|verification|card|payment|cannot use|can['’]?t use|could not use|not accept)/iu.test(
+        context,
+      )
+    ) {
+      return 'CROSS_BORDER_PAYMENT_VERIFICATION';
+    }
+
+    if (
+      /(?:mass email(?:ing)?|bulk email(?:ing)?|email campaign).{0,120}(?:client contacts?|clients?)|(?:client contacts?|clients?).{0,120}(?:mass email(?:ing)?|bulk email(?:ing)?|email campaign)/iu.test(
+        context,
+      )
+    ) {
+      return 'HR_CLIENT_CONTACT_OUTREACH';
+    }
+
+    if (
+      /(?:(?:candidate|applicant) profiles?|\bprofiles?\b).{0,140}(?:sav(?:e|ing)?|sort|portal|pool|reuse|regular basis|recurring hiring|hire store workers)|(?:sav(?:e|ing)?|sort|portal|pool|reuse).{0,140}(?:(?:candidate|applicant) profiles?|\bprofiles?\b)/iu.test(
+        context,
+      )
+    ) {
+      return 'HR_CANDIDATE_PROFILE_POOLING';
+    }
+
+    if (
       /\b(?:login|authentication|activation|verification|session|token)\b/iu.test(
         context,
       )
@@ -1424,12 +2271,20 @@ export class IdeaOpportunityRankingService {
         })
         .slice(0, MAX_EVIDENCE_SAMPLES);
 
+      const mergedProblem = preferred.problem ?? secondary.problem;
+      const mergedNeed = this.selectMergedDescriptor(
+        preferred.need,
+        secondary.need,
+      );
+      const mergedSolutionArea = this.selectMergedDescriptor(
+        preferred.solutionArea,
+        secondary.solutionArea,
+      );
       const alignedDescriptors = this.deriveAlignedDescriptors(
         preferred.title,
-        preferred.problem,
-        preferred.need,
-        preferred.solutionArea,
-        this.isCommunityAiCandidate(preferred),
+        mergedProblem,
+        mergedNeed,
+        mergedSolutionArea,
       );
 
       groups[existingIndex] = {
@@ -1482,6 +2337,19 @@ export class IdeaOpportunityRankingService {
     }
 
     if (!this.haveCompatibleOpportunityFamilies(first, second)) {
+      return false;
+    }
+
+    const hasAtomicEvidenceMatch = first.evidenceSamples.some((firstSample) =>
+      second.evidenceSamples.some((secondSample) =>
+        matchEvidenceToAtomicProblem(firstSample, secondSample).matched,
+      ),
+    );
+    if (
+      first.evidenceSamples.length > 0 &&
+      second.evidenceSamples.length > 0 &&
+      !hasAtomicEvidenceMatch
+    ) {
       return false;
     }
 
@@ -1600,6 +2468,15 @@ export class IdeaOpportunityRankingService {
       return false;
     }
 
+    const hasAtomicEvidenceMatch = first.evidenceSamples.some((firstSample) =>
+      second.evidenceSamples.some((secondSample) =>
+        matchEvidenceToAtomicProblem(firstSample, secondSample).matched,
+      ),
+    );
+    if (!hasAtomicEvidenceMatch) {
+      return false;
+    }
+
     const firstTitle = this.canonicalizeOpportunityTitle(first.title);
     const secondTitle = this.canonicalizeOpportunityTitle(second.title);
     const titleSimilarity = this.jaccardSimilarity(
@@ -1613,6 +2490,25 @@ export class IdeaOpportunityRankingService {
       (firstTitle.toLowerCase() === secondTitle.toLowerCase() ||
         titleSimilarity >= 0.72)
     );
+  }
+
+  private selectMergedDescriptor(
+    first: string | null,
+    second: string | null,
+  ): string | null {
+    const values = [first, second]
+      .map((value) => value?.replace(/\s+/gu, ' ').trim() ?? '')
+      .filter(Boolean)
+      .filter((value) => !GENERIC_LABELS.has(value.toLowerCase()));
+
+    if (values.length === 0) return null;
+
+    return values.sort((left, right) => {
+      const leftGeneric = /\b(?:workflow diagnostics|guided decision support|evidence-grounded workflow diagnosis|human-reviewed recovery)\b/iu.test(left);
+      const rightGeneric = /\b(?:workflow diagnostics|guided decision support|evidence-grounded workflow diagnosis|human-reviewed recovery)\b/iu.test(right);
+      if (leftGeneric !== rightGeneric) return leftGeneric ? 1 : -1;
+      return right.length - left.length;
+    })[0] ?? null;
   }
 
   private selectStrongerCandidate(
@@ -1863,11 +2759,15 @@ export class IdeaOpportunityRankingService {
       const terms = this.expandDomainSemanticTerms(domain);
       semanticScores.set(
         domain.name,
-        this.calculateSelectedDomainRelevance(coreCandidate, terms),
+        this.passesSelectedDomainContextGuard(domain.name, coreCandidate)
+          ? this.calculateSelectedDomainRelevance(coreCandidate, terms)
+          : 0,
       );
       contextScores.set(
         domain.name,
-        this.calculateSelectedDomainRelevance(contextCandidate, terms),
+        this.passesSelectedDomainContextGuard(domain.name, contextCandidate)
+          ? this.calculateSelectedDomainRelevance(contextCandidate, terms)
+          : 0,
       );
     }
 
@@ -1878,10 +2778,20 @@ export class IdeaOpportunityRankingService {
     for (const domain of selectedDomains) {
       const semantic = semanticScores.get(domain.name) ?? 0;
       const context = contextScores.get(domain.name) ?? 0;
+      const contextGuardPassed = this.passesSelectedDomainContextGuard(
+        domain.name,
+        coreCandidate,
+      );
       const explicit =
+        contextGuardPassed &&
         this.normalizeDomainName(rawDomainName) ===
-        this.normalizeDomainName(domain.name);
+          this.normalizeDomainName(domain.name);
       let score = semantic;
+
+      if (!contextGuardPassed) {
+        output[domain.name] = 0;
+        continue;
+      }
 
       if (semantic < MIN_SELECTED_DOMAIN_RELEVANCE) {
         score = Math.max(
@@ -2002,7 +2912,127 @@ export class IdeaOpportunityRankingService {
       );
     }
 
+    if (/^(?:manufacturing|industrial manufacturing)$/u.test(normalizedName)) {
+      aliases.push(
+        'manufacturing',
+        'factory',
+        'assembly line',
+        'production line',
+        'industrial equipment',
+        'machinery',
+        'shop floor',
+        'quality control',
+        'predictive maintenance',
+        'manufacturing supply chain',
+        'factory automation',
+      );
+    }
+
+    if (/^(?:environment|environmental technology|environmental)$/u.test(normalizedName)) {
+      aliases.push(
+        'environmental monitoring',
+        'environmental compliance',
+        'pollution monitoring',
+        'air quality',
+        'water quality',
+        'waste management',
+        'recycling',
+        'emissions',
+        'carbon footprint',
+        'sustainability',
+        'ecosystem monitoring',
+        'conservation',
+        'biodiversity',
+        'environmental impact',
+      );
+    }
+
     return [...new Set([domain.name, ...domain.keywords, ...aliases])];
+  }
+
+  private passesSelectedDomainContextGuard(
+    domainName: string,
+    candidate: NormalizedCandidate,
+  ): boolean {
+    const normalizedDomain = this.normalizeDomainName(domainName);
+    const text = this.normalizeDomainName(
+      [
+        candidate.title,
+        candidate.problem,
+        candidate.need,
+        candidate.solutionArea,
+        ...candidate.evidenceSamples,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(' '),
+    );
+
+    if (/^(?:environment|environmental technology|environmental)$/u.test(normalizedDomain)) {
+      return /\b(?:environmental monitoring|environmental compliance|pollution|air quality|water quality|waste management|recycling|emissions?|carbon footprint|sustainability|ecosystem|conservation|biodiversity|environmental impact|climate risk|climate adaptation)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:tourism|travel|travel tourism)$/u.test(normalizedDomain)) {
+      const explicitTourismAnchor =
+        /\b(?:tourism|tourism app|tourism application|tourism platform|tourism system|travel app|travel application|travel platform|tourist app|tourist service|tourism service)\b/iu.test(
+          text,
+        );
+      const tourismWorkflowAnchor =
+        /\b(?:travel booking|booking|reservation|tour itinerary|itinerary|tour operator|tour package|visitor management|destination management|travel inventory|hotel booking|guest booking|tourist service|tourism service|excursion booking)\b/iu.test(
+          text,
+        );
+      const genericTechnicalFailure =
+        /\b(?:visual studio|vsto|outofmemoryexception|out of memory|stack trace|exception from hresult|excel workbook|worksheet|module|range\(|runtime|compiler|memory error|ram|cpu)\b/iu.test(
+          text,
+        );
+      const tourismOperationalFailure =
+        /\b(?:booking|reservation|itinerary|tour|visitor|destination|hotel|guest|excursion)\b[^.!?]{0,120}\b(?:fail|failed|failure|error|blocked|missing|duplicate|wrong|unable|cannot|can['’]?t|delay|cancel|canceled|cancelled)\b/iu.test(
+          text,
+        ) ||
+        /\b(?:fail|failed|failure|error|blocked|missing|duplicate|wrong|unable|cannot|can['’]?t|delay|cancel|canceled|cancelled)\b[^.!?]{0,120}\b(?:booking|reservation|itinerary|tour|visitor|destination|hotel|guest|excursion)\b/iu.test(
+          text,
+        );
+
+      return (
+        explicitTourismAnchor ||
+        tourismOperationalFailure ||
+        (tourismWorkflowAnchor && !genericTechnicalFailure)
+      );
+    }
+
+    if (/^(?:cybersecurity|cyber security|information security)$/u.test(normalizedDomain)) {
+      return /\b(?:cybersecurity|cyber security|authentication|two[- ]factor|2fa|mfa|oauth|identity access|credential|authorization|access control|security policy|threat|vulnerabilit|breach|phishing|malware|encryption|token isolation|password security|privacy)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:education|edtech|educational technology)$/u.test(normalizedDomain)) {
+      return /\b(?:student|teacher|coursework|assignment|grading|classroom|lesson|curriculum|homework|learning platform|learning management|education workflow|school|university|course material)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:legaltech|legal tech|legal technology)$/u.test(normalizedDomain)) {
+      return /\b(?:legal research|legal document|contract|case management|case law|court|attorney|lawyer|compliance workflow|legal workflow|legaltech|law database)\b/iu.test(
+        text,
+      );
+    }
+
+    if (!/^(?:manufacturing|industrial manufacturing)$/u.test(normalizedDomain)) {
+      return true;
+    }
+
+    const industrialAnchor =
+      /\b(?:factory|factories|assembly line|production line|industrial equipment|machinery|shop floor|quality control|predictive maintenance|supply chain|warehouse|cnc|oee|plant floor|manufacturing plant|factory automation)\b/iu.test(
+        text,
+      );
+    const figurativeManufacturing =
+      /\bmanufactur(?:e|ed|ing)\s+(?:evidence|claims?|story|stories|results?|data|narrative|proof|consensus|controversy|retrospective)\b/iu.test(
+        text,
+      );
+
+    return industrialAnchor || (!figurativeManufacturing && !/\bmanufacturing\b/iu.test(text));
   }
 
   private readRawCandidateDomainName(value: Prisma.JsonValue): string {
@@ -2820,10 +3850,19 @@ export class IdeaOpportunityRankingService {
    */
   private hasConcreteRuntimeFailureSignal(evidence: string): boolean {
     const normalized = evidence.toLowerCase();
+    const runtimeSafeNormalized = normalized
+      .replace(
+        /\b(?:not|never|without|no)\s+(?:actually\s+)?(?:crash(?:es|ed|ing)?|freez(?:e|es|ing)|frozen)\b/giu,
+        ' ',
+      )
+      .replace(
+        /\b(?:keyboard\s+(?:appears?|feels?)\s+frozen|focus\s+(?:remains|stays|is)\s+(?:on|trapped|stuck)|keystrokes?\s+(?:are\s+)?(?:captured|consumed)|keyboard\s+input\s+(?:is\s+)?(?:captured|consumed)|type[- ]ahead|screen reader|no visible candidate)\b/giu,
+        ' ',
+      );
 
     const explicitRuntimeFailure =
       /\b(?:crash(?:ed|es|ing)?|freeze(?:s|ing|n)?|hang(?:s|ing)?|stuck|unresponsive|terminated|unexpectedly closes?|won['’]?t open|doesn['’]?t start|keeps? restarting|infinite loop|lost progress|state loss|session (?:lost|expired|stuck)|rollback|restore failed|data (?:lost|missing)|memory spike|out of memory|unhandled exception|runtime failure)\b/iu.test(
-        normalized,
+        runtimeSafeNormalized,
       );
 
     /*
@@ -3012,6 +4051,31 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
+      /(?:streaming pipeline|streaming data|data pipeline)/iu.test(text) &&
+      /(?:stale|skewed|incorrect|wrong|corrupt|quietly serving|silently serving)/iu.test(
+        text,
+      )
+    ) {
+      return 'Streaming Data Integrity and Staleness Failures';
+    }
+
+    if (
+      /(?:keyboard\s+(?:appears?|feels?)\s+frozen|focus\s+(?:remains|stays|is)\s+(?:on|trapped|stuck)|keystrokes?\s+(?:are\s+)?(?:captured|consumed)|keyboard\s+input\s+(?:is\s+)?(?:captured|consumed)|type[- ]ahead|screen reader|no visible candidate)/iu.test(
+        text,
+      )
+    ) {
+      return 'Accessibility Focus and Keyboard Navigation Failures';
+    }
+
+    if (
+      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|locked out(?: of)?\s+(?:my|the|this)?\s*account/iu.test(
+        text,
+      )
+    ) {
+      return 'Login and Account Access Failures';
+    }
+
+    if (
       /(?:data|history|classes|progress).{0,80}(?:gone|lost|missing|deleted|sync)/iu.test(
         text,
       )
@@ -3059,7 +4123,17 @@ export class IdeaOpportunityRankingService {
       return 'Administrative Back-Office Workflow Friction';
     }
 
-    if (/(?:crash|freeze|broken|bug|error)/iu.test(text)) {
+    const runtimeSafeText = text
+      .replace(
+        /\b(?:not|never|without|no)\s+(?:actually\s+)?(?:crash(?:es|ed|ing)?|freez(?:e|es|ing)|frozen)\b/giu,
+        ' ',
+      )
+      .replace(
+        /\b(?:keyboard\s+(?:appears?|feels?)\s+frozen|focus\s+(?:remains|stays|is)\s+(?:on|trapped|stuck)|keystrokes?\s+(?:are\s+)?(?:captured|consumed)|keyboard\s+input\s+(?:is\s+)?(?:captured|consumed)|type[- ]ahead|screen reader|no visible candidate)\b/giu,
+        ' ',
+      );
+
+    if (/(?:crash|freeze|broken|bug|error)/iu.test(runtimeSafeText)) {
       return 'Application Reliability and Crash Failures';
     }
 
@@ -3343,6 +4417,31 @@ export class IdeaOpportunityRankingService {
 
     if (!normalized || this.isNegatedComplaint(normalized)) {
       return false;
+    }
+
+    const commentBody =
+      normalized.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? null;
+    if (commentBody && isNonActionableCommunityBanter(commentBody, 'COMMENT')) {
+      return false;
+    }
+    if (
+      /\bcrash[- ]course\b/iu.test(normalized) &&
+      !/\b(?:app|application|software|process|service|server|client)\b[^.!?]{0,80}\b(?:crash(?:es|ed|ing)?|freeze|frozen|unresponsive|exception|segfault)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return false;
+    }
+
+    const commentMatch = normalized.match(/\bCommunity comment:\s*(.+)$/iu);
+    if (commentMatch?.[1]) {
+      const kind = classifyDirectCommunityEvidence(commentMatch[1], 'COMMENT');
+      if (kind === 'GENERAL_COMMENTARY' || kind === 'USER_QUESTION' || kind === 'NONE') {
+        return false;
+      }
+      if (kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST') {
+        return true;
+      }
     }
 
     return DIRECT_COMPLAINT_PATTERNS.some((pattern) =>

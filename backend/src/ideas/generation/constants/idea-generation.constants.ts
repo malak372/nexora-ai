@@ -572,7 +572,7 @@ export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = 76;
  * that are already in flight to finish, then the strongest deterministic
  * quality-approved candidate is selected.
  */
-export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 1_200;
+export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 650;
 
 /**
  * Maximum number of bounded quality-improvement attempts sent to the same

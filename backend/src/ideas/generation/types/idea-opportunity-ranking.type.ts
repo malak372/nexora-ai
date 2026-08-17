@@ -56,7 +56,19 @@ export type RankedIdeaOpportunity = {
   readonly confidencePenalty: number;
   readonly finalScore: number;
   readonly matchedDomainNames?: readonly string[];
+
+  /** Domain(s) supported by the verified problem semantics themselves. */
+  readonly problemDomainNames?: readonly string[];
+
+  /** Domain(s) supported by the verified workflow/product context around the problem. */
+  readonly workflowDomainNames?: readonly string[];
+
+  /** Primary problem domain used for downstream prompt/domain anchoring. */
+  readonly primaryMatchedDomainName?: string | null;
+
   readonly domainRelevanceScores?: Readonly<Record<string, number>>;
+  readonly problemDomainRelevanceScores?: Readonly<Record<string, number>>;
+  readonly workflowDomainRelevanceScores?: Readonly<Record<string, number>>;
 
   /** Lexical/semantic match to the requester's explicit current description. */
   readonly requestIntentAlignmentScore?: number;
@@ -73,8 +85,77 @@ export type RankedIdeaOpportunity = {
   /** Number of independently verified complaints, requests, or reviews. */
   readonly verifiedIndependentEvidenceCount?: number;
 
-  /** Number of distinct source platforms represented by verified evidence. */
+  /** Number of distinct source platforms represented by verified direct evidence. */
   readonly verifiedIndependentSourceCount?: number;
+
+  /** Total verified evidence items resolved for the candidate before problem-level filtering. */
+  readonly verifiedEvidenceCount?: number;
+
+  /** Direct-user evidence resolved for the candidate before problem-level filtering. */
+  readonly verifiedDirectUserEvidenceCount?: number;
+
+  /** Secondary evidence resolved for the candidate before problem-level filtering. */
+  readonly verifiedSecondaryEvidenceCount?: number;
+
+  /** Technical evidence resolved for the candidate before problem-level filtering. */
+  readonly verifiedTechnicalEvidenceCount?: number;
+
+  readonly verifiedQuestionEvidenceCount?: number;
+
+  readonly verifiedObservationEvidenceCount?: number;
+
+  readonly verifiedComplaintEvidenceCount?: number;
+
+  readonly verifiedComplaintSourceCount?: number;
+
+  readonly verifiedFeatureRequestEvidenceCount?: number;
+
+  /** Distinct source platforms represented by all resolved candidate evidence. */
+  readonly verifiedEvidenceSourceCount?: number;
+
+  /**
+   * Evidence that matches the final verified problem family, not merely the
+   * selected domain. These counters are the source of truth for recurrence,
+   * prompt evidence claims, and final idea wording.
+   */
+  readonly verifiedProblemMatchedEvidenceCount?: number;
+
+  readonly verifiedProblemMatchedDirectUserEvidenceCount?: number;
+
+  readonly verifiedProblemMatchedSecondaryEvidenceCount?: number;
+
+  readonly verifiedProblemMatchedTechnicalEvidenceCount?: number;
+
+  readonly verifiedProblemMatchedQuestionEvidenceCount?: number;
+
+  readonly verifiedProblemMatchedObservationEvidenceCount?: number;
+
+  readonly verifiedProblemMatchedComplaintEvidenceCount?: number;
+
+  readonly verifiedProblemMatchedComplaintSourceCount?: number;
+
+  readonly verifiedProblemMatchedFeatureRequestEvidenceCount?: number;
+
+  /** Distinct direct-user source platforms represented by problem-matched evidence. */
+  readonly verifiedProblemMatchedSourceCount?: number;
+
+  /** Distinct source platforms represented by all problem-matched evidence kinds. */
+  readonly verifiedProblemMatchedEvidenceSourceCount?: number;
+
+  readonly relatedOpportunityBundle?: readonly {
+    readonly rank: number;
+    readonly title: string;
+    readonly problem: string | null;
+    readonly need: string | null;
+    readonly solutionArea: string | null;
+    readonly evidenceType: IdeaOpportunityEvidenceType;
+    readonly evidenceSamples: readonly string[];
+    readonly matchedDomainNames: readonly string[];
+    readonly verifiedProblemMatchedEvidenceCount: number;
+    readonly verifiedProblemMatchedDirectUserEvidenceCount: number;
+    readonly verifiedProblemMatchedComplaintEvidenceCount: number;
+    readonly verifiedProblemMatchedFeatureRequestEvidenceCount: number;
+  }[];
 
   readonly raw: Prisma.JsonValue;
 };

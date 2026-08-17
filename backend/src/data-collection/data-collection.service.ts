@@ -198,11 +198,17 @@ export class DataCollectionService {
       'collectorLimits' in dto ? dto.collectorLimits : undefined;
     const isFastInternal =
       trigger === 'SYSTEM_INTERNAL' && collectionMode === 'FAST_GENERATION';
+    const isTrustedInternalGeneration =
+      trigger === 'SYSTEM_INTERNAL' &&
+      (collectionMode === 'FAST_GENERATION' ||
+        collectionMode === 'TARGETED_RECOVERY');
 
     const trustedResolvedDomain =
-      isFastInternal && 'resolvedDomain' in dto ? dto.resolvedDomain : undefined;
+      isTrustedInternalGeneration && 'resolvedDomain' in dto
+        ? dto.resolvedDomain
+        : undefined;
     const trustedResolvedSources =
-      isFastInternal && 'resolvedDataSources' in dto
+      isTrustedInternalGeneration && 'resolvedDataSources' in dto
         ? dto.resolvedDataSources
         : undefined;
 
@@ -1121,7 +1127,10 @@ export class DataCollectionService {
       'COMMENT',
     );
 
-    if (evidenceKind === 'NONE') {
+    if (
+      evidenceKind !== 'USER_COMPLAINT' &&
+      evidenceKind !== 'FEATURE_REQUEST'
+    ) {
       return false;
     }
 
@@ -1167,7 +1176,8 @@ export class DataCollectionService {
    * requests in user-controlled text.
    */
   private hasComplaintSignal(value: string): boolean {
-    return classifyDirectCommunityEvidence(value, 'POST') !== 'NONE';
+    const kind = classifyDirectCommunityEvidence(value, 'POST');
+    return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
   }
 
   /**

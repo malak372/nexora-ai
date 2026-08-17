@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../prisma/prisma.service';
-import { classifyDirectCommunityEvidence } from '../../../nlp/common/utils/community-evidence.util';
-import { matchEvidenceToProblemFamily } from '../../../nlp/common/utils/problem-family-matching.util';
+import {
+  classifyDirectCommunityEvidence,
+  isPositiveFeedbackWithoutProblem,
+  segmentCommunityEvidenceIssues,
+} from '../../../nlp/common/utils/community-evidence.util';
+import {
+  clusterEvidenceByProblemFamily,
+  matchEvidenceToProblemFamily,
+} from '../../../nlp/common/utils/problem-family-matching.util';
 import {
   INDEPENDENT_EVIDENCE_KINDS,
   type IndependentEvidence,
@@ -56,6 +63,20 @@ const COMPLAINT_PATTERNS: readonly RegExp[] = [
 ];
 
 const REVIEW_SOURCE_KEYS = new Set(['google-play', 'app-store']);
+const EDITORIAL_SOURCE_KEYS = new Set(['dev-to', 'blog']);
+const NEWS_SOURCE_KEYS = new Set(['news']);
+const SECONDARY_REPORT_SOURCE_KEYS = new Set(['product-hunt']);
+const PUBLISHER_POST_SOURCE_KEYS = new Set([
+  'google-play',
+  'app-store',
+  'youtube',
+]);
+const SECONDARY_REPORT_PATTERNS: readonly RegExp[] = [
+  /\b(?:according to|reported by|reports? that|a report|study|survey|case study|experiment)\b/iu,
+  /\b(?:after|following)\s+(?:hundreds?|dozens?|many|multiple)\s+of\s+(?:user\s+)?complaints?\b/iu,
+  /\b(?:pulled|withdrew|removed|suspended|stopped)\b[^.!?]{0,120}\b(?:after|following|because of)\b[^.!?]{0,100}\bcomplaints?\b/iu,
+  /\b(?:users?|customers?|patients?|developers?)\s+(?:reported|complained|raised concerns|experienced)\b/iu,
+];
 
 /**
  * Revalidates ranked evidence against persisted collection provenance.
@@ -127,9 +148,11 @@ export class IndependentEvidenceVerificationService {
       }
 
       return (
-        second.frequency - first.frequency ||
         second.finalScore - first.finalScore ||
-        second.evidenceReliabilityScore - first.evidenceReliabilityScore
+        (second.verifiedEvidenceCount ?? 0) -
+          (first.verifiedEvidenceCount ?? 0) ||
+        second.evidenceReliabilityScore - first.evidenceReliabilityScore ||
+        second.frequency - first.frequency
       );
     });
 
@@ -269,9 +292,10 @@ export class IndependentEvidenceVerificationService {
       (evidence) =>
         evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.SPECIFICATION,
     );
-    const classifiedDirectEvidence = nonSpecificationEvidence.filter(
+    const classifiedEvidence = nonSpecificationEvidence.filter(
       (evidence) =>
-        evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.UNKNOWN,
+        evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.UNKNOWN &&
+        evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.POSITIVE_FEEDBACK,
     );
     const problemDescriptor = [
       candidate.problem ?? '',
@@ -284,32 +308,152 @@ export class IndependentEvidenceVerificationService {
 
     const groundedCommunityCandidate =
       this.isGroundedCommunityCandidate(candidate);
-    const problemMatchedEvidence = classifiedDirectEvidence.filter(
-      (evidence) =>
-        groundedCommunityCandidate ||
-        matchEvidenceToProblemFamily(problemDescriptor, evidence.text).matched,
+
+    /*
+     * Domain relevance is intentionally not enough for opportunity evidence.
+     * A broad domain such as Mental Health can contain several unrelated
+     * problems (access affordability, investor disputes, therapeutic persona
+     * changes, data loss, etc.). Select one coherent problem cluster before
+     * recurrence counting so unrelated same-domain evidence cannot inflate the
+     * winning opportunity.
+     */
+    const problemMatchedEvidence = this.selectProblemMatchedEvidence(
+      candidate,
+      classifiedEvidence,
+      problemDescriptor,
     );
-    const groundedSingleSample =
-      groundedCommunityCandidate && problemMatchedEvidence.length > 0;
     const retainedEvidence = problemMatchedEvidence;
-    const qualifyingEvidence = problemMatchedEvidence.filter(
+
+    const allDirectEvidence = classifiedEvidence.filter((evidence) =>
+      this.isDirectUserEvidence(evidence.evidenceKind),
+    );
+    const allSecondaryEvidence = classifiedEvidence.filter((evidence) =>
+      this.isSecondaryEvidence(evidence.evidenceKind),
+    );
+    const allTechnicalEvidence = classifiedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET,
+    );
+    const allQuestionEvidence = classifiedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.USER_QUESTION,
+    );
+
+    const allObservationEvidence = classifiedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.GENERAL_COMMENTARY,
+    );
+
+    const directEvidence = retainedEvidence.filter((evidence) =>
+      this.isDirectUserEvidence(evidence.evidenceKind),
+    );
+    const secondaryEvidence = retainedEvidence.filter((evidence) =>
+      this.isSecondaryEvidence(evidence.evidenceKind),
+    );
+    const technicalEvidence = retainedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET,
+    );
+    const questionEvidence = retainedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.USER_QUESTION,
+    );
+    const observationEvidence = retainedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.GENERAL_COMMENTARY,
+    );
+    const complaintEvidence = directEvidence.filter((evidence) =>
+      this.isComplaintEvidence(evidence.evidenceKind),
+    );
+    const featureRequestEvidence = directEvidence.filter(
+      (evidence) => evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST,
+    );
+    const recurrenceEvidence = complaintEvidence.filter(
       (evidence) => evidence.qualifiesForRecurrence,
     );
 
-    const verifiedCount = qualifyingEvidence.length;
-    const verifiedSourceCount = new Set(
-      qualifyingEvidence.map((evidence) => evidence.sourceKey),
+    const verifiedProblemMatchedDirectCount = directEvidence.length;
+    const verifiedProblemMatchedDirectSourceCount = new Set(
+      directEvidence.map((evidence) => evidence.sourceKey),
     ).size;
+    const verifiedProblemMatchedComplaintCount = complaintEvidence.length;
+    const verifiedProblemMatchedFeatureRequestCount = featureRequestEvidence.length;
+    const verifiedProblemMatchedComplaintSourceCount = new Set(
+      recurrenceEvidence.map((evidence) => evidence.sourceKey),
+    ).size;
+    const verifiedProblemMatchedSecondaryCount = secondaryEvidence.length;
+    const verifiedProblemMatchedTechnicalCount = technicalEvidence.length;
+    const verifiedProblemMatchedQuestionCount = questionEvidence.length;
+    const verifiedProblemMatchedObservationCount = observationEvidence.length;
+    const verifiedProblemMatchedEvidenceCount = retainedEvidence.length;
+    const verifiedProblemMatchedEvidenceSourceCount = new Set(
+      retainedEvidence.map((evidence) => evidence.sourceKey),
+    ).size;
+
+    /*
+     * Preserve candidate-level diagnostic totals separately. They answer
+     * "what evidence was resolved in this domain/candidate corpus?" while the
+     * problem-matched counters below answer "what actually supports the final
+     * opportunity?". Only the latter may drive recurrence or final claims.
+     */
+    const verifiedDirectCount = allDirectEvidence.length;
+    const allComplaintEvidence = allDirectEvidence.filter((evidence) =>
+      this.isComplaintEvidence(evidence.evidenceKind),
+    );
+    const verifiedComplaintCount = allComplaintEvidence.length;
+    const verifiedComplaintSourceCount = new Set(
+      allComplaintEvidence.map((evidence) => evidence.sourceKey),
+    ).size;
+    const verifiedFeatureRequestCount = allDirectEvidence.filter(
+      (evidence) => evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST,
+    ).length;
+    const verifiedDirectSourceCount = new Set(
+      allDirectEvidence.map((evidence) => evidence.sourceKey),
+    ).size;
+    const verifiedSecondaryCount = allSecondaryEvidence.length;
+    const verifiedTechnicalCount = allTechnicalEvidence.length;
+    const verifiedQuestionCount = allQuestionEvidence.length;
+    const verifiedObservationCount = allObservationEvidence.length;
+    const verifiedEvidenceCount = classifiedEvidence.length;
+    const verifiedEvidenceSourceCount = new Set(
+      classifiedEvidence.map((evidence) => evidence.sourceKey),
+    ).size;
+    const weightedEvidenceScore = Math.min(
+      1,
+      verifiedProblemMatchedDirectCount / 5 +
+        verifiedProblemMatchedSecondaryCount * 0.12 +
+        verifiedProblemMatchedTechnicalCount * 0.1 +
+        verifiedProblemMatchedQuestionCount * 0.04 +
+        verifiedProblemMatchedObservationCount * 0.06,
+    );
+    const groundedSingleSample =
+      groundedCommunityCandidate && retainedEvidence.length > 0;
     const verifiedEvidenceScore = Math.max(
-      Math.min(verifiedCount / 5, 1),
-      groundedSingleSample ? MIN_GROUNDED_SINGLE_SAMPLE_SCORE : 0,
+      weightedEvidenceScore,
+      groundedSingleSample
+        ? verifiedProblemMatchedDirectCount > 0
+          ? MIN_GROUNDED_SINGLE_SAMPLE_SCORE
+          : verifiedProblemMatchedObservationCount > 0
+            ? 0.1
+            : 0.12
+        : 0,
     );
     const recurrenceEligible =
-      verifiedCount >= MIN_VERIFIED_RECURRENCE_COUNT &&
-      verifiedSourceCount >= MIN_VERIFIED_SOURCE_COUNT;
+      verifiedProblemMatchedComplaintCount >= MIN_VERIFIED_RECURRENCE_COUNT &&
+      verifiedProblemMatchedComplaintSourceCount >= MIN_VERIFIED_SOURCE_COUNT;
     const effectiveEvidenceReliabilityScore = Math.max(
       candidate.evidenceReliabilityScore,
-      groundedSingleSample ? 0.72 : 0,
+      verifiedProblemMatchedDirectCount > 0 && groundedSingleSample
+        ? 0.72
+        : verifiedProblemMatchedSecondaryCount > 0
+          ? 0.58
+          : verifiedProblemMatchedTechnicalCount > 0
+            ? 0.55
+            : verifiedProblemMatchedQuestionCount > 0
+              ? 0.45
+              : verifiedProblemMatchedObservationCount > 0
+                ? 0.44
+                : 0,
     );
 
     const disqualificationReasons = new Set(candidate.disqualificationReasons);
@@ -322,7 +466,7 @@ export class IndependentEvidenceVerificationService {
         'INSUFFICIENT_INDEPENDENT_SOURCE_DIVERSITY',
       );
       disqualificationReasons.add(
-        verifiedCount < MIN_VERIFIED_RECURRENCE_COUNT
+        verifiedProblemMatchedComplaintCount < MIN_VERIFIED_RECURRENCE_COUNT
           ? 'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE'
           : 'INSUFFICIENT_INDEPENDENT_SOURCE_DIVERSITY',
       );
@@ -359,12 +503,6 @@ export class IndependentEvidenceVerificationService {
       disqualificationReasons.add('LOW_EVIDENCE_QUALITY');
     }
 
-    /*
-     * A candidate that passes the recurrence and source-diversity gate may be
-     * restored when the sole remaining failure is the aggregate score and the
-     * verified evidence is reliable. Scientific-validity failures remain
-     * blocking and can never be bypassed by this pilot fallback.
-     */
     const pilotNonBlockingReasons = new Set([
       'LOW_OPPORTUNITY_SCORE',
       'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
@@ -378,13 +516,13 @@ export class IndependentEvidenceVerificationService {
     const blockingPilotReasons = [...disqualificationReasons].filter(
       (reason) => !pilotNonBlockingReasons.has(reason),
     );
-    const qualifiesAsVerifiedPilot =
-      qualifyingEvidence.length >= 1 &&
+    const qualifiesAsRetainedEvidencePilot =
+      verifiedProblemMatchedEvidenceCount >= 1 &&
       adjustedFinalScore >= MIN_VERIFIED_SINGLE_EVIDENCE_PILOT_SCORE &&
       effectiveEvidenceReliabilityScore >= MIN_SINGLE_EVIDENCE_RELIABILITY &&
       blockingPilotReasons.length === 0;
 
-    if (qualifiesAsVerifiedPilot) {
+    if (qualifiesAsRetainedEvidencePilot) {
       disqualificationReasons.delete('LOW_OPPORTUNITY_SCORE');
       disqualificationReasons.delete(
         'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
@@ -401,25 +539,146 @@ export class IndependentEvidenceVerificationService {
 
     return {
       ...candidate,
-      frequency: verifiedCount,
-      /*
-       * Preserve every resolved direct sample for downstream ranking and prompt
-       * grounding. Only qualifyingEvidence contributes to recurrence counts;
-       * an exact one-off developer report must not disappear merely because it
-       * has not reached the multi-source recurrence gate.
-       */
+      frequency: verifiedProblemMatchedEvidenceCount,
       evidenceSamples: retainedEvidence.map((evidence) => evidence.text),
       evidenceScore: verifiedEvidenceScore,
       evidenceReliabilityScore: effectiveEvidenceReliabilityScore,
       finalScore: adjustedFinalScore,
       selectionEligible:
-        (recurrenceEligible || qualifiesAsVerifiedPilot) &&
+        (recurrenceEligible || qualifiesAsRetainedEvidencePilot) &&
         disqualificationReasons.size === 0,
       disqualificationReasons: [...disqualificationReasons],
       independentEvidence: retainedEvidence,
-      verifiedIndependentEvidenceCount: verifiedCount,
-      verifiedIndependentSourceCount: verifiedSourceCount,
+      verifiedIndependentEvidenceCount: verifiedDirectCount,
+      verifiedIndependentSourceCount: verifiedDirectSourceCount,
+      verifiedEvidenceCount,
+      verifiedDirectUserEvidenceCount: verifiedDirectCount,
+      verifiedSecondaryEvidenceCount: verifiedSecondaryCount,
+      verifiedTechnicalEvidenceCount: verifiedTechnicalCount,
+      verifiedQuestionEvidenceCount: verifiedQuestionCount,
+      verifiedObservationEvidenceCount: verifiedObservationCount,
+      verifiedComplaintEvidenceCount: verifiedComplaintCount,
+      verifiedComplaintSourceCount: verifiedComplaintSourceCount,
+      verifiedFeatureRequestEvidenceCount: verifiedFeatureRequestCount,
+      verifiedEvidenceSourceCount,
+      verifiedProblemMatchedEvidenceCount,
+      verifiedProblemMatchedDirectUserEvidenceCount:
+        verifiedProblemMatchedDirectCount,
+      verifiedProblemMatchedSecondaryEvidenceCount:
+        verifiedProblemMatchedSecondaryCount,
+      verifiedProblemMatchedTechnicalEvidenceCount:
+        verifiedProblemMatchedTechnicalCount,
+      verifiedProblemMatchedQuestionEvidenceCount:
+        verifiedProblemMatchedQuestionCount,
+      verifiedProblemMatchedObservationEvidenceCount:
+        verifiedProblemMatchedObservationCount,
+      verifiedProblemMatchedComplaintEvidenceCount:
+        verifiedProblemMatchedComplaintCount,
+      verifiedProblemMatchedComplaintSourceCount:
+        verifiedProblemMatchedComplaintSourceCount,
+      verifiedProblemMatchedFeatureRequestEvidenceCount:
+        verifiedProblemMatchedFeatureRequestCount,
+      verifiedProblemMatchedSourceCount:
+        verifiedProblemMatchedDirectSourceCount,
+      verifiedProblemMatchedEvidenceSourceCount:
+        verifiedProblemMatchedEvidenceSourceCount,
     };
+
+  }
+
+
+  /**
+   * Chooses one coherent problem family from the resolved candidate evidence.
+   *
+   * The ranking layer may intentionally start with a broad domain family. This
+   * verifier narrows that broad family using only retained evidence, preferring
+   * clusters with more direct-user support and source diversity. This prevents
+   * same-domain but different-problem items from inflating recurrence.
+   */
+  private selectProblemMatchedEvidence(
+    candidate: RankedIdeaOpportunity,
+    evidence: readonly IndependentEvidence[],
+    problemDescriptor: string,
+  ): IndependentEvidence[] {
+    if (evidence.length <= 1) {
+      return [...evidence];
+    }
+
+    const segmentedEvidence = evidence.flatMap((item) =>
+      segmentCommunityEvidenceIssues(item.text).map((text) => ({ item, text })),
+    );
+    const clusters = clusterEvidenceByProblemFamily(
+      segmentedEvidence.map((entry) => entry.text),
+    );
+
+    if (clusters.length === 0) {
+      return evidence.filter((item) =>
+        matchEvidenceToProblemFamily(problemDescriptor, item.text).matched,
+      );
+    }
+
+    const normalized = (value: string) =>
+      value.toLowerCase().replace(/\s+/gu, ' ').trim();
+
+    const scoredClusters = clusters.map((cluster) => {
+      const clusterTexts = new Set(cluster.evidenceSamples.map(normalized));
+      const items = evidence.filter((item) =>
+        segmentedEvidence.some(
+          (entry) =>
+            entry.item === item && clusterTexts.has(normalized(entry.text)),
+        ),
+      );
+      const direct = items.filter((item) =>
+        this.isDirectUserEvidence(item.evidenceKind),
+      );
+      const secondary = items.filter((item) =>
+        this.isSecondaryEvidence(item.evidenceKind),
+      );
+      const technical = items.filter(
+        (item) =>
+          item.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET,
+      );
+      const directSources = new Set(direct.map((item) => item.sourceKey)).size;
+      const allSources = new Set(items.map((item) => item.sourceKey)).size;
+      const descriptorMatch = matchEvidenceToProblemFamily(
+        problemDescriptor,
+        cluster.label,
+      );
+      const specificFamilyBonus =
+        cluster.key !== 'generic-friction' &&
+        cluster.key !== 'mental-health-care' &&
+        !cluster.key.startsWith('lexical:')
+          ? 1
+          : 0;
+
+      const score =
+        direct.length * 4 +
+        directSources * 1.5 +
+        technical.length * 1.75 +
+        secondary.length * 0.8 +
+        allSources * 0.35 +
+        items.length * 0.2 +
+        (descriptorMatch.matched ? descriptorMatch.score * 0.75 : 0) +
+        specificFamilyBonus;
+
+      return { cluster, items, score, directCount: direct.length };
+    });
+
+    const selected = scoredClusters.sort(
+      (first, second) =>
+        second.score - first.score ||
+        second.directCount - first.directCount ||
+        second.items.length - first.items.length ||
+        first.cluster.label.localeCompare(second.cluster.label),
+    )[0];
+
+    if (!selected || selected.items.length === 0) {
+      return evidence.filter((item) =>
+        matchEvidenceToProblemFamily(problemDescriptor, item.text).matched,
+      );
+    }
+
+    return selected.items;
   }
 
 
@@ -437,6 +696,7 @@ export class IndependentEvidenceVerificationService {
 
     return (
       (source === 'COMMUNITY_AI_ANALYSIS' ||
+        source === 'COMMUNITY_LLM_ANALYSIS' ||
         source === 'DIRECT_DOMAIN_EVIDENCE_FALLBACK') &&
       groundingScore >= 70 &&
       candidate.evidenceSamples.length > 0
@@ -541,8 +801,14 @@ export class IndependentEvidenceVerificationService {
     const evidenceText = isComment
       ? this.extractCommunityCommentBody(text)
       : text;
+    const normalizedSourceKey = sourceKey.trim().toLowerCase();
+
+    if (isComment && isPositiveFeedbackWithoutProblem(evidenceText)) {
+      return INDEPENDENT_EVIDENCE_KINDS.POSITIVE_FEEDBACK;
+    }
+
     const githubPlanningOrAcceptanceText =
-      sourceKey === 'github' &&
+      normalizedSourceKey === 'github' &&
       !isComment &&
       /(?:\bproduct outcome\b|\bacceptance\b|\bacceptance criteria\b|\bdefinition of done\b|\bimplementation plan\b|\btechnical design\b|\btest plan\b|\bscope\b|\bdepends on\b|\bverify that\b|\bthe goal is\b|\bmust remain\b|\bmust not\b|\bshould remain\b|\boperators no longer see\b|\bproposed architecture\b)/iu.test(
         evidenceText,
@@ -555,6 +821,43 @@ export class IndependentEvidenceVerificationService {
       return INDEPENDENT_EVIDENCE_KINDS.SPECIFICATION;
     }
 
+    if (!isComment && NEWS_SOURCE_KEYS.has(normalizedSourceKey)) {
+      return INDEPENDENT_EVIDENCE_KINDS.NEWS_REPORT;
+    }
+
+    if (!isComment && EDITORIAL_SOURCE_KEYS.has(normalizedSourceKey)) {
+      return SECONDARY_REPORT_PATTERNS.some((pattern) => pattern.test(evidenceText))
+        ? INDEPENDENT_EVIDENCE_KINDS.SECONDARY_REPORT
+        : INDEPENDENT_EVIDENCE_KINDS.EDITORIAL_ANALYSIS;
+    }
+
+    if (!isComment && SECONDARY_REPORT_SOURCE_KEYS.has(normalizedSourceKey)) {
+      return INDEPENDENT_EVIDENCE_KINDS.SECONDARY_REPORT;
+    }
+
+    if (
+      !isComment &&
+      (normalizedSourceKey === 'github' || normalizedSourceKey === 'stackoverflow')
+    ) {
+      const structuredTechnicalIssue =
+        /(?:^|\n|\r|\b)(?:#{1,6}\s*)?(?:summary|issue|environment|steps? to reproduce|reproduction|expected(?: result)?|actual(?: result)?|error message|stack trace|log excerpt|lua\.log)\s*:/iu.test(
+          evidenceText,
+        );
+      const hasTechnicalFailure =
+        !/\bcrash[- ]course\b/iu.test(evidenceText) &&
+        /\b(?:cannot|can['’]?t|unable|fails?|failure|failed|error|bug|crash|broken|missing|blocked|timeout|exception|incorrect|unexpected|freeze|freezes|frozen|hang|hung|unresponsive|inaccessible|404|no visible candidate|focus remains|focus trapped|keystrokes? (?:are )?(?:captured|consumed))\b/iu.test(
+          evidenceText,
+        );
+
+      if (structuredTechnicalIssue || hasTechnicalFailure) {
+        return INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET;
+      }
+    }
+
+    if (!isComment && PUBLISHER_POST_SOURCE_KEYS.has(normalizedSourceKey)) {
+      return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
+    }
+
     const directKind = classifyDirectCommunityEvidence(
       evidenceText,
       isComment ? 'COMMENT' : 'POST',
@@ -565,31 +868,49 @@ export class IndependentEvidenceVerificationService {
     }
 
     if (directKind === 'USER_COMPLAINT') {
-      return REVIEW_SOURCE_KEYS.has(sourceKey)
+      return REVIEW_SOURCE_KEYS.has(normalizedSourceKey)
         ? INDEPENDENT_EVIDENCE_KINDS.REVIEW
-        : INDEPENDENT_EVIDENCE_KINDS.USER_COMPLAINT;
+        : INDEPENDENT_EVIDENCE_KINDS.DIRECT_USER_COMPLAINT;
     }
 
-    if (this.isNonComplaintMediaPost(evidenceText, sourceKey, isComment)) {
+    if (directKind === 'USER_QUESTION') {
+      return INDEPENDENT_EVIDENCE_KINDS.USER_QUESTION;
+    }
+
+    if (directKind === 'GENERAL_COMMENTARY') {
+      return INDEPENDENT_EVIDENCE_KINDS.GENERAL_COMMENTARY;
+    }
+
+    if (this.isNonComplaintMediaPost(evidenceText, normalizedSourceKey, isComment)) {
       return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
     }
 
-    /*
-     * Technical tickets remain useful engineering evidence only when they are
-     * not merely comments/proposals and were not rejected by the shared direct
-     * community classifier as adversarial, promotional, or non-problem text.
-     */
-    if (!isComment && (sourceKey === 'github' || sourceKey === 'stackoverflow')) {
-      const hasTechnicalFailure =
-        /\b(?:cannot|can['’]?t|unable|fails?|failed|error|bug|crash|broken|missing|blocked|timeout|exception|incorrect|unexpected)\b/iu.test(
-          evidenceText,
-        );
-      if (hasTechnicalFailure) {
-        return INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET;
-      }
-    }
-
     return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
+  }
+
+  private isDirectUserEvidence(kind: IndependentEvidenceKind): boolean {
+    return (
+      kind === INDEPENDENT_EVIDENCE_KINDS.DIRECT_USER_COMPLAINT ||
+      kind === INDEPENDENT_EVIDENCE_KINDS.USER_COMPLAINT ||
+      kind === INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST ||
+      kind === INDEPENDENT_EVIDENCE_KINDS.REVIEW
+    );
+  }
+
+  private isComplaintEvidence(kind: IndependentEvidenceKind): boolean {
+    return (
+      kind === INDEPENDENT_EVIDENCE_KINDS.DIRECT_USER_COMPLAINT ||
+      kind === INDEPENDENT_EVIDENCE_KINDS.USER_COMPLAINT ||
+      kind === INDEPENDENT_EVIDENCE_KINDS.REVIEW
+    );
+  }
+
+  private isSecondaryEvidence(kind: IndependentEvidenceKind): boolean {
+    return (
+      kind === INDEPENDENT_EVIDENCE_KINDS.SECONDARY_REPORT ||
+      kind === INDEPENDENT_EVIDENCE_KINDS.EDITORIAL_ANALYSIS ||
+      kind === INDEPENDENT_EVIDENCE_KINDS.NEWS_REPORT
+    );
   }
 
   private extractCommunityCommentBody(value: string): string {
@@ -614,8 +935,8 @@ export class IndependentEvidenceVerificationService {
 
     const normalized = text.toLowerCase();
     const isCrashCourseEducationalMedia =
-      /\bcrash course\b/iu.test(normalized) &&
-      /\b(?:sociology|history|biology|chemistry|physics|psychology|economics|literature|education|episode|lesson|today we(?:'ll| will) explore)\b/iu.test(
+      /\bcrash[- ]course\b/iu.test(normalized) &&
+      !/\b(?:app|application|platform|software|website|system|process|service|server|client)\b[^.!?]{0,80}\b(?:crash(?:es|ed|ing)?|freeze|frozen|unresponsive|exception|segfault)\b/iu.test(
         normalized,
       );
 
@@ -634,11 +955,7 @@ export class IndependentEvidenceVerificationService {
   }
 
   private qualifiesForRecurrence(kind: IndependentEvidenceKind): boolean {
-    return (
-      kind === INDEPENDENT_EVIDENCE_KINDS.USER_COMPLAINT ||
-      kind === INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST ||
-      kind === INDEPENDENT_EVIDENCE_KINDS.REVIEW
-    );
+    return this.isComplaintEvidence(kind);
   }
 
   private deduplicateIndependentEvidence(
@@ -728,36 +1045,100 @@ export class IndependentEvidenceVerificationService {
   }
 
   private buildSelectionReason(selected: RankedIdeaOpportunity): string {
-    const verifiedEvidenceCount =
-      selected.verifiedIndependentEvidenceCount ?? 0;
-    const verifiedSourceCount = selected.verifiedIndependentSourceCount ?? 0;
-    const retainedDirectEvidenceCount = Math.max(
-      verifiedEvidenceCount,
-      selected.independentEvidence?.length ?? 0,
-      selected.evidenceSamples.length,
-    );
+    const directCount =
+      selected.verifiedProblemMatchedDirectUserEvidenceCount ??
+      selected.verifiedDirectUserEvidenceCount ??
+      selected.verifiedIndependentEvidenceCount ??
+      0;
+    const complaintCount =
+      selected.verifiedProblemMatchedComplaintEvidenceCount ??
+      selected.verifiedComplaintEvidenceCount ??
+      directCount;
+    const featureRequestCount =
+      selected.verifiedProblemMatchedFeatureRequestEvidenceCount ??
+      selected.verifiedFeatureRequestEvidenceCount ??
+      0;
+    const complaintSourceCount =
+      selected.verifiedProblemMatchedComplaintSourceCount ??
+      selected.verifiedComplaintSourceCount ??
+      0;
+    const secondaryCount =
+      selected.verifiedProblemMatchedSecondaryEvidenceCount ??
+      selected.verifiedSecondaryEvidenceCount ??
+      0;
+    const technicalCount =
+      selected.verifiedProblemMatchedTechnicalEvidenceCount ??
+      selected.verifiedTechnicalEvidenceCount ??
+      0;
+    const questionCount =
+      selected.verifiedProblemMatchedQuestionEvidenceCount ??
+      selected.verifiedQuestionEvidenceCount ??
+      0;
+    const observationCount =
+      selected.verifiedProblemMatchedObservationEvidenceCount ??
+      selected.verifiedObservationEvidenceCount ??
+      0;
+    const totalCount =
+      selected.verifiedProblemMatchedEvidenceCount ??
+      selected.verifiedEvidenceCount ??
+      directCount + secondaryCount + technicalCount + questionCount + observationCount;
+    const directSourceCount =
+      selected.verifiedProblemMatchedSourceCount ??
+      selected.verifiedIndependentSourceCount ??
+      0;
+    const totalSourceCount =
+      selected.verifiedProblemMatchedEvidenceSourceCount ??
+      selected.verifiedEvidenceSourceCount ??
+      new Set(
+        (selected.independentEvidence ?? []).map((evidence) => evidence.sourceKey),
+      ).size;
+    const diagnosticTotal = selected.verifiedEvidenceCount ?? totalCount;
 
     if (selected.selectionEligible) {
       if (
-        verifiedEvidenceCount < MIN_VERIFIED_RECURRENCE_COUNT ||
-        verifiedSourceCount < MIN_VERIFIED_SOURCE_COUNT
+        complaintCount >= MIN_VERIFIED_RECURRENCE_COUNT &&
+        complaintSourceCount >= MIN_VERIFIED_SOURCE_COUNT
       ) {
-        return `Selected as a preliminary pilot after retaining ${verifiedEvidenceCount} problem-matched verified community report(s) across ${verifiedSourceCount} source(s). Recurrence is not established.`;
+        return `Selected after verifying ${complaintCount} problem-matched complaint/review signals across ${complaintSourceCount} independent sources.`;
       }
 
-      return `Selected after verifying ${verifiedEvidenceCount} problem-matched independent community reports across ${verifiedSourceCount} source(s).`;
+      if (directCount > 0) {
+        const diagnosticSuffix =
+          diagnosticTotal > totalCount
+            ? ` ${diagnosticTotal - totalCount} additional same-domain evidence item(s) were excluded because they did not match the selected atomic problem.`
+            : '';
+        const signalParts = [
+          complaintCount > 0
+            ? `${complaintCount} complaint/review signal(s)`
+            : '',
+          featureRequestCount > 0
+            ? `${featureRequestCount} feature request(s)`
+            : '',
+        ].filter(Boolean);
+        return `Selected as a preliminary pilot after retaining ${directCount} problem-matched direct-user signal(s) across ${Math.max(1, directSourceCount)} source(s)${signalParts.length > 0 ? ` (${signalParts.join(', ')})` : ''}. Recurrence of one operational problem is not established.${diagnosticSuffix}`;
+      }
+
+      if (secondaryCount > 0) {
+        return `Selected as a preliminary pilot from ${secondaryCount} problem-matched secondary report(s) across ${Math.max(1, totalSourceCount)} source(s). No verified direct user complaint establishes recurrence.`;
+      }
+
+      if (technicalCount > 0) {
+        return `Selected as a preliminary pilot from ${technicalCount} problem-matched technical ticket(s) across ${Math.max(1, totalSourceCount)} source(s). User recurrence is not established.`;
+      }
+
+      if (questionCount > 0) {
+        return `Selected as a bounded validation pilot from ${questionCount} problem-matched user scenario question(s) across ${Math.max(1, totalSourceCount)} source(s). The question is not counted as a direct user complaint or recurrence evidence.`;
+      }
+      if (observationCount > 0) {
+        return `Selected as a bounded validation pilot from ${observationCount} problem-matched community observation(s) across ${Math.max(1, totalSourceCount)} source(s). No verified direct user complaint establishes recurrence; the product response remains a pilot hypothesis.`;
+      }
     }
 
-    if (retainedDirectEvidenceCount > 0) {
-      const retainedLabel =
-        retainedDirectEvidenceCount === 1
-          ? 'One direct grounded community report was retained'
-          : `${retainedDirectEvidenceCount} direct grounded community reports were retained`;
-
-      return `${retainedLabel}, but the evidence does not yet satisfy the independent recurrence requirement of at least ${MIN_VERIFIED_RECURRENCE_COUNT} verified reports across ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`;
+    if (totalCount > 0) {
+      return `${totalCount === 1 ? 'One problem-matched evidence item was retained' : `${totalCount} problem-matched evidence items were retained`}, but direct-user recurrence has not been established across at least ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`;
     }
 
-    return `No direct community evidence was retained, so the selected direction must remain an explicitly unvalidated primary-domain hypothesis.`;
+    return 'No problem-matched retained evidence was verified, so the selected direction must remain an explicitly unvalidated primary-domain hypothesis.';
   }
 
   private mergeWarnings(
@@ -765,32 +1146,121 @@ export class IndependentEvidenceVerificationService {
     selected: RankedIdeaOpportunity,
   ): readonly string[] {
     const warnings = new Set(existingWarnings);
+    const directCount =
+      selected.verifiedProblemMatchedDirectUserEvidenceCount ??
+      selected.verifiedDirectUserEvidenceCount ??
+      selected.verifiedIndependentEvidenceCount ??
+      0;
+    const complaintCount =
+      selected.verifiedProblemMatchedComplaintEvidenceCount ??
+      selected.verifiedComplaintEvidenceCount ??
+      directCount;
+    const featureRequestCount =
+      selected.verifiedProblemMatchedFeatureRequestEvidenceCount ??
+      selected.verifiedFeatureRequestEvidenceCount ??
+      0;
+    const complaintSourceCount =
+      selected.verifiedProblemMatchedComplaintSourceCount ??
+      selected.verifiedComplaintSourceCount ??
+      0;
+    const secondaryCount =
+      selected.verifiedProblemMatchedSecondaryEvidenceCount ??
+      selected.verifiedSecondaryEvidenceCount ??
+      0;
+    const technicalCount =
+      selected.verifiedProblemMatchedTechnicalEvidenceCount ??
+      selected.verifiedTechnicalEvidenceCount ??
+      0;
+    const questionCount =
+      selected.verifiedProblemMatchedQuestionEvidenceCount ??
+      selected.verifiedQuestionEvidenceCount ??
+      0;
+    const observationCount =
+      selected.verifiedProblemMatchedObservationEvidenceCount ??
+      selected.verifiedObservationEvidenceCount ??
+      0;
+    const totalCount =
+      selected.verifiedProblemMatchedEvidenceCount ??
+      selected.verifiedEvidenceCount ??
+      directCount + secondaryCount + technicalCount + questionCount + observationCount;
+    const directSourceCount =
+      selected.verifiedProblemMatchedSourceCount ??
+      selected.verifiedIndependentSourceCount ??
+      0;
+    const diagnosticTotal = selected.verifiedEvidenceCount ?? totalCount;
+
+    if (directCount === 0) {
+      for (const warning of [...warnings]) {
+        if (
+          /(?:selected opportunity is supported by .*verified direct user|preliminary problem-matched direct-user evidence|only preliminary direct-user evidence)/iu.test(
+            warning,
+          )
+        ) {
+          warnings.delete(warning);
+        }
+      }
+    }
 
     if (!selected.selectionEligible) {
       warnings.add(
-        `The strongest signal did not contain at least one problem-matched verified community report suitable for a preliminary pilot.`,
+        'The strongest signal did not contain enough problem-matched retained evidence for a reliable primary opportunity.',
+      );
+    } else if (directCount === 0 && secondaryCount > 0) {
+      warnings.add(
+        `The selected opportunity is supported by ${secondaryCount} problem-matched secondary report(s) and no verified direct user complaint. Recurrence and market-wide demand remain unproven.`,
       );
     } else if (
-      (selected.verifiedIndependentEvidenceCount ?? 0) <
-        MIN_VERIFIED_RECURRENCE_COUNT ||
-      (selected.verifiedIndependentSourceCount ?? 0) < MIN_VERIFIED_SOURCE_COUNT
+      directCount > 0 &&
+      (complaintCount < MIN_VERIFIED_RECURRENCE_COUNT ||
+        complaintSourceCount < MIN_VERIFIED_SOURCE_COUNT)
     ) {
       warnings.add(
-        `Only preliminary problem-matched evidence is available; recurrence requires at least ${MIN_VERIFIED_RECURRENCE_COUNT} verified reports across ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`,
+        `Only preliminary problem-matched direct-user evidence is available; recurrence of one operational problem requires at least ${MIN_VERIFIED_RECURRENCE_COUNT} complaint/review signals across ${MIN_VERIFIED_SOURCE_COUNT} independent sources. Feature requests remain demand signals but do not by themselves prove complaint recurrence.`,
       );
     }
 
     if (
-      selected.independentEvidence?.some(
-        (evidence) =>
-          evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.SPECIFICATION,
-      )
+      totalCount > 0 &&
+      directCount === 0 &&
+      secondaryCount === 0 &&
+      technicalCount > 0
     ) {
       warnings.add(
-        'Technical specifications or test checklists were excluded from the recurrence count.',
+        'Retained problem-matched technical evidence may support a bounded pilot, but it does not establish direct user demand or recurrence.',
+      );
+    }
+
+    if (
+      totalCount > 0 &&
+      directCount === 0 &&
+      secondaryCount === 0 &&
+      technicalCount === 0 &&
+      questionCount > 0
+    ) {
+      warnings.add(
+        'Retained problem-matched scenario questions may support bounded discovery, but they are not direct user complaints and do not establish recurrence.',
+      );
+    }
+    if (
+      totalCount > 0 &&
+      directCount === 0 &&
+      secondaryCount === 0 &&
+      technicalCount === 0 &&
+      questionCount === 0 &&
+      observationCount > 0
+    ) {
+      warnings.add(
+        'Retained problem-matched community observations may justify a bounded pilot hypothesis, but they are not first-person direct user complaints and do not establish recurrence or prevalence.',
+      );
+    }
+
+    if (diagnosticTotal > totalCount) {
+      warnings.add(
+        `${diagnosticTotal - totalCount} additional verified same-domain evidence item(s) were excluded from recurrence because they did not match the selected atomic problem.`,
       );
     }
 
     return [...warnings];
   }
+
 }

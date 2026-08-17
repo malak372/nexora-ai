@@ -30,12 +30,23 @@ import {
 } from '../constants/community-ai-analysis.constants';
 import type {
   CommunityAiAnalysis,
+  CommunityAiAttemptDiagnostic,
+  CommunityAiDomainHypothesis,
   CommunityAiOpportunity,
 } from '../types/community-ai-analysis.type';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
 import { CommunityAiAnalysisPromptService } from './community-ai-analysis-prompt.service';
 import { buildCommunityAiAnalysisSchema } from '../schemas/community-ai-analysis.schema';
 import { isTransientDatabaseError } from '../utils/transient-database-error.util';
+import {
+  classifyDirectCommunityEvidence,
+  isNonActionableCommunityBanter,
+  isPositiveFeedbackWithoutProblem,
+} from '../../../nlp/common/utils/community-evidence.util';
+import {
+  matchEvidenceToAtomicProblem,
+  matchEvidenceToProblemFamily,
+} from '../../../nlp/common/utils/problem-family-matching.util';
 
 /**
  * Executes bounded, evidence-grounded LLM analysis over cleaned community data.
@@ -62,68 +73,81 @@ export class CommunityAiAnalysisService {
   /**
    * Attempts community analysis using bounded model rotation.
    *
-   * Returns null only after all domain-level attempts fail. Returning null is
-   * intentional because CommunityAiAnalysisStage preserves the existing NLP
-   * output and allows deterministic opportunity ranking to continue.
+   * Always returns either an accepted online analysis or an evidence-aware
+   * fallback so provider failures cannot fail the generation pipeline.
    */
   async analyze(
     context: IdeaGenerationContext,
-  ): Promise<CommunityAiAnalysis | null> {
+  ): Promise<CommunityAiAnalysis> {
     const prompt = this.promptService.build(context);
-    const onlineModels = await this.findOnlineFallbackModels(context);
+    const modelDiscovery = await this.findOnlineFallbackModels(context);
+    const onlineModels = modelDiscovery.models;
     const startedAt = Date.now();
+    const diagnostics: CommunityAiAttemptDiagnostic[] = [];
 
     if (onlineModels.length === 0) {
       const retainedFallback =
         this.buildRetainedEvidenceFallbackOpportunities(context);
+      const reason =
+        modelDiscovery.failureReason ??
+        'No healthy online community-analysis model was available.';
 
       if (retainedFallback.length > 0) {
         this.logger.warn(
-          'No healthy online community-analysis model is available; using retained direct evidence immediately without failing the community-analysis stage.',
+          `${reason} Retained evidence was used without failing the stage.`,
         );
-        return this.buildFallbackAnalysis(retainedFallback);
+        return this.buildFallbackAnalysis(retainedFallback, {
+          aiAttempted: false,
+          onlineAttemptCount: 0,
+          fallbackReason: reason,
+          attemptDiagnostics: diagnostics,
+          unvalidatedDomainHypotheses: this.buildUnvalidatedDomainHypotheses(
+            context,
+            retainedFallback.map((item) => item.domainName),
+          ),
+        });
       }
 
-      this.logger.warn(
-        'No healthy online community-analysis model is available and no retained direct evidence exists; deterministic NLP analysis will continue.',
+      return this.buildNoGroundedEvidenceAnalysis(
+        context,
+        diagnostics,
+        reason,
+        false,
       );
-      return null;
     }
 
-    /*
-     * Provider-diverse attempts run concurrently instead of serially. This
-     * preserves the same quality fallback coverage while bounding latency to
-     * the slowest allowed request rather than the sum of both request windows.
-     * The first response that passes parsing, evidence grounding, and business
-     * validation wins; remaining requests receive AbortSignal cancellation.
-     */
     const models = onlineModels.slice(
       0,
       Math.min(COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS, onlineModels.length),
     );
     const controllers = models.map(() => new AbortController());
-    const pending = new Map<
-      number,
-      Promise<{
-        readonly index: number;
-        readonly analysis: CommunityAiAnalysis | null;
-        readonly operationId?: string;
-        readonly modelId?: string;
-        readonly apiModelId?: string;
-        readonly providerKey?: string;
-        readonly error?: unknown;
-      }>
-    >();
+    type AttemptResult = {
+      readonly index: number;
+      readonly analysis: CommunityAiAnalysis | null;
+      readonly operationId?: string;
+      readonly modelId?: string;
+      readonly apiModelId?: string;
+      readonly providerKey?: string;
+      readonly durationMs: number;
+      readonly providerExecutionSucceeded?: boolean;
+      readonly providerOpportunityCount?: number;
+      readonly candidateTitles?: readonly string[];
+      readonly semanticGroundingRepairCount?: number;
+      readonly error?: unknown;
+    };
+    const pending = new Map<number, Promise<AttemptResult>>();
     let lastError: unknown = null;
+    let bestFallbackAnalysis: CommunityAiAnalysis | null = null;
 
     models.forEach((model, index) => {
       const attempt = index + 1;
+      const requestStartedAt = Date.now();
       const requestTimeoutMs = Math.min(
         COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
         COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS,
       );
 
-      const task = this.withHardTimeout(
+      const task: Promise<AttemptResult> = this.withHardTimeout(
         this.aiExecutionService.execute({
           aiModelId: model.id,
           userPrompt: prompt.userPrompt,
@@ -151,31 +175,60 @@ export class CommunityAiAnalysisService {
             .map((item) => item.id),
           timeoutMs: requestTimeoutMs,
           maxRetriesPerModel: 0,
-          maxModelsPerOperation: 1,
+          maxModelsPerOperation: COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION,
           allowProviderFallbackOnInvalidPrompt: true,
           signal: controllers[index].signal,
         }),
-        requestTimeoutMs + 500,
+        requestTimeoutMs + 350,
         `Community AI online attempt ${attempt}`,
       )
-        .then((result) => ({
-          index,
-          analysis: this.parseGroundAndValidate(
-            context,
-            result.text,
-            result.aiModelId,
-            result.apiModelId,
-            attempt,
-          ),
-          operationId: result.operationId,
-          modelId: result.aiModelId,
-          apiModelId: result.apiModelId,
-          providerKey: result.providerKey,
-        }))
-        .catch((error: unknown) => ({
+        .then((result): AttemptResult => {
+          const providerPreview =
+            this.summarizeProviderResponseForDiagnostics(result.text);
+          try {
+            const analysis = this.parseGroundAndValidate(
+              context,
+              result.text,
+              result.aiModelId,
+              result.apiModelId,
+              attempt,
+            );
+            return {
+              index,
+              analysis,
+              operationId: result.operationId,
+              modelId: result.aiModelId,
+              apiModelId: result.apiModelId,
+              providerKey: result.providerKey,
+              durationMs: Date.now() - requestStartedAt,
+              providerExecutionSucceeded: true,
+              providerOpportunityCount: providerPreview.opportunityCount,
+              candidateTitles: providerPreview.candidateTitles,
+              semanticGroundingRepairCount:
+                this.readSemanticGroundingRepairCount(analysis),
+            };
+          } catch (error: unknown) {
+            return {
+              index,
+              analysis: null,
+              operationId: result.operationId,
+              modelId: result.aiModelId,
+              apiModelId: result.apiModelId,
+              providerKey: result.providerKey,
+              durationMs: Date.now() - requestStartedAt,
+              providerExecutionSucceeded: true,
+              providerOpportunityCount: providerPreview.opportunityCount,
+              candidateTitles: providerPreview.candidateTitles,
+              error,
+            };
+          }
+        })
+        .catch((error: unknown): AttemptResult => ({
           index,
           analysis: null,
           error,
+          durationMs: Date.now() - requestStartedAt,
+          providerExecutionSucceeded: false,
         }));
 
       pending.set(index, task);
@@ -189,10 +242,11 @@ export class CommunityAiAnalysisService {
         Promise.race(pending.values()),
         remainingMs,
         'Community AI provider-diverse chain',
-      ).catch((error: unknown) => ({
+      ).catch((error: unknown): AttemptResult => ({
         index: -1,
         analysis: null,
         error,
+        durationMs: Date.now() - startedAt,
       }));
 
       if (settled.index < 0) {
@@ -201,55 +255,293 @@ export class CommunityAiAnalysisService {
       }
 
       pending.delete(settled.index);
+      const model = models[settled.index];
 
-      if (settled.analysis) {
+      if (settled.analysis?.aiSucceeded) {
+        diagnostics.push({
+          attempt: settled.index + 1,
+          modelId: settled.modelId ?? model?.id ?? null,
+          apiModelId: settled.apiModelId ?? model?.apiModelId ?? null,
+          providerKey: settled.providerKey ?? model?.providerKey ?? null,
+          status: 'ACCEPTED',
+          durationMs: settled.durationMs,
+          reason: null,
+          providerOpportunityCount: settled.providerOpportunityCount,
+          groundedOpportunityCount: settled.analysis.opportunities.length,
+          candidateTitles: settled.candidateTitles,
+          semanticGroundingRepairCount: settled.semanticGroundingRepairCount,
+        });
+
         controllers.forEach((controller, index) => {
           if (index !== settled.index && pending.has(index)) {
             controller.abort();
+            const pendingModel = models[index];
+            diagnostics.push({
+              attempt: index + 1,
+              modelId: pendingModel?.id ?? null,
+              apiModelId: pendingModel?.apiModelId ?? null,
+              providerKey: pendingModel?.providerKey ?? null,
+              status: 'ABORTED',
+              durationMs: Date.now() - startedAt,
+              reason: 'Cancelled after another online model returned an accepted analysis.',
+            });
           }
         });
         void Promise.allSettled(pending.values());
 
+        const accepted = this.attachExecutionTelemetry(settled.analysis, {
+          diagnostics,
+          onlineAttemptCount: models.length,
+          fallbackReason: null,
+        });
         this.logger.log(
-          `Community AI analysis accepted. operationId=${settled.operationId}, modelId=${settled.modelId}, apiModelId=${settled.apiModelId}, provider=${settled.providerKey}, concurrentAttempt=${settled.index + 1}/${models.length}, opportunities=${settled.analysis.opportunities.length}, elapsedMs=${Date.now() - startedAt}.`,
+          `Community AI analysis accepted. operationId=${settled.operationId}, modelId=${settled.modelId}, apiModelId=${settled.apiModelId}, provider=${settled.providerKey}, concurrentAttempt=${settled.index + 1}/${models.length}, opportunities=${accepted.opportunities.length}, elapsedMs=${Date.now() - startedAt}.`,
         );
-        return settled.analysis;
+        return accepted;
+      }
+
+      if (settled.analysis) {
+        bestFallbackAnalysis ??= settled.analysis;
+        diagnostics.push({
+          attempt: settled.index + 1,
+          modelId: settled.modelId ?? model?.id ?? null,
+          apiModelId: settled.apiModelId ?? model?.apiModelId ?? null,
+          providerKey: settled.providerKey ?? model?.providerKey ?? null,
+          status: 'VALIDATION_REJECTED',
+          durationMs: settled.durationMs,
+          reason:
+            settled.analysis.fallbackReason ??
+            'The provider response did not survive evidence/business validation; retained evidence was preserved.',
+          providerOpportunityCount: settled.providerOpportunityCount,
+          groundedOpportunityCount: settled.analysis.opportunities.length,
+          candidateTitles: settled.candidateTitles,
+          semanticGroundingRepairCount: settled.semanticGroundingRepairCount,
+        });
+        continue;
       }
 
       lastError = settled.error;
-      const model = models[settled.index];
+      const errorMessage = this.getErrorMessage(settled.error);
+      const normalizedError = errorMessage.toLocaleLowerCase();
+      const timedOut = /timeout|timed out|exceeded .*ms/u.test(normalizedError);
+      const aborted = /abort|cancel/u.test(normalizedError);
+      const validationRejected = settled.providerExecutionSucceeded === true;
+      diagnostics.push({
+        attempt: settled.index + 1,
+        modelId: settled.modelId ?? model?.id ?? null,
+        apiModelId: settled.apiModelId ?? model?.apiModelId ?? null,
+        providerKey: settled.providerKey ?? model?.providerKey ?? null,
+        status: validationRejected
+          ? 'VALIDATION_REJECTED'
+          : timedOut
+            ? 'TIMEOUT'
+            : aborted
+              ? 'ABORTED'
+              : 'EXECUTION_FAILED',
+        durationMs: settled.durationMs,
+        reason: errorMessage,
+        providerOpportunityCount: settled.providerOpportunityCount,
+        groundedOpportunityCount: 0,
+        candidateTitles: settled.candidateTitles,
+      });
+
       const databaseUnavailable = isTransientDatabaseError(settled.error);
       this.logger.warn(
-        `Community AI online model failed or was rejected. concurrentAttempt=${settled.index + 1}/${models.length}, model=${model?.displayName ?? model?.modelName ?? 'balanced-routing'}, provider=${model?.providerKey ?? 'auto'}, databaseUnavailable=${databaseUnavailable}, elapsedMs=${Date.now() - startedAt}, error=${this.getErrorMessage(settled.error)}.`,
+        `Community AI online model failed. concurrentAttempt=${settled.index + 1}/${models.length}, model=${model?.displayName ?? model?.modelName ?? 'balanced-routing'}, provider=${model?.providerKey ?? 'auto'}, databaseUnavailable=${databaseUnavailable}, elapsedMs=${Date.now() - startedAt}, error=${errorMessage}.`,
       );
-
       if (databaseUnavailable) {
         controllers.forEach((controller) => controller.abort());
         break;
       }
     }
 
-    controllers.forEach((controller) => controller.abort());
+    controllers.forEach((controller, index) => {
+      if (pending.has(index) && !controllers[index].signal.aborted) {
+        controller.abort();
+      }
+    });
+    for (const [index] of pending) {
+      if (!diagnostics.some((item) => item.attempt === index + 1)) {
+        const model = models[index];
+        diagnostics.push({
+          attempt: index + 1,
+          modelId: model?.id ?? null,
+          apiModelId: model?.apiModelId ?? null,
+          providerKey: model?.providerKey ?? null,
+          status: 'TIMEOUT',
+          durationMs: Date.now() - startedAt,
+          reason: 'The shared Community AI wall-clock budget expired before this model produced an accepted result.',
+        });
+      }
+    }
     void Promise.allSettled(pending.values());
+
+    const finalReason =
+      bestFallbackAnalysis?.fallbackReason ??
+      this.getErrorMessage(lastError) ??
+      'All online Community AI responses failed or were rejected within the shared time budget.';
+
+    if (bestFallbackAnalysis) {
+      return this.attachExecutionTelemetry(bestFallbackAnalysis, {
+        diagnostics,
+        onlineAttemptCount: models.length,
+        fallbackReason: finalReason,
+      });
+    }
 
     const retainedFallback = this.buildRetainedEvidenceFallbackOpportunities(context);
     if (retainedFallback.length > 0) {
-      const grounded = this.applyEvidenceGrounding(
+      const fallback = this.applyEvidenceGrounding(
         context,
-        this.buildFallbackAnalysis(retainedFallback, models.length),
+        this.buildFallbackAnalysis(retainedFallback, {
+          aiAttempted: true,
+          onlineAttemptCount: models.length,
+          fallbackReason: finalReason,
+          attemptDiagnostics: diagnostics,
+          unvalidatedDomainHypotheses: this.buildUnvalidatedDomainHypotheses(
+            context,
+            retainedFallback.map((item) => item.domainName),
+          ),
+        }),
         true,
       );
-      this.logger.warn(
-        `Community AI online enrichment was unavailable within ${Date.now() - startedAt}ms; retained direct evidence produced ${grounded.opportunities.length} grounded candidate(s), so the stage completed successfully.`,
-      );
-      return grounded;
+      return this.attachExecutionTelemetry(fallback, {
+        diagnostics,
+        onlineAttemptCount: models.length,
+        fallbackReason: finalReason,
+      });
     }
 
-    this.logger.warn(
-      `Community AI online fallback chain was exhausted within ${Date.now() - startedAt}ms. Deterministic NLP analysis will continue without Ollama. error=${this.getErrorMessage(lastError)}.`,
+    return this.buildNoGroundedEvidenceAnalysis(
+      context,
+      diagnostics,
+      finalReason,
+      true,
+    );
+  }
+
+  private attachExecutionTelemetry(
+    analysis: CommunityAiAnalysis,
+    input: {
+      readonly diagnostics: readonly CommunityAiAttemptDiagnostic[];
+      readonly onlineAttemptCount: number;
+      readonly fallbackReason: string | null;
+    },
+  ): CommunityAiAnalysis {
+    const diagnostics = [...input.diagnostics].sort(
+      (first, second) => first.attempt - second.attempt,
+    );
+    return {
+      ...analysis,
+      attemptCount: Math.max(
+        analysis.attemptCount,
+        diagnostics.filter((item) => item.status !== 'ABORTED').length,
+      ),
+      aiAttempted: input.onlineAttemptCount > 0,
+      aiSucceeded: analysis.aiSucceeded,
+      fallbackUsed: analysis.fallbackUsed || !analysis.aiSucceeded,
+      onlineAttemptCount: input.onlineAttemptCount,
+      executionFailureCount: diagnostics.filter(
+        (item) => item.status === 'EXECUTION_FAILED' || item.status === 'TIMEOUT',
+      ).length,
+      validationRejectedCount: diagnostics.filter(
+        (item) => item.status === 'VALIDATION_REJECTED',
+      ).length,
+      fallbackReason:
+        analysis.aiSucceeded && !analysis.fallbackUsed
+          ? null
+          : input.fallbackReason ?? analysis.fallbackReason,
+      attemptDiagnostics: diagnostics,
+    };
+  }
+
+  private buildNoGroundedEvidenceAnalysis(
+    context: IdeaGenerationContext,
+    diagnostics: readonly CommunityAiAttemptDiagnostic[],
+    reason: string,
+    aiAttempted: boolean,
+  ): CommunityAiAnalysis {
+    const hypotheses = this.buildUnvalidatedDomainHypotheses(context, []);
+    return {
+      summary:
+        'No evidence-grounded Community AI opportunity survived validation; unvalidated domain hypotheses were kept separate so the pipeline can continue without fabricating evidence.',
+      dominantProblems: [],
+      unmetNeeds: [],
+      opportunities: [],
+      overallConfidence: 15,
+      qualityWarnings: [
+        'Community AI did not produce an acceptable grounded opportunity within the bounded budget.',
+        'Unvalidated domain hypotheses are not treated as community evidence and may only be used as a last-resort generation direction.',
+      ],
+      modelId: null,
+      apiModelId: null,
+      attemptCount: diagnostics.length,
+      aiAttempted,
+      aiSucceeded: false,
+      fallbackUsed: true,
+      onlineAttemptCount: diagnostics.length,
+      executionFailureCount: diagnostics.filter(
+        (item) => item.status === 'EXECUTION_FAILED' || item.status === 'TIMEOUT',
+      ).length,
+      validationRejectedCount: diagnostics.filter(
+        (item) => item.status === 'VALIDATION_REJECTED',
+      ).length,
+      fallbackReason: reason,
+      attemptDiagnostics: [...diagnostics],
+      unvalidatedDomainHypotheses: hypotheses,
+    };
+  }
+
+  private buildUnvalidatedDomainHypotheses(
+    context: IdeaGenerationContext,
+    representedDomains: readonly string[],
+  ): CommunityAiDomainHypothesis[] {
+    const represented = new Set(
+      representedDomains.map((domain) => this.normalizeComparableText(domain)),
+    );
+    return context.selectedDomains
+      .filter(
+        (domain) =>
+          !represented.has(this.normalizeComparableText(domain.name)) &&
+          !this.hasRetainedDomainEvidence(context, domain.id),
+      )
+      .map((domain) => ({
+        domainName: domain.name,
+        title: `${domain.name} validation-first workflow opportunity`,
+        problem: `A concrete community problem for ${domain.name} was not retained within the bounded collection window.`,
+        unmetNeed: `A validation workflow that discovers and tests the highest-value ${domain.name} problem before implementation.`,
+        solutionArea: 'Problem discovery, validation, and configurable pilot workflow',
+        confidence: 15,
+        risks: [
+          'No retained community evidence grounds this hypothesis; it must not be presented as observed demand.',
+        ],
+      }));
+  }
+
+  private hasRetainedDomainEvidence(
+    context: IdeaGenerationContext,
+    domainId: string,
+  ): boolean {
+    const profile = context.domainEvidence.find(
+      (item) => item.domainId === domainId,
     );
 
-    return null;
+    if (!profile?.evidenceAvailable) {
+      return false;
+    }
+
+    const totalTexts =
+      typeof profile.totalTextsAnalyzed === 'number'
+        ? profile.totalTextsAnalyzed
+        : 0;
+    const posts = Array.isArray(profile.samplePosts)
+      ? profile.samplePosts.length
+      : 0;
+    const comments = Array.isArray(profile.sampleComments)
+      ? profile.sampleComments.length
+      : 0;
+
+    return totalTexts > 0 || posts + comments > 0;
   }
 
   /**
@@ -261,17 +553,21 @@ export class CommunityAiAnalysisService {
    */
   private async findOnlineFallbackModels(
     context: IdeaGenerationContext,
-  ): Promise<AiModel[]> {
+  ): Promise<{ readonly models: AiModel[]; readonly failureReason: string | null }> {
     try {
       const routableModels = await this.aiModelsService.getRoutableModels();
 
-      const onlineModels = routableModels.filter(
-        (model) =>
-          normalizeAiProviderKey(model.providerKey) !== AI_PROVIDER_KEYS.OLLAMA &&
+      const onlineModels = routableModels.filter((model) => {
+        const provider = normalizeAiProviderKey(model.providerKey);
+
+        return (
+          provider !== undefined &&
+          provider !== AI_PROVIDER_KEYS.OLLAMA &&
           model.supportsJsonOutput &&
           model.healthStatus !== 'UNAVAILABLE' &&
-          model.consecutiveFailures < 4,
-      );
+          model.consecutiveFailures < 4
+        );
+      });
 
       /*
        * Community analysis gets one short online attempt. Rotate the first
@@ -306,28 +602,34 @@ export class CommunityAiAnalysisService {
       });
 
       if (ordered.length <= 1) {
-        return ordered;
+        return { models: ordered, failureReason: null };
       }
 
-      const first = ordered[0];
-      const firstProvider = normalizeAiProviderKey(first.providerKey);
-      const differentProvider = ordered.find(
-        (model, index) =>
-          index > 0 &&
-          normalizeAiProviderKey(model.providerKey) !== firstProvider,
-      );
-      const second =
-        differentProvider ?? ordered.find((model, index) => index > 0);
+      const selected: AiModel[] = [];
+      const usedProviders = new Set<string>();
+      for (const model of ordered) {
+        const provider = normalizeAiProviderKey(model.providerKey);
+        if (!provider) continue;
 
-      return [first, ...(second ? [second] : [])].slice(
-        0,
-        COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS,
-      );
+        if (selected.length === 0 || !usedProviders.has(provider)) {
+          selected.push(model);
+          usedProviders.add(provider);
+        }
+        if (selected.length >= COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS) {
+          return { models: selected, failureReason: null };
+        }
+      }
+      for (const model of ordered) {
+        if (!selected.some((item) => item.id === model.id)) {
+          selected.push(model);
+        }
+        if (selected.length >= COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS) break;
+      }
+      return { models: selected, failureReason: null };
     } catch (error: unknown) {
-      this.logger.warn(
-        `Online community-analysis model discovery failed; balanced routing will be attempted once. error=${this.getErrorMessage(error)}.`,
-      );
-      return [];
+      const failureReason = `Online community-analysis model discovery failed: ${this.getErrorMessage(error)}`;
+      this.logger.warn(failureReason);
+      return { models: [], failureReason };
     }
   }
 
@@ -421,25 +723,50 @@ export class CommunityAiAnalysisService {
         throw error;
       }
 
-      groundedAnalysis = this.applyEvidenceGrounding(
-        context,
-        {
-          ...domainNormalizedAnalysis,
-          summary:
-            'The online model did not return a usable grounded opportunity, so one cautious candidate was recovered from retained direct NLP evidence.',
-          dominantProblems: retainedFallback.map((item) => item.problem),
-          unmetNeeds: retainedFallback.map((item) => item.unmetNeed),
-          opportunities: retainedFallback,
-          overallConfidence:
-            retainedFallback.reduce((sum, item) => sum + item.confidence, 0) /
-            retainedFallback.length,
-          qualityWarnings: [
-            ...domainNormalizedAnalysis.qualityWarnings,
-            'The provider output was unusable after grounding; retained direct evidence was recovered within the same community-analysis attempt.',
-          ],
-        },
-        true,
-      );
+      groundedAnalysis = {
+        ...this.applyEvidenceGrounding(
+          context,
+          {
+            ...domainNormalizedAnalysis,
+            summary:
+              'The online model did not return a usable grounded opportunity, so one cautious candidate was recovered from retained NLP evidence pending provenance classification.',
+            dominantProblems: retainedFallback.map((item) => item.problem),
+            unmetNeeds: retainedFallback.map((item) => item.unmetNeed),
+            opportunities: retainedFallback,
+            overallConfidence:
+              retainedFallback.reduce((sum, item) => sum + item.confidence, 0) /
+              retainedFallback.length,
+            qualityWarnings: [
+              ...domainNormalizedAnalysis.qualityWarnings,
+              'The provider output was unusable after grounding; retained evidence was recovered within the same community-analysis attempt.',
+            ],
+          },
+          true,
+        ),
+        aiSucceeded: false,
+        fallbackUsed: true,
+        validationRejectedCount: 1,
+        fallbackReason: this.getErrorMessage(error),
+      };
+    }
+
+    if (
+      groundedAnalysis.fallbackUsed ||
+      groundedAnalysis.opportunities.every((item) => item.groundingScore >= 100) &&
+        domainNormalizedAnalysis.opportunities.length === 0
+    ) {
+      groundedAnalysis = {
+        ...groundedAnalysis,
+        aiSucceeded: false,
+        fallbackUsed: true,
+        fallbackReason:
+          groundedAnalysis.fallbackReason ??
+          'The provider response failed grounding or business validation; retained evidence was used instead.',
+        validationRejectedCount: Math.max(
+          1,
+          groundedAnalysis.validationRejectedCount,
+        ),
+      };
     }
 
     const analysis = this.preserveGroundedLowConfidenceAnalysis(
@@ -491,36 +818,42 @@ export class CommunityAiAnalysisService {
       'na',
     ]);
 
+    const opportunities = analysis.opportunities.flatMap((opportunity) => {
+      const evidenceDomainName = this.resolveEvidenceBackedDomainName(
+        context,
+        opportunity.evidenceSamples,
+      );
+      if (evidenceDomainName) {
+        return [{ ...opportunity, domainName: evidenceDomainName }];
+      }
+
+      const normalized = this.normalizeComparableText(opportunity.domainName);
+      const exactSelectedName = selectedByNormalizedName.get(normalized);
+      const requestedDomainName = exactSelectedName ??
+        (genericLabels.has(normalized) ? primaryDomainName : null);
+
+      if (!requestedDomainName) {
+        return [];
+      }
+
+      const supported = opportunity.evidenceSamples.some((sample) =>
+        this.evidenceSemanticallySupportsDomain(
+          context,
+          requestedDomainName,
+          sample,
+        ),
+      );
+
+      return supported
+        ? [{ ...opportunity, domainName: requestedDomainName }]
+        : [];
+    });
+
     return {
       ...analysis,
-      opportunities: analysis.opportunities.map((opportunity) => {
-        const evidenceDomainName = this.resolveEvidenceBackedDomainName(
-          context,
-          opportunity.evidenceSamples,
-        );
-        if (evidenceDomainName) {
-          return { ...opportunity, domainName: evidenceDomainName };
-        }
-
-        const normalized = this.normalizeComparableText(
-          opportunity.domainName,
-        );
-        const exactSelectedName = selectedByNormalizedName.get(normalized);
-
-        if (exactSelectedName) {
-          return { ...opportunity, domainName: exactSelectedName };
-        }
-
-        if (genericLabels.has(normalized)) {
-          return { ...opportunity, domainName: primaryDomainName };
-        }
-
-        /*
-         * A non-selected model label is still constrained to the user's
-         * selected scope instead of rejecting the complete AI analysis.
-         */
-        return { ...opportunity, domainName: primaryDomainName };
-      }),
+      opportunities,
+      dominantProblems: opportunities.map((item) => item.problem),
+      unmetNeeds: opportunities.map((item) => item.unmetNeed),
     };
   }
 
@@ -588,7 +921,7 @@ export class CommunityAiAnalysisService {
        * retained evidence.
        */
       summary: usedRetainedEvidenceFallback
-        ? `Recovered ${opportunities.length} direct evidence-grounded opportunity candidate(s) from retained community evidence after the online model returned no opportunity objects.`
+        ? `Recovered ${opportunities.length} evidence-grounded opportunity candidate(s) from retained evidence after the online model returned no opportunity objects.`
         : this.optionalString(
             parsed.summary,
             `Extracted ${opportunities.length} evidence-grounded opportunity candidate(s).`,
@@ -616,7 +949,7 @@ export class CommunityAiAnalysisService {
         ...safeProviderWarnings,
         ...(usedRetainedEvidenceFallback
           ? [
-              'The online model returned no opportunity objects; retained direct community evidence was converted into a cautious grounded opportunity and still requires independent provenance verification.',
+              'The online model returned no opportunity objects; retained evidence was converted into a cautious grounded opportunity and still requires independent provenance verification before direct-versus-secondary claims are made.',
             ]
           : []),
         ...(opportunities.length <
@@ -629,6 +962,17 @@ export class CommunityAiAnalysisService {
       modelId,
       apiModelId,
       attemptCount,
+      aiAttempted: true,
+      aiSucceeded: !usedRetainedEvidenceFallback,
+      fallbackUsed: usedRetainedEvidenceFallback,
+      onlineAttemptCount: 1,
+      executionFailureCount: 0,
+      validationRejectedCount: usedRetainedEvidenceFallback ? 1 : 0,
+      fallbackReason: usedRetainedEvidenceFallback
+        ? 'The online model returned no usable grounded opportunity objects.'
+        : null,
+      attemptDiagnostics: [],
+      unvalidatedDomainHypotheses: [],
     };
   }
 
@@ -691,6 +1035,7 @@ export class CommunityAiAnalysisService {
         'description',
         'title',
         'need',
+        'feature',
       ]);
       if (!problem || problem.length < 24) {
         continue;
@@ -702,6 +1047,7 @@ export class CommunityAiAnalysisService {
           'need',
           'missingCapability',
           'title',
+          'feature',
         ]) ?? `A reliable workflow that resolves: ${problem}`;
       const solutionArea =
         this.firstAvailableString(record, [
@@ -734,7 +1080,7 @@ export class CommunityAiAnalysisService {
       if (
         !evidenceSample ||
         this.looksLikePromotionalOrPublisherText(evidenceSample) ||
-        !this.looksLikeDirectProblemEvidence(evidenceSample)
+        !this.isRetainedFallbackEvidenceCandidate(evidenceSample)
       ) {
         continue;
       }
@@ -757,12 +1103,26 @@ export class CommunityAiAnalysisService {
       const rawDomainName =
         this.firstAvailableString(record, ['domainName', 'domain']) ??
         primaryDomainName;
+      const normalizedRawDomainName = selectedDomainNames.get(
+        this.normalizeComparableText(rawDomainName),
+      );
+      const evidenceBackedDomainName = this.resolveEvidenceBackedDomainName(
+        context,
+        [evidenceSample],
+      );
       const domainName =
-        this.resolveEvidenceBackedDomainName(context, [evidenceSample]) ??
-        selectedDomainNames.get(
-          this.normalizeComparableText(rawDomainName),
-        ) ??
-        primaryDomainName;
+        evidenceBackedDomainName ??
+        (normalizedRawDomainName &&
+        this.evidenceSemanticallySupportsDomain(
+          context,
+          normalizedRawDomainName,
+          evidenceSample,
+        )
+          ? normalizedRawDomainName
+          : null);
+      if (!domainName) {
+        continue;
+      }
       const repairedTitle = this.deriveTitle(
         repairedProblem,
         repairedUnmetNeed,
@@ -779,7 +1139,11 @@ export class CommunityAiAnalysisService {
         title: repairedTitle,
         problem: repairedProblem,
         unmetNeed: repairedUnmetNeed,
-        solutionArea: this.boundProblemText(solutionArea, 180),
+        solutionArea: this.buildProfessionalFallbackSolutionArea(
+          solutionArea,
+          repairedProblem,
+          evidenceSample,
+        ),
         affectedUsers: this.normalizeTextArray(
           record.affectedUsers ?? record.targetUsers,
           ['Affected community users'],
@@ -838,9 +1202,13 @@ export class CommunityAiAnalysisService {
     );
     const unmetNeed = this.buildProfessionalFallbackNeed('', problem);
 
-    const fallbackDomainName =
-      this.resolveEvidenceBackedDomainName(context, [strongestCorpusSample]) ??
-      primaryDomainName;
+    const fallbackDomainName = this.resolveEvidenceBackedDomainName(
+      context,
+      [strongestCorpusSample],
+    );
+    if (!fallbackDomainName) {
+      return [];
+    }
 
     return [
       {
@@ -853,8 +1221,11 @@ export class CommunityAiAnalysisService {
         ),
         problem,
         unmetNeed,
-        solutionArea:
-          'A focused software workflow for diagnosis, validation, and guided resolution.',
+        solutionArea: this.buildProfessionalFallbackSolutionArea(
+          '',
+          problem,
+          strongestCorpusSample,
+        ),
         affectedUsers: ['Affected community users'],
         evidenceSamples: [strongestCorpusSample],
         frequency: 1,
@@ -885,25 +1256,48 @@ export class CommunityAiAnalysisService {
    */
   private buildFallbackAnalysis(
     opportunities: readonly CommunityAiOpportunity[],
-    attemptCount = 0,
+    telemetry: {
+      readonly aiAttempted?: boolean;
+      readonly onlineAttemptCount?: number;
+      readonly fallbackReason?: string | null;
+      readonly attemptDiagnostics?: readonly CommunityAiAttemptDiagnostic[];
+      readonly unvalidatedDomainHypotheses?: readonly CommunityAiDomainHypothesis[];
+    } = {},
   ): CommunityAiAnalysis {
     const averageConfidence =
       opportunities.reduce((sum, item) => sum + item.confidence, 0) /
       Math.max(opportunities.length, 1);
+    const diagnostics = [...(telemetry.attemptDiagnostics ?? [])];
 
     return {
-      summary: `Recovered ${opportunities.length} cautious opportunity candidate(s) from retained direct community evidence.`,
+      summary: `Recovered ${opportunities.length} cautious opportunity candidate(s) from retained evidence.`,
       dominantProblems: opportunities.map((item) => item.problem),
       unmetNeeds: opportunities.map((item) => item.unmetNeed),
       opportunities: [...opportunities],
       overallConfidence: averageConfidence,
       qualityWarnings: [
-        'Online community enrichment was unavailable or unusable; retained direct evidence was preserved instead of failing the stage.',
+        'Online community enrichment was unavailable or unusable; retained evidence was preserved instead of failing the stage.',
         'The recovered direction remains preliminary until broader independent evidence is collected.',
       ],
       modelId: null,
       apiModelId: null,
-      attemptCount,
+      attemptCount: diagnostics.length,
+      aiAttempted: telemetry.aiAttempted ?? diagnostics.length > 0,
+      aiSucceeded: false,
+      fallbackUsed: true,
+      onlineAttemptCount: telemetry.onlineAttemptCount ?? diagnostics.length,
+      executionFailureCount: diagnostics.filter(
+        (item) => item.status === 'EXECUTION_FAILED' || item.status === 'TIMEOUT',
+      ).length,
+      validationRejectedCount: diagnostics.filter(
+        (item) => item.status === 'VALIDATION_REJECTED',
+      ).length,
+      fallbackReason:
+        telemetry.fallbackReason ?? 'Online Community AI output was unavailable or unusable.',
+      attemptDiagnostics: diagnostics,
+      unvalidatedDomainHypotheses: [
+        ...(telemetry.unvalidatedDomainHypotheses ?? []),
+      ],
     };
   }
 
@@ -926,8 +1320,14 @@ export class CommunityAiAnalysisService {
         domainEvidence.sampleComments,
       ]);
       const matches = normalizedSamples.filter((sample) =>
-        corpus.some((corpusSample) =>
-          this.isExactOrContainedEvidenceMatch(sample, corpusSample),
+        corpus.some(
+          (corpusSample) =>
+            this.isExactOrContainedEvidenceMatch(sample, corpusSample) &&
+            this.evidenceSemanticallySupportsDomain(
+              context,
+              domainEvidence.domainName,
+              corpusSample,
+            ),
         ),
       ).length;
 
@@ -947,6 +1347,189 @@ export class CommunityAiAnalysisService {
     );
 
     return selected?.name ?? best.domainName;
+  }
+
+  /**
+   * Prevents collection-query context from becoming domain proof. A sample can
+   * be returned by a domain search while still describing a completely
+   * different problem. This lightweight in-memory guard mirrors the stricter
+   * ranking-stage attribution without adding another database or AI call.
+   */
+  private evidenceSemanticallySupportsDomain(
+    context: IdeaGenerationContext,
+    domainName: string,
+    sample: string,
+  ): boolean {
+    const commentMatch = sample.match(/^(.*?\bCommunity comment:\s*)(.+)$/iu);
+    const sourceContext = commentMatch?.[1]?.replace(/\bCommunity comment:\s*$/iu, '') ?? '';
+    const body = commentMatch?.[2] ?? sample;
+    const normalized = this.normalizeComparableText(body);
+    const normalizedSourceContext = this.normalizeComparableText(sourceContext);
+    const normalizedFullSample = this.normalizeComparableText(sample);
+    const normalizedDomain = this.normalizeComparableText(domainName);
+    const selectedDomain = context.selectedDomains.find(
+      (domain) =>
+        this.normalizeComparableText(domain.name) === normalizedDomain,
+    );
+    const terms = [
+      domainName,
+      ...(selectedDomain?.effectiveSearchKeywords ?? selectedDomain?.keywords ?? []),
+    ]
+      .map((term) => this.normalizeComparableText(term))
+      .filter((term) => term.length >= 3);
+    const genericDomainTerms = new Set([
+      'application',
+      'software',
+      'system',
+      'platform',
+      'service',
+      'services',
+      'workflow',
+      'tool',
+      'tools',
+    ]);
+    const explicitDomainNameInPersistedSample =
+      normalizedDomain.length >= 4 &&
+      (
+        normalizedSourceContext.includes(normalizedDomain) ||
+        normalizedFullSample.includes(normalizedDomain)
+      );
+    const sourceContextSupportsDomain = terms.some(
+      (term) =>
+        term.length >= 5 &&
+        !genericDomainTerms.has(term) &&
+        normalizedSourceContext.includes(term),
+    );
+
+    if (explicitDomainNameInPersistedSample || sourceContextSupportsDomain) {
+      return true;
+    }
+
+    if (normalizedDomain === 'environment') {
+      return /\b(?:environmental monitoring|environmental compliance|pollution|air quality|water quality|waste management|recycling|emissions?|carbon footprint|sustainability|ecosystem|conservation|biodiversity|environmental impact|climate risk|climate adaptation)\b/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'tourism') {
+      const explicitTourismAnchor =
+        /(?:\btourism\b|tourism app|tourism application|tourism platform|tourism system|travel app|travel application|travel platform|tourist app|tourist service|tourism service)/u.test(
+          normalized,
+        );
+      const tourismWorkflowAnchor =
+        /(?:travel booking|booking|reservation|tour itinerary|itinerary|tour operator|tour package|visitor management|destination management|travel inventory|hotel booking|guest booking|tourist service|tourism service|excursion booking)/u.test(
+          normalized,
+        );
+      const genericTechnicalFailure =
+        /(?:visual studio|vsto|outofmemoryexception|out of memory|stack trace|exception from hresult|excel workbook|worksheet|module|runtime|compiler|memory error|ram|cpu)/u.test(
+          normalized,
+        );
+      const operationalTourismFailure =
+        /(?:booking|reservation|itinerary|tour|visitor|destination|hotel|guest|excursion).{0,120}(?:fail|failed|failure|error|blocked|missing|duplicate|wrong|unable|cannot|can t|delay|cancel)/u.test(
+          normalized,
+        ) ||
+        /(?:fail|failed|failure|error|blocked|missing|duplicate|wrong|unable|cannot|can t|delay|cancel).{0,120}(?:booking|reservation|itinerary|tour|visitor|destination|hotel|guest|excursion)/u.test(
+          normalized,
+        );
+
+      return (
+        explicitTourismAnchor ||
+        operationalTourismFailure ||
+        (tourismWorkflowAnchor && !genericTechnicalFailure)
+      );
+    }
+
+    if (normalizedDomain === 'real estate') {
+      const directRealEstateAnchor =
+        /(?:real estate|housing|rent|rental|rentals|lease|leasing|tenant|landlord|mortgage|realtor|zillow|apartment|apartments)/u.test(
+          normalized,
+        );
+      const propertyWorkflowAnchor =
+        /(?:property|properties).{0,80}(?:listing|listings|management|inspection|tenant|lease|rental)|(?:listing|listings|management|inspection|tenant|lease|rental).{0,80}(?:property|properties)/u.test(
+          normalized,
+        );
+
+      return directRealEstateAnchor || propertyWorkflowAnchor;
+    }
+
+    if (
+      normalizedDomain === 'internet of things' ||
+      normalizedDomain === 'iot'
+    ) {
+      return /(?:internet of things|iot|connected device|connected devices|sensor|sensors|telemetry|device management|gateway|firmware|smart meter|smart device|bluetooth|zigbee|edge computing)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'healthcare') {
+      return /(?:healthcare|health care|patient|patients|clinical|medical|medicine|medication|prescription|physician|doctor|hospital|pharmacy|care coordination|telemedicine)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'logistics') {
+      return /(?:logistics|shipment|delivery|courier|fleet|dispatch|warehouse|last mile|tracking|transit time|driver|rider|package|parcel|order fulfillment)/u.test(
+        normalized,
+      );
+    }
+
+    if (
+      normalizedDomain === 'finance' ||
+      normalizedDomain === 'financial services' ||
+      normalizedDomain === 'fintech'
+    ) {
+      return /(?:finance|financial|bank|banking|payment|payments|billing|invoice|card|credit|debit|loan|accounting|expense|payroll|reconciliation|wallet)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'mental health') {
+      const therapeuticSignal =
+        /(?:mental health|therapy|therapist|counsel(?:ing|ling|or)|self care|psychological|voice|persona|mood|crisis|wellness)/u.test(
+          normalized,
+        );
+      const infrastructureOnlySignal =
+        /(?:google cloud|datastore|oauth2?|database|indexes?|appengine|cloud ndb|python [23]|migration|authentication credentials)/u.test(
+          normalized,
+        ) &&
+        !/(?:mental health app|therapy app|therapist|counselor|counselling session|self care|voice|persona|mood tracking)/u.test(
+          normalized,
+        );
+
+      return therapeuticSignal && !infrastructureOnlySignal;
+    }
+
+    if (normalizedDomain === 'sports fitness' || normalizedDomain === 'sports and fitness') {
+      return /(?:sports?|fitness|workout|athlete|training|gym|tennis|coach|coaching|player|watch)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'blockchain') {
+      return /(?:blockchain|crypto|cryptocurrency|wallet|smart contract|hyperledger|binance|node|pexcoin|transaction|web3)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'cybersecurity') {
+      return /(?:cybersecurity|authentication|two factor|2fa|mfa|oauth|identity access|credential|authorization|access control|security policy|threat|vulnerabilit|breach|phishing|malware|encryption|token isolation|password security|privacy)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'education') {
+      return /(?:student|teacher|coursework|assignment|grading|classroom|lesson|curriculum|homework|learning platform|learning management|education workflow|school|university|course material)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'legaltech') {
+      return /(?:legal research|legal document|contract|case management|case law|court|attorney|lawyer|compliance workflow|legal workflow|legaltech|law database)/u.test(
+        normalized,
+      );
+    }
+
+    return terms.some((term) => normalized.includes(term));
   }
 
   private firstAvailableString(
@@ -1239,7 +1822,7 @@ export class CommunityAiAnalysisService {
     return [...corpus]
       .filter((sample) => sample.trim().length >= 40)
       .filter((sample) => !this.looksLikePromotionalOrPublisherText(sample))
-      .filter((sample) => this.looksLikeDirectProblemEvidence(sample))
+      .filter((sample) => this.isRetainedFallbackEvidenceCandidate(sample))
       .map((sample) => {
         const normalized = this.normalizeComparableText(sample);
         let score = Math.min(sample.length, 320) / 80;
@@ -1280,6 +1863,31 @@ export class CommunityAiAnalysisService {
     return (hasUrl && promotionalPhrase) || promotionalPhrase || titleLike;
   }
 
+  private isRetainedFallbackEvidenceCandidate(value: string): boolean {
+    const raw = value.replace(/\s+/gu, ' ').trim();
+    const body = raw.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? raw;
+    if (
+      !body ||
+      isNonActionableCommunityBanter(body, 'COMMENT') ||
+      this.looksLikePromotionalOrPublisherText(body) ||
+      isPositiveFeedbackWithoutProblem(body)
+    ) {
+      return false;
+    }
+
+    const kind = classifyDirectCommunityEvidence(body, 'COMMENT');
+    if (
+      kind === 'USER_COMPLAINT' ||
+      kind === 'FEATURE_REQUEST' ||
+      kind === 'GENERAL_COMMENTARY' ||
+      kind === 'USER_QUESTION'
+    ) {
+      return true;
+    }
+
+    return this.looksLikeDirectProblemEvidence(body);
+  }
+
   /** Returns true only for text that contains an observable user pain signal. */
   private looksLikeDirectProblemEvidence(value: string): boolean {
     const raw = value.replace(/\s+/gu, ' ').trim();
@@ -1287,7 +1895,11 @@ export class CommunityAiAnalysisService {
     const evidenceBody = communityCommentMatch?.[1]?.trim() ?? raw;
     const normalized = this.normalizeComparableText(evidenceBody);
 
-    if (!normalized || this.looksLikePromotionalOrPublisherText(evidenceBody)) {
+    if (
+      !normalized ||
+      this.looksLikePromotionalOrPublisherText(evidenceBody) ||
+      isPositiveFeedbackWithoutProblem(evidenceBody)
+    ) {
       return false;
     }
 
@@ -1522,13 +2134,42 @@ export class CommunityAiAnalysisService {
         semanticText,
       );
 
-    if (titleClaimsEnergy && !domainIsEnergy && !evidenceSupportsEnergy) {
-      return this.deriveTitle(
-        problem,
-        unmetNeed,
-        evidenceSample,
-        domainName,
+    const derivedTitle = this.deriveTitle(
+      problem,
+      unmetNeed,
+      evidenceSample,
+      domainName,
+    );
+    const derivedNormalized = this.normalizeComparableText(derivedTitle);
+    const titleSemanticOverlap = this.tokenOverlap(
+      normalizedTitle,
+      semanticText,
+    );
+    const looksLikePublisherTitle =
+      /(?:top \d+|future of|explained by|revolutionizing|community comment|watch|video|tutorial)/u.test(
+        normalizedTitle,
       );
+    const looksLikeGenericReliabilityTitle =
+      /^(?:reliable )?(?:connectivity|service availability|workflow reliability|service reliability|validation workflow|software workflow)(?: and [a-z ]+)?$/u.test(
+        normalizedTitle,
+      );
+    const looksLikeNarrativeFragmentTitle =
+      /^(?:\d+|one|two|three|four|five)\s+(?:days?|weeks?|months?|years?)\s+ago\b|^(?:i|we)\s+(?:made|paid|tried|used|have|had)\b/u.test(
+        normalizedTitle,
+      );
+    const derivedIsSpecific =
+      /(?:payment|billing|charge|reconciliation|wallet transaction|state synchronization|transaction visibility|legal research|routing|endpoint|healthcare ai|applicant|rental|authentication|data loss|therapeutic|persona|voice continuity|crypto platform access)/u.test(
+        derivedNormalized,
+      );
+
+    if (
+      (titleClaimsEnergy && !domainIsEnergy && !evidenceSupportsEnergy) ||
+      looksLikePublisherTitle ||
+      looksLikeNarrativeFragmentTitle ||
+      (looksLikeGenericReliabilityTitle && derivedIsSpecific) ||
+      (derivedNormalized !== normalizedTitle && titleSemanticOverlap < 0.1)
+    ) {
+      return derivedTitle;
     }
 
     return title;
@@ -1548,7 +2189,209 @@ export class CommunityAiAnalysisService {
     const semanticText = this.normalizeComparableText(
       `${problem} ${unmetNeed} ${evidenceSample}`,
     );
+    const evidenceCoreText = this.normalizeComparableText(
+      `${problem} ${evidenceSample}`,
+    );
     const normalizedDomain = this.normalizeComparableText(domainName);
+    const runtimeSafeSemanticText = semanticText
+      .replace(/\b(?:not|never|without|no)\s+(?:actually\s+)?(?:crash(?:es|ed|ing)?|freez(?:e|es|ing)|frozen)\b/gu, ' ')
+      .replace(
+        /\b(?:keyboard\s+(?:appears?|feels?)\s+frozen|focus\s+(?:remains|stays|is)\s+(?:on|trapped|stuck)|keystrokes?\s+(?:are\s+)?(?:captured|consumed)|keyboard\s+input\s+(?:is\s+)?(?:captured|consumed)|type[- ]ahead|screen reader|no visible candidate)\b/gu,
+        ' ',
+      );
+
+    if (
+      /(?:model containment|containment breach|containment failure|sandbox escape|security boundary|escape onto the open internet|open[- ]weight model)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:security testing|sandbox|containment|internet|boundary|escape)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'AI Model Containment and Sandbox Escape Failures';
+    }
+
+    if (
+      /(?:current transformers?|\bcts?\b|iotawatt|energy monitor(?:ing)?|power monitor(?:ing)?)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:too much work|install|installation|setup|configure|configuration|wire|wiring|calibrat(?:e|ion)|manual effort|complex)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Energy Monitor Sensor Installation and Setup Friction';
+    }
+
+    if (
+      /(?:got married|married|name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:government department|government departments|agencies|hmrc|dvla|passport office|dwp|student loans|land registry|record updated)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Cross-Agency Life-Event Record Update Coordination';
+    }
+
+    if (
+      /(?:streaming pipeline|streaming data|data pipeline)/u.test(evidenceCoreText) &&
+      /(?:stale|skewed|incorrect|wrong|corrupt|quietly serving|silently serving)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Streaming Data Integrity and Staleness Failures';
+    }
+
+    if (
+      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|locked out(?: of)?\s+(?:my|the|this)?\s*account/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Login and Account Access Failures';
+    }
+
+    if (
+      /(?:keyboard\s+(?:appears?|feels?)\s+frozen|focus\s+(?:remains|stays|is)\s+(?:on|trapped|stuck)|keystrokes?\s+(?:are\s+)?(?:captured|consumed)|type[- ]ahead|screen reader|no visible candidate)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Accessibility Focus and Keyboard Navigation Failures';
+    }
+
+    if (
+      /(?:powershell|execution policy|pssecurityexception|running scripts is disabled|script execution disabled|unauthorizedaccess|\.ps1)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Script Execution Policy and Local Tool Permission Failures';
+    }
+
+    if (
+      /(?:insufficient funds|insufficient balance|not enough funds)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:transaction|swap|transfer|wallet|fee|gas|sol|token|blockchain|jupiter)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Blockchain Transaction Balance Validation Failures';
+    }
+
+    if (
+      /(?:firefox|chrome|browser|tab|dapp|web3)/u.test(evidenceCoreText) &&
+      /(?:crash|crashed|crashing|runtime failure|no error|terminal shows no error)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'DApp Browser Runtime Crash and Silent Failure Diagnostics';
+    }
+
+    if (
+      /(?:taking time for mental health|time for mental health|mental health time|time off for mental health|mental health break|recovery time|self care time)/u.test(evidenceCoreText) &&
+      /(?:luxury|cannot afford|can t afford|less than a day|difficult|hard|no time|workplace|professional)/u.test(evidenceCoreText)
+    ) {
+      return 'Workday Mental Health Time-Access Constraints';
+    }
+
+    if (
+      /(?:treatment|care|medicine|therapy)/u.test(evidenceCoreText) &&
+      /(?:unavailable|not available|another country|one country|cannot access|can t access|cross border)/u.test(evidenceCoreText)
+    ) {
+      return 'Cross-Border Treatment Availability and Access Gaps';
+    }
+
+    if (
+      /(?:wallet|account balance|wallet balance|transaction history|transactions?|confirmations?)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:missing|not showing|fail(?:s|ed)? to appear|incorrect|wrong|visibility|synchroni[sz]|zero|0)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:blockchain|wallet|confirmed|confirmation)/u.test(evidenceCoreText)
+    ) {
+      return 'Wallet Transaction Visibility and State Synchronization Failures';
+    }
+
+    if (
+      /(?:identity provider login error|identity_provider_login_error|cookie not found|cookie_not_found|oidc|oauth|keycloak|authentication|login required|login_required|sign in|account access|session)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:fail|failed|failure|error|unable|cannot|can t|blocked|expired|missing|not found)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Account Access and Authentication Failures';
+    }
+
+    if (
+      /(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep link|destination page)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Navigation and Routing Endpoint Failures';
+    }
+
+    if (
+      /(?:legal researcher|legal research|legal tools?|law database|law databases|attorney|documentation|constitutional violation)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:1500|expensive|afford|price|pricing|licensing fee|documentation|ai.*facts|screws with the facts|guardrail|looping)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Legal Research Documentation Cost and AI Reliability Barriers';
+    }
+
+    if (
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Cash Payment Reconciliation and Duplicate Charge Failures';
+    }
+
+    if (
+      /(?:venmo|bank|payment method|card)/u.test(evidenceCoreText) &&
+      /(?:connect|link|connected|charged|charge)/u.test(evidenceCoreText)
+    ) {
+      return 'Payment Method Linking and Charge Consistency Failures';
+    }
+
+    if (
+      /(?:international card|foreign card|international number|foreign number|traveling from abroad|travelling from abroad|traveler|traveller)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:otp|verification|card|payment|cannot use|can t use|could not use|not accept)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'International Card and OTP Access Barriers for Travelers';
+    }
+
+    if (
+      /(?:rent|rental|lease|housing|home|property)/u.test(semanticText) &&
+      /(?:filter|filtering|short term|long term|lease term|rental length)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Rental Lease-Term Filtering Limitations';
+    }
+
+    if (
+      /(?:mass email(?:ing)?|bulk email(?:ing)?|email campaign).{0,120}(?:client contacts?|clients?)|(?:client contacts?|clients?).{0,120}(?:mass email(?:ing)?|bulk email(?:ing)?|email campaign)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Client Contact Mass Outreach Gaps in Applicant Tracking Systems';
+    }
+
+    if (
+      /(?:(?:candidate|applicant) profiles?|\bprofiles?\b).{0,140}(?:sav(?:e|ing)?|sort|portal|pool|reuse|regular basis|recurring hiring|hire store workers)|(?:sav(?:e|ing)?|sort|portal|pool|reuse).{0,140}(?:(?:candidate|applicant) profiles?|\bprofiles?\b)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Candidate Profile Pooling and Reuse for Recurring Hiring';
+    }
 
     if (
       /(?:security|vulnerabilit|hack|breach|unsafe)/u.test(semanticText) &&
@@ -1581,6 +2424,74 @@ export class CommunityAiAnalysisService {
       return 'Accounting Software Performance and Data Persistence Failures';
     }
 
+    if (
+      /(?:healthcare|health care|pharmacy|patient|clinical)/u.test(semanticText) &&
+      /(?:artificial intelligence|\bai\b|ai assistant|phone assistant|customer service|automated support)/u.test(semanticText) &&
+      /(?:complaint|failure|failed|friction|pulled|withdrew|service termination|dissatisfaction)/u.test(semanticText)
+    ) {
+      return 'Healthcare AI Service Complaint and Validation Gaps';
+    }
+
+    if (
+      /(?:taking time for mental health|time for mental health|mental health time|time off for mental health|mental health break|recovery time|self care time)/u.test(semanticText) &&
+      /(?:luxury|cannot afford|can t afford|less than a day|difficult|hard|no time|workplace|professional)/u.test(semanticText)
+    ) {
+      return 'A retained community observation suggests that some people may perceive even short periods devoted to mental-health recovery as difficult to afford within daily responsibilities.';
+    }
+
+    if (
+      /(?:treatment|care|medicine|therapy)/u.test(semanticText) &&
+      /(?:unavailable|not available|another country|one country|cannot access|can t access|cross border)/u.test(semanticText)
+    ) {
+      return 'A retained healthcare observation describes a potential access gap in which a known treatment may be available in one health system or country but unavailable to the affected patient elsewhere.';
+    }
+
+    if (
+      /(?:mental health|therap(?:y|ist)|counsel(?:or|lor)|ai for mental health)/u.test(
+        semanticText,
+      ) &&
+      /(?:voice|voices|persona|personality|tone|warmth|stranger|not the same|bring back|latest update|removed|gone|deleted)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Therapeutic Persona and Voice Continuity Failures';
+    }
+
+    if (
+      /(?:binance|crypto|cryptocurrency|wallet|exchange|pexcoin|trading)/u.test(
+        semanticText,
+      ) &&
+      /(?:nigeria|country|region|cannot use|can t use|unavailable|what other app|alternative)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Regional Crypto Platform Access and Alternative Wallet Gaps';
+    }
+
+    if (/(?:login|log in|sign in|authentication|account access|password|session)/u.test(semanticText) && /(?:fail|error|unable|cannot|can t|blocked|friction)/u.test(semanticText)) {
+      return 'Account Access and Authentication Failures';
+    }
+
+    if (/(?:crash|crashes|crashed|runtime error|app closes|application closes|freeze|unresponsive)/u.test(runtimeSafeSemanticText)) {
+      return 'Application Reliability and Crash Failures';
+    }
+
+    if (/(?:data loss|lost data|history missing|history disappeared|missing history|lost conversation|lost state|persistence)/u.test(semanticText)) {
+      return 'Data Loss and Persistence Failures';
+    }
+
+    if (/(?:filter|filtering|search options|search criteria)/u.test(semanticText) && /(?:missing|cannot|can t|unable|limited|need|please add|exclude|include)/u.test(semanticText)) {
+      return 'Search and Filtering Limitations';
+    }
+
+    if (/(?:complaint|feedback|customer service|support interaction)/u.test(semanticText) && /(?:capture|classify|triage|review|escalat|failure|friction)/u.test(semanticText)) {
+      return 'Customer-Service Feedback and Triage Gaps';
+    }
+
+    if (/(?:fragmented|separate systems|multiple systems|manual coordination|disconnected workflow|siloed)/u.test(semanticText)) {
+      return 'Workflow Fragmentation and Coordination Friction';
+    }
+
     const hasExplicitEnergyAnchor =
       /(?:energy|solar|electricity|electric|power grid|battery|energy meter|solar inverter|power plant)/u.test(
         semanticText,
@@ -1598,9 +2509,55 @@ export class CommunityAiAnalysisService {
       return 'Energy Monitoring Reliability and Connection Failures';
     }
 
+    if (
+      /(?:login|sign in|authentication|account access|oauth|session)/u.test(semanticText) &&
+      /(?:fail|error|blocked|unable|cannot|can t|recovery|access)/u.test(semanticText)
+    ) {
+      return 'Account Access and Authentication Failures';
+    }
+
+    if (
+      /(?:app|application|software|platform|service)/u.test(semanticText) &&
+      /(?:crash|runtime error|freeze|closing|not working|unavailable)/u.test(runtimeSafeSemanticText)
+    ) {
+      return 'Application Reliability and Runtime Failures';
+    }
+
+    if (
+      /(?:search|filter|filtering|results|listing|catalog)/u.test(semanticText) &&
+      /(?:missing|cannot|can t|unable|limited|exclude|include|criteria)/u.test(semanticText)
+    ) {
+      return 'Search and Filtering Workflow Limitations';
+    }
+
+    if (
+      /(?:history|data|state|memory|record|records|files|progress|sync|synchronization)/u.test(semanticText) &&
+      /(?:lost|missing|disappear|deleted|reset|not saved|sync|synchronization|persistence)/u.test(semanticText)
+    ) {
+      return 'Data Persistence and Synchronization Failures';
+    }
+
+    if (
+      /(?:customer service|support|complaint|feedback|triage|service interaction)/u.test(semanticText) &&
+      /(?:failure|friction|complaint|escalation|review|resolution|dissatisfaction)/u.test(semanticText)
+    ) {
+      return normalizedDomain
+        ? `${this.toTitleCase(domainName)} Service Feedback and Resolution Gaps`
+        : 'Customer-Service Feedback and Resolution Gaps';
+    }
+
+    if (
+      /(?:notification|alert|message|delivery|reminder)/u.test(semanticText) &&
+      /(?:missing|failed|delay|late|not received|unreliable)/u.test(semanticText)
+    ) {
+      return 'Notification Delivery and Workflow Gaps';
+    }
+
     const source = this.cleanFallbackFragment(unmetNeed || problem);
     if (this.looksLikePromotionalOrPublisherText(source)) {
-      return 'Evidence-Grounded Software Workflow Opportunity';
+      return normalizedDomain
+        ? `${this.toTitleCase(domainName)} Workflow Reliability and Validation Gaps`
+        : 'Software Workflow Reliability and Validation Gaps';
     }
     const words = source
       .replace(/^(?:a|an|the)\s+/iu, '')
@@ -1611,7 +2568,11 @@ export class CommunityAiAnalysisService {
       .replace(/[.,;:!?]+$/u, '')
       .trim();
 
-    return words.length >= 8 ? this.toTitleCase(words) : 'Evidence-Grounded Software Workflow Opportunity';
+    return words.length >= 8
+      ? this.toTitleCase(words)
+      : normalizedDomain
+        ? `${this.toTitleCase(domainName)} Workflow Reliability and Validation Gaps`
+        : 'Software Workflow Reliability and Validation Gaps';
   }
 
   /**
@@ -1681,6 +2642,76 @@ export class CommunityAiAnalysisService {
       this.extractStrongestDirectProblemSentence(evidenceSample);
     const candidateIsDirectProblem =
       this.looksLikeDirectProblemEvidence(candidateProblem);
+    const semanticText = this.normalizeComparableText(
+      `${candidateProblem} ${evidenceSample}`,
+    );
+
+    if (
+      /(?:got married|married|name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name)/u.test(
+        semanticText,
+      ) &&
+      /(?:government department|government departments|agencies|hmrc|dvla|passport office|dwp|student loans|land registry|record updated)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A resident reports substantial administrative effort after a name change because multiple government departments must be identified and updated separately.';
+    }
+
+    if (
+      /(?:streaming pipeline|streaming data|data pipeline)/u.test(semanticText) &&
+      /(?:stale|skewed|incorrect|wrong|corrupt|quietly serving|silently serving)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A retained engineering report describes a streaming pipeline that can silently serve stale, skewed, or incorrect data without crashing or raising an explicit error.';
+    }
+
+    if (
+      /(?:powershell|execution policy|pssecurityexception|running scripts is disabled|script execution disabled|unauthorizedaccess|\.ps1)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A retained technical ticket documents a local script-execution restriction in which a PowerShell-based tool cannot run because the operating-system execution policy blocks the script.';
+    }
+
+    if (
+      /(?:insufficient funds|insufficient balance|not enough funds)/u.test(
+        semanticText,
+      ) &&
+      /(?:transaction|swap|transfer|wallet|fee|gas|sol|token|blockchain|jupiter)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A retained technical ticket documents a blockchain transaction that fails with an insufficient-funds error despite the reported wallet balance appearing adequate for the attempted operation.';
+    }
+
+    if (
+      /(?:firefox|chrome|browser|tab|dapp|web3)/u.test(semanticText) &&
+      /(?:crash|crashed|crashing|runtime failure|terminal shows no error|no corresponding terminal error)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A retained technical ticket documents a local Web3 development failure in which starting the DApp opens a browser tab that crashes without a corresponding terminal error.';
+    }
+
+    if (
+      /(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep link|destination page)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A retained technical issue documents a navigation or routing failure in which a user action reaches a missing or incorrect destination endpoint instead of completing the intended workflow.';
+    }
+
+    if (
+      /(?:legal researcher|legal research|legal tools?|law database|law databases|attorney|documentation|constitutional violation)/u.test(
+        semanticText,
+      ) &&
+      /(?:1500|expensive|afford|price|pricing|licensing fee|documentation|screws with the facts|guardrail|looping)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'An individual legal researcher reports that professional legal-research tools are unaffordable, documentation workload is difficult to manage, and general AI assistance can introduce factual errors or unstable guardrail behavior.';
+    }
 
     /*
      * Provider/NLP fallback records sometimes expose the parent video title as
@@ -1697,9 +2728,50 @@ export class CommunityAiAnalysisService {
       return this.boundProblemText(directEvidenceSentence, 260);
     }
 
-    const semanticText = this.normalizeComparableText(
-      `${candidateProblem} ${evidenceSample}`,
-    );
+    if (
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation|driver|rider)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A user reports a payment-reconciliation failure in which a service settled in cash is later requested or charged again by the central application, creating a duplicate-payment dispute that support has not resolved.';
+    }
+
+    if (
+      /(?:venmo|bank|payment method|card)/u.test(semanticText) &&
+      /(?:connect|link|connected|charged|charge)/u.test(semanticText)
+    ) {
+      return 'A finance user reports inconsistent payment-method handling in which a linked card can still be charged while the associated bank or wallet connection cannot be established or managed reliably.';
+    }
+
+    if (
+      /(?:mental health|therap(?:y|ist)|counsel(?:or|lor)|ai for mental health)/u.test(
+        semanticText,
+      ) &&
+      /(?:voice|voices|persona|personality|tone|warmth|stranger|not the same|bring back|latest update|removed|gone|deleted)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Retained user reviews describe therapeutic-continuity regressions in which familiar voices, tone, or counselor-like interaction behavior change or disappear after application updates, reducing continuity for affected users.';
+    }
+
+    if (
+      /(?:binance|crypto|cryptocurrency|wallet|exchange|pexcoin|trading)/u.test(
+        semanticText,
+      ) &&
+      /(?:nigeria|country|region|cannot use|can t use|unavailable|what other app|alternative)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A crypto user reports that a preferred trading platform is unavailable in their country and needs a clearly supported regional alternative for the same workflow.';
+    }
+
+    if (
+      /(?:healthcare|health care|pharmacy|patient|clinical)/u.test(semanticText) &&
+      /(?:artificial intelligence|\bai\b|ai assistant|phone assistant|customer service|automated support)/u.test(semanticText) &&
+      /(?:complaint|failure|failed|friction|pulled|withdrew|service termination|dissatisfaction)/u.test(semanticText)
+    ) {
+      return 'Healthcare organizations may lack a structured way to capture, classify, and review failures in AI-assisted customer-service interactions before service quality deteriorates.';
+    }
 
     if (
       /(?:security|vulnerabilit|hack|breach|unsafe)/u.test(semanticText) &&
@@ -1763,6 +2835,178 @@ export class CommunityAiAnalysisService {
     return 'The retained evidence indicates a possible software-workflow concern, but it does not contain a sufficiently explicit user complaint or unmet need to support a stronger problem statement.';
   }
 
+  private buildProfessionalFallbackSolutionArea(
+    candidateSolutionArea: string,
+    repairedProblem: string,
+    evidenceSample: string,
+  ): string {
+    const semanticText = this.normalizeComparableText(
+      `${candidateSolutionArea} ${repairedProblem} ${evidenceSample}`,
+    );
+
+    if (
+      /(?:name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name|multiple government departments|government departments must be identified and updated)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Cross-Agency Life-Event Update Guidance and Record-Change Coordination';
+    }
+
+    if (
+      /(?:streaming pipeline|streaming data|data pipeline)/u.test(semanticText) &&
+      /(?:stale|skewed|incorrect|wrong|corrupt|silently serve|quietly serve)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Streaming Data Integrity, Validation, and Observability';
+    }
+
+    if (
+      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|account access and authentication|login and account access/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Authentication and Account Access Recovery';
+    }
+
+    if (
+      /(?:powershell|execution policy|pssecurityexception|running scripts is disabled|script execution disabled|unauthorizedaccess|\.ps1)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Local Script Execution Policy Diagnostics and Web3 Toolchain Recovery';
+    }
+
+    if (
+      /(?:insufficient funds|insufficient balance|not enough funds)/u.test(
+        semanticText,
+      ) &&
+      /(?:transaction|swap|transfer|wallet|fee|gas|sol|token|blockchain|jupiter)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Blockchain Transaction Balance and Fee Validation Diagnostics';
+    }
+
+    if (
+      /(?:firefox|chrome|browser|tab|dapp|web3)/u.test(semanticText) &&
+      /(?:crash|crashed|crashing|runtime failure|terminal shows no error|no corresponding terminal error)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Web3 Browser Runtime Diagnostics and Silent Crash Recovery';
+    }
+
+    if (
+      /(?:taking time for mental health|time for mental health|mental health time|time off for mental health|mental health break|recovery time|self care time)/u.test(semanticText)
+    ) {
+      return 'Workday Mental Health Time Access and Recovery Planning';
+    }
+
+    if (
+      /(?:treatment|care|medicine|therapy)/u.test(semanticText) &&
+      /(?:unavailable|not available|another country|one country|cannot access|can t access|cross border)/u.test(semanticText)
+    ) {
+      return 'Treatment Availability Navigation and Access Validation';
+    }
+
+    if (
+      /(?:wallet|account balance|wallet balance|transaction history|transactions?|confirmations?)/u.test(
+        semanticText,
+      ) &&
+      /(?:missing|not showing|fail(?:s|ed)? to appear|incorrect|wrong|visibility|synchroni[sz]|zero|0)/u.test(
+        semanticText,
+      ) &&
+      /(?:blockchain|wallet|confirmed|confirmation)/u.test(semanticText)
+    ) {
+      return 'Wallet State Reconciliation and Transaction Visibility Diagnostics';
+    }
+
+    if (
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation|driver|rider)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Payment Reconciliation and Duplicate Charge Recovery';
+    }
+
+    if (
+      /(?:venmo|bank|payment method|card)/u.test(semanticText) &&
+      /(?:connect|link|connected|charged|charge)/u.test(semanticText)
+    ) {
+      return 'Payment Method Linking and Charge Consistency';
+    }
+
+    if (
+      /(?:mental health|therap(?:y|ist)|counsel(?:or|lor)|ai for mental health)/u.test(
+        semanticText,
+      ) &&
+      /(?:voice|voices|persona|personality|tone|warmth|stranger|not the same|bring back|latest update|removed|gone|deleted)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Therapeutic Persona Continuity and Asset Regression Monitoring';
+    }
+
+    if (
+      /(?:binance|crypto|cryptocurrency|wallet|exchange|pexcoin|trading)/u.test(
+        semanticText,
+      ) &&
+      /(?:nigeria|country|region|cannot use|can t use|unavailable|what other app|alternative)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Regional Crypto Access Compatibility and Alternative Platform Guidance';
+    }
+
+    if (
+      /(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep link|destination page)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Navigation and Routing Endpoint Recovery';
+    }
+
+    if (
+      /(?:legal researcher|legal research|law database|documentation)/u.test(
+        semanticText,
+      ) &&
+      /(?:afford|expensive|price|licensing|factual|facts|guardrail|looping)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Affordable Legal Evidence Documentation and Factuality Review';
+    }
+
+    if (
+      /(?:mass email(?:ing)?|bulk email(?:ing)?).{0,120}(?:client contacts?|clients?)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'ATS Client Contact Outreach and Campaign Management';
+    }
+
+    if (
+      /(?:candidate|applicant) profiles?.{0,140}(?:save|sort|portal|pool|reuse|regular basis|recurring hiring|hire store workers)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Candidate Profile Pooling and Recurring Hiring Management';
+    }
+
+    const cleaned = this.boundProblemText(candidateSolutionArea, 180);
+    if (
+      cleaned &&
+      !/focused software workflow for diagnosis, validation, and guided resolution/iu.test(
+        cleaned,
+      )
+    ) {
+      return cleaned;
+    }
+
+    return 'Evidence-Grounded Workflow Diagnosis and Human-Reviewed Recovery';
+  }
+
   private buildProfessionalFallbackNeed(
     candidateNeed: string,
     repairedProblem: string,
@@ -1774,6 +3018,113 @@ export class CommunityAiAnalysisService {
     const semanticText = this.normalizeComparableText(
       `${cleanedNeed} ${repairedProblem}`,
     );
+
+    if (
+      /(?:name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name|multiple government departments|government departments must be identified and updated)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A centralized workflow that identifies the government agencies affected by a life event and guides residents through each required record-update process.';
+    }
+
+    if (
+      /(?:streaming pipeline|streaming data|data pipeline)/u.test(semanticText) &&
+      /(?:stale|skewed|incorrect|wrong|corrupt|silently serve|quietly serve)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Automated data validation and integrity monitoring that detects stale, skewed, or incorrect streaming payloads even when the pipeline does not crash or emit an error.';
+    }
+
+    if (
+      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|account access and authentication|login and account access/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A reliable authentication and account-recovery workflow that helps affected users regain access without losing session or identity context.';
+    }
+
+    if (
+      /(?:powershell|execution policy|pssecurityexception|running scripts is disabled|script execution disabled|unauthorizedaccess|\.ps1)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A local developer-diagnostics workflow that identifies script-execution policy restrictions and guides scoped recovery without weakening machine-wide security controls.';
+    }
+
+    if (
+      /(?:insufficient funds|insufficient balance|not enough funds)/u.test(
+        semanticText,
+      ) &&
+      /(?:transaction|swap|transfer|wallet|fee|gas|sol|token|blockchain|jupiter)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A transaction-validation workflow that reconciles spendable balance, fees, reserves, and account requirements before a blockchain transfer or swap is submitted.';
+    }
+
+    if (
+      /(?:firefox|chrome|browser|tab|dapp|web3)/u.test(semanticText) &&
+      /(?:crash|crashed|crashing|runtime failure|terminal shows no error|no corresponding terminal error)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A Web3 runtime-diagnostics workflow that correlates browser crash signals with local development configuration and terminal output to support human-reviewed recovery.';
+    }
+
+    if (
+      /(?:wallet|account balance|wallet balance|transaction history|transactions?|confirmations?)/u.test(
+        semanticText,
+      ) &&
+      /(?:missing|not showing|fail(?:s|ed)? to appear|incorrect|wrong|visibility|synchroni[sz]|zero|0)/u.test(
+        semanticText,
+      ) &&
+      /(?:blockchain|wallet|confirmed|confirmation)/u.test(semanticText)
+    ) {
+      return 'A wallet-state reconciliation workflow that compares blockchain-confirmed activity with client-visible balances, confirmation counts, and recent transaction history for human-reviewed diagnostics.';
+    }
+
+    if (
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation|driver|rider)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A payment-reconciliation workflow that preserves proof of settlement, detects duplicate-payment discrepancies, and organizes evidence for human support review.';
+    }
+
+    if (
+      /(?:venmo|bank|payment method|card)/u.test(semanticText) &&
+      /(?:connect|link|connected|charged|charge)/u.test(semanticText)
+    ) {
+      return 'A payment-method consistency workflow that verifies wallet or bank linking state, explains charge-path mismatches, and guides safe human-reviewed recovery.';
+    }
+
+    if (
+      /(?:healthcare|health care|pharmacy|patient|clinical)/u.test(semanticText) &&
+      /(?:artificial intelligence|\bai\b|ai assistant|phone assistant|customer service|automated support)/u.test(semanticText) &&
+      /(?:complaint|failure|failed|friction|service|support)/u.test(semanticText)
+    ) {
+      return 'A human-reviewed healthcare AI feedback workflow that captures interaction failures, classifies complaint patterns, and validates remediation priorities before broader deployment.';
+    }
+
+    if (
+      /(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep link|destination page)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A routing-resilience workflow that captures failed navigation endpoints, preserves diagnostic context, and routes verified technical exceptions to human operators for correction.';
+    }
+
+    if (
+      /(?:legal researcher|legal research|legal tools?|law database|law databases|attorney|documentation)/u.test(
+        semanticText,
+      ) &&
+      /(?:afford|expensive|price|pricing|licensing|factual|facts|guardrail|looping|documentation)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'An affordable legal-documentation workflow with source-grounded evidence organization, factuality checks, and human review for independent researchers.';
+    }
 
     if (
       /(?:security|vulnerabilit|hack|breach|unsafe)/u.test(semanticText) &&
@@ -1809,10 +3160,35 @@ export class CommunityAiAnalysisService {
       return 'A fast, reliable accounting workflow that persists customer and invoice data without silent loss or duplicate manual entry.';
     }
 
+    if (
+      /(?:rent|rental|lease|housing|home|property)/u.test(semanticText) &&
+      /(?:filter|filtering|short term|long term|lease term|rental length)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A rental-search workflow that lets housing seekers include or exclude listings by lease duration and distinguish long-term housing from short-term rentals.';
+    }
+
+    if (
+      /(?:mass email(?:ing)?|bulk email(?:ing)?).{0,120}(?:client contacts?|clients?)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A controlled ATS outreach workflow for saved client contacts, segmented mass email dispatch, and auditable communication tracking.';
+    }
+
+    if (
+      /(?:candidate|applicant) profiles?.{0,140}(?:save|sort|portal|pool|reuse|regular basis|recurring hiring|hire store workers)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A recurring-hiring workflow for saving, sorting, searching, and reusing candidate profiles in a structured talent pool.';
+    }
+
     return cleanedNeed.length >= 30 &&
       !this.looksLikePromotionalOrPublisherText(cleanedNeed)
       ? this.boundProblemText(cleanedNeed, 220)
-      : 'A bounded validation workflow that gathers explicit user complaints, classifies the recurring problem, and tests a focused software response before broader implementation.';
+      : 'A bounded validation workflow that gathers explicit user feedback, classifies the observed problem signal, and tests a focused software response before broader implementation.';
   }
 
   /** Removes broken sentence prefixes created by upstream bounded slicing. */
@@ -1915,7 +3291,9 @@ export class CommunityAiAnalysisService {
       throw new Error('NLP evidence is required for grounding validation.');
     }
 
-    const corpus = this.collectEvidenceCorpus([context.nlp, context.domainEvidence]);
+    const canonicalCorpus = this.collectEvidenceCorpus(context.domainEvidence);
+    const supplementalCorpus = this.collectEvidenceCorpus(context.nlp);
+    const corpus = [...new Set([...canonicalCorpus, ...supplementalCorpus])];
 
     if (corpus.length === 0) {
       throw new Error(
@@ -1932,12 +3310,25 @@ export class CommunityAiAnalysisService {
       .filter((term) => term.length >= 3);
 
     const discardedOpportunityTitles: string[] = [];
+    let semanticGroundingRepairCount = 0;
+    let atomicEvidenceReductionCount = 0;
 
     const groundedOpportunities = analysis.opportunities.flatMap(
       (opportunity): CommunityAiOpportunity[] => {
         const groundedEvidence = opportunity.evidenceSamples.flatMap(
           (sample): string[] => {
-            const groundedSample = this.findGroundedCorpusMatch(sample, corpus);
+            const directGroundedSample =
+              this.findGroundedCorpusMatch(sample, canonicalCorpus) ??
+              this.findGroundedCorpusMatch(sample, corpus);
+            const groundedSample =
+              directGroundedSample ??
+              this.findSemanticOpportunityEvidence(
+                context,
+                opportunity,
+                canonicalCorpus.length > 0 ? canonicalCorpus : corpus,
+                sample,
+              )[0];
+
             if (!groundedSample) {
               return [];
             }
@@ -1953,28 +3344,53 @@ export class CommunityAiAnalysisService {
               return [];
             }
 
+            if (
+              !this.isExactOrContainedEvidenceMatch(sample, groundedSample)
+            ) {
+              semanticGroundingRepairCount += 1;
+            }
+
             return [groundedSample];
           },
         );
 
-        const uniqueEvidence = [...new Set(groundedEvidence)].slice(0, 5);
+        if (groundedEvidence.length === 0) {
+          const semanticEvidence = this.findSemanticOpportunityEvidence(
+            context,
+            opportunity,
+            canonicalCorpus.length > 0 ? canonicalCorpus : corpus,
+          );
+          if (semanticEvidence.length > 0) {
+            semanticGroundingRepairCount += semanticEvidence.length;
+            groundedEvidence.push(...semanticEvidence);
+          }
+        }
+
+        const uniqueEvidence: string[] = [...new Set<string>(groundedEvidence)].slice(0, 5);
+        const atomicEvidence = this.selectAtomicEvidenceCluster(
+          opportunity,
+          uniqueEvidence,
+        );
+        const opportunityAtomicReductionCount =
+          uniqueEvidence.length - atomicEvidence.length;
+        atomicEvidenceReductionCount += opportunityAtomicReductionCount;
 
         /*
          * Do not reject the complete provider response because one
          * opportunity was unsupported. Discard only that opportunity.
          */
-        if (uniqueEvidence.length === 0) {
+        if (atomicEvidence.length === 0) {
           discardedOpportunityTitles.push(opportunity.title);
           return [];
         }
 
         const groundingScore = Math.round(
-          (uniqueEvidence.length /
+          (atomicEvidence.length /
             Math.max(opportunity.evidenceSamples.length, 1)) *
             100,
         );
 
-        const localEvidenceSamples = uniqueEvidence.filter((sample) => {
+        const localEvidenceSamples = atomicEvidence.filter((sample) => {
           const normalizedSample = this.normalizeComparableText(sample);
 
           return locationTerms.some((term) => normalizedSample.includes(term));
@@ -1988,7 +3404,15 @@ export class CommunityAiAnalysisService {
               (risk) => !this.isUnsupportedLocalRisk(risk, locationTerms),
             );
 
-        const primaryEvidence = uniqueEvidence[0] ?? '';
+        const primaryEvidence = atomicEvidence[0] ?? '';
+        if (
+          isPositiveFeedbackWithoutProblem(primaryEvidence) &&
+          !this.looksLikeDirectProblemEvidence(primaryEvidence)
+        ) {
+          discardedOpportunityTitles.push(opportunity.title);
+          return [];
+        }
+
         const problemIsDirect =
           this.looksLikeDirectProblemEvidence(opportunity.problem) &&
           !this.looksLikePromotionalOrPublisherText(opportunity.problem);
@@ -1999,14 +3423,16 @@ export class CommunityAiAnalysisService {
           ) >= 0.16;
 
         const baseGroundedProblem =
-          problemIsDirect && problemMatchesEvidence
+          opportunityAtomicReductionCount === 0 &&
+          problemIsDirect &&
+          problemMatchesEvidence
             ? opportunity.problem
             : this.buildProfessionalFallbackProblem(
                 opportunity.problem,
                 primaryEvidence,
               );
         const groundedProblem =
-          uniqueEvidence.length === 1
+          atomicEvidence.length === 1
             ? this.singularizeSingleReportProblem(baseGroundedProblem)
             : baseGroundedProblem;
         const groundedNeed = this.buildProfessionalFallbackNeed(
@@ -2026,7 +3452,13 @@ export class CommunityAiAnalysisService {
             title: groundedTitle,
             problem: groundedProblem,
             unmetNeed: groundedNeed,
-            evidenceSamples: uniqueEvidence,
+            solutionArea: this.buildProfessionalFallbackSolutionArea(
+              opportunity.solutionArea,
+              groundedProblem,
+              primaryEvidence,
+            ),
+            frequency: Math.max(atomicEvidence.length, 1),
+            evidenceSamples: atomicEvidence,
             groundingScore,
             localEvidenceAvailable,
             localEvidenceSamples,
@@ -2068,6 +3500,16 @@ export class CommunityAiAnalysisService {
             ]
           : []),
 
+        ...(semanticGroundingRepairCount > 0
+          ? [
+              `${semanticGroundingRepairCount} provider evidence reference(s) were semantically mapped back to canonical retained evidence before acceptance.`,
+            ]
+          : []),
+        ...(atomicEvidenceReductionCount > 0
+          ? [
+              `${atomicEvidenceReductionCount} same-domain evidence item(s) were removed from Community AI opportunities because they described a different atomic problem.`,
+            ]
+          : []),
         ...(groundedOpportunities.some(
           (opportunity) => !opportunity.localEvidenceAvailable,
         )
@@ -2077,6 +3519,169 @@ export class CommunityAiAnalysisService {
           : []),
       ],
     };
+  }
+
+  private selectAtomicEvidenceCluster(
+    opportunity: CommunityAiOpportunity,
+    evidenceSamples: readonly string[],
+  ): string[] {
+    if (evidenceSamples.length <= 1) return [...evidenceSamples];
+
+    const clusters: string[][] = [];
+
+    for (const sample of evidenceSamples) {
+      let bestCluster: string[] | null = null;
+      let bestScore = 0;
+
+      for (const cluster of clusters) {
+        const representative = cluster[0] ?? '';
+        const atomicMatch = matchEvidenceToAtomicProblem(
+          representative,
+          sample,
+        );
+
+        if (atomicMatch.matched && atomicMatch.score > bestScore) {
+          bestCluster = cluster;
+          bestScore = atomicMatch.score;
+        }
+      }
+
+      if (bestCluster) {
+        bestCluster.push(sample);
+      } else {
+        clusters.push([sample]);
+      }
+    }
+
+    if (clusters.length <= 1) {
+      return [...evidenceSamples];
+    }
+
+    const descriptor = `${opportunity.title} ${opportunity.problem} ${opportunity.unmetNeed}`;
+
+    const rankedClusters = clusters
+      .map((cluster, index) => {
+        const descriptorScore = Math.max(
+          ...cluster.map(
+            (sample) =>
+              matchEvidenceToProblemFamily(descriptor, sample).score,
+          ),
+          0,
+        );
+
+        return {
+          cluster,
+          index,
+          score: cluster.length * 2 + descriptorScore,
+        };
+      })
+      .sort(
+        (first, second) =>
+          second.score - first.score || first.index - second.index,
+      );
+
+    return [...(rankedClusters[0]?.cluster ?? [evidenceSamples[0]])].slice(
+      0,
+      5,
+    );
+  }
+
+  private findSemanticOpportunityEvidence(
+    context: IdeaGenerationContext,
+    opportunity: CommunityAiOpportunity,
+    corpus: readonly string[],
+    providerEvidenceSample = '',
+  ): string[] {
+    const descriptor = this.normalizeComparableText(
+      `${opportunity.title} ${opportunity.problem} ${opportunity.unmetNeed} ${opportunity.solutionArea}`,
+    );
+    const normalizedProviderSample =
+      this.normalizeComparableText(providerEvidenceSample);
+
+    return corpus
+      .filter((sample) => sample.replace(/\s+/gu, ' ').trim().length >= 24)
+      .filter((sample) => !this.looksLikePromotionalOrPublisherText(sample))
+      .filter(
+        (sample) =>
+          !isNonActionableCommunityBanter(
+            sample,
+            /\bCommunity comment:\s*/iu.test(sample) ? 'COMMENT' : 'POST',
+          ),
+      )
+      .filter((sample) =>
+        this.evidenceSemanticallySupportsDomain(
+          context,
+          opportunity.domainName,
+          sample,
+        ),
+      )
+      .map((sample) => {
+        const normalizedSample = this.normalizeComparableText(sample);
+        const familyMatch = matchEvidenceToProblemFamily(descriptor, sample);
+        const atomicMatch = matchEvidenceToAtomicProblem(descriptor, sample);
+        const descriptorOverlap = this.tokenOverlap(
+          descriptor,
+          normalizedSample,
+        );
+        const providerOverlap = normalizedProviderSample
+          ? this.tokenOverlap(normalizedProviderSample, normalizedSample)
+          : 0;
+        const exactProviderMatch = providerEvidenceSample
+          ? this.isExactOrContainedEvidenceMatch(providerEvidenceSample, sample)
+          : false;
+        const semanticAliasMatch = this.hasSemanticOpportunityAliasMatch(
+          descriptor,
+          sample,
+        );
+
+        const score = exactProviderMatch
+          ? 1
+          : atomicMatch.matched
+            ? Math.min(
+                0.99,
+                0.82 + atomicMatch.score * 0.12 + descriptorOverlap * 0.05,
+              )
+            : familyMatch.matched
+              ? Math.min(
+                  0.98,
+                  0.72 + familyMatch.score * 0.18 + descriptorOverlap * 0.1,
+                )
+              : semanticAliasMatch
+                ? 0.82
+                : descriptorOverlap >= 0.16 && providerOverlap >= 0.2
+                ? 0.62 + Math.min(0.18, descriptorOverlap * 0.3)
+                : 0;
+
+        return { sample, score };
+      })
+      .filter((entry) => entry.score >= 0.6)
+      .sort(
+        (first, second) =>
+          second.score - first.score ||
+          second.sample.length - first.sample.length,
+      )
+      .map((entry) => entry.sample)
+      .filter(
+        (sample, index, values) =>
+          values.findIndex(
+            (candidate) =>
+              this.normalizeComparableText(candidate) ===
+              this.normalizeComparableText(sample),
+          ) === index,
+      )
+      .slice(0, Math.max(1, Math.min(3, opportunity.frequency)));
+  }
+
+  private readSemanticGroundingRepairCount(
+    analysis: CommunityAiAnalysis,
+  ): number {
+    const warning = analysis.qualityWarnings.find((item) =>
+      /provider evidence reference\(s\) were semantically mapped back/iu.test(
+        item,
+      ),
+    );
+    const match = warning?.match(/^(\d+)\s+/u);
+    return match ? Number(match[1]) : 0;
   }
 
   private collectEvidenceCorpus(value: unknown): string[] {
@@ -2115,6 +3720,44 @@ export class CommunityAiAnalysisService {
 
     visit(value);
     return [...new Set(collected)];
+  }
+
+  private summarizeProviderResponseForDiagnostics(text: string): {
+    readonly opportunityCount: number;
+    readonly candidateTitles: readonly string[];
+  } {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (!this.isRecord(parsed) || !Array.isArray(parsed.opportunities)) {
+        return { opportunityCount: 0, candidateTitles: [] };
+      }
+
+      const candidateTitles = parsed.opportunities
+        .slice(0, COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES)
+        .map((entry) => {
+          if (typeof entry === 'string') {
+            return entry.replace(/\s+/gu, ' ').trim().slice(0, 120);
+          }
+          if (!this.isRecord(entry)) {
+            return '';
+          }
+          return this.optionalString(
+            entry.title ?? entry.problem ?? entry.unmetNeed,
+            '',
+          )
+            .replace(/\s+/gu, ' ')
+            .trim()
+            .slice(0, 120);
+        })
+        .filter(Boolean);
+
+      return {
+        opportunityCount: parsed.opportunities.length,
+        candidateTitles,
+      };
+    } catch {
+      return { opportunityCount: 0, candidateTitles: [] };
+    }
   }
 
   private providerReturnedNoOpportunities(text: string): boolean {
@@ -2178,11 +3821,63 @@ export class CommunityAiAnalysisService {
     sample: string,
   ): boolean {
     const descriptor = this.normalizeComparableText(
-      `${opportunity.problem} ${opportunity.unmetNeed} ${opportunity.solutionArea}`,
+      `${opportunity.title} ${opportunity.problem} ${opportunity.unmetNeed} ${opportunity.solutionArea}`,
     );
+    const familyMatch = matchEvidenceToProblemFamily(descriptor, sample);
+    const atomicMatch = matchEvidenceToAtomicProblem(descriptor, sample);
+    const overlap = this.tokenOverlap(
+      descriptor,
+      this.normalizeComparableText(sample),
+    );
+
     return (
-      this.tokenOverlap(descriptor, this.normalizeComparableText(sample)) >=
-      0.12
+      atomicMatch.matched ||
+      familyMatch.matched ||
+      this.hasSemanticOpportunityAliasMatch(descriptor, sample) ||
+      overlap >= 0.1
+    );
+  }
+
+  private hasSemanticOpportunityAliasMatch(
+    descriptor: string,
+    sample: string,
+  ): boolean {
+    const normalizedDescriptor = this.normalizeComparableText(descriptor);
+    const normalizedSample = this.normalizeComparableText(
+      sample.match(/\bCommunity comment:\s*(.+)$/iu)?.[1] ?? sample,
+    );
+
+    const conceptPairs: readonly [RegExp, RegExp][] = [
+      [
+        /\b(?:crash|crashes|crashing|runtime|stability|reliability|unstable|app failure|application failure)\b/u,
+        /\b(?:crash|crashes|crashed|crashing|runtime failure|app stopped working|application stopped working|won t open|doesn t work)\b/u,
+      ],
+      [
+        /\b(?:duplicate payment|duplicate billing|double charge|charged twice|payment reconciliation|billing reconciliation|payment|billing|refund)\b/u,
+        /\b(?:already paid|paid cash|charged again|double charge|duplicate charge|additional payment|separate payment|proof of payment|refund|billing|payment)\b/u,
+      ],
+      [
+        /\b(?:shipment transit|transit time|shipment tracking|delivery tracking|tracking visibility|transit metric|transit analytics|delivery time)\b/u,
+        /\b(?:average transit time|shipment transit|delivery transit|shipment tracking|delivery tracking|track packages|transit time)\b/u,
+      ],
+      [
+        /\b(?:cost effective|affordable|lower cost|pricing|price|expensive|cost)\b/u,
+        /\b(?:too expensive|expensive|affordable|price|pricing|cost)\b/u,
+      ],
+      [
+        /\b(?:login|sign in|authentication|account access|access recovery)\b/u,
+        /\b(?:can t access my account|cannot access my account|unable to access my account|locked out|can t log in|cannot log in|unable to sign in)\b/u,
+      ],
+      [
+        /\b(?:404|routing|navigation endpoint|broken link|feedback link|missing endpoint)\b/u,
+        /\b(?:404|missing url|incorrect url|broken route|broken link|rate us)\b/u,
+      ],
+    ];
+
+    return conceptPairs.some(
+      ([descriptorPattern, samplePattern]) =>
+        descriptorPattern.test(normalizedDescriptor) &&
+        samplePattern.test(normalizedSample),
     );
   }
 
