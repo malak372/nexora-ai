@@ -16,6 +16,10 @@
   pointer-events: none;
 }
 
+.admin-sensitive-access-layer.is-dismissible {
+  pointer-events: auto;
+}
+
 .admin-sensitive-access-ambient {
   position: absolute;
   inset: 0;

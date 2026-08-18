@@ -201,23 +201,10 @@ function DetailBlock({ icon: Icon, label, children, className = '' }) {
 }
 
 
-/**
- * Reusable accessible header button for sortable columns.
- * The icon always communicates whether the column is idle, ascending or
- * descending without adding another row of controls to the table.
- */
-function SortHeader({ field, label, sortBy, sortOrder, onSort, className = '' }) {
-  const active = sortBy === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
+const IDEA_CARD_TONES = ['mint', 'sage', 'teal', 'rose'];
 
-  return (
-    <th className={className} aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button type="button" className={`admin-ideas-sort-head ${active ? 'is-active' : ''}`} onClick={() => onSort(field)}>
-        <span>{label}</span>
-        <Icon size={12} />
-      </button>
-    </th>
-  );
+function getIdeaCardTone(index) {
+  return IDEA_CARD_TONES[index % IDEA_CARD_TONES.length];
 }
 
 export default function AdminIdeasPage() {
@@ -682,70 +669,128 @@ export default function AdminIdeasPage() {
         ) : null}
 
         {loading && rows.length === 0 && !error ? <IdeasSkeleton /> : rows.length ? (
-          <div className={`admin-ideas-table-wrap ${loading ? 'is-updating' : ''}`}>
+          <div className={`admin-ideas-card-section ${loading ? 'is-updating' : ''}`}>
             {loading ? <div className="admin-ideas-inline-loader"><LoaderCircle size={15} className="admin-spin" /> Updating ideas…</div> : null}
-            <table className="admin-ideas-table">
-              <thead>
-                <tr>
-                  <SortHeader field="title" label="Idea" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                  <SortHeader field="owner" label="Owner" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                  <SortHeader field="domain" label="Domain" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                  <SortHeader field="generationType" label="Generation" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                  <SortHeader field="isUnlocked" label="Access" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                  <SortHeader field="publication" label="Publication" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                  <SortHeader field="createdAt" label="Created" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                  <th className="admin-ideas-actions-head" aria-label="Actions"><span>Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((idea) => {
-                  const runStatus = idea?.generationRun?.status;
-                  return (
-                    <tr key={idea.id} onClick={() => openIdea(idea)} tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') openIdea(idea); }}>
-                      <td>
-                        <div className="admin-idea-title-cell">
-                          <span className="admin-idea-row-mark"><Lightbulb size={16} /></span>
-                          <div><strong>{idea.title || 'Untitled idea'}</strong><small><i className={`admin-idea-status-dot ${statusTone(runStatus)}`} />{runStatus ? titleCase(runStatus) : 'Idea record'}</small></div>
+
+            <div className="admin-ideas-column-bar" role="group" aria-label="Sortable idea columns">
+              {[
+                ['title', 'Idea'],
+                ['owner', 'Owner'],
+                ['domain', 'Domain'],
+                ['generationType', 'Generation'],
+                ['isUnlocked', 'Access'],
+                ['publication', 'Publication'],
+                ['createdAt', 'Created'],
+              ].map(([field, label]) => {
+                const active = sortBy === field;
+                const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
+                return (
+                  <button
+                    key={field}
+                    type="button"
+                    className={`admin-ideas-column-bar__item ${active ? 'is-active' : ''}`}
+                    onClick={() => applySort(field)}
+                  >
+                    <span>{label}</span>
+                    <Icon size={12} />
+                  </button>
+                );
+              })}
+              <div className="admin-ideas-column-bar__item is-static"><span>Actions</span></div>
+            </div>
+
+            <div className="admin-ideas-card-grid">
+              {rows.map((idea, index) => {
+                const runStatus = idea?.generationRun?.status;
+                const tone = getIdeaCardTone(index);
+                return (
+                  <article
+                    key={idea.id}
+                    className={`admin-idea-card admin-idea-card--${tone}`}
+                    onClick={() => openIdea(idea)}
+                    tabIndex={0}
+                    onKeyDown={(event) => { if (event.key === 'Enter') openIdea(idea); }}
+                  >
+                    <div className="admin-idea-card__hero">
+                      <div className="admin-idea-card__lead">
+                        <span className="admin-idea-card__mark"><Lightbulb size={18} /></span>
+                        <div className="admin-idea-card__title-wrap">
+                          <h4>{idea.title || 'Untitled idea'}</h4>
+                          <small><i className={`admin-idea-status-dot ${statusTone(runStatus)}`} />{runStatus ? titleCase(runStatus) : 'Idea record'}</small>
                         </div>
-                      </td>
-                      <td><div className="admin-idea-owner-cell"><span className="admin-idea-owner-avatar">{String(getOwner(idea)).charAt(0).toUpperCase()}</span><div><strong className="admin-idea-owner">{getOwner(idea)}</strong><small className="admin-idea-cell-note">{getOwnerMeta(idea)}</small></div></div></td>
-                      <td><span className="admin-idea-domain-chip">{getDomain(idea)}</span></td>
-                      <td><span className="admin-idea-pill is-neutral">{titleCase(idea.generationType)}</span></td>
-                      <td><span className={`admin-idea-pill ${idea.isUnlocked ? 'is-success' : 'is-danger'}`}>{idea.isUnlocked ? <Unlock size={12} /> : <LockKeyhole size={12} />}{idea.isUnlocked ? 'Unlocked' : 'Locked'}</span></td>
-                      <td><span className={`admin-idea-pill ${isPublished(idea) ? 'is-success' : 'is-neutral'}`}>{isPublished(idea) ? <Globe2 size={12} /> : <FileText size={12} />}{isPublished(idea) ? 'Published' : 'Not published'}</span></td>
-                      <td><span className="admin-idea-date"><CalendarDays size={13} /> {formatDate(idea.createdAt)}</span></td>
-                      <td>
-                        <div className="admin-idea-row-actions">
-                          {isPublished(idea) ? (
-                            <button
-                              type="button"
-                              className="admin-idea-insights-btn"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openPublicationInsights(idea);
-                              }}
-                              title="Publication insights and reports"
-                              aria-label="Publication insights"
-                            >
-                              <Sparkles size={15} />
-                            </button>
-                          ) : null}
+                      </div>
+
+                      <div className="admin-idea-card__owner">
+                        <span className="admin-idea-card__owner-avatar">{String(getOwner(idea)).charAt(0).toUpperCase()}</span>
+                        <div>
+                          <label>Owner</label>
+                          <strong>{getOwner(idea)}</strong>
+                          <small>{getOwnerMeta(idea)}</small>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="admin-idea-card__meta-grid">
+                      <div>
+                        <span>Domain</span>
+                        <strong className="admin-idea-chip admin-idea-chip--soft">{getDomain(idea)}</strong>
+                      </div>
+                      <div>
+                        <span>Generation</span>
+                        <strong className="admin-idea-chip admin-idea-chip--soft">{titleCase(idea.generationType)}</strong>
+                      </div>
+                      <div>
+                        <span>Access</span>
+                        <strong className={`admin-idea-chip ${idea.isUnlocked ? 'admin-idea-chip--success' : 'admin-idea-chip--danger'}`}>
+                          {idea.isUnlocked ? <Unlock size={12} /> : <LockKeyhole size={12} />}
+                          {idea.isUnlocked ? 'Unlocked' : 'Locked'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Publication</span>
+                        <strong className={`admin-idea-chip ${isPublished(idea) ? 'admin-idea-chip--success' : 'admin-idea-chip--soft'}`}>
+                          {isPublished(idea) ? <Globe2 size={12} /> : <FileText size={12} />}
+                          {isPublished(idea) ? 'Published' : 'Not published'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Created</span>
+                        <strong className="admin-idea-card__date"><CalendarDays size={13} /> {formatDate(idea.createdAt)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="admin-idea-card__footer">
+                      <span>Actions</span>
+                      <div className="admin-idea-card__actions">
+                        {isPublished(idea) ? (
                           <button
                             type="button"
-                            className="admin-idea-open-btn admin-idea-open-btn--modern"
-                            onClick={(event) => { event.stopPropagation(); openIdea(idea); }}
-                            title="Open idea details"
-                            aria-label={`Open ${idea.title || 'idea'} details`}
+                            className="admin-idea-insights-btn"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openPublicationInsights(idea);
+                            }}
+                            title="Publication insights and reports"
+                            aria-label="Publication insights"
                           >
-                            <Eye size={15} />
+                            <Sparkles size={15} />
                           </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="admin-idea-open-btn admin-idea-open-btn--modern"
+                          onClick={(event) => { event.stopPropagation(); openIdea(idea); }}
+                          title="Open idea details"
+                          aria-label={`Open ${idea.title || 'idea'} details`}
+                        >
+                          <Eye size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </div>
         ) : !error ? (
           <div className="admin-ideas-empty"><Search size={24} /><strong>No ideas match this view</strong><span>Try another filter or search phrase.</span></div>

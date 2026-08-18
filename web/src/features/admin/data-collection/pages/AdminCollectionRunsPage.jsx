@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  Check,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -226,7 +225,7 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHoriz
             >
               <span>{option.label}</span>
               {option.count !== undefined && <em>{Number(option.count || 0).toLocaleString()}</em>}
-              {option.key === value && <Check size={14} />}
+              {option.key === value && <CheckCircle2 className="admin-cr-option-check" size={15} />}
             </button>
           ))}
         </div>
@@ -270,7 +269,7 @@ function SortControl({ sortBy, sortOrder, onChange, onToggle }) {
               }}
             >
               <span>{option.label}</span>
-              {sortBy === option.key && <Check size={14} />}
+              {sortBy === option.key && <CheckCircle2 className="admin-cr-option-check" size={15} />}
             </button>
           ))}
         </div>
@@ -382,7 +381,7 @@ function RunDetailsModal({ run, onClose, onChanged }) {
           <div>
             <span>Collection run inspector</span>
             <h3 id="admin-cr-modal-title">{run.domain?.name || 'Collection run'}</h3>
-            <small>Run {shortId(run.id)} · {formatDate(run.createdAt)}</small>
+            <small>Run {run.id || '—'} · {formatDate(run.createdAt)}</small>
           </div>
           <button type="button" className="admin-cr-modal__close" onClick={onClose} disabled={Boolean(busy)} aria-label="Close"><X size={18} /></button>
         </header>
@@ -745,7 +744,7 @@ export default function AdminCollectionRunsPage() {
                       <div className="admin-cr-run-cell">
                         <span className={`admin-cr-run-mark ${statusInfo(row.status).className}`} aria-label={`${statusInfo(row.status).label} collection run`}><Database size={16} /></span>
                         <div>
-                          <strong>Run {shortId(row.id)}</strong>
+                          <strong>Run {row.id || '—'}</strong>
                           <small>{row.createdBy?.fullName || row.createdBy?.email || (row.createdById ? `User ${shortId(row.createdById)}` : 'Internal / legacy')}</small>
                           <span>{row.language || 'ANY'} · {formatDate(row.createdAt, true)}</span>
                         </div>

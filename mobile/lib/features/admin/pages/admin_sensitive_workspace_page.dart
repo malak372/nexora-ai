@@ -114,6 +114,19 @@ class _AdminSensitiveWorkspacePageState
         throw const ApiException('Sensitive access could not be verified.');
       }
 
+      if (widget.scope == 'TEAM_CHAT') {
+        _password.clear();
+
+        if (!mounted) {
+          return;
+        }
+
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const AdminTeamChatPage()),
+        );
+        return;
+      }
+
       final embeddedKey = widget.scope == 'ADMINISTRATORS'
           ? 'workspace'
           : 'settings';

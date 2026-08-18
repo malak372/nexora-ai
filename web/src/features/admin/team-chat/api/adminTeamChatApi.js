@@ -36,6 +36,18 @@ export async function getTeamChatConversations() {
     return Array.isArray(payload) ? payload : [];
 }
 
+export async function getAdminTeamChatUnreadSummary() {
+    const response = await normalUserApi.get(
+        `${TEAM_CHAT_BASE}/unread-summary`,
+    );
+
+    const payload = unwrap(response);
+
+    return payload && typeof payload === 'object'
+        ? payload
+        : { unreadCount: 0, latestMessage: null };
+}
+
 export async function createDirectAdminConversation(adminId) {
     if (!adminId) {
         throw new Error('Administrator id is required.');
@@ -100,6 +112,28 @@ export async function sendAdminChatMessage(
     return unwrap(response);
 }
 
+export async function deleteAdminChatMessage(
+    conversationId,
+    messageId,
+    scope = 'me',
+) {
+    if (!conversationId || !messageId) {
+        throw new Error('Conversation id and message id are required.');
+    }
+
+    const normalizedScope = scope === 'everyone' ? 'everyone' : 'me';
+
+    const response = await normalUserApi.delete(
+        `${TEAM_CHAT_BASE}/conversations/${encodeURIComponent(
+            conversationId,
+        )}/messages/${encodeURIComponent(
+            messageId,
+        )}?scope=${normalizedScope}`,
+    );
+
+    return unwrap(response);
+}
+
 export async function markAdminConversationRead(conversationId) {
     if (!conversationId) {
         throw new Error('Conversation id is required.');
@@ -140,9 +174,11 @@ export function getAdminTeamChatSocket() {
 export const adminTeamChatApi = {
     administrators: getTeamChatAdministrators,
     conversations: getTeamChatConversations,
+    unreadSummary: getAdminTeamChatUnreadSummary,
     direct: createDirectAdminConversation,
     createGroup: createAdminGroupConversation,
     messages: getAdminConversationMessages,
     send: sendAdminChatMessage,
+    deleteMessage: deleteAdminChatMessage,
     markRead: markAdminConversationRead,
 };

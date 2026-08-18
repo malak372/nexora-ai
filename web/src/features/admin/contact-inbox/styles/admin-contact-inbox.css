@@ -1,0 +1,492 @@
+.admin-support-page--contact {
+    --contact-deep: #2f7774;
+    --contact-mint: #eaf6f3;
+    --contact-mint-2: #f6fbf9;
+    --contact-sage: #f1f6ef;
+    --contact-teal: #e8f6f5;
+    --contact-rose: #fbf0f3;
+    --contact-rose-deep: #b77889;
+    --contact-text: #354942;
+    --contact-muted: #84938e;
+    --contact-line: rgba(47, 119, 116, .10);
+}
+
+.admin-support-page--contact .admin-support-panel {
+    overflow: hidden;
+    border-color: rgba(47, 119, 116, .09);
+    border-radius: 28px;
+    background: #fff;
+    box-shadow: 0 16px 44px rgba(47, 91, 81, .06);
+}
+
+.admin-support-page--contact .admin-support-panel__header {
+    border-bottom-color: rgba(47, 119, 116, .08);
+    background:
+        radial-gradient(circle at 88% 12%, rgba(216, 183, 189, .10), transparent 25%),
+        linear-gradient(90deg, #f1f8f6 0%, #ffffff 58%, #fbf6f7 100%);
+}
+
+.admin-support-page--contact .admin-support-live-chip {
+    border-color: rgba(92, 189, 185, .16);
+    background: #edf8f5;
+    color: var(--contact-deep);
+}
+
+.admin-support-page--contact .admin-support-live-chip i {
+    background: #5cbdb9;
+    box-shadow: 0 0 0 4px rgba(92, 189, 185, .12);
+}
+
+.admin-support-page--contact .admin-support-tabs button:hover {
+    background: #f1f8f6;
+    color: var(--contact-deep);
+}
+
+.admin-support-page--contact .admin-support-tabs button.is-active {
+    border-color: rgba(92, 189, 185, .18);
+    background: #eaf6f3;
+    color: var(--contact-deep);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .82), 0 6px 14px rgba(47, 119, 116, .06);
+}
+
+.admin-support-page--contact .admin-support-sort,
+.admin-support-page--contact .admin-support-search,
+.admin-support-page--contact .admin-support-sort-direction {
+    border-color: rgba(47, 119, 116, .10);
+    background: rgba(255, 255, 255, .92);
+}
+
+.admin-support-page--contact .admin-support-sort:focus-within,
+.admin-support-page--contact .admin-support-search:focus-within {
+    border-color: rgba(92, 189, 185, .34);
+    box-shadow: 0 0 0 3px rgba(92, 189, 185, .09);
+}
+
+.admin-support-page--contact .admin-support-table-wrap {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 18px 2px 4px !important;
+    overflow: visible !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.admin-support-page--contact .admin-support-table {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+.admin-support-page--contact .admin-support-table thead {
+    display: none !important;
+}
+
+.admin-support-page--contact .admin-support-table tbody {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 18px !important;
+    width: 100% !important;
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr {
+    --card-accent: #5cbdb9;
+    --card-accent-deep: #2f7774;
+    --card-hero: linear-gradient(100deg, #edf7f5 0%, #f8fbfa 58%, #e3f3ef 100%);
+    position: relative !important;
+    isolation: isolate;
+    min-width: 0 !important;
+    min-height: 350px !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-template-rows: 145px 118px 72px !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    border: 1px solid rgba(47, 119, 116, .10) !important;
+    border-radius: 26px !important;
+    background: #fff !important;
+    box-shadow: 0 16px 34px rgba(47, 91, 81, .065) !important;
+    filter: none !important;
+    transform: none !important;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease !important;
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n + 2) {
+    --card-accent: #8eb481;
+    --card-accent-deep: #657b5e;
+    --card-hero: linear-gradient(100deg, #f1f6ef 0%, #fafcf8 58%, #e7f0e3 100%);
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n + 3) {
+    --card-accent: #58aaa5;
+    --card-accent-deep: #2f7975;
+    --card-hero: linear-gradient(100deg, #e8f6f5 0%, #f8fbfb 58%, #dff1ef 100%);
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n) {
+    --card-accent: #d8a0ae;
+    --card-accent-deep: #aa687a;
+    --card-hero: linear-gradient(100deg, #fbf0f3 0%, #fff9fa 58%, #f7e6eb 100%);
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr:hover {
+    transform: translateY(-3px) !important;
+    border-color: color-mix(in srgb, var(--card-accent) 38%, white) !important;
+    box-shadow: 0 22px 42px rgba(47, 91, 81, .10) !important;
+    filter: none !important;
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr::before {
+    content: "";
+    position: relative;
+    z-index: 0;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    border-bottom: 1px solid rgba(47, 119, 116, .07);
+    background: var(--card-hero);
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr::after {
+    content: "";
+    position: absolute !important;
+    z-index: 0 !important;
+    top: 18px !important;
+    right: 18px !important;
+    left: auto !important;
+    width: 78px !important;
+    height: 92px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    opacity: .24 !important;
+    box-shadow: none !important;
+    background-image: radial-gradient(var(--card-accent-deep) 1.1px, transparent 1.1px) !important;
+    background-size: 9px 9px !important;
+    pointer-events: none;
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr>td {
+    position: relative !important;
+    z-index: 1 !important;
+    min-width: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 18px 20px !important;
+    border: 0 !important;
+    border-right: 1px solid rgba(47, 119, 116, .07) !important;
+    border-bottom: 1px solid rgba(47, 119, 116, .07) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #5d726b !important;
+    text-align: left !important;
+    vertical-align: middle !important;
+    box-shadow: none !important;
+}
+
+.admin-support-page--contact .admin-support-table tbody>tr>td::before {
+    position: static !important;
+    display: block !important;
+    margin: 0 0 9px !important;
+    color: #8a9b95 !important;
+    font-size: 8px !important;
+    font-weight: 900 !important;
+    letter-spacing: .09em !important;
+    text-transform: uppercase !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(1) {
+    grid-column: 1 / 3 !important;
+    grid-row: 1 !important;
+    min-height: 145px !important;
+    padding: 22px !important;
+    display: flex !important;
+    align-items: center !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(1)::before {
+    content: "Message" !important;
+    position: absolute !important;
+    top: 22px !important;
+    left: 92px !important;
+    bottom: auto !important;
+    color: var(--card-accent-deep) !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-primary-cell {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    flex-direction: row !important;
+    gap: 16px !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-row-icon {
+    width: 54px !important;
+    height: 54px !important;
+    flex: 0 0 54px !important;
+    display: grid !important;
+    place-items: center !important;
+    border: 1px solid rgba(255, 255, 255, .88) !important;
+    border-radius: 18px !important;
+    background: rgba(255, 255, 255, .55) !important;
+    color: var(--card-accent-deep) !important;
+    box-shadow: inset 0 0 0 1px rgba(47, 119, 116, .035) !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-primary-cell>div {
+    min-width: 0 !important;
+    padding-top: 18px;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-primary-cell strong {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden;
+    color: var(--contact-text) !important;
+    font-size: 16px !important;
+    line-height: 1.28 !important;
+    font-weight: 800 !important;
+    text-overflow: ellipsis;
+    white-space: nowrap !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-primary-cell p {
+    margin: 7px 0 0 !important;
+    overflow: hidden;
+    color: #798b85 !important;
+    font-size: 10px !important;
+    line-height: 1.5 !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(2) {
+    grid-column: 3 / 5 !important;
+    grid-row: 1 !important;
+    min-height: 145px !important;
+    padding: 30px 64px 22px 24px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(2)::before {
+    content: "Sender" !important;
+    color: var(--card-accent-deep) !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(2) .admin-support-person strong {
+    color: var(--contact-text);
+    font-size: 13px;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(2) .admin-support-person span {
+    margin-top: 5px;
+    color: #7f918b;
+    font-size: 9px;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(3) {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(3)::before {
+    content: "Destination" !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(4) {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(4)::before {
+    content: "Type" !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(5) {
+    grid-column: 3 !important;
+    grid-row: 2 !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(5)::before {
+    content: "Status" !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(6) {
+    grid-column: 4 !important;
+    grid-row: 2 !important;
+    border-right: 0 !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(6)::before {
+    content: "Activity" !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(3) .admin-support-person strong,
+.admin-support-page--contact .admin-support-table td:nth-child(6) .admin-support-date strong {
+    color: #48615a;
+    font-size: 10px;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(3) .admin-support-person span,
+.admin-support-page--contact .admin-support-table td:nth-child(6) .admin-support-date span {
+    margin-top: 5px;
+    color: #93a19d;
+    font-size: 8px;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(7) {
+    grid-column: 1 / -1 !important;
+    grid-row: 3 !important;
+    min-height: 72px !important;
+    padding: 14px 20px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    border: 0 !important;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .90), rgba(249, 252, 251, .98)) !important;
+}
+
+.admin-support-page--contact .admin-support-table td:nth-child(7)::before {
+    content: "Actions" !important;
+    display: block !important;
+    margin-right: auto !important;
+    margin-bottom: 0 !important;
+}
+
+.admin-support-page--contact .admin-support-view-button {
+    min-width: 90px !important;
+    min-height: 38px !important;
+    border: 1px solid color-mix(in srgb, var(--card-accent) 28%, white) !important;
+    border-radius: 13px !important;
+    background: color-mix(in srgb, var(--card-hero) 55%, white) !important;
+    color: var(--card-accent-deep) !important;
+    box-shadow: none !important;
+    transition: transform .16s ease, background .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease !important;
+}
+
+.admin-support-page--contact .admin-support-view-button:hover:not(:disabled) {
+    transform: translateY(-2px) !important;
+    border-color: var(--card-accent) !important;
+    background: var(--card-accent) !important;
+    color: #fff !important;
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--card-accent) 20%, transparent) !important;
+}
+
+.admin-support-page--contact .admin-support-table td[colspan] {
+    grid-column: 1 / -1 !important;
+    grid-row: 1 / -1 !important;
+    min-height: 220px !important;
+    display: block !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: #fff !important;
+}
+
+.admin-support-page--contact .admin-support-table tr:has(td[colspan]) {
+    min-height: 220px !important;
+    display: block !important;
+    grid-column: 1 / -1 !important;
+    background: #fff !important;
+}
+
+.admin-support-page--contact .admin-support-table td[colspan]::before {
+    display: none !important;
+}
+
+.admin-support-page--contact .admin-support-pagination {
+    margin-top: 14px;
+    border-top-color: rgba(47, 119, 116, .07);
+    background: #fff;
+}
+
+@media (max-width: 1240px) {
+    .admin-support-page--contact .admin-support-table tbody {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+@media (max-width: 760px) {
+    .admin-support-page--contact .admin-support-table tbody>tr {
+        min-height: 0 !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        grid-template-rows: auto !important;
+    }
+
+    .admin-support-page--contact .admin-support-table td:nth-child(1),
+    .admin-support-page--contact .admin-support-table td:nth-child(2),
+    .admin-support-page--contact .admin-support-table td:nth-child(7) {
+        grid-column: 1 / -1 !important;
+        grid-row: auto !important;
+    }
+
+    .admin-support-page--contact .admin-support-table td:nth-child(3),
+    .admin-support-page--contact .admin-support-table td:nth-child(4),
+    .admin-support-page--contact .admin-support-table td:nth-child(5),
+    .admin-support-page--contact .admin-support-table td:nth-child(6) {
+        grid-column: auto !important;
+        grid-row: auto !important;
+    }
+
+    .admin-support-page--contact .admin-support-table td:nth-child(2) {
+        min-height: 96px !important;
+        padding: 18px 20px !important;
+    }
+
+    .admin-support-page--contact .admin-support-table td:nth-child(1) {
+        min-height: 150px !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .admin-support-page--contact .admin-support-table tbody>tr {
+        grid-template-columns: 1fr !important;
+    }
+
+    .admin-support-page--contact .admin-support-table tbody>tr>td {
+        grid-column: 1 !important;
+        grid-row: auto !important;
+        border-right: 0 !important;
+    }
+
+    .admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-primary-cell {
+        align-items: flex-start !important;
+    }
+
+    .admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-primary-cell strong {
+        white-space: normal !important;
+    }
+
+    .admin-support-page--contact .admin-support-table td:nth-child(7) {
+        align-items: stretch !important;
+        flex-direction: column !important;
+        gap: 12px;
+    }
+
+    .admin-support-page--contact .admin-support-table td:nth-child(7) .admin-support-view-button {
+        width: 100% !important;
+        justify-content: center !important;
+    }
+}
+
+.admin-support-page--contact .admin-support-sort-picker__trigger,
+.admin-support-page--contact .admin-support-sort-picker__direction {
+    border-color: rgba(47, 119, 116, .10);
+    background: rgba(255, 255, 255, .92);
+}
+
+.admin-support-page--contact .admin-support-sort-picker.is-open .admin-support-sort-picker__trigger {
+    border-color: rgba(92, 189, 185, .34);
+    box-shadow: 0 0 0 3px rgba(92, 189, 185, .09);
+}

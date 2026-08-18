@@ -4,8 +4,6 @@
  * @author  Malak
  */
 import {
-  ArrowDown,
-  ArrowUp,
   BadgeCheck,
   CheckCircle2,
   ChevronLeft,
@@ -20,7 +18,6 @@ import {
   MessageSquareReply,
   RefreshCw,
   Search,
-  SlidersHorizontal,
   UserRound,
   UserRoundCheck,
   X,
@@ -31,8 +28,10 @@ import { createPortal } from 'react-dom';
 
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import AdminSupportSelect from '../../shared/components/AdminSupportSelect';
+import AdminSupportSortPicker from '../../shared/components/AdminSupportSortPicker';
 import '../../shared/styles/admin-pages.css';
 import '../../shared/styles/admin-support-workspaces.css';
+import '../styles/admin-contact-inbox.css';
 
 const PAGE_SIZE = 20;
 
@@ -440,17 +439,14 @@ export default function AdminContactInboxPage() {
           </div>
 
           <div className="admin-support-tools">
-            <label className="admin-support-sort">
-              <SlidersHorizontal size={15} />
-              <span><small>Sort messages</small>
-                <select value={sortBy} onChange={(event) => { setSortBy(event.target.value); setPage(1); }}>
-                  {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </span>
-            </label>
-            <button type="button" className="admin-support-sort-direction" onClick={() => setSortOrder((value) => value === 'asc' ? 'desc' : 'asc')} aria-label="Toggle sort direction">
-              {sortOrder === 'asc' ? <ArrowUp size={17} /> : <ArrowDown size={17} />}
-            </button>
+            <AdminSupportSortPicker
+              label="Sort messages"
+              value={sortBy}
+              order={sortOrder}
+              options={SORT_OPTIONS}
+              onChange={(nextSortBy) => { setSortBy(nextSortBy); setPage(1); }}
+              onToggleOrder={() => setSortOrder((value) => value === 'asc' ? 'desc' : 'asc')}
+            />
             <label className="admin-support-search"><Search size={17} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search sender, email, subject or reply…" /></label>
           </div>
         </div>

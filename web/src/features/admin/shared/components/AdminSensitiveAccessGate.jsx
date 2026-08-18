@@ -17,17 +17,33 @@ export default function AdminSensitiveAccessGate({
   title,
   description,
   onVerified,
+  onClose,
 }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef(null);
+  const cardRef = useRef(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => inputRef.current?.focus(), 80);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!onClose) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && !busy) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [busy, onClose]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -60,10 +76,24 @@ export default function AdminSensitiveAccessGate({
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="admin-sensitive-access-layer" aria-live="polite">
+    <div
+      className={`admin-sensitive-access-layer ${onClose ? 'is-dismissible' : ''}`}
+      aria-live="polite"
+      onPointerDown={(event) => {
+        if (
+          onClose &&
+          !busy &&
+          cardRef.current &&
+          !cardRef.current.contains(event.target)
+        ) {
+          onClose();
+        }
+      }}
+    >
       <div className="admin-sensitive-access-ambient" />
 
       <form
+        ref={cardRef}
         className="admin-sensitive-access-card"
         onSubmit={submit}
         role="dialog"

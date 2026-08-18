@@ -37,35 +37,24 @@ import {
   getAccessToken,
   getStoredUser,
 } from '../../features/auth/shared/auth.storage';
+import {
+  adminTeamChatApi,
+  getAdminTeamChatSocket,
+} from '../../features/admin/team-chat/api/adminTeamChatApi';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
 import './admin-layout.css';
 
-/**
- * Defines the grouped navigation structure used by
- * the administrator workspace.
- *
- * Each group contains:
- * - A group label.
- * - A representative icon.
- * - One or more administrator workspace routes.
- * - A visual tone associated with each route.
- *
- * @author Eman
- */
-const groups = [
+const dashboardItem = {
+  to: '/admin/dashboard',
+  label: 'Overview',
+  icon: Gauge,
+  tone: 'dashboard',
+};
+
+const navigationGroups = [
   {
-    label: 'Overview',
-    icon: Gauge,
-    items: [
-      {
-        to: '/admin/dashboard',
-        label: 'Command center',
-        icon: Gauge,
-        tone: 'dashboard',
-      },
-    ],
-  },
-  {
+    key: 'people',
+    navLabel: 'People',
     label: 'People & access',
     icon: UsersRound,
     items: [
@@ -90,8 +79,10 @@ const groups = [
     ],
   },
   {
+    key: 'community',
+    navLabel: 'Community',
     label: 'Community & support',
-    icon: BellRing,
+    icon: Lightbulb,
     items: [
       {
         to: '/admin/ideas',
@@ -117,15 +108,11 @@ const groups = [
         icon: BookOpenCheck,
         tone: 'contact',
       },
-      {
-        to: '/admin/alerts',
-        label: 'Alerts',
-        icon: BellRing,
-        tone: 'alerts',
-      },
     ],
   },
   {
+    key: 'data',
+    navLabel: 'Data',
     label: 'Data & evidence',
     icon: Database,
     items: [
@@ -156,6 +143,8 @@ const groups = [
     ],
   },
   {
+    key: 'intelligence',
+    navLabel: 'AI',
     label: 'Intelligence',
     icon: BrainCircuit,
     items: [
@@ -186,6 +175,8 @@ const groups = [
     ],
   },
   {
+    key: 'finance',
+    navLabel: 'Finance',
     label: 'Finance',
     icon: CircleDollarSign,
     items: [
@@ -204,6 +195,8 @@ const groups = [
     ],
   },
   {
+    key: 'system',
+    navLabel: 'System',
     label: 'Security & system',
     icon: ShieldCheck,
     items: [
@@ -229,14 +222,13 @@ const groups = [
   },
 ];
 
-/**
- * Standalone administrator account navigation item.
- *
- * This entry is placed outside the primary grouped navigation
- * and provides access to profile and security settings.
- *
- * @author Eman
- */
+const alertItem = {
+  to: '/admin/alerts',
+  label: 'Alerts',
+  icon: BellRing,
+  tone: 'alerts',
+};
+
 const accountItem = {
   to: '/admin/account',
   label: 'Profile & security',
@@ -244,86 +236,98 @@ const accountItem = {
   tone: 'account',
 };
 
-/**
- * Flattened collection containing every administrator route.
- *
- * Used to build route-specific page titles and visual tones.
- */
+const mobileGroups = [
+  {
+    label: 'Overview',
+    items: [dashboardItem],
+  },
+  ...navigationGroups.map((group) => ({
+    label: group.label,
+    items:
+      group.key === 'community'
+        ? [...group.items, alertItem]
+        : group.items,
+  })),
+];
+
 const allItems = [
-  ...groups.flatMap((group) => group.items),
+  dashboardItem,
+  ...navigationGroups.flatMap((group) => group.items),
+  alertItem,
   accountItem,
 ];
 
-/**
- * Maps administrator routes to their display titles.
- */
 const routeTitles = Object.fromEntries(
   allItems.map((item) => [item.to, item.label]),
 );
 
-/**
- * Maps administrator routes to their visual theme tones.
- */
 const routeTones = Object.fromEntries(
   allItems.map((item) => [item.to, item.tone]),
 );
 
-/**
- * Determines whether a navigation route is currently active.
- *
- * A route is considered active when the current pathname
- * exactly matches the route or belongs to one of its nested paths.
- *
- * @param {string} pathname Current browser pathname.
- * @param {string} to Navigation destination.
- * @returns {boolean} Whether the route is active.
- *
- * @author Eman
- */
+const sensitiveAdminRoutes = new Set([
+  '/admin/administrators',
+  '/admin/team-chat',
+  '/admin/settings',
+]);
+
+function getLocationPath(location) {
+  return `${location.pathname}${location.search || ''}${location.hash || ''}`;
+}
+
 function isRouteActive(pathname, to) {
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 
-/**
- * Main layout for the administrator web application.
- *
- * Responsibilities include:
- * - Validating administrator authentication and role access.
- * - Rendering the global administrator header.
- * - Rendering grouped top navigation.
- * - Managing responsive mobile navigation.
- * - Displaying administrator profile information.
- * - Managing route-specific titles and visual themes.
- * - Dispatching administrator workspace search events.
- * - Preloading administrator routes for faster navigation.
- * - Synchronizing authentication and user profile changes.
- * - Handling expired authentication sessions.
- * - Providing administrator logout functionality.
- * - Rendering nested administrator routes through React Router.
- *
- * @returns {JSX.Element} The administrator application layout.
- *
- * @author Eman
- */
+function AdminNavLink({
+  item,
+  className,
+  children,
+  onClick,
+}) {
+  const Icon = item.icon;
+  const location = useLocation();
+  const sensitiveReturnState =
+    sensitiveAdminRoutes.has(item.to) &&
+      !isRouteActive(location.pathname, item.to)
+      ? { sensitiveReturnTo: getLocationPath(location) }
+      : undefined;
+
+  return (
+    <NavLink
+      to={item.to}
+      state={sensitiveReturnState}
+      className={({ isActive }) =>
+        `${className} tone-${item.tone}${isActive ? ' is-active' : ''}`
+      }
+      onMouseEnter={() => preloadAdminRoute(item.to)}
+      onFocus={() => preloadAdminRoute(item.to)}
+      onClick={onClick}
+    >
+      {children || (
+        <>
+          <Icon size={16} />
+          <span>{item.label}</span>
+        </>
+      )}
+    </NavLink>
+  );
+}
+
 export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const navRef = useRef(null);
+  const headerRef = useRef(null);
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState('');
   const [search, setSearch] = useState('');
   const [user, setUser] = useState(() => getStoredUser() || {});
+  const [teamChatUnread, setTeamChatUnread] = useState(0);
+  const [teamChatNotice, setTeamChatNotice] = useState(null);
 
   const role = String(user.role || '').toUpperCase();
 
-  /**
-   * Protects the administrator layout from unauthorized access.
-   *
-   * Users without an access token are redirected to login,
-   * while authenticated non-administrator users are redirected
-   * to the normal-user dashboard.
-   */
   useEffect(() => {
     if (!getAccessToken()) {
       navigate('/login', { replace: true });
@@ -335,25 +339,106 @@ export default function AdminLayout() {
     }
   }, [navigate, role]);
 
-  /**
-   * Closes responsive navigation elements whenever
-   * the active administrator route changes.
-   */
   useEffect(() => {
     setMobileOpen(false);
     setOpenGroup('');
   }, [location.pathname]);
 
-  /**
-   * Preloads the primary administrator routes after
-   * the layout is initially mounted.
-   */
   useEffect(() => preloadPrimaryAdminRoutes(), []);
 
-  /**
-   * Synchronizes locally stored administrator information
-   * whenever the authentication layer broadcasts user changes.
-   */
+  useEffect(() => {
+    if (role !== 'ADMIN' || !getAccessToken()) {
+      setTeamChatUnread(0);
+      setTeamChatNotice(null);
+      return undefined;
+    }
+
+    let active = true;
+
+    const refreshUnread = async ({ announce = false } = {}) => {
+      try {
+        const summary = await adminTeamChatApi.unreadSummary();
+        if (!active) return;
+
+        const total = Number(summary?.unreadCount || 0);
+        const latest = summary?.latestMessage || null;
+
+        setTeamChatUnread(total);
+
+        if (total === 0) {
+          setTeamChatNotice(null);
+          return;
+        }
+
+        if (announce) {
+          setTeamChatNotice({
+            senderName:
+              latest?.sender?.fullName ||
+              'Administrator',
+            preview: latest?.content || '',
+            total,
+          });
+        }
+      } catch { }
+    };
+
+    void refreshUnread({ announce: true });
+
+    const socket = getAdminTeamChatSocket();
+
+    const onMessage = (message) => {
+      if (!message?.conversationId || message.senderId === user.id) {
+        return;
+      }
+
+      setTeamChatUnread((current) => current + 1);
+      setTeamChatNotice({
+        senderName: message.sender?.fullName || 'Administrator',
+        preview: message.content || '',
+        total: null,
+      });
+    };
+
+    const onConversation = () => {
+      void refreshUnread();
+    };
+
+    const onRead = (payload) => {
+      if (!payload?.userId || payload.userId === user.id) {
+        void refreshUnread();
+      }
+    };
+
+    const onMessageDeleted = (payload) => {
+      if (payload?.scope === 'everyone' || payload?.userId === user.id) {
+        void refreshUnread();
+      }
+    };
+
+    socket.on('admin-chat:message', onMessage);
+    socket.on('admin-chat:conversation', onConversation);
+    socket.on('admin-chat:read', onRead);
+    socket.on('admin-chat:message-deleted', onMessageDeleted);
+
+    return () => {
+      active = false;
+      socket.off('admin-chat:message', onMessage);
+      socket.off('admin-chat:conversation', onConversation);
+      socket.off('admin-chat:read', onRead);
+      socket.off('admin-chat:message-deleted', onMessageDeleted);
+    };
+  }, [role, user.id]);
+
+  useEffect(() => {
+    if (!teamChatNotice) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setTeamChatNotice(null);
+    }, 4500);
+
+    return () => window.clearTimeout(timer);
+  }, [teamChatNotice]);
+
   useEffect(() => {
     const syncUser = (event) =>
       setUser(event.detail || getStoredUser() || {});
@@ -381,10 +466,6 @@ export default function AdminLayout() {
     };
   }, []);
 
-  /**
-   * Redirects the administrator to login whenever
-   * the application reports that the current session has expired.
-   */
   useEffect(() => {
     const onExpired = () =>
       navigate('/login', { replace: true });
@@ -401,15 +482,11 @@ export default function AdminLayout() {
       );
   }, [navigate]);
 
-  /**
-   * Closes any open navigation dropdown when the user
-   * clicks or taps outside the navigation area.
-   */
   useEffect(() => {
     const closeMenus = (event) => {
       if (
-        navRef.current &&
-        !navRef.current.contains(event.target)
+        headerRef.current &&
+        !headerRef.current.contains(event.target)
       ) {
         setOpenGroup('');
       }
@@ -427,25 +504,14 @@ export default function AdminLayout() {
       );
   }, []);
 
-  /**
-   * Resolves the current administrator workspace title.
-   */
   const title =
     routeTitles[location.pathname] ||
     'Admin workspace';
 
-  /**
-   * Resolves the visual theme associated with the
-   * currently active administrator route.
-   */
   const tone =
     routeTones[location.pathname] ||
     'dashboard';
 
-  /**
-   * Generates administrator initials for use when
-   * no profile image is available.
-   */
   const initials = useMemo(
     () =>
       (user.fullName || user.name || 'Admin')
@@ -457,9 +523,6 @@ export default function AdminLayout() {
     [user.fullName, user.name],
   );
 
-  /**
-   * Resolves the administrator profile image URL.
-   */
   const avatarUrl = resolveMediaUrl(
     user.avatarUrl ||
     user.profileImageUrl ||
@@ -467,10 +530,6 @@ export default function AdminLayout() {
     '',
   );
 
-  /**
-   * Clears the current authentication session and
-   * returns the administrator to the login page.
-   */
   const signOut = () => {
     clearAuthSession();
 
@@ -479,15 +538,6 @@ export default function AdminLayout() {
     });
   };
 
-  /**
-   * Dispatches a global administrator workspace search event.
-   *
-   * Individual administrator pages can listen for
-   * `voxidence:admin-search` and process the search value
-   * according to their own workspace data.
-   *
-   * @param {React.FormEvent<HTMLFormElement>} event Form submission event.
-   */
   const submitSearch = (event) => {
     event.preventDefault();
 
@@ -498,6 +548,8 @@ export default function AdminLayout() {
     );
   };
 
+  const profileOpen = openGroup === 'profile';
+
   return (
     <div className={`admin-shell admin-theme-${tone}`}>
       <div
@@ -505,10 +557,11 @@ export default function AdminLayout() {
         aria-hidden="true"
       />
 
-      <header className="admin-header">
-        <div className="admin-header__primary">
+      <header className="admin-header" ref={headerRef}>
+        <div className="admin-header__bar">
           <button
             className="admin-icon-btn admin-header__mobile-menu"
+            type="button"
             onClick={() =>
               setMobileOpen((value) => !value)
             }
@@ -534,25 +587,233 @@ export default function AdminLayout() {
             }
             aria-label="Open admin command center"
           >
-            <VoxidenceMark size={36} />
+            <VoxidenceMark size={35} />
 
-            <span>
+            <span className="admin-brand__copy">
               <strong>Voxidence</strong>
-              <small>Administration</small>
+              <small>Admin</small>
             </span>
           </button>
 
-          <div className="admin-header__route">
-            <span>Operations console</span>
-            <h1>{title}</h1>
-          </div>
+          <nav
+            className="admin-topnav"
+            aria-label="Admin navigation"
+          >
+            <AdminNavLink
+              item={dashboardItem}
+              className="admin-topnav__link admin-topnav__link--overview"
+            />
+
+            {navigationGroups.map((group) => {
+              const GroupIcon = group.icon;
+              const groupActive = group.items.some((item) =>
+                isRouteActive(location.pathname, item.to),
+              );
+              const groupOpen = openGroup === group.key;
+
+              return (
+                <div
+                  key={group.key}
+                  className={`admin-topnav__dropdown${groupActive ? ' is-active' : ''}${groupOpen ? ' is-open' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="admin-topnav__category"
+                    onClick={() =>
+                      setOpenGroup((current) =>
+                        current === group.key ? '' : group.key,
+                      )
+                    }
+                    aria-haspopup="menu"
+                    aria-expanded={groupOpen}
+                  >
+                    <GroupIcon size={16} />
+                    <span>{group.navLabel}</span>
+
+                    {group.key === 'people' && teamChatUnread > 0 ? (
+                      <b className="admin-topnav__group-badge">
+                        {teamChatUnread > 99 ? '99+' : teamChatUnread}
+                      </b>
+                    ) : null}
+
+                    <ChevronDown
+                      className="admin-topnav__chevron"
+                      size={13}
+                    />
+                  </button>
+
+                  <div
+                    className="admin-category-menu"
+                    role="menu"
+                  >
+                    <div className="admin-category-menu__head">
+                      <span>Admin category</span>
+                      <strong>{group.label}</strong>
+                      <small>{group.items.length} workspaces</small>
+                    </div>
+
+                    <div className="admin-category-menu__items">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+
+                        return (
+                          <AdminNavLink
+                            key={item.to}
+                            item={item}
+                            className="admin-category-menu__link"
+                            onClick={() => setOpenGroup('')}
+                          >
+                            <span className="admin-category-menu__icon">
+                              <Icon size={16} />
+                            </span>
+
+                            <span className="admin-category-menu__copy">
+                              <strong>{item.label}</strong>
+                              <small>Open workspace</small>
+                            </span>
+
+                            {item.to === '/admin/team-chat' &&
+                              teamChatUnread > 0 ? (
+                              <b className="admin-topnav__menu-badge">
+                                {teamChatUnread > 99 ? '99+' : teamChatUnread}
+                              </b>
+                            ) : null}
+                          </AdminNavLink>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </nav>
 
           <form
             className="admin-global-search"
             onSubmit={submitSearch}
           >
-            <Search size={17} />
+            <Search size={16} />
 
+            <input
+              value={search}
+              onChange={(event) =>
+                setSearch(event.target.value)
+              }
+              placeholder={`Search ${title.toLowerCase()}…`}
+            />
+
+            <kbd>↵</kbd>
+          </form>
+
+          <NavLink
+            to={alertItem.to}
+            className={({ isActive }) =>
+              `admin-header__alert tone-alerts${isActive ? ' is-active' : ''}`
+            }
+            onMouseEnter={() =>
+              preloadAdminRoute(alertItem.to)
+            }
+            onFocus={() =>
+              preloadAdminRoute(alertItem.to)
+            }
+            aria-label="Open alerts"
+            title="Alerts"
+          >
+            <BellRing size={18} />
+          </NavLink>
+
+          <div
+            className={`admin-profile-menu${profileOpen ? ' is-open' : ''}`}
+          >
+            <button
+              className="admin-profile-pill"
+              type="button"
+              onClick={() =>
+                setOpenGroup((current) =>
+                  current === 'profile' ? '' : 'profile',
+                )
+              }
+              title="Administrator menu"
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
+            >
+              <span className="admin-profile-pill__avatar">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="" />
+                ) : (
+                  initials
+                )}
+              </span>
+
+              <span className="admin-profile-pill__copy">
+                <strong>
+                  {user.fullName ||
+                    user.name ||
+                    'Administrator'}
+                </strong>
+
+                <small>Administrator</small>
+              </span>
+
+              <ChevronDown
+                className="admin-profile-pill__chevron"
+                size={14}
+              />
+            </button>
+
+            <div
+              className="admin-profile-menu__dropdown"
+              role="menu"
+            >
+              <div className="admin-profile-menu__summary">
+                <span className="admin-profile-pill__avatar admin-profile-pill__avatar--large">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" />
+                  ) : (
+                    initials
+                  )}
+                </span>
+
+                <div>
+                  <strong>
+                    {user.fullName ||
+                      user.name ||
+                      'Administrator'}
+                  </strong>
+                  <small>
+                    {user.email || 'Admin account'}
+                  </small>
+                </div>
+              </div>
+
+              <AdminNavLink
+                item={accountItem}
+                className="admin-profile-menu__item"
+              >
+                <UserRound size={16} />
+                <span>Profile & security</span>
+              </AdminNavLink>
+
+              <button
+                className="admin-profile-menu__item admin-profile-menu__signout"
+                type="button"
+                onClick={signOut}
+              >
+                <LogOut size={16} />
+                <span>Sign out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div
+          className={`admin-mobile-panel${mobileOpen ? ' is-open' : ''}`}
+        >
+          <form
+            className="admin-mobile-search"
+            onSubmit={submitSearch}
+          >
+            <Search size={16} />
             <input
               value={search}
               onChange={(event) =>
@@ -560,224 +821,58 @@ export default function AdminLayout() {
               }
               placeholder="Search this workspace…"
             />
-
-            <kbd>↵</kbd>
           </form>
 
-          <button
-            className="admin-profile-pill"
-            type="button"
-            onClick={() =>
-              navigate('/admin/account')
-            }
-            title="Open profile and security settings"
-          >
-            <span className="admin-profile-pill__avatar">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" />
-              ) : (
-                initials
-              )}
-            </span>
+          <div className="admin-mobile-panel__scroll">
+            {mobileGroups.map((group) => (
+              <section
+                key={group.label}
+                className="admin-mobile-group"
+              >
+                <h3>{group.label}</h3>
 
-            <div>
-              <strong>
-                {user.fullName ||
-                  user.name ||
-                  'Administrator'}
-              </strong>
+                <div className="admin-mobile-group__items">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
 
-              <small>
-                Profile & security
-              </small>
-            </div>
-          </button>
-        </div>
+                    return (
+                      <AdminNavLink
+                        key={item.to}
+                        item={item}
+                        className="admin-mobile-link"
+                        onClick={() => setMobileOpen(false)}
+                      >
+                        <span className="admin-mobile-link__icon">
+                          <Icon size={17} />
+                        </span>
 
-        <div
-          className={`admin-nav-row ${mobileOpen ? 'is-open' : ''
-            }`}
-          ref={navRef}
-        >
-          <nav
-            className="admin-topnav"
-            aria-label="Admin navigation"
-          >
-            {groups.map((group) => {
-              const GroupIcon = group.icon;
+                        <span>{item.label}</span>
 
-              const groupActive =
-                group.items.some((item) =>
-                  isRouteActive(
-                    location.pathname,
-                    item.to,
-                  ),
-                );
-
-              /**
-               * Groups containing one route are rendered
-               * directly as a top-level navigation link.
-               */
-              if (group.items.length === 1) {
-                const item = group.items[0];
-                const ItemIcon = item.icon;
-
-                return (
-                  <NavLink
-                    key={group.label}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      `admin-topnav__single tone-${item.tone}${isActive
-                        ? ' is-active'
-                        : ''
-                      }`
-                    }
-                    onMouseEnter={() =>
-                      preloadAdminRoute(item.to)
-                    }
-                    onFocus={() =>
-                      preloadAdminRoute(item.to)
-                    }
-                  >
-                    <ItemIcon size={16} />
-                    <span>{group.label}</span>
-                  </NavLink>
-                );
-              }
-
-              const isOpen =
-                openGroup === group.label;
-
-              return (
-                <div
-                  key={group.label}
-                  className={`admin-topnav__group ${groupActive
-                      ? 'is-active'
-                      : ''
-                    } ${isOpen
-                      ? 'is-open'
-                      : ''
-                    }`}
-                >
-                  <button
-                    type="button"
-                    className="admin-topnav__group-trigger"
-                    onClick={() =>
-                      setOpenGroup((current) =>
-                        current === group.label
-                          ? ''
-                          : group.label,
-                      )
-                    }
-                    aria-haspopup="menu"
-                    aria-expanded={isOpen}
-                  >
-                    <GroupIcon size={16} />
-
-                    <span>
-                      {group.label}
-                    </span>
-
-                    <ChevronDown
-                      className="admin-topnav__chevron"
-                      size={14}
-                    />
-                  </button>
-
-                  <div
-                    className="admin-topnav__menu"
-                    role="menu"
-                  >
-                    <div className="admin-topnav__menu-head">
-                      <span>
-                        {group.label}
-                      </span>
-
-                      <small>
-                        {group.items.length}{' '}
-                        workspaces
-                      </small>
-                    </div>
-
-                    {group.items.map(
-                      ({
-                        to,
-                        label,
-                        icon: Icon,
-                        tone: itemTone,
-                      }) => (
-                        <NavLink
-                          key={to}
-                          to={to}
-                          role="menuitem"
-                          className={({
-                            isActive,
-                          }) =>
-                            `admin-topnav__menu-link tone-${itemTone}${isActive
-                              ? ' is-active'
-                              : ''
-                            }`
-                          }
-                          onMouseEnter={() =>
-                            preloadAdminRoute(to)
-                          }
-                          onFocus={() =>
-                            preloadAdminRoute(to)
-                          }
-                        >
-                          <span className="admin-topnav__menu-icon">
-                            <Icon size={16} />
-                          </span>
-
-                          <span className="admin-topnav__menu-copy">
-                            <strong>
-                              {label}
-                            </strong>
-
-                            <small>
-                              Open workspace
-                            </small>
-                          </span>
-
-                          <i aria-hidden="true" />
-                        </NavLink>
-                      ),
-                    )}
-                  </div>
+                        {item.to === '/admin/team-chat' &&
+                          teamChatUnread > 0 ? (
+                          <b className="admin-topnav__menu-badge">
+                            {teamChatUnread > 99 ? '99+' : teamChatUnread}
+                          </b>
+                        ) : null}
+                      </AdminNavLink>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </nav>
+              </section>
+            ))}
+          </div>
 
-          <div className="admin-nav-row__utilities">
-            <NavLink
-              to={accountItem.to}
-              className={({ isActive }) =>
-                `admin-topnav__account tone-account${isActive
-                  ? ' is-active'
-                  : ''
-                }`
-              }
-              onMouseEnter={() =>
-                preloadAdminRoute(
-                  accountItem.to,
-                )
-              }
-              onFocus={() =>
-                preloadAdminRoute(
-                  accountItem.to,
-                )
-              }
-            >
-              <UserRound size={16} />
-              <span>Account</span>
-            </NavLink>
+          <div className="admin-mobile-panel__footer">
+            <AdminNavLink
+              item={accountItem}
+              className="admin-mobile-footer-link"
+              onClick={() => setMobileOpen(false)}
+            />
 
             <button
-              className="admin-topnav__signout"
               type="button"
+              className="admin-mobile-footer-link admin-mobile-footer-link--signout"
               onClick={signOut}
-              title="Sign out"
             >
               <LogOut size={16} />
               <span>Sign out</span>
@@ -795,6 +890,49 @@ export default function AdminLayout() {
           aria-label="Close navigation"
         />
       )}
+
+      {teamChatNotice ? (
+        <div className="admin-team-chat-notice" role="status">
+          <button
+            type="button"
+            className="admin-team-chat-notice__content"
+            onClick={() => {
+              setTeamChatNotice(null);
+              navigate('/admin/team-chat', {
+                state: {
+                  sensitiveReturnTo: getLocationPath(location),
+                },
+              });
+            }}
+          >
+            <span className="admin-team-chat-notice__icon">
+              <MessageCircleMore size={18} />
+            </span>
+
+            <span className="admin-team-chat-notice__copy">
+              <strong>New team message</strong>
+              <span>
+                {teamChatNotice.senderName}
+                {teamChatNotice.preview
+                  ? `: ${teamChatNotice.preview}`
+                  : ' sent you a message.'}
+              </span>
+              {teamChatUnread > 1 ? (
+                <small>{teamChatUnread} unread messages</small>
+              ) : null}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="admin-team-chat-notice__close"
+            onClick={() => setTeamChatNotice(null)}
+            aria-label="Dismiss team chat notification"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      ) : null}
 
       <div className="admin-workspace">
         <main className="admin-main">

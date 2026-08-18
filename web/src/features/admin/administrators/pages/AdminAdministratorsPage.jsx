@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import AdminSensitiveAccessGate from '../../shared/components/AdminSensitiveAccessGate';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
@@ -320,8 +320,10 @@ function InviteAdministratorModal({
  */
 export default function AdminAdministratorsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [accessToken, setAccessToken] = useState('');
+  const [accessGateOpen, setAccessGateOpen] = useState(true);
 
   const [data, setData] = useState({
     administrators: [],
@@ -354,6 +356,7 @@ export default function AdminAdministratorsPage() {
    */
   const lockWorkspace = useCallback(() => {
     setAccessToken('');
+    setAccessGateOpen(true);
 
     setData({
       administrators: [],
@@ -451,6 +454,16 @@ export default function AdminAdministratorsPage() {
     [data.administrators],
   );
 
+  const currentAdminInitials = String(
+    currentAdmin?.fullName || 'Administrator',
+  )
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
+
   /**
    * Normalized search value used by both administrator
    * and invitation filters.
@@ -537,6 +550,7 @@ export default function AdminAdministratorsPage() {
     if (verificationResult?.workspace) {
       applyWorkspace(verificationResult.workspace);
       setAccessToken(token);
+      setAccessGateOpen(false);
       setNotice('Administrator workspace unlocked.');
       return;
     }
@@ -548,6 +562,7 @@ export default function AdminAdministratorsPage() {
 
       applyWorkspace(payload);
       setAccessToken(token);
+      setAccessGateOpen(false);
       setNotice('Administrator workspace unlocked.');
     } catch (requestError) {
       setError(
@@ -732,111 +747,154 @@ export default function AdminAdministratorsPage() {
    * currently protected by the sensitive-access gate.
    */
   const locked = !accessToken;
+  const gateVisible = locked && accessGateOpen;
+
+  const closeAccessGate = useCallback(() => {
+    const currentPath = `${location.pathname}${location.search || ''}${location.hash || ''}`;
+    const returnTo = location.state?.sensitiveReturnTo;
+
+    if (returnTo && returnTo !== currentPath) {
+      navigate(returnTo, { replace: true });
+      return;
+    }
+
+    navigate('/admin/dashboard', { replace: true });
+  }, [location.hash, location.pathname, location.search, location.state, navigate]);
+
+  const handleLockedPageClick = useCallback(
+    (event) => {
+      if (!locked || accessGateOpen) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setAccessGateOpen(true);
+    },
+    [locked, accessGateOpen],
+  );
 
   return (
     <>
       <div
-        className={`admin-page admin-administrators-page admin-sensitive-page-content ${locked ? 'is-sensitive-locked' : ''
+        className={`admin-page admin-administrators-page admin-sensitive-page-content ${gateVisible ? 'is-sensitive-locked' : ''
           }`}
-        aria-hidden={locked ? 'true' : undefined}
+        aria-hidden={gateVisible ? 'true' : undefined}
+        onClickCapture={handleLockedPageClick}
       >
-        <section className="admin-hero admin-administrators-hero">
-          <div>
-            <span className="admin-hero__eyebrow">
-              <ShieldCheck size={15} /> Identity & access
-            </span>
+        <section className="admin-administrators-overview">
+          <div className="admin-hero admin-administrators-hero">
+            <div className="admin-administrators-hero__copy">
+              <span className="admin-hero__eyebrow">
+                <ShieldCheck size={15} /> Identity & access
+              </span>
 
-            <h2>Administrators</h2>
+              <h2>Administrators</h2>
 
-            <p>
-              Manage trusted staff identities and private administrator
-              invitations without mixing them with Normal or Premium users.
-            </p>
+              <p>
+                Manage trusted staff identities and private administrator
+                invitations without mixing them with Normal or Premium users.
+              </p>
+
+              <div className="admin-administrators-hero__actions">
+                <button
+                  type="button"
+                  className="admin-btn"
+                  onClick={() =>
+                    load({
+                      quiet: true,
+                    })
+                  }
+                  disabled={refreshing || locked}
+                >
+                  <RefreshCw
+                    size={15}
+                    className={refreshing ? 'admin-spin' : ''}
+                  />
+                  Refresh
+                </button>
+
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--primary"
+                  onClick={openInvite}
+                  disabled={locked}
+                >
+                  <Send size={15} />
+                  Invite administrator
+                </button>
+              </div>
+            </div>
+
+            <div
+              className="admin-administrators-hero__visual"
+              aria-hidden="true"
+            >
+              <span className="admin-administrators-hero__orb" />
+              <span className="admin-administrators-hero__dots" />
+              <span className="admin-administrators-hero__wave admin-administrators-hero__wave--one" />
+              <span className="admin-administrators-hero__wave admin-administrators-hero__wave--two" />
+
+              <div className="admin-administrators-hero__shield">
+                <div className="admin-administrators-hero__shield-core">
+                  <UsersRound size={36} strokeWidth={1.65} />
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="admin-administrators-hero__actions">
-            <button
-              type="button"
-              className="admin-btn"
-              onClick={() =>
-                load({
-                  quiet: true,
-                })
-              }
-              disabled={refreshing || locked}
-            >
-              <RefreshCw
-                size={15}
-                className={refreshing ? 'admin-spin' : ''}
-              />
-              Refresh
-            </button>
+          <section className="admin-stat-grid admin-administrators-stats">
+            <article className="admin-stat">
+              <span className="admin-stat__icon">
+                <UsersRound size={20} />
+              </span>
 
-            <button
-              type="button"
-              className="admin-btn admin-btn--primary"
-              onClick={openInvite}
-              disabled={locked}
-            >
-              <Send size={15} />
-              Invite administrator
-            </button>
-          </div>
-        </section>
+              <strong>
+                {data.summary.activeAdministrators ?? 0}
+              </strong>
 
-        <section className="admin-stat-grid admin-administrators-stats">
-          <article className="admin-stat">
-            <span className="admin-stat__icon">
-              <UsersRound size={18} />
-            </span>
+              <small>Active administrators</small>
+              <i>Staff</i>
+            </article>
 
-            <strong>
-              {data.summary.activeAdministrators ?? 0}
-            </strong>
+            <article className="admin-stat">
+              <span className="admin-stat__icon">
+                <Mail size={20} />
+              </span>
 
-            <small>Active administrators</small>
-            <i>Staff</i>
-          </article>
+              <strong>
+                {data.summary.pendingInvitations ?? 0}
+              </strong>
 
-          <article className="admin-stat">
-            <span className="admin-stat__icon">
-              <Mail size={18} />
-            </span>
+              <small>Pending invitations</small>
+              <i>24h expiry</i>
+            </article>
 
-            <strong>
-              {data.summary.pendingInvitations ?? 0}
-            </strong>
+            <article className="admin-stat">
+              <span className="admin-stat__icon">
+                <BadgeCheck size={20} />
+              </span>
 
-            <small>Pending invitations</small>
-            <i>24h expiry</i>
-          </article>
+              <strong>{verifiedCount}</strong>
+              <small>Verified staff identities</small>
+              <i>Protected</i>
+            </article>
 
-          <article className="admin-stat">
-            <span className="admin-stat__icon">
-              <BadgeCheck size={18} />
-            </span>
+            <article className="admin-stat admin-administrator-current-stat">
+              <span className="admin-stat__avatar">
+                {currentAdminInitials || 'A'}
+              </span>
 
-            <strong>{verifiedCount}</strong>
-            <small>Verified staff identities</small>
-            <i>Protected</i>
-          </article>
+              <strong
+                title={
+                  currentAdmin?.fullName || 'Administrator'
+                }
+              >
+                {currentAdmin?.fullName || 'Administrator'}
+              </strong>
 
-          <article className="admin-stat admin-administrator-current-stat">
-            <span className="admin-stat__icon">
-              <UserRoundCog size={18} />
-            </span>
-
-            <strong
-              title={
-                currentAdmin?.fullName || 'Administrator'
-              }
-            >
-              {currentAdmin?.fullName || 'Administrator'}
-            </strong>
-
-            <small>Your staff identity</small>
-            <i>Current</i>
-          </article>
+              <small>Your staff identity</small>
+              <i>Current</i>
+            </article>
+          </section>
         </section>
 
         {error ? (
@@ -1027,8 +1085,8 @@ export default function AdminAdministratorsPage() {
                         <td>
                           <span
                             className={`admin-status ${admin.isVerified
-                                ? ''
-                                : 'admin-status--neutral'
+                              ? ''
+                              : 'admin-status--neutral'
                               }`}
                           >
                             {admin.isVerified ? (
@@ -1067,6 +1125,11 @@ export default function AdminAdministratorsPage() {
                               onClick={() =>
                                 navigate(
                                   `/admin/team-chat?adminId=${admin.id}`,
+                                  {
+                                    state: {
+                                      fromAdministrators: true,
+                                    },
+                                  },
                                 )
                               }
                             >
@@ -1252,12 +1315,13 @@ export default function AdminAdministratorsPage() {
         </section>
       </div>
 
-      {locked ? (
+      {gateVisible ? (
         <AdminSensitiveAccessGate
           scope={ADMINISTRATORS_SCOPE}
           title="Unlock administrator management"
           description="Confirm your current administrator password before viewing staff identities or managing administrator invitations."
           onVerified={onVerified}
+          onClose={closeAccessGate}
         />
       ) : null}
 
