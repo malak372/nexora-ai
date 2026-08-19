@@ -23,6 +23,7 @@ import type {
   IdeaGenerationNlpContext,
 } from '../../types/idea-generation-context.type';
 import { classifyDirectCommunityEvidence } from '../../../../nlp/common/utils/community-evidence.util';
+import { RequestEvidenceAlignmentUtil } from '../../utils/request-evidence-alignment.util';
 
 /**
  * Enriches cleaned NLP output with evidence-grounded opportunities extracted
@@ -59,8 +60,22 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       };
     }
 
+    const plannedRequest = Boolean(
+      context.requestDescription?.trim() && context.collectionPlan,
+    );
+    const hasSelectedDomainEvidence =
+      this.hasAnyRetainedSelectedDomainEvidence(context);
+    const hasRequestAlignedEvidence = plannedRequest
+      ? this.hasAnyRetainedRequestAlignedEvidence(context)
+      : hasSelectedDomainEvidence;
+    const skipOnlineAnalysisForUngroundedPlannedRequest =
+      plannedRequest && (!hasSelectedDomainEvidence || !hasRequestAlignedEvidence);
+
     let baseAnalysis: CommunityAiAnalysis;
-    if (context.nlp.totalTextsAnalyzed > 0) {
+    if (
+      context.nlp.totalTextsAnalyzed > 0 &&
+      !skipOnlineAnalysisForUngroundedPlannedRequest
+    ) {
       try {
         baseAnalysis = await this.communityAiAnalysisService.analyze(context);
       } catch (error: unknown) {
@@ -91,7 +106,19 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         };
       }
     } else {
-      baseAnalysis = this.buildFallbackAnalysis(context);
+      const fallback = this.buildFallbackAnalysis(context);
+      baseAnalysis = skipOnlineAnalysisForUngroundedPlannedRequest
+        ? {
+            ...fallback,
+            summary:
+              'The planned first-pass collection retained no request-aligned selected-domain evidence, so online Community AI enrichment was skipped and the requester-defined validation direction was preserved without fabricating demand.',
+            qualityWarnings: [
+              'No request-aligned selected-domain evidence survived the first-pass grounding guard; unrelated domain mentions were excluded from Community AI synthesis.',
+            ],
+            fallbackReason:
+              'No request-aligned selected-domain evidence was retained for the planned requester workflow.',
+          }
+        : fallback;
     }
     const analysis = this.ensureSelectedDomainCoverage(context, baseAnalysis);
 
@@ -279,6 +306,42 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           : []),
       ],
     };
+  }
+
+  private hasAnyRetainedRequestAlignedEvidence(
+    context: IdeaGenerationContext,
+  ): boolean {
+    const description = context.requestDescription?.trim();
+    if (!description) return true;
+
+    const samples = context.domainEvidence.flatMap((profile) => [
+      ...(Array.isArray(profile.samplePosts) ? profile.samplePosts : []),
+      ...(Array.isArray(profile.sampleComments) ? profile.sampleComments : []),
+    ]);
+
+    return samples.some((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return false;
+      }
+      const text = typeof entry.text === 'string' ? entry.text : '';
+      return RequestEvidenceAlignmentUtil.isAligned({
+        requestDescription: description,
+        evidenceText: text,
+        plannedQueries: context.collectionPlan?.searchQueries ?? [],
+      });
+    });
+  }
+
+  private hasAnyRetainedSelectedDomainEvidence(
+    context: IdeaGenerationContext,
+  ): boolean {
+    const domainIds = context.selectedDomains.length
+      ? context.selectedDomains.map((domain) => domain.id)
+      : [context.domainId];
+
+    return domainIds.some((domainId) =>
+      this.hasRetainedDomainEvidence(context, domainId),
+    );
   }
 
   private hasRetainedDomainEvidence(

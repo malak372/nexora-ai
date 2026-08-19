@@ -70,12 +70,176 @@ export class CollectorQueryBuilderUtil {
       'AI integration',
     ],
     agriculture: [
-      'irrigation scheduling',
       'crop monitoring',
-      'farm inventory',
-      'harvest planning',
       'soil monitoring',
-      'farmer marketplace',
+      'weather forecasting',
+      'crop health imagery',
+      'crop disease detection',
+      'field prioritization',
+      'irrigation scheduling',
+      'harvest planning',
+      'agricultural resource optimization',
+      'farm inventory',
+    ],
+    'book club reading group management': [
+      'book club reading schedule',
+      'member reading progress tracking',
+      'book club meeting coordination',
+      'discussion topic history',
+      'shared reading notes',
+      'book suggestion voting',
+      'missed meeting catch up',
+      'reading group section completion',
+    ],
+    'book club & reading group management': [
+      'book club reading schedule',
+      'member reading progress tracking',
+      'book club meeting coordination',
+      'discussion topic history',
+      'shared reading notes',
+      'book suggestion voting',
+      'missed meeting catch up',
+      'reading group section completion',
+    ],
+    'recipe culinary knowledge management': [
+      'saved recipe organization',
+      'recipe ingredient substitutions',
+      'personal recipe changes',
+      'cooking result history',
+      'family recipe preferences',
+      'recipe search and retrieval',
+      'recipe version history',
+      'cooking notes consolidation',
+    ],
+    'recipe & culinary knowledge management': [
+      'saved recipe organization',
+      'recipe ingredient substitutions',
+      'personal recipe changes',
+      'cooking result history',
+      'family recipe preferences',
+      'recipe search and retrieval',
+      'recipe version history',
+      'cooking notes consolidation',
+    ],
+    'travel planning comparison': [
+      'travel accommodation price comparison',
+      'hotel activity transportation availability',
+      'travel review comparison',
+      'trip budget planning',
+      'booking platform price changes',
+      'traveler preference matching',
+    ],
+    'travel planning & comparison': [
+      'travel accommodation price comparison',
+      'hotel activity transportation availability',
+      'travel review comparison',
+      'trip budget planning',
+      'booking platform price changes',
+      'traveler preference matching',
+    ],
+    manufacturing: [
+      'machine energy consumption',
+      'idle equipment electricity waste',
+      'production energy efficiency',
+      'machine anomaly energy usage',
+      'predictive maintenance energy signal',
+      'factory cooling electricity use',
+      'production demand energy load',
+    ],
+    'internet of things': [
+      'industrial equipment telemetry',
+      'machine energy sensor monitoring',
+      'connected equipment anomaly detection',
+      'factory device telemetry',
+      'sensor data predictive maintenance',
+    ],
+    'municipal iot device security asset management': [
+      'municipal iot unauthorized device discovery',
+      'smart city sensor security visibility',
+      'traffic light firmware vulnerability',
+      'public camera unauthorized connection',
+      'city device anomaly detection',
+      'municipal connected device inventory',
+      'outdated smart city equipment security',
+    ],
+    'musical instrument repair tracking shop management': [
+      'instrument repair intake tracking',
+      'repair ticket status',
+      'technician repair notes',
+      'replacement parts tracking',
+      'instrument pickup date',
+      'repair shop paper tags',
+      'misplaced instrument repair order',
+      'customer repair status update',
+    ],
+    iot: [
+      'industrial equipment telemetry',
+      'machine energy sensor monitoring',
+      'connected equipment anomaly detection',
+      'factory device telemetry',
+      'sensor data predictive maintenance',
+    ],
+    'photography studio operations': [
+      'client booking management',
+      'photo shoot scheduling',
+      'shoot location details',
+      'shot list management',
+      'equipment preparation checklist',
+      'editing request tracking',
+      'image selection workflow',
+      'photo delivery deadline tracking',
+      'studio project coordination',
+    ],
+    'laundry dry cleaning operations': [
+      'customer garment tracking',
+      'special cleaning instruction tracking',
+      'stain treatment records',
+      'pickup deadline tracking',
+      'lost garment prevention',
+      'garment order status',
+      'paper tag replacement',
+      'customer dispute traceability',
+      'dry cleaning quality issue tracking',
+    ],
+    'laundry & dry-cleaning operations': [
+      'customer garment tracking',
+      'special cleaning instruction tracking',
+      'stain treatment records',
+      'pickup deadline tracking',
+      'lost garment prevention',
+      'garment order status',
+      'paper tag replacement',
+      'customer dispute traceability',
+      'dry cleaning quality issue tracking',
+    ],
+    'wardrobe personal fashion management': [
+      'clothing inventory tracking',
+      'closet organization',
+      'outfit planning',
+      'clothing fit tracking',
+      'cleaning and repair tracking',
+      'shoes and accessories inventory',
+      'shopping receipt wardrobe import',
+      'duplicate clothing purchase prevention',
+      'seasonal wardrobe planning',
+    ],
+    'tailoring custom apparel': [
+      'customer measurement records',
+      'fabric selection tracking',
+      'alteration request history',
+      'fitting appointment scheduling',
+      'custom clothing order tracking',
+      'returning customer measurements',
+      'garment design notes',
+      'made to measure workflow',
+    ],
+    tailoring: [
+      'customer measurement records',
+      'fabric selection tracking',
+      'alteration request history',
+      'fitting appointment scheduling',
+      'custom clothing order tracking',
+      'returning customer measurements',
     ],
     'e commerce': [
       'checkout payment',
@@ -109,6 +273,15 @@ export class CollectorQueryBuilderUtil {
       'battery monitoring',
       'meter reading',
     ],
+    environment: [
+      'air quality monitoring',
+      'air pollution measurement',
+      'emissions tracking',
+      'environmental sensor data',
+      'pollution hotspot detection',
+      'waste monitoring',
+      'environmental incident reporting',
+    ],
     education: [
       'student homework',
       'assignment submission',
@@ -125,6 +298,29 @@ export class CollectorQueryBuilderUtil {
       'reconciliation',
       'cash flow tracking',
     ],
+    government: [
+      'permit approval status',
+      'license processing delay',
+      'cross department record verification',
+      'official record version conflict',
+      'citizen document status',
+      'public contract approval tracking',
+    ],
+    legaltech: [
+      'contract verification',
+      'ownership record conflict',
+      'legal document status',
+      'permit record verification',
+      'cross department approval traceability',
+      'official record dispute',
+    ],
+    blockchain: [
+      'record provenance verification',
+      'tamper evident audit trail',
+      'document version integrity',
+      'approval history verification',
+      'distributed ledger record audit',
+    ],
     healthcare: [
       'patient appointment',
       'clinical workflow',
@@ -133,13 +329,82 @@ export class CollectorQueryBuilderUtil {
       'patient communication',
       'care coordination',
     ],
+    'beauty salon management': [
+      'salon appointment scheduling',
+      'stylist availability',
+      'client preference history',
+      'service history sharing',
+      'salon product inventory',
+      'loyalty history',
+      'double booking prevention',
+      'special request tracking',
+    ],
+    'pet care management': [
+      'pet vaccination tracking',
+      'grooming appointment',
+      'feeding routine',
+      'pet care history',
+      'veterinarian record sharing',
+      'pet sitter instructions',
+      'shared family pet care',
+    ],
+    'event planning management': [
+      'wedding vendor coordination',
+      'event booking conflict',
+      'venue scheduling',
+      'photographer scheduling',
+      'catering preference tracking',
+      'guest list coordination',
+      'event budget tracking',
+      'last minute event changes',
+    ],
+    'funeral memorial services': [
+      'funeral service coordination',
+      'memorial ceremony scheduling',
+      'burial preference tracking',
+      'funeral guest communication',
+      'floral arrangement coordination',
+      'funeral transportation coordination',
+      'memorial document checklist',
+      'funeral home family requests',
+    ],
+    'media entertainment': [
+      'band rehearsal scheduling',
+      'song version coordination',
+      'set list synchronization',
+      'recording version management',
+      'music collaboration',
+      'rehearsal equipment checklist',
+      'practice note sharing',
+    ],
+    'media & entertainment': [
+      'band rehearsal scheduling',
+      'song version coordination',
+      'set list synchronization',
+      'recording version management',
+      'music collaboration',
+      'rehearsal equipment checklist',
+      'practice note sharing',
+    ],
+    'moving home organization': [
+      'packed belongings tracking',
+      'room assignment coordination',
+      'fragile item labeling',
+      'moving task checklist',
+      'moving service appointment',
+      'unpacking item search',
+      'household purchase checklist',
+      'family moving coordination',
+    ],
     'sports & fitness': [
-      'exercise calorie adjustment',
-      'nutrition tracking',
-      'workout synchronization',
-      'macro targets',
-      'activity import',
-      'training plan',
+      'training load monitoring',
+      'athlete performance tracking',
+      'overtraining detection',
+      'athlete recovery monitoring',
+      'injury risk monitoring',
+      'wearable workout data integration',
+      'fitness equipment telemetry',
+      'coach performance dashboard',
     ],
   };
 
@@ -182,9 +447,343 @@ export class CollectorQueryBuilderUtil {
     const knownFamilies =
       this.DOMAIN_PROBLEM_FAMILIES[domainName] ??
       this.findClosestKnownFamilies(domainName);
+    const userIntent = this.normalize([domainName, ...(input.userKeywords ?? []), ...userTerms].join(' '));
+    const paymentFraudIntent =
+      /\b(?:fraud|fraudulent|suspicious transaction|transaction risk|false positive|false-positive|legitimate (?:customer|user|transaction)|payment fraud|card fraud|account behavior|security alert triage)\b/iu.test(
+        userIntent,
+      );
+    const sportsPerformanceIntent =
+      /\b(?:gym|gyms|sports training|athlete|athletes|coach|coaches|workout data|training load|overtraining|recovery|injury risk|performance tracking|wearable devices?|fitness equipment|training intensity)\b/iu.test(
+        userIntent,
+      );
+    const funeralIntent =
+      /\b(?:funeral|funerals|memorial service|memorial services|burial|burial preference|funeral home|bereaved|ceremony schedule|floral arrangement)\b/iu.test(
+        userIntent,
+      );
+    const remotePatientIntent =
+      /\b(?:remote patient monitoring|post[- ]discharge|after discharge|home[- ]care|home care|vital signs|patient deterioration|readmission|recovery monitoring)\b/iu.test(
+        userIntent,
+      );
+    const musicCollaborationIntent =
+      /\b(?:band|bands|musician|musicians|rehearsal|rehearsals|song versions?|song charts?|recordings?|set lists?|setlists?|practice notes?|music collaboration)\b/iu.test(
+        userIntent,
+      );
+    const agricultureFieldIntent =
+      /\b(?:agriculture|agricultural|farm|farming|crop|crops|soil|weather|harvest|irrigation|disease|field|fields)\b/iu.test(
+        userIntent,
+      );
+    const urbanMobilityEnvironmentIntent =
+      /\b(?:traffic|congestion|public transport|public transportation|transit|bus|train|road incidents?|urban mobility)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:air pollution|air quality|emissions?|environmental|pollution)\b/iu.test(
+        userIntent,
+      );
+    const householdMovingIntent =
+      /\b(?:moving home|moving to a new home|new home|house move|packed belongings|packing|unpacking|room assignments?|fragile items?|moving tasks?)\b/iu.test(
+        userIntent,
+      );
+    const wardrobeIntent =
+      /\b(?:wardrobe|closet|clothes|clothing|shoes|footwear|accessories|outfit|outfits)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:inventory|remember|fit|fits|sizing|cleaning|laundry|repair|maintenance|photos?|receipts?|duplicate purchases?|unused items?|occasion|weather|outfit|coordinate|coordination)\b/iu.test(
+        userIntent,
+      );
+    const bookClubIntent =
+      /\b(?:book club|book clubs|reading group|reading groups|reading circle|reading circles)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:reading schedules?|meeting dates?|member progress|discussion topics?|book suggestions?|shared notes?|finished each section|missed meetings?|falling behind)\b/iu.test(
+        userIntent,
+      );
+    const recipeKnowledgeIntent =
+      /\b(?:recipe|recipes|cooking|home cook|ingredient substitutions?|personal changes?|family preferences?|cooking results?)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:save|saved|social media|websites?|handwritten notes?|messages?|substitutions?|changes?|results?|preferences?|search|recreate|wasted ingredients?)\b/iu.test(
+        userIntent,
+      );
+    const travelComparisonIntent =
+      /\b(?:travelers?|travel|trip planning|accommodations?|hotels?|activities|transportation|local experiences?|booking websites?)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:compare|comparison|prices?|availability|reviews?|preferences?|budget|different platforms?|booking platforms?|missed opportunities?|expenses?)\b/iu.test(
+        userIntent,
+      );
+    const industrialEnergyIntent =
+      /\b(?:manufacturing plants?|factories|factory|production lines?|machines?|industrial equipment)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:energy costs?|energy consumption|electricity|power consumption|idle consumption|cooling systems?|production demand|waste energy|energy waste|unusual consumption|predictive maintenance|equipment problems?|telemetry|connected equipment)\b/iu.test(
+        userIntent,
+      );
+    const municipalDeviceSecurityIntent =
+      /\b(?:smart cit(?:y|ies)|municipal|city technology|traffic lights?|parking sensors?|public cameras?|environmental monitors?|connected city devices?|iot devices?)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:security|unauthorized|outdated|firmware|compromised|device behavior|anomal|vulnerab|unmanaged|rogue device|security standards?)\w*\b/iu.test(
+        userIntent,
+      );
+    const musicalInstrumentRepairIntent =
+      /\b(?:musical instruments?|instrument repair|repair shop|luthier|guitar repair|violin repair|piano repair)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:repair|technician|replacement parts?|pickup|paper tags?|repair progress|repair status|notes?|intake)\b/iu.test(
+        userIntent,
+      );
+
+    const photographyStudioIntent =
+      /\b(?:photography studio|photography studios|photo studio|photo studios|professional photographer|professional photographers|commercial photographer|portrait studio|photography|photo shoot|photoshoot)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:client bookings?|shot lists?|editing requests?|equipment preparation|camera gear|image selections?|photo selections?|delivery deadlines?|location details?|shoot schedule|session schedule)\b/iu.test(
+        userIntent,
+      );
+    const crossBorderAgreementIntent =
+      /\b(?:cross[- ]border|international payments?|business agreements?|contract terms?|contractual conditions?|settlements?)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:payments?|settlements?|contracts?|agreements?|approvals?|verification documents?|reconciliation|disputes?|transaction records?)\b/iu.test(
+        userIntent,
+      );
+    const laundryOperationsIntent =
+      /\b(?:laundry shop|laundry shops|laundromat|laundromats|dry cleaning|dry-cleaning|dry cleaner|dry cleaners|laundry service|garment cleaning|wash and fold)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:garments?|clothes|stains?|cleaning instructions?|pickup|pick up|deadlines?|treatment|paper tags?|lost|missing|delayed|customer disputes?|order status)\b/iu.test(
+        userIntent,
+      );
+    const legalDocumentComplianceIntent =
+      /\b(?:legal|regulations?|contracts?|applications?|case[- ]related documents?|legal documents?|rules?|requirements?|compliance)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:search|compare|check|missing|inconsisten|delay|stored across|multiple systems|correct rules)\w*\b/iu.test(
+        userIntent,
+      );
 
     const naturalTemplates =
-      domainName.includes('smart cit')
+      urbanMobilityEnvironmentIntent &&
+      /(?:smart cit|transport|environment)/u.test(domainName)
+        ? [
+            'traffic congestion public transport air pollution',
+            'traffic incidents transit delays air quality',
+            'urban mobility emissions peak hours',
+            'traffic transit environmental data fragmented',
+            'public transport reliability congestion pollution',
+            'city traffic decisions emissions impact',
+          ]
+        : householdMovingIntent &&
+            /(?:moving|home organization|household)/u.test(domainName)
+          ? [
+              'moving home packed belongings room assignment',
+              'fragile items labels lost during move',
+              'moving tasks service appointments forgotten',
+              'family moving checklist not synchronized',
+              'unpacking essential items hard to find',
+              'duplicate purchases after moving home',
+            ]
+        : bookClubIntent &&
+            /(?:book club|reading group|reading community)/u.test(domainName)
+          ? [
+              'book club reading schedule member progress problem',
+              'reading group meeting date coordination missed meeting',
+              'book club discussion topics shared notes repeated conversation',
+              'reading group members falling behind progress tracking',
+              'book suggestions voting discussion history book club',
+              'reading apps group chat notes scattered book club',
+            ]
+        : recipeKnowledgeIntent &&
+            /(?:recipe|culinary|cooking)/u.test(domainName)
+          ? [
+              'saved recipes scattered across apps hard to find',
+              'recipe ingredient substitutions personal changes forgotten',
+              'family recipe preferences notes not stored together',
+              'cooking results recipe adjustments hard to recreate',
+              'recipe collection search organization problem home cook',
+              'wasted ingredients forgotten recipe changes complaint',
+            ]
+        : travelComparisonIntent &&
+            /(?:tourism|travel|e commerce|e-commerce|artificial intelligence)/u.test(domainName)
+          ? [
+              'travel accommodation price comparison across booking platforms',
+              'hotel activity transportation availability comparison problem',
+              'travel price changes budget planning reviews scattered',
+              'multi platform trip planning traveler preferences difficult',
+              'travel booking missed deals price availability complaint',
+              'trip planning reviews activities transport budget comparison',
+            ]
+        : industrialEnergyIntent &&
+            /(?:manufactur|energy|internet of things|\biot\b)/u.test(domainName)
+          ? [
+              'factory machine idle energy consumption waste',
+              'manufacturing electricity use low production demand',
+              'industrial equipment abnormal power consumption maintenance',
+              'machine energy monitoring predictive maintenance anomaly',
+              'factory cooling system electricity waste production',
+              'connected equipment telemetry energy efficiency manufacturing',
+            ]
+        : municipalDeviceSecurityIntent &&
+            /(?:smart cit|internet of things|iot|cybersecurity|municipal)/u.test(domainName)
+          ? [
+              'municipal iot unauthorized device security visibility',
+              'smart city sensor outdated firmware vulnerability',
+              'traffic light public camera unauthorized connection',
+              'city connected device unusual behavior detection',
+              'municipal device inventory unmanaged iot security',
+              'smart city infrastructure compromised device incident',
+            ]
+        : musicalInstrumentRepairIntent &&
+            /(?:musical instrument|repair tracking|shop management|luthier)/u.test(domainName)
+          ? [
+              'instrument repair shop lost repair ticket',
+              'musical instrument repair paper tags tracking problem',
+              'guitar repair technician notes parts status',
+              'repair shop instrument pickup date delay',
+              'instrument repair replacement parts ordered wrong',
+              'customer waiting repair status instrument shop',
+            ]
+        : photographyStudioIntent &&
+            /(?:photography|photo studio|studio operations)/u.test(domainName)
+          ? [
+              'photography studio booking details scattered messages',
+              'photo shoot shot list missed client request',
+              'photographer forgot equipment before client shoot',
+              'editing requests image selections hard to track',
+              'photo delivery deadline missed studio workflow',
+              'shoot location details calendar notes disconnected',
+            ]
+        : crossBorderAgreementIntent &&
+            /(?:blockchain|finance|legaltech|legal tech)/u.test(domainName)
+          ? [
+              'cross border payment settlement verification dispute',
+              'contract conditions approval payment reconciliation',
+              'business agreement records stored across systems',
+              'payment contract verification documents mismatch',
+              'international settlement delays contract dispute',
+              'transaction records approvals agreement reconciliation',
+            ]
+        : laundryOperationsIntent &&
+            /(?:laundry|dry cleaning|dry-cleaning)/u.test(domainName)
+          ? [
+              'laundry lost garment tracking problem',
+              'dry cleaning special instructions missed',
+              'laundry stain treatment details not shared',
+              'laundry pickup deadline delayed order',
+              'paper garment tags lost dry cleaner',
+              'dry cleaning order status customer dispute',
+            ]
+        : wardrobeIntent &&
+            /(?:wardrobe|fashion|closet|clothing)/u.test(domainName)
+          ? [
+              'clothing inventory hard to remember what I own',
+              'wardrobe duplicate purchases forgotten clothes',
+              'closet cleaning repair status hard to track',
+              'outfit planning weather occasion difficult',
+              'shoes accessories inventory scattered photos receipts',
+              'wardrobe items unused because hard to coordinate outfits',
+            ]
+        : legalDocumentComplianceIntent &&
+            /(?:government|legaltech|legal tech|artificial intelligence)/u.test(domainName)
+          ? [
+              'legal document compliance missing requirements review',
+              'regulation contract application requirements hard to compare',
+              'case documents inconsistencies discovered late',
+              'legal documents stored across systems compliance',
+              'application documents missing requirements delayed approval',
+              'legal office document review rules comparison problem',
+            ]
+        : funeralIntent || domainName.includes('funeral') || domainName.includes('memorial')
+        ? [
+            'funeral family coordination missed requests',
+            'memorial ceremony scheduling conflict',
+            'funeral home guest communication problem',
+            'burial preference not shared family',
+            'funeral floral transportation coordination',
+            'memorial service provider duplicated arrangements',
+          ]
+        : musicCollaborationIntent &&
+            /(?:media|entertainment|music)/u.test(domainName)
+          ? [
+              'band rehearsal song version mismatch',
+              'set list update not shared band members',
+              'rehearsal recording version confusion',
+              'band equipment checklist item missing',
+              'practice notes not synchronized musicians',
+              'rehearsal schedule change missed band',
+            ]
+        : agricultureFieldIntent && domainName.includes('agriculture')
+          ? [
+              'soil weather crop health data fragmented',
+              'crop disease detection delayed field',
+              'weather forecast irrigation decision problem',
+              'field prioritization crop risk difficult',
+              'crop health imagery not synchronized',
+              'farm resource usage difficult to optimize',
+            ]
+        : sportsPerformanceIntent &&
+            /(?:sports|fitness|internet of things|artificial intelligence)/u.test(domainName)
+          ? [
+              'athlete training load monitoring overtraining',
+              'wearable workout data coach integration problem',
+              'athlete recovery data missed injury risk',
+              'fitness equipment wearable data synchronization',
+              'coach performance monitoring training intensity',
+              'sports injury risk early warning wearable data',
+            ]
+        : remotePatientIntent && domainName.includes('healthcare')
+          ? [
+              'remote patient monitoring after discharge missed deterioration',
+              'home care vital signs not reviewed in time',
+              'patient monitoring devices data not synchronized',
+              'remote patient alert prioritization problem',
+              'post discharge monitoring delayed intervention',
+            ]
+        : paymentFraudIntent &&
+            /(?:finance|cybersecurity|artificial intelligence|e commerce|e-commerce|ecommerce)/u.test(domainName)
+          ? [
+              'payment fraud detection false positive',
+              'suspicious transaction legitimate customer blocked',
+              'transaction fraud alert triage',
+              'account behavior transaction risk scoring',
+              'fraud detection false decline customer',
+              'payment security alerts analyzed separately',
+            ]
+        : domainName.includes('beauty') || domainName.includes('salon')
+          ? [
+              'salon double booking appointment problem',
+              'stylist availability scheduling conflict',
+              'salon client preferences lost between employees',
+              'salon product inventory wasted service',
+              'beauty salon loyalty history missing',
+              'salon special requests not shared',
+            ]
+        : domainName.includes('event planning') || domainName.includes('wedding')
+        ? [
+            'wedding vendor booking conflict',
+            'venue photographer schedule conflict',
+            'catering preference change not shared',
+            'guest list update missed by vendor',
+            'event budget unexpected vendor expense',
+            'last minute event change coordination problem',
+          ]
+        : domainName.includes('pet care')
+          ? [
+              'pet vaccination appointment missed',
+              'grooming appointment forgotten',
+              'feeding routine inconsistent between family members',
+              'pet care history hard to share with veterinarian',
+              'pet sitter missing care instructions',
+            ]
+          : domainName.includes('healthcare')
+            ? [
+                'remote patient monitoring after discharge missed deterioration',
+                'home care vital signs not reviewed in time',
+                'patient monitoring devices data not synchronized',
+                'remote patient alert prioritization problem',
+                'post discharge monitoring delayed intervention',
+              ]
+            : domainName.includes('smart cit')
         ? [
             'parking status is wrong',
             'bus arrival data not updating',
@@ -243,18 +842,27 @@ export class CollectorQueryBuilderUtil {
   static buildStackOverflowTechnicalQueries(input: {
     readonly domainName?: string | null;
     readonly userKeywords?: readonly string[];
+    readonly plannedQueries?: readonly string[];
     readonly maxQueries?: number;
   }): string[] {
     const domainName = this.normalize(input.domainName ?? '');
     const maxQueries = Math.max(1, input.maxQueries ?? 3);
+    const plannedTerms = this.cleanTerms(input.plannedQueries ?? [])
+      .map((term) => this.compactPlannedSourceQuery(term, 7))
+      .filter(Boolean);
+
+    if (plannedTerms.length > 0) {
+      return this.unique(plannedTerms).slice(0, maxQueries);
+    }
+
     const balancedTerms = this.cleanTerms(input.userKeywords ?? [])
-      .filter((term) => !this.isGenericProductExpansion(term))
       .map((term) => this.expandKnownDomainAnchor(term))
+      .filter((term) => !this.isGenericProductExpansion(term))
       .filter((term) => !/(?:user complaint problem|not working difficult confusing|review missing feature)$/iu.test(term))
       .filter((term) => !/^(?:coherent cross-domain workflow|cross-domain workflow)/iu.test(term))
       .slice(0, maxQueries);
 
-    if (balancedTerms.length > 1) {
+    if (balancedTerms.length > 0) {
       return this.unique(
         balancedTerms.map((term, index) =>
           index % 3 === 0
@@ -309,18 +917,27 @@ export class CollectorQueryBuilderUtil {
   static buildGitHubFlexibleQueries(input: {
     readonly domainName?: string | null;
     readonly userKeywords?: readonly string[];
+    readonly plannedQueries?: readonly string[];
     readonly maxQueries?: number;
   }): string[] {
     const domainName = this.normalize(input.domainName ?? '');
     const maxQueries = Math.max(1, input.maxQueries ?? 3);
+    const plannedTerms = this.cleanTerms(input.plannedQueries ?? [])
+      .map((term) => this.compactPlannedSourceQuery(term, 7))
+      .filter(Boolean);
+
+    if (plannedTerms.length > 0) {
+      return this.unique(plannedTerms).slice(0, maxQueries);
+    }
+
     const balancedTerms = this.cleanTerms(input.userKeywords ?? [])
-      .filter((term) => !this.isGenericProductExpansion(term))
       .map((term) => this.expandKnownDomainAnchor(term))
+      .filter((term) => !this.isGenericProductExpansion(term))
       .filter((term) => !/(?:user complaint problem|not working difficult confusing|review missing feature)$/iu.test(term))
       .filter((term) => !/^(?:coherent cross-domain workflow|cross-domain workflow)/iu.test(term))
       .slice(0, maxQueries);
 
-    if (balancedTerms.length > 1) {
+    if (balancedTerms.length > 0) {
       return this.unique(
         balancedTerms.map((term, index) =>
           index % 3 === 0
@@ -366,6 +983,32 @@ export class CollectorQueryBuilderUtil {
     return this.unique(queries).slice(0, maxQueries);
   }
 
+  private static compactPlannedSourceQuery(
+    value: string,
+    maxWords: number,
+  ): string {
+    const sourceNoise = new Set([
+      'forum',
+      'forums',
+      'discussion',
+      'discussions',
+      'review',
+      'reviews',
+      'complaint',
+      'complaints',
+      'report',
+      'reports',
+      'regarding',
+      'about',
+    ]);
+    const words = this.normalize(value)
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((word) => !sourceNoise.has(word));
+
+    return words.slice(0, Math.max(3, maxWords)).join(' ').trim();
+  }
+
   /**
    * YouTube queries always retain a domain anchor and a review/problem intent.
    * This prevents broad words such as arrival, delivery, or app from returning
@@ -380,12 +1023,12 @@ export class CollectorQueryBuilderUtil {
     const maxQueries = Math.max(1, input.maxQueries ?? 3);
     const balancedDomainTerms = this.cleanTerms(input.userKeywords ?? [])
       .filter((term) => !/^(?:coherent cross-domain workflow|cross-domain workflow)/iu.test(term))
-      .filter((term) => !this.isGenericProductExpansion(term))
       .map((term) => this.expandKnownDomainAnchor(term))
+      .filter((term) => !this.isGenericProductExpansion(term))
       .filter((term) => !/(?:user complaint problem|not working difficult confusing|review missing feature)$/iu.test(term))
       .slice(0, maxQueries);
 
-    if (balancedDomainTerms.length > 1) {
+    if (balancedDomainTerms.length > 0) {
       return this.unique(
         balancedDomainTerms.map((term, index) =>
           index % 3 === 0
@@ -469,18 +1112,29 @@ export class CollectorQueryBuilderUtil {
   private static expandKnownDomainAnchor(value: string): string {
     const normalized = this.normalize(value);
     const anchors: Readonly<Record<string, string>> = {
-      agriculture: 'farming irrigation crop',
+      agriculture: 'farming soil weather crop health',
       'e commerce': 'checkout marketplace order',
       'e-commerce': 'checkout marketplace order',
       ecommerce: 'checkout marketplace order',
       energy: 'energy monitoring electricity',
+      environment: 'air quality pollution emissions environmental sensor',
       education: 'student homework assignment',
       finance: 'invoice expense reconciliation',
       healthcare: 'patient clinical workflow',
+      'funeral memorial services': 'funeral memorial burial ceremony family',
+      'beauty salon management': 'salon appointment stylist client preference',
+      'pet care management': 'pet vaccination grooming veterinarian',
+      'event planning management': 'wedding venue vendor schedule',
+      'sports & fitness': 'athlete training load recovery wearable',
+      'internet of things': 'connected device sensor telemetry protocol',
       transportation: 'public transport route',
       logistics: 'shipment delivery tracking',
       'artificial intelligence': 'AI model reliability',
       'business operations': 'administrative approval workflow',
+      'media entertainment': 'band music rehearsal song set list',
+      'media & entertainment': 'band music rehearsal song set list',
+      'moving home organization': 'moving home packed belongings room assignment',
+      'wardrobe personal fashion management': 'wardrobe clothing inventory outfit cleaning repair',
     };
 
     return anchors[normalized] ?? value;
@@ -491,7 +1145,7 @@ export class CollectorQueryBuilderUtil {
       values
         .map((value) => this.normalize(value))
         .filter((value) => value.length >= 3)
-        .filter((value) => value.split(/\s+/u).length <= 5),
+        .filter((value) => value.split(/\s+/u).length <= 7),
     );
   }
 

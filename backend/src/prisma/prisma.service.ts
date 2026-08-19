@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 /**
@@ -15,6 +15,8 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new Logger(PrismaService.name);
+
   constructor() {
     const configuredUrl = process.env.DATABASE_URL?.trim();
     const datasourceUrl = configuredUrl
@@ -53,23 +55,66 @@ export class PrismaService
   }
 
   async onModuleInit() {
-    await this.$connect();
+    const configuredAttempts = Number.parseInt(
+      process.env.PRISMA_CONNECT_ATTEMPTS ?? '5',
+      10,
+    );
+    const attempts = Number.isFinite(configuredAttempts)
+      ? Math.min(8, Math.max(1, configuredAttempts))
+      : 5;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await this.$connect();
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const transient = PrismaService.isTransientConnectionError(message);
+
+        if (!transient || attempt >= attempts) {
+          throw error;
+        }
+
+        const delayMs = Math.min(4_000, 650 * attempt);
+        this.logger.warn(
+          `Database connection attempt ${attempt}/${attempts} failed transiently; retrying in ${delayMs}ms. ${PrismaService.summarizeConnectionError(message)}`,
+        );
+        await PrismaService.delay(delayMs);
+      }
+    }
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
   }
 
+
+  private static isTransientConnectionError(message: string): boolean {
+    return /(?:EMAXCONNSESSION|max clients reached|too many clients|P1001|can't reach database server|server has closed the connection|connection (?:closed|terminated|refused|reset)|timed? out|pool timeout)/iu.test(
+      message,
+    );
+  }
+
+  private static summarizeConnectionError(message: string): string {
+    return message.replace(/\s+/gu, ' ').trim().slice(0, 240);
+  }
+
+  private static async delay(delayMs: number): Promise<void> {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, delayMs);
+    });
+  }
+
   private static buildBoundedDatabaseUrl(databaseUrl: string): string {
     try {
       const url = new URL(databaseUrl);
       const requestedLimit = Number.parseInt(
-        process.env.PRISMA_CONNECTION_LIMIT ?? '4',
+        process.env.PRISMA_CONNECTION_LIMIT ?? '2',
         10,
       );
       const safeLimit = Number.isFinite(requestedLimit)
-        ? Math.min(5, Math.max(1, requestedLimit))
-        : 4;
+        ? Math.min(3, Math.max(1, requestedLimit))
+        : 2;
 
       const currentLimit = Number.parseInt(
         url.searchParams.get('connection_limit') ?? '',
@@ -80,8 +125,20 @@ export class PrismaService
         url.searchParams.set('connection_limit', String(safeLimit));
       }
 
-      if (!url.searchParams.has('pool_timeout')) {
-        url.searchParams.set('pool_timeout', '60');
+      const currentPoolTimeout = Number.parseInt(
+        url.searchParams.get('pool_timeout') ?? '',
+        10,
+      );
+      if (!Number.isFinite(currentPoolTimeout) || currentPoolTimeout > 30) {
+        url.searchParams.set('pool_timeout', '30');
+      }
+
+      const currentConnectTimeout = Number.parseInt(
+        url.searchParams.get('connect_timeout') ?? '',
+        10,
+      );
+      if (!Number.isFinite(currentConnectTimeout) || currentConnectTimeout > 10) {
+        url.searchParams.set('connect_timeout', '10');
       }
 
       return url.toString();

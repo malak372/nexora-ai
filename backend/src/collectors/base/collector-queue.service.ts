@@ -101,15 +101,7 @@ export class CollectorQueueService {
       8,
     );
 
-    /*
-     * The runtime currently registers twelve collectors. A floor of sixteen
-     * allows all selected collectors to start in one wave, including a small
-     * allowance for another active job, while the queue remains globally
-     * bounded.
-     *
-     * COLLECTOR_QUEUE_CONCURRENCY may raise this value for a larger deployment.
-     */
-    this.concurrency = Math.max(16, configuredConcurrency);
+    this.concurrency = Math.min(8, Math.max(2, configuredConcurrency));
 
     this.maxQueueSize = this.getPositiveNumber('COLLECTOR_QUEUE_MAX_SIZE', 100);
   }

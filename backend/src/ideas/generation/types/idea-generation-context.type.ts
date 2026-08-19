@@ -8,6 +8,7 @@ import type {
   AdvancedIdeaAiOutput,
   CoreIdeaAiOutput,
   IdeaAdvancedOutputKey,
+  ParsedIdeaAiOutput,
 } from './idea-ai-output.type';
 
 import type { CommunityAiAnalysis } from './community-ai-analysis.type';
@@ -16,6 +17,7 @@ import type {
   IdeaOpportunityRanking,
   RankedIdeaOpportunity,
 } from './idea-opportunity-ranking.type';
+import type { RequestCollectionPlan } from './request-collection-plan.type';
 
 /**
  * Data source selected for one generation run.
@@ -375,6 +377,16 @@ export type IdeaGenerationDomainEvidence = {
   readonly sampleComments: Prisma.JsonValue | null;
 };
 
+export type IdeaGenerationBenchmarkCandidateSnapshot = {
+  candidateId: string;
+  selected: boolean;
+  finalScore: number;
+  qualityScore: number;
+  opportunityRank: number;
+  opportunityTitle: string;
+  parsedOutput: ParsedIdeaAiOutput;
+};
+
 export type IdeaGenerationContext = {
   /**
    * Persisted IdeaGenerationRun identifier.
@@ -419,6 +431,9 @@ export type IdeaGenerationContext = {
   domainResolution: IdeaGenerationDomainResolutionTrace | null;
 
   requestDescription: string | null;
+
+  /** Bounded AI/deterministic plan created before collection when request text exists. */
+  collectionPlan: RequestCollectionPlan | null;
 
   /**
    * User-supplied keywords.
@@ -494,6 +509,8 @@ export type IdeaGenerationContext = {
    * opportunities before the comparative judge selects the strongest idea.
    */
   benchmarkWinnerOpportunity: RankedIdeaOpportunity | null;
+
+  benchmarkCandidates: IdeaGenerationBenchmarkCandidateSnapshot[];
 
   /** Number of targeted evidence-recovery attempts used by this run. */
   evidenceRecoveryAttempts: number;
@@ -591,6 +608,9 @@ export type CreateIdeaGenerationContextInput = {
 
   requestDescription?: string | null;
 
+  /** Optional pre-collection intent plan derived from request text. */
+  collectionPlan?: RequestCollectionPlan | null;
+
   /**
    * Optional user-provided keywords.
    */
@@ -638,6 +658,7 @@ export function createIdeaGenerationContext(
     domainResolution: input.domainResolution ?? null,
 
     requestDescription: input.requestDescription ?? null,
+    collectionPlan: input.collectionPlan ?? null,
     keywords: input.keywords ?? [],
 
     requestedDataSourceKeys: input.requestedDataSourceKeys ?? [],
@@ -655,6 +676,7 @@ export function createIdeaGenerationContext(
     communityAiAnalysis: null,
     opportunityRanking: null,
     benchmarkWinnerOpportunity: null,
+    benchmarkCandidates: [],
     evidenceRecoveryAttempts: 0,
     evidenceRecoveryCollectionJobIds: [],
     noResultOutcome: null,

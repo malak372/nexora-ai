@@ -37,6 +37,7 @@ import type {
 } from '../../types/idea-ai-output.type';
 
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
+import { evaluateRequestIntentAlignment } from '../../utils/request-intent-alignment.util';
 
 /**
  * Performs final business-level validation and normalization of
@@ -163,6 +164,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     );
 
     this.validateOutputForGenerationType(context, normalizedOutput);
+    this.validateRequesterIntentAlignment(context, normalizedOutput);
     this.validateUnifiedIdeaNarrative(context, normalizedOutput);
 
     const updatedContext: IdeaGenerationContext = {
@@ -219,6 +221,44 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
 
 
   /**
+   * Enforces the requester description as a final persistence invariant.
+   * Benchmark generation performs the same check earlier so another model can
+   * be tried; this stage is the last safety boundary before duplicate checking
+   * and persistence.
+   */
+  private validateRequesterIntentAlignment(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): void {
+    const requesterDescription = context.requestDescription?.trim();
+
+    if (!requesterDescription) {
+      return;
+    }
+
+    const alignment = evaluateRequestIntentAlignment(
+      requesterDescription,
+      parsedOutput.coreIdea,
+    );
+
+    if (alignment.matched) {
+      return;
+    }
+
+    this.throwInvalidOutput(
+      'Generated idea no longer matches the explicit requester-described workflow.',
+      {
+        reason: 'REQUEST_INTENT_MISMATCH',
+        requestIntentScore: alignment.score,
+        problemIntentScore: alignment.problemScore,
+        sharedIntentTokenCount: alignment.sharedTokenCount,
+        requiredSharedIntentTokenCount: alignment.requiredSharedTokenCount,
+      },
+    );
+  }
+
+
+  /**
    * Applies the same final text cleanup before the normalized output is placed
    * back into the pipeline context. Persistence performs the same cleanup as a
    * last safety boundary, but doing it here keeps WebSocket previews,
@@ -259,6 +299,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         .replace(/\bNest\s*\.\s*js\b/giu, 'NestJS')
         .replace(/\bNode\s*\.\s*js\b/giu, 'Node.js')
         .replace(/\bReact\s*\.\s*js\b/giu, 'React')
+        .replace(
+          /\ba\s+(operational|auditable|immutable|automated|integrated)\b/giu,
+          'an $1',
+        )
         .replace(/\s+([,.;:!?])/gu, '$1')
         .replace(/[ \t]{2,}/gu, ' ')
         .replace(
@@ -276,6 +320,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         )
         .replace(/\bpotential\s+potentially\b/giu, 'potentially')
         .replace(/\bpotentially\s+potentially\b/giu, 'potentially')
+        .replace(
+          /\bthe potential current information\b/giu,
+          'the most current information available within the pilot',
+        )
+        .replace(
+          /\baccess to potential current information\b/giu,
+          'access to the most current information available within the pilot',
+        )
         .trim();
 
       const protectsRequesterDescription = Boolean(
@@ -347,7 +399,21 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
             'One retained community report describes one observed user who may experience',
           )
           .replace(
-            /\brecurring\s+(friction|failures?|problems?|issues?|challenges?)\b/giu,
+            /\b(One retained direct user report from one independent source) indicates that ([^.!?]{3,140}?(?:failures?|friction|gaps?|errors?|limitations?))\./giu,
+            (_match, subject: string, problem: string) =>
+              `${subject} describes ${problem.toLocaleLowerCase()}.`,
+          )
+          .replace(
+            /\b([A-Z][^.!?]{1,140}?)\s+(?:frequently|often|commonly|typically)\s+(?:suffer|suffers)\s+from\b/gu,
+            '$1 may suffer from',
+          )
+          .replace(
+            /\b([A-Z][^.!?]{1,140}?)\s+(?:frequently|often|commonly|typically)\s+(experience|encounter|face)s?\b/gu,
+            (_match, subject: string, verb: string) =>
+              `${subject} may ${verb.toLowerCase()}`,
+          )
+          .replace(
+            /\b(?:persistent|recurring|widespread|common|frequent|systemic)\s+(friction|failures?|problems?|issues?|challenges?|instability)\b/giu,
             'reported $1',
           )
           .replace(
@@ -474,7 +540,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         );
       }
 
-      return sanitized;
+      return this.sanitizeCrossTemplateLeakage(context, sanitized);
     };
 
     const sanitizeStructuredValue = (value: unknown): unknown => {
@@ -639,6 +705,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       ) {
         return false;
       }
+      if (
+        /^(?:see|need|want|would like|please add|add)\b|\b(?:see a couple upgrades|couple upgrades|some upgrades|feature request|requested feature|general improvements?|miscellaneous improvements?)\b/iu.test(
+          title,
+        )
+      ) {
+        return false;
+      }
 
       let withoutDomains = title;
       for (const domain of context.selectedDomains) {
@@ -736,7 +809,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       ['agriculture', /\b(?:agriculture|agricultural|farming|farm|irrigation|crop|crops)\b/u],
       ['ecommerce', /\b(?:e commerce|ecommerce|checkout|shopping cart|merchant|online store)\b/u],
       ['healthcare', /\b(?:healthcare|medical|patient|patients|clinic|hospital)\b/u],
-      ['finance', /\b(?:finance|financial|accounting|invoice|payroll|expense|budget)\b/u],
+      ['finance', /\b(?:finance|financial|accounting|payroll|banking|fintech)\b/u],
     ];
 
     for (const [label, pattern] of definitions) {
@@ -1452,11 +1525,16 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           '$1In the requester-described scenario, ',
         )
         .replace(
-          /\b(?:many|most|numerous|widespread|commonly|frequently|often)\b/giu,
-          (match) =>
-            /^(?:often|frequently|commonly)$/iu.test(match)
-              ? 'potentially'
-              : 'potential',
+          /\b(?:many|most|numerous)\s+(users|customers|operators|teams|businesses|organizations|shops|cities|companies|participants|people)\b/giu,
+          'some $1',
+        )
+        .replace(
+          /\bwidespread\s+(friction|failures?|problems?|issues?|challenges?|difficulties)\b/giu,
+          'potential $1',
+        )
+        .replace(
+          /\b(?:often|frequently|commonly)\s+(struggle|struggles|face|faces|encounter|encounters|experience|experiences)\b/giu,
+          (_match, verb: string) => `may ${this.toTentativeBaseVerb(verb)}`,
         );
     }
 
@@ -1683,6 +1761,28 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     if (directEvidenceCount === 1) {
       cleaned = cleaned
         .replace(
+          /\bThis issue (?:frequently|often|commonly|typically) stems from\b/giu,
+          'A potential contributing factor to validate is',
+        )
+        .replace(
+          /\bThis (?:failure|problem) (?:frequently|often|commonly|typically) stems from\b/giu,
+          'A potential contributing factor to validate is',
+        )
+        .replace(
+          /\b(One retained direct user report from one independent source) indicates that ([^.!?]{3,140}?(?:failures?|friction|gaps?|errors?|limitations?))\./giu,
+          (_match, subject: string, problem: string) =>
+            `${subject} describes ${problem.toLocaleLowerCase()}.`,
+        )
+        .replace(
+          /\b([A-Z][^.!?]{1,140}?)\s+(?:frequently|often|commonly|typically)\s+(?:suffer|suffers)\s+from\b/gu,
+          '$1 may suffer from',
+        )
+        .replace(
+          /\b([A-Z][^.!?]{1,140}?)\s+(?:frequently|often|commonly|typically)\s+(experience|encounter|face)s?\b/gu,
+          (_match, subject: string, verb: string) =>
+            `${subject} may ${verb.toLowerCase()}`,
+        )
+        .replace(
           /\b(One retained direct user report from one independent source) indicates that (?:logistics service users|food delivery users|tourism users|users|customers) (?:occasionally|often|frequently|commonly) (?:encounter|experience|face)\b/giu,
           '$1 describes a case in which a user encountered',
         )
@@ -1862,7 +1962,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     cleaned = this.removeUnsupportedSparseCausalSentences(context, cleaned);
     cleaned = this.repairSparsePilotMetricLanguage(context, cleaned);
 
-    return cleaned
+    return cleaned.replace(/\ba\s+(operational|auditable|immutable|automated|integrated)\b/giu, 'an $1')
       .replace(/\s{2,}/gu, ' ')
       .replace(/\s+([,.;:!?])/gu, '$1')
       .trim();
@@ -2051,6 +2151,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .replace(
         /\bsoftware\s+(?:a|an)\s+user experienced\b/giu,
         'a software user experienced',
+      )
+      .replace(
+        /\bthat\s+(During|When|While|If|The|A|An)\b/gu,
+        (_match, word: string) => `that ${word.toLocaleLowerCase()}`,
       )
       .replace(
         /\bindicates that\s+software\s+one user\b/giu,
@@ -4137,7 +4241,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     if (/anxiety|mindfulness|mental health|stress|wellbeing/u.test(normalized)) {
       return 'Users choose a guided exercise, receive clear step-by-step support, and control whether optional session data is retained; the product does not diagnose conditions or replace professional care.';
     }
-    if (/search|knowledge graph|embedding|research/u.test(normalized)) {
+    if (this.isSearchRetrievalWorkflow(problem)) {
       return 'Users submit authorized queries, inspect traceable results and confidence indicators, and retain control over which datasets are indexed or shared.';
     }
     return 'Users provide only authorized inputs, review the generated findings, and keep final control over any recommended action.';
@@ -4154,7 +4258,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     if (/anxiety|mindfulness|mental health|stress|wellbeing/u.test(normalized)) {
       return `A pilot in ${location} will begin with baseline measurements for exercise clarity, completion rate, perceived usefulness, and repeat engagement. The remaining pilot period will compare those measures, record drop-off and misunderstood instructions, and determine whether the product improves practical use without making clinical claims unsupported by the evidence.`;
     }
-    if (/search|knowledge graph|embedding|research/u.test(normalized)) {
+    if (this.isSearchRetrievalWorkflow(problem)) {
       return `A pilot in ${location} will establish baseline query relevance, retrieval time, source traceability, and researcher task completion. The remaining pilot period will compare those measures, document failed queries and weak matches, and determine whether the shared search layer improves evidence discovery.`;
     }
     if (
@@ -4175,7 +4279,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     if (/anxiety|mindfulness|mental health|stress|wellbeing/u.test(normalized)) {
       return 'The pilot must use clear non-clinical language, minimize sensitive data retention, support consent withdrawal, and provide escalation guidance when users need professional help. Key risks include misunderstood instructions, overreliance on self-guided support, cultural or language mismatch, and weak evidence from a small initial sample.';
     }
-    if (/search|knowledge graph|embedding|research/u.test(normalized)) {
+    if (this.isSearchRetrievalWorkflow(problem)) {
       return 'The pilot must preserve dataset permissions, provenance, access controls, and reproducible indexing. Key risks include incompatible embedding spaces, weak source metadata, biased retrieval, changing external APIs, and misleading similarity scores that require researcher review.';
     }
     if (
@@ -4186,6 +4290,51 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return 'The pilot must use secure device enrollment, revocable credentials, least-privilege policies, and safe configuration rollback. Key risks include ESP32 memory limits, cryptographic overhead, firmware incompatibility across board variants, unstable networks, incorrect key provisioning, and compromised devices.';
     }
     return 'The pilot must preserve permission boundaries, minimize retained data, and maintain traceability. Key risks include incomplete source data, changing integrations, noisy evidence, and the need for human review before important decisions.';
+  }
+
+  private isSearchRetrievalWorkflow(value: string): boolean {
+    const normalized = value.toLocaleLowerCase();
+    return /\b(?:semantic search|vector search|knowledge graph|embeddings?|embedding space|document retrieval|information retrieval|dataset indexing|research literature|research corpus|query relevance|source traceability|retrieval pipeline|shared search layer|search index|search indexing)\b/iu.test(
+      normalized,
+    );
+  }
+
+  private sanitizeCrossTemplateLeakage(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    const request = context.requestDescription?.trim() ?? '';
+    const winner = context.opportunityRanking?.selected;
+    const scopeText = [
+      request,
+      winner?.problem ?? '',
+      winner?.need ?? '',
+      winner?.solutionArea ?? '',
+    ].join(' ');
+
+    if (this.isSearchRetrievalWorkflow(scopeText)) {
+      return value;
+    }
+
+    return value
+      .replace(
+        /Users submit authorized queries, inspect traceable results and confidence indicators, and retain control over which datasets are indexed or shared\.?/giu,
+        'Authorized users record the relevant operational details, review status and evidence in one workspace, and retain final control over any consequential action.',
+      )
+      .replace(
+        /A pilot in ([^.!?]{2,120}) will establish baseline query relevance, retrieval time, source traceability, and researcher task completion\. The remaining pilot period will compare those measures, document failed queries and weak matches, and determine whether the shared search layer improves evidence discovery\.?/giu,
+        'A pilot in $1 will establish baseline task completion, processing time, unresolved-case age, and user effort. The remaining pilot period will compare those measures and determine whether the operational workflow improves coordination and status visibility.',
+      )
+      .replace(
+        /The pilot must preserve dataset permissions, provenance, access controls, and reproducible indexing\. Key risks include incompatible embedding spaces, weak source metadata, biased retrieval, changing external APIs, and misleading similarity scores that require researcher review\.?/giu,
+        'The pilot must preserve permission boundaries, data provenance, access controls, and auditable status changes. Key risks include incomplete records, inconsistent staff adoption, changing integrations, and operational decisions that still require human review.',
+      )
+      .replace(
+        /[^.!?]*(?:semantic search|vector search|embedding spaces?|embeddings?|dataset indexing|shared search layer|query relevance|researcher task completion|research corpus|retrieval pipeline)[^.!?]*[.!?]?/giu,
+        ' The operational workflow should preserve traceability, clear ownership, and human review without introducing unrelated retrieval or research-system assumptions.',
+      )
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   private firstSentences(value: string, count: number): string {
@@ -4244,8 +4393,20 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   private buildProblemImpactSentence(problem: string): string {
     const normalized = problem.toLowerCase();
 
-    if (/revert|selector|signature|verification|contract/iu.test(normalized)) {
-      return 'This can block contract execution, prevent proof-verification workflows from starting, and increase debugging time.';
+    if (
+      /(?:authentication|login|log in|sign in|two[- ]factor|2fa|multi[- ]factor|verification code|session timeout|account access)/iu.test(
+        normalized,
+      )
+    ) {
+      return 'This can force repeated sign-in attempts, delay account tasks, and increase abandonment of the affected access workflow.';
+    }
+
+    if (
+      /(?:contract|signature|proof verification|proof-verification|legal verification|record verification|selector revert|revert selector)/iu.test(
+        normalized,
+      )
+    ) {
+      return 'This can block contract or record-verification workflows, delay approval steps, and increase investigation effort.';
     }
 
     if (/crash|failure|error|broken|not working|unable/iu.test(normalized)) {

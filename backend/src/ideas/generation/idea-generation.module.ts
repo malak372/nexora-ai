@@ -37,6 +37,7 @@ import { CommunityAiAnalysisService } from './services/community-ai-analysis.ser
 import { CollectionJobResolverService } from './services/collection-job-resolver.service';
 import { GuestIdeaSessionService } from './services/guest-idea-session.service';
 import { DomainResolutionService } from './services/domain-resolution.service';
+import { RequestCollectionPlanningService } from './services/request-collection-planning.service';
 import { CollectionPreviewService } from './services/collection-preview.service';
 import { IdeaAiOutputParserService } from './services/idea-ai-output-parser.service';
 import { IdeaCandidateJudgePromptService } from './services/idea-candidate-judge-prompt.service';
@@ -111,6 +112,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
 
     GuestIdeaSessionService,
     DomainResolutionService,
+    RequestCollectionPlanningService,
     CollectionPreviewService,
     IdeaGenerationPolicyService,
     IdeaGenerationSelectionService,

@@ -113,6 +113,37 @@ export class IdeaDuplicateDetectionService {
     );
   }
 
+  async checkPreparedBenchmarkCorpus(
+    cacheKey: string,
+    domainId: string,
+    idea: CoreIdeaAiOutput,
+  ): Promise<IdeaDuplicateCheckResult> {
+    const normalizedCacheKey = cacheKey.trim();
+    const normalizedDomainId = domainId.trim();
+
+    if (!normalizedCacheKey || !normalizedDomainId) {
+      return {
+        isDuplicate: false,
+        highestSimilarity: 0,
+        titleSimilarity: 0,
+        semanticSimilarity: 0,
+        workflowSimilarity: 0,
+        sameProblemFamily: false,
+        familyPenalty: 0,
+        duplicateReasons: [],
+        matchedIdea: null,
+      };
+    }
+
+    const candidates = await this.getBenchmarkSemanticCorpus(
+      normalizedCacheKey,
+      normalizedDomainId,
+      this.prisma,
+    );
+
+    return this.evaluateAgainstCandidates(idea, candidates);
+  }
+
   async check(
     domainId: string,
     collectionJobId: string,
@@ -375,10 +406,9 @@ export class IdeaDuplicateDetectionService {
   }
 
   /**
-   * Reuses the bounded same-domain semantic corpus only inside one benchmark
-   * run. Exact-title detection remains a fresh global query on every attempt,
-   * and the final duplicate-check stage does not pass a cache key, so it always
-   * performs a fresh semantic read before persistence.
+   * Reuses the bounded same-domain semantic corpus inside one benchmark or
+   * final-stage rescue flow. Global exact-title protection still runs in the
+   * final duplicate stage and again inside atomic persistence.
    */
   private async getBenchmarkSemanticCorpus(
     cacheKey: string,
@@ -545,6 +575,105 @@ export class IdeaDuplicateDetectionService {
         semanticThreshold: IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
       },
     });
+  }
+
+  private evaluateAgainstCandidates(
+    idea: CoreIdeaAiOutput,
+    candidates: readonly DuplicateIdeaCandidate[],
+  ): IdeaDuplicateCheckResult {
+    const normalizedTitle = this.normalizeText(
+      idea.title,
+      MAX_DUPLICATE_TITLE_LENGTH,
+    );
+    const newFingerprint = this.buildFingerprint(idea);
+    const normalizedTitleTokens = this.toTokenSet(normalizedTitle);
+
+    let matchedIdea: DuplicateIdeaCandidate | null = null;
+    let highestSimilarity = 0;
+    let highestTitleSimilarity = 0;
+    let highestSemanticSimilarity = 0;
+    let highestWorkflowSimilarity = 0;
+    let highestCapabilitySimilarity = 0;
+    let highestSameProblemFamily = false;
+
+    for (const candidate of candidates) {
+      const comparison = this.compareCandidate(
+        idea,
+        candidate,
+        newFingerprint,
+        normalizedTitleTokens,
+      );
+
+      if (comparison.combinedSimilarity > highestSimilarity) {
+        highestSimilarity = comparison.combinedSimilarity;
+        highestTitleSimilarity = comparison.titleSimilarity;
+        highestSemanticSimilarity = comparison.semanticSimilarity;
+        highestWorkflowSimilarity = comparison.workflowSimilarity;
+        highestCapabilitySimilarity = comparison.capabilitySimilarity;
+        highestSameProblemFamily = comparison.sameProblemFamily;
+        matchedIdea = comparison.candidate;
+      }
+
+      if (
+        comparison.titleSimilarity >= 0.995 ||
+        comparison.semanticSimilarity >= 0.94 ||
+        (comparison.sameProblemFamily &&
+          comparison.semanticSimilarity >= 0.86 &&
+          comparison.workflowSimilarity >= 0.84) ||
+        (comparison.capabilitySimilarity >= 0.88 &&
+          comparison.workflowSimilarity >= 0.8)
+      ) {
+        highestSimilarity = comparison.combinedSimilarity;
+        highestTitleSimilarity = comparison.titleSimilarity;
+        highestSemanticSimilarity = comparison.semanticSimilarity;
+        highestWorkflowSimilarity = comparison.workflowSimilarity;
+        highestCapabilitySimilarity = comparison.capabilitySimilarity;
+        highestSameProblemFamily = comparison.sameProblemFamily;
+        matchedIdea = comparison.candidate;
+        break;
+      }
+    }
+
+    const nearTitleDuplicate = highestTitleSimilarity >= 0.9;
+    const directSemanticDuplicate = highestSemanticSimilarity >= 0.82;
+    const familyCompoundDuplicate =
+      highestSameProblemFamily &&
+      highestSemanticSimilarity >= 0.68 &&
+      highestWorkflowSimilarity >= 0.7;
+    const capabilityWorkflowDuplicate =
+      highestCapabilitySimilarity >= 0.72 && highestWorkflowSimilarity >= 0.58;
+    const isDuplicate =
+      nearTitleDuplicate ||
+      directSemanticDuplicate ||
+      familyCompoundDuplicate ||
+      capabilityWorkflowDuplicate;
+    const duplicateReasons: IdeaDuplicateReason[] = [];
+
+    if (nearTitleDuplicate) {
+      duplicateReasons.push('EXACT_OR_NEAR_TITLE');
+    }
+    if (
+      directSemanticDuplicate ||
+      familyCompoundDuplicate ||
+      capabilityWorkflowDuplicate
+    ) {
+      duplicateReasons.push('SEMANTIC_OVERLAP');
+    }
+    if (familyCompoundDuplicate) {
+      duplicateReasons.push('SAME_PROBLEM_FAMILY');
+    }
+
+    return {
+      isDuplicate,
+      highestSimilarity: this.round(highestSimilarity),
+      titleSimilarity: this.round(highestTitleSimilarity),
+      semanticSimilarity: this.round(highestSemanticSimilarity),
+      workflowSimilarity: this.round(highestWorkflowSimilarity),
+      sameProblemFamily: highestSameProblemFamily,
+      familyPenalty: 0,
+      duplicateReasons,
+      matchedIdea,
+    };
   }
 
   private compareCandidate(

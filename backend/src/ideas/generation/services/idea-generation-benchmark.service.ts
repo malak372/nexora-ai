@@ -20,7 +20,10 @@ import {
   normalizeAiProviderKey,
 } from '../../../ai/constants/ai-provider.constants';
 import type { AiExecutionResult } from '../../../ai/types/ai-execution-result.type';
-import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
+import {
+  AiFinishReason,
+  AiResponseFormat,
+} from '../../../ai/types/ai-provider.type';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import {
@@ -77,6 +80,7 @@ import {
   type IdeaQualityEvaluation,
   type IdeaQualityEvaluationContext,
 } from './idea-quality-evaluator.service';
+import { evaluateRequestIntentAlignment } from '../utils/request-intent-alignment.util';
 
 /**
  * One successfully generated benchmark candidate.
@@ -112,6 +116,8 @@ export type IdeaBenchmarkCandidate = {
   readonly opportunityRank: number;
   readonly opportunityTitle: string;
   readonly semanticDiversity: IdeaSemanticDiversityScore | null;
+  /** True only for the in-process emergency candidate used after provider exhaustion. */
+  readonly deterministicEmergencyFallback: boolean;
 };
 
 /**
@@ -172,6 +178,13 @@ type AcceptedModelAttempt = {
  * model behind a full timeout window.
  */
 const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 2;
+const IDEA_BENCHMARK_CORPUS_WARMUP_BUDGET_MS = 1_200;
+const IDEA_BENCHMARK_DUPLICATE_DB_BUDGET_MS = 1_500;
+const IDEA_BENCHMARK_STRUCTURAL_FALLBACK_SCORE = 40;
+const IDEA_BENCHMARK_STRONG_FIRST_WAVE_FALLBACK_SCORE = 58;
+const IDEA_BENCHMARK_STRUCTURAL_FALLBACK_GRACE_MS = 300;
+const IDEA_BENCHMARK_EVIDENCE_BACKED_FAST_STOP_SCORE = 58;
+const IDEA_BENCHMARK_EVIDENCE_BACKED_FAST_STOP_GRACE_MS = 700;
 
 @Injectable()
 export class IdeaGenerationBenchmarkService {
@@ -206,23 +219,19 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
+    const duplicateCorpusLoad =
+      this.duplicateDetectionService.prepareBenchmarkSemanticCorpus(
+        context.runId,
+        context.domainId,
+      );
+
     const [routableModels, , duplicateCorpus] = await Promise.all([
-        this.aiModelsService.getRoutableModels(),
-        // Candidate cleanup is independent from model discovery. Starting both
-        // together removes one remote database latency wave without changing
-        // selection, scoring, or persistence semantics.
-        this.prisma.ideaGenerationCandidate.deleteMany({
-          where: { runId: context.runId },
-        }),
-        // Warm the bounded semantic corpus while model metadata is loading.
-        // The returned rows are reused as a compact novelty guard in the first
-        // provider prompt, so an already-known idea is avoided before paying
-        // for a full duplicate-regeneration call.
-        this.duplicateDetectionService.prepareBenchmarkSemanticCorpus(
-          context.runId,
-          context.domainId,
-        ),
-      ]);
+      this.aiModelsService.getRoutableModels(),
+      this.prisma.ideaGenerationCandidate.deleteMany({
+        where: { runId: context.runId },
+      }),
+      this.resolveBenchmarkCorpusWithinFastPath(duplicateCorpusLoad),
+    ]);
 
     const eligibleModels = routableModels.filter((model) => {
       if (
@@ -241,8 +250,8 @@ export class IdeaGenerationBenchmarkService {
     });
 
     if (eligibleModels.length === 0) {
-      throw new ServiceUnavailableException(
-        'No active routable AI model supporting JSON output is available.',
+      this.logger.warn(
+        'No active routable JSON-capable AI model is available. The benchmark will continue to the deterministic emergency fallback instead of failing the generation run.',
       );
     }
 
@@ -329,7 +338,10 @@ export class IdeaGenerationBenchmarkService {
         ? 1
         : IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
       const directionAttemptLimit = isNoEvidenceHypothesis
-        ? Math.min(attemptedCandidateCount + 1, IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS)
+        ? Math.min(
+            attemptedCandidateCount + IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH,
+            IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
+          )
         : IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS;
 
       while (
@@ -394,6 +406,7 @@ export class IdeaGenerationBenchmarkService {
           direction,
           blockedModelIds,
           true,
+          isNoEvidenceHypothesis,
         );
 
         for (const candidate of settledAttempts) {
@@ -420,6 +433,41 @@ export class IdeaGenerationBenchmarkService {
         ) {
           break;
         }
+
+        const strongestStructuralFallback = this.findBestStructurallyValidCandidate(
+          settledAttempts,
+          IDEA_BENCHMARK_STRONG_FIRST_WAVE_FALLBACK_SCORE,
+        );
+        if (isInitialWave && strongestStructuralFallback) {
+          this.logger.log(
+            `First provider-diverse wave produced a strong structurally valid ${strongestStructuralFallback.quality.score}-point fallback; the 70-point quality gate remains unmet, but no second full provider-timeout wave is started.`,
+          );
+          break;
+        }
+
+        if (
+          isInitialWave &&
+          acceptedCandidatesForDirection.length === 0
+        ) {
+          const deterministicAvailabilityFallback =
+            this.buildDeterministicEmergencyCandidate(
+              context,
+              direction.opportunity,
+            );
+          acceptedCandidatesForDirection.push(
+            deterministicAvailabilityFallback,
+          );
+          successfulCandidates.push(deterministicAvailabilityFallback);
+          this.logger.warn(
+            [
+              'The first provider-diverse core-generation wave returned no structurally valid candidate.',
+              'A grounded deterministic availability candidate was created immediately instead of opening a second sequential provider-timeout window.',
+              `opportunity="${direction.opportunity.title}"`,
+              `quality=${deterministicAvailabilityFallback.quality.score}`,
+            ].join(' '),
+          );
+          break;
+        }
       }
 
       if (
@@ -437,6 +485,17 @@ export class IdeaGenerationBenchmarkService {
             ? `Opportunity "${direction.opportunity.title}" completed with ${acceptedCandidatesForDirection.length} accepted candidate(s); remaining provider requests were unavailable or cancelled after the preferred quality gate was satisfied.`
             : `Opportunity "${direction.opportunity.title}" completed with ${acceptedCandidatesForDirection.length} structurally valid fallback candidate(s); the preferred quality gate was not satisfied.`,
         );
+      }
+
+      const bestEvidenceBackedDirectionCandidate =
+        this.findBestEvidenceBackedFastStopCandidate(
+          acceptedCandidatesForDirection,
+        );
+      if (!isNoEvidenceHypothesis && bestEvidenceBackedDirectionCandidate) {
+        this.logger.log(
+          `Stopped benchmark after the first evidence-backed opportunity produced a structurally valid ${bestEvidenceBackedDirectionCandidate.quality.score}-point candidate; the ${IDEA_MIN_ACCEPTED_QUALITY_SCORE}-point gate remains a reporting benchmark while additional opportunity waves are skipped for latency.`,
+        );
+        break;
       }
 
       /*
@@ -491,10 +550,20 @@ export class IdeaGenerationBenchmarkService {
     }
 
     if (successfulCandidates.length === 0) {
-      throw new ServiceUnavailableException(
-        localFallbackModel
-          ? 'No sufficiently distinct quality-approved idea could be generated after exhausting all online benchmark models and the local Ollama emergency fallback.'
-          : 'No sufficiently distinct quality-approved idea could be generated after trying the configured online models, bounded duplicate redesign attempts, and ranked fallback opportunities. No local Ollama fallback model was available.',
+      const deterministicFallback = this.buildDeterministicEmergencyCandidate(
+        context,
+        conceptDirections[0]?.opportunity ??
+          context.opportunityRanking?.selected ??
+          null,
+      );
+      successfulCandidates.push(deterministicFallback);
+      this.logger.error(
+        [
+          'All bounded AI core-generation attempts were unavailable or unusable.',
+          'The run was preserved with an in-process deterministic emergency candidate instead of failing.',
+          `opportunity=\"${deterministicFallback.opportunityTitle}\"`,
+          `quality=${deterministicFallback.quality.score}`,
+        ].join(' '),
       );
     }
 
@@ -729,6 +798,423 @@ export class IdeaGenerationBenchmarkService {
   }
 
 
+  /**
+   * Builds a complete in-process candidate when every bounded AI request fails.
+   *
+   * This is an availability safeguard, not synthetic community evidence. The
+   * candidate is derived only from the already-ranked opportunity, retained
+   * evidence, requester description, selected domains, and pilot location.
+   * Provider outages therefore degrade generation quality gracefully instead
+   * of turning an otherwise valid paid generation run into a technical failure.
+   */
+  private buildDeterministicEmergencyCandidate(
+    context: IdeaGenerationContext,
+    opportunity: RankedIdeaOpportunity | null,
+  ): IdeaBenchmarkCandidate {
+    const startedAt = Date.now();
+    const parsedOutput = this.buildDeterministicEmergencyOutput(
+      context,
+      opportunity,
+    );
+    const qualityContext = this.buildQualityContext(context);
+    const quality = this.qualityEvaluatorService.evaluate(
+      parsedOutput,
+      qualityContext,
+    );
+    const opportunityRank = opportunity?.rank ?? 1;
+    const opportunityTitle =
+      opportunity?.title?.trim() ||
+      `${this.resolveEmergencyDomainLabel(context, opportunity)} Operational Validation`;
+    const candidateId = randomUUID();
+    const providerKey = AI_PROVIDER_KEYS.OLLAMA;
+    const apiModelId = 'internal/deterministic-emergency-fallback';
+    const text = JSON.stringify(parsedOutput);
+
+    const aiResult: AiExecutionResult = {
+      text,
+      operationId: `deterministic:${context.runId}`,
+      aiModelId: 'deterministic-emergency-fallback',
+      providerKey,
+      apiModelId,
+      inputTokens: 0,
+      outputTokens: 0,
+      costEstimate: 0,
+      responseTimeMs: Math.max(1, Date.now() - startedAt),
+      finishReason: AiFinishReason.STOP,
+      fallbackUsed: true,
+      attemptCount: 0,
+    };
+
+    return {
+      candidateId,
+      modelSnapshot: {
+        id: 'deterministic-emergency-fallback',
+        providerKey,
+        apiModelId,
+        modelName: 'Deterministic Emergency Fallback',
+        displayName: 'Deterministic Emergency Fallback',
+      },
+      aiResult,
+      parsedOutput,
+      quality,
+      aiJudge: null,
+      finalScore: quality.score,
+      semanticDiversityAdjustedScore: quality.score,
+      hybridFinalScore: null,
+      selected: false,
+      opportunityRank,
+      opportunityTitle,
+      semanticDiversity: null,
+      deterministicEmergencyFallback: true,
+    };
+  }
+
+  /** Builds the complete tier-specific output used by the emergency candidate. */
+  private buildDeterministicEmergencyOutput(
+    context: IdeaGenerationContext,
+    opportunity: RankedIdeaOpportunity | null,
+  ): ParsedIdeaAiOutput {
+    const domainLabel = this.resolveEmergencyDomainLabel(context, opportunity);
+    const problem = this.resolveEmergencyProblem(context, opportunity);
+    const evidence = this.resolveEmergencyEvidence(opportunity);
+    const need =
+      opportunity?.need?.trim() ||
+      opportunity?.solutionArea?.trim() ||
+      'a reliable, auditable workflow that centralizes the affected process and supports human-reviewed resolution';
+    const title = this.buildEmergencyProductTitle(
+      opportunity?.title ?? '',
+      problem,
+      domainLabel,
+    );
+    const targetUsers = this.resolveEmergencyTargetUsers(
+      context,
+      opportunity,
+      domainLabel,
+    );
+    const evidenceQualification = evidence
+      ? 'The direction is grounded in one retained evidence item and remains preliminary until broader independent validation is available.'
+      : context.requestDescription?.trim()
+        ? 'No independent community evidence survived the bounded collection window, so the requester-provided workflow is preserved explicitly as a validation hypothesis rather than presented as observed market demand.'
+        : 'No independent community evidence survived the bounded collection window, so this direction is treated as a preliminary validation hypothesis based on the ranked domain signals rather than proven market demand.';
+    const problemStatement = this.buildEmergencyProblemStatement(
+      context,
+      problem,
+      evidenceQualification,
+      domainLabel,
+    );
+    const objectives = [
+      `Centralize the records, status changes, and operational context needed to investigate ${this.lowercaseInitial(problem)} in one auditable workspace.`,
+      `Implement a deterministic triage and prioritization workflow that links each reported issue to its supporting evidence, current status, responsible owner, and next human-reviewed action.`,
+      `Protect sensitive ${domainLabel} records with role-based access control, encrypted transport, bounded data retention, and an immutable audit trail for critical changes.`,
+      `Establish a baseline during the first pilot phase and measure directional change in resolution time, coordination errors, and unresolved cases during the remaining pilot period without pre-committing unsupported percentage improvements.`,
+    ];
+    const country = context.location.country?.trim() || 'the selected pilot region';
+    const fullAbstract = [
+      `${title} is a preliminary software product designed around the ranked ${domainLabel} problem: ${problem} ${evidenceQualification}`,
+      `The end-to-end workflow begins by capturing the minimum records required to understand the affected process. Authorized users review a structured case view containing the relevant source evidence, operational context, status history, and ownership information. The workspace then guides staff through triage, assignment, verification, and resolution steps so the team can replace fragmented messages or ad-hoc workarounds with one traceable source of truth. The product does not claim to automate a final business, clinical, academic, financial, or regulatory decision; consequential actions remain human reviewed.`,
+      `The implementation uses a modular NestJS backend with PostgreSQL for relational records and Prisma ORM for typed persistence. A responsive React or Next.js client provides the operational workspace. BullMQ with Redis is used only for durable asynchronous work such as notifications, imports, or report preparation when needed. API boundaries enforce authenticated access, role-based permissions, input validation, encrypted transport, and audit logging. The design keeps external integrations optional so the pilot can start with secure file import or manual entry when third-party APIs are unavailable.`,
+      `For an initial pilot in ${country}, the first phase establishes baseline workflow volume, unresolved-case age, and coordination errors. Later phases measure directional change after the structured workflow is introduced and collect direct user feedback to determine whether the product should be expanded. The pilot must validate data availability, staff adoption, integration constraints, and the actual prevalence of the ranked problem before broader rollout.`,
+      `Key limitations include sparse evidence, dependency on the quality of source records, and the possibility that the ranked problem is not broadly representative. The product therefore preserves evidence provenance, labels assumptions, avoids market-wide claims, and routes uncertain cases to human review. The immediate objective is dependable workflow coordination and evidence collection, not autonomous decision making.`,
+    ].join('\n\n');
+    const partialAbstract = `${title} is a preliminary ${domainLabel} workflow that addresses: ${problem} ${evidenceQualification} The pilot centralizes the affected records, makes ownership and status visible, and tests whether a structured human-reviewed process improves coordination before any broader demand claim is made.`;
+    const limitedAbstract = partialAbstract.split(/\s+/u).slice(0, 65).join(' ');
+
+    const coreIdea: ParsedIdeaAiOutput['coreIdea'] = {
+      title,
+      problemStatement,
+      objectives,
+      targetUsers,
+    };
+
+    if (context.generationType === IdeaGenerationType.GUEST_FREE) {
+      coreIdea.limitedAbstract = limitedAbstract;
+      coreIdea.partialAbstract = partialAbstract;
+    } else if (context.generationType === IdeaGenerationType.NORMAL_FREE) {
+      coreIdea.partialAbstract = partialAbstract;
+    } else {
+      coreIdea.fullAbstract = fullAbstract;
+    }
+
+    return {
+      coreIdea,
+      advancedOutputs:
+        context.generationType === IdeaGenerationType.PREMIUM_CREDIT
+          ? this.buildEmergencyPremiumOutputs(
+              context,
+              title,
+              problem,
+              need,
+              domainLabel,
+              targetUsers,
+              fullAbstract,
+              evidence,
+            )
+          : [],
+    };
+  }
+
+  private buildEmergencyProblemStatement(
+    context: IdeaGenerationContext,
+    problem: string,
+    evidenceQualification: string,
+    domainLabel: string,
+  ): string {
+    const requesterDescription = context.requestDescription?.trim();
+    const baseProblem = requesterDescription || problem;
+    return [
+      baseProblem,
+      evidenceQualification,
+      `Without one traceable workflow, this makes it difficult to coordinate ownership, verify current status, preserve evidence context, and resolve cases consistently.`,
+      `The proposed ${domainLabel} pilot keeps this problem scope explicit and tests a structured, human-reviewed coordination workflow before wider deployment.`,
+      'Potential contributing factors, prevalence, causal impact, and market-wide demand remain hypotheses until they are supported by additional direct evidence.',
+    ]
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, 2_180);
+  }
+
+  private buildEmergencyPremiumOutputs(
+    context: IdeaGenerationContext,
+    title: string,
+    problem: string,
+    need: string,
+    domainLabel: string,
+    targetUsers: readonly string[],
+    fullAbstract: string,
+    evidence: string | null,
+  ): ParsedIdeaAiOutput['advancedOutputs'] {
+    const country = context.location.country?.trim() || 'the selected pilot region';
+    const nlp = context.nlp;
+    const evidenceSummary = evidence
+      ? `One retained evidence item supports the selected direction: ${evidence.slice(0, 700)}`
+      : context.requestDescription?.trim()
+        ? `No independent community evidence was retained inside the bounded collection window. The requester statement is preserved as the validation hypothesis: ${context.requestDescription.trim().slice(0, 700)}`
+        : `No independent community evidence was retained inside the bounded collection window. The selected ${domainLabel} direction remains an unvalidated hypothesis.`;
+    const stack = [
+      'NestJS',
+      'TypeScript',
+      'PostgreSQL',
+      'Prisma ORM',
+      'React or Next.js',
+      'BullMQ',
+      'Redis',
+      'Docker',
+    ];
+    const features = [
+      'Structured case intake with evidence provenance and source references',
+      'Operational status board with ownership, priority, and next-action tracking',
+      'Human-reviewed triage and resolution workflow with immutable audit history',
+      'Role-based access control and bounded sensitive-data visibility',
+      'Pilot metrics dashboard for baseline, unresolved-case age, and directional outcome tracking',
+    ];
+
+    return [
+      {
+        outputKey: 'full-abstract',
+        title: 'Full Abstract',
+        content: fullAbstract,
+      },
+      {
+        outputKey: 'technology-stack',
+        title: 'Technology Stack',
+        content: stack.map((item) => `- ${item}`).join('\n'),
+        structuredContent: [...stack],
+      },
+      {
+        outputKey: 'system-architecture',
+        title: 'System Architecture',
+        content: `${title} uses a modular NestJS API with a PostgreSQL database managed through Prisma ORM and a responsive React or Next.js client. Authenticated REST endpoints enforce role-based access and validation. BullMQ and Redis handle only durable asynchronous work such as notifications, imports, and report preparation. Audit events are append-only, sensitive fields are access-scoped, and integrations can fall back to secure manual or file-based intake so external provider availability does not block the pilot.`,
+      },
+      {
+        outputKey: 'database-design',
+        title: 'Database Design',
+        content: `The relational model centers on Workspace, Case, EvidenceItem, StatusEvent, Assignment, User, and AuditLog records. Each Case belongs to the active ${domainLabel} workspace, links to one or more EvidenceItem records, and stores current status, priority, owner, and timestamps. StatusEvent preserves the case lifecycle, while AuditLog records security-sensitive actions. Evidence provenance is stored separately from interpreted conclusions so direct community evidence, secondary reports, requester statements, and validation hypotheses remain distinguishable.`,
+      },
+      {
+        outputKey: 'mvp-features',
+        title: 'MVP Features',
+        content: features.map((item) => `- ${item}`).join('\n'),
+        structuredContent: [...features],
+      },
+      {
+        outputKey: 'value-proposition',
+        title: 'Value Proposition',
+        content: `${title} turns a fragmented ${domainLabel} workflow into one evidence-traceable operational workspace, helping ${targetUsers.slice(0, 2).join(' and ')} coordinate cases, preserve context, and reach human-reviewed resolutions without claiming unsupported automation or market prevalence.`,
+      },
+      {
+        outputKey: 'revenue-model',
+        title: 'Revenue Model',
+        content: `A pilot-to-subscription B2B or institutional model is recommended. The initial pilot validates the workflow and onboarding effort; production pricing can then be tiered by active workspaces, managed cases, or authorized staff seats. Any final pricing should be validated with target organizations rather than inferred from the current sparse evidence base.`,
+      },
+      {
+        outputKey: 'local-regulations',
+        title: 'Local Regulations',
+        content: `Deployment in ${country} must verify the local requirements applicable to personal data, institutional records, retention, user consent, and any sector-specific information handled by the pilot. The software should enforce least-privilege access, encrypted transport, auditable changes, and configurable retention. Formal legal review is required before production use where regulated or sensitive records are involved.`,
+      },
+      {
+        outputKey: 'budget-estimation',
+        title: 'Budget Estimation',
+        content: `Preliminary lean-pilot planning range: USD 24,000-42,000 for a small engineering team, secure hosting, testing, onboarding, and contingency. This is a planning hypothesis rather than a market quote and must be recalculated against the final integration scope, local staffing rates, security requirements, and pilot duration. Hardware, paid third-party data, formal certification, and external legal fees are excluded unless explicitly required.`,
+      },
+      {
+        outputKey: 'feasibility-assessment',
+        title: 'Feasibility Assessment',
+        content: `Technical feasibility is high for the core workflow because it relies on standard authenticated web application patterns, relational persistence, auditable status transitions, and optional asynchronous jobs. The main feasibility risks are source-data quality, staff adoption, external-system access, and whether ${need} is valuable enough in real operations. The pilot should validate those assumptions before adding complex automation.`,
+      },
+      {
+        outputKey: 'implementation-timeline',
+        title: 'Implementation Timeline',
+        content: `Month 1: validate workflow, evidence model, access roles, and baseline metrics. Months 2-3: implement secure intake, case tracking, audit history, and core dashboard. Month 4: integrate optional data sources and complete security/testing work. Months 5-6: run the pilot in ${country}, collect direct user evidence, measure directional operational change, and decide whether the product should be refined, expanded, or stopped.`,
+      },
+      {
+        outputKey: 'market-potential',
+        title: 'Market Potential',
+        content: `Current market potential is unproven. The ranked problem suggests a plausible need within ${domainLabel}, but the available evidence is too limited to support prevalence or market-size claims. The pilot should measure repeated problem occurrence, willingness to adopt the workflow, integration effort, and evidence from additional independent organizations before any broader commercial conclusion is made.`,
+      },
+      {
+        outputKey: 'nlp-executive-summary',
+        title: 'NLP Executive Summary',
+        content: `${evidenceSummary} Trusted NLP totals for this run are ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). The emergency candidate does not upgrade requester statements or incidental mentions into community evidence.`,
+      },
+      {
+        outputKey: 'community-feedback-summary',
+        title: 'Community Feedback Summary',
+        content: evidence
+          ? `The selected direction is supported by retained evidence but should remain preliminary because the current evidence volume is limited. The product workflow must preserve the exact supported problem and collect additional direct feedback during the pilot rather than generalize beyond the source material.`
+          : `No qualifying independent community feedback survived the bounded collection window for the selected problem. The product therefore remains a validation-first pilot and must collect direct feedback from target users before making recurrence, prevalence, or demand claims.`,
+      },
+    ];
+  }
+
+  private resolveEmergencyProblem(
+    context: IdeaGenerationContext,
+    opportunity: RankedIdeaOpportunity | null,
+  ): string {
+    return (
+      context.requestDescription?.trim() ||
+      opportunity?.problem?.trim() ||
+      opportunity?.need?.trim() ||
+      opportunity?.title?.trim() ||
+      `The selected ${this.resolveEmergencyDomainLabel(context, opportunity)} workflow lacks a reliable, centralized way to coordinate records, status changes, and human-reviewed resolution.`
+    );
+  }
+
+  private resolveEmergencyEvidence(
+    opportunity: RankedIdeaOpportunity | null,
+  ): string | null {
+    const direct = opportunity?.evidenceSamples.find((value) => value.trim());
+    if (direct) return direct.trim();
+
+    const independent = opportunity?.independentEvidence?.find((item) =>
+      item.text.trim(),
+    );
+    if (independent) return independent.text.trim();
+
+    const supporting = opportunity?.supportingEvidence?.find(
+      (item) => item.qualifiesAsCommunityEvidence && item.text.trim(),
+    );
+    return supporting?.text.trim() || null;
+  }
+
+  private resolveEmergencyDomainLabel(
+    context: IdeaGenerationContext,
+    opportunity: RankedIdeaOpportunity | null,
+  ): string {
+    const opportunityDomains = [
+      opportunity?.primaryMatchedDomainName,
+      ...(opportunity?.problemDomainNames ?? []),
+      ...(opportunity?.matchedDomainNames ?? []),
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    const selectedDomains = context.selectedDomains
+      .map((domain) => domain.name.trim())
+      .filter(Boolean);
+    const values = [...new Set([...opportunityDomains, ...selectedDomains])];
+    return values.slice(0, 3).join(' + ') || context.domainName?.trim() || 'Operational';
+  }
+
+  private resolveEmergencyTargetUsers(
+    context: IdeaGenerationContext,
+    opportunity: RankedIdeaOpportunity | null,
+    domainLabel: string,
+  ): string[] {
+    const raw = opportunity?.raw;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const affectedUsers = (raw as Record<string, unknown>).affectedUsers;
+      if (Array.isArray(affectedUsers)) {
+        const values = affectedUsers
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .slice(0, 4);
+        if (values.length >= 2) return values;
+      }
+    }
+
+    const primaryDomain =
+      context.selectedDomains[0]?.name?.trim() ||
+      context.domainName?.trim() ||
+      domainLabel;
+    return [
+      `${primaryDomain} operations managers`,
+      `${primaryDomain} frontline staff`,
+      'Authorized administrators and reviewers',
+    ];
+  }
+
+  private buildEmergencyProductTitle(
+    opportunityTitle: string,
+    problem: string,
+    domainLabel: string,
+  ): string {
+    const text = `${opportunityTitle} ${problem}`.toLowerCase();
+    if (/exam|assessment|proctor|student/.test(text)) {
+      return 'Assessment Decision Review and Recovery Workspace';
+    }
+    if (/bill|billing|payment|checkout|invoice/.test(text)) {
+      return 'Billing and Payment Recovery Workspace';
+    }
+    if (/vacan|tenant|property|housing|maintenance complaint/.test(text)) {
+      return 'Property Vacancy and Maintenance Insight Workspace';
+    }
+    if (/flower|florist|bouquet|floral/.test(text)) {
+      return 'Custom Floral Order Coordination Workspace';
+    }
+    if (/pottery|kiln|ceramic|glaz/.test(text)) {
+      return 'Kiln and Piece Coordination Workspace';
+    }
+    if (/shipment|logistics|delivery|parcel|consignment/.test(text)) {
+      return 'Shipment Exception and Delivery Coordination Workspace';
+    }
+    if (/energy|electric|utility|emission/.test(text)) {
+      return 'Energy Operations Insight and Resolution Workspace';
+    }
+
+    const normalized = opportunityTitle
+      .replace(/\b(?:failure|failures|resolution|opportunity|discovery|validation|workflow)\b/giu, ' ')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .split(' ')
+      .slice(0, 6)
+      .join(' ');
+    if (normalized.length >= 12) {
+      return `${normalized} Operations Workspace`;
+    }
+
+    const domainRoot = domainLabel.split('+')[0]?.trim() || 'Operational';
+    return `${domainRoot} Evidence and Resolution Workspace`;
+  }
+
+  private lowercaseInitial(value: string): string {
+    const trimmed = value.trim().replace(/\s+/gu, ' ');
+    if (!trimmed) return 'the selected workflow problem';
+    return `${trimmed.charAt(0).toLocaleLowerCase()}${trimmed.slice(1)}`;
+  }
+
+
   /** Returns the number of candidates that truly passed the quality gate. */
   private countQualityApprovedCandidates(
     candidates: readonly IdeaBenchmarkCandidate[],
@@ -812,6 +1298,7 @@ export class IdeaGenerationBenchmarkService {
     direction: CandidateConceptDirection,
     blockedModelIds: Set<string>,
     allowQualityRevision = true,
+    acceptStructuralFallbackEarly = false,
   ): Promise<Array<IdeaBenchmarkCandidate | null>> {
     if (models.length <= 1) {
       const model = models[0];
@@ -865,7 +1352,7 @@ export class IdeaGenerationBenchmarkService {
         context,
         model,
         direction,
-        allowQualityRevision,
+        false,
         controllers[index].signal,
       )
         .then((candidate) => ({ index, candidate }))
@@ -875,6 +1362,8 @@ export class IdeaGenerationBenchmarkService {
     });
 
     let acceptedGraceDeadlineAt: number | null = null;
+    let structuralFallbackGraceDeadlineAt: number | null = null;
+    let evidenceBackedFallbackGraceDeadlineAt: number | null = null;
 
     while (pending.size > 0) {
       const settlementPromise = Promise.race(pending.values()).then(
@@ -885,13 +1374,22 @@ export class IdeaGenerationBenchmarkService {
           }),
       );
 
+      const activeGraceDeadlines = [
+        acceptedGraceDeadlineAt,
+        structuralFallbackGraceDeadlineAt,
+        evidenceBackedFallbackGraceDeadlineAt,
+      ].filter((value): value is number => value !== null);
+      const nearestGraceDeadline =
+        activeGraceDeadlines.length > 0
+          ? Math.min(...activeGraceDeadlines)
+          : null;
       const next =
-        acceptedGraceDeadlineAt === null
+        nearestGraceDeadline === null
           ? await settlementPromise
           : await Promise.race([
               settlementPromise,
               this.createBenchmarkGraceTimeout(
-                Math.max(0, acceptedGraceDeadlineAt - Date.now()),
+                Math.max(0, nearestGraceDeadline - Date.now()),
               ),
             ]);
 
@@ -914,7 +1412,49 @@ export class IdeaGenerationBenchmarkService {
           );
         }
 
+        const bestStructuralFallback =
+          this.findBestValidationHypothesisFastStopCandidate(results);
+        if (
+          acceptStructuralFallbackEarly &&
+          structuralFallbackGraceDeadlineAt !== null &&
+          structuralFallbackGraceDeadlineAt <= Date.now() &&
+          bestStructuralFallback
+        ) {
+          this.abortPendingBenchmarkRequests(controllers, pending);
+          this.logger.log(
+            `Validation-hypothesis fast stop: model "${bestStructuralFallback.modelSnapshot.displayName ?? bestStructuralFallback.modelSnapshot.modelName}" returned a structurally valid ${bestStructuralFallback.quality.score}-point fallback; slower peers were cancelled without weakening the ${IDEA_MIN_ACCEPTED_QUALITY_SCORE}-point evidence quality gate.`,
+          );
+          void Promise.allSettled(pending.values());
+          return results.map((candidate) =>
+            candidate?.candidateId === bestStructuralFallback.candidateId
+              ? bestStructuralFallback
+              : null,
+          );
+        }
+
+        const bestEvidenceBackedFallback =
+          this.findBestEvidenceBackedFastStopCandidate(results);
+        if (
+          !acceptStructuralFallbackEarly &&
+          evidenceBackedFallbackGraceDeadlineAt !== null &&
+          evidenceBackedFallbackGraceDeadlineAt <= Date.now() &&
+          bestEvidenceBackedFallback
+        ) {
+          this.abortPendingBenchmarkRequests(controllers, pending);
+          this.logger.log(
+            `Evidence-backed fast stop: model "${bestEvidenceBackedFallback.modelSnapshot.displayName ?? bestEvidenceBackedFallback.modelSnapshot.modelName}" returned a structurally valid ${bestEvidenceBackedFallback.quality.score}-point candidate after ${IDEA_BENCHMARK_EVIDENCE_BACKED_FAST_STOP_GRACE_MS}ms peer grace; slower peers were cancelled while the preferred ${IDEA_MIN_ACCEPTED_QUALITY_SCORE}-point gate remains a reporting benchmark rather than a latency requirement.`,
+          );
+          void Promise.allSettled(pending.values());
+          return results.map((candidate) =>
+            candidate?.candidateId === bestEvidenceBackedFallback.candidateId
+              ? bestEvidenceBackedFallback
+              : null,
+          );
+        }
+
         acceptedGraceDeadlineAt = null;
+        structuralFallbackGraceDeadlineAt = null;
+        evidenceBackedFallbackGraceDeadlineAt = null;
         continue;
       }
 
@@ -943,7 +1483,33 @@ export class IdeaGenerationBenchmarkService {
         candidate?.quality.accepted === true &&
         candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE;
 
-      if (!candidate || !isQualityApproved) {
+      if (!candidate) {
+        continue;
+      }
+
+      if (
+        acceptStructuralFallbackEarly &&
+        !isQualityApproved &&
+        this.isValidationHypothesisFastStopCandidate(candidate) &&
+        structuralFallbackGraceDeadlineAt === null &&
+        pending.size > 0
+      ) {
+        structuralFallbackGraceDeadlineAt =
+          Date.now() + IDEA_BENCHMARK_STRUCTURAL_FALLBACK_GRACE_MS;
+      }
+
+      if (
+        !acceptStructuralFallbackEarly &&
+        !isQualityApproved &&
+        this.isEvidenceBackedFastStopCandidate(candidate) &&
+        evidenceBackedFallbackGraceDeadlineAt === null &&
+        pending.size > 0
+      ) {
+        evidenceBackedFallbackGraceDeadlineAt =
+          Date.now() + IDEA_BENCHMARK_EVIDENCE_BACKED_FAST_STOP_GRACE_MS;
+      }
+
+      if (!isQualityApproved) {
         continue;
       }
 
@@ -982,17 +1548,91 @@ export class IdeaGenerationBenchmarkService {
     const bestAccepted = this.findBestQualityApprovedCandidate(results);
 
     if (bestAccepted) {
-      /*
-       * Every hedged request has already finished, so return only the strongest
-       * quality-approved candidate. This avoids paying for an additional
-       * comparative-judge request after the deterministic gate has already
-       * produced a clear bounded winner.
-       */
       return results.map((candidate) =>
         candidate?.candidateId === bestAccepted.candidateId
           ? bestAccepted
           : null,
       );
+    }
+
+    if (!acceptStructuralFallbackEarly) {
+      const bestEvidenceBackedFallback =
+        this.findBestEvidenceBackedFastStopCandidate(results);
+      if (bestEvidenceBackedFallback) {
+        this.logger.log(
+          `Evidence-backed bounded completion: the provider-diverse wave finished with a structurally valid ${bestEvidenceBackedFallback.quality.score}-point candidate; skipping an extra self-revision request because the same ${IDEA_BENCHMARK_EVIDENCE_BACKED_FAST_STOP_SCORE}-point fast-stop policy would have cancelled a slower peer.`,
+        );
+        return results.map((candidate) =>
+          candidate?.candidateId === bestEvidenceBackedFallback.candidateId
+            ? bestEvidenceBackedFallback
+            : null,
+        );
+      }
+    }
+
+    if (allowQualityRevision) {
+      const revisionCandidate = results
+        .filter(
+          (candidate): candidate is IdeaBenchmarkCandidate =>
+            candidate !== null &&
+            !candidate.quality.accepted &&
+            candidate.quality.score >= IDEA_QUALITY_REVISION_TRIGGER_SCORE,
+        )
+        .sort(
+          (left, right) =>
+            right.quality.score - left.quality.score ||
+            left.aiResult.responseTimeMs - right.aiResult.responseTimeMs,
+        )[0];
+
+      if (revisionCandidate) {
+        const model = models.find(
+          (candidateModel) =>
+            candidateModel.id === revisionCandidate.modelSnapshot.id,
+        );
+
+        if (model) {
+          const revisedAttempt = await this.reviseWeakCandidate(
+            context,
+            model,
+            {
+              aiResult: revisionCandidate.aiResult,
+              parsedOutput: revisionCandidate.parsedOutput,
+              quality: revisionCandidate.quality,
+            },
+            this.buildQualityContext(context),
+            direction.promptText,
+          );
+
+          if (revisedAttempt.quality.score > revisionCandidate.quality.score) {
+            const revisedCandidate: IdeaBenchmarkCandidate = {
+              ...revisionCandidate,
+              aiResult: revisedAttempt.aiResult,
+              parsedOutput: revisedAttempt.parsedOutput,
+              quality: revisedAttempt.quality,
+              finalScore: revisedAttempt.quality.score,
+              semanticDiversityAdjustedScore: revisedAttempt.quality.score,
+            };
+            const resultIndex = results.findIndex(
+              (candidate) =>
+                candidate?.candidateId === revisionCandidate.candidateId,
+            );
+            if (resultIndex >= 0) {
+              results[resultIndex] = revisedCandidate;
+            }
+
+            if (
+              revisedCandidate.quality.accepted &&
+              revisedCandidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE
+            ) {
+              return results.map((candidate) =>
+                candidate?.candidateId === revisedCandidate.candidateId
+                  ? revisedCandidate
+                  : null,
+              );
+            }
+          }
+        }
+      }
     }
 
     return results;
@@ -1019,6 +1659,99 @@ export class IdeaGenerationBenchmarkService {
       );
 
     return accepted[0] ?? null;
+  }
+
+  private findBestStructurallyValidCandidate(
+    candidates: readonly (IdeaBenchmarkCandidate | null)[],
+    minimumScore: number,
+  ): IdeaBenchmarkCandidate | null {
+    const valid = candidates
+      .filter(
+        (candidate): candidate is IdeaBenchmarkCandidate =>
+          candidate !== null && candidate.quality.score >= minimumScore,
+      )
+      .sort(
+        (first, second) =>
+          second.quality.score - first.quality.score ||
+          first.aiResult.responseTimeMs - second.aiResult.responseTimeMs,
+      );
+
+    return valid[0] ?? null;
+  }
+
+  private isValidationHypothesisFastStopCandidate(
+    candidate: IdeaBenchmarkCandidate,
+  ): boolean {
+    if (candidate.quality.score < IDEA_BENCHMARK_STRUCTURAL_FALLBACK_SCORE) {
+      return false;
+    }
+
+    const hardBlockingCodes = new Set([
+      'UNSUPPORTED_LOCAL_CLAIM',
+      'UNSUPPORTED_PLATFORM_ACCESS',
+      'MALFORMED_MEASURABLE_TARGET',
+      'UNSUPPORTED_IMPACT_TARGET',
+      'SECONDARY_DOMAIN_LEAKAGE',
+    ]);
+
+    return !candidate.quality.issues.some((issue) =>
+      hardBlockingCodes.has(issue.code),
+    );
+  }
+
+  private findBestValidationHypothesisFastStopCandidate(
+    candidates: readonly (IdeaBenchmarkCandidate | null)[],
+  ): IdeaBenchmarkCandidate | null {
+    return (
+      candidates
+        .filter(
+          (candidate): candidate is IdeaBenchmarkCandidate =>
+            candidate !== null &&
+            this.isValidationHypothesisFastStopCandidate(candidate),
+        )
+        .sort(
+          (first, second) =>
+            second.quality.score - first.quality.score ||
+            first.aiResult.responseTimeMs - second.aiResult.responseTimeMs,
+        )[0] ?? null
+    );
+  }
+
+  private isEvidenceBackedFastStopCandidate(
+    candidate: IdeaBenchmarkCandidate,
+  ): boolean {
+    if (candidate.quality.score < IDEA_BENCHMARK_EVIDENCE_BACKED_FAST_STOP_SCORE) {
+      return false;
+    }
+
+    const blockingCodes = new Set([
+      'UNSUPPORTED_LOCAL_CLAIM',
+      'UNSUPPORTED_PLATFORM_ACCESS',
+      'MALFORMED_MEASURABLE_TARGET',
+      'UNSUPPORTED_IMPACT_TARGET',
+      'SECONDARY_DOMAIN_LEAKAGE',
+    ]);
+
+    return !candidate.quality.issues.some((issue) =>
+      blockingCodes.has(issue.code),
+    );
+  }
+
+  private findBestEvidenceBackedFastStopCandidate(
+    candidates: readonly (IdeaBenchmarkCandidate | null)[],
+  ): IdeaBenchmarkCandidate | null {
+    const valid = candidates
+      .filter(
+        (candidate): candidate is IdeaBenchmarkCandidate =>
+          candidate !== null && this.isEvidenceBackedFastStopCandidate(candidate),
+      )
+      .sort(
+        (first, second) =>
+          second.quality.score - first.quality.score ||
+          first.aiResult.responseTimeMs - second.aiResult.responseTimeMs,
+      );
+
+    return valid[0] ?? null;
   }
 
   /** Cancels only provider requests that are still running. */
@@ -1167,15 +1900,21 @@ export class IdeaGenerationBenchmarkService {
           'NO_DIRECT_EVIDENCE',
         );
 
-      const acceptedAttempt = await this.resolveDistinctAttempt(
-        context,
-        model,
-        direction,
-        usableAttempt,
-        qualityContext,
-        signal,
-        !isUnvalidatedHypothesis,
-      );
+      const shouldCheckPersistedDuplicate =
+        !isUnvalidatedHypothesis &&
+        usableAttempt.quality.accepted &&
+        usableAttempt.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE;
+      const acceptedAttempt = shouldCheckPersistedDuplicate
+        ? await this.resolveDistinctAttempt(
+            context,
+            model,
+            direction,
+            usableAttempt,
+            qualityContext,
+            signal,
+            signal === undefined,
+          )
+        : usableAttempt;
 
       /*
        * Candidate diagnostics are not needed to evaluate the winner. Allocate
@@ -1205,6 +1944,7 @@ export class IdeaGenerationBenchmarkService {
         opportunityRank: direction.opportunity.rank,
         opportunityTitle: direction.opportunity.title,
         semanticDiversity: null,
+        deterministicEmergencyFallback: false,
       };
     } catch (error: unknown) {
       if (signal?.aborted) {
@@ -1272,10 +2012,17 @@ export class IdeaGenerationBenchmarkService {
     }
 
     let currentAttempt = initialAttempt;
-    let duplicateResult = await this.checkAttemptDuplicate(
+    let duplicateResult = await this.checkAttemptDuplicateWithinBudget(
       context,
       currentAttempt,
     );
+
+    if (!duplicateResult) {
+      this.logger.warn(
+        `Prepared-corpus duplicate verification exceeded ${IDEA_BENCHMARK_DUPLICATE_DB_BUDGET_MS}ms; the benchmark continues with the quality-approved candidate and leaves the final exact-title race guard to the final duplicate stage and atomic persistence.`,
+      );
+      return currentAttempt;
+    }
 
     if (!duplicateResult.isDuplicate) {
       return currentAttempt;
@@ -1284,13 +2031,11 @@ export class IdeaGenerationBenchmarkService {
     this.logDuplicateRejection(model, direction, 0, duplicateResult);
 
     if (!allowDuplicateRedesign) {
+      const errorMessage = this.buildDuplicateRejectionMessage(duplicateResult);
       this.logger.warn(
-        `Duplicate redesign was skipped for unvalidated opportunity "${direction.opportunity.title}" to keep the benchmark bounded. The first complete candidate is returned with a deterministic identity adjustment instead of starting another provider/revision window.`,
+        `${errorMessage} The confirmed duplicate is rejected immediately so the already-running peer can continue without starting a second provider redesign window.`,
       );
-      return this.applyDeterministicIdentityDiversification(
-        currentAttempt,
-        direction,
-      );
+      throw new ServiceUnavailableException(errorMessage);
     }
 
     for (
@@ -1328,10 +2073,18 @@ export class IdeaGenerationBenchmarkService {
           continue;
         }
 
-        duplicateResult = await this.checkAttemptDuplicate(
-          context,
-          currentAttempt,
-        );
+        const refreshedDuplicateResult =
+          await this.checkAttemptDuplicateWithinBudget(
+            context,
+            currentAttempt,
+          );
+        if (!refreshedDuplicateResult) {
+          this.logger.warn(
+            `Post-redesign prepared-corpus duplicate verification exceeded ${IDEA_BENCHMARK_DUPLICATE_DB_BUDGET_MS}ms; keeping the revised quality-approved candidate without adding another latency window.`,
+          );
+          return currentAttempt;
+        }
+        duplicateResult = refreshedDuplicateResult;
 
         if (!duplicateResult.isDuplicate) {
           this.logger.log(
@@ -1372,30 +2125,45 @@ export class IdeaGenerationBenchmarkService {
     throw new ServiceUnavailableException(errorMessage);
   }
 
-  private applyDeterministicIdentityDiversification(
+  private async resolveBenchmarkCorpusWithinFastPath(
+    corpusPromise: Promise<readonly DuplicateIdeaCandidate[]>,
+  ): Promise<readonly DuplicateIdeaCandidate[]> {
+    const guardedCorpus = corpusPromise.catch((error: unknown) => {
+      this.logger.warn(
+        `Benchmark semantic corpus warmup failed; continuing without blocking provider generation. error=${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [] as readonly DuplicateIdeaCandidate[];
+    });
+
+    return Promise.race([
+      guardedCorpus,
+      new Promise<readonly DuplicateIdeaCandidate[]>((resolve) => {
+        setTimeout(() => resolve([]), IDEA_BENCHMARK_CORPUS_WARMUP_BUDGET_MS);
+      }),
+    ]);
+  }
+
+  private async checkAttemptDuplicateWithinBudget(
+    context: IdeaGenerationContext,
     attempt: AcceptedModelAttempt,
-    direction: CandidateConceptDirection,
-  ): AcceptedModelAttempt {
-    const coreIdea = attempt.parsedOutput.coreIdea;
-    const baseTitle = coreIdea.title
-      .replace(
-        /\b(?:platform|workbench|system|solution|evidence|intake|pilot|validation)\b/giu,
-        '',
-      )
-      .replace(/\s+/gu, ' ')
-      .trim();
-    const diversifiedTitle = `${baseTitle || 'Operational Insight'} Workspace`;
-    return {
-      ...attempt,
-      parsedOutput: {
-        ...attempt.parsedOutput,
-        coreIdea: {
-          ...coreIdea,
-          title: diversifiedTitle,
-          problemStatement: `${coreIdea.problemStatement} This bounded pilot uses the selected opportunity as a validation target and does not claim a distinct market-wide problem family.`,
-        },
-      },
-    };
+  ): Promise<IdeaDuplicateCheckResult | null> {
+    const duplicateCheck = this.checkAttemptDuplicate(context, attempt)
+      .then((result) => ({ kind: 'result' as const, result }))
+      .catch((error: unknown) => ({ kind: 'error' as const, error }));
+    const timeout = new Promise<{ readonly kind: 'timeout' }>((resolve) => {
+      setTimeout(
+        () => resolve({ kind: 'timeout' as const }),
+        IDEA_BENCHMARK_DUPLICATE_DB_BUDGET_MS,
+      );
+    });
+
+    const settled = await Promise.race([duplicateCheck, timeout]);
+    if (settled.kind === 'error') {
+      throw settled.error;
+    }
+    return settled.kind === 'result' ? settled.result : null;
   }
 
   private async checkAttemptDuplicate(
@@ -1410,12 +2178,10 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
-    return this.duplicateDetectionService.check(
-      context.domainId,
-      collectionJobId,
-      attempt.parsedOutput.coreIdea,
-      undefined,
+    return this.duplicateDetectionService.checkPreparedBenchmarkCorpus(
       context.runId,
+      context.domainId,
+      attempt.parsedOutput.coreIdea,
     );
   }
 
@@ -1697,10 +2463,16 @@ export class IdeaGenerationBenchmarkService {
       // The shorter timeout prevents one unavailable model from holding the
       // complete parallel batch for several minutes.
       timeoutMs: this.resolveCoreModelTimeoutMs(model),
-      maxRetriesPerModel: IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
+      maxRetriesPerModel: signal
+        ? 0
+        : IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
       signal,
     });
-    const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
+    const rawParsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
+    const parsedOutput = this.normalizeSparseEvidenceBenchmarkOutput(
+      rawParsedOutput,
+      qualityContext,
+    );
     this.assertCandidateProblemSolutionPortfolio(context, parsedOutput);
     const quality = this.qualityEvaluatorService.evaluate(
       parsedOutput,
@@ -1708,6 +2480,76 @@ export class IdeaGenerationBenchmarkService {
     );
 
     return { aiResult, parsedOutput, quality };
+  }
+
+  private normalizeSparseEvidenceBenchmarkOutput(
+    output: ParsedIdeaAiOutput,
+    context: IdeaQualityEvaluationContext,
+  ): ParsedIdeaAiOutput {
+    const directEvidenceCount = Math.max(0, context.directEvidenceCount ?? 0);
+    const independentSourceCount = Math.max(
+      0,
+      context.verifiedIndependentSourceCount ?? 0,
+    );
+    if (directEvidenceCount > 1 || independentSourceCount > 1) {
+      return output;
+    }
+
+    const sanitizeNarrative = (value: string): string =>
+      value
+        .replace(
+          /\bThis issue (?:frequently|often|commonly|typically) stems from\b/giu,
+          'A potential contributing factor to validate is',
+        )
+        .replace(
+          /\bThis (?:failure|problem) (?:frequently|often|commonly|typically) stems from\b/giu,
+          'A potential contributing factor to validate is',
+        )
+        .replace(
+          /\b(?:persistent|recurring|widespread|common|frequent|systemic)\s+(friction|failures?|problems?|issues?|challenges?|demand)\b/giu,
+          directEvidenceCount === 0 ? 'potential $1' : 'reported $1',
+        )
+        .replace(
+          /\b(?:users|customers|developers|operators|patients|coaches|athletes|families)\s+(?:often|frequently|commonly|typically)\s+(struggle|experience|encounter|face)\b/giu,
+          (_match, verb: string) =>
+            `the retained scenario suggests that affected users may ${verb.toLowerCase()}`,
+        );
+
+    const sanitizeMarketPotential = (value: string): string =>
+      sanitizeNarrative(value)
+        .replace(/\b(?:large|strong|proven|substantial|common|recurring) demand\b/giu, 'potential demand')
+        .replace(/\bfrequently\b/giu, 'potentially')
+        .replace(/\bfrequent\b/giu, 'potential')
+        .replace(
+          /\b(?:common|substantial|widespread|recurring|industry-wide|market-wide)\b/giu,
+          'potential',
+        );
+
+    return {
+      coreIdea: {
+        ...output.coreIdea,
+        title: output.coreIdea.title.trim(),
+        problemStatement: sanitizeNarrative(output.coreIdea.problemStatement),
+        objectives: output.coreIdea.objectives.map(sanitizeNarrative),
+        targetUsers: output.coreIdea.targetUsers.map(sanitizeNarrative),
+        ...(output.coreIdea.limitedAbstract
+          ? { limitedAbstract: sanitizeNarrative(output.coreIdea.limitedAbstract) }
+          : {}),
+        ...(output.coreIdea.partialAbstract
+          ? { partialAbstract: sanitizeNarrative(output.coreIdea.partialAbstract) }
+          : {}),
+        ...(output.coreIdea.fullAbstract
+          ? { fullAbstract: sanitizeNarrative(output.coreIdea.fullAbstract) }
+          : {}),
+      },
+      advancedOutputs: output.advancedOutputs.map((advancedOutput) => ({
+        ...advancedOutput,
+        content:
+          advancedOutput.outputKey === 'market-potential'
+            ? sanitizeMarketPotential(advancedOutput.content)
+            : sanitizeNarrative(advancedOutput.content),
+      })),
+    };
   }
 
   /**
@@ -1754,6 +2596,7 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
+    this.assertRequesterIntentLock(context, parsedOutput);
     this.assertWinnerProblemLock(context, parsedOutput);
 
     const evidenceBackedDomainNames = new Set(
@@ -1840,6 +2683,41 @@ export class IdeaGenerationBenchmarkService {
         'ABSTRACT_DUPLICATION_REJECTED: fullAbstract must add material detail beyond the overview.',
       );
     }
+  }
+
+  /**
+   * Rejects a generated candidate before benchmark scoring when its public-facing
+   * core idea no longer solves the explicit requester description. Premium
+   * fullAbstract is authoritative; a copied short disclaimer cannot mask an
+   * unrelated title/problem/objective portfolio.
+   */
+  private assertRequesterIntentLock(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): void {
+    const requesterDescription = context.requestDescription?.trim();
+
+    if (!requesterDescription) {
+      return;
+    }
+
+    const alignment = evaluateRequestIntentAlignment(
+      requesterDescription,
+      parsedOutput.coreIdea,
+    );
+
+    if (alignment.matched) {
+      return;
+    }
+
+    throw new ServiceUnavailableException(
+      [
+        'REQUEST_INTENT_MISMATCH:',
+        `generated candidate retained only ${alignment.sharedTokenCount} material requester-intent token(s)`,
+        `(score=${alignment.score}, problemScore=${alignment.problemScore}, requiredShared=${alignment.requiredSharedTokenCount}).`,
+        'The benchmark must try another model or keep the requester-defined validation hypothesis instead of substituting an unrelated same-domain problem.',
+      ].join(' '),
+    );
   }
 
   /** Parses numbered `[Domain] Problem | Solution response` entries. */
@@ -2234,6 +3112,10 @@ export class IdeaGenerationBenchmarkService {
       ranking,
     );
     const alignedEvidenceDomains = finalClaimDomains;
+    const isValidationHypothesis =
+      opportunity.disqualificationReasons.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      );
 
     if (isControlledSparseFallback) {
       this.logger.warn(
@@ -2284,13 +3166,21 @@ export class IdeaGenerationBenchmarkService {
             ]
           : []),
         ...(crossDomainPortfolio.length > 1
-          ? [
-              '- VERIFIED CROSS-DOMAIN WINNER: the selected opportunity itself is verified across the domains below. Integrate only these domains into one coherent product workflow.',
-              '- Do not add any selected search-space domain that is absent from this verified winner portfolio.',
-              '<cross_domain_problem_portfolio>',
-              JSON.stringify(crossDomainPortfolio),
-              '</cross_domain_problem_portfolio>',
-            ]
+          ? isValidationHypothesis
+            ? [
+                '- VALIDATION-SCOPE PORTFOLIO: the domains below are allowed requester-selected hypothesis dimensions. Integrate them into one coherent product workflow without claiming that retained evidence verified the cross-domain connection.',
+                '- Do not add any selected search-space domain that is absent from this validation-scope portfolio.',
+                '<cross_domain_problem_portfolio>',
+                JSON.stringify(crossDomainPortfolio),
+                '</cross_domain_problem_portfolio>',
+              ]
+            : [
+                '- VERIFIED CROSS-DOMAIN WINNER: the selected opportunity itself is verified across the domains below. Integrate only these domains into one coherent product workflow.',
+                '- Do not add any selected search-space domain that is absent from this verified winner portfolio.',
+                '<cross_domain_problem_portfolio>',
+                JSON.stringify(crossDomainPortfolio),
+                '</cross_domain_problem_portfolio>',
+              ]
           : []),
         ...(!opportunity.selectionEligible
           ? [
@@ -2300,11 +3190,32 @@ export class IdeaGenerationBenchmarkService {
             ]
           : []),
         ...(alignedEvidenceDomains.length > 1
-          ? [
-              `- FINAL CLAIM SPACE: the selected opportunity is verified across ${alignedEvidenceDomains.join(', ')}. Use all and only these domains in the title, problem, target users, objectives, abstracts, features, architecture examples, market discussion, and pilot participants.`,
-              `- Forbidden search-space domains for this candidate: ${forbiddenSearchDomains.join(', ') || 'none'}.`,
-              '- Every target-user segment, objective, and capability must map to retained verified evidence supporting the selected opportunity.',
-            ]
+          ? isValidationHypothesis
+            ? [
+                `- FINAL VALIDATION SCOPE: ${alignedEvidenceDomains.join(', ')}. These domains are requester-approved hypothesis dimensions, not verified evidence domains. Use all and only these domains to build one coherent validation-first product.`,
+                `- Forbidden search-space domains for this candidate: ${forbiddenSearchDomains.join(', ') || 'none'}.`,
+                '- Every allowed validation-scope domain must have a material implementation role through a concrete mechanism, capability, affected workflow, or pilot measurement. Merely naming the domain is not sufficient.',
+                ...(alignedEvidenceDomains.some((name) => name.trim().toLocaleLowerCase() === 'blockchain')
+                  ? [
+                      '- BLOCKCHAIN MATERIALITY: use one bounded mechanism such as a permissioned consortium ledger, cryptographic hash anchoring of record versions, signed provenance, or an append-only cross-agency verification ledger. A generic mutable database audit log or vague "immutable audit trail" alone does not satisfy the Blockchain dimension. Present the mechanism as a pilot design choice, never as evidence of blockchain demand or adoption.',
+                    ]
+                  : []),
+                ...(alignedEvidenceDomains.some((name) => name.trim().toLocaleLowerCase() === 'legaltech')
+                  ? [
+                      '- LEGALTECH MATERIALITY: implement a concrete contracts, record-verification, compliance, provenance, or dispute-resolution workflow without giving legal advice or asserting legal conclusions.',
+                    ]
+                  : []),
+                ...(alignedEvidenceDomains.some((name) => name.trim().toLocaleLowerCase() === 'government')
+                  ? [
+                      '- GOVERNMENT MATERIALITY: anchor capabilities in the requester-named public-sector workflow such as permits, licenses, official records, approvals, ownership records, and cross-department processing.',
+                    ]
+                  : []),
+              ]
+            : [
+                `- FINAL CLAIM SPACE: the selected opportunity is verified across ${alignedEvidenceDomains.join(', ')}. Use all and only these domains in the title, problem, target users, objectives, abstracts, features, architecture examples, market discussion, and pilot participants.`,
+                `- Forbidden search-space domains for this candidate: ${forbiddenSearchDomains.join(', ') || 'none'}.`,
+                '- Every target-user segment, objective, and capability must map to retained verified evidence supporting the selected opportunity.',
+              ]
           : [
               `- FINAL CLAIM SPACE: generate only for ${alignedEvidenceDomains[0] ?? opportunityDomainName ?? context.domainName ?? 'the domain represented by the selected opportunity'}.`,
               `- Do not add users, workflows, institutions, capabilities, architecture examples, market claims, or pilot participants from these other selected search-space domains: ${forbiddenSearchDomains.join(', ') || 'none'}.`,
@@ -2679,20 +3590,31 @@ export class IdeaGenerationBenchmarkService {
   private buildQualityContext(
     context: IdeaGenerationContext,
   ): IdeaQualityEvaluationContext {
-    const retainedDirectEvidenceCount = (context.domainEvidence ?? []).reduce(
-      (total, domain) => {
-        const samplePostsCount = Array.isArray(domain.samplePosts)
-          ? domain.samplePosts.length
-          : 0;
-
-        const sampleCommentsCount = Array.isArray(domain.sampleComments)
-          ? domain.sampleComments.length
-          : 0;
-
-        return total + samplePostsCount + sampleCommentsCount;
-      },
-      0,
+    const selectedOpportunity = context.opportunityRanking?.selected;
+    const validationOnly = Boolean(
+      selectedOpportunity?.disqualificationReasons.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      ),
     );
+    const independentDirectEvidenceCount =
+      selectedOpportunity?.independentEvidence?.filter((item) =>
+        [
+          'DIRECT_USER_COMPLAINT',
+          'USER_COMPLAINT',
+          'FEATURE_REQUEST',
+          'REVIEW',
+        ].includes(item.evidenceKind),
+      ).length ?? 0;
+    const selectedDirectEvidenceCount =
+      selectedOpportunity?.verifiedProblemMatchedDirectUserEvidenceCount ??
+      selectedOpportunity?.verifiedDirectUserEvidenceCount ??
+      selectedOpportunity?.verifiedIndependentEvidenceCount ??
+      independentDirectEvidenceCount;
+    const retainedDirectEvidenceCount = validationOnly
+      ? 0
+      : typeof selectedDirectEvidenceCount === 'number'
+        ? Math.max(0, Math.floor(selectedDirectEvidenceCount))
+        : 0;
 
     const winnerDomains =
       context.opportunityRanking?.selected.matchedDomainNames?.filter(Boolean) ?? [];
@@ -2731,9 +3653,16 @@ export class IdeaGenerationBenchmarkService {
     const metrics = context.nlp
       ? `Trusted NLP totals: ${context.nlp.totalTextsAnalyzed} texts, ${context.nlp.totalPostsAnalyzed} posts, and ${context.nlp.totalCommentsAnalyzed} comments.`
       : 'Trusted NLP totals are unavailable.';
+    const validationOnly = Boolean(
+      context.opportunityRanking?.selected.disqualificationReasons.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      ),
+    );
 
     return [
-      'Generate one specific, evidence-grounded, differentiated, locally deployable software product.',
+      validationOnly
+        ? 'Generate one specific, requester-grounded, differentiated, locally deployable validation-first software product. The requester description defines the hypothesis; it is not retained evidence.'
+        : 'Generate one specific, evidence-grounded, differentiated, locally deployable software product.',
       'Use a natural public-facing product title. Never put Cross-Domain, Multi-Domain, Validation, Request Validation, Validation Pilot, Evidence Validation, Opportunity Discovery, Primary Domain, Preliminary Pilot, or a plus-sign-joined domain list in the title. Keep evidence/validation qualification in the narrative instead.',
       context.requestDescription
         ? `Requester intent: ${context.requestDescription}. This is a mandatory product-scope constraint for the final idea, but it is never evidence. Keep the selected product directly about the named user problem/workflow and do not substitute an easier same-domain problem. Preserve every material pain, operational constraint, named data source, and requested outcome from the description; do not silently drop one merely to simplify the product. Map each material dimension to the problem narrative, a concrete capability/objective, or an explicit pilot measurement/assumption. If evidence is weak, build the smallest validation-first product for this exact requester scope. If the wording asks to enhance, improve, automate, or optimize something with AI, treat AI as a preferred solution mechanism rather than a separate problem domain unless Artificial Intelligence is explicitly selected as a domain.`
@@ -2750,8 +3679,14 @@ export class IdeaGenerationBenchmarkService {
         : context.generationType === IdeaGenerationType.GUEST_FREE
           ? 'Return limitedAbstract and partialAbstract only. Do not return fullAbstract or advancedOutputs for guest generation.'
           : 'For NORMAL_FREE, return exactly these root keys and no others: title, problemStatement, objectives, targetUsers, partialAbstract. Never return limitedAbstract, fullAbstract, advancedOutputs, businessModel, technologyStack, systemArchitecture, budgetEstimation, implementationTimeline, feasibilityAssessment, marketPotential, valueProposition, localRegulations, or any premium-only field.',
-      'Preserve the assigned opportunity as the immutable evidence unit for the candidate: its title, problem, need, solution area, severity, frequency, verified matched domains, and retained evidence must remain mutually consistent. Do not merge a separate shortlisted opportunity into the candidate unless that opportunity is the explicit candidate-specific assignment.',
-      'The final problemStatement must be one coherent problem-only narrative. Use only domains that have retained direct evidence in domainEvidence. A selected domain with zero retained posts and comments must not appear in targetUsers, objectives, abstracts, market claims, or advanced outputs.',
+      validationOnly
+        ? 'Preserve the assigned requester-defined validation hypothesis as the immutable candidate scope. Keep its problem, allowed validation domains, and evidence limitations mutually consistent. Do not merge a separate shortlisted evidence item into the hypothesis or imply that unrelated evidence validates it.'
+        : 'Preserve the assigned opportunity as the immutable evidence unit for the candidate: its title, problem, need, solution area, severity, frequency, verified matched domains, and retained evidence must remain mutually consistent. Do not merge a separate shortlisted opportunity into the candidate unless that opportunity is the explicit candidate-specific assignment.',
+      context.opportunityRanking?.selected.disqualificationReasons.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      )
+        ? 'The final problemStatement must be one coherent problem-only narrative. This run is an explicit requester-defined validation hypothesis: domains in selected.matchedDomainNames may appear as concrete product mechanisms or pilot dimensions even when they have zero retained direct evidence, but they must never be described as evidence-backed demand, prevalence, recurrence, or adoption. Domains outside selected.matchedDomainNames remain forbidden.'
+        : 'The final problemStatement must be one coherent problem-only narrative. Use only domains that have retained direct evidence in domainEvidence. A selected domain with zero retained posts and comments must not appear in targetUsers, objectives, abstracts, market claims, or advanced outputs.',
       'Classify domain alignment by the affected user workflow and unmet need, not by incidental words naming a government website, school, city, company, repository, or source system.',
       'A cybersecurity incident such as ransomware, deletion by an attacker, or a data breach is not evidence of ordinary synchronization failure, network timeout, or storage-choice demand. Do not reinterpret security incidents as product reliability evidence.',
       'When directEvidenceCount or frequency equals 1, use singular and qualified wording such as one report indicates or a limited evidence sample suggests. Never use frequently, recurring discussions, common, widespread, or equivalent market-wide language.',
@@ -3065,7 +4000,9 @@ export class IdeaGenerationBenchmarkService {
       return {
         id: candidate.candidateId,
         runId,
-        aiModelId: candidate.modelSnapshot.id,
+        aiModelId: candidate.deterministicEmergencyFallback
+          ? null
+          : candidate.modelSnapshot.id,
         providerKey: candidate.modelSnapshot.providerKey,
         apiModelId: candidate.modelSnapshot.apiModelId,
         modelName: candidate.modelSnapshot.modelName,
@@ -3119,9 +4056,11 @@ export class IdeaGenerationBenchmarkService {
           : Prisma.JsonNull,
         judgeReason: isWinner
           ? (evaluation?.reason ??
-            (candidate.quality.accepted
-              ? 'Selected by deterministic quality and semantic-diversity ranking.'
-              : 'Selected as the strongest structurally valid availability fallback.'))
+            (candidate.deterministicEmergencyFallback
+              ? 'Selected by the deterministic emergency fallback after all bounded AI core-generation attempts were unavailable or unusable.'
+              : candidate.quality.accepted
+                ? 'Selected by deterministic quality and semantic-diversity ranking.'
+                : 'Selected as the strongest structurally valid availability fallback.'))
           : (evaluation?.comparisonReport.find(
               (report) => report.candidateId === candidate.candidateId,
             )?.whyItRankedHere ?? null),

@@ -48,7 +48,12 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
     const benchmark = await this.benchmarkService.benchmark(context);
     const benchmarkDurationMs = Date.now() - benchmarkStartedAt;
     const winner = benchmark.winner;
-    const winnerOpportunity = context.opportunityRanking?.selected;
+    const ranking = context.opportunityRanking;
+    const winnerOpportunity = ranking
+      ? [ranking.selected, ...ranking.alternatives].find(
+          (opportunity) => opportunity.rank === winner.opportunityRank,
+        ) ?? ranking.selected
+      : null;
 
     if (!winnerOpportunity) {
       throw new BadRequestException({
@@ -61,6 +66,15 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
       ...context,
       coreIdea: winner.parsedOutput.coreIdea,
       benchmarkWinnerOpportunity: winnerOpportunity,
+      benchmarkCandidates: benchmark.candidates.map((candidate) => ({
+        candidateId: candidate.candidateId,
+        selected: candidate.candidateId === winner.candidateId,
+        finalScore: candidate.finalScore,
+        qualityScore: candidate.quality.score,
+        opportunityRank: candidate.opportunityRank,
+        opportunityTitle: candidate.opportunityTitle,
+        parsedOutput: candidate.parsedOutput,
+      })),
       advancedOutputs: this.mergeAdvancedOutputs(
         context.advancedOutputs,
         winner.parsedOutput.advancedOutputs,
@@ -87,7 +101,9 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
     return {
       context: updatedContext,
       resultPreview: [
-        `Benchmark selected the best model execution for the immutable opportunity #${winner.opportunityRank} "${winner.opportunityTitle}".`,
+        winner.deterministicEmergencyFallback
+          ? `All bounded AI model requests were unavailable, so the deterministic emergency fallback completed the immutable opportunity #${winner.opportunityRank} \"${winner.opportunityTitle}\" without failing the run.`
+          : `Benchmark selected the best model execution for the immutable opportunity #${winner.opportunityRank} \"${winner.opportunityTitle}\".`,
         this.createResponsePreview(winner.aiResult.text),
       ].join(' '),
       metadata: {
@@ -99,7 +115,10 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           apiModelId: winner.aiResult.apiModelId,
           deterministicScore: winner.quality.score,
           qualityThresholdAccepted: winner.quality.accepted,
-          availabilityFallbackUsed: !winner.quality.accepted,
+          availabilityFallbackUsed:
+            winner.deterministicEmergencyFallback || !winner.quality.accepted,
+          deterministicEmergencyFallbackUsed:
+            winner.deterministicEmergencyFallback,
           semanticDiversityAdjustedScore: winner.semanticDiversityAdjustedScore,
           aiJudgeScore: winner.aiJudge?.overallScore ?? null,
           hybridFinalScore: winner.hybridFinalScore,
@@ -119,7 +138,9 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           responseTimeMs: winner.aiResult.responseTimeMs,
         },
         benchmarkDurationMs,
-        modelExecutionMode: 'PARALLEL_PER_BATCH',
+        modelExecutionMode: winner.deterministicEmergencyFallback
+          ? 'DETERMINISTIC_EMERGENCY_FALLBACK'
+          : 'PARALLEL_PER_BATCH',
         modelTimings,
         fastestModelResponseMs:
           measuredModelTimes.length > 0 ? Math.min(...measuredModelTimes) : null,
@@ -173,7 +194,10 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           responseTimeMs: candidate.aiResult.responseTimeMs,
           validationScore: candidate.quality.score,
           qualityThresholdAccepted: candidate.quality.accepted,
-          availabilityFallbackUsed: !candidate.quality.accepted,
+          availabilityFallbackUsed:
+            candidate.deterministicEmergencyFallback || !candidate.quality.accepted,
+          deterministicEmergencyFallbackUsed:
+            candidate.deterministicEmergencyFallback,
           validationIssues: candidate.quality.issues.map((issue) => issue.code),
           semanticDiversityScore:
             candidate.semanticDiversity?.diversityScore ?? null,

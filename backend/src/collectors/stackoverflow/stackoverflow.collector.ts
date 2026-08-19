@@ -287,13 +287,18 @@ export class StackOverflowCollector
           ...(input.domainKeywords ?? []),
           ...(input.keywords ?? []),
         ],
+        plannedQueries: input.plannedQueries,
         // The queries execute concurrently, so three selected-domain anchors
         // improve recall without creating three sequential network waits.
         maxQueries: isBoundedMode ? 3 : 6,
       });
 
     return technicalQueries.map((query, index) =>
-      index === 0 ? { title: query } : { q: query },
+      input.plannedQueries?.length
+        ? { q: query }
+        : index === 0
+          ? { title: query }
+          : { q: query },
     );
   }
 

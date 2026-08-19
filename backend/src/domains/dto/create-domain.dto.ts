@@ -63,6 +63,10 @@ export class CreateDomainDto {
   @IsBoolean()
   isActive?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+
   /**
    * Optional discovery keywords associated with this domain.
    *

@@ -145,6 +145,11 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       },
     );
 
+    const plannedDataSources = this.selectPlannedDataSources(
+      selection.dataSources,
+      context,
+    );
+
     const updatedContext: IdeaGenerationContext = {
       ...context,
 
@@ -156,24 +161,25 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
 
       keywords: mergedKeywords,
 
-      selectedDataSources: selection.dataSources,
+      selectedDataSources: plannedDataSources,
     };
 
     return {
       context: updatedContext,
 
-      resultPreview: `Selected ${selection.dataSources.length} data source(s) for domain "${selection.domain.name}".`,
+      resultPreview: `Selected ${plannedDataSources.length} data source(s) for domain "${selection.domain.name}"${context.collectionPlan ? ' using the pre-collection intent plan' : ''}.`,
 
       metadata: {
         domainId: selection.domain.id,
 
         domainName: selection.domain.name,
 
-        selectedDataSourceKeys: selection.dataSources.map(
+        selectedDataSourceKeys: plannedDataSources.map(
           (dataSource) => dataSource.key,
         ),
 
-        selectedDataSourcesCount: selection.dataSources.length,
+        selectedDataSourcesCount: plannedDataSources.length,
+        collectionPlanSourceFocus: context.collectionPlan?.sourceFocus ?? [],
 
         mergedKeywordsCount: mergedKeywords.length,
         selectedDomains: selectedDomains.map(({ id, name }) => ({ id, name })),
@@ -184,6 +190,150 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
         domainResolution: context.domainResolution,
       },
     };
+  }
+
+  private selectPlannedDataSources<T extends { readonly key: string }>(
+    dataSources: readonly T[],
+    context: IdeaGenerationContext,
+  ): T[] {
+    if (!context.requestDescription?.trim() || !context.collectionPlan) {
+      return [...dataSources];
+    }
+
+    const sourceKeysByFocus: Record<string, readonly string[]> = {
+      REVIEWS: ['google-play', 'app-store'],
+      FORUMS: ['reddit', 'forum', 'hacker-news'],
+      TECHNICAL: ['stackoverflow', 'github'],
+      NEWS: ['news', 'blog'],
+      PRODUCT_DISCOVERY: ['product-hunt'],
+    };
+    const requestedKeys = new Set<string>();
+    for (const focus of context.collectionPlan.sourceFocus) {
+      for (const key of sourceKeysByFocus[focus] ?? []) {
+        requestedKeys.add(key);
+      }
+    }
+
+    if (requestedKeys.size === 0) {
+      return [...dataSources];
+    }
+
+    const normalizedIntentText = [
+      context.requestDescription ?? '',
+      ...(context.collectionPlan.searchQueries ?? []),
+      ...(context.collectionPlan.intentConcepts ?? []),
+    ]
+      .join(' ')
+      .toLocaleLowerCase();
+    const institutionalPlan =
+      /\b(?:government|municipal|public sector|public facility|city council|city government|local authority|public infrastructure|school district|library system|administrative building|city planner|city planners|city planning|urban planning|municipal planning|neighborhood management|neighbourhood management|public housing|residential planning|housing authority|property management.{0,80}city|city.{0,80}property management)\b/iu.test(
+        normalizedIntentText,
+      );
+    const smallBusinessOperationsPlan =
+      /\b(?:flower shop|flower shops|florist|florists|bouquet|bouquets|tattoo studio|dance studio|pottery studio|photography studio|repair shop|custom order|custom orders|small business|local supplier|local suppliers|musical instrument repair|luthier)\b/iu.test(
+        normalizedIntentText,
+      ) &&
+      /\b(?:orders?|inventory|availability|delivery|booking|schedule|customer|supplier|substitution|pickup|preferences?|requirements?|appointments?|technician|parts?|notes?|repair status|paper tags?)\b/iu.test(
+        normalizedIntentText,
+      );
+    const municipalDeviceSecurityPlan =
+      /\b(?:smart cit(?:y|ies)|municipal|city technology|city network|public infrastructure|traffic lights?|parking sensors?|public cameras?|environmental monitors?|connected city devices?)\b/iu.test(
+        normalizedIntentText,
+      ) &&
+      /\b(?:cybersecurity|security|unauthorized|outdated|firmware|compromised|device behavior|anomal|vulnerab|unmanaged|rogue device|security standards?)\w*\b/iu.test(
+        normalizedIntentText,
+      );
+    const developerTechnicalIntent =
+      /\b(?:api|sdk|code|runtime|exception|stack trace|docker|container|database schema|webhook|firmware|telemetry endpoint|developer|developers)\b/iu.test(
+        normalizedIntentText,
+      );
+
+    if (institutionalPlan) {
+      for (const key of ['news', 'youtube', 'blog', 'forum']) {
+        requestedKeys.add(key);
+      }
+      if (!developerTechnicalIntent) {
+        requestedKeys.delete('google-play');
+        requestedKeys.delete('app-store');
+        requestedKeys.delete('stackoverflow');
+      }
+    }
+
+    if (smallBusinessOperationsPlan) {
+      for (const key of ['youtube', 'news', 'google-play', 'app-store', 'forum']) {
+        requestedKeys.add(key);
+      }
+    }
+
+    if (municipalDeviceSecurityPlan) {
+      for (const key of ['news', 'youtube', 'blog', 'github']) {
+        requestedKeys.add(key);
+      }
+      requestedKeys.delete('google-play');
+      requestedKeys.delete('app-store');
+      requestedKeys.delete('product-hunt');
+    }
+
+    const priorityKeys = municipalDeviceSecurityPlan
+      ? ['news', 'youtube', 'blog', 'github', 'forum', 'stackoverflow']
+      : institutionalPlan
+        ? ['news', 'youtube', 'blog', 'forum', 'github', 'hacker-news', 'stackoverflow']
+      : smallBusinessOperationsPlan
+        ? ['youtube', 'news', 'google-play', 'app-store', 'forum', 'blog', 'product-hunt']
+      : [
+          'google-play',
+          'app-store',
+          'reddit',
+          'forum',
+          'product-hunt',
+          'github',
+          'stackoverflow',
+          'news',
+          'blog',
+          'hacker-news',
+          'dev-to',
+        ];
+
+    const planned: T[] = [];
+    for (const key of priorityKeys) {
+      if (!requestedKeys.has(key) || planned.length >= 5) continue;
+      const source = dataSources.find(
+        (candidate) => candidate.key === key && !planned.includes(candidate),
+      );
+      if (source) planned.push(source);
+    }
+
+    for (const source of dataSources) {
+      if (planned.length >= 5) break;
+      if (requestedKeys.has(source.key) && !planned.includes(source)) {
+        planned.push(source);
+      }
+    }
+
+    if (planned.length >= 3) {
+      return planned.slice(0, 4);
+    }
+
+    const isTechnicalPlan = context.collectionPlan.sourceFocus.includes('TECHNICAL');
+    const safeSupplementKeys = municipalDeviceSecurityPlan
+      ? ['news', 'youtube', 'blog', 'github']
+      : institutionalPlan
+        ? ['news', 'youtube', 'blog', 'forum', 'github']
+      : smallBusinessOperationsPlan
+        ? ['youtube', 'news', 'google-play', 'app-store', 'forum', 'blog']
+      : isTechnicalPlan
+        ? ['github', 'stackoverflow', 'reddit', 'forum', 'news', 'dev-to']
+        : ['google-play', 'app-store', 'reddit', 'forum', 'product-hunt', 'news'];
+
+    for (const key of safeSupplementKeys) {
+      if (planned.length >= 3) break;
+      const source = dataSources.find(
+        (candidate) => candidate.key === key && !planned.includes(candidate),
+      );
+      if (source) planned.push(source);
+    }
+
+    return planned.length > 0 ? planned.slice(0, 4) : [...dataSources];
   }
 
   /**

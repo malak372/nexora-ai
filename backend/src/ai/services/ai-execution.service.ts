@@ -6,7 +6,7 @@ import {
 
 import { ConfigService } from '@nestjs/config';
 
-import { AiModel, AiRoutingStrategy } from '@prisma/client';
+import { AiModel, AiRoutingStrategy, ApiRequestType } from '@prisma/client';
 
 import { randomUUID } from 'crypto';
 
@@ -696,7 +696,15 @@ export class AiExecutionService {
         true,
       );
 
-    await this.recordModelFailureWhenApplicable(model.id, resolvedError);
+    const modelHealthPersistence = this.recordModelFailureWhenApplicable(
+      model.id,
+      resolvedError,
+    );
+    if (this.shouldDeferTransientIdeaGenerationMaintenance(input, resolvedError)) {
+      void modelHealthPersistence;
+    } else {
+      await modelHealthPersistence;
+    }
 
     return {
       success: false,
@@ -827,7 +835,7 @@ export class AiExecutionService {
     } catch (error: unknown) {
       const normalizedError = this.normalizeError(error);
 
-      await this.recordFailedProviderAttempt(
+      const failedAttemptPersistence = this.recordFailedProviderAttempt(
         context.operationId,
         attemptNumber,
         fallbackUsed,
@@ -836,6 +844,12 @@ export class AiExecutionService {
         normalizedError,
         Date.now() - attemptStartedAt,
       );
+
+      if (this.shouldDeferTransientIdeaGenerationMaintenance(input, normalizedError)) {
+        void failedAttemptPersistence;
+      } else {
+        await failedAttemptPersistence;
+      }
 
       /*
        * Some providers reject an otherwise valid application JSON Schema at
@@ -1489,6 +1503,26 @@ export class AiExecutionService {
    * Persists one provider request that failed before producing a usable
    * provider result.
    */
+  /**
+   * Idea generation has its own bounded benchmark and deterministic emergency
+   * fallback, so transient provider-maintenance writes must not extend the
+   * user-facing timeout after the provider has already failed.
+   */
+  private shouldDeferTransientIdeaGenerationMaintenance(
+    input: AiExecutionInput,
+    error: AiProviderError,
+  ): boolean {
+    return (
+      input.requestType === ApiRequestType.IDEA_GENERATION &&
+      [
+        AiProviderErrorCode.TIMEOUT,
+        AiProviderErrorCode.NETWORK,
+        AiProviderErrorCode.PROVIDER_UNAVAILABLE,
+        AiProviderErrorCode.RATE_LIMIT,
+      ].includes(error.code)
+    );
+  }
+
   private async recordFailedProviderAttempt(
     operationId: string,
     attemptNumber: number,

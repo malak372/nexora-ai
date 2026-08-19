@@ -73,8 +73,26 @@ export type RankedIdeaOpportunity = {
   /** Lexical/semantic match to the requester's explicit current description. */
   readonly requestIntentAlignmentScore?: number;
 
+  /** Whether the retained evidence matches the full request or only a supported subset. */
+  readonly requestIntentSupportTier?:
+    | 'FULL_REQUEST_MATCH'
+    | 'PARTIAL_REQUEST_SUPPORT'
+    | 'WEAK_OR_UNRELATED';
+
   /** Evidence score after bounded request-intent reranking. */
   readonly requestIntentAdjustedScore?: number;
+
+  readonly supportingEvidence?: readonly {
+    readonly sourceType:
+      | 'COMMUNITY_EVIDENCE'
+      | 'SECONDARY_EVIDENCE'
+      | 'TECHNICAL_EVIDENCE'
+      | 'REQUESTER_STATEMENT'
+      | 'REQUESTER_DOMAIN_SELECTION'
+      | 'PERSONALIZATION_SIGNAL';
+    readonly text: string;
+    readonly qualifiesAsCommunityEvidence: boolean;
+  }[];
 
   readonly selectionEligible: boolean;
   readonly disqualificationReasons: readonly string[];

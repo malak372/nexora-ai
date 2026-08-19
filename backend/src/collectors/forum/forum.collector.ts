@@ -196,6 +196,13 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
    * Builds the forum search query.
    */
   private buildSearchQuery(input: CollectorInput): string {
+    const plannedQuery = (input.plannedQueries ?? [])
+      .map((query) => this.cleanNormalizedText(query))
+      .find(Boolean);
+    if (plannedQuery) {
+      return plannedQuery.split(/\s+/u).slice(0, 10).join(' ');
+    }
+
     const domainKeywords = this.getDomainKeywords(input);
 
     const fallbackDomain = input.domainName

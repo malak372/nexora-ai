@@ -562,7 +562,7 @@ export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
  * the pipeline can keep the stronger result without returning to long provider
  * timeout chains.
  */
-export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = 76;
+export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = IDEA_MIN_ACCEPTED_QUALITY_SCORE;
 
 /**
  * Maximum time granted to already-running hedged peer requests after the first
@@ -581,7 +581,7 @@ export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 650;
 export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
 
 /** Skip expensive self-revision when the first pass is already usable. */
-export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 68;
+export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 69;
 
 /**
  * Number of AI models launched in the first provider-diverse wave.
@@ -644,7 +644,7 @@ export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 4;
  * many redesign attempts before the benchmark advances to the next model or
  * ranked opportunity.
  */
-export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 0;
+export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 1;
 
 /**
  * Preferred minimum number of valid candidates before comparative judging.

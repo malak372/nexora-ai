@@ -75,6 +75,7 @@ export type IdeaGenerationCollectionInput = {
   readonly dataSourceKeys?: string[];
 
   readonly keywords?: string[];
+  readonly plannedQueries?: string[];
 
   readonly collectionMode?: CollectorInput['collectionMode'];
   readonly collectorLimits?: CollectorInput['limits'];
@@ -353,6 +354,10 @@ export class DataCollectionService {
               language: dto.language,
               radiusKm: dto.radiusKm,
               keywords: userKeywords,
+              plannedQueries:
+                'plannedQueries' in dto
+                  ? this.unique(dto.plannedQueries ?? [])
+                  : undefined,
               collectionMode,
               limits: effectiveCollectorLimits,
             };
@@ -418,6 +423,7 @@ export class DataCollectionService {
               relevanceTerms,
               collectionMode,
               dataSource.key,
+              'plannedQueries' in dto ? dto.plannedQueries ?? [] : [],
             );
             const relevanceElapsedMs = Date.now() - relevanceStartedMs;
 
@@ -502,6 +508,35 @@ export class DataCollectionService {
             return 'COMPLETED' as const;
           } catch (error: unknown) {
             jobForSource = jobForSource ?? (await getJob());
+
+            if (collectionMode === 'FAST_GENERATION') {
+              const failedJobId = jobForSource.id;
+              const failedDataSourceId = dataSource.id;
+              const failedError = error;
+              deferredFastSourceCheckpoints.push(async () => {
+                const persistedTotals =
+                  await this.socialPostService.countByCollectionJobSource(
+                    failedJobId,
+                    failedDataSourceId,
+                  );
+
+                await this.collectionJobService.markSourceFailed(
+                  failedJobId,
+                  failedDataSourceId,
+                  failedError,
+                  persistedTotals,
+                  sourceStartedAt,
+                );
+              });
+
+              this.logger.warn(
+                `FAST_GENERATION source failed without blocking the evidence path | source=${dataSource.key} | ` +
+                  `error=${this.getErrorMessage(error)}`,
+              );
+
+              return 'FAILED' as const;
+            }
+
             const persistedTotals =
               await this.socialPostService.countByCollectionJobSource(
                 jobForSource.id,
@@ -520,7 +555,6 @@ export class DataCollectionService {
               dataSource.id,
               error,
               persistedTotals,
-              collectionMode === 'FAST_GENERATION' ? sourceStartedAt : undefined,
             );
 
             return 'FAILED' as const;
@@ -914,7 +948,9 @@ export class DataCollectionService {
     relevanceTerms: string[],
     collectionMode?: CollectorInput['collectionMode'],
     sourceKey?: string,
+    plannedQueries: readonly string[] = [],
   ): CollectorPost[] {
+    const hasPlannedQueries = plannedQueries.length > 0;
     const normalizedTerms = this.expandTechnicalRelevanceTerms(
       this.normalizeRelevanceTerms(relevanceTerms),
     );
@@ -995,6 +1031,13 @@ export class DataCollectionService {
         ),
       );
       const hasComplaintComment = complaintComments.length > 0;
+      const plannedContainerAnchorGuard =
+        !hasPlannedQueries ||
+        !isCommentContainerSource ||
+        this.hasPlannedWorkflowProblemAnchor(
+          [post.title, post.content, commentsBody].filter(Boolean).join(' '),
+          plannedQueries,
+        );
 
       const containerDomainScore = isCommentContainerSource
         ? RelevanceScoreUtil.scoreText({
@@ -1014,9 +1057,23 @@ export class DataCollectionService {
           normalizedTerms,
         );
 
+      const plannedSecondaryEvidenceOverride =
+        hasPlannedQueries &&
+        (collectionMode === 'FAST_GENERATION' || collectionMode === 'TARGETED_RECOVERY') &&
+        (sourceKey === 'news' || sourceKey === 'blog' || sourceKey === 'youtube') &&
+        this.hasStrongDomainAnchor(
+          [post.title, post.content].filter(Boolean).join(' '),
+          normalizedTerms,
+        ) &&
+        this.hasSecondaryOperationalProblemSignal(
+          [post.title, post.content].filter(Boolean).join(' '),
+        ) &&
+        plannedContainerAnchorGuard;
+
       const commentContainerOverride =
         isCommentContainerSource &&
         hasComplaintComment &&
+        plannedContainerAnchorGuard &&
         containerDomainScore >=
           this.resolveContainerDomainMinimum(sourceKey, collectionMode);
 
@@ -1024,7 +1081,7 @@ export class DataCollectionService {
         (hasMinimumIndependentRelevance &&
           finalScore >= minimumScore &&
           passesGenericTitleGuard &&
-          hasCommunityProblemSignal) ||
+          (hasCommunityProblemSignal || plannedSecondaryEvidenceOverride)) ||
         technicalProblemOverride ||
         commentContainerOverride;
 
@@ -1042,6 +1099,7 @@ export class DataCollectionService {
           `communityProblemSignal=${hasCommunityProblemSignal}`,
           `publisherCopyExcluded=${isMarketplaceSource}`,
           `technicalProblemOverride=${technicalProblemOverride}`,
+          `plannedSecondaryEvidenceOverride=${plannedSecondaryEvidenceOverride}`,
           `commentContainerOverride=${commentContainerOverride}`,
           `complaintComments=${complaintComments.length}`,
           `accepted=${accepted}`,
@@ -1178,6 +1236,59 @@ export class DataCollectionService {
   private hasComplaintSignal(value: string): boolean {
     const kind = classifyDirectCommunityEvidence(value, 'POST');
     return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
+  }
+
+  private hasPlannedWorkflowProblemAnchor(
+    value: string,
+    plannedQueries: readonly string[],
+  ): boolean {
+    const normalizedValue = value
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const planned = plannedQueries
+      .join(' ')
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (!planned || !normalizedValue) return true;
+
+    if (/\b(?:instrument repair|repair shop|technician|replacement parts?|pickup|paper tags?)\b/iu.test(planned)) {
+      return /\b(?:repair|luthier|technician|replacement parts?|parts?|pickup|pick up|repair ticket|service ticket|repair status|repair progress|paper tags?|instrument intake)\b/iu.test(
+        normalizedValue,
+      );
+    }
+
+    if (/\b(?:smart city|municipal|iot|traffic sensors?|public cameras?)\b/iu.test(planned) && /\b(?:security|unauthorized|outdated|firmware|compromised|vulnerab|unmanaged|anomal)\w*\b/iu.test(planned)) {
+      return /\b(?:security|unauthorized|outdated|firmware|compromised|vulnerab|unmanaged|rogue|anomal|unusual device behavior|limited visibility)\w*\b/iu.test(
+        normalizedValue,
+      );
+    }
+
+    const highSignalTerms = planned
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((token) => /^(?:access|alert|anomaly|approval|availability|breach|complaint|conflict|delay|delivery|dispute|error|failure|firmware|inventory|missing|order|outage|pickup|repair|request|risk|security|status|supplier|sync|technician|threat|unauthorized|visibility|waste)$/iu.test(token));
+
+    return highSignalTerms.length === 0 || highSignalTerms.some((term) =>
+      normalizedValue.includes(term),
+    );
+  }
+
+  private hasSecondaryOperationalProblemSignal(value: string): boolean {
+    const normalized = value
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (!normalized) return false;
+
+    return /\b(?:challenge|challenges|problem|problems|issue|issues|failure|failures|failed|delay|delays|delayed|lost|misplaced|forgotten|incorrect|wrong|waiting longer|waste|wasting|inefficient|inefficiency|inefficiently|fragmented|fragmentation|siloed|disconnected|separate systems?|separate records?|paper tags?|manual tracking|rising costs?|high costs?|higher costs?|energy bills?|consumption spike|consumption spikes|sudden increase|unexpected increase|emissions?|resource waste|maintenance failure|maintenance failures|outage|downtime|data gap|visibility gap|limited visibility|difficult to identify|hard to identify|unable to identify|unauthorized|unmanaged|outdated firmware|compromised device|unusual device behavior|security gap|cost overrun|cost overruns|excess consumption|excessive consumption)\b/iu.test(
+      normalized,
+    );
   }
 
   /**

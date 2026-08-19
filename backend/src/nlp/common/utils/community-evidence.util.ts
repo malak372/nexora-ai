@@ -113,12 +113,27 @@ const SYSTEMIC_COMMUNITY_PROBLEM_PATTERNS: readonly RegExp[] = [
 const FEATURE_REQUEST_EVIDENCE_PATTERNS: readonly RegExp[] = [
   /\b(?:feature request|please(?: also)? add|please(?: also)? support|should(?: also)? add|you should add|would like|would love to|requesting support for)\b/iu,
   /\bis there any\b[^.!?]{0,140}\b(?:that can|which can|with (?:a )?(?:feature|option|capability)|supporting)\b/iu,
-  /\bi wish\b[^.!?]{0,100}\b(?:app|platform|service|feature|option|setting|support|allow|let|could|would|had|add|include)\b/iu,
+  /\bi wish\s+(?:(?:the\s+)?(?:app|application|platform|service|tool|software|it|they)\b[^.!?]{0,90}\b(?:had|would|could|supported|included|allowed|enabled|offered|provided|added)|(?:there\s+(?:was|were)|i|we)\b[^.!?]{0,90}\b(?:could|were able to|had an? (?:feature|option|setting|way)))\b/iu,
+  /\bi hope\b[^.!?]{0,100}\b(?:add|include|support|allow|enable|provide|offer)\b/iu,
   /\b(?:i['’]?m|i am) looking(?: primarily)? for\b[^.!?]{0,120}\b(?:app|application|tool|service|platform|feature|option|capability)\b[^.!?]{0,140}\b(?:that|which|with|shows?|provides?|supports?|lets?|allows?)\b/iu,
   /\b(?:i need|we need)\b[^.!?]{0,80}\b(?:an? )?(?:app|application|tool|service|platform|feature|option|capability)\b[^.!?]{0,140}\b(?:that|which|with|shows?|provides?|supports?|lets?|allows?)\b/iu,
   /\bdo you (?:happen to )?know\b[^.!?]{0,80}\b(?:an? )?(?:app|application|tool|service|platform|alternative)\b[^.!?]{0,140}\b(?:that|which|with|shows?|provides?|supports?)\b/iu,
   /(?:أرجو إضافة|يرجى إضافة|نحتاج ميزة|أتمنى إضافة|اقتراح ميزة|طلب ميزة)/iu,
 ];
+
+function isRetrospectiveWishWithoutCapabilityRequest(value: string): boolean {
+  const normalized = normalizeCommunityText(value);
+  if (!normalized) return false;
+
+  const retrospectiveWish =
+    /\bi wish i had (?:this|the|an?)\s+(?:app|application|service|platform|tool)\b[^.!?]{0,100}\b(?:when|back then|earlier|before|years? ago|months? ago|weeks? ago)\b/iu.test(normalized) ||
+    /\bi wish i (?:knew|had known|found|discovered|heard)\b[^.!?]{0,100}\b(?:earlier|before|sooner|back then)\b/iu.test(normalized) ||
+    /\bi wish (?:this|it) (?:existed|was around|had existed)\b[^.!?]{0,100}\b(?:when|earlier|before|back then)\b/iu.test(normalized);
+
+  if (!retrospectiveWish) return false;
+
+  return !/(?:please(?: also)? add|please(?: also)? support|should(?: also)? add|you should add|i hope[^.!?]{0,80}(?:add|include|support|allow|enable)|i wish\s+(?:(?:the\s+)?(?:app|application|platform|service|tool|software|it|they)\b[^.!?]{0,90}\b(?:had|would|could|supported|included|allowed|enabled|offered|provided|added)|(?:there\s+(?:was|were)|i|we)\b[^.!?]{0,90}\b(?:could|were able to|had an? (?:feature|option|setting|way))))/iu.test(normalized);
+}
 
 const THIRD_PARTY_SCENARIO_QUESTION_PATTERNS: readonly RegExp[] = [
   /^\s*(?:what about|what if|how about)\b/iu,
@@ -340,6 +355,10 @@ export function classifyDirectCommunityEvidence(
     isLikelyGamingEvidence(semanticNormalized) ||
     isNonActionableCommunityBanter(normalized, sourceType)
   ) {
+    return 'NONE';
+  }
+
+  if (isRetrospectiveWishWithoutCapabilityRequest(semanticNormalized)) {
     return 'NONE';
   }
 

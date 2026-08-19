@@ -6,8 +6,9 @@ import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { classifyDirectCommunityEvidence } from '../../../nlp/common/utils/community-evidence.util';
 import { filterEvidenceByProblemFamily } from '../../../nlp/common/utils/problem-family-matching.util';
+import { CollectorQueryBuilderUtil } from '../../../collectors/base/collector-query-builder.util';
+import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
 import { CollectionJobResolverService } from './collection-job-resolver.service';
-import { CommunityAiAnalysisService } from './community-ai-analysis.service';
 import type {
   IdeaGenerationContext,
   IdeaGenerationNlpContext,
@@ -91,20 +92,15 @@ export class IdeaEvidenceRecoveryService {
     'forum',
   ] as const;
 
-  /**
-   * Recovery uses several complementary complaint-rich sources in parallel.
-   * Three sources are enough to improve evidence recall without repeating the
-   * full nine-source collection pass.
-   */
+  /** Keeps recovery bounded to two complementary evidence sources per run. */
   private readonly maximumRecoverySources = 2;
 
   /** Keeps provider queries bounded and natural-language complaint focused. */
-  private readonly maximumRecoveryKeywords = 3;
+  private readonly maximumRecoveryKeywords = 2;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly collectionJobResolver: CollectionJobResolverService,
-    private readonly communityAiAnalysisService: CommunityAiAnalysisService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -121,11 +117,15 @@ export class IdeaEvidenceRecoveryService {
   ): Promise<IdeaEvidenceRecoveryResult> {
     const evidenceFamilies = this.detectEvidenceFamilies(selectedOpportunity);
     const excludedSourceKeys = await this.resolveLowYieldSourceKeys(context);
-    const recoverySources = this.selectRecoverySources(
+    const recoveryCandidateSources = await this.resolveRecoveryCandidateSources(
       context.selectedDataSources,
+    );
+    const recoverySources = this.selectRecoverySources(
+      recoveryCandidateSources,
       evidenceFamilies,
       selectedOpportunity,
       excludedSourceKeys,
+      context,
     );
     const recoveryKeywords = this.buildRecoveryKeywords(
       context,
@@ -172,6 +172,7 @@ export class IdeaEvidenceRecoveryService {
       radiusKm: context.location.radiusKm ?? undefined,
       dataSourceKeys: recoverySources.map((source) => source.key),
       keywords: recoveryKeywords,
+      plannedQueries: recoveryKeywords,
       forceRefresh: true,
       collectionMode: 'TARGETED_RECOVERY',
       collectorLimits: this.resolveRecoveryCollectorLimits(),
@@ -200,51 +201,34 @@ export class IdeaEvidenceRecoveryService {
     );
 
     /*
-     * The regular collection resolver runs deterministic NLP only. Running the
-     * same grounded Community AI analysis over the supplemental corpus is
-     * essential; otherwise recovery can increase raw text counts while never
-     * producing opportunity records that ranking can merge with the original
-     * evidence family.
+     * Recovery remains deterministic after collection. A second Community AI
+     * call is intentionally avoided so a missing first-pass evidence sample
+     * cannot add another provider-latency wave.
      */
-    const recoveryContext: IdeaGenerationContext = {
-      ...context,
-      selectedDataSources: recoverySources,
-      keywords: recoveryKeywords,
-      collection: {
-        collectionJobId: result.job.id,
-        reused: result.reused,
-        totalPosts: result.nlpOutput.totalPostsAnalyzed,
-        totalComments: result.nlpOutput.totalCommentsAnalyzed,
-      },
+    const rawRecoveredEvidenceSamples = this.collectRecoveredEvidenceSamples(
       nlp,
-      communityAiAnalysis: null,
-      opportunityRanking: null,
-    };
-    const retainedRecoveryTextCount = this.countRetainedRecoveryTexts(nlp);
-    const retainedDirectEvidenceCount =
-      this.countDirectCommunityEvidenceSamples(nlp);
+      null,
+    );
+    const requestAlignedRecoverySamples = rawRecoveredEvidenceSamples.filter(
+      (sample) => this.isEvidenceAlignedToRequest(sample, context),
+    );
+    const requestAlignedNlp = this.filterNlpContextToNovelEvidence(
+      nlp,
+      requestAlignedRecoverySamples,
+    );
+    const retainedRecoveryTextCount = requestAlignedRecoverySamples.length;
+    const retainedDirectEvidenceCount = requestAlignedRecoverySamples.length;
 
-    /*
-     * If deterministic preprocessing already retained direct complaint/request
-     * samples, do not spend another provider call asking Community AI to
-     * rediscover the same evidence. The deterministic recovery opportunity
-     * preserves the quotes unchanged and independent verification remains the
-     * final eligibility gate.
-     */
-    const shouldRunCommunityAiRecovery =
-      retainedRecoveryTextCount > 0 && retainedDirectEvidenceCount === 0;
-    const rawCommunityAiAnalysis = shouldRunCommunityAiRecovery
-      ? await this.communityAiAnalysisService.analyze(recoveryContext)
-      : null;
+    const shouldRunCommunityAiRecovery = false;
+    const rawCommunityAiAnalysis = null;
 
     if (retainedRecoveryTextCount === 0) {
-      this.logger.warn(
-        'Targeted recovery retained zero final evidence texts; skipping Community AI recovery analysis.',
-      );
-    } else if (retainedDirectEvidenceCount > 0) {
       this.logger.debug(
-        `Targeted recovery retained ${retainedDirectEvidenceCount} direct evidence sample(s); ` +
-          'skipping redundant Community AI recovery analysis.',
+        'Targeted recovery produced no request-aligned external evidence; ending the recovery pass without another AI call.',
+      );
+    } else {
+      this.logger.debug(
+        `Targeted recovery retained ${retainedDirectEvidenceCount} request-aligned external evidence sample(s); using deterministic evidence preservation instead of a second Community AI call.`,
       );
     }
 
@@ -258,9 +242,9 @@ export class IdeaEvidenceRecoveryService {
       selectedOpportunity,
     );
     const recoveredEvidenceSamples = this.collectRecoveredEvidenceSamples(
-      nlp,
+      requestAlignedNlp,
       rawCommunityAiAnalysis,
-    );
+    ).filter((sample) => this.isEvidenceAlignedToRequest(sample, context));
     const novelEvidenceSamples = recoveredEvidenceSamples.filter(
       (sample) =>
         !primaryEvidenceSamples.some((primarySample) =>
@@ -278,7 +262,7 @@ export class IdeaEvidenceRecoveryService {
         novelEvidenceSamples,
       );
     const novelNlp = this.filterNlpContextToNovelEvidence(
-      nlp,
+      requestAlignedNlp,
       novelEvidenceSamples,
     );
     const recoveryOutcome = this.resolveRecoveryOutcome(
@@ -306,45 +290,9 @@ export class IdeaEvidenceRecoveryService {
   }
 
   /**
-   * Counts only the corpus that survived central relevance, preprocessing, and
-   * NLP persistence. Raw collector hits do not justify an AI recovery call.
-   */
-  private countDirectCommunityEvidenceSamples(
-    nlp: IdeaGenerationNlpContext,
-  ): number {
-    const postTexts = this.readTextEntries(nlp.samplePosts);
-    const commentTexts = this.readTextEntries(nlp.sampleComments);
-
-    const directPosts = postTexts.filter((text) => {
-      const kind = classifyDirectCommunityEvidence(text, 'POST');
-      return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
-    }).length;
-    const directComments = commentTexts.filter((text) => {
-      const commentBody =
-        text.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? text;
-      const kind = classifyDirectCommunityEvidence(commentBody, 'COMMENT');
-      return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
-    }).length;
-
-    return directPosts + directComments;
-  }
-
-  private countRetainedRecoveryTexts(nlp: IdeaGenerationNlpContext): number {
-    const samplePosts = Array.isArray(nlp.samplePosts)
-      ? nlp.samplePosts.length
-      : 0;
-    const sampleComments = Array.isArray(nlp.sampleComments)
-      ? nlp.sampleComments.length
-      : 0;
-    const retainedTotals =
-      (nlp.totalPostsAnalyzed ?? 0) + (nlp.totalCommentsAnalyzed ?? 0);
-
-    return Math.max(samplePosts + sampleComments, retainedTotals);
-  }
-
-  /**
-   * Excludes sources that already failed, were rate-limited, or returned zero
-   * records in the primary job. Recovery should not repeat known-dead work.
+   * Excludes sources that actually failed, timed out, or were rate-limited in
+   * the primary job. Healthy zero-yield sources remain eligible because the
+   * recovery pass uses a different, problem-focused query.
    */
   private async resolveLowYieldSourceKeys(
     context: IdeaGenerationContext,
@@ -367,12 +315,17 @@ export class IdeaEvidenceRecoveryService {
       return new Set(
         diagnostics
           .filter((entry) => {
-            const noYield = entry.totalPosts + entry.totalComments <= 0;
             const failed = entry.status === CollectionJobStatus.FAILED;
             const rateLimited = /(?:429|rate\s*limit|too many requests)/iu.test(
               entry.failureReason ?? '',
             );
-            return noYield || failed || rateLimited;
+            const timedOut = /(?:timeout|timed out|exceeded \d+ms)/iu.test(
+              entry.failureReason ?? '',
+            );
+            // A healthy zero-yield source is deliberately NOT excluded. Recovery
+            // uses different, problem-focused planned queries, so the best source
+            // should be allowed one bounded retry with a materially different query.
+            return failed || rateLimited || timedOut;
           })
           .map((entry) => entry.dataSource.key),
       );
@@ -386,6 +339,39 @@ export class IdeaEvidenceRecoveryService {
     }
   }
 
+  private async resolveRecoveryCandidateSources(
+    selectedSources: readonly SelectedIdeaDataSource[],
+  ): Promise<SelectedIdeaDataSource[]> {
+    try {
+      const reserveSources = await this.prisma.dataSource.findMany({
+        where: { isActive: true, isImplemented: true },
+        select: {
+          id: true,
+          key: true,
+          displayName: true,
+          supportsPosts: true,
+          supportsComments: true,
+          supportsRegion: true,
+          supportsLanguage: true,
+        },
+      });
+      const byKey = new Map<string, SelectedIdeaDataSource>();
+      for (const source of [...selectedSources, ...reserveSources]) {
+        if (!byKey.has(source.key)) {
+          byKey.set(source.key, source);
+        }
+      }
+      return [...byKey.values()];
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Unable to load reserve recovery sources; using selected sources only. error=${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [...selectedSources];
+    }
+  }
+
   /**
    * Selects review-rich sources for end-user friction and technical sources for
    * developer-facing failures. GitHub and DEV are intentionally deprioritized
@@ -396,6 +382,7 @@ export class IdeaEvidenceRecoveryService {
     evidenceFamilies: readonly EvidenceRecoveryFamily[],
     selectedOpportunity: RankedIdeaOpportunity | null,
     excludedSourceKeys: ReadonlySet<string>,
+    context: IdeaGenerationContext,
   ): SelectedIdeaDataSource[] {
     const byKey = new Map(
       selectedSources.map((source) => [source.key, source] as const),
@@ -422,19 +409,38 @@ export class IdeaEvidenceRecoveryService {
      * listings. It starts with direct complaint sources, then uses one review
      * source as a complementary signal.
      */
+    const requestIntentText = `${context.requestDescription ?? ''} ${
+      context.collectionPlan?.searchQueries.join(' ') ?? ''
+    }`.toLocaleLowerCase();
+    const institutionalIntent =
+      /\b(?:government|municipal|city planner|city planners|city planning|urban planning|municipal planning|neighborhood management|neighbourhood management|public housing|housing authority|public infrastructure|property management.{0,80}city|city.{0,80}property management)\b/iu.test(
+        requestIntentText,
+      );
+    const smallBusinessIntent =
+      /\b(?:flower shop|flower shops|florist|florists|bouquet|tattoo studio|dance studio|pottery studio|photography studio|repair shop|custom order|custom orders|small business|local supplier|local suppliers)\b/iu.test(
+        requestIntentText,
+      );
+
     const familyPreferredOrder: readonly string[] =
-      isDeveloperTechnicalRecovery
-        ? this.technicalSourceOrder
-        : isGenericZeroEvidenceRecovery
-          ? [
-              'youtube',
-              'app-store',
-              'google-play',
-              'forum',
-              'stackoverflow',
-              'github',
-            ]
-          : this.reviewSourceOrder;
+      institutionalIntent
+        ? ['news', 'youtube', 'github', 'blog', 'forum', 'hacker-news', 'stackoverflow', 'product-hunt']
+        : smallBusinessIntent
+          ? ['youtube', 'news', 'google-play', 'app-store', 'forum', 'blog', 'product-hunt']
+          : isDeveloperTechnicalRecovery
+            ? this.technicalSourceOrder
+            : isGenericZeroEvidenceRecovery
+              ? [
+                  'reddit',
+                  'forum',
+                  'youtube',
+                  'app-store',
+                  'google-play',
+                  'news',
+                  'blog',
+                  'stackoverflow',
+                  'github',
+                ]
+              : this.reviewSourceOrder;
 
     /*
      * Prefer the platform that produced the original verified complaint. This
@@ -460,15 +466,29 @@ export class IdeaEvidenceRecoveryService {
       .map((key: string) => byKey.get(key))
       .filter((source): source is SelectedIdeaDataSource => Boolean(source));
 
-    const commentRich = ordered.filter((source) => source.supportsComments);
-    const fallback = ordered.filter((source) => !source.supportsComments);
-    const selected = [...commentRich, ...fallback].slice(
-      0,
-      this.maximumRecoverySources,
-    );
+    const selected: SelectedIdeaDataSource[] = [];
+    const firstPreferred = ordered[0];
+    if (firstPreferred) selected.push(firstPreferred);
+
+    // Prefer a complementary evidence shape for the second slot: pair a
+    // report/article source with a comment-bearing source whenever possible.
+    const complementary = firstPreferred?.supportsComments
+      ? ordered.find(
+          (source) =>
+            !source.supportsComments && !selected.includes(source),
+        )
+      : ordered.find(
+          (source) => source.supportsComments && !selected.includes(source),
+        );
+    if (complementary) selected.push(complementary);
+
+    for (const source of ordered) {
+      if (selected.length >= this.maximumRecoverySources) break;
+      if (!selected.includes(source)) selected.push(source);
+    }
 
     if (selected.length > 0) {
-      return selected;
+      return selected.slice(0, this.maximumRecoverySources);
     }
 
     return selectedSources
@@ -491,6 +511,17 @@ export class IdeaEvidenceRecoveryService {
     const domain = (context.domainName ?? '').trim();
     const domainTerm = domain || context.keywords[0]?.trim() || 'software';
     const requestIntentTerms = this.buildRequestIntentRecoveryQueries(context);
+    const targetedCollectorQueries = CollectorQueryBuilderUtil.buildDomainPainQueries({
+      domainName: domainTerm,
+      domainKeywords:
+        context.selectedDomains.find((item) => item.id === context.domainId)
+          ?.effectiveSearchKeywords ??
+        context.selectedDomains.find((item) => item.id === context.domainId)
+          ?.keywords ??
+        [],
+      userKeywords: context.keywords,
+      maxQueries: this.maximumRecoveryKeywords,
+    });
     const opportunityTerms = this.buildOpportunityTerms(
       domainTerm,
       selectedOpportunity,
@@ -510,6 +541,7 @@ export class IdeaEvidenceRecoveryService {
     return [
       ...new Set([
         ...requestIntentTerms,
+        ...targetedCollectorQueries,
         ...opportunityTerms,
         ...familyTerms,
         ...genericComplaintTerms,
@@ -540,11 +572,153 @@ export class IdeaEvidenceRecoveryService {
       ),
     );
     const issueSignal =
-      /\b(?:access|alerts?|anomal\w*|breach\w*|burnout|cost\w*|delay\w*|expense\w*|fail\w*|fraud\w*|friction|hiring|incident\w*|inefficien\w*|missing|outage\w*|recruit\w*|risk\w*|security|suspicious|threat\w*|turnover|waste\w*|workload|errors?|unable|cannot|sync\w*)\b/iu;
+      /\b(?:access|alerts?|alteration\w*|anomal\w*|approval\w*|breach\w*|burnout|conflict\w*|cost\w*|delay\w*|delivery\w*|dispute\w*|expense\w*|fabric\w*|fail\w*|fitting\w*|fraud\w*|friction|hiring|incident\w*|inefficien\w*|inventory\w*|license\w*|measurement\w*|missing|order\w*|outage\w*|permit\w*|record\w*|recruit\w*|risk\w*|security|suspicious|threat\w*|turnover|verification\w*|waste\w*|workload|errors?|unable|cannot|sync\w*|device\w*|firmware|unauthorized|outdated|technician\w*|parts?|pickup|notes?|repair\w*|status)\b/iu;
     const genericPhrase =
       /\b(?:coherent cross-domain workflow|management decision support|platform|system|software|application|workflow)\b/iu;
 
-    const candidates: string[] = context.keywords
+    const descriptionPhrases = context.requestDescription
+      .split(/[.!?;,]/u)
+      .map((value) => value.replace(/\s+/gu, ' ').trim())
+      .filter((value) => value.length >= 8)
+      .flatMap((value) => {
+        const words = value.split(/\s+/u);
+        if (words.length <= 7) return [value];
+        const phrases: string[] = [];
+        for (let index = 0; index < words.length; index += 4) {
+          const phrase = words.slice(index, index + 7).join(' ');
+          if (phrase.split(/\s+/u).length >= 3) phrases.push(phrase);
+        }
+        return phrases;
+      });
+
+    const normalizedDescription = context.requestDescription
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const contextualQueries: string[] = [];
+
+    const paymentFraudWorkflow =
+      /\b(?:marketplace|marketplaces|e[- ]?commerce|checkout|purchase|purchases|transaction|transactions|payment|payments)\b/iu.test(
+        normalizedDescription,
+      ) &&
+      /\b(?:fraud|fraudulent|chargeback|chargebacks|account takeover|account takeovers|payment dispute|payment disputes|suspicious|risk signals?|false decline|blocked legitimate|legitimate customers?)\b/iu.test(
+        normalizedDescription,
+      );
+    if (paymentFraudWorkflow) {
+      contextualQueries.push(
+        'payment fraud legitimate customer falsely blocked',
+        'chargeback account takeover marketplace checkout risk',
+        'suspicious transaction fraud signals reviewed separately',
+      );
+    }
+
+    const photographyStudioWorkflow =
+      /\b(?:photography studio|photography studios|photo studio|photo studios|professional photographer|commercial photographer|portrait studio|photography|photo shoot|photoshoot)\b/iu.test(
+        normalizedDescription,
+      ) &&
+      /\b(?:client bookings?|shot lists?|editing requests?|equipment preparation|camera gear|image selections?|photo selections?|delivery deadlines?|location details?|shoot schedule|session schedule)\b/iu.test(
+        normalizedDescription,
+      );
+    if (photographyStudioWorkflow) {
+      contextualQueries.push(
+        'photography studio booking shot list client request',
+        'photographer equipment checklist forgotten gear',
+        'editing requests image selection delivery deadline',
+      );
+    }
+
+    const crossBorderAgreementWorkflow =
+      /\b(?:cross[- ]border|international payments?|business agreements?|contract terms?|contractual conditions?|settlements?)\b/iu.test(
+        normalizedDescription,
+      ) &&
+      /\b(?:payments?|settlements?|contracts?|agreements?|approvals?|verification documents?|reconciliation|disputes?|transaction records?)\b/iu.test(
+        normalizedDescription,
+      );
+    if (crossBorderAgreementWorkflow) {
+      contextualQueries.push(
+        'cross border payment settlement contract dispute',
+        'contract conditions approval payment reconciliation',
+        'agreement verification documents transaction mismatch',
+      );
+    }
+
+    const laundryOperationsWorkflow =
+      /\b(?:laundry shop|laundry shops|laundromat|laundromats|dry cleaning|dry-cleaning|dry cleaner|dry cleaners|garment cleaning|wash and fold)\b/iu.test(
+        normalizedDescription,
+      ) &&
+      /\b(?:garments?|stains?|cleaning instructions?|pickup|deadlines?|additional treatment|paper tags?|lost garments?|incorrect cleaning|delayed orders?|customer disputes?)\b/iu.test(
+        normalizedDescription,
+      );
+    if (laundryOperationsWorkflow) {
+      contextualQueries.push(
+        'laundry lost garment tracking problem',
+        'dry cleaning special instructions stain treatment missed',
+        'laundry pickup deadline delayed order customer dispute',
+      );
+    }
+
+    const legalDocumentWorkflow =
+      /\b(?:regulations?|contracts?|applications?|case[- ]related documents?|legal documents?|rules?|requirements?|compliance)\b/iu.test(
+        normalizedDescription,
+      ) &&
+      /\b(?:search|compare|check|missing|inconsisten|delay|stored across|multiple systems|follow the correct rules)\w*\b/iu.test(
+        normalizedDescription,
+      );
+    if (legalDocumentWorkflow) {
+      contextualQueries.push(
+        'legal document compliance missing requirements review',
+        'regulation contract application requirements hard to compare',
+        'case documents inconsistencies discovered late',
+      );
+    }
+
+    const wardrobeWorkflow =
+      /\b(?:wardrobe|closet|clothes|clothing|shoes|accessories|outfits?)\b/iu.test(
+        normalizedDescription,
+      ) &&
+      /\b(?:remember|inventory|fit|cleaning|repair|photos?|receipts?|duplicate purchases?|unused items?|weather|occasion)\b/iu.test(
+        normalizedDescription,
+      );
+    if (wardrobeWorkflow) {
+      contextualQueries.push(
+        'wardrobe inventory forget clothes duplicate purchases',
+        'closet cleaning repair status hard to track',
+        'outfit planning weather occasion wardrobe problem',
+      );
+    }
+
+    const municipalDeviceSecurityWorkflow =
+      /\b(?:smart cit(?:y|ies)|municipal|city technology|traffic lights?|parking sensors?|public cameras?|environmental monitors?)\b/iu.test(
+        normalizedDescription,
+      ) &&
+      /\b(?:security|unauthorized|outdated|compromised|device behavior|firmware|connected devices?|iot|security standards?)\b/iu.test(
+        normalizedDescription,
+      );
+    if (municipalDeviceSecurityWorkflow) {
+      contextualQueries.push(
+        'municipal iot unauthorized devices security visibility',
+        'smart city sensors outdated firmware security problem',
+        'city connected devices unusual behavior incident',
+      );
+    }
+
+    const musicalInstrumentRepairWorkflow =
+      /\b(?:musical instruments?|instrument repair|repair shop|luthier|guitar|violin|piano)\b/iu.test(
+        normalizedDescription,
+      ) &&
+      /\b(?:repair|technician|replacement parts?|paper tags?|pickup|repair progress|repair status|notes?)\b/iu.test(
+        normalizedDescription,
+      );
+    if (musicalInstrumentRepairWorkflow) {
+      contextualQueries.push(
+        'instrument repair shop lost repair ticket status',
+        'guitar repair shop parts technician notes pickup delay',
+        'musical instrument repair paper tags tracking problem',
+      );
+    }
+
+    const candidates: string[] = [...contextualQueries, ...descriptionPhrases, ...context.keywords]
       .filter((value): value is string => typeof value === 'string')
       .map((value) => value.replace(/\s+/gu, ' ').trim())
       .filter((value) => value.length >= 5 && value.length <= 80)
@@ -607,14 +781,119 @@ export class IdeaEvidenceRecoveryService {
       'warehouse picking error',
     ];
 
+    const tailoringQueries = [
+      'tailor shop lost customer measurements',
+      'custom clothing order details missing',
+      'alteration request history hard to find',
+      'fitting appointment scheduling problem',
+      'fabric selection order tracking',
+      'returning customer measurements missing',
+    ];
+    const salonQueries = [
+      'salon double booking appointment problem',
+      'stylist availability scheduling conflict',
+      'salon client preferences lost between employees',
+      'salon product inventory waste',
+      'salon loyalty history missing',
+      'salon special requests not shared',
+    ];
+    const paymentFraudQueries = [
+      'payment fraud detection false positive',
+      'suspicious transaction legitimate customer blocked',
+      'transaction fraud alert triage',
+      'account behavior transaction risk scoring',
+      'fraud detection false decline payment',
+      'payment security alerts analyzed separately',
+    ];
+    const petCareQueries = [
+      'family missed pet vaccination appointment',
+      'pet grooming appointment forgotten',
+      'pet feeding routine inconsistent family',
+      'pet care history hard to share veterinarian',
+      'pet sitter missing care instructions',
+      'shared pet care records scattered messages',
+    ];
+    const eventPlanningQueries = [
+      'wedding vendor booking conflict',
+      'event venue photographer schedule conflict',
+      'wedding guest list catering changes lost',
+      'event budget unexpected vendor expenses',
+      'last minute wedding vendor changes confusion',
+      'event planning information scattered messages spreadsheets',
+    ];
+    const remotePatientMonitoringQueries = [
+      'remote patient monitoring after discharge missed deterioration',
+      'home care vital signs multiple devices monitoring',
+      'post discharge patient alerts delayed intervention',
+      'remote patient monitoring readmission risk',
+      'clinical staff alert overload remote monitoring',
+      'home health patient telemetry review problem',
+    ];
+    const sportsPerformanceQueries = [
+      'athlete overtraining detection wearable data',
+      'training load monitoring recovery injury risk',
+      'coach combine wearable fitness equipment data',
+      'athlete recovery metrics multiple devices',
+      'sports performance dashboard training intensity alerts',
+      'wearable workout data integration coaching problem',
+    ];
+    const funeralMemorialQueries = [
+      'funeral service scheduling coordination problem',
+      'memorial planning family requests missed',
+      'funeral home guest communication coordination',
+      'burial preferences documents service providers scattered',
+      'funeral floral transportation scheduling conflict',
+      'memorial arrangements duplicated family coordination',
+    ];
+    const governmentRecordQueries = [
+      'permit approval status hard to trace',
+      'license processing delay departments',
+      'official record versions conflict departments',
+      'cross department document verification problem',
+      'ownership record verification dispute',
+    ];
+
+    const intentText = domainKeywords.join(' ').toLowerCase();
+    const hasPaymentFraudIntent =
+      /\b(?:fraud|fraudulent|suspicious transaction|transaction risk|false positive|false-positive|legitimate (?:customer|user|transaction)|payment fraud|account behavior|fraud alert)\b/iu.test(
+        intentText,
+      );
+
     const knownQueries =
-      normalizedDomain.includes('smart cit')
+      hasPaymentFraudIntent &&
+      /(?:finance|cybersecurity|artificial intelligence)/u.test(normalizedDomain)
+        ? paymentFraudQueries
+        : normalizedDomain.includes('beauty') || normalizedDomain.includes('salon')
+          ? salonQueries
+        : normalizedDomain.includes('smart cit')
         ? smartCityQueries
         : normalizedDomain.includes('transport')
           ? transportationQueries
           : normalizedDomain.includes('logistic')
             ? logisticsQueries
-            : [];
+            : normalizedDomain.includes('tailor') ||
+                normalizedDomain.includes('custom apparel')
+              ? tailoringQueries
+              : normalizedDomain.includes('pet care') ||
+                  normalizedDomain.includes('animal care')
+                ? petCareQueries
+                : normalizedDomain.includes('event planning') ||
+                    normalizedDomain.includes('wedding')
+                  ? eventPlanningQueries
+                  : normalizedDomain.includes('funeral') ||
+                      normalizedDomain.includes('memorial')
+                    ? funeralMemorialQueries
+                    : normalizedDomain.includes('sports') ||
+                        normalizedDomain.includes('fitness')
+                      ? sportsPerformanceQueries
+                      : normalizedDomain.includes('healthcare') ||
+                          normalizedDomain.includes('home care')
+                        ? remotePatientMonitoringQueries
+                        : normalizedDomain.includes('government') ||
+                        normalizedDomain.includes('legaltech') ||
+                        normalizedDomain.includes('blockchain')
+                      ? governmentRecordQueries
+                      : [];
 
     const usefulDomainTerms = domainKeywords
       .map((value) => value.toLowerCase().replace(/\s+/gu, ' ').trim())
@@ -700,7 +979,7 @@ export class IdeaEvidenceRecoveryService {
       ...(analysis?.opportunities.flatMap(
         (opportunity) => opportunity.evidenceSamples,
       ) ?? []),
-    ]).filter((sample) => this.looksLikeComplaintEvidence(sample));
+    ]).filter((sample) => this.looksLikeUsableProblemEvidence(sample));
   }
 
   /** Keeps only opportunities that cite at least one genuinely new sample. */
@@ -771,8 +1050,8 @@ export class IdeaEvidenceRecoveryService {
 
   /**
    * Builds an auditable recovery opportunity when the online Community AI
-   * cannot return a valid schema despite the recovery corpus containing new
-   * complaint evidence. This is not synthetic market research: every claim is
+   * is intentionally skipped while the recovery corpus contains new
+   * problem-matched external evidence. This is not synthetic market research: every claim is
    * inherited from the previously ranked problem family and every supporting
    * sample is copied from the newly collected corpus. The deterministic
    * ranking and independent-source verifier still decide whether the result is
@@ -787,6 +1066,19 @@ export class IdeaEvidenceRecoveryService {
       return null;
     }
 
+    const rawSource =
+      selectedOpportunity.raw &&
+      typeof selectedOpportunity.raw === 'object' &&
+      !Array.isArray(selectedOpportunity.raw) &&
+      typeof (selectedOpportunity.raw as Prisma.JsonObject).source === 'string'
+        ? String((selectedOpportunity.raw as Prisma.JsonObject).source)
+        : null;
+    const validationHypothesis =
+      rawSource === 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS';
+    if (validationHypothesis && !context.requestDescription?.trim()) {
+      return null;
+    }
+
     const problemDescriptor = [
       selectedOpportunity.problem ?? '',
       selectedOpportunity.need ?? '',
@@ -796,19 +1088,17 @@ export class IdeaEvidenceRecoveryService {
       .filter(Boolean)
       .join(' ');
 
-    const familyMatchedNovelEvidence = filterEvidenceByProblemFamily(
-      problemDescriptor,
-      novelEvidenceSamples,
-    );
-    const familyMatchedExistingEvidence = filterEvidenceByProblemFamily(
-      problemDescriptor,
-      selectedOpportunity.evidenceSamples,
-    );
-
-    const evidenceSamples = this.deduplicateEvidenceSamples([
-      ...familyMatchedExistingEvidence,
-      ...familyMatchedNovelEvidence,
-    ]).slice(0, 8);
+    const familyMatchedNovelEvidence = validationHypothesis
+      ? [...novelEvidenceSamples]
+      : filterEvidenceByProblemFamily(
+          problemDescriptor,
+          novelEvidenceSamples,
+        );
+    const evidenceSamples = this.deduplicateEvidenceSamples(
+      familyMatchedNovelEvidence.filter((sample) =>
+        this.isEvidenceAlignedToRequest(sample, context),
+      ),
+    ).slice(0, 8);
     if (evidenceSamples.length === 0) {
       this.logger.debug(
         'Targeted recovery found direct evidence, but none matched the selected problem family; no deterministic recovery opportunity was created.',
@@ -823,11 +1113,14 @@ export class IdeaEvidenceRecoveryService {
       context.domainName?.trim() ||
       rawDomainName ||
       'General';
-    const title = `${selectedOpportunity.title} — recovered evidence`;
-    const problem =
-      selectedOpportunity.problem ||
-      selectedOpportunity.need ||
-      `Users in ${domainName} encounter a repeated workflow problem.`;
+    const title = validationHypothesis
+      ? `${context.collectionPlan?.suggestedDomainName?.trim() || domainName} Evidence-Backed Pilot Opportunity`
+      : `${selectedOpportunity.title} — recovered evidence`;
+    const problem = validationHypothesis
+      ? context.requestDescription!.replace(/\s+/gu, ' ').trim()
+      : selectedOpportunity.problem ||
+        selectedOpportunity.need ||
+        `Users in ${domainName} encounter a repeated workflow problem.`;
     const unmetNeed =
       selectedOpportunity.need ||
       `A focused workflow that addresses the recovered ${domainName} complaints.`;
@@ -863,14 +1156,14 @@ export class IdeaEvidenceRecoveryService {
 
     return {
       summary:
-        `Targeted recovery retained ${evidenceSamples.length} new complaint evidence sample(s). ` +
+        `Targeted recovery retained ${evidenceSamples.length} new problem-matched external evidence sample(s). ` +
         'A deterministic evidence-preserving opportunity was created because online Community AI did not return an acceptable grounded response.',
       dominantProblems: [problem],
       unmetNeeds: [unmetNeed],
       opportunities: [opportunity],
       overallConfidence: confidence,
       qualityWarnings: [
-        'Community AI recovery output was unavailable; this opportunity was constructed deterministically from newly retained evidence.',
+        'A second Community AI recovery call was intentionally skipped; this opportunity was constructed deterministically from newly retained evidence.',
         'Eligibility remains controlled by deterministic ranking and independent-source verification.',
       ],
       modelId: null,
@@ -883,7 +1176,7 @@ export class IdeaEvidenceRecoveryService {
       executionFailureCount: 0,
       validationRejectedCount: 0,
       fallbackReason:
-        'Targeted evidence recovery constructed this opportunity deterministically after Community AI recovery was unavailable.',
+        'Targeted evidence recovery constructed this opportunity deterministically to preserve latency and provenance.',
       attemptDiagnostics: [],
       unvalidatedDomainHypotheses: [],
     };
@@ -1137,10 +1430,35 @@ export class IdeaEvidenceRecoveryService {
       .trim();
   }
 
-  private looksLikeComplaintEvidence(value: string): boolean {
-    return /\b(?:cannot|can't|unable|blocked|missing|error|failed|failure|problem|issue|doesn't|does not|should|need|request|unavailable|inaccessible|paywall|subscription|forced|forcing)\b/iu.test(
-      value,
+  private looksLikeUsableProblemEvidence(value: string): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    const commentMatch = normalized.match(/\bCommunity comment:\s*(.+)$/iu);
+    const evidenceText = commentMatch?.[1]?.trim() ?? normalized;
+    const kind = classifyDirectCommunityEvidence(
+      evidenceText,
+      commentMatch ? 'COMMENT' : 'POST',
     );
+    if (kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST') {
+      return true;
+    }
+
+    return /\b(?:challenge|problem|issue|failure|failed|delay|delayed|lost|misplaced|forgotten|incorrect|wrong|outdated|unauthorized|unmanaged|compromised|vulnerab|security gap|visibility gap|limited visibility|difficult to identify|hard to identify|cannot identify|unable to identify|fragmented|separate systems?|paper tags?|manual tracking|waiting longer|maintenance complaint|service disruption)\w*\b/iu.test(
+      evidenceText,
+    );
+  }
+
+  private isEvidenceAlignedToRequest(
+    sample: string,
+    context: IdeaGenerationContext,
+  ): boolean {
+    const description = context.requestDescription?.trim();
+    if (!description) return true;
+
+    return RequestEvidenceAlignmentUtil.isAligned({
+      requestDescription: description,
+      evidenceText: sample,
+      plannedQueries: context.collectionPlan?.searchQueries ?? [],
+    });
   }
 
   /** Returns controlled English and Arabic complaint variants per family. */
@@ -1275,9 +1593,9 @@ export class IdeaEvidenceRecoveryService {
   }
 
   /**
-   * Resolves larger limits only for targeted recovery. Normal collection limits
-   * remain untouched, preventing a recovery optimization from increasing every
-   * collection job's cost and latency.
+   * Resolves small bounded limits only for targeted recovery. Normal collection
+   * limits remain untouched, keeping the supplemental pass inside its latency
+   * budget.
    */
   private resolveRecoveryCollectorLimits(): {
     readonly maxFetchedPosts: number;
@@ -1287,19 +1605,19 @@ export class IdeaEvidenceRecoveryService {
   } {
     return {
       maxFetchedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 6),
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 4),
         20,
       ),
       maxSavedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 4),
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 3),
         12,
       ),
       maxFetchedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 8),
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 6),
         30,
       ),
       maxSavedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 6),
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 4),
         20,
       ),
     };

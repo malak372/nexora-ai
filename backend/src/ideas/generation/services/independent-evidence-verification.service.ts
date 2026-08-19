@@ -854,6 +854,17 @@ export class IndependentEvidenceVerificationService {
       }
     }
 
+    if (!isComment && normalizedSourceKey === 'youtube') {
+      const explicitProblemReport =
+        SECONDARY_REPORT_PATTERNS.some((pattern) => pattern.test(evidenceText)) ||
+        /\b(?:problem|issue|failure|failed|delay|delayed|lost|misplaced|forgotten|incorrect|wrong|outdated|unauthorized|unmanaged|compromised|vulnerab|limited visibility|difficult to identify|hard to identify|manual tracking|paper tags?|waiting longer)\w*\b/iu.test(
+          evidenceText,
+        );
+      if (explicitProblemReport) {
+        return INDEPENDENT_EVIDENCE_KINDS.EDITORIAL_ANALYSIS;
+      }
+    }
+
     if (!isComment && PUBLISHER_POST_SOURCE_KEYS.has(normalizedSourceKey)) {
       return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
     }

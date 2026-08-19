@@ -285,15 +285,24 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     const isBoundedMode =
       input.collectionMode === 'FAST_GENERATION' ||
       input.collectionMode === 'TARGETED_RECOVERY';
-
-    return CollectorQueryBuilderUtil.buildYouTubeAnchoredQueries({
+    const maximumQueries = isBoundedMode ? 3 : this.maxSearchQueries;
+    const plannedQueries = (input.plannedQueries ?? [])
+      .map((query) => this.cleanNormalizedText(query))
+      .map((query) => query.split(/\s+/u).slice(0, 9).join(' '))
+      .filter(Boolean);
+    const anchoredQueries = CollectorQueryBuilderUtil.buildYouTubeAnchoredQueries({
       domainName: input.domainName,
       userKeywords: [
         ...(input.domainKeywords ?? []),
         ...(input.keywords ?? []),
       ],
-      maxQueries: isBoundedMode ? 3 : this.maxSearchQueries,
+      maxQueries: maximumQueries,
     });
+
+    return this.unique([...plannedQueries, ...anchoredQueries]).slice(
+      0,
+      maximumQueries,
+    );
   }
 
   /**
@@ -348,18 +357,68 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     }
 
     const normalized = this.cleanNormalizedText(content);
-    const domainName = this.cleanNormalizedText(input.domainName ?? '');
-    const recoveryAnchors = domainName.includes('smart cit')
-      ? ['smart city', 'municipal', 'public transport', 'street light', 'parking']
-      : domainName.includes('transport')
-        ? ['public transport', 'bus', 'route', 'fare', 'transit']
-        : domainName.includes('logistic')
-          ? ['logistics', 'delivery', 'shipment', 'warehouse', 'driver']
-          : [domainName];
-
-    return recoveryAnchors.some(
-      (anchor) => anchor && normalized.includes(this.cleanNormalizedText(anchor)),
+    const planned = this.cleanNormalizedText(
+      (input.plannedQueries ?? []).join(' '),
     );
+
+    if (
+      /(?:musical instrument|instrument repair|repair shop|luthier|technician|repair ticket|pickup)/iu.test(
+        planned,
+      )
+    ) {
+      const instrumentAnchor =
+        /(?:musical instrument|instrument|guitar|violin|piano|saxophone|clarinet|trumpet|luthier)/iu.test(
+          normalized,
+        );
+      const repairAnchor =
+        /(?:repair|technician|service ticket|work order|parts?|pickup|intake|bench note|repair status|repair shop)/iu.test(
+          normalized,
+        );
+      return instrumentAnchor && repairAnchor;
+    }
+
+    if (
+      /(?:smart city|municipal|city technology|traffic light|parking sensor|public camera|environmental monitor|iot)/iu.test(
+        planned,
+      ) &&
+      /(?:security|unauthorized|outdated|firmware|compromised|vulnerab|unmanaged|anomal|visibility)/iu.test(
+        planned,
+      )
+    ) {
+      const infrastructureAnchor =
+        /(?:smart city|municipal|city network|traffic light|traffic signal|parking sensor|public camera|environmental monitor|iot|connected device|sensor)/iu.test(
+          normalized,
+        );
+      const securityAnchor =
+        /(?:security|cyber|unauthorized|unmanaged|outdated|firmware|compromised|vulnerab|anomal|rogue|intrusion|breach|attack|visibility)/iu.test(
+          normalized,
+        );
+      return infrastructureAnchor && securityAnchor;
+    }
+
+    const plannedTokens = planned
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((token) => token.length >= 5)
+      .filter(
+        (token) =>
+          !/^(?:about|after|before|current|different|management|platform|problem|problems|software|system|systems|tracking|workflow)$/iu.test(
+            token,
+          ),
+      )
+      .slice(0, 8);
+    if (plannedTokens.length > 0) {
+      const matches = plannedTokens.filter((token) => normalized.includes(token));
+      if (matches.length >= Math.min(2, plannedTokens.length)) return true;
+    }
+
+    const domainName = this.cleanNormalizedText(input.domainName ?? '');
+    if (!domainName) return true;
+
+    const domainTokens = domainName
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((token) => token.length >= 4)
+      .filter((token) => !/^(?:management|tracking|system|platform)$/iu.test(token));
+    return domainTokens.some((token) => normalized.includes(token));
   }
 
   /**

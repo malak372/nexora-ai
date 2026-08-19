@@ -18,6 +18,7 @@ type ProblemFamilyDefinition = {
   readonly strongPatterns?: readonly RegExp[];
   readonly supportingPatterns?: readonly RegExp[];
   readonly negativePatterns?: readonly RegExp[];
+  readonly hardNegativePatterns?: readonly RegExp[];
   readonly priority?: number;
 };
 
@@ -64,6 +65,7 @@ const FAMILIES: readonly ProblemFamilyDefinition[] = [
   { key: 'hr-client-outreach', label: 'Client Contact Mass Outreach Gaps in Applicant Tracking Systems', pattern: /(?:mass email(?:ing)?|bulk email(?:ing)?|email campaign).{0,120}(?:client contacts?|clients?)|(?:client contacts?|clients?).{0,120}(?:mass email(?:ing)?|bulk email(?:ing)?|email campaign)/iu, strongPatterns: [/(?:mass email(?:ing)?|bulk email(?:ing)?).{0,100}(?:client contacts?|clients?)/iu, /(?:client contacts?|clients?).{0,100}(?:mass email(?:ing)?|bulk email(?:ing)?)/iu], supportingPatterns: [/\b(?:applicant tracking|\bats\b|recruitment|recruiter|staffing)\b/iu], priority: 20 },
   { key: 'hr-recruitment', label: 'Recruitment and Applicant Tracking Friction', pattern: /\b(?:recruitment|recruiter|hiring|applicant tracking|\bats\b|candidate screening|candidate profiles?|interview scheduling|employee onboarding|talent acquisition|job application)\b/iu, strongPatterns: [/\b(?:applicant tracking|\bats\b|candidate screening|candidate profiles?)\b/iu, /\b(?:recruitment|recruiter|hiring|talent acquisition)\b/iu], priority: 8 },
   { key: 'legal-research-access', label: 'Legal Research Documentation Cost and AI Reliability Barriers', pattern: /\b(?:legal researcher|legal research|legal tools?|law databases?|case documentation|evidence documentation|attorney research)\b/iu, strongPatterns: [/\b(?:legal researcher|legal research|law databases?)\b/iu, /\b(?:afford|expensive|price|pricing|licensing fee|1500|documentation burden|documenting)\b/iu, /\b(?:ai|guardrail|factual|facts|looping)\b/iu], priority: 13 },
+  { key: 'mobile-license-verification', label: 'Mobile App License Verification and Test Response Failures', pattern: /\b(?:license test response|licensing server|licensechecker|servermanagedpolicy|strictpolicy|not[_ -]?licensed|lvl licensing|google play licensing)\b/iu, strongPatterns: [/\b(?:license test response|licensing server|licensechecker|servermanagedpolicy|strictpolicy|not[_ -]?licensed|lvl licensing)\b/iu, /\b(?:android|google play|mobile app|testing device|test account)\b/iu], supportingPatterns: [/\b(?:public key|cache|debug|distribution key|developer account|test response)\b/iu], priority: 22 },
   { key: 'rental-lease-filtering', label: 'Rental Lease-Term Filtering Limitations', pattern: /\b(?:rental length|lease term|lease duration|short[- ]term rentals?|long[- ]term rentals?|vacation home|vacation rental)\b/iu, strongPatterns: [/\b(?:filter|exclude|include|search)\b[^.!?]{0,100}\b(?:rental length|lease term|lease duration|short[- ]term|long[- ]term)\b/iu, /\b(?:short[- ]term rentals?|vacation home|vacation rental)\b[^.!?]{0,100}\b(?:filter|exclude|long[- ]term|somewhere to live)\b/iu], supportingPatterns: [/\b(?:rent|rental|housing|listing|listings|lease|home)\b/iu], priority: 18 },
   { key: 'real-estate-session-persistence', label: 'Repeated Session Logout Failures', pattern: /\b(?:keep getting logged out|keeps? logging (?:me|us) out|repeated(?:ly)? logged out|session (?:expires?|drops?|ends?)|unexpected logout)\b/iu, strongPatterns: [/\b(?:keep getting logged out|repeated(?:ly)? logged out|unexpected logout)\b/iu], supportingPatterns: [/\b(?:zillow|real estate|property|listing|favorites?|saved homes?)\b/iu], priority: 17 },
   { key: 'real-estate-favorites-filtering', label: 'Favorites Location Filtering Gaps', pattern: /\b(?:favorites?|favourites?|saved homes?|saved listings?)\b[^.!?]{0,120}\b(?:location|area|region)\b[^.!?]{0,80}\b(?:filter|search)|\b(?:filter|search)\b[^.!?]{0,120}\b(?:favorites?|favourites?|saved homes?|saved listings?)\b[^.!?]{0,80}\b(?:location|area|region)\b/iu, strongPatterns: [/\bno way to (?:really )?filter (?:my )?(?:favorites?|favourites?) via location\b/iu], supportingPatterns: [/\b(?:zillow|real estate|property|listing|home)\b/iu], priority: 17 },
@@ -75,13 +77,53 @@ const FAMILIES: readonly ProblemFamilyDefinition[] = [
   { key: 'application-access-support', label: 'Application Access and Support Failures', pattern: /\b(?:cannot access|can['’]?t access|unable to access|no customer service|no support|customer service support)\b/iu, strongPatterns: [/\b(?:cannot access|can['’]?t access|unable to access)\b/iu, /\b(?:no customer service|no support|customer service support)\b/iu], priority: 9 },
   { key: 'mental-health-time-access', label: 'Workday Mental Health Time-Access Constraints', pattern: /\b(?:taking time for mental health|time for mental health|mental health time|mental-health time|time off for mental health|mental health break|mental health breaks|self[- ]care time|recovery time)\b/iu, strongPatterns: [/\b(?:taking time for mental health|time off for mental health|mental health time|mental health break|recovery time)\b/iu, /\b(?:luxury|cannot afford|can['’]?t afford|unable to take|difficult to take|hard to take|no time|less than a day)\b/iu], supportingPatterns: [/\b(?:workplace|workday|professional|employee|worker|schedule|self[- ]care|wellness)\b/iu], priority: 21 },
   { key: 'healthcare-treatment-access', label: 'Cross-Border Treatment Availability and Access Gaps', pattern: /\b(?:treatment|therapy|medicine|medication|care)\b[^.!?]{0,180}\b(?:unavailable|not available|unable to access|cannot access|can['’]?t access|another country|one country|different country|cross[- ]border)\b|\b(?:unavailable|not available|unable to access|cannot access|can['’]?t access)\b[^.!?]{0,180}\b(?:treatment|therapy|medicine|medication|care)\b/iu, strongPatterns: [/\b(?:known|successful|effective)\s+treatment\b[^.!?]{0,160}\b(?:unavailable|not available|another country|one country)\b/iu, /\b(?:treatment|care)\b[^.!?]{0,160}\b(?:country|region|cross[- ]border)\b/iu], supportingPatterns: [/\b(?:patient|physician|clinician|healthcare|health care|medical)\b/iu], priority: 20 },
-  { key: 'clinical-sparse-measurements', label: 'Sparse Clinical Measurement and Missing-by-Design Data Gaps', pattern: /\b(?:missing values?|null values?|sparse features?|sparse data|imput(?:e|ing|ation)|forward[- ]fill|mean|median|test results?|measurements?)\b/iu, strongPatterns: [/\b(?:95\+?%|98%|most|many)\s+(?:of\s+the\s+)?(?:data|values?)\s+(?:is|are)\s+missing\b/iu, /\b(?:tests?|measurements?)\s+(?:are|were)?\s*(?:taken|ordered|measured)\s+(?:infrequently|only when|when ordered)\b/iu, /\b(?:imput(?:e|ing|ation)|forward[- ]fill|mean|median)\b/iu], supportingPatterns: [/\b(?:patient|clinical|medical|physionet|sepsis|test results?)\b/iu], negativePatterns: [/\b(?:records?|files?|history|saved data)\b[^.!?]{0,80}\b(?:disappeared|gone|deleted|lost)\b/iu], priority: 22 },
+  { key: 'clinical-sparse-measurements', label: 'Sparse Clinical Measurement and Missing-by-Design Data Gaps', pattern: /\b(?:missing values?|null values?|sparse features?|sparse data|imput(?:e|ing|ation)|forward[- ]fill|test results?)\b|\b(?:patient|clinical|medical|physionet|sepsis)\b[^.!?]{0,120}\bmeasurements?\b|\bmeasurements?\b[^.!?]{0,120}\b(?:patient|clinical|medical|physionet|sepsis)\b/iu, strongPatterns: [/\b(?:95\+?%|98%|most|many)\s+(?:of\s+the\s+)?(?:data|values?)\s+(?:is|are)\s+missing\b/iu, /\b(?:tests?|measurements?)\s+(?:are|were)?\s*(?:taken|ordered|measured)\s+(?:infrequently|only when|when ordered)\b/iu, /\b(?:imput(?:e|ing|ation)|forward[- ]fill|mean|median)\b/iu], supportingPatterns: [/\b(?:patient|clinical|medical|physionet|sepsis|test results?)\b/iu], negativePatterns: [/\b(?:records?|files?|history|saved data)\b[^.!?]{0,80}\b(?:disappeared|gone|deleted|lost)\b/iu, /\b(?:metric|imperial) measurement system\b/iu], priority: 22 },
   { key: 'blockchain-wallet-state-sync', label: 'Wallet Transaction Visibility and State Synchronization Failures', pattern: /\b(?:wallet|account balance|wallet balance|transactions?|confirmations?|blockchain confirmation|transaction history)\b/iu, strongPatterns: [/\b(?:wallet|account balance|wallet balance)\b[^.!?]{0,180}\b(?:transaction|confirmation|blockchain)\b/iu, /\b(?:confirmed|confirmations?|blockchain)\b[^.!?]{0,180}\b(?:missing|not showing|fail(?:s|ed)? to appear|incorrect|wrong|visibility|balance)\b/iu, /\b(?:transactions?|balance)\b[^.!?]{0,180}\b(?:missing|not showing|incorrect|wrong|0|zero)\b/iu], supportingPatterns: [/\b(?:mobile|desktop|client|green mobile app|wallet app)\b/iu, /\b(?:sync|synchroni[sz]|state|visibility|confirmation count)\b/iu], priority: 20 },
+  {
+    key: 'device-protocol-compatibility',
+    label: 'Device Protocol Compatibility and Connectivity Limitations',
+    pattern: /(?:\bant\b[^.!?]{0,120}\b(?:support|unsupported|cycling|fitness|wearable|gear|device|equipment|protocol|connect|compatib)|\b(?:wireless protocol|protocol support|protocol compatibility|device compatibility|hardware compatibility|unsupported protocol|unsupported device|cycling gear|fitness gear)\b)/iu,
+    strongPatterns: [
+      /\bant\b[^.!?]{0,140}\b(?:support|unsupported|cannot|can['’]?t|unable|gear|device|equipment|connect|compatib)/iu,
+      /\b(?:protocol|device|hardware) compatibility\b/iu,
+      /\b(?:cannot|can['’]?t|unable to)\b[^.!?]{0,120}\b(?:use|connect|pair)\b[^.!?]{0,120}\b(?:gear|device|equipment|sensor|wearable)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:wearable|watch|cycling|fitness|sensor|equipment|bluetooth|pairing|connectivity|firmware)\b/iu,
+    ],
+    hardNegativePatterns: [
+      /\b(?:login|log in|sign in|password|account access|oauth|oidc|two[- ]factor authentication|2fa|verification code)\b/iu,
+    ],
+    priority: 26,
+  },
+  {
+    key: 'route-planning-capability',
+    label: 'Route Planning Stop Reference and Import Limitations',
+    pattern: /\b(?:routing app|route planning|route planner|route planning software|unlimited stops?|stop numbers?|driver references?|import stops?|upload stops?|stop list)\b/iu,
+    strongPatterns: [
+      /\b(?:routing app|route planner|route planning software)\b[^.!?]{0,160}\b(?:upload|import|stop numbers?|driver references?|unlimited stops?|stop list)\b/iu,
+      /\b(?:upload|import)\b[^.!?]{0,120}\b(?:stop numbers?|driver references?|stops?|route list)\b/iu,
+    ],
+    supportingPatterns: [/\b(?:drivers?|dispatch|delivery|stops?|route|routing|planner)\b/iu],
+    hardNegativePatterns: [/\b(?:404|not found|missing url|incorrect url|broken link|broken route|redirect|deep[- ]link|endpoint)\b/iu],
+    priority: 25,
+  },
+  {
+    key: 'application-update-loop',
+    label: 'Application Update Loop and Version Verification Failures',
+    pattern: /\b(?:update loop|version mismatch|latest version|already updated|already installed|prompted to update|keeps? asking to update|app store update)\b/iu,
+    strongPatterns: [
+      /\b(?:prompted|asked|keeps? asking)\b[^.!?]{0,100}\bupdate\b[^.!?]{0,160}\b(?:latest version|already installed|already updated|app store|play store)\b/iu,
+      /\b(?:latest version|already installed|already updated)\b[^.!?]{0,140}\b(?:update|app store|play store)\b/iu,
+    ],
+    supportingPatterns: [/\b(?:version|store|launch|open|enter|access)\b/iu],
+    priority: 25,
+  },
   { key: 'duplicate-payment-reconciliation', label: 'Duplicate Payment and Payment Reconciliation Failures', pattern: /\b(?:already paid|paid\b[^.!?]{0,90}\bcash|cash\b[^.!?]{0,90}\bpaid|charged\b[^.!?]{0,90}\bagain|double charg(?:e|ed|ing)?|duplicate charg(?:e|ed|ing)?|payment reconciliation|proof of payment\b[^.!?]{0,120}\b(?:additional|another|again|insist|payment))\b/iu, strongPatterns: [/\b(?:already paid|charged\b[^.!?]{0,90}\bagain|double charg(?:e|ed|ing)?|duplicate charg(?:e|ed|ing)?|payment reconciliation)\b/iu], supportingPatterns: [/\b(?:refund|cash|driver|rider|proof of payment|support team|billing|payment)\b/iu], priority: 18 },
   { key: 'shipment-transit-metrics', label: 'Shipment Transit-Time Visibility Gaps', pattern: /\b(?:(?:average|estimated|typical)\s+(?:shipment\s+|delivery\s+)?transit\s+time|(?:shipment|delivery)\s+transit\s+(?:time|duration)|transit\s+time\s+(?:metric|metrics|average|analytics|visibility))\b/iu, strongPatterns: [/\b(?:average|estimated|typical)\s+(?:shipment\s+|delivery\s+)?transit\s+time\b/iu], supportingPatterns: [/\b(?:shipment|delivery|tracking|aftership|courier|logistics)\b/iu], priority: 17 },
   { key: 'billing-payment', label: 'Billing and Payment Failures', pattern: /\b(?:payment|checkout|card|charged|charge|billing|bill|invoice|transaction|refund|price|cost|expensive|afford|affordable|paywall|subscription)\b/iu },
   { key: 'outage-reliability', label: 'Service Outage and Reliability Failures', pattern: /\b(?:outage|power cut|service down|downtime|offline|unavailable|blackout|disconnect(?:ed|ion)?|interruption)\b/iu },
-  { key: 'authentication', label: 'Login and Account Access Failures', pattern: /\b(?:login|log in|authentication|activation|verification|sign in|password|session|session expired|token|otp|account access|identity provider|oidc|oauth|keycloak|cookie not found|cookie_not_found|access (?:my|the|an?) account)\b/iu, strongPatterns: [/\b(?:identity provider login error|identity_provider_login_error|cookie not found|cookie_not_found|oidc|oauth|keycloak|authentication session|login_required|login required)\b/iu, /\b(?:login|log in|authentication|sign in|account access)\b[^.!?]{0,80}\b(?:fail|failed|failure|error|blocked|unable|cannot|can['’]?t)\b/iu, /\b(?:cannot|can['’]?t|unable to)\s+(?:log in|login|sign in|access)\s+(?:(?:to\s+)?(?:my|the|this|an?)\s+)?account\b/iu, /\blocked out of (?:my|the|this) account\b/iu], supportingPatterns: [/\b(?:redirect|callback|cookie|session|sso|external idp|okta|azure|ping|account)\b/iu], priority: 20 },
+  { key: 'authentication', label: 'Login and Account Access Failures', pattern: /\b(?:login|log in|authentication|sign in|password|session expired|account access|identity provider|oidc|oauth|keycloak|cookie not found|cookie_not_found|two[- ]factor authentication|2fa|multi[- ]factor authentication|verification code|access (?:my|the|an?) account)\b/iu, strongPatterns: [/\b(?:identity provider login error|identity_provider_login_error|cookie not found|cookie_not_found|oidc|oauth|keycloak|authentication session|login_required|login required|two[- ]factor authentication|2fa|multi[- ]factor authentication)\b/iu, /\b(?:login|log in|authentication|sign in|account access)\b[^.!?]{0,80}\b(?:fail|failed|failure|error|blocked|unable|cannot|can['’]?t)\b/iu, /\b(?:cannot|can['’]?t|unable to)\s+(?:log in|login|sign in|access)\s+(?:(?:to\s+)?(?:my|the|this|an?)\s+)?account\b/iu, /\blocked out of (?:my|the|this) account\b/iu], supportingPatterns: [/\b(?:redirect|callback|cookie|session|sso|external idp|okta|azure|ping|account|otp)\b/iu], hardNegativePatterns: [/\b(?:ant\+|wireless protocol|protocol compatibility|cycling gear|fitness gear)\b/iu], priority: 20 },
   {
     key: 'streaming-data-integrity',
     label: 'Streaming Data Integrity and Staleness Failures',
@@ -111,7 +153,8 @@ const FAMILIES: readonly ProblemFamilyDefinition[] = [
   { key: 'inaccurate-readings', label: 'Inaccurate Readings and Data Quality', pattern: /\b(?:inaccurate|incorrect|wrong reading|wrong data|reading(?:s)? wrong|measurement|meter reading|precision|not accurate|data is wrong)\b/iu },
   { key: 'energy-consumption', label: 'Energy Consumption Insight Gaps', pattern: /\b(?:energy consumption|electricity usage|power usage|energy usage|consumption|kilowatt|kwh|meter usage|utility usage)\b/iu },
   { key: 'device-sync', label: 'Device Synchronization and Connectivity Failures', pattern: /\b(?:sync|synchroni[sz]|device|bluetooth|wifi|wi-fi|connect|connection|pairing|gateway|sensor|smart meter|firmware)\b/iu },
-  { key: 'data-loss', label: 'Data Loss and Persistence Failures', pattern: /(?:\b(?:data|history|conversation|conversations|chat|chats|records?|files?|progress|drafts?|saved items?|favorites?|notes?|profiles?|state|memory|voice|voices|assets?)\b.{0,55}\b(?:lost|missing|deleted|gone|disappear(?:ed)?|not saved|save failed|reset|wiped)\b)|(?:\b(?:lost|missing|deleted|gone|disappear(?:ed)?|reset|wiped)\b.{0,55}\b(?:data|history|conversation|conversations|chat|chats|records?|files?|progress|drafts?|saved items?|favorites?|notes?|profiles?|state|memory|voice|voices|assets?)\b)|\b(?:data loss|lost data|missing data|history missing|persistence failure|persistence failures)\b/iu, strongPatterns: [/(?:\b(?:data|history|conversation|conversations|chat|chats|records?|files?|progress|drafts?|saved items?|favorites?|notes?|profiles?|state|memory|voice|voices|assets?)\b.{0,35}\b(?:lost|missing|deleted|gone|disappear(?:ed)?|reset|wiped)\b)|\b(?:data loss|lost data|missing data|history missing)\b/iu], negativePatterns: [/\b(?:deleted|removed)\s+(?:the\s+)?app\b|\bapp\s+(?:deleted|removed)\b|\bdeleted,?\s+and\s+will\s+never\s+use\s+again\b|\bdeleted\s+it\s+and\s+will\s+never\s+use\s+again\b/iu, /\b(?:missing|null) values?\b|\b(?:imput(?:e|ing|ation)|forward[- ]fill|mean|median)\b|\btests? (?:are|were )?(?:taken|ordered) infrequently\b/iu], priority: 6 },
+  { key: 'data-fragmentation', label: 'Fragmented Data Integration and Coordination', pattern: /\b(?:fragmented data|fragmented information|data fragmentation|information fragmentation|disconnected (?:data|systems?|sources?)|siloed (?:data|systems?|records?)|multiple disconnected systems?|separate data sources?|missing data layer|foundational data layer|unified data layer|data integration gap|data integration friction)\b/iu, strongPatterns: [/\b(?:fragmented|disconnected|siloed)\b[^.!?]{0,120}\b(?:data|information|systems?|sources?|records?)\b/iu, /\b(?:missing|foundational|unified) data layer\b/iu], supportingPatterns: [/\b(?:integration|normalization|standardization|accessibility|coordination|schema|property records?|asset data)\b/iu], priority: 19 },
+  { key: 'data-loss', label: 'Data Loss and Persistence Failures', pattern: /(?:\b(?:data|history|conversation|conversations|chat|chats|records?|files?|progress|drafts?|saved items?|favorites?|notes?|profiles?|state|memory|voice|voices|assets?)\b.{0,55}\b(?:lost|missing|deleted|gone|disappear(?:ed)?|not saved|save failed|reset|wiped)\b)|(?:\b(?:lost|missing|deleted|gone|disappear(?:ed)?|reset|wiped)\b.{0,55}\b(?:data|history|conversation|conversations|chat|chats|records?|files?|progress|drafts?|saved items?|favorites?|notes?|profiles?|state|memory|voice|voices|assets?)\b)|\b(?:data loss|lost data|missing data|history missing|persistence failure|persistence failures)\b/iu, strongPatterns: [/(?:\b(?:data|history|conversation|conversations|chat|chats|records?|files?|progress|drafts?|saved items?|favorites?|notes?|profiles?|state|memory|voice|voices|assets?)\b.{0,35}\b(?:lost|missing|deleted|gone|disappear(?:ed)?|reset|wiped)\b)|\b(?:data loss|lost data|missing data|history missing)\b/iu], negativePatterns: [/\b(?:deleted|removed)\s+(?:the\s+)?app\b|\bapp\s+(?:deleted|removed)\b|\bdeleted,?\s+and\s+will\s+never\s+use\s+again\b|\bdeleted\s+it\s+and\s+will\s+never\s+use\s+again\b/iu, /\b(?:missing|null) values?\b|\b(?:imput(?:e|ing|ation)|forward[- ]fill|mean|median)\b|\btests? (?:are|were )?(?:taken|ordered) infrequently\b/iu], hardNegativePatterns: [/\b(?:missing|foundational|unified) data layer\b|\b(?:fragmented|disconnected|siloed)\b[^.!?]{0,120}\b(?:data|information|systems?|sources?|records?)\b/iu], priority: 6 },
 
   {
     key: 'script-execution-policy',
@@ -143,7 +186,7 @@ const FAMILIES: readonly ProblemFamilyDefinition[] = [
   { key: 'navigation-ui', label: 'Navigation and Interface Friction', pattern: /\b(?:navigation|interface|ui|button|menu|layout|screen|hard to use|confusing|cannot find|can['’]?t find)\b/iu },
   { key: 'performance', label: 'Performance and Responsiveness Failures', pattern: /\b(?:slow|lag|latency|freeze|frozen|stuck|unresponsive|takes too long|loading forever)\b/iu },
   { key: 'healthcare-ai-service', label: 'Healthcare AI Service Complaint and Validation Gaps', pattern: /\b(?:ai[- ]assisted customer[- ]service|ai[- ]driven customer[- ]service|ai customer service|ai phone assistant|automated ai customer service|automated healthcare interaction|healthcare ai support)\b/iu, strongPatterns: [/\b(?:healthcare|health care|pharmacy|patient|clinical)\b/iu, /\b(?:complaints?|failure|failed|pulled|withdrew|service termination|friction|dissatisfaction)\b/iu], supportingPatterns: [/\b(?:phone assistant|customer service|human review|feedback|triage)\b/iu], priority: 9 },
-  { key: 'navigation-routing', label: 'Navigation and Routing Endpoint Failures', pattern: /\b(?:404|not found|missing url|incorrect url|broken route|broken link|routing|route|redirect|deep[- ]link|destination page|endpoint)\b/iu, strongPatterns: [/\b404\b/iu, /\b(?:missing|incorrect) url\b/iu, /\b(?:broken route|broken link|routing|deep[- ]link|destination page)\b/iu], supportingPatterns: [/\b(?:button|page|feedback|rating|rate us|navigation|redirect)\b/iu], negativePatterns: [/\b(?:identity provider login error|identity_provider_login_error|cookie not found|cookie_not_found|oidc|oauth|keycloak|authentication|login_required|login required|sso session|external idp)\b/iu], priority: 14 },
+  { key: 'navigation-routing', label: 'Navigation and Routing Endpoint Failures', pattern: /\b(?:404|not found|missing url|incorrect url|broken route|broken link|redirect|deep[- ]link|destination page|missing endpoint|incorrect endpoint|endpoint failure)\b/iu, strongPatterns: [/\b404\b/iu, /\b(?:missing|incorrect) url\b/iu, /\b(?:broken route|broken link|deep[- ]link|destination page|missing endpoint|incorrect endpoint)\b/iu], supportingPatterns: [/\b(?:button|page|feedback|rating|rate us|navigation|redirect|endpoint)\b/iu], hardNegativePatterns: [/\b(?:routing app|route planner|route planning software|stop numbers?|driver references?|unlimited stops?|upload stops?|import stops?)\b/iu], negativePatterns: [/\b(?:identity provider login error|identity_provider_login_error|cookie not found|cookie_not_found|oidc|oauth|keycloak|authentication|login_required|login required|sso session|external idp)\b/iu], priority: 14 },
   { key: 'crash-runtime', label: 'Application Crash and Runtime Failures', pattern: /\b(?:crash|crashes|crashed|crashing|runtime error|runtime failure|exception|app closes|application closes|freeze|frozen|unresponsive)\b/iu, negativePatterns: [/\b(?:404|missing url|incorrect url|broken route|broken link|redirect|deep[- ]link)\b/iu, /\b(?:crash[- ]course|course crash)\b/iu, /\b(?:not|never|without|no)\s+(?:actually\s+)?crash(?:es|ed|ing)?\b/iu, /\b(?:keyboard (?:appears? )?(?:frozen|freeze)|focus (?:remains|stays|trapped|stuck)|focus trap|keystrokes? (?:are )?captured|type[- ]ahead|screen reader)\b/iu], priority: 5 },
   { key: 'public-transport', label: 'Public Transport Reliability Friction', pattern: /\b(?:public transport|transit|bus|train|rail|metro|route planner|arrival time)\b/iu },
   { key: 'traffic-congestion', label: 'Traffic Congestion and Routing Friction', pattern: /\b(?:traffic|congestion|bottleneck|gridlock|stuck in traffic|route)\b/iu },
@@ -153,17 +196,18 @@ const FAMILIES: readonly ProblemFamilyDefinition[] = [
   {
     key: 'therapeutic-continuity',
     label: 'Therapeutic Persona and Voice Continuity Failures',
-    pattern: /\b(?:voice|voices|persona|personality|tone|warmth|counselor|counsellor|therapist|therapeutic persona|interaction style|memory of conversations?)\b/iu,
+    pattern: /\b(?:voice|voices|persona|personality|tone|warmth|counselor|counsellor|therapist|therapeutic persona|interaction style|memory of conversations?)\b[^.!?]{0,180}\b(?:gone|removed|deleted|changed|different|stranger|not the same|bring back|latest update|after (?:an? )?update|lost|stopped remembering|no longer remembers?)\b|\b(?:gone|removed|deleted|changed|different|stranger|not the same|bring back|latest update|after (?:an? )?update|lost|stopped remembering|no longer remembers?)\b[^.!?]{0,180}\b(?:voice|voices|persona|personality|tone|warmth|counselor|counsellor|therapist|therapeutic persona|interaction style|memory of conversations?)\b/iu,
     strongPatterns: [
       /\b(?:voice|voices|persona|personality|tone|warmth|counselor|counsellor|therapist)\b/iu,
-      /\b(?:gone|removed|deleted|changed|different|stranger|not the same|bring back|latest update|after (?:an? )?update|update)\b/iu,
+      /\b(?:gone|removed|deleted|changed|different|stranger|not the same|bring back|latest update|after (?:an? )?update|lost|stopped remembering|no longer remembers?)\b/iu,
     ],
     supportingPatterns: [
       /\b(?:mental health|therapy|therapeutic|self[- ]care|support tool|ai for mental health)\b/iu,
-      /\b(?:life[- ]changer|life[- ]saver|comforting|familiar|trusted|meaningful conversations?)\b/iu,
+      /\b(?:comforting|familiar|trusted|meaningful conversations?)\b/iu,
     ],
     negativePatterns: [
       /\b(?:lawsuit|investor|fraud|funding|taking time for mental health|cannot afford time|workplace mental health)\b/iu,
+      /\bi wish i had (?:this|the|an?)\s+(?:app|application|service|platform|tool)\b[^.!?]{0,100}\b(?:when|earlier|before|back then)\b/iu,
     ],
     priority: 16,
   },
@@ -223,6 +267,12 @@ function familyScore(value: string, family: ProblemFamilyDefinition): number {
   const normalized = normalize(value);
   if (!normalized || !family.pattern.test(normalized)) {
     return 0;
+  }
+
+  for (const pattern of family.hardNegativePatterns ?? []) {
+    if (pattern.test(normalized)) {
+      return 0;
+    }
   }
 
   let score = 1 + (family.priority ?? 0) / 100;
@@ -289,13 +339,27 @@ export function resolveProblemFamilyKeys(value: string): readonly string[] {
   return recognized.length > 0 ? recognized : [lexicalFamilyKey(body)];
 }
 
+export function resolvePrimaryProblemFamily(
+  value: string,
+): { readonly key: string; readonly label: string } | null {
+  const body = evidenceBody(value);
+  const primary = rankedFamilies(body)[0];
+  if (!primary) return null;
+  return { key: primary.key, label: familyLabel(primary.key) };
+}
+
 const ATOMIC_PROBLEM_CUES: readonly { readonly key: string; readonly pattern: RegExp }[] = [
   { key: 'ai-model-containment', pattern: /\b(?:model containment|containment breach|sandbox escape|security boundary|escape onto the open internet|security testing)\b/iu },
   { key: 'energy-monitor-installation', pattern: /\b(?:current transformers?|\bcts?\b|energy monitor(?:ing)?|power monitor(?:ing)?)\b[^.!?]{0,160}\b(?:install|setup|configure|wiring|calibration|too much work|manual effort|complex|difficult)\b|\b(?:install|setup|configure|wiring|calibration|too much work|manual effort|complex|difficult)\b[^.!?]{0,160}\b(?:current transformers?|\bcts?\b|energy monitor(?:ing)?|power monitor(?:ing)?)\b/iu },
+  { key: 'data-fragmentation', pattern: /\b(?:fragmented|disconnected|siloed)\b[^.!?]{0,120}\b(?:data|information|systems?|sources?|records?)\b|\b(?:missing|foundational|unified) data layer\b/iu },
   { key: 'persisted-record-loss', pattern: /\b(?:records?|files?|history|saved data|saved records?|database records?)\b[^.!?]{0,90}\b(?:lost|missing|gone|deleted|disappeared|not saved|wiped)\b|\b(?:lost|missing|gone|deleted|disappeared)\b[^.!?]{0,90}\b(?:records?|files?|history|saved data|database)\b/iu },
   { key: 'sparse-measurements', pattern: /\b(?:missing|null) values?\b|\b(?:imput(?:e|ing|ation)|forward[- ]fill|mean|median|sparse features?|sparse data)\b|\btests?\b[^.!?]{0,90}\b(?:infrequently|only when|when ordered)\b/iu },
   { key: 'duplicate-charge', pattern: /\b(?:already paid|paid .*cash|cash .*paid|charged .*again|double charg|duplicate charg|payment reconciliation)\b/iu },
+  { key: 'device-protocol-compatibility', pattern: /(?:\bant\b[^.!?]{0,120}\b(?:support|unsupported|cycling|fitness|wearable|gear|device|equipment|protocol|connect|compatib)|\b(?:wireless protocol|protocol compatibility|unsupported protocol|cycling gear|fitness gear)\b)/iu },
+  { key: 'route-planning-capability', pattern: /\b(?:routing app|route planner|route planning software)\b[^.!?]{0,160}\b(?:upload|import|stop numbers?|driver references?|unlimited stops?)\b|\b(?:upload|import)\b[^.!?]{0,100}\b(?:stop numbers?|driver references?|stops?)\b/iu },
+  { key: 'application-update-loop', pattern: /\b(?:update loop|version mismatch|prompted to update|latest version|already installed|already updated)\b/iu },
   { key: 'authentication', pattern: /\b(?:oauth|oidc|login|log in|authentication|identity provider|session|cookie|token|sign in|account access|access (?:my|the|this) account|locked out of (?:my|the|this) account)\b/iu },
+  { key: 'mobile-license-verification', pattern: /\b(?:license test response|licensing server|licensechecker|servermanagedpolicy|strictpolicy|not[_ -]?licensed|lvl licensing|google play licensing)\b/iu },
   { key: 'routing', pattern: /\b(?:404|missing url|incorrect url|broken route|broken link|deep[- ]link|destination page)\b/iu },
   { key: 'streaming-data-integrity', pattern: /\b(?:streaming|stream)\s+pipelines?\b[^.!?]{0,180}\b(?:stale|skewed|incorrect|wrong|corrupt(?:ed|ion)?|silently|quietly)\b|\b(?:stale|skewed|incorrect|wrong|corrupt(?:ed|ion)?)\s+data\b/iu },
   { key: 'focus-navigation', pattern: /\b(?:keyboard (?:appears? )?(?:frozen|freeze)|focus (?:remains|stays|trapped|stuck)|focus trap|keystrokes? (?:are )?captured|type[- ]ahead|accessible panel|screen reader|no visible candidate)\b/iu },

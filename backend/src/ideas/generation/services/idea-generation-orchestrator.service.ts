@@ -33,6 +33,7 @@ import {
 
 import type { IdeaOwner } from '../../shared/types/idea-owner.type';
 import type { IdeaGenerationPolicy } from '../types/idea-generation-policy.type';
+import type { RequestCollectionPlan } from '../types/request-collection-plan.type';
 
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 
@@ -46,6 +47,7 @@ import { IdeaGenerationLockService } from './idea-generation-lock.service';
 import { IdeaGenerationRunService } from './idea-generation-run.service';
 import { DomainResolutionService } from './domain-resolution.service';
 import { IdeaGenerationPolicyService } from './idea-generation-policy.service';
+import { RequestCollectionPlanningService } from './request-collection-planning.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { randomUUID } from 'node:crypto';
 
@@ -134,6 +136,8 @@ type ExecuteOwnedIdeaGenerationInput = {
 
   requestDescription: string | null;
 
+  collectionPlan: RequestCollectionPlan | null;
+
   /**
    * User-provided generation keywords.
    */
@@ -203,8 +207,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
   /** Per-run heartbeat timers keep long external stages from looking stale. */
   private readonly heartbeatTimers = new Map<string, NodeJS.Timeout>();
 
-  /** One lightweight run/lock heartbeat every 15 seconds. */
-  private readonly heartbeatIntervalMs = 15_000;
+  /** One non-overlapping run/lock heartbeat every 30 seconds. */
+  private readonly heartbeatIntervalMs = 30_000;
+
+  private readonly heartbeatInFlight = new Set<string>();
 
   constructor(
     private readonly guestSessionService: GuestIdeaSessionService,
@@ -216,6 +222,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     private readonly pipelineService: IdeaGenerationPipelineService,
 
     private readonly domainResolutionService: DomainResolutionService,
+
+    private readonly requestCollectionPlanningService: RequestCollectionPlanningService,
 
     private readonly prisma: PrismaService,
 
@@ -319,6 +327,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       selectedDomains: context.selectedDomains ?? [],
       domainResolution: context.domainResolution ?? null,
       requestDescription: context.requestDescription ?? null,
+      collectionPlan: context.collectionPlan ?? null,
       keywords: context.keywords,
       requestedDataSourceKeys: context.requestedDataSourceKeys,
       location: context.location,
@@ -346,12 +355,24 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
    * compatibility and idea persistence. Additional selected domains are preserved as first-class generation
    * constraints and also contribute bounded collection keywords.
    */
-  private resolveDomainForUser(userId: string, dto: GenerateIdeaDto) {
+  private resolveDomainForUser(
+    userId: string,
+    dto: GenerateIdeaDto,
+    collectionPlan: RequestCollectionPlan | null = null,
+  ) {
     return this.domainResolutionService.resolve({
       userId,
       domainId: dto.domainIds?.[0] ?? dto.domainId,
       description: dto.description,
-      keywords: dto.keywords,
+      keywords: this.mergeCollectionPlanKeywords(dto.keywords, collectionPlan),
+      plannedDomainName: collectionPlan?.suggestedDomainName ?? undefined,
+      plannedKeywords: collectionPlan
+        ? [
+            ...collectionPlan.searchQueries,
+            ...collectionPlan.evidenceTargets,
+            ...collectionPlan.intentConcepts,
+          ]
+        : undefined,
       language: dto.language,
     });
   }
@@ -365,6 +386,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
   private async buildCrossDomainProfile(
     dto: GenerateIdeaDto,
     resolvedDomain: Awaited<ReturnType<DomainResolutionService['resolve']>>,
+    collectionPlan: RequestCollectionPlan | null = null,
   ): Promise<{
     readonly selectedDomains: SelectedGenerationDomain[];
     readonly keywords: string[];
@@ -419,6 +441,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       select: {
         id: true,
         name: true,
+        isVisible: true,
         domainKeywords: {
           where: { language: { in: [dto.language, LanguageCode.ANY] } },
           select: { keyword: true },
@@ -428,10 +451,15 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       },
     });
 
+    const explicitRequestedIdSet = new Set(explicitRequestedIds);
     const byId = new Map(domains.map((domain) => [domain.id, domain]));
     const selectedDomains = requestedIds
       .map((id) => byId.get(id))
       .filter((domain): domain is (typeof domains)[number] => Boolean(domain))
+      .filter(
+        (domain) =>
+          domain.isVisible || !explicitRequestedIdSet.has(domain.id),
+      )
       .map((domain) => {
         const configuredKeywords = this.normalizeStringArray(
           domain.domainKeywords.map((entry) => entry.keyword),
@@ -457,6 +485,13 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     const requestIntentKeywords = this.buildRequestIntentKeywords(
       dto.description,
     );
+    const plannedCollectionKeywords = collectionPlan
+      ? [
+          ...collectionPlan.searchQueries,
+          ...collectionPlan.evidenceTargets,
+          ...collectionPlan.intentConcepts,
+        ]
+      : [];
     const userKeywords = this.normalizeStringArray(dto.keywords).slice(0, 8);
     const bridgeKeyword = selectedDomains.length > 1
       ? `coherent cross-domain workflow combining ${selectedDomains.map((domain) => domain.name).join(' and ')}`
@@ -487,11 +522,12 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     return {
       selectedDomains,
       keywords: [...new Set([
+        ...plannedCollectionKeywords,
         ...requestIntentKeywords,
         ...userKeywords,
         bridgeKeyword,
         ...balancedDomainKeywords,
-      ])].slice(0, 30),
+      ])].slice(0, 36),
     };
   }
 
@@ -632,6 +668,29 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         'workflow bottleneck',
         'process automation',
       ],
+      'tailoring custom apparel': [
+        'tailoring',
+        'tailor shop',
+        'custom clothing',
+        'customer measurements',
+        'fabric selection',
+        'alteration requests',
+        'fitting appointments',
+        'design notes',
+        'custom order tracking',
+        'made to measure',
+      ],
+      tailoring: [
+        'tailoring',
+        'tailor shop',
+        'custom clothing',
+        'customer measurements',
+        'fabric selection',
+        'alteration requests',
+        'fitting appointments',
+        'design notes',
+        'custom order tracking',
+      ],
       environment: [
         'environmental monitoring',
         'waste management',
@@ -680,6 +739,36 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         'predictive maintenance',
         'factory automation',
         'manufacturing supply chain',
+        'machine energy consumption',
+        'industrial equipment telemetry',
+        'idle equipment energy waste',
+      ],
+      'book club reading group management': [
+        'book club reading schedule',
+        'member reading progress tracking',
+        'book club meeting coordination',
+        'discussion topic history',
+        'shared reading notes',
+        'book suggestion voting',
+      ],
+      'recipe culinary knowledge management': [
+        'saved recipe organization',
+        'recipe ingredient substitutions',
+        'personal recipe changes',
+        'cooking result history',
+        'family recipe preferences',
+        'recipe search and retrieval',
+        'recipe version history',
+        'cooking notes consolidation',
+      ],
+      'travel planning comparison': [
+        'travel accommodation price comparison',
+        'booking platform comparison',
+        'activity availability',
+        'transportation options',
+        'travel reviews',
+        'traveler preferences',
+        'trip budget planning',
       ],
       'media entertainment': [
         'content creation',
@@ -687,6 +776,21 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         'audience engagement',
         'media workflow',
         'digital publishing',
+        'band rehearsal',
+        'music collaboration',
+        'song version management',
+        'set list coordination',
+        'recording version management',
+      ],
+      'moving home organization': [
+        'moving home',
+        'packed belongings',
+        'room assignment',
+        'moving checklist',
+        'fragile item tracking',
+        'moving service appointments',
+        'household purchase checklist',
+        'family moving coordination',
       ],
       'mental health': [
         'therapy access',
@@ -751,11 +855,22 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     ];
   }
 
-  private resolveDomainForGuest(dto: GenerateGuestIdeaDto) {
+  private resolveDomainForGuest(
+    dto: GenerateGuestIdeaDto,
+    collectionPlan: RequestCollectionPlan | null = null,
+  ) {
     return this.domainResolutionService.resolve({
       domainId: dto.domainId,
       description: dto.description,
-      keywords: dto.keywords,
+      keywords: this.mergeCollectionPlanKeywords(dto.keywords, collectionPlan),
+      plannedDomainName: collectionPlan?.suggestedDomainName ?? undefined,
+      plannedKeywords: collectionPlan
+        ? [
+            ...collectionPlan.searchQueries,
+            ...collectionPlan.evidenceTargets,
+            ...collectionPlan.intentConcepts,
+          ]
+        : undefined,
       language: dto.language,
     });
   }
@@ -787,6 +902,95 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     };
   }
 
+  private async planRequestCollection(input: {
+    readonly description?: string | null;
+    readonly keywords?: readonly string[];
+    readonly generationType: IdeaGenerationType;
+    readonly userId?: string;
+    readonly guestSessionId?: string;
+  }): Promise<RequestCollectionPlan | null> {
+    const description = this.normalizeOptionalValue(input.description ?? undefined);
+    if (!description) {
+      return null;
+    }
+
+    return this.requestCollectionPlanningService.plan({
+      description,
+      keywords: input.keywords ?? [],
+      generationType: input.generationType,
+      userId: input.userId,
+      guestSessionId: input.guestSessionId,
+    });
+  }
+
+  private mergeCollectionPlanKeywords(
+    keywords: readonly string[] | undefined,
+    collectionPlan: RequestCollectionPlan | null,
+  ): string[] {
+    return this.uniqueNormalizedStrings([
+      ...(collectionPlan?.intentConcepts ?? []),
+      ...(collectionPlan?.evidenceTargets ?? []),
+      ...(keywords ?? []),
+    ]).slice(0, 24);
+  }
+
+  private buildPlannedRequestKeywords(
+    description: string | null | undefined,
+    keywords: readonly string[] | undefined,
+    collectionPlan: RequestCollectionPlan | null,
+  ): string[] {
+    const planned = this.uniqueNormalizedStrings([
+      ...(collectionPlan?.searchQueries ?? []),
+      ...(collectionPlan?.evidenceTargets ?? []),
+      ...(collectionPlan?.intentConcepts ?? []),
+    ]);
+
+    if (planned.length > 0) {
+      return this.uniqueNormalizedStrings([
+        ...planned,
+        ...(keywords ?? []),
+      ]).slice(0, 30);
+    }
+
+    return this.uniqueNormalizedStrings([
+      ...(keywords ?? []),
+      ...this.extractRequestSearchPhrases(description ?? ''),
+    ]).slice(0, 24);
+  }
+
+  private uniqueNormalizedStrings(values: readonly string[]): string[] {
+    const result: string[] = [];
+    const seen = new Set<string>();
+
+    for (const raw of values) {
+      if (typeof raw !== 'string') continue;
+      const value = raw.replace(/\s+/gu, ' ').trim();
+      if (!value) continue;
+      const key = value.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(value);
+    }
+
+    return result;
+  }
+
+  private extractRequestSearchPhrases(description: string): string[] {
+    const words = description
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
+      .split(/\s+/u)
+      .filter((word) => word.length >= 4);
+    const phrases: string[] = [];
+
+    for (let index = 0; index < words.length - 2 && phrases.length < 8; index += 2) {
+      phrases.push(words.slice(index, index + 4).join(' '));
+    }
+
+    return phrases;
+  }
+
   async generateForUser(
     input: GenerateRegisteredIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
@@ -796,10 +1000,21 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
      * Run them together so personalization/domain inference does not add a
      * sequential database round-trip to the hot generation path.
      */
-    const [policy, resolvedDomain] = await Promise.all([
+    const collectionPlanPromise = this.planRequestCollection({
+      description: input.dto.description,
+      keywords: input.dto.keywords,
+      generationType: input.dto.generationType,
+      userId,
+    });
+    const [policy, collectionPlan] = await Promise.all([
       this.resolveUserQueuePolicy(userId, input.dto.generationType),
-      this.resolveDomainForUser(userId, input.dto),
+      collectionPlanPromise,
     ]);
+    const resolvedDomain = await this.resolveDomainForUser(
+      userId,
+      input.dto,
+      collectionPlan,
+    );
 
     const owner: IdeaOwner = {
       type: IDEA_OWNER_TYPES.USER,
@@ -808,6 +1023,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     const domainProfile = await this.buildCrossDomainProfile(
       input.dto,
       resolvedDomain,
+      collectionPlan,
     );
 
     return this.executeOwnedGeneration({
@@ -822,6 +1038,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
 
       requestDescription: this.normalizeOptionalValue(input.dto.description),
+
+      collectionPlan,
 
       keywords: domainProfile.keywords,
 
@@ -874,7 +1092,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       type: IDEA_OWNER_TYPES.GUEST,
       guestSessionId: guestSession.id,
     };
-    const resolvedDomain = await this.resolveDomainForGuest(input.dto);
+    const collectionPlan = await this.planRequestCollection({
+      description: input.dto.description,
+      keywords: input.dto.keywords,
+      generationType: IdeaGenerationType.GUEST_FREE,
+      guestSessionId: guestSession.id,
+    });
+    const resolvedDomain = await this.resolveDomainForGuest(
+      input.dto,
+      collectionPlan,
+    );
 
     return this.executeOwnedGeneration({
       owner,
@@ -889,10 +1116,13 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
       requestDescription: this.normalizeOptionalValue(input.dto.description),
 
-      keywords: [
-        ...this.buildRequestIntentKeywords(input.dto.description),
-        ...this.normalizeStringArray(input.dto.keywords),
-      ].slice(0, 30),
+      collectionPlan,
+
+      keywords: this.buildPlannedRequestKeywords(
+        input.dto.description,
+        input.dto.keywords,
+        collectionPlan,
+      ),
 
       requestedDataSourceKeys: [],
 
@@ -927,13 +1157,25 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
      * The pipeline entitlement stage still performs the same validation again
      * to protect against balance changes between queue acceptance and execution.
      */
-    const [policy, resolvedDomain] = await Promise.all([
+    const collectionPlanPromise = this.planRequestCollection({
+      description: input.dto.description,
+      keywords: input.dto.keywords,
+      generationType: input.dto.generationType,
+      userId,
+    });
+    const [policy, collectionPlan] = await Promise.all([
       this.resolveUserQueuePolicy(userId, input.dto.generationType),
-      this.resolveDomainForUser(userId, input.dto),
+      collectionPlanPromise,
     ]);
+    const resolvedDomain = await this.resolveDomainForUser(
+      userId,
+      input.dto,
+      collectionPlan,
+    );
     const domainProfile = await this.buildCrossDomainProfile(
       input.dto,
       resolvedDomain,
+      collectionPlan,
     );
 
     return this.queueOwnedGeneration({
@@ -943,6 +1185,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       selectedDomains: domainProfile.selectedDomains,
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
       requestDescription: this.normalizeOptionalValue(input.dto.description),
+      collectionPlan,
       keywords: domainProfile.keywords,
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
@@ -1010,7 +1253,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     const guestSession = await this.guestSessionService.resolveAvailableSession(
       input.guestSessionToken,
     );
-    const resolvedDomain = await this.resolveDomainForGuest(input.dto);
+    const collectionPlan = await this.planRequestCollection({
+      description: input.dto.description,
+      keywords: input.dto.keywords,
+      generationType: IdeaGenerationType.GUEST_FREE,
+      guestSessionId: guestSession.id,
+    });
+    const resolvedDomain = await this.resolveDomainForGuest(
+      input.dto,
+      collectionPlan,
+    );
 
     return this.queueOwnedGeneration({
       owner: {
@@ -1022,10 +1274,12 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       selectedDomains: [],
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
       requestDescription: this.normalizeOptionalValue(input.dto.description),
-      keywords: [
-        ...this.buildRequestIntentKeywords(input.dto.description),
-        ...this.normalizeStringArray(input.dto.keywords),
-      ].slice(0, 30),
+      collectionPlan,
+      keywords: this.buildPlannedRequestKeywords(
+        input.dto.description,
+        input.dto.keywords,
+        collectionPlan,
+      ),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -1205,6 +1459,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
       requestDescription: input.requestDescription,
 
+      collectionPlan: input.collectionPlan,
+
       keywords: input.keywords,
 
       requestedDataSourceKeys: input.requestedDataSourceKeys,
@@ -1238,6 +1494,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestDescription: this.normalizeOptionalValue(
         checkpoint.requestDescription ?? undefined,
       ),
+      collectionPlan: checkpoint.collectionPlan ?? null,
       keywords: this.normalizeRecoveredStringArray(checkpoint.keywords),
       requestedDataSourceKeys: this.normalizeRecoveredStringArray(
         checkpoint.requestedDataSourceKeys,
@@ -1256,6 +1513,9 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       opportunityRanking: checkpoint.opportunityRanking ?? null,
       benchmarkWinnerOpportunity:
         checkpoint.benchmarkWinnerOpportunity ?? null,
+      benchmarkCandidates: Array.isArray(checkpoint.benchmarkCandidates)
+        ? checkpoint.benchmarkCandidates
+        : [],
       evidenceRecoveryAttempts:
         typeof checkpoint.evidenceRecoveryAttempts === 'number' &&
         Number.isFinite(checkpoint.evidenceRecoveryAttempts) &&
@@ -1485,19 +1745,34 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     this.stopRunHeartbeat(runId);
 
     const timer = setInterval(() => {
-      void Promise.allSettled([
-        this.runService.heartbeat(runId),
-        this.lockService.refresh(owner, runId),
-      ]).then((results) => {
-        for (const result of results) {
-          if (result.status === 'rejected') {
-            const error = this.normalizeError(result.reason);
+      if (this.heartbeatInFlight.has(runId)) {
+        return;
+      }
+
+      this.heartbeatInFlight.add(runId);
+      void (async () => {
+        try {
+          try {
+            await this.runService.heartbeat(runId);
+          } catch (reason) {
+            const error = this.normalizeError(reason);
             this.logger.warn(
               `Generation heartbeat failed for run "${runId}": ${error.message}`,
             );
           }
+
+          try {
+            await this.lockService.refresh(owner, runId);
+          } catch (reason) {
+            const error = this.normalizeError(reason);
+            this.logger.warn(
+              `Generation lock heartbeat failed for run "${runId}": ${error.message}`,
+            );
+          }
+        } finally {
+          this.heartbeatInFlight.delete(runId);
         }
-      });
+      })();
     }, this.heartbeatIntervalMs);
 
     timer.unref();
@@ -1686,6 +1961,28 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       incidents: 'security incident',
       credentials: 'credential security',
       vulnerabilities: 'security vulnerability',
+      fabrics: 'fabric selection',
+      alterations: 'alteration requests',
+      fittings: 'fitting appointments',
+      garments: 'garment',
+      clothes: 'clothing',
+      wardrobes: 'wardrobe',
+      closets: 'closet',
+      outfits: 'outfit',
+      shoes: 'footwear',
+      accessories: 'accessory',
+      receipts: 'receipt',
+      repairs: 'repair',
+      bands: 'band',
+      musicians: 'musician',
+      rehearsals: 'rehearsal',
+      recordings: 'recording',
+      songs: 'song',
+      setlists: 'set list',
+      checklists: 'checklist',
+      fields: 'field',
+      crops: 'crop',
+      forecasts: 'forecast',
     };
 
     const stopWords = new Set([
@@ -1721,6 +2018,44 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       'optimize',
       'optimized',
       'optimization',
+      'often',
+      'usually',
+      'frequently',
+      'commonly',
+      'struggle',
+      'struggles',
+      'struggling',
+      'keep',
+      'keeps',
+      'keeping',
+      'need',
+      'needs',
+      'want',
+      'wants',
+      'difficult',
+      'difficulty',
+      'multiple',
+      'several',
+      'different',
+      'shared',
+      'manage',
+      'manages',
+      'managing',
+      'large',
+      'small',
+      'numbers',
+      'still',
+      'remember',
+      'what',
+      'they',
+      'their',
+      'have',
+      'only',
+      'usually',
+      'kept',
+      'information',
+      'specific',
+      'leading',
     ]);
 
     const tokens = searchableIntent
@@ -1730,11 +2065,30 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       .split(/\s+/)
       .filter(Boolean);
 
+    const normalizedContentTokens = tokens
+      .filter((token) => !stopWords.has(token))
+      .flatMap((token) => (aliasMap[token] ?? token).split(/\s+/u))
+      .filter((token) => token.length >= 3 && !stopWords.has(token));
+
+    const phraseCandidates: string[] = [];
+    for (const width of [3, 2]) {
+      for (let index = 0; index <= normalizedContentTokens.length - width; index += 1) {
+        const phrase = normalizedContentTokens
+          .slice(index, index + width)
+          .join(' ')
+          .trim();
+        if (phrase) phraseCandidates.push(phrase);
+      }
+    }
+
+    const compactSearchableIntent =
+      searchableIntent.split(/\s+/u).filter(Boolean).length <= 8
+        ? searchableIntent
+        : null;
     const terms = [
-      searchableIntent,
-      ...tokens
-        .filter((token) => !stopWords.has(token))
-        .map((token) => aliasMap[token] ?? token),
+      ...(compactSearchableIntent ? [compactSearchableIntent] : []),
+      ...phraseCandidates,
+      ...normalizedContentTokens,
     ];
 
     const hasAdministrationIntent = tokens.some((token) =>
@@ -1743,9 +2097,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     const hasFinanceIntent = tokens.some((token) =>
       ['finance', 'financial', 'accounting', 'budget', 'invoice', 'expense', 'expenses', 'cost', 'costs', 'payroll', 'procurement', 'reconciliation'].includes(token),
     );
-    const hasHrIntent = tokens.some((token) =>
-      ['hr', 'employee', 'employees', 'workforce', 'recruitment', 'recruiting', 'hiring', 'burnout', 'turnover', 'retention', 'candidate', 'applicant'].includes(token),
-    );
+    const hasExplicitHrIntent =
+      /\b(?:human resources|\bhr\b|recruitment|recruiting|hiring|talent acquisition|candidate screening|applicant tracking|employee onboarding)\b/iu.test(
+        searchableIntent,
+      );
+    const hasWorkforcePainIntent =
+      /\b(?:employee|employees|workforce|staff)\b/iu.test(searchableIntent) &&
+      /\b(?:burnout|turnover|retention|workload|wellbeing|well-being|engagement|performance review|employee feedback|staffing shortage|recruitment|hiring|onboarding)\b/iu.test(
+        searchableIntent,
+      );
+    const hasHrIntent = hasExplicitHrIntent || hasWorkforcePainIntent;
     const hasCybersecurityIntent =
       /\b(?:cybersecurity|cyber security|security|unauthori[sz]ed access|data breach|security breach|suspicious activity|security alert|threat|attack|incident response|malware|ransomware|phishing|vulnerab|credential|access control|privacy)\w*\b/iu.test(
         searchableIntent,
@@ -1758,6 +2119,103 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       /\b(?:detect|identify|spot|discover|predict|early|emerging|warning|anomaly|trend)\w*\b/iu.test(searchableIntent);
     const hasDataAnalysisIntent =
       /\b(?:data|feedback|record|records|insight|insights|analy[sz]|analytics|scattered|fragmented)\w*\b/iu.test(searchableIntent);
+    const hasWardrobeIntent =
+      /\b(?:wardrobe|closet|clothes|clothing|shoes|footwear|accessories|outfit|outfits)\b/iu.test(
+        searchableIntent,
+      ) &&
+      /\b(?:inventory|remember|fit|fits|sizing|cleaning|laundry|repair|maintenance|photos?|receipts?|duplicate purchases?|unused items?|occasion|weather|outfit|coordinate|coordination)\b/iu.test(
+        searchableIntent,
+      );
+    const hasLaundryOperationsIntent =
+      /\b(?:laundry shop|laundry shops|laundromat|laundromats|dry cleaning|dry-cleaning|dry cleaner|dry cleaners|laundry service|garment cleaning|wash and fold)\b/iu.test(
+        searchableIntent,
+      ) &&
+      /\b(?:garments?|clothes|stains?|cleaning instructions?|pickup|pick up|deadlines?|treatment|paper tags?|lost|missing|delayed|customer disputes?|order status)\b/iu.test(
+        searchableIntent,
+      );
+    const hasTailoringAnchor =
+      /\b(?:tailor|tailoring|custom clothing|custom apparel|made[- ]to[- ]measure|bespoke|garment|fabric|alteration|fitting appointment|design notes?)\b/iu.test(
+        searchableIntent,
+      );
+    const hasTailoringMeasurementContext =
+      /\bmeasurements?\b/iu.test(searchableIntent) &&
+      /\b(?:customer|client|body|clothing|garment|tailor|tailoring|fitting|size|sizing)\b/iu.test(
+        searchableIntent,
+      );
+    const hasTailoringIntent =
+      hasTailoringAnchor || hasTailoringMeasurementContext;
+    const hasPetCareIntent =
+      /\b(?:pet care|pet owners?|pet sitter|veterinarian|veterinary|vaccination|grooming|feeding routine|animal care|pet health)\b/iu.test(
+        searchableIntent,
+      );
+    const hasEventPlanningIntent =
+      /\b(?:wedding|weddings|private event|event planning|event coordination|venue|venues|photographer|photographers|decorator|decorators|catering|guest list|guest lists|event vendor|event vendors)\b/iu.test(
+        searchableIntent,
+      );
+    const hasBookClubIntent =
+      /\b(?:book club|book clubs|reading group|reading groups|reading circle|reading circles)\b/iu.test(
+        searchableIntent,
+      ) &&
+      /\b(?:reading schedules?|meeting dates?|member progress|discussion topics?|book suggestions?|shared notes?|reading apps?|group chats?|finished each section|missed meetings?|falling behind)\b/iu.test(
+        searchableIntent,
+      );
+    const hasIndustrialEnergyIntent =
+      /\b(?:manufacturing plants?|factories|factory|production lines?|machines?|industrial equipment)\b/iu.test(
+        searchableIntent,
+      ) &&
+      /\b(?:energy costs?|energy consumption|electricity|power consumption|idle consumption|cooling systems?|production demand|waste energy|energy waste|unusual consumption|predictive maintenance|equipment problems?|connected equipment|telemetry)\b/iu.test(
+        searchableIntent,
+      );
+    const hasPhotographyStudioIntent =
+      /\b(?:photography studio|photography studios|photo studio|photo studios|professional photographer|professional photographers|commercial photographer|commercial photographers|portrait studio|portrait studios)\b/iu.test(
+        searchableIntent,
+      ) ||
+      (
+        /\b(?:photography|photo shoot|photoshoot|photographer)\b/iu.test(searchableIntent) &&
+        /\b(?:client bookings?|shot lists?|editing requests?|equipment preparation|camera gear|image selections?|delivery deadlines?|shoot schedule)\b/iu.test(
+          searchableIntent,
+        )
+      );
+    const hasSalonIntent =
+      /\b(?:beauty salon|beauty salons|hair salon|hair salons|salon appointment|salon appointments|salon scheduling|stylist|stylists|hairdresser|hairdressers|barber|barbers|barbershop|nail salon|nail technician|esthetician|spa appointment|beauty services|personal care services)\b/iu.test(
+        searchableIntent,
+      );
+    const hasMusicCollaborationIntent =
+      /\b(?:band|bands|musician|musicians|rehearsal|rehearsals|song versions?|song charts?|recordings?|set lists?|setlists?|practice notes?|music collaboration)\b/iu.test(
+        searchableIntent,
+      );
+    const hasPaymentFraudIntent =
+      /\b(?:bank|banks|payment provider|payment providers|digital payment|payments?|transaction|transactions)\b/iu.test(
+        searchableIntent,
+      ) &&
+      /\b(?:fraud|fraudulent|suspicious activity|suspicious transaction|risk(?:y)? transaction|false positive|false-positive|legitimate users?|legitimate customers?|blocked unnecessarily|fraud detection|security alerts?)\b/iu.test(
+        searchableIntent,
+      );
+    const hasRemotePatientMonitoringIntent =
+      /\b(?:hospital|home[- ]care|home care|patient|patients|clinical)\b/iu.test(
+        searchableIntent,
+      ) &&
+      /\b(?:vital signs?|recovery|post[- ]discharge|after discharge|remote monitoring|patient monitoring|wearable|connected devices?|telemetry)\b/iu.test(
+        searchableIntent,
+      );
+    const hasGovernmentRecordsIntent =
+      /\b(?:government|public sector|government agency|government agencies|government department|government departments|permit|permits|official records?|public records?|citizen services?)\b/iu.test(
+        searchableIntent,
+      ) ||
+      (
+        /\b(?:license|licenses|approval|approvals)\b/iu.test(searchableIntent) &&
+        /\b(?:government|agency|agencies|department|departments|public sector|citizen)\b/iu.test(
+          searchableIntent,
+        )
+      );
+    const hasLegalRecordsIntent =
+      /\b(?:legal|contract|contracts|ownership records?|dispute|disputes|verification|compliance|license|licenses)\b/iu.test(
+        searchableIntent,
+      );
+    const hasLedgerIntent =
+      /\b(?:blockchain|distributed ledger|immutable|provenance|tamper|audit trail|record verification|version history)\b/iu.test(
+        searchableIntent,
+      );
 
     if (hasAdministrationIntent) {
       terms.unshift(
@@ -1778,7 +2236,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       );
     }
 
-    if (hasHrIntent) {
+    if (hasHrIntent && !hasSalonIntent) {
       terms.unshift(
         'employee burnout',
         'employee turnover',
@@ -1816,8 +2274,175 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       );
     }
 
-    if (hasEarlyDetectionIntent && hasDataAnalysisIntent) {
+    if (hasPaymentFraudIntent) {
       terms.unshift(
+        'payment fraud detection false positives',
+        'suspicious transaction risk scoring',
+        'legitimate payment falsely blocked',
+        'transaction behavior fraud detection',
+        'fraud alert triage payment operations',
+        'account behavior transaction fraud',
+        'false decline fraud prevention',
+        'real time payment fraud review',
+      );
+    }
+
+    if (hasBookClubIntent) {
+      terms.unshift(
+        'book club reading schedule',
+        'member reading progress tracking',
+        'book club meeting coordination',
+        'discussion topic history',
+        'shared reading notes',
+        'book suggestion voting',
+        'missed meeting catch up',
+        'reading group section completion',
+      );
+    }
+
+    if (hasIndustrialEnergyIntent) {
+      terms.unshift(
+        'factory machine energy consumption',
+        'idle equipment electricity waste',
+        'production demand energy monitoring',
+        'industrial equipment power anomaly',
+        'machine energy predictive maintenance',
+        'factory cooling electricity consumption',
+        'connected equipment energy telemetry',
+        'manufacturing energy efficiency monitoring',
+      );
+    }
+
+    if (hasPhotographyStudioIntent) {
+      terms.unshift(
+        'photography studio operations',
+        'studio client booking management',
+        'photo shoot location planning',
+        'shot list management',
+        'photography equipment preparation',
+        'editing request tracking',
+        'image selection workflow',
+        'client photo delivery deadlines',
+      );
+    }
+
+    if (hasSalonIntent) {
+      terms.unshift(
+        'salon appointment scheduling conflicts',
+        'stylist availability coordination',
+        'salon client preference history',
+        'beauty service history sharing',
+        'salon product usage inventory',
+        'salon loyalty history',
+        'salon double booking prevention',
+        'salon special request tracking',
+      );
+    }
+
+    if (hasLaundryOperationsIntent) {
+      terms.unshift(
+        'laundry garment tracking',
+        'dry cleaning special instructions tracking',
+        'laundry stain treatment records',
+        'laundry pickup deadline tracking',
+        'lost garment prevention laundry',
+        'dry cleaning order status handoff',
+        'laundry paper tag replacement',
+        'laundry customer dispute order traceability',
+      );
+    }
+
+    if (hasWardrobeIntent) {
+      terms.unshift(
+        'digital wardrobe inventory',
+        'clothing inventory organization',
+        'closet item tracking',
+        'clothing fit tracking',
+        'wardrobe cleaning repair tracking',
+        'outfit planning by weather occasion',
+        'duplicate clothing purchase prevention',
+        'wardrobe receipt photo organization',
+      );
+    }
+
+    if (hasTailoringIntent) {
+      terms.unshift(
+        'tailor shop order management',
+        'customer measurement records',
+        'fabric selection tracking',
+        'alteration request history',
+        'fitting appointment tracking',
+        'custom clothing order tracking',
+        'returning customer measurements',
+      );
+    }
+
+    if (hasPetCareIntent) {
+      terms.unshift(
+        'shared pet care coordination',
+        'pet vaccination tracking',
+        'pet grooming appointment tracking',
+        'feeding routine coordination',
+        'pet care history sharing',
+        'veterinarian care history',
+        'pet sitter care instructions',
+      );
+    }
+
+    if (hasEventPlanningIntent) {
+      terms.unshift(
+        'wedding vendor coordination problems',
+        'event planning booking conflicts',
+        'venue photographer catering coordination',
+        'guest list and event schedule tracking',
+        'wedding budget unexpected expenses',
+        'last minute event vendor changes',
+        'private event coordination spreadsheet problems',
+      );
+    }
+
+    if (hasMusicCollaborationIntent) {
+      terms.unshift(
+        'band rehearsal coordination',
+        'song version management',
+        'set list coordination',
+        'recording version management',
+        'rehearsal equipment checklist',
+        'music collaboration workflow',
+      );
+    }
+
+    if (hasRemotePatientMonitoringIntent) {
+      terms.unshift(
+        'remote patient monitoring after discharge',
+        'home care vital signs monitoring',
+        'post discharge patient deterioration alerts',
+        'multi device patient vital monitoring',
+        'remote patient monitoring readmission',
+        'home health patient monitoring workflow',
+        'clinical alert prioritization remote patients',
+      );
+    }
+
+    if (hasGovernmentRecordsIntent && hasLegalRecordsIntent) {
+      terms.unshift(
+        'permit and license approval tracking',
+        'cross-department official record verification',
+        'contract and ownership record reconciliation',
+        'government document status traceability',
+      );
+    }
+
+    if (hasGovernmentRecordsIntent && hasLegalRecordsIntent && hasLedgerIntent) {
+      terms.unshift(
+        'auditable public record provenance',
+        'tamper-evident approval history',
+        'cross-department record version verification',
+      );
+    }
+
+    if (hasEarlyDetectionIntent && hasDataAnalysisIntent) {
+      terms.push(
         'early problem detection',
         'operational anomaly detection',
         'feedback trend detection',
@@ -1825,10 +2450,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       );
     }
 
-    return this.normalizeStringArray([
-      searchableIntent,
-      ...terms.filter((term) => term !== searchableIntent),
-    ]).slice(0, 12);
+    return this.normalizeStringArray(terms).slice(0, 12);
   }
 
   private stripSolutionPreferencePhrases(value: string): string {

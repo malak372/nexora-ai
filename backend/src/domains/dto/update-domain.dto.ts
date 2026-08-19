@@ -56,6 +56,10 @@ export class UpdateDomainDto {
   @IsBoolean()
   isActive?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+
   /**
    * Optional replacement for the domain keyword list.
    *
