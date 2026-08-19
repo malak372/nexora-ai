@@ -33,7 +33,6 @@ import 'admin_resource_page.dart';
 import 'admin_sensitive_workspace_page.dart';
 import 'admin_support_queue_page.dart';
 import 'admin_system_settings_page.dart';
-import 'admin_team_chat_page.dart';
 
 class AdminShell extends StatefulWidget {
   const AdminShell({super.key, this.initialIndex = 0});
@@ -100,8 +99,66 @@ class _AdminShellState extends State<AdminShell> {
     setState(() => _checkingRole = false);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_showTeamChatUnreadNotification());
       unawaited(_warmPrimaryAdminTabs());
     });
+  }
+
+  Future<void> _showTeamChatUnreadNotification() async {
+    try {
+      final conversations = await _api.getTeamChatConversations(force: true);
+      final unread = conversations.where(
+        (conversation) =>
+            (num.tryParse(conversation['unreadCount']?.toString() ?? '0') ??
+                0) >
+            0,
+      );
+      final unreadTotal = unread.fold<int>(0, (total, conversation) {
+        final count =
+            num.tryParse(conversation['unreadCount']?.toString() ?? '0') ?? 0;
+        return total + count.toInt();
+      });
+
+      if (!mounted || unreadTotal <= 0) return;
+
+      final latest = unread.isNotEmpty ? unread.first : null;
+      final rawLastMessage = latest?['lastMessage'];
+      final lastMessage = rawLastMessage is Map
+          ? Map<String, dynamic>.from(rawLastMessage)
+          : const <String, dynamic>{};
+      final rawSender = lastMessage['sender'];
+      final sender = rawSender is Map
+          ? Map<String, dynamic>.from(rawSender)
+          : const <String, dynamic>{};
+      final senderName =
+          sender['fullName']?.toString().trim().isNotEmpty == true
+          ? sender['fullName'].toString().trim()
+          : latest?['displayName']?.toString().trim().isNotEmpty == true
+          ? latest!['displayName'].toString().trim()
+          : 'Administrator';
+      final preview = lastMessage['content']?.toString().trim() ?? '';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 7),
+          content: Text(
+            preview.isNotEmpty
+                ? '$senderName: $preview'
+                : unreadTotal == 1
+                ? 'You have a new team message.'
+                : 'You have $unreadTotal unread team messages.',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          action: SnackBarAction(
+            label: 'Open',
+            onPressed: () => unawaited(_open('team-chat')),
+          ),
+        ),
+      );
+    } catch (_) {}
   }
 
   Future<void> _warmPrimaryAdminTabs() async {
@@ -409,7 +466,14 @@ class _AdminShellState extends State<AdminShell> {
       unawaited(_warmSecurityReadOnlyWorkspaces());
       page = const AdminAuditTrailPage();
     } else if (id == 'team-chat') {
-      page = const AdminTeamChatPage();
+      page = const AdminSensitiveWorkspacePage(
+        scope: 'TEAM_CHAT',
+        title: 'Team chat',
+        subtitle:
+            'Confirm your administrator password before opening private team conversations.',
+        icon: Icons.forum_outlined,
+        path: '/admin/team-chat',
+      );
     } else if (id == 'administrators') {
       page = const AdminSensitiveWorkspacePage(
         scope: 'ADMINISTRATORS',

@@ -3,10 +3,12 @@ import {
     Check,
     LoaderCircle,
     MessageCircleMore,
+    MoreVertical,
     Plus,
     RefreshCw,
     Search,
     Send,
+    Trash2,
     UsersRound,
     X,
 } from 'lucide-react';
@@ -17,7 +19,7 @@ import {
     useRef,
     useState,
 } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { getStoredUser } from '../../../auth/shared/auth.storage';
 import { resolveMediaUrl } from '../../../../utils/mediaUrl';
@@ -30,7 +32,6 @@ import {
 } from '../api/adminTeamChatApi';
 import '../styles/admin-team-chat.css';
 
-const TEAM_CHAT_SCOPE = 'TEAM_CHAT';
 
 /**
  * Formats a conversation timestamp for display in the
@@ -499,7 +500,13 @@ function GroupModal({
  * @author Eman
  */
 export default function AdminTeamChatPage() {
+    const location = useLocation();
+    const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
+    const [accessGranted, setAccessGranted] = useState(
+        () => location.state?.fromAdministrators === true,
+    );
+    const [accessGateOpen, setAccessGateOpen] = useState(true);
 
     const currentUser = useMemo(
         () => getStoredUser() || {},
@@ -509,9 +516,12 @@ export default function AdminTeamChatPage() {
     const currentUserId = currentUser.id;
 
     const messagesEndRef = useRef(null);
+    const messagesViewportRef = useRef(null);
+    const composerRef = useRef(null);
     const directHandledRef = useRef('');
+    const activeIdRef = useRef('');
+    const sendQueueRef = useRef(Promise.resolve());
 
-    const [accessToken, setAccessToken] = useState('');
     const [administrators, setAdministrators] = useState([]);
     const [conversations, setConversations] = useState([]);
     const [activeId, setActiveId] = useState('');
@@ -520,7 +530,6 @@ export default function AdminTeamChatPage() {
     const [draft, setDraft] = useState('');
     const [loading, setLoading] = useState(false);
     const [messagesLoading, setMessagesLoading] = useState(false);
-    const [sending, setSending] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [administratorsLoading, setAdministratorsLoading] = useState(false);
     const [error, setError] = useState('');
@@ -528,13 +537,10 @@ export default function AdminTeamChatPage() {
     const [directBusyId, setDirectBusyId] = useState('');
     const [groupOpen, setGroupOpen] = useState(false);
     const [groupBusy, setGroupBusy] = useState(false);
+    const [messageMenuId, setMessageMenuId] = useState('');
+    const [messageMenuPlacement, setMessageMenuPlacement] = useState('down');
+    const [deletingMessageId, setDeletingMessageId] = useState('');
 
-    const locked = !accessToken;
-
-    const onVerified = useCallback(async (token) => {
-        setAccessToken(token);
-        setError('');
-    }, []);
 
     /**
      * Resolves the currently selected conversation
@@ -556,6 +562,53 @@ export default function AdminTeamChatPage() {
      * - Latest message content.
      * - Member email addresses.
      */
+    useEffect(() => {
+        activeIdRef.current = activeId;
+        setMessageMenuId('');
+        setMessageMenuPlacement('down');
+    }, [activeId]);
+
+    const applyMessageToConversation = useCallback(
+        (message, { read = false } = {}) => {
+            if (!message?.conversationId) return;
+
+            setConversations((current) => {
+                const existing = current.find(
+                    (conversation) =>
+                        conversation.id === message.conversationId,
+                );
+
+                if (!existing) return current;
+
+                const alreadyApplied =
+                    existing.lastMessage?.id === message.id;
+                const mine = message.senderId === currentUserId;
+                const unreadCount =
+                    read || mine
+                        ? 0
+                        : alreadyApplied
+                            ? Number(existing.unreadCount || 0)
+                            : Number(existing.unreadCount || 0) + 1;
+                const updated = {
+                    ...existing,
+                    lastMessage: message,
+                    lastMessageAt: message.createdAt,
+                    updatedAt: message.createdAt,
+                    unreadCount,
+                };
+
+                return [
+                    updated,
+                    ...current.filter(
+                        (conversation) =>
+                            conversation.id !== message.conversationId,
+                    ),
+                ];
+            });
+        },
+        [currentUserId],
+    );
+
     const filteredConversations = useMemo(() => {
         const query = search.trim().toLowerCase();
 
@@ -683,11 +736,8 @@ export default function AdminTeamChatPage() {
             }
 
             try {
-                const [conversationData, adminData] =
-                    await Promise.all([
-                        adminTeamChatApi.conversations(),
-                        adminTeamChatApi.administrators(),
-                    ]);
+                const conversationData =
+                    await adminTeamChatApi.conversations();
 
                 const nextConversations = Array.isArray(
                     conversationData,
@@ -696,10 +746,6 @@ export default function AdminTeamChatPage() {
                     : [];
 
                 setConversations(nextConversations);
-
-                setAdministrators(
-                    Array.isArray(adminData) ? adminData : [],
-                );
 
                 setActiveId(
                     (current) =>
@@ -750,7 +796,7 @@ export default function AdminTeamChatPage() {
                         : [],
                 );
 
-                await adminTeamChatApi
+                void adminTeamChatApi
                     .markRead(conversationId)
                     .catch(() => undefined);
 
@@ -783,9 +829,9 @@ export default function AdminTeamChatPage() {
      * when the page is first mounted.
      */
     useEffect(() => {
-        if (locked) return;
+        if (!accessGranted) return;
         loadConversations();
-    }, [loadConversations, locked]);
+    }, [accessGranted, loadConversations]);
 
     /**
      * Handles direct-conversation requests supplied through
@@ -800,7 +846,7 @@ export default function AdminTeamChatPage() {
             searchParams.get('adminId') || '';
 
         if (
-            locked ||
+            !accessGranted ||
             !adminId ||
             directHandledRef.current === adminId
         ) {
@@ -824,7 +870,7 @@ export default function AdminTeamChatPage() {
             });
         });
     }, [
-        locked,
+        accessGranted,
         openDirectConversation,
         searchParams,
         setSearchParams,
@@ -835,9 +881,9 @@ export default function AdminTeamChatPage() {
      * currently selected conversation.
      */
     useEffect(() => {
-        if (locked) return;
+        if (!accessGranted) return;
         loadMessages(activeId);
-    }, [activeId, loadMessages, locked]);
+    }, [accessGranted, activeId, loadMessages]);
 
     /**
      * Automatically scrolls the message area to
@@ -861,32 +907,36 @@ export default function AdminTeamChatPage() {
      * Listeners are removed when the effect is cleaned up.
      */
     useEffect(() => {
-        if (locked) return undefined;
+        if (!accessGranted) return undefined;
 
         const socket = getAdminTeamChatSocket();
 
         const onMessage = (message) => {
             if (!message?.conversationId) return;
 
-            if (message.conversationId === activeId) {
+            const isActive = message.conversationId === activeId;
+
+            if (isActive) {
                 setMessages((current) =>
-                    current.some(
-                        (item) => item.id === message.id,
-                    )
+                    current.some((item) => item.id === message.id)
                         ? current
                         : [...current, message],
                 );
 
                 if (message.senderId !== currentUserId) {
-                    adminTeamChatApi
-                        .markRead(activeId)
+                    void adminTeamChatApi
+                        .markRead(message.conversationId)
                         .catch(() => undefined);
                 }
             }
 
-            loadConversations({
-                quiet: true,
-            });
+            applyMessageToConversation(message, { read: isActive });
+
+            if (!conversations.some(
+                (conversation) => conversation.id === message.conversationId,
+            )) {
+                void loadConversations({ quiet: true });
+            }
         };
 
         const onConversation = () =>
@@ -896,99 +946,131 @@ export default function AdminTeamChatPage() {
 
         const onRead = () => undefined;
 
-        socket.on(
-            'admin-chat:message',
-            onMessage,
-        );
+        const onMessageDeleted = (payload) => {
+            if (
+                !payload?.messageId ||
+                (payload.scope !== 'everyone' &&
+                    payload.userId !== currentUserId)
+            ) {
+                return;
+            }
 
-        socket.on(
-            'admin-chat:conversation',
-            onConversation,
-        );
+            if (payload.conversationId === activeId) {
+                setMessages((current) =>
+                    current.filter((message) => message.id !== payload.messageId),
+                );
+            }
 
-        socket.on(
-            'admin-chat:read',
-            onRead,
-        );
+            setMessageMenuId((current) =>
+                current === payload.messageId ? '' : current,
+            );
+
+            void loadConversations({ quiet: true });
+        };
+
+        socket.on('admin-chat:message', onMessage);
+        socket.on('admin-chat:conversation', onConversation);
+        socket.on('admin-chat:read', onRead);
+        socket.on('admin-chat:message-deleted', onMessageDeleted);
 
         return () => {
-            socket.off(
-                'admin-chat:message',
-                onMessage,
-            );
-
-            socket.off(
-                'admin-chat:conversation',
-                onConversation,
-            );
-
-            socket.off(
-                'admin-chat:read',
-                onRead,
-            );
+            socket.off('admin-chat:message', onMessage);
+            socket.off('admin-chat:conversation', onConversation);
+            socket.off('admin-chat:read', onRead);
+            socket.off('admin-chat:message-deleted', onMessageDeleted);
         };
     }, [
+        accessGranted,
         activeId,
+        applyMessageToConversation,
+        conversations,
         currentUserId,
         loadConversations,
-        locked,
     ]);
 
-    /**
-     * Sends the current message draft to the
-     * active administrator conversation.
-     *
-     * Empty messages, missing conversations, and duplicate
-     * submissions while a message is sending are ignored.
-     *
-     * @param {React.FormEvent<HTMLFormElement>} event Form submit event.
-     * @returns {Promise<void>}
-     */
-    const sendMessage = async (event) => {
+    const sendMessage = (event) => {
         event.preventDefault();
 
         const content = draft.trim();
+        const conversationId = activeId;
 
-        if (
-            !content ||
-            !activeId ||
-            sending
-        ) {
+        if (!content || !conversationId) {
             return;
         }
 
-        setSending(true);
         setDraft('');
+        setError('');
 
-        try {
-            const message =
-                await adminTeamChatApi.send(
-                    activeId,
+        const send = async () => {
+            try {
+                const message = await adminTeamChatApi.send(
+                    conversationId,
                     content,
                 );
 
-            setMessages((current) =>
-                current.some(
-                    (item) => item.id === message.id,
-                )
-                    ? current
-                    : [...current, message],
+                if (activeIdRef.current === conversationId) {
+                    setMessages((current) =>
+                        current.some((item) => item.id === message.id)
+                            ? current
+                            : [...current, message],
+                    );
+                }
+
+                applyMessageToConversation(message, { read: true });
+            } catch (requestError) {
+                setDraft((current) =>
+                    current.trim()
+                        ? `${content}\n${current}`
+                        : content,
+                );
+
+                setError(
+                    getApiErrorMessage(
+                        requestError,
+                        'Could not send the message.',
+                    ),
+                );
+            }
+        };
+
+        sendQueueRef.current = sendQueueRef.current.then(send, send);
+
+        window.requestAnimationFrame(() => {
+            composerRef.current?.focus();
+        });
+    };
+
+    const deleteMessage = async (messageId, scope) => {
+        const conversationId = activeId;
+
+        if (!messageId || !conversationId || deletingMessageId) {
+            return;
+        }
+
+        setDeletingMessageId(messageId);
+
+        try {
+            await adminTeamChatApi.deleteMessage(
+                conversationId,
+                messageId,
+                scope,
             );
 
-            await loadConversations({
-                quiet: true,
-            });
+            setMessages((current) =>
+                current.filter((message) => message.id !== messageId),
+            );
+            setMessageMenuId('');
+            setError('');
+            void loadConversations({ quiet: true });
         } catch (requestError) {
-            setDraft(content);
-
             setError(
                 getApiErrorMessage(
                     requestError,
-                    'Could not send the message.',
+                    'Could not delete the message.',
                 ),
             );
         } finally {
-            setSending(false);
+            setDeletingMessageId('');
         }
     };
 
@@ -1029,12 +1111,35 @@ export default function AdminTeamChatPage() {
         }
     };
 
+    const locked = !accessGranted;
+    const gateVisible = locked && accessGateOpen;
+
+    const closeAccessGate = useCallback(() => {
+        const currentPath = `${location.pathname}${location.search || ''}${location.hash || ''}`;
+        const returnTo = location.state?.sensitiveReturnTo;
+
+        if (returnTo && returnTo !== currentPath) {
+            navigate(returnTo, { replace: true });
+            return;
+        }
+
+        navigate('/admin/dashboard', { replace: true });
+    }, [location.hash, location.pathname, location.search, location.state, navigate]);
+
+    const handleLockedPageClick = (event) => {
+        if (!locked || accessGateOpen) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        setAccessGateOpen(true);
+    };
+
     return (
         <>
             <main
-                className={`admin-page admin-team-chat-page admin-sensitive-page-content ${locked ? 'is-sensitive-locked' : ''
-                    }`}
-                aria-hidden={locked ? 'true' : undefined}
+                className={`admin-page admin-team-chat-page admin-sensitive-page-content ${gateVisible ? 'is-sensitive-locked' : ''}`}
+                aria-hidden={gateVisible ? 'true' : undefined}
+                onClickCapture={handleLockedPageClick}
             >
                 <section className="admin-hero admin-team-chat-hero">
                     <div>
@@ -1312,7 +1417,10 @@ export default function AdminTeamChatPage() {
                                     </span>
                                 </header>
 
-                                <div className="admin-team-chat-messages">
+                                <div
+                                    ref={messagesViewportRef}
+                                    className="admin-team-chat-messages"
+                                >
                                     {messagesLoading ? (
                                         <div className="admin-team-chat-state">
                                             <LoaderCircle
@@ -1352,13 +1460,119 @@ export default function AdminTeamChatPage() {
                                                         />
                                                     ) : null}
 
-                                                    <div>
+                                                    <div className="admin-team-chat-message__body">
                                                         {!mine ? (
                                                             <strong>
                                                                 {message.sender
                                                                     ?.fullName ||
                                                                     'Administrator'}
                                                             </strong>
+                                                        ) : null}
+
+                                                        {mine ? (
+                                                            <div
+                                                                className="admin-team-chat-message__actions"
+                                                                onBlur={(event) => {
+                                                                    if (
+                                                                        !event.currentTarget.contains(
+                                                                            event.relatedTarget,
+                                                                        )
+                                                                    ) {
+                                                                        setMessageMenuId('');
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <button
+                                                                    type="button"
+                                                                    className="admin-team-chat-message__more"
+                                                                    onClick={(event) => {
+                                                                        if (messageMenuId === message.id) {
+                                                                            setMessageMenuId('');
+                                                                            return;
+                                                                        }
+
+                                                                        const viewportRect =
+                                                                            messagesViewportRef.current?.getBoundingClientRect();
+                                                                        const buttonRect =
+                                                                            event.currentTarget.getBoundingClientRect();
+
+                                                                        if (viewportRect) {
+                                                                            const spaceBelow =
+                                                                                viewportRect.bottom - buttonRect.bottom;
+                                                                            const spaceAbove =
+                                                                                buttonRect.top - viewportRect.top;
+
+                                                                            setMessageMenuPlacement(
+                                                                                spaceBelow < 92 && spaceAbove > spaceBelow
+                                                                                    ? 'up'
+                                                                                    : 'down',
+                                                                            );
+                                                                        } else {
+                                                                            setMessageMenuPlacement('down');
+                                                                        }
+
+                                                                        setMessageMenuId(message.id);
+                                                                    }}
+                                                                    disabled={
+                                                                        deletingMessageId ===
+                                                                        message.id
+                                                                    }
+                                                                    aria-label="Message options"
+                                                                    aria-expanded={
+                                                                        messageMenuId ===
+                                                                        message.id
+                                                                    }
+                                                                >
+                                                                    {deletingMessageId ===
+                                                                        message.id ? (
+                                                                        <LoaderCircle
+                                                                            className="admin-spin"
+                                                                            size={14}
+                                                                        />
+                                                                    ) : (
+                                                                        <MoreVertical
+                                                                            size={15}
+                                                                        />
+                                                                    )}
+                                                                </button>
+
+                                                                {messageMenuId ===
+                                                                    message.id ? (
+                                                                    <div
+                                                                        className={`admin-team-chat-message__menu is-${messageMenuPlacement}`}
+                                                                    >
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                deleteMessage(
+                                                                                    message.id,
+                                                                                    'me',
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            <Trash2
+                                                                                size={13}
+                                                                            />
+                                                                            Delete for me
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="is-danger"
+                                                                            onClick={() =>
+                                                                                deleteMessage(
+                                                                                    message.id,
+                                                                                    'everyone',
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            <Trash2
+                                                                                size={13}
+                                                                            />
+                                                                            Delete for everyone
+                                                                        </button>
+                                                                    </div>
+                                                                ) : null}
+                                                            </div>
                                                         ) : null}
 
                                                         <p>
@@ -1402,6 +1616,7 @@ export default function AdminTeamChatPage() {
                                     onSubmit={sendMessage}
                                 >
                                     <textarea
+                                        ref={composerRef}
                                         value={draft}
                                         onChange={(event) =>
                                             setDraft(
@@ -1426,20 +1641,10 @@ export default function AdminTeamChatPage() {
 
                                     <button
                                         type="submit"
-                                        disabled={
-                                            !draft.trim() ||
-                                            sending
-                                        }
+                                        disabled={!draft.trim()}
                                         aria-label="Send message"
                                     >
-                                        {sending ? (
-                                            <LoaderCircle
-                                                className="admin-spin"
-                                                size={17}
-                                            />
-                                        ) : (
-                                            <Send size={17} />
-                                        )}
+                                        <Send size={17} />
                                     </button>
                                 </form>
                             </>
@@ -1507,12 +1712,16 @@ export default function AdminTeamChatPage() {
                 />
             </main>
 
-            {locked ? (
+            {gateVisible ? (
                 <AdminSensitiveAccessGate
-                    scope={TEAM_CHAT_SCOPE}
+                    scope="TEAM_CHAT"
                     title="Unlock team chat"
-                    description="Confirm your current administrator password before viewing private administrator conversations or sending team messages."
-                    onVerified={onVerified}
+                    description="Confirm your current administrator password before opening private administrator conversations."
+                    onVerified={async () => {
+                        setAccessGranted(true);
+                        setAccessGateOpen(false);
+                    }}
+                    onClose={closeAccessGate}
                 />
             ) : null}
         </>

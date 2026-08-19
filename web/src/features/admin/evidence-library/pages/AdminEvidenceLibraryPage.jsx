@@ -213,11 +213,6 @@ function latestCollection(rows, summary) {
   return values[0]?.toISOString() || '';
 }
 
-function compactText(value, max = 92) {
-  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
-  if (normalized.length <= max) return normalized;
-  return `${normalized.slice(0, max - 1)}…`;
-}
 
 function sourceInitial(value) {
   const text = String(value || 'E').trim();
@@ -831,13 +826,13 @@ export default function AdminEvidenceLibraryPage() {
                           <div className="admin-evidence-text-cell">
                             <span className="admin-evidence-row-icon"><FileText size={15} /></span>
                             <div>
-                              <strong>{compactText(evidenceContent(item))}</strong>
+                              <strong>{evidenceContent(item)}</strong>
                               <small>{sentiment ? `Sentiment: ${sentiment}` : 'Pipeline evidence record'}</small>
                             </div>
                           </div>
                         </td>
                         <td><span className="admin-evidence-source-pill"><i>{sourceInitial(source)}</i>{source}</span></td>
-                        <td><span className="admin-evidence-plain-cell">{compactText(evidenceAuthor(item), 36)}</span></td>
+                        <td><span className="admin-evidence-plain-cell">{evidenceAuthor(item)}</span></td>
                         <td><span className="admin-evidence-language-pill">{evidenceLanguage(item)}</span></td>
                         <td><span className="admin-evidence-engagement"><Heart size={13} /> {evidenceEngagement(item).toLocaleString()}</span></td>
                         <td><span className="admin-evidence-date">{formatDate(publishedAt(item), true)}</span></td>

@@ -5,8 +5,6 @@
  */
 import {
   AlertCircle,
-  ArrowDown,
-  ArrowUp,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -21,7 +19,6 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   UserRound,
   X,
   XCircle,
@@ -31,6 +28,7 @@ import { createPortal } from 'react-dom';
 
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import AdminSupportSelect from '../../shared/components/AdminSupportSelect';
+import AdminSupportSortPicker from '../../shared/components/AdminSupportSortPicker';
 import '../../shared/styles/admin-pages.css';
 import '../../shared/styles/admin-support-workspaces.css';
 import '../styles/admin-complaints.css';
@@ -458,17 +456,14 @@ export default function AdminComplaintsPage() {
           </div>
 
           <div className="admin-support-tools">
-            <label className="admin-support-sort">
-              <SlidersHorizontal size={15} />
-              <span><small>Sort complaints</small>
-                <select value={sortBy} onChange={(event) => { setSortBy(event.target.value); setPage(1); }}>
-                  {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </span>
-            </label>
-            <button type="button" className="admin-support-sort-direction" onClick={() => setSortOrder((value) => value === 'asc' ? 'desc' : 'asc')} aria-label="Toggle sort direction">
-              {sortOrder === 'asc' ? <ArrowUp size={17} /> : <ArrowDown size={17} />}
-            </button>
+            <AdminSupportSortPicker
+              label="Sort complaints"
+              value={sortBy}
+              order={sortOrder}
+              options={SORT_OPTIONS}
+              onChange={(nextSortBy) => { setSortBy(nextSortBy); setPage(1); }}
+              onToggleOrder={() => setSortOrder((value) => value === 'asc' ? 'desc' : 'asc')}
+            />
             <label className="admin-support-search"><Search size={17} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search subject, user, idea or reply…" /></label>
           </div>
         </div>

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import AdminSensitiveAccessGate from '../../shared/components/AdminSensitiveAccessGate';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
@@ -359,9 +360,16 @@ function ReviewModal({ settings, form, changes, busy, onClose, onConfirm }) {
   );
 }
 
-function LockedSettingsPreview() {
+function LockedSettingsPreview({
+  gateVisible,
+  onLockedClick,
+}) {
   return (
-    <div className="admin-settings-page admin-sensitive-page-content is-sensitive-locked" aria-hidden="true">
+    <div
+      className={`admin-settings-page admin-sensitive-page-content ${gateVisible ? 'is-sensitive-locked' : ''}`}
+      aria-hidden={gateVisible ? 'true' : undefined}
+      onClickCapture={onLockedClick}
+    >
       <section className="admin-settings-hero">
         <div>
           <span className="admin-settings-eyebrow"><SlidersHorizontal size={16} /> PLATFORM CONFIGURATION</span>
@@ -424,7 +432,10 @@ function LockedSettingsPreview() {
 }
 
 export default function AdminSettingsPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [accessToken, setAccessToken] = useState('');
+  const [accessGateOpen, setAccessGateOpen] = useState(true);
   const [settings, setSettings] = useState(null);
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(false);
@@ -437,6 +448,7 @@ export default function AdminSettingsPage() {
 
   const lockWorkspace = useCallback(() => {
     setAccessToken('');
+    setAccessGateOpen(true);
     setSettings(null);
     setForm({});
     setFieldErrors({});
@@ -553,44 +565,73 @@ export default function AdminSettingsPage() {
     await load({ fresh: true, silent: true });
   };
 
+  const closeAccessGate = useCallback(() => {
+    const currentPath = `${location.pathname}${location.search || ''}${location.hash || ''}`;
+    const returnTo = location.state?.sensitiveReturnTo;
+
+    if (returnTo && returnTo !== currentPath) {
+      navigate(returnTo, { replace: true });
+      return;
+    }
+
+    navigate('/admin/dashboard', { replace: true });
+  }, [location.hash, location.pathname, location.search, location.state, navigate]);
+
   if (!accessToken) {
+    const gateVisible = accessGateOpen;
+
     return (
       <>
-        <LockedSettingsPreview />
-        <AdminSensitiveAccessGate
-          scope={SYSTEM_SETTINGS_SCOPE}
-          title="Unlock system settings"
-          description="Confirm your current administrator password before viewing or changing live pricing, credits, Premium access, and publication rules."
-          onVerified={async (token, verificationResult) => {
-            setError('');
+        <LockedSettingsPreview
+          gateVisible={gateVisible}
+          onLockedClick={(event) => {
+            if (gateVisible) return;
 
-            if (verificationResult?.settings) {
-              const next = normalizeSettings(verificationResult.settings);
-              setSettings(next);
-              setForm(formFromSettings(next));
-              setFieldErrors({});
-              setAccessToken(token);
-              setNotice('System settings unlocked.');
-              return;
-            }
-
-            setLoading(true);
-            try {
-              const payload = await adminApi.settings.get(token);
-              const next = normalizeSettings(payload);
-              setSettings(next);
-              setForm(formFromSettings(next));
-              setFieldErrors({});
-              setAccessToken(token);
-              setNotice('System settings unlocked.');
-            } catch (requestError) {
-              setError(getApiErrorMessage(requestError, 'Could not load system settings.'));
-              throw requestError;
-            } finally {
-              setLoading(false);
-            }
+            event.preventDefault();
+            event.stopPropagation();
+            setAccessGateOpen(true);
           }}
         />
+
+        {gateVisible ? (
+          <AdminSensitiveAccessGate
+            scope={SYSTEM_SETTINGS_SCOPE}
+            title="Unlock system settings"
+            description="Confirm your current administrator password before viewing or changing live pricing, credits, Premium access, and publication rules."
+            onVerified={async (token, verificationResult) => {
+              setError('');
+
+              if (verificationResult?.settings) {
+                const next = normalizeSettings(verificationResult.settings);
+                setSettings(next);
+                setForm(formFromSettings(next));
+                setFieldErrors({});
+                setAccessToken(token);
+                setAccessGateOpen(false);
+                setNotice('System settings unlocked.');
+                return;
+              }
+
+              setLoading(true);
+              try {
+                const payload = await adminApi.settings.get(token);
+                const next = normalizeSettings(payload);
+                setSettings(next);
+                setForm(formFromSettings(next));
+                setFieldErrors({});
+                setAccessToken(token);
+                setAccessGateOpen(false);
+                setNotice('System settings unlocked.');
+              } catch (requestError) {
+                setError(getApiErrorMessage(requestError, 'Could not load system settings.'));
+                throw requestError;
+              } finally {
+                setLoading(false);
+              }
+            }}
+            onClose={closeAccessGate}
+          />
+        ) : null}
       </>
     );
   }
