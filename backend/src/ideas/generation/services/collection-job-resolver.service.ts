@@ -120,6 +120,9 @@ export type ResolveCollectionJobInput = {
    */
   readonly keywords?: readonly string[];
 
+  /** AI-planned searches preserved separately for source-aware collectors. */
+  readonly plannedQueries?: readonly string[];
+
   /**
    * When true, compatible historical jobs are ignored and a fresh collection
    * plus NLP analysis is produced.
@@ -300,6 +303,10 @@ export class CollectionJobResolverService {
 
       keywords: normalizedInput.keywords
         ? [...normalizedInput.keywords]
+        : undefined,
+
+      plannedQueries: normalizedInput.plannedQueries
+        ? [...normalizedInput.plannedQueries]
         : undefined,
 
       collectionMode: normalizedInput.collectionMode,
@@ -807,6 +814,8 @@ export class CollectionJobResolverService {
       dataSourceKeys,
 
       keywords: this.normalizeKeywords(input.keywords),
+
+      plannedQueries: this.normalizeKeywords(input.plannedQueries),
 
       forceRefresh: input.forceRefresh === true,
       collectionMode: input.collectionMode,

@@ -35,7 +35,7 @@ export class SocialPostService {
    * removes the old one-post-at-a-time latency while avoiding an unbounded
    * burst of interactive transactions against Supabase.
    */
-  private static readonly POST_PERSISTENCE_CONCURRENCY = 4;
+  private static readonly POST_PERSISTENCE_CONCURRENCY = 2;
 
   constructor(private readonly prisma: PrismaService) {}
 

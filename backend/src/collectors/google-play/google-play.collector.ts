@@ -214,6 +214,17 @@ export class GooglePlayCollector
    * recall while relevance scoring still protects the saved dataset.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
+    const plannedQueries = (input.plannedQueries ?? [])
+      .map((query) => this.toStoreDiscoveryQuery(query))
+      .filter(Boolean);
+    const isBoundedMode =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
+
+    if (plannedQueries.length > 0 && isBoundedMode) {
+      return this.unique(plannedQueries).slice(0, 3);
+    }
+
     const domainKeywords = this.getDomainKeywords(input);
 
     const fallbackDomain = input.domainName
@@ -233,9 +244,6 @@ export class GooglePlayCollector
       .filter(Boolean)
       .slice(0, 6);
 
-    const isBoundedMode =
-      input.collectionMode === 'FAST_GENERATION' ||
-      input.collectionMode === 'TARGETED_RECOVERY';
     const focusedQueries = terms.slice(0, isBoundedMode ? 3 : 4);
 
     // FAST_GENERATION keeps one standalone query per selected-domain anchor.
@@ -250,6 +258,20 @@ export class GooglePlayCollector
       ...focusedQueries,
       ...(combinedQuery ? [combinedQuery] : []),
     ]).slice(0, 5);
+  }
+
+  private toStoreDiscoveryQuery(value: string): string {
+    const stopWords = new Set([
+      'conflict', 'conflicts', 'missing', 'forgotten', 'fragmented', 'problem',
+      'problems', 'complaint', 'complaints', 'review', 'reviews', 'difficult',
+      'coordination', 'tracking', 'records', 'record',
+    ]);
+    return this.cleanNormalizedText(value)
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((word) => !stopWords.has(word))
+      .slice(0, 4)
+      .join(' ');
   }
 
   /** Removes duplicate applications returned by multiple focused searches. */

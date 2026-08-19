@@ -252,6 +252,9 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       radiusKm: context.location.radiusKm ?? undefined,
       dataSourceKeys: sourceKeys,
       keywords: this.buildUnifiedKeywords(context, domains),
+      plannedQueries: context.collectionPlan
+        ? [...context.collectionPlan.searchQueries]
+        : undefined,
       forceRefresh: context.forceRefresh,
       collectionMode: 'FAST_GENERATION',
       resolvedDomain: {
@@ -263,7 +266,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
          * old behavior where collectors received only the first domain even
          * though the request selected two or three domains.
          */
-        keywords: this.buildBalancedDomainVocabulary(domains),
+        keywords: this.buildCollectorVocabulary(context, domains),
       },
       resolvedDataSources: context.selectedDataSources.map((source) => ({
         id: source.id,
@@ -276,12 +279,19 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
        * collectors still execute in parallel, therefore the additional depth
        * improves recall without creating one sequential request chain.
        */
-      collectorLimits: {
-        maxFetchedPosts: 14,
-        maxSavedPosts: 10,
-        maxFetchedComments: 24,
-        maxSavedComments: 16,
-      },
+      collectorLimits: context.collectionPlan
+        ? {
+            maxFetchedPosts: 10,
+            maxSavedPosts: 8,
+            maxFetchedComments: 18,
+            maxSavedComments: 12,
+          }
+        : {
+            maxFetchedPosts: 14,
+            maxSavedPosts: 10,
+            maxFetchedComments: 24,
+            maxSavedComments: 16,
+          },
     });
   }
 
@@ -343,8 +353,23 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       }
     };
 
-    // The literal requester problem always receives the first search slot.
-    addUnique(this.buildEvidenceSearchIntent(context.requestDescription));
+    for (const query of context.collectionPlan?.searchQueries ?? []) {
+      addUnique(query);
+      if (balanced.length >= 8) break;
+    }
+
+    for (const target of context.collectionPlan?.evidenceTargets ?? []) {
+      addUnique(target);
+      if (balanced.length >= 12) break;
+    }
+
+    if (!context.collectionPlan) {
+      for (const intent of this.buildEvidenceSearchIntents(
+        context.requestDescription,
+      )) {
+        addUnique(intent);
+      }
+    }
 
     /*
      * Reserve the next slots for one explicit anchor from every selected
@@ -393,6 +418,36 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     return balanced.slice(0, 20);
   }
 
+  private buildCollectorVocabulary(
+    context: IdeaGenerationContext,
+    domains: readonly SelectedGenerationDomain[],
+  ): string[] {
+    if (!context.collectionPlan) {
+      return this.buildBalancedDomainVocabulary(domains);
+    }
+
+    const values = [
+      ...context.collectionPlan.searchQueries.slice(0, 6),
+      ...context.collectionPlan.intentConcepts.slice(0, 4),
+      ...context.collectionPlan.evidenceTargets.slice(0, 3),
+      ...this.buildBalancedDomainVocabulary(domains),
+    ];
+    const output: string[] = [];
+    const seen = new Set<string>();
+
+    for (const raw of values) {
+      const value = raw?.trim();
+      if (!value) continue;
+      const key = this.normalizeTerm(value);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(value);
+      if (output.length >= 20) break;
+    }
+
+    return output;
+  }
+
   /**
    * Creates a round-robin domain vocabulary for collectors that still consume
    * resolvedDomain.keywords. Domain names are emitted first, followed by each
@@ -427,18 +482,94 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     return output;
   }
 
-  private buildEvidenceSearchIntent(value: string | null | undefined): string {
+  private buildEvidenceSearchIntents(
+    value: string | null | undefined,
+  ): string[] {
     if (!value) {
-      return '';
+      return [];
     }
 
-    return value
+    const normalized = value
       .replace(/\b(?:ai|artificial intelligence)[ -]?(?:enhance|enhanced|enhancement|powered)\b/giu, ' ')
       .replace(/\b(?:enhance|enhanced|improve|improved|optimize|optimized)\b[^.!?,;]{0,24}\b(?:with|using|by)\s+(?:ai|artificial intelligence)\b/giu, ' ')
       .replace(/\b(?:using|use|with)\s+(?:ai|artificial intelligence)\b/giu, ' ')
       .replace(/\b(?:and|or|with|using|by)\s*$/giu, ' ')
+      .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
+
+    if (!normalized) {
+      return [];
+    }
+
+    const stopWords = new Set([
+      'a',
+      'an',
+      'and',
+      'are',
+      'as',
+      'at',
+      'be',
+      'by',
+      'for',
+      'from',
+      'in',
+      'is',
+      'it',
+      'of',
+      'on',
+      'or',
+      'the',
+      'to',
+      'with',
+      'often',
+      'usually',
+      'frequently',
+      'commonly',
+      'struggle',
+      'struggles',
+      'struggling',
+      'difficult',
+      'difficulty',
+      'information',
+      'separate',
+      'systems',
+      'system',
+      'data',
+    ]);
+
+    const tokens = normalized
+      .toLowerCase()
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((token) => token.length >= 3 && !stopWords.has(token));
+
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    const queries: string[] = [];
+    const seen = new Set<string>();
+    const push = (parts: readonly string[]) => {
+      const query = parts.join(' ').replace(/\s+/gu, ' ').trim();
+      if (query.split(/\s+/u).length < 3) return;
+      if (seen.has(query)) return;
+      seen.add(query);
+      queries.push(query);
+    };
+
+    const windowSize = tokens.length >= 7 ? 5 : Math.min(5, tokens.length);
+    const step = Math.max(2, windowSize - 2);
+
+    for (
+      let index = 0;
+      index < tokens.length && queries.length < 4;
+      index += step
+    ) {
+      push(tokens.slice(index, index + windowSize));
+    }
+
+    return queries.slice(0, 4);
   }
 
 

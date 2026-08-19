@@ -12,12 +12,14 @@ import type { IdeaGenerationNlpContext } from '../types/idea-generation-context.
 import {
   classifyDirectCommunityEvidence,
   isNonActionableCommunityBanter,
+  isPositiveFeedbackWithoutProblem,
   segmentCommunityEvidenceIssues,
 } from '../../../nlp/common/utils/community-evidence.util';
 import {
   clusterEvidenceByProblemFamily,
   matchEvidenceToAtomicProblem,
   matchEvidenceToProblemFamily,
+  resolvePrimaryProblemFamily,
 } from '../../../nlp/common/utils/problem-family-matching.util';
 
 const MAX_EVIDENCE_SAMPLES = 5;
@@ -552,15 +554,22 @@ export class IdeaOpportunityRankingService {
     const verifiedEvidenceTexts = (candidate.independentEvidence ?? [])
       .map((evidence) => evidence.text.replace(/\s+/gu, ' ').trim())
       .filter(Boolean);
+    const attributionEvidenceTexts =
+      verifiedEvidenceTexts.length > 0
+        ? verifiedEvidenceTexts
+        : this.resolveRawCommunityAttributionEvidence(
+            candidate,
+            selectedDomains,
+          );
 
-    if (verifiedEvidenceTexts.length === 0) {
+    if (attributionEvidenceTexts.length === 0) {
       return candidate;
     }
 
-    const familyReconciledCandidate = this.reconcileVerifiedProblemFamily(
-      candidate,
-      verifiedEvidenceTexts,
-    );
+    const hasVerifiedEvidence = verifiedEvidenceTexts.length > 0;
+    const familyReconciledCandidate = hasVerifiedEvidence
+      ? this.reconcileVerifiedProblemFamily(candidate, verifiedEvidenceTexts)
+      : candidate;
     const evidenceOnlyCandidate: NormalizedCandidate = {
       title: '',
       problem: null,
@@ -570,7 +579,7 @@ export class IdeaOpportunityRankingService {
       sourceIndex: familyReconciledCandidate.sourceIndex,
       frequency: familyReconciledCandidate.frequency,
       severity: familyReconciledCandidate.severity,
-      evidenceSamples: verifiedEvidenceTexts,
+      evidenceSamples: attributionEvidenceTexts,
       raw: familyReconciledCandidate.raw,
     };
     const verifiedDomainAttribution = this.calculateVerifiedDomainAttribution(
@@ -597,11 +606,15 @@ export class IdeaOpportunityRankingService {
 
     return {
       ...familyReconciledCandidate,
-      evidenceSamples: verifiedEvidenceTexts.slice(0, MAX_EVIDENCE_SAMPLES),
-      frequency: Math.min(
-        Math.max(familyReconciledCandidate.frequency, 1),
-        verifiedEvidenceTexts.length,
-      ),
+      evidenceSamples: hasVerifiedEvidence
+        ? verifiedEvidenceTexts.slice(0, MAX_EVIDENCE_SAMPLES)
+        : familyReconciledCandidate.evidenceSamples,
+      frequency: hasVerifiedEvidence
+        ? Math.min(
+            Math.max(familyReconciledCandidate.frequency, 1),
+            verifiedEvidenceTexts.length,
+          )
+        : familyReconciledCandidate.frequency,
       matchedDomainNames,
       problemDomainNames,
       workflowDomainNames,
@@ -614,6 +627,66 @@ export class IdeaOpportunityRankingService {
         matchedDomainNames.length > 0,
       disqualificationReasons: [...disqualificationReasons],
     };
+  }
+
+  private resolveRawCommunityAttributionEvidence(
+    candidate: RankedIdeaOpportunity,
+    selectedDomains: readonly SelectedDomainRankingInput[],
+  ): string[] {
+    if (!this.isJsonObject(candidate.raw)) {
+      return [];
+    }
+
+    const source = this.readString(candidate.raw.source)?.toUpperCase() ?? '';
+    if (
+      source !== 'COMMUNITY_AI_ANALYSIS' &&
+      source !== 'COMMUNITY_LLM_ANALYSIS'
+    ) {
+      return [];
+    }
+
+    const rawDomainName = this.readString(candidate.raw.domainName)?.trim() ?? '';
+    const selectedDomain = selectedDomains.find(
+      (domain) =>
+        this.normalizeDomainName(domain.name) ===
+        this.normalizeDomainName(rawDomainName),
+    );
+
+    if (!selectedDomain) {
+      return [];
+    }
+
+    const rawEvidence = Array.isArray(candidate.raw.evidenceSamples)
+      ? candidate.raw.evidenceSamples
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.replace(/\s+/gu, ' ').trim())
+          .filter(Boolean)
+          .slice(0, MAX_EVIDENCE_SAMPLES)
+      : [];
+
+    if (rawEvidence.length === 0) {
+      return [];
+    }
+
+    const attributionCandidate: NormalizedCandidate = {
+      title: '',
+      problem: null,
+      need: null,
+      solutionArea: null,
+      evidenceType: candidate.evidenceType,
+      sourceIndex: candidate.sourceIndex,
+      frequency: Math.max(1, candidate.frequency),
+      severity: candidate.severity,
+      evidenceSamples: rawEvidence,
+      raw: candidate.raw,
+    };
+
+    return this.passesSelectedDomainContextGuard(
+      selectedDomain.name,
+      attributionCandidate,
+    )
+      ? rawEvidence
+      : [];
   }
 
   private reconcileVerifiedProblemFamily(
@@ -778,6 +851,10 @@ export class IdeaOpportunityRankingService {
       return 'Accessibility Focus and Keyboard Navigation Failures';
     }
 
+    if (familyKey === 'mobile-license-verification') {
+      return 'Mobile App License Verification and Test Response Failures';
+    }
+
     if (familyKey === 'authentication') {
       return 'Login and Account Access Failures';
     }
@@ -892,6 +969,10 @@ export class IdeaOpportunityRankingService {
     if (familyKey === 'billing-payment') {
       return 'Reliable Payment Reconciliation and Duplicate Charge Recovery';
     }
+    if (familyKey === 'mobile-license-verification') {
+      return 'Mobile developers need a deterministic way to verify license-test configuration, store-account state, cache behavior, and server responses when expected LICENSED results are returned as NOT_LICENSED';
+    }
+
     if (familyKey === 'authentication') {
       return 'Reliable Login, Authentication, and Account Access Recovery';
     }
@@ -998,6 +1079,10 @@ export class IdeaOpportunityRankingService {
         return 'Payment Method Linking and Charge Consistency';
       }
       return 'Billing and Payment Recovery';
+    }
+
+    if (familyKey === 'mobile-license-verification') {
+      return 'Mobile App Licensing Test Diagnostics and Store Verification';
     }
 
     if (familyKey === 'authentication') {
@@ -1336,6 +1421,7 @@ export class IdeaOpportunityRankingService {
     const wordCount = normalized.split(/\s+/u).length;
 
     if (normalized.length > 96 || wordCount > 12) return false;
+    if (this.isGenericFeatureRequestTitle(normalized)) return false;
 
     const narrativeFragment =
       /^(?:\d+|one|two|three|four|five)\s+(?:days?|weeks?|months?|years?)\s+ago\b/iu.test(
@@ -1346,6 +1432,14 @@ export class IdeaOpportunityRankingService {
       );
 
     if (narrativeFragment) return false;
+
+    if (
+      /(?:community comment|community post|\bunltd\b|^[^:]{2,50}:\s)/iu.test(
+        normalized,
+      )
+    ) {
+      return false;
+    }
 
     if (
       /^(?:bounded|evidence[- ]grounded) validation workflow\b|^a bounded validation workflow\b/iu.test(
@@ -1380,6 +1474,11 @@ export class IdeaOpportunityRankingService {
       .join(' ')
       .replace(/\s+/gu, ' ')
       .toLowerCase();
+
+    const evidenceFamily = resolvePrimaryProblemFamily(evidenceSamples.join(' '));
+    if (evidenceFamily) {
+      return evidenceFamily.label;
+    }
 
     if (
       /(?:got married|married|name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name)/iu.test(
@@ -1563,6 +1662,9 @@ export class IdeaOpportunityRankingService {
       .filter((sample) => !this.isPromotionalOnlyEvidence(sample))
       .filter((sample) => {
         const body = sample.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim();
+        if (body && isPositiveFeedbackWithoutProblem(body)) {
+          return false;
+        }
         return !body || !isNonActionableCommunityBanter(body, 'COMMENT');
       });
 
@@ -1630,9 +1732,14 @@ export class IdeaOpportunityRankingService {
           workingCandidate.need ??
           workingCandidate.solutionArea ??
           null);
+    const featureRequestNeedsDerivedTitle =
+      workingCandidate.evidenceType ===
+        IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST &&
+      this.isGenericFeatureRequestTitle(originalTitle);
     const tentativeTitle =
       GENERIC_LABELS.has(normalizedTitle) ||
-      originalTitle.split(/\s+/u).length < 2
+      originalTitle.split(/\s+/u).length < 2 ||
+      featureRequestNeedsDerivedTitle
         ? (derivedTitle ?? structuredFallbackTitle)
         : originalTitle;
 
@@ -1645,17 +1752,22 @@ export class IdeaOpportunityRankingService {
       isCommunityAiCandidate &&
       !GENERIC_LABELS.has(normalizedTitle) &&
       originalTitle.split(/\s+/u).length >= 3 &&
+      !/(?:community comment|community post|\bunltd\b|^[^:]{2,50}:\s)/iu.test(
+        originalTitle,
+      ) &&
       this.isProfessionalOpportunityTitle(originalTitle);
-    const finalTitle = preserveCommunityTitle
-      ? originalTitle
-      : isCommunityAiCandidate
-        ? this.deriveProfessionalCommunityTitle(
-            workingCandidate,
-            titleDerivationEvidence,
-          )
-        : tentativeTitle
-          ? this.canonicalizeOpportunityTitle(tentativeTitle)
-          : null;
+    const finalTitle = structuredFeatureTitle
+      ? structuredFeatureTitle
+      : preserveCommunityTitle
+        ? originalTitle
+        : isCommunityAiCandidate
+          ? this.deriveProfessionalCommunityTitle(
+              workingCandidate,
+              titleDerivationEvidence,
+            )
+          : tentativeTitle
+            ? this.canonicalizeOpportunityTitle(tentativeTitle)
+            : null;
 
     if (!finalTitle) {
       return null;
@@ -1734,13 +1846,22 @@ export class IdeaOpportunityRankingService {
       workingCandidate.problem,
       evidenceSamples,
     );
-    const alignedDescriptors = this.deriveAlignedDescriptors(
-      finalTitle,
-      repairedProblem,
-      workingCandidate.need,
-      workingCandidate.solutionArea,
-      isCommunityAiCandidate,
-    );
+    const alignedDescriptors =
+      workingCandidate.evidenceType ===
+      IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+        ? this.deriveFeatureRequestDescriptors(
+            finalTitle,
+            evidenceSamples,
+            workingCandidate.need,
+            workingCandidate.solutionArea,
+          )
+        : this.deriveAlignedDescriptors(
+            finalTitle,
+            repairedProblem,
+            workingCandidate.need,
+            workingCandidate.solutionArea,
+            isCommunityAiCandidate,
+          );
 
     const boundedEvidenceSamples = evidenceSamples.slice(
       0,
@@ -2095,6 +2216,13 @@ export class IdeaOpportunityRankingService {
       .join(' ')
       .toLowerCase();
 
+    const primaryEvidenceFamily = resolvePrimaryProblemFamily(
+      candidate.evidenceSamples.join(' '),
+    );
+    if (primaryEvidenceFamily) {
+      return `PROBLEM_FAMILY:${primaryEvidenceFamily.key}`;
+    }
+
     if (
       /\b(?:ransomware|data breach|cyberattack|malware|attacker deleted|compromised personal information)\b/iu.test(
         context,
@@ -2171,7 +2299,7 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
-      /\b(?:login|authentication|activation|verification|session|token)\b/iu.test(
+      /\b(?:login|log in|authentication|sign in|password|account access|oauth|oidc|two[- ]factor authentication|2fa|verification code|session expired)\b/iu.test(
         context,
       )
     ) {
@@ -2229,7 +2357,7 @@ export class IdeaOpportunityRankingService {
        * example chat-history loss or TCP failures) from inflating subscription
        * access evidence and its downstream score.
        */
-      const evidenceSamples = this.deduplicateEvidenceSamples([
+      let evidenceSamples = this.deduplicateEvidenceSamples([
         ...preferred.evidenceSamples,
         ...secondary.evidenceSamples,
       ])
@@ -2270,6 +2398,22 @@ export class IdeaOpportunityRankingService {
           );
         })
         .slice(0, MAX_EVIDENCE_SAMPLES);
+
+      if (evidenceSamples.length === 0) {
+        const groundedCommunityCandidate = [preferred, secondary].find(
+          (item) => this.isCommunityAiCandidate(item),
+        );
+        if (groundedCommunityCandidate) {
+          evidenceSamples = groundedCommunityCandidate.evidenceSamples
+            .filter((sample) =>
+              this.isAcceptedCommunityAiEvidence(
+                groundedCommunityCandidate,
+                sample,
+              ),
+            )
+            .slice(0, MAX_EVIDENCE_SAMPLES);
+        }
+      }
 
       const mergedProblem = preferred.problem ?? secondary.problem;
       const mergedNeed = this.selectMergedDescriptor(
@@ -2912,6 +3056,159 @@ export class IdeaOpportunityRankingService {
       );
     }
 
+    if (/^(?:cybersecurity|cyber security|information security)$/u.test(normalizedName)) {
+      aliases.push(
+        'cybersecurity',
+        'cyber security',
+        'authentication',
+        'identity access',
+        'access control',
+        'security policy',
+        'security concern',
+        'security concerns',
+        'network security',
+        'credential security',
+        'vulnerability',
+        'breach',
+        'threat',
+        'phishing',
+        'malware',
+        'encryption',
+      );
+    }
+
+    if (/^(?:tattoo studio operations client management|tattoo studio operations & client management|tattoo studio management)$/u.test(normalizedName)) {
+      aliases.push(
+        'tattoo studio',
+        'tattoo artist',
+        'artist scheduling',
+        'appointment booking',
+        'booking conflict',
+        'design revision',
+        'client feedback',
+        'client preference',
+        'appointment deposit',
+        'consent form',
+        'aftercare',
+        'session history',
+        'design approval',
+      );
+    }
+
+    if (/^(?:photography studio operations|photography workflow management|photography studios)$/u.test(normalizedName)) {
+      aliases.push(
+        'photography studio',
+        'photo studio',
+        'client booking',
+        'shoot schedule',
+        'shot list',
+        'equipment preparation',
+        'camera gear',
+        'editing request',
+        'image selection',
+        'photo selection',
+        'delivery deadline',
+        'client photo delivery',
+      );
+    }
+
+    if (/^(?:wardrobe personal fashion management|wardrobe fashion management|personal wardrobe management|digital wardrobe)$/u.test(normalizedName)) {
+      aliases.push(
+        'wardrobe',
+        'digital wardrobe',
+        'closet',
+        'clothing inventory',
+        'clothes inventory',
+        'shoes',
+        'footwear',
+        'accessories',
+        'outfit planning',
+        'outfit coordination',
+        'clothing fit',
+        'cleaning',
+        'repair',
+        'wardrobe maintenance',
+        'shopping receipt',
+        'duplicate purchase',
+        'seasonal outfit',
+        'weather outfit',
+      );
+    }
+
+    if (/^(?:tailoring custom apparel|tailoring|custom apparel)$/u.test(normalizedName)) {
+      aliases.push(
+        'tailoring',
+        'tailor shop',
+        'custom clothing',
+        'custom apparel',
+        'made to measure',
+        'bespoke clothing',
+        'customer measurements',
+        'body measurements',
+        'fabric selection',
+        'alteration request',
+        'alteration history',
+        'fitting appointment',
+        'design notes',
+        'garment order',
+        'custom order tracking',
+      );
+    }
+
+    if (/^(?:government|public sector)$/u.test(normalizedName)) {
+      aliases.push(
+        'government agency',
+        'government department',
+        'permit',
+        'license',
+        'official record',
+        'public record',
+        'approval status',
+        'cross department',
+        'citizen service',
+        'ownership record',
+      );
+    }
+
+    if (/^(?:legaltech|legal tech|legal technology)$/u.test(normalizedName)) {
+      aliases.push(
+        'legal document',
+        'legal research',
+        'law database',
+        'regulation',
+        'regulations',
+        'regulatory requirement',
+        'contract',
+        'contracts',
+        'case document',
+        'case management',
+        'application requirement',
+        'compliance check',
+        'compliance workflow',
+        'missing requirement',
+        'document inconsistency',
+        'ownership record',
+        'record verification',
+        'document verification',
+        'legal workflow',
+        'dispute',
+        'audit trail',
+      );
+    }
+
+    if (/^(?:blockchain|web3)$/u.test(normalizedName)) {
+      aliases.push(
+        'blockchain',
+        'distributed ledger',
+        'tamper evident',
+        'record provenance',
+        'version integrity',
+        'audit trail',
+        'immutable record',
+        'smart contract',
+      );
+    }
+
     if (/^(?:manufacturing|industrial manufacturing)$/u.test(normalizedName)) {
       aliases.push(
         'manufacturing',
@@ -3001,6 +3298,42 @@ export class IdeaOpportunityRankingService {
       );
     }
 
+    if (/^(?:wardrobe personal fashion management|wardrobe fashion management|personal wardrobe management|digital wardrobe)$/u.test(normalizedDomain)) {
+      return /\b(?:wardrobe|closet|clothing inventory|clothes inventory|clothes|clothing|shoes|footwear|accessories|outfit|outfits|fit tracking|cleaning|laundry|repair|wardrobe maintenance|shopping receipt|duplicate purchase|seasonal outfit|weather outfit)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:tattoo studio operations client management|tattoo studio operations & client management|tattoo studio management)$/u.test(normalizedDomain)) {
+      return /\b(?:tattoo studio|tattoo shop|tattoo artist|artist schedule|appointment booking|booking conflict|design revision|client feedback|client preference|appointment deposit|consent form|aftercare|session history|design approval)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:photography studio operations|photography workflow management|photography studios)$/u.test(normalizedDomain)) {
+      return /\b(?:photography studio|photo studio|photographer|client booking|shoot schedule|photo shoot|shot list|equipment preparation|camera gear|editing request|image selection|photo selection|delivery deadline|photo delivery|client gallery)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:tailoring custom apparel|tailoring|custom apparel)$/u.test(normalizedDomain)) {
+      return /\b(?:tailor(?:ing)?|custom clothing|custom apparel|made[- ]to[- ]measure|bespoke|garment|customer measurements?|body measurements?|fabric selections?|alteration requests?|alteration history|fitting appointments?|design notes?|custom order)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:government|public sector)$/u.test(normalizedDomain)) {
+      return /\b(?:government|public sector|agency|agencies|department|departments|permit|license|official record|public record|citizen service|approval status|ownership record)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:blockchain|web3)$/u.test(normalizedDomain)) {
+      return /\b(?:blockchain|distributed ledger|smart contract|web3|tamper[- ]evident|immutable record|record provenance|ledger|transaction)\b/iu.test(
+        text,
+      );
+    }
+
     if (/^(?:cybersecurity|cyber security|information security)$/u.test(normalizedDomain)) {
       return /\b(?:cybersecurity|cyber security|authentication|two[- ]factor|2fa|mfa|oauth|identity access|credential|authorization|access control|security policy|threat|vulnerabilit|breach|phishing|malware|encryption|token isolation|password security|privacy)\b/iu.test(
         text,
@@ -3014,7 +3347,25 @@ export class IdeaOpportunityRankingService {
     }
 
     if (/^(?:legaltech|legal tech|legal technology)$/u.test(normalizedDomain)) {
-      return /\b(?:legal research|legal document|contract|case management|case law|court|attorney|lawyer|compliance workflow|legal workflow|legaltech|law database)\b/iu.test(
+      return /\b(?:legal research|legal document|legal documents|regulation|regulations|regulatory requirement|contract|contracts|case management|case document|case law|court|attorney|lawyer|application requirement|compliance check|compliance workflow|missing requirement|document inconsistency|legal workflow|legaltech|law database)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:e commerce|ecommerce)$/u.test(normalizedDomain)) {
+      return /\b(?:e commerce|ecommerce|online store|online shop|woocommerce|shopify|merchant|marketplace|checkout|shopping cart|product catalog|order fulfillment|customer order|store order|online order)\b/iu.test(
+        text,
+      );
+    }
+
+    if (normalizedDomain === 'logistics') {
+      return /\b(?:logistics|shipment|shipping|courier|fleet|dispatch|warehouse|last mile|parcel|package|delivery tracking|shipment tracking|order tracking|fulfillment|delivery route|fleet routing)\b/iu.test(
+        text,
+      );
+    }
+
+    if (/^(?:internet of things|iot)$/u.test(normalizedDomain)) {
+      return /\b(?:internet of things|iot|connected device|connected devices|sensor|sensors|telemetry|device management|iot gateway|device gateway|firmware|smart meter|smart device|bluetooth|zigbee|edge computing|embedded device)\b/iu.test(
         text,
       );
     }
@@ -3532,6 +3883,14 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
+      /fragmented data|fragmented information|data fragmentation|disconnected systems?|siloed data|missing data layer|foundational data layer|unified data layer|data integration/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Fragmented Data Integration and Coordination';
+    }
+
+    if (
       /data loss|synchronization|sync|recovery|missing history/iu.test(
         normalized,
       )
@@ -3676,15 +4035,43 @@ export class IdeaOpportunityRankingService {
     candidate: NormalizedCandidate,
     evidenceSamples: readonly string[],
   ): string | null {
+    const evidenceText = evidenceSamples.join(' ').toLowerCase();
     const text = [
       candidate.title,
       candidate.solutionArea,
       candidate.need,
-      ...evidenceSamples,
+      evidenceText,
     ]
       .filter((value): value is string => Boolean(value))
       .join(' ')
       .toLowerCase();
+
+    if (
+      /(?:mychart|patient portal|medical history|lab order|external medical|health document)/iu.test(
+        evidenceText,
+      ) &&
+      /(?:upload|import|other platforms|external platform)/iu.test(evidenceText) &&
+      /(?:invoice|eob|explanation of benefits|insurance)/iu.test(evidenceText)
+    ) {
+      return 'External Medical Document Import and Billing Reconciliation';
+    }
+
+    if (
+      /(?:upload(?:ing)? files?|import(?:ing)? files?|external documents?|documents? from other platforms)/iu.test(
+        evidenceText,
+      )
+    ) {
+      return 'Cross-System Document Import and File Upload';
+    }
+
+    if (
+      /(?:lease term|rental length|short[- ]term|long[- ]term|vacation rental)/iu.test(
+        evidenceText,
+      ) &&
+      /(?:filter|exclude|search)/iu.test(evidenceText)
+    ) {
+      return 'Lease-Term Search Filtering and Rental Relevance';
+    }
 
     if (
       /(?:ai|artificial intelligence|llm).{0,160}(?:local|browser|on-device|privacy|external server|consent)|(?:sensitive data|user-provided data).{0,140}(?:local|browser|external service|consent)/iu.test(
@@ -3707,12 +4094,96 @@ export class IdeaOpportunityRankingService {
     if (
       explicitTitle &&
       !GENERIC_LABELS.has(explicitTitle.toLowerCase()) &&
-      explicitTitle.split(/\s+/u).length >= 3
+      !this.isGenericFeatureRequestTitle(explicitTitle) &&
+      explicitTitle.split(/\s+/u).length >= 3 &&
+      this.descriptorSupportedByEvidence(explicitTitle, evidenceSamples)
     ) {
       return explicitTitle;
     }
 
     return null;
+  }
+
+  private deriveFeatureRequestDescriptors(
+    title: string,
+    evidenceSamples: readonly string[],
+    candidateNeed: string | null,
+    candidateSolutionArea: string | null,
+  ): { problem: string; need: string | null; solutionArea: string | null } {
+    const evidenceText = evidenceSamples.join(' ').toLowerCase();
+
+    if (
+      /(?:mychart|patient portal|medical history|lab order|external medical|health document)/iu.test(
+        evidenceText,
+      ) &&
+      /(?:upload|import|other platforms|external platform)/iu.test(evidenceText) &&
+      /(?:invoice|eob|explanation of benefits|insurance)/iu.test(evidenceText)
+    ) {
+      return {
+        problem: 'Patient portals may lack a convenient way to import external medical-history or lab-order documents and compare portal invoices with insurance explanation-of-benefits records.',
+        need: 'Patients need secure cross-provider document import plus clear invoice-to-EOB reconciliation without relying on disconnected manual files.',
+        solutionArea: 'External Medical Document Import and Invoice/EOB Reconciliation',
+      };
+    }
+
+    const need =
+      candidateNeed &&
+      this.descriptorSupportedByEvidence(candidateNeed, evidenceSamples)
+        ? candidateNeed
+        : `Users need a reliable ${title.toLowerCase()} capability that directly addresses the retained feature request.`;
+    const solutionArea =
+      candidateSolutionArea &&
+      this.descriptorSupportedByEvidence(
+        candidateSolutionArea,
+        evidenceSamples,
+      )
+        ? candidateSolutionArea
+        : title;
+
+    return {
+      problem: title,
+      need,
+      solutionArea,
+    };
+  }
+
+  private isGenericFeatureRequestTitle(value: string): boolean {
+    const normalized = value
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .toLowerCase();
+
+    return /^(?:see |add |need |needs |want |wants |would like |please add |request(?:ed)? |feature request|a few |some |couple )?(?:a |an |the )?(?:couple |few |some )?(?:upgrade|upgrades|improvement|improvements|feature|features|changes|requests?)$/iu.test(
+      normalized,
+    ) ||
+      /^(?:see|want|would like|please|can you|could you)\b.{0,70}\b(?:upgrade|upgrades|feature|features|improvement|improvements)\b/iu.test(
+        normalized,
+      );
+  }
+
+  private descriptorSupportedByEvidence(
+    descriptor: string,
+    evidenceSamples: readonly string[],
+  ): boolean {
+    const normalizedDescriptor = descriptor.replace(/\s+/gu, ' ').trim();
+    if (!normalizedDescriptor || evidenceSamples.length === 0) return false;
+
+    return evidenceSamples.some((sample) => {
+      const familyMatch = matchEvidenceToProblemFamily(
+        normalizedDescriptor,
+        sample,
+      );
+      const atomicMatch = matchEvidenceToAtomicProblem(
+        normalizedDescriptor,
+        sample,
+      );
+      const similarity = this.jaccardSimilarity(
+        this.toSemanticTokenSet(normalizedDescriptor),
+        this.toSemanticTokenSet(sample),
+      );
+
+      return atomicMatch.matched || familyMatch.score >= 0.72 || similarity >= 0.1;
+    });
   }
 
   /**
@@ -4076,9 +4547,18 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
-      /(?:data|history|classes|progress).{0,80}(?:gone|lost|missing|deleted|sync)/iu.test(
+      /(?:fragmented data|fragmented information|data fragmentation|disconnected systems?|siloed data|missing data layer|foundational data layer|unified data layer|data integration)/iu.test(
         text,
       )
+    ) {
+      return 'Fragmented Data Integration and Coordination';
+    }
+
+    if (
+      /(?:data|history|classes|progress).{0,80}(?:gone|lost|missing|deleted|sync)/iu.test(
+        text,
+      ) &&
+      !/(?:missing|foundational|unified) data layer/iu.test(text)
     ) {
       return 'Data Loss and Synchronization Failures';
     }

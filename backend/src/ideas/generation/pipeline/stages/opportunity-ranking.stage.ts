@@ -50,6 +50,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
   readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
+  private readonly previousIdeaTextCache = new Map<
+    string,
+    { readonly expiresAt: number; readonly texts: readonly string[] }
+  >();
+
   constructor(
     private readonly opportunityRankingService: IdeaOpportunityRankingService,
     private readonly independentEvidenceVerificationService: IndependentEvidenceVerificationService,
@@ -324,45 +329,6 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ) &&
       context.evidenceRecoveryAttempts === 0
     ) {
-      const coveredDomainCount = context.domainEvidence.filter(
-        (entry) => entry.totalTextsAnalyzed > 0,
-      ).length;
-      const hasBroadMultiDomainCoverage =
-        context.selectedDomains.length > 1 &&
-        primaryTextCount >= 8 &&
-        coveredDomainCount >= Math.min(2, context.selectedDomains.length);
-      const requesterDescriptionWordCount = context.requestDescription
-        .trim()
-        .split(/\s+/u)
-        .filter(Boolean).length;
-      const hasRichRequesterDescription =
-        requesterDescriptionWordCount >= 18 ||
-        context.requestDescription.trim().length >= 140;
-      const hasAdequateSingleDomainCoverage =
-        context.selectedDomains.length === 1 &&
-        primaryTextCount >= 5 &&
-        representativeEvidenceCount >= 2 &&
-        (context.nlp?.confidence ?? 0) >= 0.4 &&
-        context.communityAiAnalysis?.aiSucceeded === true &&
-        context.communityAiAnalysis.fallbackUsed === false;
-
-      /*
-       * A second recovery pass is low-value when a detailed requester description
-       * already drove a healthy first collection and grounded Community-AI pass,
-       * but none of the retained evidence matched the requested problem. In that
-       * state, another search commonly rediscovers same-domain but different
-       * problems and adds 20-30 seconds without improving claim honesty. Preserve
-       * the requester-defined hypothesis immediately. Short/vague descriptions,
-       * tiny corpora, failed AI analysis, and genuinely empty collections still
-       * receive the one bounded targeted recovery pass.
-       */
-      if (
-        hasBroadMultiDomainCoverage ||
-        (hasRichRequesterDescription && hasAdequateSingleDomainCoverage)
-      ) {
-        return false;
-      }
-
       return true;
     }
 
@@ -687,6 +653,25 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       selectedDomainNames.map((name) => [name, 1]),
     );
 
+    const supportingEvidence = requestDescription
+      ? [
+          {
+            sourceType: 'REQUESTER_STATEMENT' as const,
+            text: requestDescription,
+            qualifiesAsCommunityEvidence: false,
+          },
+        ]
+      : [
+          {
+            sourceType:
+              context.domainResolution?.source === 'USER_SELECTED'
+                ? ('REQUESTER_DOMAIN_SELECTION' as const)
+                : ('PERSONALIZATION_SIGNAL' as const),
+            text: `Validation scope: ${selectedDomainNames.join(' + ')}`,
+            qualifiesAsCommunityEvidence: false,
+          },
+        ];
+
     const selected: IdeaOpportunityRanking['selected'] = {
       rank: 1,
       title,
@@ -729,6 +714,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       independentEvidence: [],
       requestIntentAlignmentScore: requestDescription ? 1 : undefined,
       requestIntentAdjustedScore: requestDescription ? 0.18 : undefined,
+      supportingEvidence,
       raw: {
         source: 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
         domainName: selectedDomainNames[0],
@@ -740,6 +726,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         requestDescription: requestDescription || null,
         requestIntentAlignmentScore: requestDescription ? 1 : null,
         evidenceSamples: [],
+        supportingEvidence,
       },
     };
 
@@ -755,8 +742,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           : `No direct community problem was retained within the fast collection budget. The run remains anchored to "${domainLabel}" and generates a clearly labeled validation hypothesis.`,
       qualityWarnings: [
         requestDescription
-          ? 'No sufficiently request-aligned direct community problem was established. The generated product must validate the requester-described workflow and must not present an unrelated evidence item as the primary opportunity.'
-          : 'No direct community problem was established. The generated product must be presented as a validation workflow, not as validated market demand.',
+          ? 'No sufficiently request-aligned direct community problem was established. The requester statement is preserved as traceable scope evidence but does not count as community demand evidence.'
+          : 'No direct community problem was established. The selected-domain or personalization signal is preserved only as traceable validation-scope support and does not count as market-demand evidence.',
         'The selected location is a pilot deployment target and is not claimed as evidence origin.',
       ],
     };
@@ -1199,6 +1186,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   }
 
   private async loadPreviousIdeaTexts(domainId: string): Promise<string[]> {
+    const cached = this.previousIdeaTextCache.get(domainId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return [...cached.texts];
+    }
+
     try {
       const previousIdeas = await this.prisma.idea.findMany({
         where: {
@@ -1208,28 +1200,31 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         select: {
           title: true,
           problemStatement: true,
-          objectives: true,
-          targetUsers: true,
           partialAbstract: true,
-          fullAbstract: true,
         },
         orderBy: { createdAt: 'desc' },
-        take: 150,
+        take: 40,
       });
 
-      return previousIdeas
+      const texts = previousIdeas
         .map((idea) =>
-          [
-            idea.title,
-            idea.problemStatement,
-            JSON.stringify(idea.objectives),
-            JSON.stringify(idea.targetUsers),
-            idea.partialAbstract ?? '',
-            idea.fullAbstract ?? '',
-          ].join(' '),
+          [idea.title, idea.problemStatement, idea.partialAbstract ?? ''].join(' '),
         )
         .map((text) => text.replace(/\s+/gu, ' ').trim())
         .filter(Boolean);
+
+      this.previousIdeaTextCache.set(domainId, {
+        expiresAt: Date.now() + 90_000,
+        texts,
+      });
+      if (this.previousIdeaTextCache.size > 40) {
+        const oldestKey = this.previousIdeaTextCache.keys().next().value as
+          | string
+          | undefined;
+        if (oldestKey) this.previousIdeaTextCache.delete(oldestKey);
+      }
+
+      return texts;
     } catch (error: unknown) {
       throw new BadRequestException({
         code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
@@ -2042,7 +2037,25 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const originalCandidates = [ranking.selected, ...ranking.alternatives];
 
     const scored = originalCandidates.map((candidate) => {
-      const alignment = this.calculateRequestIntentAlignment(candidate, description);
+      const rawCandidate =
+        candidate.raw && typeof candidate.raw === 'object' && !Array.isArray(candidate.raw)
+          ? (candidate.raw as Prisma.JsonObject)
+          : null;
+      const rawSource =
+        rawCandidate && typeof rawCandidate.source === 'string'
+          ? rawCandidate.source
+          : null;
+      const rawRequestDescription =
+        rawCandidate && typeof rawCandidate.requestDescription === 'string'
+          ? rawCandidate.requestDescription.trim()
+          : '';
+      const isCanonicalRequesterHypothesis =
+        rawSource === 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS' &&
+        rawRequestDescription.length > 0 &&
+        this.normalizeIntentText(rawRequestDescription) === normalizedDescription;
+      const alignment = isCanonicalRequesterHypothesis
+        ? 1
+        : this.calculateRequestIntentAlignment(candidate, description);
       const adjusted = Math.max(
         0,
         Math.min(1, candidate.finalScore * 0.72 + alignment * 0.28),
@@ -2052,6 +2065,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       );
       const isStronglyAligned = alignment >= STRONG_INTENT_ALIGNMENT;
       const isPreliminaryAligned = alignment >= PRELIMINARY_INTENT_ALIGNMENT;
+      const requestIntentSupportTier = isStronglyAligned
+        ? 'FULL_REQUEST_MATCH' as const
+        : alignment >= 0.24
+          ? 'PARTIAL_REQUEST_SUPPORT' as const
+          : 'WEAK_OR_UNRELATED' as const;
       const disqualificationReasons = [...candidate.disqualificationReasons];
 
       if (!isStronglyAligned && !disqualificationReasons.includes('WEAK_REQUEST_INTENT_ALIGNMENT')) {
@@ -2071,6 +2089,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
               ...(candidate.raw as Prisma.JsonObject),
               requestIntentAlignmentScore: alignment,
               requestIntentAdjustedScore: adjusted,
+              requestIntentSupportTier,
               requestIntentSelectionTier: isStronglyAligned
                 ? 'STRONG_ALIGNED'
                 : isPreliminaryAligned
@@ -2084,6 +2103,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         finalScore: adjusted,
         requestIntentAlignmentScore: alignment,
         requestIntentAdjustedScore: adjusted,
+        requestIntentSupportTier,
         selectionEligible,
         disqualificationReasons,
         raw,
@@ -2105,10 +2125,21 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         right.finalScore - left.finalScore,
       );
 
-    if (strongEligible.length === 0 && preliminaryAligned.length === 0) {
+    const partialSupportCandidates = scored.filter(
+      (candidate) =>
+        !candidate.disqualificationReasons.includes('OFF_SELECTED_DOMAIN') &&
+        candidate.requestIntentSupportTier === 'PARTIAL_REQUEST_SUPPORT',
+    );
+
+    if (strongEligible.length === 0) {
       const fallback = this.buildPrimaryDomainHypothesisRanking(context);
       const mismatchAlternatives = scored
-        .sort((left, right) => right.finalScore - left.finalScore)
+        .sort(
+          (left, right) =>
+            (right.requestIntentAlignmentScore ?? 0) -
+              (left.requestIntentAlignmentScore ?? 0) ||
+            right.finalScore - left.finalScore,
+        )
         .slice(0, 4)
         .map((candidate, index) => ({ ...candidate, rank: index + 2 }));
 
@@ -2117,13 +2148,21 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         alternatives: mismatchAlternatives,
         evaluatedCount: Math.max(fallback.evaluatedCount, ranking.evaluatedCount),
         qualityWarnings: [
-          `The collected evidence was stronger for problems that did not materially match the requester description "${description}". Those candidates were retained only as fallback diagnostics and were not allowed to become the primary idea.`,
+          ...(partialSupportCandidates.length > 0 ||
+          preliminaryAligned.length > 0
+            ? [
+                `${Math.max(partialSupportCandidates.length, preliminaryAligned.length)} retained evidence candidate(s) support only part of the requester-described workflow. Because none passed the strong requester-intent gate, they remain supporting context and cannot replace the primary requester-defined problem.`,
+              ]
+            : [
+                `The collected evidence was stronger for problems that did not materially match the requester description "${description}". Those candidates were retained only as fallback diagnostics and were not allowed to become the primary idea.`,
+              ]),
           ...fallback.qualityWarnings,
         ],
+        selectionReason: `No retained evidence candidate passed the strong requester-intent gate for "${description}". The pipeline preserved the requester-defined problem as the primary validation direction and kept partial evidence only as supporting context.`,
       };
     }
 
-    const winner = strongEligible[0] ?? preliminaryAligned[0];
+    const winner = strongEligible[0];
     const explicitPrimaryDomain =
       context.domainResolution?.source === 'USER_SELECTED'
         ? context.domainResolution.selectedDomain.name.trim()
@@ -2136,6 +2175,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
     if (
       explicitPrimaryDomain &&
+      context.selectedDomains.length <= 1 &&
       !winnerClaimDomains.has(explicitPrimaryDomain.toLocaleLowerCase())
     ) {
       const fallback = this.buildPrimaryDomainHypothesisRanking(context);
@@ -2158,7 +2198,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
     const ordered = [winner, ...scored.filter((candidate) => candidate !== winner)]
       .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
-    const isPreliminaryWinner = !winner.selectionEligible;
+    const isPreliminaryWinner = false;
     const changed = winner.title !== ranking.selected.title;
 
     return {
@@ -2216,11 +2256,12 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       requestTokens.size > 0 ? lexicalMatches / requestTokens.size : 0.5;
 
     const conceptGroups = this.resolveIntentConceptGroups(requestText);
+    const matchedConceptCount = conceptGroups.filter((group) =>
+      group.some((term) => candidateText.includes(term)),
+    ).length;
     const conceptScore =
       conceptGroups.length > 0
-        ? conceptGroups.filter((group) =>
-            group.some((term) => candidateText.includes(term)),
-          ).length / conceptGroups.length
+        ? matchedConceptCount / conceptGroups.length
         : lexicalScore;
 
     const rawAlignment = Math.max(
@@ -2232,8 +2273,15 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       (group) => !group.some((term) => candidateText.includes(term)),
     );
 
-    // A specific requester object/workflow is mandatory, not optional weight.
-    return missingRequiredAnchor ? Math.min(rawAlignment, 0.12) : rawAlignment;
+    const hasMaterialPartialSupport =
+      missingRequiredAnchor &&
+      conceptGroups.length >= 2 &&
+      matchedConceptCount >= 2 &&
+      conceptScore >= 0.5;
+
+    return missingRequiredAnchor
+      ? Math.min(rawAlignment, hasMaterialPartialSupport ? 0.44 : 0.12)
+      : rawAlignment;
   }
 
   private resolveRequiredIntentAnchors(requestText: string): readonly string[][] {
@@ -2297,18 +2345,32 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ]);
     }
 
-    if (/\b(?:employee|employees|workforce|staff|burnout|turnover|retention|workload)\b/u.test(requestText)) {
+    if (
+      /\b(?:human resources|\bhr\b|recruitment|recruiting|hiring|talent acquisition|candidate|applicant|employee onboarding|burnout|turnover|retention|workload|employee feedback)\b/u.test(
+        requestText,
+      ) ||
+      (/\b(?:employee|employees|workforce|staff)\b/u.test(requestText) &&
+        /\b(?:burnout|turnover|retention|workload|wellbeing|well being|engagement|performance review|staffing shortage|recruitment|hiring|onboarding)\b/u.test(
+          requestText,
+        ))
+    ) {
       anchors.push([
+        'human resources',
+        'hr',
         'employee',
         'employees',
         'workforce',
         'staff',
+        'recruitment',
+        'hiring',
         'burnout',
         'turnover',
         'retention',
         'workload',
         'wellbeing',
         'well being',
+        'engagement',
+        'onboarding',
       ]);
     }
 
@@ -2376,6 +2438,22 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ]);
     }
 
+    if (
+      /\b(?:tailor|tailoring|custom clothing|custom apparel|bespoke|garment|made to measure)\b/u.test(
+        requestText,
+      )
+    ) {
+      anchors.push([
+        'tailor',
+        'tailoring',
+        'custom clothing',
+        'custom apparel',
+        'bespoke',
+        'garment',
+        'made to measure',
+      ]);
+    }
+
     return anchors;
   }
 
@@ -2428,8 +2506,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         terms: ['finance', 'financial', 'accounting', 'budget', 'expense', 'invoice', 'payroll', 'procurement', 'reconciliation', 'cash flow', 'payment'],
       },
       {
-        trigger: /\b(?:employee|employees|workforce|staff|burnout|turnover|retention|workload)\b/u,
-        terms: ['employee', 'employees', 'workforce', 'staff', 'burnout', 'turnover', 'retention', 'workload', 'wellbeing'],
+        trigger: /\b(?:human resources|\bhr\b|recruitment|recruiting|hiring|talent acquisition|candidate|applicant|employee onboarding|burnout|turnover|retention|workload|employee feedback)\b/u,
+        terms: ['human resources', 'hr', 'employee', 'employees', 'workforce', 'staff', 'recruitment', 'hiring', 'candidate', 'applicant', 'burnout', 'turnover', 'retention', 'workload', 'wellbeing', 'onboarding'],
       },
       {
         trigger: /\b(?:recruitment|recruiting|hiring|candidate|candidates|applicant|applicants|talent acquisition)\b/u,
@@ -2442,6 +2520,30 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       {
         trigger: /\b(?:detect|identify|early|emerging|analyze|analyse|analytics|insight|insights|scattered|fragmented|feedback|records|data)\b/u,
         terms: ['detect', 'detection', 'identify', 'early', 'emerging', 'analyze', 'analyse', 'analytics', 'insight', 'insights', 'feedback', 'record', 'records', 'data', 'trend', 'warning', 'anomaly'],
+      },
+      {
+        trigger: /\b(?:fraud|fraudulent|chargeback|chargebacks|account takeover|account takeovers|payment dispute|payment disputes|false decline|false declines|legitimate purchase|legitimate purchases|suspicious transaction|suspicious transactions)\b/u,
+        terms: ['fraud', 'fraudulent', 'chargeback', 'chargebacks', 'account takeover', 'payment dispute', 'false decline', 'legitimate purchase', 'suspicious transaction', 'risk scoring', 'blocked purchase', 'fraud detection'],
+      },
+      {
+        trigger: /\b(?:laundry|laundromat|dry cleaning|dry-cleaning|dry cleaner|garment cleaning|wash and fold)\b/u,
+        terms: ['laundry', 'laundromat', 'dry cleaning', 'dry-cleaning', 'dry cleaner', 'garment', 'garments', 'stain', 'cleaning instruction', 'pickup', 'deadline', 'treatment', 'lost garment', 'delayed order', 'paper tag'],
+      },
+      {
+        trigger: /\b(?:tailor|tailoring|custom clothing|custom apparel|bespoke|garment|made to measure)\b/u,
+        terms: ['tailor', 'tailoring', 'custom clothing', 'custom apparel', 'bespoke', 'garment', 'made to measure'],
+      },
+      {
+        trigger: /\b(?:measurement|measurements|fabric|alteration|fitting|custom order|clothing order|design notes?)\b/u,
+        terms: ['measurement', 'measurements', 'fabric', 'alteration', 'fitting', 'custom order', 'clothing order', 'design note', 'order details'],
+      },
+      {
+        trigger: /\b(?:paper|messages?|previous measurements?|history|historical|returning customers?|recorded|records?)\b/u,
+        terms: ['paper', 'message', 'messages', 'previous measurement', 'history', 'historical', 'returning customer', 'record', 'records', 'order details'],
+      },
+      {
+        trigger: /\b(?:mistake|mistakes|repeated fittings?|delay|delayed orders?|follow ups?|poor management)\b/u,
+        terms: ['mistake', 'mistakes', 'repeated fitting', 'delay', 'delayed', 'delivery', 'follow up', 'poor management', 'order not ready'],
       },
       {
         trigger: /\b(?:company|business|organization|organisation|enterprise|department|office|staff|team)\b/u,

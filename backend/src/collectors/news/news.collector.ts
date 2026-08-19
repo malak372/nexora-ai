@@ -63,7 +63,8 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       if (
-        input.collectionMode === 'FAST_GENERATION' &&
+        (input.collectionMode === 'FAST_GENERATION' ||
+          input.collectionMode === 'TARGETED_RECOVERY') &&
         NewsCollector.unavailableUntil > Date.now()
       ) {
         this.logger.warn('News collection skipped by rate-limit circuit breaker.');
@@ -135,14 +136,17 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         NewsCollector.unavailableUntil =
           Date.now() + NewsCollector.RATE_LIMIT_COOLDOWN_MS;
         this.logger.warn(
-          'NewsAPI rate limit reached; FAST_GENERATION news requests are disabled for 30 minutes.',
+          'NewsAPI rate limit reached; bounded generation news requests are disabled for 30 minutes.',
         );
 
         /*
          * News is an optional evidence source. A provider quota must never mark
          * the complete fast collection as failed or trigger recovery work.
          */
-        if (input.collectionMode === 'FAST_GENERATION') {
+        if (
+          input.collectionMode === 'FAST_GENERATION' ||
+          input.collectionMode === 'TARGETED_RECOVERY'
+        ) {
           return [];
         }
       }
@@ -161,8 +165,13 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
     searchQuery: string,
     input: CollectorInput,
   ): Promise<NewsApiArticle[]> {
+    const boundedSearchQuery = this.boundNewsApiQuery(searchQuery);
+    if (!boundedSearchQuery) {
+      return [];
+    }
+
     const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'articles', [
-      searchQuery,
+      boundedSearchQuery,
       input.country,
       input.language,
     ]);
@@ -173,7 +182,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         headers: this.buildHeaders(),
 
         params: {
-          q: searchQuery,
+          q: boundedSearchQuery,
 
           language: CollectorLanguageUtil.resolveNewsApiLanguage(
             input.language,
@@ -205,16 +214,36 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
    * Builds search queries.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
+    const plannedQueries = (input.plannedQueries ?? [])
+      .map((query) => this.cleanNormalizedText(query))
+      .map((query) => this.boundNewsApiTerm(query))
+      .filter(Boolean);
+
+    if (plannedQueries.length > 0) {
+      const maximumPlannedQueries =
+        input.collectionMode === 'TARGETED_RECOVERY'
+          ? 2
+          : input.collectionMode === 'FAST_GENERATION'
+            ? 2
+            : 6;
+      return this.unique(plannedQueries)
+        .map((query) => this.boundNewsApiQuery(query))
+        .filter(Boolean)
+        .slice(0, maximumPlannedQueries);
+    }
+
     const userKeywords = (input.keywords ?? [])
       .map((keyword) => this.cleanNormalizedText(keyword))
+      .map((keyword) => this.boundNewsApiTerm(keyword))
       .filter(Boolean);
 
     const domainKeywords = this.getDomainKeywords(input)
       .map((keyword) => this.cleanNormalizedText(keyword))
+      .map((keyword) => this.boundNewsApiTerm(keyword))
       .filter(Boolean);
 
     const fallbackDomain = input.domainName
-      ? [this.cleanNormalizedText(input.domainName)]
+      ? [this.boundNewsApiTerm(this.cleanNormalizedText(input.domainName))]
       : [];
 
     const baseTerms = this.unique([
@@ -242,7 +271,46 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         .flatMap((term) => problemTerms.map((problem) => `${term} ${problem}`)),
     ];
 
-    return this.unique(queries).slice(0, 8);
+    const maximumQueries =
+      input.collectionMode === 'FAST_GENERATION' ? 2 : 8;
+
+    return this.unique(queries)
+      .map((query) => this.boundNewsApiQuery(query))
+      .filter(Boolean)
+      .slice(0, maximumQueries);
+  }
+
+  private boundNewsApiTerm(value: string): string {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    if (normalized.length <= 90) return normalized;
+
+    return normalized
+      .split(/\s+/u)
+      .reduce<string[]>((parts, word) => {
+        const candidate = [...parts, word].join(' ');
+        return candidate.length <= 90 ? [...parts, word] : parts;
+      }, [])
+      .join(' ')
+      .trim();
+  }
+
+  private boundNewsApiQuery(value: string): string {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    if (!normalized) return '';
+    if (normalized.length <= 450) return normalized;
+
+    const parts = normalized.split(/\s+/u);
+    const bounded: string[] = [];
+    for (const part of parts) {
+      const candidate = [...bounded, part].join(' ');
+      if (candidate.length > 450) break;
+      bounded.push(part);
+    }
+
+    return bounded
+      .join(' ')
+      .replace(/\s+(?:OR|AND|NOT)\s*$/iu, '')
+      .trim();
   }
 
   /**

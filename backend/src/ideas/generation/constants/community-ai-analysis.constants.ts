@@ -67,10 +67,10 @@ export const COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION = 1;
  * healthy provider response without multiplying latency by the number of
  * fallback models.
  */
-export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 8_500;
+export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 9_500;
 
 /** Hard wall-clock cap shared by the complete concurrent online fallback chain. */
-export const COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS = 9_000;
+export const COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS = 10_000;
 
 /**
  * Disables the explicit Ollama fallback in the strict fast-generation path.

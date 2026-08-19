@@ -49,6 +49,13 @@ export type CollectorInput = {
    */
   keywords?: string[];
 
+  /**
+   * AI-planned first-pass searches. These remain separate from generic domain
+   * keywords so source-specific collectors can preserve requester intent
+   * instead of re-expanding an already focused query into a broad search.
+   */
+  plannedQueries?: string[];
+
   /** Distinguishes normal domain discovery from targeted evidence recovery. */
   collectionMode?: CollectorCollectionMode;
 

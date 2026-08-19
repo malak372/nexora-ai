@@ -308,6 +308,17 @@ export class AppStoreCollector
 
   /** Builds focused queries instead of relying on one broad domain term. */
   private buildSearchQueries(input: CollectorInput): string[] {
+    const plannedQueries = (input.plannedQueries ?? [])
+      .map((query) => this.toStoreDiscoveryQuery(query))
+      .filter(Boolean);
+    const isBoundedMode =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
+
+    if (plannedQueries.length > 0 && isBoundedMode) {
+      return this.unique(plannedQueries).slice(0, 3);
+    }
+
     const userKeywords = (input.keywords ?? [])
       .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
@@ -332,10 +343,6 @@ export class AppStoreCollector
       .filter(Boolean)
       .slice(0, 8);
 
-    const isBoundedMode =
-      input.collectionMode === 'FAST_GENERATION' ||
-      input.collectionMode === 'TARGETED_RECOVERY';
-
     /*
      * In FAST_GENERATION the first balanced keywords are the selected domain
      * anchors (for example AI, Finance, Food). Keep them as independent search
@@ -358,6 +365,20 @@ export class AppStoreCollector
     ].filter((term): term is string => Boolean(term));
 
     return this.unique([...intentQueries, ...focused]).slice(0, 6);
+  }
+
+  private toStoreDiscoveryQuery(value: string): string {
+    const stopWords = new Set([
+      'conflict', 'conflicts', 'missing', 'forgotten', 'fragmented', 'problem',
+      'problems', 'complaint', 'complaints', 'review', 'reviews', 'difficult',
+      'coordination', 'tracking', 'records', 'record',
+    ]);
+    return this.cleanNormalizedText(value)
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((word) => !stopWords.has(word))
+      .slice(0, 4)
+      .join(' ');
   }
 
   /** Deduplicates applications returned by multiple focused searches. */

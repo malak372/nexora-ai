@@ -192,6 +192,13 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
    * Builds the primary blog query.
    */
   private buildSearchQuery(input: CollectorInput): string {
+    const plannedQuery = (input.plannedQueries ?? [])
+      .map((query) => this.cleanNormalizedText(query))
+      .find(Boolean);
+    if (plannedQuery) {
+      return plannedQuery.split(/\s+/u).slice(0, 10).join(' ');
+    }
+
     const userKeyword = input.keywords?.[0]
       ? this.cleanNormalizedText(input.keywords[0])
       : '';

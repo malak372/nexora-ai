@@ -237,12 +237,15 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
         ...(input.domainKeywords ?? []),
         ...(input.keywords ?? []),
       ],
+      plannedQueries: input.plannedQueries,
       maxQueries: isBoundedMode ? 3 : 6,
     });
 
     return clauses.map((clause) =>
       [
-        `${clause} bug OR incorrect OR stale OR fail OR "not updating"`,
+        input.plannedQueries?.length
+          ? clause
+          : `${clause} bug OR incorrect OR stale OR fail OR "not updating"`,
         'in:title,body',
         'is:issue',
         '-is:pr',

@@ -46,6 +46,7 @@ import {
 import {
   matchEvidenceToAtomicProblem,
   matchEvidenceToProblemFamily,
+  resolvePrimaryProblemFamily,
 } from '../../../nlp/common/utils/problem-family-matching.util';
 
 /**
@@ -819,9 +820,11 @@ export class CommunityAiAnalysisService {
     ]);
 
     const opportunities = analysis.opportunities.flatMap((opportunity) => {
+      const semanticSubject = `${opportunity.problem} ${opportunity.unmetNeed}`;
       const evidenceDomainName = this.resolveEvidenceBackedDomainName(
         context,
         opportunity.evidenceSamples,
+        semanticSubject,
       );
       if (evidenceDomainName) {
         return [{ ...opportunity, domainName: evidenceDomainName }];
@@ -836,13 +839,20 @@ export class CommunityAiAnalysisService {
         return [];
       }
 
-      const supported = opportunity.evidenceSamples.some((sample) =>
-        this.evidenceSemanticallySupportsDomain(
-          context,
-          requestedDomainName,
-          sample,
-        ),
+      const subjectSupported = this.evidenceSemanticallySupportsDomain(
+        context,
+        requestedDomainName,
+        `${opportunity.problem} ${opportunity.unmetNeed}`,
       );
+      const supported =
+        subjectSupported &&
+        opportunity.evidenceSamples.some((sample) =>
+          this.evidenceSemanticallySupportsDomain(
+            context,
+            requestedDomainName,
+            sample,
+          ),
+        );
 
       return supported
         ? [{ ...opportunity, domainName: requestedDomainName }]
@@ -1109,6 +1119,7 @@ export class CommunityAiAnalysisService {
       const evidenceBackedDomainName = this.resolveEvidenceBackedDomainName(
         context,
         [evidenceSample],
+        `${repairedProblem} ${repairedUnmetNeed}`,
       );
       const domainName =
         evidenceBackedDomainName ??
@@ -1123,11 +1134,18 @@ export class CommunityAiAnalysisService {
       if (!domainName) {
         continue;
       }
-      const repairedTitle = this.deriveTitle(
+      const repairedTitle = this.normalizeOpportunityTitle(
+        domainName,
+        this.firstAvailableString(record, ['title', 'name']) ??
+          this.deriveTitle(
+            repairedProblem,
+            repairedUnmetNeed,
+            evidenceSample,
+            domainName,
+          ),
         repairedProblem,
         repairedUnmetNeed,
         evidenceSample,
-        domainName,
       );
       const confidence = Math.max(
         COMMUNITY_AI_ANALYSIS_MIN_OPPORTUNITY_CONFIDENCE,
@@ -1205,6 +1223,7 @@ export class CommunityAiAnalysisService {
     const fallbackDomainName = this.resolveEvidenceBackedDomainName(
       context,
       [strongestCorpusSample],
+      `${problem} ${unmetNeed}`,
     );
     if (!fallbackDomainName) {
       return [];
@@ -1304,6 +1323,7 @@ export class CommunityAiAnalysisService {
   private resolveEvidenceBackedDomainName(
     context: IdeaGenerationContext,
     evidenceSamples: readonly string[],
+    semanticSubject = '',
   ): string | null {
     const normalizedSamples = evidenceSamples
       .map((sample) => sample.replace(/\s+/gu, ' ').trim())
@@ -1319,6 +1339,17 @@ export class CommunityAiAnalysisService {
         domainEvidence.samplePosts,
         domainEvidence.sampleComments,
       ]);
+      const subjectSupportsDomain =
+        !semanticSubject.trim() ||
+        this.evidenceSemanticallySupportsDomain(
+          context,
+          domainEvidence.domainName,
+          semanticSubject,
+        );
+      if (!subjectSupportsDomain) {
+        continue;
+      }
+
       const matches = normalizedSamples.filter((sample) =>
         corpus.some(
           (corpusSample) =>
@@ -1388,12 +1419,94 @@ export class CommunityAiAnalysisService {
       'tool',
       'tools',
     ]);
+    if (normalizedDomain === 'artificial intelligence') {
+      return /(?:artificial intelligence|\bai\b|machine learning|large language model|\bllm\b|ai model|ai assistant|ai system|automated decision|automated scoring|ai proctor)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'smart cities' || normalizedDomain === 'smart city') {
+      return /(?:smart cit(?:y|ies)|city planning|urban planning|municipal planning|urban mobility|public infrastructure|city services|civic technology|neighborhood management|neighbourhood management|public housing|traffic management|municipal service)/u.test(
+        normalized,
+      );
+    }
+
+    if (
+      normalizedDomain === 'internet of things' ||
+      normalizedDomain === 'iot'
+    ) {
+      return /(?:internet of things|iot|connected device|connected devices|sensor|sensors|telemetry|device management|gateway|firmware|smart meter|smart device|bluetooth|zigbee|edge computing)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'e commerce' || normalizedDomain === 'ecommerce') {
+      return /(?:e commerce|ecommerce|online store|online shop|woocommerce|shopify|merchant|marketplace|checkout|shopping cart|product catalog|order fulfillment|customer order|store order|online order)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'logistics') {
+      return /(?:logistics|shipment|shipping|delivery tracking|shipment tracking|order tracking|courier|fleet|dispatch|warehouse|last mile|transit time|driver|rider|package|parcel|order fulfillment)/u.test(
+        normalized,
+      );
+    }
+
+    if (
+      normalizedDomain === 'pet care management' ||
+      normalizedDomain === 'pet care' ||
+      normalizedDomain === 'animal care'
+    ) {
+      return /(?:pet care|pet health|pet owners?|pet sitters?|veterinar(?:ian|y)|vaccination|vaccinations|grooming|feeding routine|animal care|care instructions|pet appointment)/u.test(
+        normalized,
+      );
+    }
+
+    if (
+      normalizedDomain === 'media entertainment' ||
+      normalizedDomain === 'media & entertainment'
+    ) {
+      const explicitMediaWorkflow =
+        /(?:media entertainment|media workflow|content creation|digital publishing|audience engagement|video streaming|audio streaming|streaming video|streaming audio|music collaboration|band rehearsal|song version|set list|recording version|film|video production|audio production|broadcast)/u.test(
+          normalized,
+        );
+      const llmDeveloperStreaming =
+        /(?:llm|large language model|next js|nextjs|first token|token latency|api response|server sent events|sse|developer|typescript|javascript)/u.test(
+          normalized,
+        ) &&
+        /(?:streaming|stream|latency|token)/u.test(normalized);
+
+      return explicitMediaWorkflow && !llmDeveloperStreaming;
+    }
+
+    if (normalizedDomain === 'mental health') {
+      const sourceContextConfirmsMentalHealth =
+        /(?:mental health|therapy|wellness|counsel)/u.test(
+          normalizedSourceContext,
+        );
+      const therapeuticWorkflowSignal =
+        sourceContextConfirmsMentalHealth ||
+        /(?:mental health app|mental wellness|therapy app|therapist|counsel(?:ing|ling|or)|self care|psychological support|mood tracking|crisis support|workplace mental health|mental health leave|mental health break)/u.test(
+          normalized,
+        );
+      const mentalHealthProblemSignal =
+        /(?:cannot|can t|unable|blocked|missing|failed|failure|problem|issue|lack|need|request|wish|reminder|feature|please add|unavailable|unafford|expensive|glitch|not working|doesn t work|does not work|difficult|hard|no access|no time)/u.test(
+          normalized,
+        );
+      const infrastructureOnlySignal =
+        /(?:google cloud|datastore|oauth2?|database|indexes?|appengine|cloud ndb|python [23]|migration|authentication credentials|stack trace|repository|runtime|container)/u.test(
+          normalized,
+        ) &&
+        !/(?:mental health app|therapy app|therapist|counselor|counselling session|mental wellness workflow|self care workflow|mood tracking|crisis support)/u.test(
+          normalized,
+        );
+
+      return therapeuticWorkflowSignal && mentalHealthProblemSignal && !infrastructureOnlySignal;
+    }
+
     const explicitDomainNameInPersistedSample =
       normalizedDomain.length >= 4 &&
-      (
-        normalizedSourceContext.includes(normalizedDomain) ||
-        normalizedFullSample.includes(normalizedDomain)
-      );
+      normalizedSourceContext.includes(normalizedDomain);
     const sourceContextSupportsDomain = terms.some(
       (term) =>
         term.length >= 5 &&
@@ -1401,7 +1514,22 @@ export class CommunityAiAnalysisService {
         normalizedSourceContext.includes(term),
     );
 
-    if (explicitDomainNameInPersistedSample || sourceContextSupportsDomain) {
+    const problemSignal =
+      '(?:cannot|can t|unable|blocked|missing|failed|failure|problem|issue|complaint|waste|delay|declin|vacancy|error|unavailable|inefficien|lost|loss|conflict|dispute|risk|spike|broken|not working|doesn t work|does not work|need|request)';
+    const bodyDomainProblemCoupling = terms.some((term) => {
+      if (term.length < 5 || genericDomainTerms.has(term)) return false;
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return (
+        new RegExp(`${escaped}.{0,140}${problemSignal}`, 'u').test(normalized) ||
+        new RegExp(`${problemSignal}.{0,140}${escaped}`, 'u').test(normalized)
+      );
+    });
+
+    if (
+      explicitDomainNameInPersistedSample ||
+      sourceContextSupportsDomain ||
+      bodyDomainProblemCoupling
+    ) {
       return true;
     }
 
@@ -1439,6 +1567,22 @@ export class CommunityAiAnalysisService {
       );
     }
 
+    if (
+      normalizedDomain === 'tailoring custom apparel' ||
+      normalizedDomain === 'tailoring' ||
+      normalizedDomain === 'custom apparel'
+    ) {
+      return /(?:tailor(?:ing)?|custom clothing|custom apparel|made[- ]to[- ]measure|bespoke|garment|customer measurements?|body measurements?|fabric selections?|alteration requests?|alteration history|fitting appointments?|design notes?|custom order)/u.test(
+        normalized,
+      );
+    }
+
+    if (normalizedDomain === 'government' || normalizedDomain === 'public sector') {
+      return /(?:government|public sector|agency|agencies|department|departments|permit|license|official record|public record|citizen service|approval status|ownership record)/u.test(
+        normalized,
+      );
+    }
+
     if (normalizedDomain === 'real estate') {
       const directRealEstateAnchor =
         /(?:real estate|housing|rent|rental|rentals|lease|leasing|tenant|landlord|mortgage|realtor|zillow|apartment|apartments)/u.test(
@@ -1452,23 +1596,8 @@ export class CommunityAiAnalysisService {
       return directRealEstateAnchor || propertyWorkflowAnchor;
     }
 
-    if (
-      normalizedDomain === 'internet of things' ||
-      normalizedDomain === 'iot'
-    ) {
-      return /(?:internet of things|iot|connected device|connected devices|sensor|sensors|telemetry|device management|gateway|firmware|smart meter|smart device|bluetooth|zigbee|edge computing)/u.test(
-        normalized,
-      );
-    }
-
     if (normalizedDomain === 'healthcare') {
       return /(?:healthcare|health care|patient|patients|clinical|medical|medicine|medication|prescription|physician|doctor|hospital|pharmacy|care coordination|telemedicine)/u.test(
-        normalized,
-      );
-    }
-
-    if (normalizedDomain === 'logistics') {
-      return /(?:logistics|shipment|delivery|courier|fleet|dispatch|warehouse|last mile|tracking|transit time|driver|rider|package|parcel|order fulfillment)/u.test(
         normalized,
       );
     }
@@ -1483,22 +1612,6 @@ export class CommunityAiAnalysisService {
       );
     }
 
-    if (normalizedDomain === 'mental health') {
-      const therapeuticSignal =
-        /(?:mental health|therapy|therapist|counsel(?:ing|ling|or)|self care|psychological|voice|persona|mood|crisis|wellness)/u.test(
-          normalized,
-        );
-      const infrastructureOnlySignal =
-        /(?:google cloud|datastore|oauth2?|database|indexes?|appengine|cloud ndb|python [23]|migration|authentication credentials)/u.test(
-          normalized,
-        ) &&
-        !/(?:mental health app|therapy app|therapist|counselor|counselling session|self care|voice|persona|mood tracking)/u.test(
-          normalized,
-        );
-
-      return therapeuticSignal && !infrastructureOnlySignal;
-    }
-
     if (normalizedDomain === 'sports fitness' || normalizedDomain === 'sports and fitness') {
       return /(?:sports?|fitness|workout|athlete|training|gym|tennis|coach|coaching|player|watch)/u.test(
         normalized,
@@ -1506,7 +1619,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (normalizedDomain === 'blockchain') {
-      return /(?:blockchain|crypto|cryptocurrency|wallet|smart contract|hyperledger|binance|node|pexcoin|transaction|web3)/u.test(
+      return /(?:blockchain|crypto|cryptocurrency|wallet|smart contract|hyperledger|binance|node|pexcoin|transaction|web3|distributed ledger|tamper evident|record provenance|immutable record|version integrity)/u.test(
         normalized,
       );
     }
@@ -1524,7 +1637,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (normalizedDomain === 'legaltech') {
-      return /(?:legal research|legal document|contract|case management|case law|court|attorney|lawyer|compliance workflow|legal workflow|legaltech|law database)/u.test(
+      return /(?:legal research|legal document|contract|case management|case law|court|attorney|lawyer|compliance workflow|legal workflow|legaltech|law database|ownership record|record verification|document verification|dispute|audit trail)/u.test(
         normalized,
       );
     }
@@ -2157,6 +2270,8 @@ export class CommunityAiAnalysisService {
       /^(?:\d+|one|two|three|four|five)\s+(?:days?|weeks?|months?|years?)\s+ago\b|^(?:i|we)\s+(?:made|paid|tried|used|have|had)\b/u.test(
         normalizedTitle,
       );
+    const looksLikeInternalQualificationTitle =
+      this.isInternalQualificationText(title);
     const derivedIsSpecific =
       /(?:payment|billing|charge|reconciliation|wallet transaction|state synchronization|transaction visibility|legal research|routing|endpoint|healthcare ai|applicant|rental|authentication|data loss|therapeutic|persona|voice continuity|crypto platform access)/u.test(
         derivedNormalized,
@@ -2166,6 +2281,7 @@ export class CommunityAiAnalysisService {
       (titleClaimsEnergy && !domainIsEnergy && !evidenceSupportsEnergy) ||
       looksLikePublisherTitle ||
       looksLikeNarrativeFragmentTitle ||
+      looksLikeInternalQualificationTitle ||
       (looksLikeGenericReliabilityTitle && derivedIsSpecific) ||
       (derivedNormalized !== normalizedTitle && titleSemanticOverlap < 0.1)
     ) {
@@ -2199,6 +2315,22 @@ export class CommunityAiAnalysisService {
         /\b(?:keyboard\s+(?:appears?|feels?)\s+frozen|focus\s+(?:remains|stays|is)\s+(?:on|trapped|stuck)|keystrokes?\s+(?:are\s+)?(?:captured|consumed)|keyboard\s+input\s+(?:is\s+)?(?:captured|consumed)|type[- ]ahead|screen reader|no visible candidate)\b/gu,
         ' ',
       );
+
+    const primaryEvidenceFamily = resolvePrimaryProblemFamily(
+      `${problem} ${evidenceSample}`,
+    );
+    if (primaryEvidenceFamily?.key === 'device-protocol-compatibility') {
+      return 'Device Protocol Compatibility and Connectivity Limitations';
+    }
+    if (primaryEvidenceFamily?.key === 'route-planning-capability') {
+      return 'Route Planning Stop Reference and Import Limitations';
+    }
+    if (primaryEvidenceFamily?.key === 'application-update-loop') {
+      return 'Application Update Loop and Version Verification Failures';
+    }
+    if (primaryEvidenceFamily?.key === 'data-fragmentation') {
+      return 'Fragmented Data Integration and Coordination';
+    }
 
     if (
       /(?:model containment|containment breach|containment failure|sandbox escape|security boundary|escape onto the open internet|open[- ]weight model)/u.test(
@@ -2243,6 +2375,17 @@ export class CommunityAiAnalysisService {
     }
 
     if (
+      /(?:license test response|licensing server|licensechecker|servermanagedpolicy|strictpolicy|not licensed|not_licensed|lvl licensing|google play licensing)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:android|google play|mobile app|test account|testing device|developer account)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Mobile App License Verification and Test Response Failures';
+    }
+
+    if (
       /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|locked out(?: of)?\s+(?:my|the|this)?\s*account/u.test(
         evidenceCoreText,
       )
@@ -2278,7 +2421,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:firefox|chrome|browser|tab|dapp|web3)/u.test(evidenceCoreText) &&
+      /\b(?:firefox|chrome|browser|tab|dapp|web3)\b/u.test(evidenceCoreText) &&
       /(?:crash|crashed|crashing|runtime failure|no error|terminal shows no error)/u.test(
         evidenceCoreText,
       )
@@ -2324,7 +2467,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep link|destination page)/u.test(
+      /(?:404|not found|missing url|incorrect url|broken route|broken link|redirect|deep link|destination page|missing endpoint|incorrect endpoint|endpoint failure)/u.test(
         evidenceCoreText,
       )
     ) {
@@ -2447,6 +2590,17 @@ export class CommunityAiAnalysisService {
     }
 
     if (
+      /(?:google|apple|email|identity provider|oauth)/u.test(
+        semanticText,
+      ) &&
+      /(?:need to create account|create account using email|email sign up|email based sign up|only have google|only have apple|google or apple|identity provider|oauth)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A user reports an account-access barrier because the application restricts registration to specific identity providers and does not offer the requested email-based sign-up path.';
+    }
+
+    if (
       /(?:mental health|therap(?:y|ist)|counsel(?:or|lor)|ai for mental health)/u.test(
         semanticText,
       ) &&
@@ -2468,7 +2622,27 @@ export class CommunityAiAnalysisService {
       return 'Regional Crypto Platform Access and Alternative Wallet Gaps';
     }
 
-    if (/(?:login|log in|sign in|authentication|account access|password|session)/u.test(semanticText) && /(?:fail|error|unable|cannot|can t|blocked|friction)/u.test(semanticText)) {
+    if (
+      /(?:container|docker|bridge network|host network)/u.test(evidenceCoreText) &&
+      /(?:tcp|socket|network mode|network_mode|gateway|connect|communication)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Inter-Container Network Boundary and Socket Connectivity Failures';
+    }
+
+    if (
+      /(?:energy savings|gas savings|electricity savings|energy carrier|gas price|electricity price|price forecast)/u.test(
+        evidenceCoreText,
+      ) &&
+      /(?:incorrect|inaccurate|distort|wrong|single value|same price|growth rate|npv|payback)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Energy Savings Carrier Forecasting and Valuation Errors';
+    }
+
+    if (/(?:login|log in|sign in|authentication|account access|password|session|two factor|2fa|multi factor|verification code)/u.test(semanticText) && /(?:fail|error|unable|cannot|can t|blocked|friction|timeout|restart|knocks? you out)/u.test(semanticText)) {
       return 'Account Access and Authentication Failures';
     }
 
@@ -2517,6 +2691,23 @@ export class CommunityAiAnalysisService {
     }
 
     if (
+      /(?:artificial intelligence|\bai\b|automated)/u.test(semanticText) &&
+      /(?:exam|examination|assessment|proctor|entrance test|entrance exam)/u.test(semanticText) &&
+      /(?:fail|failure|error|repeat|retake|do over|wrong|dispute|review)/u.test(semanticText)
+    ) {
+      return 'AI Assessment Decision Verification and Recovery';
+    }
+
+    if (
+      /(?:app|application|app store|play store|version|update)/u.test(evidenceCoreText) &&
+      /(?:prompted to update|asks? to update|update loop|latest version|already updated|already on the latest version|version check|version mismatch)/u.test(
+        evidenceCoreText,
+      )
+    ) {
+      return 'Application Update Loop and Version Verification Failures';
+    }
+
+    if (
       /(?:app|application|software|platform|service)/u.test(semanticText) &&
       /(?:crash|runtime error|freeze|closing|not working|unavailable)/u.test(runtimeSafeSemanticText)
     ) {
@@ -2553,7 +2744,10 @@ export class CommunityAiAnalysisService {
       return 'Notification Delivery and Workflow Gaps';
     }
 
-    const source = this.cleanFallbackFragment(unmetNeed || problem);
+    const cleanedUnmetNeed = this.cleanFallbackFragment(unmetNeed);
+    const source = this.isInternalQualificationText(cleanedUnmetNeed)
+      ? this.cleanFallbackFragment(problem)
+      : this.cleanFallbackFragment(cleanedUnmetNeed || problem);
     if (this.looksLikePromotionalOrPublisherText(source)) {
       return normalizedDomain
         ? `${this.toTitleCase(domainName)} Workflow Reliability and Validation Gaps`
@@ -2642,9 +2836,33 @@ export class CommunityAiAnalysisService {
       this.extractStrongestDirectProblemSentence(evidenceSample);
     const candidateIsDirectProblem =
       this.looksLikeDirectProblemEvidence(candidateProblem);
-    const semanticText = this.normalizeComparableText(
-      `${candidateProblem} ${evidenceSample}`,
+    const candidateAtomicMatch = matchEvidenceToAtomicProblem(
+      candidateProblem,
+      evidenceSample,
     );
+    const candidateProblemOverlap = this.tokenOverlap(
+      this.normalizeComparableText(candidateProblem),
+      this.normalizeComparableText(evidenceSample),
+    );
+    const candidateIntroducesUnsupportedConcept =
+      this.introducesUnsupportedSemanticConcept(
+        candidateProblem,
+        evidenceSample,
+      );
+    const candidateIsEvidenceAligned =
+      !candidateIntroducesUnsupportedConcept &&
+      (candidateAtomicMatch.matched || candidateProblemOverlap >= 0.28);
+    const semanticText = this.normalizeComparableText(
+      `${candidateIsEvidenceAligned ? candidateProblem : ''} ${evidenceSample}`,
+    );
+
+    if (
+      !candidateIsEvidenceAligned &&
+      directEvidenceSentence &&
+      this.looksLikeDirectProblemEvidence(directEvidenceSentence)
+    ) {
+      return this.boundProblemText(directEvidenceSentence, 260);
+    }
 
     if (
       /(?:got married|married|name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name)/u.test(
@@ -2667,6 +2885,17 @@ export class CommunityAiAnalysisService {
     }
 
     if (
+      /(?:license test response|licensing server|licensechecker|servermanagedpolicy|strictpolicy|not licensed|not_licensed|lvl licensing|google play licensing)/u.test(
+        semanticText,
+      ) &&
+      /(?:android|google play|mobile app|test account|testing device|developer account)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A mobile developer reports that a Google Play licensing test returns NOT_LICENSED even after the expected test response, account, public-key, cache, and policy settings were checked.';
+    }
+
+    if (
       /(?:powershell|execution policy|pssecurityexception|running scripts is disabled|script execution disabled|unauthorizedaccess|\.ps1)/u.test(
         semanticText,
       )
@@ -2686,7 +2915,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:firefox|chrome|browser|tab|dapp|web3)/u.test(semanticText) &&
+      /\b(?:firefox|chrome|browser|tab|dapp|web3)\b/u.test(semanticText) &&
       /(?:crash|crashed|crashing|runtime failure|terminal shows no error|no corresponding terminal error)/u.test(
         semanticText,
       )
@@ -2695,7 +2924,15 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep link|destination page)/u.test(
+      /(?:crash|crashes|crashed|crashing|runtime failure|runtime error|app closes|application closes|glitch|glitching|freeze|unresponsive)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A crash-diagnostics and recovery workflow that captures failure context, preserves the interrupted session state when possible, and guides human-reviewed remediation before the user repeats the same task.';
+    }
+
+    if (
+      /(?:404|not found|missing url|incorrect url|broken route|broken link|redirect|deep link|destination page|missing endpoint|incorrect endpoint|endpoint failure)/u.test(
         semanticText,
       )
     ) {
@@ -2711,6 +2948,17 @@ export class CommunityAiAnalysisService {
       )
     ) {
       return 'An individual legal researcher reports that professional legal-research tools are unaffordable, documentation workload is difficult to manage, and general AI assistance can introduce factual errors or unstable guardrail behavior.';
+    }
+
+    if (
+      /(?:mychart|patient portal|medical history|lab order|external medical|health document)/u.test(
+        semanticText,
+      ) &&
+      /(?:upload|import|external platform|other platforms|invoice|eob|explanation of benefits)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A patient-portal user requests a secure way to import external medical-history or lab-order documents and an easier path to compare portal invoices with insurance explanation-of-benefits records.';
     }
 
     /*
@@ -2729,7 +2977,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation|driver|rider)/u.test(
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|payment reconciliation|proof of payment .*?(?:again|additional|another))/u.test(
         semanticText,
       )
     ) {
@@ -2741,6 +2989,17 @@ export class CommunityAiAnalysisService {
       /(?:connect|link|connected|charged|charge)/u.test(semanticText)
     ) {
       return 'A finance user reports inconsistent payment-method handling in which a linked card can still be charged while the associated bank or wallet connection cannot be established or managed reliably.';
+    }
+
+    if (
+      /(?:google|apple|email|identity provider|oauth)/u.test(
+        semanticText,
+      ) &&
+      /(?:need to create account|create account using email|email sign up|email based sign up|only have google|only have apple|google or apple|identity provider|oauth)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A user reports an account-access barrier because the application restricts registration to specific identity providers and does not offer the requested email-based sign-up path.';
     }
 
     if (
@@ -2817,6 +3076,7 @@ export class CommunityAiAnalysisService {
 
     const cleaned = this.cleanFallbackFragment(candidateProblem);
     if (
+      candidateIsEvidenceAligned &&
       cleaned.length >= 35 &&
       !this.looksLikePromotionalOrPublisherText(cleaned)
     ) {
@@ -2840,9 +3100,43 @@ export class CommunityAiAnalysisService {
     repairedProblem: string,
     evidenceSample: string,
   ): string {
-    const semanticText = this.normalizeComparableText(
-      `${candidateSolutionArea} ${repairedProblem} ${evidenceSample}`,
+    const evidenceContext = this.normalizeComparableText(
+      `${repairedProblem} ${evidenceSample}`,
     );
+    const solutionOverlap = candidateSolutionArea
+      ? this.tokenOverlap(
+          this.normalizeComparableText(candidateSolutionArea),
+          evidenceContext,
+        )
+      : 0;
+    const trustedSolutionArea =
+      solutionOverlap >= 0.3 &&
+      !this.isInternalQualificationText(candidateSolutionArea) &&
+      !this.introducesUnsupportedSemanticConcept(
+        candidateSolutionArea,
+        evidenceContext,
+      )
+        ? candidateSolutionArea
+        : '';
+    const semanticText = this.normalizeComparableText(
+      `${trustedSolutionArea} ${repairedProblem} ${evidenceSample}`,
+    );
+
+    const primaryEvidenceFamily = resolvePrimaryProblemFamily(
+      `${repairedProblem} ${evidenceSample}`,
+    );
+    if (primaryEvidenceFamily?.key === 'device-protocol-compatibility') {
+      return 'Device Protocol Compatibility and Integration Diagnostics';
+    }
+    if (primaryEvidenceFamily?.key === 'route-planning-capability') {
+      return 'Route Planning Stop Import and Driver Reference Management';
+    }
+    if (primaryEvidenceFamily?.key === 'application-update-loop') {
+      return 'Application Version Verification and Update-Loop Recovery';
+    }
+    if (primaryEvidenceFamily?.key === 'data-fragmentation') {
+      return 'Data Integration, Normalization, and Source Coordination';
+    }
 
     if (
       /(?:name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name|multiple government departments|government departments must be identified and updated)/u.test(
@@ -2850,6 +3144,15 @@ export class CommunityAiAnalysisService {
       )
     ) {
       return 'Cross-Agency Life-Event Update Guidance and Record-Change Coordination';
+    }
+
+    if (
+      /(?:mychart|patient portal|medical history|lab order|external medical|health document)/u.test(
+        semanticText,
+      ) &&
+      /(?:upload|import|invoice|eob|explanation of benefits)/u.test(semanticText)
+    ) {
+      return 'External Medical Document Import and Invoice/EOB Reconciliation';
     }
 
     if (
@@ -2862,7 +3165,38 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|account access and authentication|login and account access/u.test(
+      /(?:container|docker|bridge network|host network)/u.test(semanticText) &&
+      /(?:tcp|socket|network mode|network_mode|gateway|connect|communication)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Inter-Container Network Boundary Diagnostics and Secure Socket Routing';
+    }
+
+    if (
+      /(?:energy savings|gas savings|electricity savings|energy carrier|gas price|electricity price|price forecast)/u.test(
+        semanticText,
+      ) &&
+      /(?:incorrect|inaccurate|distort|wrong|single value|same price|growth rate|npv|payback)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Energy-Carrier Savings Forecast Validation and Valuation Modeling';
+    }
+
+    if (
+      /(?:license test response|licensing server|licensechecker|servermanagedpolicy|strictpolicy|not licensed|not_licensed|lvl licensing|google play licensing)/u.test(
+        semanticText,
+      ) &&
+      /(?:android|google play|mobile app|test account|testing device|developer account)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Mobile App Licensing Test Diagnostics and Store Verification';
+    }
+
+    if (
+      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|account access and authentication|login and account access|two[- ]factor authentication|2fa|multi[- ]factor authentication|verification code|authentication (?:failure|friction|timeout|loop)|sign[- ]in (?:failure|friction|loop)/u.test(
         semanticText,
       )
     ) {
@@ -2889,7 +3223,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:firefox|chrome|browser|tab|dapp|web3)/u.test(semanticText) &&
+      /\b(?:firefox|chrome|browser|tab|dapp|web3)\b/u.test(semanticText) &&
       /(?:crash|crashed|crashing|runtime failure|terminal shows no error|no corresponding terminal error)/u.test(
         semanticText,
       )
@@ -2911,6 +3245,17 @@ export class CommunityAiAnalysisService {
     }
 
     if (
+      /(?:crash|crashes|crashed|crashing|runtime failure|runtime error|freeze|frozen|unresponsive)/u.test(
+        semanticText,
+      ) &&
+      /(?:app|application|mobile|software|browser|client|session|runtime)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A reliable crash-diagnostics and guided recovery workflow that captures the affected application state, preserves user context, and supports human-reviewed remediation without claiming an unverified root cause.';
+    }
+
+    if (
       /(?:wallet|account balance|wallet balance|transaction history|transactions?|confirmations?)/u.test(
         semanticText,
       ) &&
@@ -2923,7 +3268,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation|driver|rider)/u.test(
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|payment reconciliation|proof of payment .*?(?:again|additional|another))/u.test(
         semanticText,
       )
     ) {
@@ -2935,6 +3280,17 @@ export class CommunityAiAnalysisService {
       /(?:connect|link|connected|charged|charge)/u.test(semanticText)
     ) {
       return 'Payment Method Linking and Charge Consistency';
+    }
+
+    if (
+      /(?:google|apple|email|identity provider|oauth)/u.test(
+        semanticText,
+      ) &&
+      /(?:need to create account|create account using email|email sign up|email based sign up|only have google|only have apple|google or apple|identity provider|oauth)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A user reports an account-access barrier because the application restricts registration to specific identity providers and does not offer the requested email-based sign-up path.';
     }
 
     if (
@@ -2960,7 +3316,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep link|destination page)/u.test(
+      /(?:404|not found|missing url|incorrect url|broken route|broken link|redirect|deep link|destination page|missing endpoint|incorrect endpoint|endpoint failure)/u.test(
         semanticText,
       )
     ) {
@@ -2979,6 +3335,39 @@ export class CommunityAiAnalysisService {
     }
 
     if (
+      /(?:home inventory|household inventory|belongings?|item|items|room|rooms)/u.test(
+        semanticText,
+      ) &&
+      /(?:reminder|search|find|locate|label|assignment|packed|fragile|moving|unpacking)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A household inventory and moving-coordination workflow that links belongings to rooms and labels, connects reminders and tasks to the exact item, and helps family members find packed or essential items without duplicate manual tracking.';
+    }
+
+    if (
+      /(?:moving app|moving application|move to a new home|moving home|house move)/u.test(
+        semanticText,
+      ) &&
+      /(?:onboarding|navigate|navigation|confusing|hard to use)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A guided moving-app onboarding workflow that makes the next required task, service update, and household setup step easy to find and complete.';
+    }
+
+    if (
+      /(?:traffic|congestion|public transport|public transportation|transit|bus|train|road incident|urban mobility)/u.test(
+        semanticText,
+      ) &&
+      /(?:air pollution|air quality|emissions?|environmental)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A unified urban-mobility workflow that correlates traffic, transit reliability, road incidents, and environmental measurements so city teams can identify operational changes that reduce delay and emissions.';
+    }
+
+    if (
       /(?:mass email(?:ing)?|bulk email(?:ing)?).{0,120}(?:client contacts?|clients?)/u.test(
         semanticText,
       )
@@ -2994,7 +3383,7 @@ export class CommunityAiAnalysisService {
       return 'Candidate Profile Pooling and Recurring Hiring Management';
     }
 
-    const cleaned = this.boundProblemText(candidateSolutionArea, 180);
+    const cleaned = this.boundProblemText(trustedSolutionArea, 180);
     if (
       cleaned &&
       !/focused software workflow for diagnosis, validation, and guided resolution/iu.test(
@@ -3004,20 +3393,59 @@ export class CommunityAiAnalysisService {
       return cleaned;
     }
 
+    if (primaryEvidenceFamily) {
+      return `${this.toTitleCase(primaryEvidenceFamily.label)} Diagnosis and Human-Reviewed Recovery`;
+    }
+
     return 'Evidence-Grounded Workflow Diagnosis and Human-Reviewed Recovery';
   }
 
   private buildProfessionalFallbackNeed(
     candidateNeed: string,
     repairedProblem: string,
+    evidenceSample = '',
   ): string {
     const cleanedNeed = this.cleanFallbackFragment(candidateNeed)
       .replace(/^a reliable workflow that resolves\s*:\s*/iu, '')
       .trim();
+    const evidenceContext = this.normalizeComparableText(
+      `${repairedProblem} ${evidenceSample}`,
+    );
+    const needAtomicMatch = matchEvidenceToAtomicProblem(
+      cleanedNeed,
+      evidenceSample || repairedProblem,
+    );
+    const needOverlap = cleanedNeed
+      ? this.tokenOverlap(
+          this.normalizeComparableText(cleanedNeed),
+          evidenceContext,
+        )
+      : 0;
+    const candidateNeedIsAligned =
+      Boolean(cleanedNeed) &&
+      !this.isInternalQualificationText(cleanedNeed) &&
+      !this.introducesUnsupportedSemanticConcept(cleanedNeed, evidenceContext) &&
+      (needAtomicMatch.matched || needOverlap >= 0.3);
 
     const semanticText = this.normalizeComparableText(
-      `${cleanedNeed} ${repairedProblem}`,
+      `${candidateNeedIsAligned ? cleanedNeed : ''} ${repairedProblem} ${evidenceSample}`,
     );
+
+    const primaryEvidenceFamily = resolvePrimaryProblemFamily(
+      `${repairedProblem} ${evidenceSample}`,
+    );
+    if (primaryEvidenceFamily?.key === 'device-protocol-compatibility') {
+      return 'Users need a compatibility workflow that verifies supported device protocols, identifies incompatible fitness equipment or wearables, and guides supported connection options before hardware is purchased or configured.';
+    }
+    if (primaryEvidenceFamily?.key === 'route-planning-capability') {
+      return 'Route planners need a workflow for importing stop lists, preserving driver reference numbers, and validating route constraints before dispatch.';
+    }
+    if (primaryEvidenceFamily?.key === 'application-update-loop') {
+      return 'Users need a version-verification workflow that distinguishes a genuine required update from an erroneous update loop and guides safe access recovery without assuming an unverified root cause.';
+    }
+    if (primaryEvidenceFamily?.key === 'data-fragmentation') {
+      return 'Operators need a unified data-integration workflow that normalizes fragmented records from disconnected sources, exposes inconsistencies, and preserves source provenance for human review.';
+    }
 
     if (
       /(?:name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name|multiple government departments|government departments must be identified and updated)/u.test(
@@ -3037,11 +3465,51 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|account access and authentication|login and account access/u.test(
+      /(?:mychart|patient portal|medical history|lab order|external medical|health document)/u.test(
+        semanticText,
+      ) &&
+      /(?:upload|import|invoice|eob|explanation of benefits)/u.test(semanticText)
+    ) {
+      return 'Patients need a secure workflow to import external medical-history and lab-order documents, preserve them across provider boundaries, and reconcile portal invoices with insurance explanation-of-benefits records.';
+    }
+
+    if (
+      /(?:can(?:not|['’]?t)|unable to)\s+(?:access|login|log in|sign in|log into|sign into)\s+(?:my|the|this)?\s*account|account access and authentication|login and account access|two[- ]factor authentication|2fa|multi[- ]factor authentication|verification code|authentication (?:failure|friction|timeout|loop)|sign[- ]in (?:failure|friction|loop)/u.test(
         semanticText,
       )
     ) {
       return 'A reliable authentication and account-recovery workflow that helps affected users regain access without losing session or identity context.';
+    }
+
+    if (
+      /(?:container|docker|bridge network|host network)/u.test(semanticText) &&
+      /(?:tcp|socket|network mode|network_mode|gateway|connect|communication)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A secure inter-container connectivity workflow that validates bridge-to-host routing, reachable socket endpoints, and least-privilege network boundaries without exposing an entire container to the host network.';
+    }
+
+    if (
+      /(?:energy savings|gas savings|electricity savings|energy carrier|gas price|electricity price|price forecast)/u.test(
+        semanticText,
+      ) &&
+      /(?:incorrect|inaccurate|distort|wrong|single value|same price|growth rate|npv|payback)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A deterministic energy-savings model that preserves gas and electricity as separate carriers, applies the correct price forecast to each, and exposes valuation differences for human review.';
+    }
+
+    if (
+      /(?:license test response|licensing server|licensechecker|servermanagedpolicy|strictpolicy|not licensed|not_licensed|lvl licensing|google play licensing)/u.test(
+        semanticText,
+      ) &&
+      /(?:android|google play|mobile app|test account|testing device|developer account)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A deterministic licensing-test workflow that verifies store account state, test-response configuration, public-key setup, cache state, and server results before developers change unrelated application logic.';
     }
 
     if (
@@ -3064,7 +3532,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:firefox|chrome|browser|tab|dapp|web3)/u.test(semanticText) &&
+      /\b(?:firefox|chrome|browser|tab|dapp|web3)\b/u.test(semanticText) &&
       /(?:crash|crashed|crashing|runtime failure|terminal shows no error|no corresponding terminal error)/u.test(
         semanticText,
       )
@@ -3085,7 +3553,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation|driver|rider)/u.test(
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|payment reconciliation|proof of payment .*?(?:again|additional|another))/u.test(
         semanticText,
       )
     ) {
@@ -3108,7 +3576,7 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:404|not found|missing url|incorrect url|broken route|broken link|routing|redirect|deep link|destination page)/u.test(
+      /(?:404|not found|missing url|incorrect url|broken route|broken link|redirect|deep link|destination page|missing endpoint|incorrect endpoint|endpoint failure)/u.test(
         semanticText,
       )
     ) {
@@ -3136,7 +3604,12 @@ export class CommunityAiAnalysisService {
     }
 
     if (
-      /(?:llm|large language model|ai coding|generated code)/u.test(semanticText)
+      /(?:llm|large language model|ai coding|generated code|code assistant)/u.test(
+        semanticText,
+      ) &&
+      /(?:coding|code|generated code|repository|refactor|bloated|rewrite|pushback|invalid request|nonsensical)/u.test(
+        semanticText,
+      )
     ) {
       return 'A validation workflow that challenges ambiguous AI coding requests, exposes uncertainty, and flags bloated or poorly structured generated code before repository integration.';
     }
@@ -3170,6 +3643,39 @@ export class CommunityAiAnalysisService {
     }
 
     if (
+      /(?:home inventory|household inventory|belongings?|item|items|room|rooms)/u.test(
+        semanticText,
+      ) &&
+      /(?:reminder|search|find|locate|label|assignment|packed|fragile|moving|unpacking)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A household inventory and moving-coordination workflow that links belongings to rooms and labels, connects reminders and tasks to the exact item, and helps family members find packed or essential items without duplicate manual tracking.';
+    }
+
+    if (
+      /(?:moving app|moving application|move to a new home|moving home|house move)/u.test(
+        semanticText,
+      ) &&
+      /(?:onboarding|navigate|navigation|confusing|hard to use)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A guided moving-app onboarding workflow that makes the next required task, service update, and household setup step easy to find and complete.';
+    }
+
+    if (
+      /(?:traffic|congestion|public transport|public transportation|transit|bus|train|road incident|urban mobility)/u.test(
+        semanticText,
+      ) &&
+      /(?:air pollution|air quality|emissions?|environmental)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A unified urban-mobility workflow that correlates traffic, transit reliability, road incidents, and environmental measurements so city teams can identify operational changes that reduce delay and emissions.';
+    }
+
+    if (
       /(?:mass email(?:ing)?|bulk email(?:ing)?).{0,120}(?:client contacts?|clients?)/u.test(
         semanticText,
       )
@@ -3185,10 +3691,108 @@ export class CommunityAiAnalysisService {
       return 'A recurring-hiring workflow for saving, sorting, searching, and reusing candidate profiles in a structured talent pool.';
     }
 
-    return cleanedNeed.length >= 30 &&
+    if (
+      candidateNeedIsAligned &&
+      cleanedNeed.length >= 30 &&
       !this.looksLikePromotionalOrPublisherText(cleanedNeed)
-      ? this.boundProblemText(cleanedNeed, 220)
-      : 'A bounded validation workflow that gathers explicit user feedback, classifies the observed problem signal, and tests a focused software response before broader implementation.';
+    ) {
+      return this.boundProblemText(cleanedNeed, 220);
+    }
+
+    if (primaryEvidenceFamily) {
+      return `A focused workflow that diagnoses and resolves ${primaryEvidenceFamily.label.toLowerCase()} using the retained evidence as the validation baseline, while routing uncertain cases to human review.`;
+    }
+
+    return 'A focused workflow that diagnoses the specific retained user friction, preserves the affected workflow context, and validates a human-reviewed recovery path before broader demand claims are made.';
+  }
+
+  private introducesUnsupportedSemanticConcept(
+    candidate: string,
+    evidenceContext: string,
+  ): boolean {
+    const normalizedCandidate = this.normalizeComparableText(candidate);
+    const normalizedEvidence = this.normalizeComparableText(evidenceContext);
+
+    if (!normalizedCandidate || !normalizedEvidence) {
+      return false;
+    }
+
+    const conceptGroups: readonly {
+      readonly candidate: RegExp;
+      readonly evidence: RegExp;
+    }[] = [
+      {
+        candidate: /(?:artificial intelligence|\bai\b|ai assisted|ai generated|llm|machine learning|model inference|prompt)/u,
+        evidence: /(?:artificial intelligence|\bai\b|ai assistant|llm|machine learning|model inference|prompt|generated code)/u,
+      },
+      {
+        candidate: /(?:security audit|vulnerabilit|breach|hack|cyber attack|threat model|penetration test)/u,
+        evidence: /(?:security audit|vulnerabilit|breach|hack|cyber attack|threat model|penetration test|malware|phishing)/u,
+      },
+      {
+        candidate: /(?:financial equation|deterministic calculation|cash flow|npv|payback|budget|accounting|invoice reconciliation|pricing model)/u,
+        evidence: /(?:financial equation|calculation|cash flow|npv|payback|budget|accounting|invoice|pricing|price forecast|gas price|electricity price)/u,
+      },
+      {
+        candidate: /(?:legal research|legal document|contract execution|proof verification|attorney|law database|case law)/u,
+        evidence: /(?:legal research|legal document|contract|attorney|law database|case law|legal workflow)/u,
+      },
+      {
+        candidate: /(?:therapeutic continuity|therapeutic persona|voice continuity|counselor like|counsellor like|persona continuity|tone continuity|asset regression)/u,
+        evidence: /(?:(?:voice|voices|persona|personality|tone|warmth|counselor|counsellor|therapist|interaction style|memory of conversations?)\b[^.!?]{0,180}\b(?:changed|different|gone|removed|deleted|stranger|not the same|bring back|latest update|after an? update|lost|stopped remembering|no longer remembers?)|(?:changed|different|gone|removed|deleted|stranger|not the same|bring back|latest update|after an? update|lost|stopped remembering|no longer remembers?)\b[^.!?]{0,180}\b(?:voice|voices|persona|personality|tone|warmth|counselor|counsellor|therapist|interaction style|memory of conversations?))/u,
+      },
+      {
+        candidate: /(?:clinical|patient|medical|sparse measurement|missing by design|missingness|imputation|clinical data quality)/u,
+        evidence: /(?:(?:patient|clinical|medical|physionet|sepsis|test results?)\b[^.!?]{0,160}\b(?:missing|null|sparse|measurement|imput|forward fill)|(?:missing|null|sparse|imput|forward fill|test results?)\b[^.!?]{0,160}\b(?:patient|clinical|medical|physionet|sepsis))/u,
+      },
+      {
+        candidate: /(?:authentication|account recovery|account access|login|sign in|identity provider|\boauth\b|\bmfa\b|\b2fa\b|credential|password)/u,
+        evidence: /(?:authentication|account access|login|log in|sign in|signin|identity provider|\boauth\b|\bmfa\b|\b2fa\b|two factor|credential|password|verification code|can t access|cannot access|unable to access|only have google|only have apple|create account using email)/u,
+      },
+      {
+        candidate: /(?:google or apple|email based sign up|email sign up|create account using email|registration by email|email registration)/u,
+        evidence: /(?:google or apple|only (?:have|has) google|only (?:have|has) apple|sign up (?:using|with) email|create account (?:using|with) email|email registration|email sign up)/u,
+      },
+      {
+        candidate: /(?:identity provider|\boauth\b|google sign in|google login|apple sign in|apple login|registration provider)/u,
+        evidence: /(?:identity provider|\boauth\b|google (?:sign in|login)|apple (?:sign in|login)|registration provider)/u,
+      },
+      {
+        candidate: /(?:ai coding|coding request|generated code|repository integration|manual refactor|refactoring|bloated code|code assistant)/u,
+        evidence: /(?:ai coding|coding request|generated code|repository|refactor|bloated|code assistant|coding assistant)/u,
+      },
+      {
+        candidate: /(?:blockchain|distributed ledger|smart contract|on chain|web3|wallet transaction)/u,
+        evidence: /(?:blockchain|distributed ledger|smart contract|on chain|web3|wallet|crypto|transaction confirmation)/u,
+      },
+      {
+        candidate: /(?:search and filtering|search criteria|filtering workflow|catalog filtering)/u,
+        evidence: /(?:search|filter|filtering|search criteria|catalog|listing)/u,
+      },
+      {
+        candidate: /(?:routing resilience|routing-resilience|failed navigation|navigation endpoint|broken route|broken navigation|redirect failure|deep link failure)/u,
+        evidence: /(?:404|not found|broken link|broken route|route (?:fails|failed|failure)|navigation (?:fails|failed|failure)|cannot navigate|can t navigate|redirect (?:fails|failed|failure)|deep link (?:fails|failed|failure))/u,
+      },
+      {
+        candidate: /(?:crash|runtime failure|application stability|crash recovery)/u,
+        evidence: /(?:\bcrash(?:es|ed|ing)?\b|runtime failure|application stability|unexpected closure|force close)/u,
+      },
+    ];
+
+    return conceptGroups.some(
+      (group) =>
+        group.candidate.test(normalizedCandidate) &&
+        !group.evidence.test(normalizedEvidence),
+    );
+  }
+
+  private isInternalQualificationText(value: string): boolean {
+    const normalized = this.normalizeComparableText(value);
+    if (!normalized) return false;
+
+    return /(?:bounded workflow that addresses the concrete retained evidence|measures whether the observed friction improves|keeps broader demand claims preliminary|additional independent evidence|validation workflow that preserves the requester described problem|requester intent validation|problem discovery validation and configurable pilot workflow|focused workflow that diagnoses the specific retained user friction|preserves the affected workflow context|human reviewed recovery path|evidence grounded workflow diagnosis)/u.test(
+      normalized,
+    );
   }
 
   /** Removes broken sentence prefixes created by upstream bounded slicing. */
@@ -3228,6 +3832,14 @@ export class CommunityAiAnalysisService {
       .replace(
         /\bUsers experience complete failure when attempting to\b/giu,
         'One user reported a complete failure when attempting to',
+      )
+      .replace(
+        /\bUsers consistently (?:experience|encounter|face)\b/giu,
+        'One user reported experiencing',
+      )
+      .replace(
+        /\bUsers consistently\b/giu,
+        'One user reported that they',
       )
       .replace(
         /\bUsers (?:experience|encounter|face)\b/giu,
@@ -3416,11 +4028,16 @@ export class CommunityAiAnalysisService {
         const problemIsDirect =
           this.looksLikeDirectProblemEvidence(opportunity.problem) &&
           !this.looksLikePromotionalOrPublisherText(opportunity.problem);
+        const problemAtomicMatch = matchEvidenceToAtomicProblem(
+          opportunity.problem,
+          primaryEvidence,
+        );
         const problemMatchesEvidence =
+          problemAtomicMatch.matched ||
           this.tokenOverlap(
             this.normalizeComparableText(opportunity.problem),
             this.normalizeComparableText(primaryEvidence),
-          ) >= 0.16;
+          ) >= 0.28;
 
         const baseGroundedProblem =
           opportunityAtomicReductionCount === 0 &&
@@ -3435,15 +4052,47 @@ export class CommunityAiAnalysisService {
           atomicEvidence.length === 1
             ? this.singularizeSingleReportProblem(baseGroundedProblem)
             : baseGroundedProblem;
-        const groundedNeed = this.buildProfessionalFallbackNeed(
+        const preliminaryNeed = this.buildProfessionalFallbackNeed(
           opportunity.unmetNeed,
           groundedProblem,
+          primaryEvidence,
         );
-        const groundedTitle = this.deriveTitle(
+        const atomicEvidenceContext = this.normalizeComparableText(
+          `${groundedProblem} ${primaryEvidence}`,
+        );
+        const groundedNeed = this.introducesUnsupportedSemanticConcept(
+          preliminaryNeed,
+          atomicEvidenceContext,
+        )
+          ? this.buildProfessionalFallbackNeed(
+              '',
+              groundedProblem,
+              primaryEvidence,
+            )
+          : preliminaryNeed;
+        const preliminarySolutionArea =
+          this.buildProfessionalFallbackSolutionArea(
+            opportunity.solutionArea,
+            groundedProblem,
+            primaryEvidence,
+          );
+        const groundedSolutionArea =
+          this.introducesUnsupportedSemanticConcept(
+            preliminarySolutionArea,
+            atomicEvidenceContext,
+          )
+            ? this.buildProfessionalFallbackSolutionArea(
+                '',
+                groundedProblem,
+                primaryEvidence,
+              )
+            : preliminarySolutionArea;
+        const groundedTitle = this.normalizeOpportunityTitle(
+          opportunity.domainName,
+          opportunity.title,
           groundedProblem,
           groundedNeed,
           primaryEvidence,
-          opportunity.domainName,
         );
 
         return [
@@ -3452,11 +4101,7 @@ export class CommunityAiAnalysisService {
             title: groundedTitle,
             problem: groundedProblem,
             unmetNeed: groundedNeed,
-            solutionArea: this.buildProfessionalFallbackSolutionArea(
-              opportunity.solutionArea,
-              groundedProblem,
-              primaryEvidence,
-            ),
+            solutionArea: groundedSolutionArea,
             frequency: Math.max(atomicEvidence.length, 1),
             evidenceSamples: atomicEvidence,
             groundingScore,
@@ -3597,6 +4242,17 @@ export class CommunityAiAnalysisService {
     );
     const normalizedProviderSample =
       this.normalizeComparableText(providerEvidenceSample);
+    const problemSubject = `${opportunity.problem} ${opportunity.unmetNeed}`;
+
+    if (
+      !this.evidenceSemanticallySupportsDomain(
+        context,
+        opportunity.domainName,
+        problemSubject,
+      )
+    ) {
+      return [];
+    }
 
     return corpus
       .filter((sample) => sample.replace(/\s+/gu, ' ').trim().length >= 24)
@@ -3648,9 +4304,9 @@ export class CommunityAiAnalysisService {
                 )
               : semanticAliasMatch
                 ? 0.82
-                : descriptorOverlap >= 0.16 && providerOverlap >= 0.2
-                ? 0.62 + Math.min(0.18, descriptorOverlap * 0.3)
-                : 0;
+                : descriptorOverlap >= 0.24 && providerOverlap >= 0.35
+                  ? 0.64 + Math.min(0.16, descriptorOverlap * 0.25)
+                  : 0;
 
         return { sample, score };
       })

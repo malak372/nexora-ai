@@ -958,13 +958,33 @@ export class AnalysisMergeService {
       );
     }
 
+    if (/search|filtering|filter|search criteria/iu.test(normalizedLabel)) {
+      return /\b(?:search|filter|filtering|filters|search criteria|search option|catalog|listing)\b/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    if (/feature removal|change notification|functionality change/iu.test(normalizedLabel)) {
+      const hasFeatureObject = /\b(?:feature|functionality|capability|option|setting)\b/iu.test(
+        normalizedEvidence,
+      );
+      const hasChange = /\b(?:removed|removal|disappeared|disappear|changed|change|deprecated|replaced)\b/iu.test(
+        normalizedEvidence,
+      );
+      const hasCommunicationNeed = /\b(?:notify|notification|announce|communication|alternative|replacement)\b/iu.test(
+        normalizedEvidence,
+      );
+
+      return hasFeatureObject && hasChange && hasCommunicationNeed;
+    }
+
     if (/navigation|interface|usability/iu.test(normalizedLabel)) {
       return /(?:navigate|navigation|interface|back button|scroll|popup|tab|menu|schedule)/iu.test(
         normalizedEvidence,
       );
     }
 
-    if (/cross-device|desktop|laptop|computer/iu.test(normalizedLabel)) {
+    if (/cross[- ]device|desktop|laptop|computer/iu.test(normalizedLabel)) {
       const hasTargetDevice =
         /(?:desktop|laptop|computer|pc|ios|android|mobile|tablet)/iu.test(
           normalizedEvidence,
@@ -993,7 +1013,18 @@ export class AnalysisMergeService {
       /reliability|crash|stable application|performance/iu.test(normalizedLabel)
     ) {
       if (
-        !/(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+        /\b(?:scratch|scratches|sore|sores|bug bite|bug bites|insect bite|wound|skin)\b/iu.test(
+          normalizedEvidence,
+        ) &&
+        !/\b(?:app|application|software|runtime|screen|process|service)\b/iu.test(
+          normalizedEvidence,
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        !/\b(?:crash|crashes|crashed|crashing|freeze|freezes|frozen)\b|white screen/iu.test(
           normalizedEvidence,
         ) &&
         /(?:login|log in|sign in|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
@@ -1012,11 +1043,11 @@ export class AnalysisMergeService {
       }
 
       const hasExplicitCrash =
-        /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+        /\b(?:crash|crashes|crashed|crashing|freeze|freezes|frozen)\b|white screen/iu.test(
           normalizedEvidence,
         );
       const hasOperationalFailure =
-        /(?:bug|glitch|submission failed|fails? to submit|upload failed|not working|doesn['’]?t work)/iu.test(
+        /\b(?:bug|glitch)\b|submission failed|fails? to submit|upload failed|not working|doesn['’]?t work/iu.test(
           normalizedEvidence,
         ) &&
         !/(?:login|log in|sign in|authentication|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
@@ -1061,7 +1092,7 @@ export class AnalysisMergeService {
     }
 
     if (
-      /desktop|laptop|computer|cross device|cross platform/iu.test(normalized)
+      /\b(?:desktop|laptop)\b|cross[- ]device|cross[- ]platform|(?:computer|pc).{0,50}(?:access|install|download|available)/iu.test(normalized)
     ) {
       return 'Cross-Device Desktop and Laptop Access';
     }
@@ -1093,7 +1124,7 @@ export class AnalysisMergeService {
     }
 
     if (
-      /crash|stable app|stable application|reliability|performance/iu.test(
+      /\b(?:crash|crashes|crashed|crashing|reliability|performance)\b|stable app|stable application/iu.test(
         normalized,
       )
     ) {
@@ -1115,7 +1146,7 @@ export class AnalysisMergeService {
       return 'Connectivity and Device Communication Failures';
     }
 
-    if (/crash|stable|reliable application|performance/iu.test(normalized)) {
+    if (/\b(?:crash|crashes|crashed|crashing|stable|performance)\b|reliable application/iu.test(normalized)) {
       return 'Application Reliability and Crash Failures';
     }
 
@@ -1166,7 +1197,7 @@ export class AnalysisMergeService {
     }
 
     if (
-      /cross-device|cross device|desktop|laptop|computer|mobile only/iu.test(
+      /cross[- ]device|\b(?:desktop|laptop|mobile only)\b|(?:computer|pc).{0,50}(?:access|install|download|available)/iu.test(
         normalized,
       )
     ) {
@@ -1208,7 +1239,7 @@ export class AnalysisMergeService {
     }
 
     if (
-      /crash|instability|reliability|freeze|generic error|glitch/iu.test(
+      /\b(?:crash|crashes|crashed|crashing|instability|reliability|freeze|frozen|glitch)\b|generic error/iu.test(
         normalized,
       )
     ) {

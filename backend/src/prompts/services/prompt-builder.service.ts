@@ -639,21 +639,33 @@ export class PromptBuilderService {
       sampleComments: item.sampleComments,
     }));
 
-    const winnerDomains = input.opportunityRanking?.selected.matchedDomainNames ?? [];
+    const selectedOpportunity = input.opportunityRanking?.selected;
+    const winnerDomains = selectedOpportunity?.matchedDomainNames ?? [];
+    const validationOnly = Boolean(
+      selectedOpportunity?.disqualificationReasons.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      ),
+    );
 
     return [
       'APPLICATION-ENFORCED CROSS-DOMAIN EVIDENCE MAP:',
       '- Keep each evidence sample attached to its domain.',
       ...(winnerDomains.length > 0
         ? [
-            `- The selected opportunity is primarily supported by: ${winnerDomains.join(', ')}.`,
-            '- Use those winner domains for the title, problem framing, and primary affected users. Do not substitute the first selected domain merely because it owns the collection job.',
+            validationOnly
+              ? `- The selected opportunity is an unvalidated requester-defined hypothesis whose allowed validation scope is: ${winnerDomains.join(', ')}.`
+              : `- The selected opportunity is primarily supported by: ${winnerDomains.join(', ')}.`,
+            validationOnly
+              ? '- These validation-scope domains may shape concrete product mechanisms, users, objectives, and pilot checks, but they are not evidence that demand or cross-domain recurrence has been proven.'
+              : '- Use those winner domains for the title, problem framing, and primary affected users. Do not substitute the first selected domain merely because it owns the collection job.',
           ]
         : []),
       '- One valid sample is enough to form a cautious preliminary problem hypothesis.',
       '- selectedDomains define the search space only. matchedDomainNames on the selected opportunity define the final claim space.',
       '- Evidence from a selected domain outside the winner domain set remains alternative evidence and must not be merged into the final title, problem, users, objectives, abstracts, or capabilities.',
-      '- A domain with no collected evidence may remain visible in diagnostics as an unsupported search-space domain, but it must not appear as part of the generated product claim.',
+      validationOnly
+        ? '- In a zero-evidence requester-validation hypothesis, an allowed final-claim domain may appear as an explicit product mechanism or pilot dimension even without retained evidence, but it must never be described as evidence-backed demand.'
+        : '- A domain with no collected evidence may remain visible in diagnostics as an unsupported search-space domain, but it must not appear as part of the generated product claim.',
       '<untrusted_domain_evidence>',
       this.formatJsonForPrompt(
         evidence,
@@ -767,13 +779,21 @@ export class PromptBuilderService {
 
     const domains = input.selectedDomains ?? [];
     const domainNames = domains.map((domain) => domain.name);
-    const winnerDomainNames = input.opportunityRanking?.selected.matchedDomainNames ?? [];
+    const selectedOpportunity = input.opportunityRanking?.selected;
+    const winnerDomainNames = selectedOpportunity?.matchedDomainNames ?? [];
+    const validationOnly = Boolean(
+      selectedOpportunity?.disqualificationReasons.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      ),
+    );
 
     return [
       'APPLICATION-ENFORCED MULTI-DOMAIN IDEA NARRATIVE:',
       '- Return one coherent software product scoped to the selected opportunity. It is cross-domain when matchedDomainNames contains more than one domain backed by verified bundle evidence, or when the selected opportunity is an explicit zero-evidence/request-validation hypothesis whose allowed validation scope contains multiple selected domains.',
       '- title must be a concise public-facing product or capability name, normally 3-10 words. Never expose pipeline scaffolding in the title: do not use Cross-Domain, Multi-Domain, Validation, Request Validation, Validation Pilot, Evidence Validation, Opportunity Discovery, Primary Domain, Preliminary Pilot, or a plus-sign-joined list of domains. Validation status belongs in the problem/abstract, never in the title.',
-      '- problemStatement must be one polished narrative paragraph of 90-180 words. Include only evidence-backed problems that the returned objectives and solution capabilities directly address. Cross-domain and multi-problem ideas are allowed, but every included problem must map to at least one concrete objective, one affected user role, and one product capability.',
+      validationOnly
+        ? '- problemStatement must be one polished narrative paragraph of 90-180 words that preserves the requester-defined problem as an explicitly unvalidated hypothesis. Do not imply retained evidence proved it. Every material problem dimension must map to at least one concrete objective, affected user role, product capability, or pilot measurement.'
+        : '- problemStatement must be one polished narrative paragraph of 90-180 words. Include only evidence-backed problems that the returned objectives and solution capabilities directly address. Cross-domain and multi-problem ideas are allowed, but every included problem must map to at least one concrete objective, one affected user role, and one product capability.',
       '- Do not add legal, HR, recruitment, compliance, AI, or any other selected-domain module that falls outside the selected opportunity matchedDomainNames, even when a separate shortlisted alternative has evidence for it.',
       '- When evidence contains unrelated problems, select the strongest coherent problem cluster instead of combining unrelated feature bundles. relatedOpportunityBundle is the only exception: its items are separate atomic problems with independent evidence that may be combined only at solution-synthesis time when they form one coherent workflow. Never describe bundle items as recurrence of one problem.',
       '- Do not place solutions, objectives, feature lists, "Solution response", numbered portfolio entries, or implementation instructions inside problemStatement.',
@@ -789,8 +809,12 @@ export class PromptBuilderService {
               : []),
             `- Search-space domains outside the final claim set are forbidden in the generated narrative: ${domainNames.filter((name) => !winnerDomainNames.some((winner) => winner.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase())).join(', ') || 'none'}.`,
             winnerDomainNames.length > 1
-              ? `- When referring to the evidence source in prose, use "across ${winnerDomainNames.join(' and ')}" because the selected opportunity itself is verified across those domains.`
-              : `- When referring to the evidence source in prose, use the single verified winner domain ${winnerDomainNames[0]}. Do not describe the product as cross-domain merely because other selected domains produced separate evidence.`,
+              ? validationOnly
+                ? `- The allowed validation scope spans ${winnerDomainNames.join(' and ')}. Refer to these as requester-selected pilot dimensions, never as domains where evidence already verified the problem.`
+                : `- When referring to the evidence source in prose, use "across ${winnerDomainNames.join(' and ')}" because the selected opportunity itself is verified across those domains.`
+              : validationOnly
+                ? `- ${winnerDomainNames[0]} is an allowed validation-scope domain, not a verified evidence source for the requester-defined problem.`
+                : `- When referring to the evidence source in prose, use the single verified winner domain ${winnerDomainNames[0]}. Do not describe the product as cross-domain merely because other selected domains produced separate evidence.`,
           ]
         : []),
       '- objectives must contain exactly 4 concrete, non-overlapping items: at least 2 distinct product capabilities, 1 security/privacy/operational-control capability, and 1 combined pilot measurement objective that establishes a baseline and evaluates directional change. Do not spend two separate objectives on baseline and evaluation.',
@@ -826,15 +850,18 @@ export class PromptBuilderService {
     }
 
     const selected = input.opportunityRanking?.selected;
+    const validationOnly = Boolean(
+      selected?.disqualificationReasons.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      ),
+    );
     const hasDirectEvidence =
-      (selected?.verifiedProblemMatchedEvidenceCount ??
+      !validationOnly &&
+      ((selected?.verifiedProblemMatchedEvidenceCount ??
         selected?.verifiedIndependentEvidenceCount ??
         0) > 0 ||
-      (selected?.independentEvidence?.length ?? 0) > 0 ||
-      (selected?.evidenceSamples.length ?? 0) > 0 ||
-      (input.domainEvidence ?? []).some(
-        (item) => item.evidenceAvailable && item.totalTextsAnalyzed > 0,
-      );
+        (selected?.independentEvidence?.length ?? 0) > 0 ||
+        (selected?.evidenceSamples.length ?? 0) > 0);
 
     if (hasDirectEvidence) {
       return '';
@@ -871,6 +898,22 @@ export class PromptBuilderService {
       ...(isCrossDomain
         ? [
             '- This is a cross-domain validation hypothesis. Build one coherent workflow connecting the allowed domains, but do not claim that community evidence already proves the connection or the demand.',
+            '- Every allowed validation-scope domain must have a material implementation role: at least one concrete mechanism, capability, affected workflow, or pilot measurement. Merely naming a domain is not sufficient.',
+            ...(claimDomains.some((name) => name.trim().toLocaleLowerCase() === 'blockchain')
+              ? [
+                  '- When Blockchain is in the allowed validation scope, express it as one bounded technical mechanism such as a permissioned consortium ledger, cryptographic hash anchoring of record versions, signed record provenance, or an append-only cross-agency verification ledger. Do not satisfy Blockchain with a vague "immutable audit trail" backed only by an ordinary mutable database, and do not claim blockchain adoption or demand is proven.',
+                ]
+              : []),
+            ...(claimDomains.some((name) => name.trim().toLocaleLowerCase() === 'legaltech')
+              ? [
+                  '- When LegalTech is in the allowed validation scope, give it a concrete records/contracts/compliance/dispute-verification role. Do not turn the product into legal advice or claim a legal conclusion.',
+                ]
+              : []),
+            ...(claimDomains.some((name) => name.trim().toLocaleLowerCase() === 'government')
+              ? [
+                  '- When Government is in the allowed validation scope, anchor the workflow in concrete public-sector operations such as permits, licenses, official records, approvals, ownership records, or inter-department processing named by the requester.',
+                ]
+              : []),
             '- The product may validate that only one of these domains ultimately contains the strongest problem; the current output must remain explicit that the cross-domain framing is a pilot assumption.',
           ]
         : [

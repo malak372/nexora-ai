@@ -101,6 +101,14 @@ export class FeatureRequestExtractionService {
       const requestsSeenInSourceText = new Set<string>();
 
       for (const evidenceUnit of evidenceUnits) {
+        if (
+          /\bi need you to (?:know|understand|realize|see|hear)\b/iu.test(
+            evidenceUnit,
+          )
+        ) {
+          continue;
+        }
+
         const directKind = classifyDirectCommunityEvidence(
           evidenceUnit,
           text.sourceType,
@@ -238,7 +246,23 @@ export class FeatureRequestExtractionService {
     }
 
     if (/notification|reminder|deadline alert/iu.test(text)) {
-      return 'Assignment and Deadline Notifications';
+      if (
+        /(?:mental health|mental wellness|wellness|therapy|therapeutic|mood|meditation|self[- ]care)/iu.test(
+          text,
+        )
+      ) {
+        return 'Daily Wellness Reminders';
+      }
+
+      if (
+        /(?:assignment|deadline|student|course|lesson|homework|classroom|education|learning)/iu.test(
+          text,
+        )
+      ) {
+        return 'Assignment and Deadline Notifications';
+      }
+
+      return 'Reminder and Notification Support';
     }
 
     if (
@@ -304,10 +328,14 @@ export class FeatureRequestExtractionService {
     const requestSentence = evidence
       .replace(/\s+/gu, ' ')
       .split(/(?<=[.!?])\s+/u)
-      .find((sentence) =>
-        /\b(?:please(?: also)? add|should(?: also)? add|you should add|would like|would love to|i wish|(?:i['’]?m|i am) looking(?: primarily)? for|i need|we need|do you (?:happen to )?know)\b/iu.test(
-          sentence,
-        ),
+      .find(
+        (sentence) =>
+          !/\bi need you to (?:know|understand|realize|see|hear)\b/iu.test(
+            sentence,
+          ) &&
+          /\b(?:please(?: also)? add|should(?: also)? add|you should add|would like|would love to|i wish|(?:i['’]?m|i am) looking(?: primarily)? for|i need|we need|do you (?:happen to )?know)\b/iu.test(
+            sentence,
+          ),
       );
     const requestPhrase = requestSentence
       ?.replace(

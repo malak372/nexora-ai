@@ -469,6 +469,18 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
    * @returns Normalized search queries.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
+    const plannedQueries = (input.plannedQueries ?? [])
+      .map((query) => this.cleanNormalizedText(query))
+      .filter(Boolean);
+
+    if (plannedQueries.length > 0) {
+      const domainAnchor = this.cleanNormalizedText(input.domainName);
+      return this.unique([
+        ...plannedQueries.slice(0, 5),
+        ...(domainAnchor ? [domainAnchor] : []),
+      ]).slice(0, this.maxSearchQueries);
+    }
+
     const domainKeywords = this.getDomainKeywords(input);
 
     const domainName = this.cleanNormalizedText(input.domainName);
