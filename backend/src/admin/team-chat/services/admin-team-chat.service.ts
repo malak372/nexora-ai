@@ -16,8 +16,6 @@ import { CreateAdminGroupConversationDto } from '../dto/create-admin-group-conve
  *
  * Each conversation includes:
  * - Conversation members and their basic user information.
- * - The latest non-deleted message.
- * - Basic information about the sender of the latest message.
  *
  * @author Eman
  */
@@ -32,20 +30,6 @@ const conversationInclude = Prisma.validator<Prisma.AdminConversationInclude>()(
                         email: true,
                         avatarUrl: true,
                         isActive: true,
-                    },
-                },
-            },
-        },
-        messages: {
-            where: { deletedAt: null },
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-            include: {
-                sender: {
-                    select: {
-                        id: true,
-                        fullName: true,
-                        avatarUrl: true,
                     },
                 },
             },
@@ -79,10 +63,40 @@ type ConversationWithRelations = Prisma.AdminConversationGetPayload<{
  */
 @Injectable()
 export class AdminTeamChatService {
+    private readonly conversationMembersCache = new Map<
+        string,
+        { memberIds: string[]; expiresAt: number }
+    >();
+
+    private readonly conversationMembersCacheTtlMs = 5 * 60 * 1000;
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly events: EventEmitter2,
     ) { }
+
+    private rememberConversationMembers(
+        conversationId: string,
+        memberIds: string[],
+    ) {
+        this.conversationMembersCache.set(conversationId, {
+            memberIds: [...memberIds],
+            expiresAt: Date.now() + this.conversationMembersCacheTtlMs,
+        });
+    }
+
+    private getCachedConversationMemberIds(conversationId: string) {
+        const cached = this.conversationMembersCache.get(conversationId);
+
+        if (!cached) return null;
+
+        if (cached.expiresAt <= Date.now()) {
+            this.conversationMembersCache.delete(conversationId);
+            return null;
+        }
+
+        return cached.memberIds;
+    }
 
     /**
      * Retrieves all active administrators.
@@ -139,11 +153,34 @@ export class AdminTeamChatService {
             include: conversationInclude,
         });
 
-        return Promise.all(
+        const serialized = await Promise.all(
             conversations.map((conversation) =>
                 this.serializeConversation(conversation, currentAdminId),
             ),
         );
+
+        return serialized.sort((left, right) => {
+            const leftTime = (left.lastMessageAt ?? left.updatedAt).getTime();
+            const rightTime = (right.lastMessageAt ?? right.updatedAt).getTime();
+            return rightTime - leftTime;
+        });
+    }
+
+    async getUnreadSummary(currentAdminId: string) {
+        const conversations = await this.listConversations(currentAdminId);
+        const unreadConversations = conversations.filter(
+            (conversation) => conversation.unreadCount > 0,
+        );
+
+        const unreadCount = unreadConversations.reduce(
+            (total, conversation) => total + conversation.unreadCount,
+            0,
+        );
+
+        return {
+            unreadCount,
+            latestMessage: unreadConversations[0]?.lastMessage ?? null,
+        };
     }
 
     /**
@@ -323,6 +360,9 @@ export class AdminTeamChatService {
             where: {
                 conversationId,
                 deletedAt: null,
+                deletions: {
+                    none: { userId: currentAdminId },
+                },
             },
             orderBy: { createdAt: 'desc' },
             take: 100,
@@ -353,11 +393,10 @@ export class AdminTeamChatService {
      * The message content is trimmed before storage.
      * Empty messages are rejected.
      *
-     * Message creation, conversation timestamp update, and sender
-     * read-status update are executed inside a single Prisma transaction.
-     *
-     * After creation, a real-time `admin-chat.message.created`
-     * application event is emitted.
+     * After the message is stored, a real-time
+     * `admin-chat.message.created` application event is emitted.
+     * Conversation metadata and sender read status are then updated
+     * before the request completes.
      *
      * @param currentAdminId The ID of the message sender.
      * @param conversationId The target conversation ID.
@@ -376,31 +415,61 @@ export class AdminTeamChatService {
             throw new BadRequestException('Message content cannot be empty.');
         }
 
-        const conversation = await this.getConversationForMember(
-            conversationId,
-            currentAdminId,
-        );
+        let memberIds = this.getCachedConversationMemberIds(conversationId);
 
-        const now = new Date();
-
-        const [message] = await this.prisma.$transaction([
-            this.prisma.adminChatMessage.create({
-                data: {
-                    conversationId,
-                    senderId: currentAdminId,
-                    content,
+        if (!memberIds?.includes(currentAdminId)) {
+            const conversation = await this.prisma.adminConversation.findFirst({
+                where: {
+                    id: conversationId,
+                    members: {
+                        some: { userId: currentAdminId },
+                    },
                 },
-                include: {
-                    sender: {
+                select: {
+                    members: {
                         select: {
-                            id: true,
-                            fullName: true,
-                            email: true,
-                            avatarUrl: true,
+                            userId: true,
                         },
                     },
                 },
-            }),
+            });
+
+            if (!conversation) {
+                throw new ForbiddenException(
+                    'You do not have access to this conversation.',
+                );
+            }
+
+            memberIds = conversation.members.map((member) => member.userId);
+            this.rememberConversationMembers(conversationId, memberIds);
+        }
+
+        const now = new Date();
+
+        const message = await this.prisma.adminChatMessage.create({
+            data: {
+                conversationId,
+                senderId: currentAdminId,
+                content,
+            },
+            include: {
+                sender: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true,
+                        avatarUrl: true,
+                    },
+                },
+            },
+        });
+
+        this.events.emit('admin-chat.message.created', {
+            message,
+            memberIds,
+        });
+
+        await Promise.all([
             this.prisma.adminConversation.update({
                 where: { id: conversationId },
                 data: { lastMessageAt: now },
@@ -416,15 +485,126 @@ export class AdminTeamChatService {
             }),
         ]);
 
-        const memberIds = conversation.members.map((member) => member.userId);
-
-        this.events.emit('admin-chat.message.created', {
-            message,
-            memberIds,
-        });
-
         return message;
     }
+
+
+    async deleteMessage(
+        currentAdminId: string,
+        conversationId: string,
+        messageId: string,
+        rawScope: string,
+    ) {
+        const scope = rawScope.trim().toLowerCase();
+
+        if (scope !== 'me' && scope !== 'everyone') {
+            throw new BadRequestException('Invalid message deletion scope.');
+        }
+
+        const conversation = await this.getConversationForMember(
+            conversationId,
+            currentAdminId,
+        );
+
+        const message = await this.prisma.adminChatMessage.findFirst({
+            where: {
+                id: messageId,
+                conversationId,
+            },
+            select: {
+                id: true,
+                senderId: true,
+                deletedAt: true,
+            },
+        });
+
+        if (!message) {
+            throw new NotFoundException('Message not found.');
+        }
+
+        if (scope === 'everyone') {
+            if (message.senderId !== currentAdminId) {
+                throw new ForbiddenException(
+                    'You can only delete your own message for everyone.',
+                );
+            }
+
+            if (!message.deletedAt) {
+                await this.prisma.$transaction(async (tx) => {
+                    await tx.adminChatMessage.update({
+                        where: { id: messageId },
+                        data: { deletedAt: new Date() },
+                    });
+
+                    const latestMessage = await tx.adminChatMessage.findFirst({
+                        where: {
+                            conversationId,
+                            deletedAt: null,
+                        },
+                        orderBy: { createdAt: 'desc' },
+                        select: { createdAt: true },
+                    });
+
+                    await tx.adminConversation.update({
+                        where: { id: conversationId },
+                        data: {
+                            lastMessageAt: latestMessage?.createdAt ?? null,
+                        },
+                    });
+                });
+            }
+
+            const payload = {
+                conversationId,
+                messageId,
+                scope: 'everyone' as const,
+                userId: currentAdminId,
+            };
+
+            this.events.emit('admin-chat.message.deleted', {
+                ...payload,
+                memberIds: conversation.members.map((member) => member.userId),
+            });
+
+            this.events.emit('admin-chat.conversation.changed', {
+                conversationId,
+                memberIds: conversation.members.map((member) => member.userId),
+            });
+
+            return payload;
+        }
+
+        if (!message.deletedAt) {
+            await this.prisma.adminChatMessageDeletion.upsert({
+                where: {
+                    messageId_userId: {
+                        messageId,
+                        userId: currentAdminId,
+                    },
+                },
+                update: {},
+                create: {
+                    messageId,
+                    userId: currentAdminId,
+                },
+            });
+        }
+
+        const payload = {
+            conversationId,
+            messageId,
+            scope: 'me' as const,
+            userId: currentAdminId,
+        };
+
+        this.events.emit('admin-chat.message.deleted', {
+            ...payload,
+            memberIds: [currentAdminId],
+        });
+
+        return payload;
+    }
+
 
     /**
      * Marks a conversation as read for the current administrator.
@@ -436,6 +616,7 @@ export class AdminTeamChatService {
      * @param conversationId The ID of the conversation.
      * @returns The conversation ID and updated read timestamp.
      */
+
     async markRead(currentAdminId: string, conversationId: string) {
         const conversation = await this.getConversationForMember(
             conversationId,
@@ -496,6 +677,11 @@ export class AdminTeamChatService {
             );
         }
 
+        this.rememberConversationMembers(
+            conversation.id,
+            conversation.members.map((member) => member.userId),
+        );
+
         return conversation;
     }
 
@@ -551,20 +737,49 @@ export class AdminTeamChatService {
         conversation: ConversationWithRelations,
         currentAdminId: string,
     ) {
+        this.rememberConversationMembers(
+            conversation.id,
+            conversation.members.map((member) => member.userId),
+        );
+
         const currentMembership = conversation.members.find(
             (member) => member.userId === currentAdminId,
         );
 
         const lastReadAt = currentMembership?.lastReadAt ?? null;
 
-        const unreadCount = await this.prisma.adminChatMessage.count({
-            where: {
-                conversationId: conversation.id,
-                senderId: { not: currentAdminId },
-                deletedAt: null,
-                ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
-            },
-        });
+        const [unreadCount, lastMessage] = await Promise.all([
+            this.prisma.adminChatMessage.count({
+                where: {
+                    conversationId: conversation.id,
+                    senderId: { not: currentAdminId },
+                    deletedAt: null,
+                    deletions: {
+                        none: { userId: currentAdminId },
+                    },
+                    ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
+                },
+            }),
+            this.prisma.adminChatMessage.findFirst({
+                where: {
+                    conversationId: conversation.id,
+                    deletedAt: null,
+                    deletions: {
+                        none: { userId: currentAdminId },
+                    },
+                },
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    sender: {
+                        select: {
+                            id: true,
+                            fullName: true,
+                            avatarUrl: true,
+                        },
+                    },
+                },
+            }),
+        ]);
 
         const otherMembers = conversation.members
             .filter((member) => member.userId !== currentAdminId)
@@ -588,7 +803,7 @@ export class AdminTeamChatService {
             displayAvatarUrl,
             createdAt: conversation.createdAt,
             updatedAt: conversation.updatedAt,
-            lastMessageAt: conversation.lastMessageAt,
+            lastMessageAt: lastMessage?.createdAt ?? null,
             unreadCount,
             members: conversation.members.map((member) => ({
                 id: member.user.id,
@@ -597,7 +812,7 @@ export class AdminTeamChatService {
                 avatarUrl: member.user.avatarUrl,
                 isActive: member.user.isActive,
             })),
-            lastMessage: conversation.messages[0] || null,
+            lastMessage: lastMessage || null,
         };
     }
 }

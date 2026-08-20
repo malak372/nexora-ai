@@ -800,60 +800,87 @@ export default function AdminEvidenceLibraryPage() {
           </div>
         ) : !error ? (
           <>
-            <div className="admin-evidence-table-wrap">
-              <table className="admin-evidence-table">
-                <thead>
-                  <tr>
-                    <th>Evidence</th>
-                    <th>Source</th>
-                    <th>Author</th>
-                    <th>Language</th>
-                    <SortHeader label="Engagement" column="engagement" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                    <SortHeader label="Published" column="published" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                    <SortHeader label="Collected" column="collected" sortBy={sortBy} sortOrder={sortOrder} onSort={applySort} />
-                    <th className="admin-evidence-actions-head">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((item, index) => {
-                    const id = firstValue(item, ['id', 'externalId', 'commentId'], `${page}-${index}`);
-                    const source = evidenceSource(item);
-                    const sentiment = evidenceSentiment(item);
+            <div className="admin-evidence-grid">
+              {rows.map((item, index) => {
+                const id = firstValue(item, ['id', 'externalId', 'commentId'], `${page}-${index}`);
+                const source = evidenceSource(item);
+                const sentiment = evidenceSentiment(item);
 
-                    return (
-                      <tr key={String(id)} onClick={() => setSelected(item)}>
-                        <td>
-                          <div className="admin-evidence-text-cell">
-                            <span className="admin-evidence-row-icon"><FileText size={15} /></span>
-                            <div>
-                              <strong>{evidenceContent(item)}</strong>
-                              <small>{sentiment ? `Sentiment: ${sentiment}` : 'Pipeline evidence record'}</small>
-                            </div>
-                          </div>
-                        </td>
-                        <td><span className="admin-evidence-source-pill"><i>{sourceInitial(source)}</i>{source}</span></td>
-                        <td><span className="admin-evidence-plain-cell">{evidenceAuthor(item)}</span></td>
-                        <td><span className="admin-evidence-language-pill">{evidenceLanguage(item)}</span></td>
-                        <td><span className="admin-evidence-engagement"><Heart size={13} /> {evidenceEngagement(item).toLocaleString()}</span></td>
-                        <td><span className="admin-evidence-date">{formatDate(publishedAt(item), true)}</span></td>
-                        <td><span className="admin-evidence-date">{formatDate(collectedAt(item), true)}</span></td>
-                        <td>
-                          <button
-                            type="button"
-                            className="admin-evidence-inspect-btn"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setSelected(item);
-                            }}
-                          >
-                            Inspect
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                return (
+                  <article
+                    key={String(id)}
+                    className="admin-evidence-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelected(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelected(item);
+                      }
+                    }}
+                  >
+                    <div className="admin-evidence-card__hero">
+                      <div className="admin-evidence-card__identity">
+                        <span className="admin-evidence-card__icon"><FileText size={18} /></span>
+                        <div className="admin-evidence-card__headline">
+                          <small>Evidence</small>
+                          <strong>{evidenceContent(item)}</strong>
+                          <span>{sentiment ? `Sentiment: ${sentiment}` : 'Pipeline evidence record'}</span>
+                        </div>
+                      </div>
+                      <i className="admin-evidence-card__dots" aria-hidden="true" />
+                    </div>
+
+                    <div className="admin-evidence-card__meta-grid">
+                      <div className="admin-evidence-card__meta-item">
+                        <small>Source</small>
+                        <div className="admin-evidence-source-pill"><i>{sourceInitial(source)}</i>{source}</div>
+                      </div>
+
+                      <div className="admin-evidence-card__meta-item">
+                        <small>Author</small>
+                        <strong className="admin-evidence-card__text">{evidenceAuthor(item)}</strong>
+                      </div>
+
+                      <div className="admin-evidence-card__meta-item">
+                        <small>Language</small>
+                        <div className="admin-evidence-language-pill">{evidenceLanguage(item)}</div>
+                      </div>
+
+                      <div className="admin-evidence-card__meta-item">
+                        <small>Engagement</small>
+                        <div className="admin-evidence-engagement"><Heart size={13} /> {evidenceEngagement(item).toLocaleString()}</div>
+                      </div>
+
+                      <div className="admin-evidence-card__meta-item admin-evidence-card__meta-item--wide">
+                        <small>Published</small>
+                        <strong className="admin-evidence-card__text">{formatDate(publishedAt(item), true)}</strong>
+                      </div>
+
+                      <div className="admin-evidence-card__meta-item admin-evidence-card__meta-item--wide">
+                        <small>Collected</small>
+                        <strong className="admin-evidence-card__text">{formatDate(collectedAt(item), true)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="admin-evidence-card__footer">
+                      <span className="admin-evidence-card__actions-label">Actions</span>
+                      <button
+                        type="button"
+                        className="admin-evidence-inspect-btn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelected(item);
+                        }}
+                      >
+                        <Search size={15} />
+                        <span>Inspect</span>
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
 
             <div className="admin-evidence-pagination">

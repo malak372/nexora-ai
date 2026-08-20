@@ -64,6 +64,7 @@ function resolveForwardStage(currentKey, incomingKey) {
 
   const currentSequence = STAGE_SEQUENCE.get(currentKey) ?? 0;
   const incomingSequence = STAGE_SEQUENCE.get(incomingKey) ?? 0;
+
   return incomingSequence >= currentSequence ? incomingKey : currentKey;
 }
 
@@ -72,13 +73,17 @@ function resolveFurthestStageKey(stages = []) {
     const stageKey = stage?.stageKey ?? stage?.key;
     const status = String(stage?.status ?? '').toUpperCase();
 
-    if (!stageKey || !['RUNNING', 'COMPLETED', 'SUCCEEDED', 'SKIPPED'].includes(status)) {
+    if (
+      !stageKey ||
+      !['RUNNING', 'COMPLETED', 'SUCCEEDED', 'SKIPPED'].includes(status)
+    ) {
       return resolvedKey;
     }
 
     return resolveForwardStage(resolvedKey, stageKey);
   }, null);
 }
+
 const TERMINAL_STATUSES = new Set([
   'COMPLETED',
   'FAILED',
@@ -86,13 +91,49 @@ const TERMINAL_STATUSES = new Set([
   'NO_RESULT',
 ]);
 
+function getRunIdeaId(run) {
+  return run?.ideaId ?? run?.idea?.id ?? run?.idea?.ideaId ?? null;
+}
+
+function statusRank(status) {
+  switch (String(status ?? '').trim().toUpperCase()) {
+    case 'QUEUED':
+      return 0;
+    case 'RUNNING':
+      return 1;
+    case 'RETRYING':
+      return 2;
+    case 'NO_RESULT':
+      return 3;
+    case 'FAILED':
+    case 'CANCELLED':
+      return 4;
+    case 'COMPLETED':
+      return 5;
+    default:
+      return -1;
+  }
+}
+
+function isFullyResolvedTerminalRun(run) {
+  const status = String(run?.status ?? '').toUpperCase();
+
+  if (!TERMINAL_STATUSES.has(status)) {
+    return false;
+  }
+
+  return status !== 'COMPLETED' || Boolean(getRunIdeaId(run));
+}
+
 function toTimestamp(value) {
   const timestamp = value ? Date.parse(value) : 0;
+
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function mergeStage(stages, nextStage) {
   const incomingKey = nextStage.stageKey ?? nextStage.key;
+
   const index = stages.findIndex(
     (stage) => (stage.stageKey ?? stage.key) === incomingKey,
   );
@@ -114,6 +155,7 @@ function mergeStage(stages, nextStage) {
 
   const copy = [...stages];
   copy[index] = { ...current, ...nextStage };
+
   return copy;
 }
 
@@ -130,43 +172,134 @@ function mergeRunSnapshot(current, incoming) {
       ...incoming,
       id: incoming?.id ?? incoming?.runId,
       runId: incoming?.runId ?? incoming?.id,
+      ideaId:
+        incoming?.ideaId ??
+        incoming?.idea?.id ??
+        incoming?.idea?.ideaId ??
+        null,
       stages: incoming?.stages ?? [],
     };
   }
 
-  if (
-    toTimestamp(incoming?.updatedAt) > 0 &&
-    toTimestamp(current?.updatedAt) > toTimestamp(incoming?.updatedAt)
-  ) {
-    return current;
+  const incomingTimestamp = toTimestamp(incoming?.updatedAt);
+  const currentTimestamp = toTimestamp(current?.updatedAt);
+
+  const incomingIsNewer =
+    incomingTimestamp === 0 ||
+    currentTimestamp === 0 ||
+    incomingTimestamp >= currentTimestamp;
+
+  const merged = incomingIsNewer
+    ? { ...current, ...incoming }
+    : { ...current };
+
+  if (!incomingIsNewer) {
+    [
+      'ideaId',
+      'ideaTitle',
+      'idea',
+      'completedAt',
+      'errorCode',
+      'errorMessage',
+      'generationType',
+      'type',
+      'metadata',
+    ].forEach((key) => {
+      if (incoming?.[key] != null) {
+        merged[key] = incoming[key];
+      }
+    });
   }
 
-  return {
-    ...current,
-    ...incoming,
-    id: incoming?.id ?? incoming?.runId ?? current?.id,
-    runId: incoming?.runId ?? incoming?.id ?? current?.runId,
-    ideaId: incoming?.ideaId ?? current?.ideaId ?? null,
-    startedAt: incoming?.startedAt ?? current?.startedAt ?? null,
-    completedAt: incoming?.completedAt ?? current?.completedAt ?? null,
-    cancelRequestedAt:
-      incoming?.cancelRequestedAt ?? current?.cancelRequestedAt ?? null,
-    currentStageKey: resolveForwardStage(
-      current?.currentStageKey,
-      resolveForwardStage(
-        incoming?.currentStageKey,
-        resolveFurthestStageKey(incoming?.stages ?? []),
-      ),
+  const currentStatus = String(
+    current?.status ?? 'QUEUED',
+  ).toUpperCase();
+
+  const incomingStatus = String(
+    incoming?.status ?? '',
+  ).toUpperCase();
+
+  const resumedFromRetry =
+    currentStatus === 'RETRYING' &&
+    incomingStatus === 'RUNNING';
+
+  if (
+    incomingStatus &&
+    (
+      resumedFromRetry ||
+      statusRank(incomingStatus) >= statusRank(currentStatus)
+    )
+  ) {
+    merged.status = incomingStatus;
+  } else {
+    merged.status = currentStatus;
+  }
+
+  merged.id =
+    incoming?.id ??
+    incoming?.runId ??
+    current?.id;
+
+  merged.runId =
+    incoming?.runId ??
+    incoming?.id ??
+    current?.runId;
+
+  merged.ideaId =
+    incoming?.ideaId ??
+    incoming?.idea?.id ??
+    incoming?.idea?.ideaId ??
+    current?.ideaId ??
+    current?.idea?.id ??
+    current?.idea?.ideaId ??
+    null;
+
+  merged.startedAt =
+    incoming?.startedAt ??
+    current?.startedAt ??
+    null;
+
+  merged.completedAt =
+    incoming?.completedAt ??
+    current?.completedAt ??
+    null;
+
+  merged.cancelRequestedAt =
+    incoming?.cancelRequestedAt ??
+    current?.cancelRequestedAt ??
+    null;
+
+  merged.currentStageKey = resolveForwardStage(
+    current?.currentStageKey,
+    resolveForwardStage(
+      incoming?.currentStageKey,
+      resolveFurthestStageKey(incoming?.stages ?? []),
     ),
-    progressPercent: Math.max(
-      Number(current?.progressPercent ?? 0),
-      Number(incoming?.progressPercent ?? 0),
-    ),
-    stages: mergeStages(current?.stages ?? [], incoming?.stages ?? []),
-  };
+  );
+
+  merged.progressPercent = Math.max(
+    Number(current?.progressPercent ?? 0),
+    Number(incoming?.progressPercent ?? 0),
+  );
+
+  merged.stages = mergeStages(
+    current?.stages ?? [],
+    incoming?.stages ?? [],
+  );
+
+  merged.updatedAt =
+    incomingTimestamp >= currentTimestamp &&
+      incoming?.updatedAt != null
+      ? incoming.updatedAt
+      : current?.updatedAt;
+
+  return merged;
 }
 
-export function useIdeaGenerationSocket(runId, initialRun = null) {
+export function useIdeaGenerationSocket(
+  runId,
+  initialRun = null,
+) {
   const socketRef = useRef(null);
   const mountedRef = useRef(true);
   const requestInFlightRef = useRef(false);
@@ -175,7 +308,9 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
   const socketProvenRef = useRef(false);
 
   const [run, setRun] = useState(initialRun);
-  const [connectionState, setConnectionState] = useState('connecting');
+  const [connectionState, setConnectionState] =
+    useState('connecting');
+
   const [error, setError] = useState('');
   const [errorStatus, setErrorStatus] = useState(null);
 
@@ -195,23 +330,28 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
         const data = await getGenerationRun(runId);
 
         if (mountedRef.current) {
-          setRun((current) => mergeRunSnapshot(current, data));
+          setRun((current) =>
+            mergeRunSnapshot(current, data),
+          );
+
           setError('');
           setErrorStatus(null);
         }
 
         return data;
       } catch (requestError) {
-        const status = requestError?.response?.status ?? null;
+        const status =
+          requestError?.response?.status ?? null;
 
         if (mountedRef.current && !silent) {
           setErrorStatus(status);
+
           setError(
             status === 429
               ? 'Live progress is still running. Status synchronization will retry automatically.'
               : requestError?.response?.data?.message ||
-                  requestError?.message ||
-                  'Generation progress could not be refreshed.',
+              requestError?.message ||
+              'Generation progress could not be refreshed.',
           );
         }
 
@@ -223,23 +363,56 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
     [runId],
   );
 
+  const resolvedIdeaId = getRunIdeaId(run);
+
+  const runStatus = String(
+    run?.status ?? '',
+  ).toUpperCase();
+
   useEffect(() => {
-    if (!runId) return undefined;
+    if (
+      runStatus !== 'COMPLETED' ||
+      resolvedIdeaId
+    ) {
+      return;
+    }
+
+    loadSnapshot({
+      silent: true,
+    }).catch(() => undefined);
+  }, [
+    loadSnapshot,
+    resolvedIdeaId,
+    runStatus,
+  ]);
+
+  useEffect(() => {
+    if (!runId) {
+      return undefined;
+    }
 
     mountedRef.current = true;
     socketProvenRef.current = false;
 
-    const seededRun = initialRun &&
-      String(initialRun?.runId ?? initialRun?.id ?? '') === String(runId)
-      ? initialRun
-      : null;
+    const seededRun =
+      initialRun &&
+        String(
+          initialRun?.runId ??
+          initialRun?.id ??
+          '',
+        ) === String(runId)
+        ? initialRun
+        : null;
 
     setRun(seededRun);
     runRef.current = seededRun;
 
     const clearReconciliationTimer = () => {
       if (reconciliationTimerRef.current) {
-        window.clearTimeout(reconciliationTimerRef.current);
+        window.clearTimeout(
+          reconciliationTimerRef.current,
+        );
+
         reconciliationTimerRef.current = null;
       }
     };
@@ -249,168 +422,250 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
 
       if (
         !mountedRef.current ||
-        TERMINAL_STATUSES.has(runRef.current?.status)
+        isFullyResolvedTerminalRun(runRef.current)
       ) {
         return;
       }
 
-      reconciliationTimerRef.current = window.setTimeout(async () => {
-        let nextDelay = socketProvenRef.current
-          ? SOCKET_RECONCILIATION_MS
-          : FALLBACK_RECONCILIATION_MS;
+      reconciliationTimerRef.current =
+        window.setTimeout(async () => {
+          let nextDelay =
+            socketProvenRef.current
+              ? SOCKET_RECONCILIATION_MS
+              : FALLBACK_RECONCILIATION_MS;
 
-        try {
-          await loadSnapshot({ silent: true });
-        } catch (requestError) {
-          if (requestError?.response?.status === 429) {
-            nextDelay = RATE_LIMIT_RETRY_MS;
+          try {
+            await loadSnapshot({
+              silent: true,
+            });
+          } catch (requestError) {
+            if (
+              requestError?.response?.status === 429
+            ) {
+              nextDelay = RATE_LIMIT_RETRY_MS;
+            }
+          } finally {
+            scheduleReconciliation(nextDelay);
           }
-        } finally {
-          scheduleReconciliation(nextDelay);
-        }
-      }, delay);
+        }, delay);
     };
 
-    /*
-     * Give Socket.IO the first chance to hydrate the page. joinRun emits an
-     * authoritative snapshot immediately, so an eager HTTP request here only
-     * duplicates DB work and can compete with the socket handshake. If the
-     * realtime path is unavailable, the reconciliation loop starts in under a
-     * second and keeps polling until the socket recovers.
-     */
-    scheduleReconciliation(INITIAL_SOCKET_GRACE_MS);
+    scheduleReconciliation(
+      INITIAL_SOCKET_GRACE_MS,
+    );
 
-    const socket = io(`${SOCKET_URL}/idea-generation`, {
-      /*
-       * Do not force WebSocket-only mode. Socket.IO can now connect through
-       * polling and upgrade to WebSocket automatically, which keeps realtime
-       * working behind dev proxies, mobile hotspots, reverse proxies, and
-       * networks that reject a direct WebSocket handshake.
-       */
-      auth: (callback) => {
-        callback({ token: getAccessToken() });
+    const socket = io(
+      `${SOCKET_URL}/idea-generation`,
+      {
+        auth: (callback) => {
+          callback({
+            token: getAccessToken(),
+          });
+        },
+        withCredentials: true,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 350,
+        reconnectionDelayMax: 3_000,
+        timeout: 8_000,
       },
-      withCredentials: true,
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 350,
-      reconnectionDelayMax: 3_000,
-      timeout: 8_000,
-    });
+    );
 
     socketRef.current = socket;
 
     const markRealtimeEvent = () => {
       socketProvenRef.current = true;
+
       setConnectionState('connected');
+
       clearReconciliationTimer();
-      scheduleReconciliation(SOCKET_RECONCILIATION_MS);
+
+      scheduleReconciliation(
+        SOCKET_RECONCILIATION_MS,
+      );
     };
 
     socket.on('connect', () => {
       setConnectionState('joining');
 
-      socket.emit('idea-generation.join', { runId }, (acknowledgement) => {
-        if (!mountedRef.current) return;
+      socket.emit(
+        'idea-generation.join',
+        { runId },
+        (acknowledgement) => {
+          if (!mountedRef.current) {
+            return;
+          }
 
-        if (acknowledgement?.success) {
-          setConnectionState('connected');
-          setError('');
-          setErrorStatus(null);
+          if (acknowledgement?.success) {
+            setConnectionState('connected');
+            setError('');
+            setErrorStatus(null);
+            return;
+          }
 
-          /*
-           * joinRun emits an authoritative socket snapshot before the
-           * acknowledgement, so another HTTP request here only adds latency.
-           */
-          return;
-        }
-
-        setConnectionState('fallback');
-      });
+          setConnectionState('fallback');
+        },
+      );
     });
 
     socket.on('disconnect', () => {
       socketProvenRef.current = false;
+
       setConnectionState('reconnecting');
+
       scheduleReconciliation(250);
     });
 
     socket.on('connect_error', () => {
       socketProvenRef.current = false;
+
       setConnectionState('fallback');
+
       scheduleReconciliation(250);
     });
 
-    socket.on('idea-generation.snapshot', (payload) => {
-      if (payload?.runId !== runId) return;
+    socket.on(
+      'idea-generation.snapshot',
+      (payload) => {
+        if (payload?.runId !== runId) {
+          return;
+        }
 
-      markRealtimeEvent();
-      setRun((current) => mergeRunSnapshot(current, payload));
-      setError('');
-      setErrorStatus(null);
-    });
+        markRealtimeEvent();
 
-    socket.on('idea-generation.run.updated', (payload) => {
-      if (payload?.runId !== runId) return;
-
-      markRealtimeEvent();
-      setRun((current) => mergeRunSnapshot(current, payload));
-    });
-
-    socket.on('idea-generation.stage.updated', (payload) => {
-      if (payload?.runId !== runId) return;
-
-      markRealtimeEvent();
-      setRun((current) => {
-        const stages = mergeStage(current?.stages ?? [], payload);
-
-        return {
-          ...(current ?? {
-            id: runId,
-            runId,
-            status: 'QUEUED',
-            progressPercent: 0,
-            currentStageKey: null,
-            startedAt: null,
-            stages: [],
-          }),
-          status:
-            current?.status === 'QUEUED' &&
-            String(payload.status ?? '').toUpperCase() === 'RUNNING'
-              ? 'RUNNING'
-              : current?.status ?? 'RUNNING',
-          startedAt:
-            current?.startedAt ??
-            (String(payload.status ?? '').toUpperCase() === 'RUNNING'
-              ? payload.startedAt ?? null
-              : null),
-          progressPercent: Math.max(
-            Number(current?.progressPercent ?? 0),
-            Number(payload.progressPercent ?? 0),
+        setRun((current) =>
+          mergeRunSnapshot(
+            current,
+            payload,
           ),
-          currentStageKey: ['RUNNING', 'COMPLETED', 'SUCCEEDED', 'SKIPPED'].includes(
-            String(payload.status ?? '').toUpperCase(),
-          )
-            ? resolveForwardStage(current?.currentStageKey, payload.stageKey)
-            : current?.currentStageKey,
-          stages,
-        };
-      });
-    });
+        );
+
+        setError('');
+        setErrorStatus(null);
+      },
+    );
+
+    socket.on(
+      'idea-generation.run.updated',
+      (payload) => {
+        if (payload?.runId !== runId) {
+          return;
+        }
+
+        markRealtimeEvent();
+
+        setRun((current) =>
+          mergeRunSnapshot(
+            current,
+            payload,
+          ),
+        );
+      },
+    );
+
+    socket.on(
+      'idea-generation.stage.updated',
+      (payload) => {
+        if (payload?.runId !== runId) {
+          return;
+        }
+
+        markRealtimeEvent();
+
+        setRun((current) => {
+          const stages = mergeStage(
+            current?.stages ?? [],
+            payload,
+          );
+
+          return {
+            ...(current ?? {
+              id: runId,
+              runId,
+              status: 'QUEUED',
+              progressPercent: 0,
+              currentStageKey: null,
+              startedAt: null,
+              stages: [],
+            }),
+
+            status:
+              current?.status === 'QUEUED' &&
+                String(
+                  payload.status ?? '',
+                ).toUpperCase() === 'RUNNING'
+                ? 'RUNNING'
+                : current?.status ??
+                'RUNNING',
+
+            startedAt:
+              current?.startedAt ??
+              (
+                String(
+                  payload.status ?? '',
+                ).toUpperCase() ===
+                  'RUNNING'
+                  ? payload.startedAt ??
+                  null
+                  : null
+              ),
+
+            progressPercent: Math.max(
+              Number(
+                current?.progressPercent ??
+                0,
+              ),
+              Number(
+                payload.progressPercent ??
+                0,
+              ),
+            ),
+
+            currentStageKey: [
+              'RUNNING',
+              'COMPLETED',
+              'SUCCEEDED',
+              'SKIPPED',
+            ].includes(
+              String(
+                payload.status ?? '',
+              ).toUpperCase(),
+            )
+              ? resolveForwardStage(
+                current?.currentStageKey,
+                payload.stageKey,
+              )
+              : current?.currentStageKey,
+
+            stages,
+          };
+        });
+      },
+    );
 
     return () => {
       mountedRef.current = false;
+
       clearReconciliationTimer();
 
       if (socket.connected) {
-        socket.emit('idea-generation.leave', { runId }, () => undefined);
+        socket.emit(
+          'idea-generation.leave',
+          { runId },
+          () => undefined,
+        );
       }
 
       socket.removeAllListeners();
       socket.disconnect();
+
       socketRef.current = null;
     };
-  }, [initialRun, loadSnapshot, runId]);
+  }, [
+    initialRun,
+    loadSnapshot,
+    runId,
+  ]);
 
   return {
     run,

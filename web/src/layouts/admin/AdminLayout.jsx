@@ -39,7 +39,8 @@ import {
 } from '../../features/auth/shared/auth.storage';
 import {
   adminTeamChatApi,
-  getAdminTeamChatSocket,
+  createAdminTeamChatSocket,
+  disconnectAdminTeamChatSocket,
 } from '../../features/admin/team-chat/api/adminTeamChatApi';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
 import './admin-layout.css';
@@ -382,9 +383,7 @@ export default function AdminLayout() {
       } catch { }
     };
 
-    void refreshUnread({ announce: true });
-
-    const socket = getAdminTeamChatSocket();
+    const socket = createAdminTeamChatSocket();
 
     const onMessage = (message) => {
       if (!message?.conversationId || message.senderId === user.id) {
@@ -420,12 +419,15 @@ export default function AdminLayout() {
     socket.on('admin-chat:read', onRead);
     socket.on('admin-chat:message-deleted', onMessageDeleted);
 
+    void refreshUnread({ announce: true });
+
     return () => {
       active = false;
       socket.off('admin-chat:message', onMessage);
       socket.off('admin-chat:conversation', onConversation);
       socket.off('admin-chat:read', onRead);
       socket.off('admin-chat:message-deleted', onMessageDeleted);
+      socket.disconnect();
     };
   }, [role, user.id]);
 
@@ -443,41 +445,53 @@ export default function AdminLayout() {
     const syncUser = (event) =>
       setUser(event.detail || getStoredUser() || {});
 
+    const syncAuthSession = (event) => {
+      const nextUser = event.detail?.user || getStoredUser() || {};
+
+      if (!event.detail?.user) {
+        disconnectAdminTeamChatSocket();
+      }
+
+      setUser(nextUser);
+    };
+
     window.addEventListener(
-      'voxidence :user-updated',
+      'nexora:user-updated',
       syncUser,
     );
 
     window.addEventListener(
-      'voxidence :auth-session-changed',
-      syncUser,
+      'nexora:auth-session-changed',
+      syncAuthSession,
     );
 
     return () => {
       window.removeEventListener(
-        'voxidence :user-updated',
+        'nexora:user-updated',
         syncUser,
       );
 
       window.removeEventListener(
-        'voxidence :auth-session-changed',
-        syncUser,
+        'nexora:auth-session-changed',
+        syncAuthSession,
       );
     };
   }, []);
 
   useEffect(() => {
-    const onExpired = () =>
+    const onExpired = () => {
+      disconnectAdminTeamChatSocket();
       navigate('/login', { replace: true });
+    };
 
     window.addEventListener(
-      'voxidence :session-expired',
+      'nexora:session-expired',
       onExpired,
     );
 
     return () =>
       window.removeEventListener(
-        'voxidence :session-expired',
+        'nexora:session-expired',
         onExpired,
       );
   }, [navigate]);
@@ -531,6 +545,7 @@ export default function AdminLayout() {
   );
 
   const signOut = () => {
+    disconnectAdminTeamChatSocket();
     clearAuthSession();
 
     navigate('/login', {

@@ -515,12 +515,11 @@ export default function AdminTeamChatPage() {
 
     const currentUserId = currentUser.id;
 
-    const messagesEndRef = useRef(null);
     const messagesViewportRef = useRef(null);
     const composerRef = useRef(null);
     const directHandledRef = useRef('');
     const activeIdRef = useRef('');
-    const sendQueueRef = useRef(Promise.resolve());
+    const conversationsRef = useRef([]);
 
     const [administrators, setAdministrators] = useState([]);
     const [conversations, setConversations] = useState([]);
@@ -568,6 +567,10 @@ export default function AdminTeamChatPage() {
         setMessageMenuPlacement('down');
     }, [activeId]);
 
+    useEffect(() => {
+        conversationsRef.current = conversations;
+    }, [conversations]);
+
     const applyMessageToConversation = useCallback(
         (message, { read = false } = {}) => {
             if (!message?.conversationId) return;
@@ -607,6 +610,31 @@ export default function AdminTeamChatPage() {
             });
         },
         [currentUserId],
+    );
+
+    const mergeConfirmedMessage = useCallback(
+        (current, message) => {
+            if (current.some((item) => item.id === message.id)) {
+                return current;
+            }
+
+            const optimisticIndex = current.findIndex(
+                (item) =>
+                    item.__optimistic === true &&
+                    item.conversationId === message.conversationId &&
+                    item.senderId === message.senderId &&
+                    item.content === message.content,
+            );
+
+            if (optimisticIndex < 0) {
+                return [...current, message];
+            }
+
+            const next = [...current];
+            next[optimisticIndex] = message;
+            return next;
+        },
+        [],
     );
 
     const filteredConversations = useMemo(() => {
@@ -885,16 +913,25 @@ export default function AdminTeamChatPage() {
         loadMessages(activeId);
     }, [accessGranted, activeId, loadMessages]);
 
+    const scrollMessagesToBottom = useCallback(() => {
+        const viewport = messagesViewportRef.current;
+
+        if (!viewport) return;
+
+        viewport.scrollTop = viewport.scrollHeight;
+    }, []);
+
     /**
      * Automatically scrolls the message area to
      * the latest message whenever the message list changes.
      */
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'end',
+        const frameId = window.requestAnimationFrame(() => {
+            scrollMessagesToBottom();
         });
-    }, [messages]);
+
+        return () => window.cancelAnimationFrame(frameId);
+    }, [messages, scrollMessagesToBottom]);
 
     /**
      * Registers real-time administrator chat Socket.IO listeners.
@@ -914,13 +951,12 @@ export default function AdminTeamChatPage() {
         const onMessage = (message) => {
             if (!message?.conversationId) return;
 
-            const isActive = message.conversationId === activeId;
+            const isActive =
+                message.conversationId === activeIdRef.current;
 
             if (isActive) {
                 setMessages((current) =>
-                    current.some((item) => item.id === message.id)
-                        ? current
-                        : [...current, message],
+                    mergeConfirmedMessage(current, message),
                 );
 
                 if (message.senderId !== currentUserId) {
@@ -932,7 +968,7 @@ export default function AdminTeamChatPage() {
 
             applyMessageToConversation(message, { read: isActive });
 
-            if (!conversations.some(
+            if (!conversationsRef.current.some(
                 (conversation) => conversation.id === message.conversationId,
             )) {
                 void loadConversations({ quiet: true });
@@ -955,7 +991,7 @@ export default function AdminTeamChatPage() {
                 return;
             }
 
-            if (payload.conversationId === activeId) {
+            if (payload.conversationId === activeIdRef.current) {
                 setMessages((current) =>
                     current.filter((message) => message.id !== payload.messageId),
                 );
@@ -981,11 +1017,10 @@ export default function AdminTeamChatPage() {
         };
     }, [
         accessGranted,
-        activeId,
         applyMessageToConversation,
-        conversations,
         currentUserId,
         loadConversations,
+        mergeConfirmedMessage,
     ]);
 
     const sendMessage = (event) => {
@@ -998,8 +1033,32 @@ export default function AdminTeamChatPage() {
             return;
         }
 
+        const optimisticId = `local-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2)}`;
+        const optimisticMessage = {
+            id: optimisticId,
+            conversationId,
+            senderId: currentUserId,
+            content,
+            createdAt: new Date().toISOString(),
+            sender: {
+                id: currentUserId,
+                fullName: currentUser.fullName,
+                email: currentUser.email,
+                avatarUrl: currentUser.avatarUrl,
+            },
+            __optimistic: true,
+        };
+
         setDraft('');
         setError('');
+
+        if (activeIdRef.current === conversationId) {
+            setMessages((current) => [...current, optimisticMessage]);
+        }
+
+        applyMessageToConversation(optimisticMessage, { read: true });
 
         const send = async () => {
             try {
@@ -1010,14 +1069,16 @@ export default function AdminTeamChatPage() {
 
                 if (activeIdRef.current === conversationId) {
                     setMessages((current) =>
-                        current.some((item) => item.id === message.id)
-                            ? current
-                            : [...current, message],
+                        mergeConfirmedMessage(current, message),
                     );
                 }
 
                 applyMessageToConversation(message, { read: true });
             } catch (requestError) {
+                setMessages((current) =>
+                    current.filter((item) => item.id !== optimisticId),
+                );
+
                 setDraft((current) =>
                     current.trim()
                         ? `${content}\n${current}`
@@ -1030,13 +1091,16 @@ export default function AdminTeamChatPage() {
                         'Could not send the message.',
                     ),
                 );
+
+                void loadConversations({ quiet: true });
             }
         };
 
-        sendQueueRef.current = sendQueueRef.current.then(send, send);
+        void send();
 
         window.requestAnimationFrame(() => {
-            composerRef.current?.focus();
+            composerRef.current?.focus({ preventScroll: true });
+            scrollMessagesToBottom();
         });
     };
 
@@ -1469,7 +1533,7 @@ export default function AdminTeamChatPage() {
                                                             </strong>
                                                         ) : null}
 
-                                                        {mine ? (
+                                                        {!message.__optimistic ? (
                                                             <div
                                                                 className="admin-team-chat-message__actions"
                                                                 onBlur={(event) => {
@@ -1555,21 +1619,23 @@ export default function AdminTeamChatPage() {
                                                                             />
                                                                             Delete for me
                                                                         </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            className="is-danger"
-                                                                            onClick={() =>
-                                                                                deleteMessage(
-                                                                                    message.id,
-                                                                                    'everyone',
-                                                                                )
-                                                                            }
-                                                                        >
-                                                                            <Trash2
-                                                                                size={13}
-                                                                            />
-                                                                            Delete for everyone
-                                                                        </button>
+                                                                        {mine ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                className="is-danger"
+                                                                                onClick={() =>
+                                                                                    deleteMessage(
+                                                                                        message.id,
+                                                                                        'everyone',
+                                                                                    )
+                                                                                }
+                                                                            >
+                                                                                <Trash2
+                                                                                    size={13}
+                                                                                />
+                                                                                Delete for everyone
+                                                                            </button>
+                                                                        ) : null}
                                                                     </div>
                                                                 ) : null}
                                                             </div>
@@ -1608,7 +1674,6 @@ export default function AdminTeamChatPage() {
                                         </div>
                                     )}
 
-                                    <div ref={messagesEndRef} />
                                 </div>
 
                                 <form

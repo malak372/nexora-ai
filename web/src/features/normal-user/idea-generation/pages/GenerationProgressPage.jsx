@@ -49,7 +49,8 @@ export default function GenerationProgressPage() {
 
   const pipeline = backendPipeline;
 
-  const isComplete = COMPLETED_RUN_STATUSES.has(run?.status) && Boolean(run?.ideaId);
+  const ideaId = run?.ideaId ?? run?.idea?.id ?? run?.idea?.ideaId ?? null;
+  const isComplete = COMPLETED_RUN_STATUSES.has(run?.status) && Boolean(ideaId);
   const isTerminal = TERMINAL_RUN_STATUSES.has(run?.status);
   const activeStage = pipeline.find((stage) => stage.status === 'active') ?? null;
   const preparingStage = pipeline.find((stage) => stage.key === 'prepare');
@@ -222,7 +223,7 @@ export default function GenerationProgressPage() {
 
       {isComplete ? (
         <CompletionCelebration
-          ideaId={run.ideaId}
+          ideaId={ideaId}
           ideaTitle={run.idea?.title}
           isPremium={run?.generationType === 'PREMIUM_CREDIT'}
           onOpenIdea={(ideaId) => navigate(`/normal/ideas/${ideaId}`, { replace: true })}

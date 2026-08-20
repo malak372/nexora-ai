@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:socket_io_client/socket_io_client.dart' as io;
 
+import '../../../core/network/realtime_socket.dart';
 import '../../../core/storage/session_store.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/api/auth_api.dart';
@@ -43,19 +45,50 @@ class AdminShell extends StatefulWidget {
   State<AdminShell> createState() => _AdminShellState();
 }
 
-class _AdminShellState extends State<AdminShell> {
+class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
   final _api = AdminApi.instance;
   final List<Widget?> _pages = List<Widget?>.filled(4, null);
 
   late int _index;
 
   bool _checkingRole = true;
+  io.Socket? _teamChatSocket;
+  Timer? _teamChatUnreadRefreshTimer;
+  Timer? _teamChatReconnectTimer;
+  Timer? _teamChatSafetySyncTimer;
+  Timer? _teamChatNotificationTimer;
+  OverlayEntry? _teamChatNotificationEntry;
+  String _currentUserId = '';
+  String _lastTeamChatMessageId = '';
+  int _teamChatUnreadCount = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _index = widget.initialIndex.clamp(0, 3).toInt();
     _verifyRole();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_resumeTeamChatNotifications());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _teamChatUnreadRefreshTimer?.cancel();
+    _teamChatReconnectTimer?.cancel();
+    _teamChatSafetySyncTimer?.cancel();
+    _teamChatNotificationTimer?.cancel();
+    _teamChatNotificationEntry?.remove();
+    _detachTeamChatSocketListeners();
+    _teamChatSocket?.dispose();
+    _teamChatSocket = null;
+    super.dispose();
   }
 
   Widget _createPage(int index) {
@@ -83,6 +116,7 @@ class _AdminShellState extends State<AdminShell> {
   Future<void> _verifyRole() async {
     final user = await SessionStore.instance.readUser();
     final role = user?['role']?.toString().trim().toUpperCase() ?? '';
+    _currentUserId = user?['id']?.toString().trim() ?? '';
 
     if (!mounted) return;
 
@@ -99,12 +133,429 @@ class _AdminShellState extends State<AdminShell> {
     setState(() => _checkingRole = false);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_showTeamChatUnreadNotification());
+      unawaited(_initializeTeamChatNotifications());
       unawaited(_warmPrimaryAdminTabs());
     });
   }
 
+  Future<void> _initializeTeamChatNotifications() async {
+    await _connectTeamChatNotificationSocket();
+    await _showTeamChatUnreadNotification();
+  }
+
+  Future<void> _connectTeamChatNotificationSocket() async {
+    try {
+      final existing = _teamChatSocket;
+      final socket =
+          existing ?? await RealtimeSocket.createIsolated('/admin-chat');
+
+      if (existing == null) {
+        _teamChatSocket = socket;
+        _attachTeamChatSocketListeners(socket);
+      }
+
+      if (socket.connected) {
+        _teamChatReconnectTimer?.cancel();
+        _startTeamChatSafetySync();
+        unawaited(_refreshTeamChatUnreadCount());
+      } else {
+        socket.connect();
+        _scheduleTeamChatReconnect();
+      }
+    } catch (_) {
+      _scheduleTeamChatReconnect();
+    }
+  }
+
+  void _attachTeamChatSocketListeners(io.Socket socket) {
+    socket.onConnect(_onTeamChatSocketConnect);
+    socket.onReconnect(_onTeamChatSocketReconnect);
+    socket.onDisconnect(_onTeamChatSocketDisconnect);
+    socket.onConnectError(_onTeamChatSocketFailure);
+    socket.onError(_onTeamChatSocketFailure);
+    socket.on('admin-chat:ready', _onTeamChatSocketReady);
+    socket.on('admin-chat:message', _onTeamChatMessage);
+    socket.on('admin-chat:conversation', _onTeamChatStateChanged);
+    socket.on('admin-chat:read', _onTeamChatStateChanged);
+    socket.on('admin-chat:message-deleted', _onTeamChatStateChanged);
+  }
+
+  void _detachTeamChatSocketListeners() {
+    final socket = _teamChatSocket;
+    if (socket == null) return;
+
+    socket.off('connect', _onTeamChatSocketConnect);
+    socket.off('reconnect', _onTeamChatSocketReconnect);
+    socket.off('disconnect', _onTeamChatSocketDisconnect);
+    socket.off('connect_error', _onTeamChatSocketFailure);
+    socket.off('error', _onTeamChatSocketFailure);
+    socket.off('admin-chat:ready', _onTeamChatSocketReady);
+    socket.off('admin-chat:message', _onTeamChatMessage);
+    socket.off('admin-chat:conversation', _onTeamChatStateChanged);
+    socket.off('admin-chat:read', _onTeamChatStateChanged);
+    socket.off('admin-chat:message-deleted', _onTeamChatStateChanged);
+  }
+
+  void _onTeamChatSocketConnect(dynamic _) {
+    _teamChatReconnectTimer?.cancel();
+    _startTeamChatSafetySync();
+    unawaited(_refreshTeamChatUnreadCount());
+  }
+
+  void _onTeamChatSocketReconnect(dynamic _) {
+    _teamChatReconnectTimer?.cancel();
+    _startTeamChatSafetySync();
+    unawaited(_syncTeamChatUnreadNotification());
+  }
+
+  void _onTeamChatSocketReady(dynamic _) {
+    _teamChatReconnectTimer?.cancel();
+    _startTeamChatSafetySync();
+    unawaited(_syncTeamChatUnreadNotification());
+  }
+
+  void _onTeamChatSocketDisconnect(dynamic _) {
+    _startTeamChatSafetySync();
+    _scheduleTeamChatReconnect();
+  }
+
+  void _onTeamChatSocketFailure(dynamic _) {
+    if (_teamChatSocket?.connected == true) return;
+    _startTeamChatSafetySync();
+    _scheduleTeamChatReconnect();
+  }
+
+  void _scheduleTeamChatReconnect() {
+    if (!mounted) return;
+
+    _teamChatReconnectTimer?.cancel();
+    _teamChatReconnectTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      final socket = _teamChatSocket;
+      if (socket == null) {
+        unawaited(_connectTeamChatNotificationSocket());
+        return;
+      }
+      if (!socket.connected) socket.connect();
+    });
+  }
+
+  void _startTeamChatSafetySync() {
+    _teamChatSafetySyncTimer?.cancel();
+    if (!mounted) return;
+
+    final connected = _teamChatSocket?.connected == true;
+    final interval = connected
+        ? const Duration(seconds: 2)
+        : const Duration(milliseconds: 650);
+
+    _teamChatSafetySyncTimer = Timer(interval, () async {
+      if (!mounted) return;
+      await _syncTeamChatUnreadNotification();
+      _startTeamChatSafetySync();
+    });
+  }
+
+  Future<void> _resumeTeamChatNotifications() async {
+    final socket = _teamChatSocket;
+    if (socket == null) {
+      await _connectTeamChatNotificationSocket();
+    } else if (!socket.connected) {
+      socket.connect();
+      _scheduleTeamChatReconnect();
+    }
+
+    _startTeamChatSafetySync();
+    await _syncTeamChatUnreadNotification();
+  }
+
+  void _onTeamChatMessage(dynamic raw) {
+    if (!mounted || raw is! Map) return;
+
+    final message = Map<String, dynamic>.from(raw);
+    final conversationId = message['conversationId']?.toString().trim() ?? '';
+    final senderId = message['senderId']?.toString().trim() ?? '';
+
+    if (conversationId.isEmpty || senderId == _currentUserId) return;
+
+    final messageId = message['id']?.toString().trim() ?? '';
+    if (messageId.isNotEmpty && messageId == _lastTeamChatMessageId) return;
+    if (messageId.isNotEmpty) _lastTeamChatMessageId = messageId;
+
+    _teamChatUnreadCount += 1;
+
+    final rawSender = message['sender'];
+    final sender = rawSender is Map
+        ? Map<String, dynamic>.from(rawSender)
+        : const <String, dynamic>{};
+    final senderName = sender['fullName']?.toString().trim().isNotEmpty == true
+        ? sender['fullName'].toString().trim()
+        : 'Administrator';
+    final preview = message['content']?.toString().trim() ?? '';
+
+    _showTeamChatSnackBar(
+      senderName: senderName,
+      preview: preview,
+      unreadTotal: _teamChatUnreadCount,
+    );
+  }
+
+  void _onTeamChatStateChanged(dynamic _) {
+    _teamChatUnreadRefreshTimer?.cancel();
+    _teamChatUnreadRefreshTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      unawaited(_refreshTeamChatUnreadCount());
+    });
+  }
+
+  Future<void> _refreshTeamChatUnreadCount() async {
+    try {
+      final conversations = await _api.getTeamChatConversations(force: true);
+      final unreadTotal = conversations.fold<int>(0, (total, conversation) {
+        final count =
+            num.tryParse(conversation['unreadCount']?.toString() ?? '0') ?? 0;
+        return total + count.toInt();
+      });
+
+      if (!mounted) return;
+      _teamChatUnreadCount = unreadTotal;
+    } catch (_) {}
+  }
+
+  void _showTeamChatSnackBar({
+    required String senderName,
+    required String preview,
+    required int unreadTotal,
+  }) {
+    if (!mounted) return;
+
+    final messageText = preview.isNotEmpty
+        ? preview
+        : unreadTotal == 1
+        ? 'You have a new team message.'
+        : 'You have $unreadTotal unread team messages.';
+
+    _teamChatNotificationTimer?.cancel();
+    _teamChatNotificationEntry?.remove();
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final top = MediaQuery.of(context).padding.top + 10;
+
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (overlayContext) => Positioned(
+        top: top,
+        left: 12,
+        right: 12,
+        child: Material(
+          color: Colors.transparent,
+          child: SafeArea(
+            top: false,
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              tween: Tween<double>(begin: 0, end: 1),
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: Transform.translate(
+                    offset: Offset(0, -10 * (1 - value)),
+                    child: Transform.scale(
+                      scale: 0.985 + (0.015 * value),
+                      alignment: Alignment.topCenter,
+                      child: child,
+                    ),
+                  ),
+                );
+              },
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  _teamChatNotificationTimer?.cancel();
+                  if (entry.mounted) entry.remove();
+                  if (_teamChatNotificationEntry == entry) {
+                    _teamChatNotificationEntry = null;
+                  }
+                  unawaited(_open('team-chat'));
+                },
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(11, 10, 10, 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFEFD),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppColors.primaryDark.withValues(alpha: 0.13),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primaryDeep.withValues(alpha: 0.14),
+                        blurRadius: 28,
+                        offset: const Offset(0, 12),
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.035),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: AppColors.primarySoft,
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(
+                            color: AppColors.primaryDark.withValues(
+                              alpha: 0.10,
+                            ),
+                          ),
+                        ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            const Center(
+                              child: Icon(
+                                Icons.forum_rounded,
+                                size: 20,
+                                color: AppColors.primaryDark,
+                              ),
+                            ),
+                            Positioned(
+                              top: 5,
+                              right: 5,
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppColors.primarySoft,
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Team chat',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: AppColors.primaryDark,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w900,
+                                      height: 1.1,
+                                      letterSpacing: 0.15,
+                                    ),
+                                  ),
+                                ),
+                                if (unreadTotal > 1)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primarySoft,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      unreadTotal > 99 ? '99+' : '$unreadTotal',
+                                      style: const TextStyle(
+                                        color: AppColors.primaryDark,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
+                                        height: 1,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              senderName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 12.8,
+                                fontWeight: FontWeight.w900,
+                                height: 1.15,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              messageText,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                height: 1.28,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF4F8F6),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 16,
+                          color: AppColors.primaryDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    _teamChatNotificationEntry = entry;
+    overlay.insert(entry);
+
+    _teamChatNotificationTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (entry.mounted) entry.remove();
+      if (_teamChatNotificationEntry == entry) {
+        _teamChatNotificationEntry = null;
+      }
+    });
+  }
+
   Future<void> _showTeamChatUnreadNotification() async {
+    await _syncTeamChatUnreadNotification(forceShowLatest: true);
+  }
+
+  Future<void> _syncTeamChatUnreadNotification({
+    bool forceShowLatest = false,
+  }) async {
     try {
       final conversations = await _api.getTeamChatConversations(force: true);
       final unread = conversations.where(
@@ -119,13 +570,32 @@ class _AdminShellState extends State<AdminShell> {
         return total + count.toInt();
       });
 
-      if (!mounted || unreadTotal <= 0) return;
+      if (!mounted) return;
+
+      final previousUnreadTotal = _teamChatUnreadCount;
+      _teamChatUnreadCount = unreadTotal;
+      if (unreadTotal <= 0) return;
 
       final latest = unread.isNotEmpty ? unread.first : null;
       final rawLastMessage = latest?['lastMessage'];
       final lastMessage = rawLastMessage is Map
           ? Map<String, dynamic>.from(rawLastMessage)
           : const <String, dynamic>{};
+      final messageId = lastMessage['id']?.toString().trim() ?? '';
+      final senderId = lastMessage['senderId']?.toString().trim() ?? '';
+
+      if (senderId == _currentUserId) return;
+
+      final latestIsNew =
+          messageId.isEmpty || messageId != _lastTeamChatMessageId;
+      final shouldShow =
+          (forceShowLatest && latestIsNew) ||
+          unreadTotal > previousUnreadTotal ||
+          (messageId.isNotEmpty && messageId != _lastTeamChatMessageId);
+
+      if (!shouldShow) return;
+      if (messageId.isNotEmpty) _lastTeamChatMessageId = messageId;
+
       final rawSender = lastMessage['sender'];
       final sender = rawSender is Map
           ? Map<String, dynamic>.from(rawSender)
@@ -138,25 +608,10 @@ class _AdminShellState extends State<AdminShell> {
           : 'Administrator';
       final preview = lastMessage['content']?.toString().trim() ?? '';
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 7),
-          content: Text(
-            preview.isNotEmpty
-                ? '$senderName: $preview'
-                : unreadTotal == 1
-                ? 'You have a new team message.'
-                : 'You have $unreadTotal unread team messages.',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          action: SnackBarAction(
-            label: 'Open',
-            onPressed: () => unawaited(_open('team-chat')),
-          ),
-        ),
+      _showTeamChatSnackBar(
+        senderName: senderName,
+        preview: preview,
+        unreadTotal: unreadTotal,
       );
     } catch (_) {}
   }
