@@ -98,10 +98,10 @@ export class CollectorQueueService {
   constructor(private readonly configService: ConfigService) {
     const configuredConcurrency = this.getPositiveNumber(
       'COLLECTOR_QUEUE_CONCURRENCY',
-      8,
+      16,
     );
 
-    this.concurrency = Math.min(8, Math.max(2, configuredConcurrency));
+    this.concurrency = Math.min(32, Math.max(16, configuredConcurrency));
 
     this.maxQueueSize = this.getPositiveNumber('COLLECTOR_QUEUE_MAX_SIZE', 100);
   }

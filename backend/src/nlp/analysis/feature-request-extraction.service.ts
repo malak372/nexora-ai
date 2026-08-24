@@ -199,9 +199,17 @@ export class FeatureRequestExtractionService {
       }
 
       const normalizedKey = normalizedRequest.toLocaleLowerCase();
-      const concreteRequest = GENERIC_FEATURE_REQUEST_LABELS.has(normalizedKey)
-        ? this.deriveConcreteFeatureRequest(evidence)
-        : normalizedRequest;
+      const isGenericRequest = GENERIC_FEATURE_REQUEST_LABELS.has(normalizedKey);
+      const isNarrativeRequestLabel =
+        /^(?:i|we)\b/iu.test(normalizedRequest) &&
+        normalizedRequest.split(/\s+/u).length >= 5;
+      const derivedRequest =
+        isGenericRequest || isNarrativeRequestLabel
+          ? this.deriveConcreteFeatureRequest(evidence)
+          : null;
+      const concreteRequest = isGenericRequest
+        ? derivedRequest
+        : derivedRequest ?? normalizedRequest;
 
       if (!concreteRequest) {
         continue;
@@ -235,6 +243,18 @@ export class FeatureRequestExtractionService {
 
     if (/dark mode|night mode|dark theme/iu.test(text)) {
       return 'Dark Mode and Theme Support';
+    }
+
+    if (
+      /\b(?:google\s+(?:login|sign[- ]?in)|sign[- ]?in\s+with\s+google)\b/iu.test(
+        text,
+      ) &&
+      /\b(?:two[- ]factor authentication|two[- ]factor|2fa)\b/iu.test(text) &&
+      /\b(?:country|region|regional|not active|not available|unavailable|unsupported)\b/iu.test(
+        text,
+      )
+    ) {
+      return 'Google Login Alternative for Regions Without 2FA';
     }
 
     if (

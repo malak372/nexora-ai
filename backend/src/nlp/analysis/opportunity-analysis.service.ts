@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { isRepositoryOperationalRecord } from '../common/utils/community-evidence.util';
+import { hasDocumentAccessOrDownloadFailure } from '../common/utils/document-access-evidence.util';
 
 import {
   IntelligentAnalysisOutput,
@@ -646,9 +647,7 @@ export class OpportunityAnalysisService {
 
         if (/document|download|syllabus|file/iu.test(normalizedLabel)) {
           return (
-            /(?:document|download|syllabus|attachment|pdf|file|broken link)/iu.test(
-              text,
-            ) &&
+            hasDocumentAccessOrDownloadFailure(text) &&
             !/(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp)/iu.test(
               text,
             )

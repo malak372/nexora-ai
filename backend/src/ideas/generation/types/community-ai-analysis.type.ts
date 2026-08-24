@@ -1,3 +1,17 @@
+export type CommunityAiEvidenceClassification =
+  | 'DIRECT_PROBLEM'
+  | 'SUPPORTING_SIGNAL'
+  | 'UNRELATED';
+
+export type CommunityAiEvidenceTriage = {
+  readonly evidenceId: string;
+  readonly classification: CommunityAiEvidenceClassification;
+  readonly confidence: number;
+  readonly reason: string;
+  readonly problemFamily: string | null;
+  readonly verifiedByDeterministicGuard: boolean;
+};
+
 /**
  * One evidence-grounded opportunity extracted by the community-analysis LLM.
  * Scores use a 0-100 scale because they are later consumed by deterministic
@@ -90,4 +104,11 @@ export type CommunityAiAnalysis = {
   readonly fallbackReason: string | null;
   readonly attemptDiagnostics: readonly CommunityAiAttemptDiagnostic[];
   readonly unvalidatedDomainHypotheses: readonly CommunityAiDomainHypothesis[];
+
+  /**
+   * AI semantic classification of the bounded raw collector corpus. Entries
+   * are post-processed by deterministic request/workflow guards before they are
+   * exposed as accepted triage labels.
+   */
+  readonly evidenceClassifications?: readonly CommunityAiEvidenceTriage[];
 };

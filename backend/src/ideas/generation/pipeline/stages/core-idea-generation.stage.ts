@@ -41,11 +41,12 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
 
   async execute(
     context: IdeaGenerationContext,
+    signal?: AbortSignal,
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
     const benchmarkStartedAt = Date.now();
-    const benchmark = await this.benchmarkService.benchmark(context);
+    const benchmark = await this.benchmarkService.benchmark(context, signal);
     const benchmarkDurationMs = Date.now() - benchmarkStartedAt;
     const winner = benchmark.winner;
     const ranking = context.opportunityRanking;

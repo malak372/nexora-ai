@@ -127,6 +127,23 @@ export class ProblemNormalizerService {
         ],
       },
       {
+        title: 'Blockchain Transaction Execution and Smart Contract Revert Failures',
+        terms: [
+          'transaction reverted',
+          'transaction revert',
+          'execution reverted',
+          'reverted without reason string',
+          'provider error transaction',
+          'providererror transaction',
+          'smart contract transaction failed',
+          'smart contract execution failed',
+          'failed blockchain transaction',
+          'gas estimation failed',
+          'cannot estimate gas',
+          'evm revert',
+        ],
+      },
+      {
         title: 'Document Access and Download Failures',
         terms: [
           'document download failure',
@@ -301,6 +318,24 @@ export class ProblemNormalizerService {
         ],
       },
       {
+        title: 'AI Hallucination and Output Reliability Failures',
+        terms: [
+          'ai hallucination',
+          'model hallucination',
+          'hallucination',
+          'hallucinations',
+          'fabricated facts',
+          'fabricated citations',
+          'made-up facts',
+          'false citations',
+          'wrong facts',
+          'incorrect facts',
+          'unsupported claims',
+          'output reliability',
+          'factuality failure',
+        ],
+      },
+      {
         title: 'Application Reliability and Crash Failures',
         terms: [
           'reliable',
@@ -458,11 +493,17 @@ export class ProblemNormalizerService {
     }
 
     const groups = this.problemGroups[language] ?? [];
-    const matchedGroup = groups.find((group) =>
-      group.terms.some((groupTerm) =>
+    const matchedGroup = groups.find((group) => {
+      if (
+        group.title === 'Application Reliability and Crash Failures' &&
+        !this.hasSoftwareRuntimeContext(normalizedTerm)
+      ) {
+        return false;
+      }
+      return group.terms.some((groupTerm) =>
         this.isRelatedTerm(normalizedTerm, groupTerm),
-      ),
-    );
+      );
+    });
 
     if (matchedGroup) {
       return matchedGroup.title;
@@ -493,6 +534,16 @@ export class ProblemNormalizerService {
       paddedTerm.includes(paddedGroupTerm) ||
       paddedGroupTerm.includes(paddedTerm)
     );
+  }
+
+  private hasSoftwareRuntimeContext(value: string): boolean {
+    const explicitRuntime =
+      /\b(?:runtime error|runtime failure|exception|segfault|application crash|app crash|software crash|browser crash|server crash)\b/iu.test(value);
+    const softwareContext =
+      /\b(?:app|application|software|program|process|server|browser|website|web app|mobile app|desktop app|operating system|api|code|runtime)\b/iu.test(value);
+    const runtimeFailure =
+      /\b(?:crash(?:es|ed|ing)?|freeze|frozen|unresponsive|runtime error|exception|segfault)\b/iu.test(value);
+    return explicitRuntime || (softwareContext && runtimeFailure);
   }
 
   /** Normalizes a term before grouping. */

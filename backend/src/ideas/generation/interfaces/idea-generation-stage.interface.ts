@@ -73,10 +73,12 @@ export interface IdeaGenerationStage {
    * Executes the stage using the current pipeline context.
    *
    * @param context Current idea-generation context.
+   * @param signal Optional cooperative cancellation signal supplied by the pipeline.
    * @returns Updated context and optional result preview.
    */
   execute(
     context: IdeaGenerationContext,
+    signal?: AbortSignal,
   ): Promise<IdeaGenerationStageExecutionResult>;
 
   /**

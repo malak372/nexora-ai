@@ -10,6 +10,8 @@ import {
   scoreCommunityEvidenceQuality,
   segmentCommunityEvidenceIssues,
 } from '../common/utils/community-evidence.util';
+import { hasDocumentAccessOrDownloadFailure } from '../common/utils/document-access-evidence.util';
+import { resolvePrimaryProblemFamily } from '../common/utils/problem-family-matching.util';
 import type { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
 import type { IntelligentAnalysisOutput } from '../pipeline/types/intelligent-analysis.types';
 
@@ -177,7 +179,9 @@ export class ProblemInsightService {
       text.sourceType,
     );
     const hasActionableDirectEvidence =
-      evidenceKind === 'USER_COMPLAINT' || evidenceKind === 'FEATURE_REQUEST';
+      evidenceKind === 'USER_COMPLAINT' ||
+      evidenceKind === 'FEATURE_REQUEST' ||
+      evidenceKind === 'OBSERVED_UNMET_NEED';
     const hasComplaintLexicon =
       this.hasLexiconMatches(text, NlpLexiconType.COMPLAINT) ||
       this.hasLexiconMatches(text, NlpLexiconType.PROBLEM);
@@ -237,6 +241,22 @@ export class ProblemInsightService {
     }
 
     if (type === NlpLexiconType.RELIABILITY) {
+      if (
+        /\b(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b[^.!?]{0,120}\b(?:access|available|availability)\b|\b(?:doesn['’]?t|does not|cannot|can['’]?t|unable to)\s+have\s+access\s+to\s+(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b/iu.test(
+          normalizedEvidence,
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        ['ai-feedback-correction-inflexibility', 'ai-hallucination-output-reliability'].includes(
+          resolvePrimaryProblemFamily(normalizedEvidence)?.key ?? '',
+        )
+      ) {
+        return true;
+      }
+
       if (this.isScientificOrAlgorithmicErrorContext(normalizedEvidence)) {
         return false;
       }
@@ -280,6 +300,14 @@ export class ProblemInsightService {
   ): string[] {
     const text = this.normalizeText(value);
     const terms: string[] = [];
+    const primaryProblemFamily = resolvePrimaryProblemFamily(text);
+
+    if (primaryProblemFamily?.key === 'ai-feedback-correction-inflexibility') {
+      terms.push('ai feedback correction');
+    }
+    if (primaryProblemFamily?.key === 'ai-hallucination-output-reliability') {
+      terms.push('ai hallucination');
+    }
 
     if (language === LanguageCode.AR) {
       if (
@@ -346,9 +374,7 @@ export class ProblemInsightService {
 
     if (
       !hasScriptExecutionPolicyFailure &&
-      /(?:download|document|syllabus|file|link).{0,80}(?:error|fail|broken|null|(?:can(?:not|['’]?t)|can\s+not)|won['’]?t|does(?:n['’]?t| not) open)|(?:error|null).{0,60}(?:download|document|file|syllabus)/iu.test(
-        text,
-      )
+      hasDocumentAccessOrDownloadFailure(text)
     ) {
       terms.push('document download failure');
     }
@@ -378,7 +404,7 @@ export class ProblemInsightService {
     }
 
     if (
-      /(?:keep getting logged out|keeps? logging (?:me|us) out|repeated(?:ly)? logged out|unexpected logout|session (?:expires?|drops?|ends?))/iu.test(
+      /(?:keep getting logged out|keeps? logging (?:me|us) out|repeated(?:ly)? logged out|unexpected logout|session (?:expires?|drops?))/iu.test(
         text,
       )
     ) {
@@ -449,6 +475,10 @@ export class ProblemInsightService {
       terms.push('login failure');
     }
 
+    const legalResearchAccessLimitation =
+      /\b(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b[^.!?]{0,120}\b(?:access|available|availability)\b|\b(?:doesn['’]?t|does not|cannot|can['’]?t|unable to)\s+have\s+access\s+to\s+(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b/iu.test(
+        text,
+      );
     const hasExplicitCrashOrFreeze = this.hasActualSoftwareRuntimeFailure(text);
     const hasOperationalReliabilityFailure =
       /(?:bug|glitch)/iu.test(text) &&
@@ -467,9 +497,10 @@ export class ProblemInsightService {
       );
 
     if (
-      hasExplicitCrashOrFreeze ||
-      hasOperationalReliabilityFailure ||
-      hasGenericError
+      !legalResearchAccessLimitation &&
+      (hasExplicitCrashOrFreeze ||
+        hasOperationalReliabilityFailure ||
+        hasGenericError)
     ) {
       terms.push('crash');
     }
@@ -503,6 +534,20 @@ export class ProblemInsightService {
         text,
       );
 
+    if (/feedback incorporation|correction failure|model correction/iu.test(normalizedTitle)) {
+      return (
+        resolvePrimaryProblemFamily(text)?.key ===
+        'ai-feedback-correction-inflexibility'
+      );
+    }
+
+    if (/hallucination|output reliability|factuality/iu.test(normalizedTitle)) {
+      return (
+        resolvePrimaryProblemFamily(text)?.key ===
+        'ai-hallucination-output-reliability'
+      );
+    }
+
     if (/script execution|execution policy|local tool permission|powershell/iu.test(normalizedTitle)) {
       return (
         /\b(?:powershell|execution polic(?:y|ies)|pssecurityexception|\.ps1|running scripts is disabled|unauthorizedaccess)\b/iu.test(
@@ -527,12 +572,7 @@ export class ProblemInsightService {
 
     if (/document|download|syllabus|file/iu.test(normalizedTitle)) {
       return (
-        /(?:document|download|syllabus|pdf|attachment|file|link)/iu.test(
-          text,
-        ) &&
-        /(?:cannot|can['’]?t|unable|won['’]?t|doesn['’]?t|fail|failed|broken|error|null|not open|open)/iu.test(
-          text,
-        ) &&
+        hasDocumentAccessOrDownloadFailure(text) &&
         !hasAuthenticationContext &&
         !/\b(?:powershell|execution polic(?:y|ies)|pssecurityexception|\.ps1|running scripts is disabled|unauthorizedaccess)\b/iu.test(text)
       );
@@ -549,6 +589,13 @@ export class ProblemInsightService {
     }
 
     if (/reliability|crash|تعطل/iu.test(normalizedTitle)) {
+      if (
+        /\b(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b[^.!?]{0,120}\b(?:access|available|availability)\b|\b(?:doesn['’]?t|does not|cannot|can['’]?t|unable to)\s+have\s+access\s+to\s+(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b/iu.test(
+          text,
+        )
+      ) {
+        return false;
+      }
       const hasExplicitRuntimeFailure = this.hasActualSoftwareRuntimeFailure(text);
       const hasNonAuthOperationalFailure =
         /(?:bug|glitch|submission failed|fails? to submit|upload failed|doesn['’]?t work|not working)/iu.test(
@@ -596,6 +643,12 @@ export class ProblemInsightService {
     const normalizedTitle = title.toLocaleLowerCase();
 
     // Match concrete workflows before the generic word "failure".
+    if (/hallucination|output reliability|factuality/iu.test(normalizedTitle)) {
+      return [
+        /\b(?:hallucinat(?:e|es|ed|ing|ion|ions)|fabricated? (?:facts?|answers?|citations?|sources?)|made[- ]up (?:facts?|answers?|citations?|sources?)|false citations?|wrong facts?|incorrect facts?|unsupported claims?|factuality|grounding)\b/iu,
+      ];
+    }
+
     if (/script execution|execution policy|local tool permission|powershell/iu.test(normalizedTitle)) {
       return [
         /\b(?:powershell|execution polic(?:y|ies)|pssecurityexception|\.ps1|running scripts is disabled|unauthorizedaccess)\b/iu,

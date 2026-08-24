@@ -77,26 +77,26 @@ export const GENERATION_HEARTBEAT_INTERVAL_MS = 15 * 1000;
  * providers will respond. The pipeline must never mark a run completed unless
  * a persisted idea exists and FinalizationStage succeeds.
  */
-export const IDEA_GENERATION_TARGET_BUDGET_MS = 70_000;
+export const IDEA_GENERATION_TARGET_BUDGET_MS = 80_000;
 
 /**
  * Hard safety deadline. The 60-second target is a performance objective, not
  * a reason to destroy a valid run while persistence or a provider call is
  * finishing. External adapters keep their own short timeouts.
  */
-export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 70_000;
+export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 95_000;
 
 /** Maximum provider time allocated to one non-specialized core model. */
-export const IDEA_CORE_MODEL_TIMEOUT_MS = 14_000;
+export const IDEA_CORE_MODEL_TIMEOUT_MS = 18_500;
 
 /**
- * Provider-specific core-generation deadlines. Google receives a wider window
- * because structured idea generation can legitimately exceed sixteen seconds.
- * OpenRouter remains bounded more aggressively so a slow upstream endpoint does
- * not consume the complete generation budget.
+ * Provider-specific core-generation deadlines. OpenRouter remains tightly
+ * bounded because connection failures are usually detected quickly. Direct
+ * Google receives a slightly wider window because production runs have shown
+ * valid Gemini responses arriving just after the previous 18.5-second cutoff.
  */
-export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 12_000;
-export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 14_000;
+export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 18_500;
+export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 22_500;
 
 /** Use a configured local model only after every online core model fails. */
 export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = false;
@@ -145,13 +145,13 @@ export const DEFAULT_STAGE_RETRY_DELAY_MS = 250;
  * A prolonged outage is handled by the persisted RETRYING/PAUSED lifecycle;
  * keeping this bounded prevents a single request from blocking for minutes.
  */
-export const GENERATION_DATABASE_RETRY_MAX_ATTEMPTS = 2;
+export const GENERATION_DATABASE_RETRY_MAX_ATTEMPTS = 5;
 
 /** Initial delay used by exponential database retry backoff. */
-export const GENERATION_DATABASE_RETRY_BASE_DELAY_MS = 150;
+export const GENERATION_DATABASE_RETRY_BASE_DELAY_MS = 350;
 
 /** Maximum delay between database retry attempts. */
-export const GENERATION_DATABASE_RETRY_MAX_DELAY_MS = 500;
+export const GENERATION_DATABASE_RETRY_MAX_DELAY_MS = 2_500;
 
 /** Delay before a paused generation run becomes eligible for recovery. */
 export const GENERATION_PAUSED_RETRY_DELAY_MS = 60_000;
@@ -532,14 +532,15 @@ export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
 
 /**
- * Maximum targeted evidence-recovery attempts per generation run.
+ * Maximum source/query recovery waves per generation run.
  *
- * The pipeline allows exactly one targeted evidence-recovery pass when the
- * initial bounded parallel collection yields no independently verified direct
- * evidence. If recovery also yields zero verified evidence, generation ends
- * with a normal no-result outcome and consumes no entitlement.
+ * Recovery is no longer governed by a short wall-clock deadline. The stage
+ * rotates through problem-focused query pages and source groups until usable
+ * evidence is found or the available source/query space has been exhausted.
+ * This cap is a safety bound against accidental infinite loops rather than a
+ * latency target.
  */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 6;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
 export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0;
@@ -572,7 +573,7 @@ export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = IDEA_MIN_ACCEPTED_QUALI
  * that are already in flight to finish, then the strongest deterministic
  * quality-approved candidate is selected.
  */
-export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 650;
+export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 0;
 
 /**
  * Maximum number of bounded quality-improvement attempts sent to the same
@@ -634,7 +635,7 @@ export const IDEA_BENCHMARK_MAX_CANDIDATES =
  * intentionally larger than the target candidate count. This leaves room for
  * provider fallback without making the benchmark unbounded.
  */
-export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 4;
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 6;
 
 /**
  * Maximum number of bounded regeneration attempts for a quality-approved
@@ -688,6 +689,33 @@ export const IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS = new Set<string>([
   'nvidia/nemotron-nano-9b-v2:free',
   'cohere/north-mini-code:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
-  'mistralai/mistral-small-2603',
   'stepfun/step-3.5-flash',
+]);
+
+/**
+ * Models that remain eligible for core generation but are scheduled after the
+ * faster preferred core rotation when their observed latency sits close to the
+ * bounded core request deadline.
+ */
+export const IDEA_BENCHMARK_SECONDARY_CORE_MODEL_API_IDS = new Set<string>([
+  'qwen/qwen3.6-35b-a3b',
+  'mistralai/mistral-small-3.2-24b-instruct',
+  'openai/gpt-5-mini',
+  'anthropic/claude-haiku-4.5',
+]);
+
+/**
+ * Fast structured-output models preferred in the first online core wave.
+ *
+ * Quality, evidence, and grounding gates remain unchanged. These identifiers
+ * only influence execution order so a known slow model does not consume the
+ * bounded first wave ahead of a faster structured model.
+ */
+export const IDEA_BENCHMARK_FAST_CORE_MODEL_API_IDS = new Set<string>([
+  'gemini-3.6-flash',
+  'google/gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
+  'google/gemini-3.5-flash-lite',
+  'mistralai/mistral-small-2603',
+  'openai/gpt-5.4-nano',
 ]);

@@ -8,6 +8,8 @@ import {
   isLikelyProductDescription,
   isRepositoryOperationalRecord,
 } from '../common/utils/community-evidence.util';
+import { hasDocumentAccessOrDownloadFailure } from '../common/utils/document-access-evidence.util';
+import { resolvePrimaryProblemFamily } from '../common/utils/problem-family-matching.util';
 import { toTitleCase } from '../common/utils/text-formatting.util';
 
 import type { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
@@ -201,6 +203,14 @@ export class NeedExtractionService {
   private inferConcreteNeeds(value: string): string[] {
     const text = value.normalize('NFKC').toLocaleLowerCase();
     const needs: string[] = [];
+    const primaryProblemFamily = resolvePrimaryProblemFamily(text);
+
+    if (primaryProblemFamily?.key === 'ai-feedback-correction-inflexibility') {
+      needs.push('ai feedback incorporation and correction workflow');
+    }
+    if (primaryProblemFamily?.key === 'ai-hallucination-output-reliability') {
+      needs.push('ai hallucination and output reliability verification');
+    }
 
     if (this.hasCrossDeviceAccessFailure(text)) {
       needs.push('desktop and laptop access');
@@ -230,11 +240,7 @@ export class NeedExtractionService {
       needs.push('clear and stable navigation');
     }
 
-    if (
-      /(?:download|document|syllabus|file|link).{0,80}(?:error|fail|broken|null|(?:can(?:not|['’]?t)|can\s+not)|won['’]?t|does(?:n['’]?t| not) open)|(?:error|null).{0,60}(?:download|document|file|syllabus)/iu.test(
-        text,
-      )
-    ) {
+    if (hasDocumentAccessOrDownloadFailure(text)) {
       needs.push('reliable document access and downloads');
     }
 
@@ -255,6 +261,10 @@ export class NeedExtractionService {
     }
 
     const runtimeSafeText = this.removeNonRuntimeFailureLanguage(text);
+    const legalResearchAccessLimitation =
+      /\b(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b[^.!?]{0,120}\b(?:access|available|availability)\b|\b(?:doesn['’]?t|does not|cannot|can['’]?t|unable to)\s+have\s+access\s+to\s+(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b/iu.test(
+        text,
+      );
     if (
       /\bstreaming\b.{0,60}\b(?:pipeline|data|payload|feed)\b|\b(?:pipeline|data)\b.{0,60}\bstreaming\b/iu.test(
         text,
@@ -275,9 +285,7 @@ export class NeedExtractionService {
     }
 
     const hasExplicitCrashOrFreeze =
-      /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
-        runtimeSafeText,
-      );
+      primaryProblemFamily?.key === 'crash-runtime';
     const hasOperationalReliabilityFailure =
       /(?:bug|glitch)/iu.test(text) &&
       /(?:app|application|software|screen|submission|upload|save|work)/iu.test(
@@ -296,9 +304,10 @@ export class NeedExtractionService {
       );
 
     if (
-      hasExplicitCrashOrFreeze ||
-      hasOperationalReliabilityFailure ||
-      hasGenericOperationalError
+      !legalResearchAccessLimitation &&
+      (hasExplicitCrashOrFreeze ||
+        hasOperationalReliabilityFailure ||
+        hasGenericOperationalError)
     ) {
       needs.push('stable crash-resistant operation');
     }
@@ -441,6 +450,12 @@ export class NeedExtractionService {
       return [/\b(?:verification|activation|email|code|otp|login|sign in)\b/iu];
     }
 
+    if (/hallucination|output reliability|factuality/iu.test(normalizedNeed)) {
+      return [
+        /\b(?:hallucinat(?:e|es|ed|ing|ion|ions)|fabricated? (?:facts?|answers?|citations?|sources?)|made[- ]up (?:facts?|answers?|citations?|sources?)|false citations?|wrong facts?|incorrect facts?|unsupported claims?|factuality|grounding)\b/iu,
+      ];
+    }
+
     if (/synchronization|recovery|data/iu.test(normalizedNeed)) {
       return [/\b(?:data|history|classes|progress|sync|lost|missing|gone)\b/iu];
     }
@@ -453,7 +468,7 @@ export class NeedExtractionService {
 
     if (/document|download|syllabus|file/iu.test(normalizedNeed)) {
       return [
-        /\b(?:document|download|syllabus|file|link|null error|cannot open)\b/iu,
+        /\b(?:cannot|can['’]?t|unable to|failed to|fails? to|won['’]?t|doesn['’]?t|does not)\s+(?:open|download|access|view|load|retrieve|get)\s+(?:the\s+|a\s+|an\s+|my\s+|this\s+|that\s+)?(?:document|file|pdf|attachment|syllabus|link)\b|\b(?:document|file|pdf|attachment|syllabus|download(?:\s+link)?)\b[^.!?]{0,70}\b(?:cannot be opened|won['’]?t open|doesn['’]?t open|failed to open|download failed|download error|access denied|permission denied|unavailable|missing|broken link)\b/iu,
       ];
     }
 
@@ -472,6 +487,16 @@ export class NeedExtractionService {
     if (/accessible focus|keyboard navigation|focus recovery/iu.test(normalizedNeed)) {
       return [
         /\b(?:keyboard|focus|captured|consumed|type[- ]ahead|screen reader|navigation)\b/iu,
+      ];
+    }
+
+    if (
+      /blockchain transaction|smart contract|transaction revert|execution revert|revert diagnostics|provider error/iu.test(
+        normalizedNeed,
+      )
+    ) {
+      return [
+        /\b(?:transaction reverted|execution reverted|reverted without (?:a )?reason(?: string)?|providererror|provider error|transaction (?:failed|fails)|status (?:is |was )?failed|smart contract|hardhat|alchemy|goerli|evm|solidity)\b/iu,
       ];
     }
 
@@ -513,8 +538,20 @@ export class NeedExtractionService {
       return 'Account Activation and Login Failures';
     }
 
+    if (/hallucination|output reliability|factuality/iu.test(normalizedNeed)) {
+      return 'AI Hallucination and Output Reliability Failures';
+    }
+
     if (/streaming data integrity|staleness monitoring/iu.test(normalizedNeed)) {
       return 'Streaming Data Integrity and Staleness Failures';
+    }
+
+    if (
+      /blockchain transaction|smart contract|transaction revert|execution revert|revert diagnostics|provider error|failed transaction/iu.test(
+        normalizedNeed,
+      )
+    ) {
+      return 'Blockchain Transaction Execution and Smart Contract Revert Failures';
     }
 
     if (/accessible focus|keyboard navigation|focus recovery/iu.test(normalizedNeed)) {
@@ -529,7 +566,7 @@ export class NeedExtractionService {
       return 'Navigation and Interface Failures';
     }
 
-    if (/document|download|syllabus|file/iu.test(normalizedNeed)) {
+    if (hasDocumentAccessOrDownloadFailure(normalizedNeed)) {
       return 'Document Access and Download Failures';
     }
 
@@ -576,21 +613,27 @@ export class NeedExtractionService {
       );
     }
 
-    if (/document|download|syllabus|file/iu.test(normalizedNeed)) {
-      const hasDocumentObject =
-        /(?:document|download|syllabus|attachment|pdf|file|broken link)/iu.test(
-          text,
-        );
-      const hasDocumentFailure =
-        /(?:cannot|can['’]?t|unable|won['’]?t|doesn['’]?t|fail|failed|broken|error|null|not open|open)/iu.test(
-          text,
-        );
-      const isAuthenticationOnly =
-        /(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp|verification code)/iu.test(
-          text,
-        ) && !hasDocumentObject;
+    if (/feedback incorporation|correction workflow|model correction/iu.test(normalizedNeed)) {
+      return (
+        resolvePrimaryProblemFamily(text)?.key ===
+        'ai-feedback-correction-inflexibility'
+      );
+    }
 
-      return hasDocumentObject && hasDocumentFailure && !isAuthenticationOnly;
+    if (/hallucination|output reliability|factuality/iu.test(normalizedNeed)) {
+      return (
+        resolvePrimaryProblemFamily(text)?.key ===
+        'ai-hallucination-output-reliability'
+      );
+    }
+
+    if (/document|download|syllabus|file/iu.test(normalizedNeed)) {
+      return (
+        hasDocumentAccessOrDownloadFailure(text) &&
+        !/(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp|verification code)/iu.test(
+          text,
+        )
+      );
     }
 
     if (/streaming data integrity|staleness monitoring/iu.test(normalizedNeed)) {
@@ -631,11 +674,16 @@ export class NeedExtractionService {
     if (
       /crash|stable|reliable application|performance/iu.test(normalizedNeed)
     ) {
+      if (
+        /\b(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b[^.!?]{0,120}\b(?:access|available|availability)\b|\b(?:doesn['’]?t|does not|cannot|can['’]?t|unable to)\s+have\s+access\s+to\s+(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b/iu.test(
+          text,
+        )
+      ) {
+        return false;
+      }
       const runtimeSafeText = this.removeNonRuntimeFailureLanguage(text);
       const hasExplicitCrash =
-        /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
-          runtimeSafeText,
-        );
+        resolvePrimaryProblemFamily(runtimeSafeText)?.key === 'crash-runtime';
       const hasOperationalFailure =
         /(?:bug|glitch|fails? to submit|submission failed|upload failed|not working|doesn['’]?t work)/iu.test(
           runtimeSafeText,

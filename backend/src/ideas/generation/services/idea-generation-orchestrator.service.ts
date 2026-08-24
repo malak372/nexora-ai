@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -22,6 +23,7 @@ import {
   IdeaGenerationPipelineService,
   type IdeaGenerationPipelineResult,
 } from '../pipeline/idea-generation-pipeline.service';
+import { IdeaGenerationCancelledError } from '../pipeline/idea-generation-stage.service';
 
 import {
   createIdeaGenerationContext,
@@ -37,7 +39,10 @@ import type { RequestCollectionPlan } from '../types/request-collection-plan.typ
 
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 
-import { IDEA_GENERATION_ERROR_CODES } from '../constants/idea-generation.constants';
+import {
+  GENERATION_HEARTBEAT_INTERVAL_MS,
+  IDEA_GENERATION_ERROR_CODES,
+} from '../constants/idea-generation.constants';
 import { IDEA_GENERATION_STAGE_KEYS } from '../constants/idea-generation-stages.constants';
 
 import { GuestIdeaSessionService } from './guest-idea-session.service';
@@ -48,8 +53,10 @@ import { IdeaGenerationRunService } from './idea-generation-run.service';
 import { DomainResolutionService } from './domain-resolution.service';
 import { IdeaGenerationPolicyService } from './idea-generation-policy.service';
 import { RequestCollectionPlanningService } from './request-collection-planning.service';
+import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
+import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 /**
  * Dependency-injection token used to register all executable
@@ -136,6 +143,8 @@ type ExecuteOwnedIdeaGenerationInput = {
 
   requestDescription: string | null;
 
+  requestFingerprint: string;
+
   collectionPlan: RequestCollectionPlan | null;
 
   /**
@@ -207,8 +216,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
   /** Per-run heartbeat timers keep long external stages from looking stale. */
   private readonly heartbeatTimers = new Map<string, NodeJS.Timeout>();
 
-  /** One non-overlapping run/lock heartbeat every 30 seconds. */
-  private readonly heartbeatIntervalMs = 30_000;
+  /** One non-overlapping run/lock heartbeat on the shared generation cadence. */
+  private readonly heartbeatIntervalMs = GENERATION_HEARTBEAT_INTERVAL_MS;
 
   private readonly heartbeatInFlight = new Set<string>();
 
@@ -318,7 +327,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     }
 
     const checkpoint = run.contextSnapshot as unknown as IdeaGenerationContext;
-    const context = this.normalizeRecoveredContext(run.id, checkpoint);
+    let context = this.normalizeRecoveredContext(run.id, checkpoint);
+    context = await this.refreshRecoveredRequestSemantics(context);
 
     const input: ExecuteOwnedIdeaGenerationInput = {
       owner: context.owner,
@@ -327,6 +337,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       selectedDomains: context.selectedDomains ?? [],
       domainResolution: context.domainResolution ?? null,
       requestDescription: context.requestDescription ?? null,
+      requestFingerprint:
+        context.requestFingerprint ?? this.buildRecoveredRequestFingerprint(context),
       collectionPlan: context.collectionPlan ?? null,
       keywords: context.keywords,
       requestedDataSourceKeys: context.requestedDataSourceKeys,
@@ -365,7 +377,15 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: dto.domainIds?.[0] ?? dto.domainId,
       description: dto.description,
       keywords: this.mergeCollectionPlanKeywords(dto.keywords, collectionPlan),
+      plannedExistingDomainId:
+        collectionPlan?.selectedExistingDomainId ?? undefined,
+      plannedDomainSelectionMode:
+        collectionPlan?.domainSelectionMode ?? undefined,
       plannedDomainName: collectionPlan?.suggestedDomainName ?? undefined,
+      plannedDomainConfidence:
+        collectionPlan?.aiUsed && !collectionPlan.fallbackUsed
+          ? collectionPlan.confidence
+          : undefined,
       plannedKeywords: collectionPlan
         ? [
             ...collectionPlan.searchQueries,
@@ -393,10 +413,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
   }> {
     const explicitRequestedIds = [
       ...new Set(
-        [
-          ...(dto.domainIds ?? []),
-          dto.domainId,
-        ].filter((value): value is string => Boolean(value?.trim())),
+        (dto.domainIds && dto.domainIds.length > 0
+          ? dto.domainIds
+          : [dto.domainId]
+        ).filter((value): value is string => Boolean(value?.trim())),
       ),
     ];
     const topAutoScore = resolvedDomain.trace.candidates[0]?.score ?? 0;
@@ -421,70 +441,124 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
             .filter(
               (candidate) => candidate.score >= topAutoScore * 0.7,
             )
-            .slice(0, 2)
+            .slice(0, 3)
             .map((candidate) => candidate.domainId)
         : [];
 
-    const requestedIds = [
-      ...new Set(
-        [
-          resolvedDomain.domainId,
-          ...explicitRequestedIds,
-          ...autoIntentDomainIds,
-          ...autoPersonalizationDomainIds,
-        ].filter(Boolean),
-      ),
-    ].slice(0, 3);
+    const maximumDomainConstraints = hasCurrentIntent ? 4 : 3;
+    const inferredCapacity = Math.max(
+      0,
+      maximumDomainConstraints - explicitRequestedIds.length,
+    );
+    const inferredIds = [
+      ...new Set([
+        resolvedDomain.domainId,
+        ...autoIntentDomainIds,
+        ...autoPersonalizationDomainIds,
+      ].filter((id) => Boolean(id) && !explicitRequestedIds.includes(id))),
+    ].slice(0, inferredCapacity);
+    const requestedIds = hasCurrentIntent
+      ? [
+          ...new Set([
+            resolvedDomain.domainId,
+            ...explicitRequestedIds,
+            ...inferredIds,
+          ]),
+        ].slice(0, maximumDomainConstraints)
+      : [...explicitRequestedIds, ...inferredIds].slice(
+          0,
+          maximumDomainConstraints,
+        );
 
     const domains = await this.prisma.domain.findMany({
       where: { id: { in: requestedIds }, isActive: true },
       select: {
         id: true,
         name: true,
+        isAutoGenerated: true,
         isVisible: true,
         domainKeywords: {
           where: { language: { in: [dto.language, LanguageCode.ANY] } },
           select: { keyword: true },
           orderBy: { createdAt: 'asc' },
-          take: 10,
+          take: 20,
         },
       },
     });
 
-    const explicitRequestedIdSet = new Set(explicitRequestedIds);
+    const requestIntentKeywords = this.buildCollectionRequestIntentKeywords(
+      dto.description,
+      collectionPlan,
+    );
+
     const byId = new Map(domains.map((domain) => [domain.id, domain]));
     const selectedDomains = requestedIds
       .map((id) => byId.get(id))
       .filter((domain): domain is (typeof domains)[number] => Boolean(domain))
-      .filter(
-        (domain) =>
-          domain.isVisible || !explicitRequestedIdSet.has(domain.id),
-      )
       .map((domain) => {
-        const configuredKeywords = this.normalizeStringArray(
-          domain.domainKeywords.map((entry) => entry.keyword),
-        ).slice(0, 10);
-        const effectiveSearchKeywords = this.normalizeStringArray([
-          ...configuredKeywords,
-          ...this.buildFallbackDomainKeywords(domain.name),
-        ]).slice(0, 10);
+        const persistentConfiguredKeywords = this.sanitizePersistentDomainKeywords(
+          domain.name,
+          this.normalizeStringArray(
+            domain.domainKeywords.map((entry) => entry.keyword),
+          ),
+        ).slice(0, 20);
+        const configuredKeywords =
+          dto.description?.trim() && domain.isAutoGenerated && !domain.isVisible
+            ? this.filterPersistentKeywordsForCurrentRequest(
+                persistentConfiguredKeywords,
+                dto.description,
+              ).slice(0, 12)
+            : persistentConfiguredKeywords;
+        const domainRequestIntentKeywords = dto.description?.trim()
+          ? this.buildDomainScopedRequestIntentKeywords({
+              domainName: domain.name,
+              description: dto.description,
+              collectionPlan,
+              configuredKeywords,
+            })
+          : [];
+        const effectiveSearchKeywords = this.normalizeStringArray(
+          dto.description?.trim()
+            ? [
+                ...domainRequestIntentKeywords,
+                domain.name,
+                ...this.filterPersistentKeywordsForCurrentRequest(
+                  configuredKeywords,
+                  dto.description,
+                ),
+              ]
+            : [
+                ...configuredKeywords,
+                ...this.buildFallbackDomainKeywords(domain.name),
+              ],
+        ).slice(0, 20);
 
         return {
           id: domain.id,
           name: domain.name,
           keywords: effectiveSearchKeywords,
           configuredKeywords,
+          requestIntentKeywords: domainRequestIntentKeywords,
           effectiveSearchKeywords,
+          isExplicitlySelected: explicitRequestedIds.includes(domain.id),
         };
       });
+
+    const selectedDomainIdSet = new Set(selectedDomains.map((domain) => domain.id));
+    const missingExplicitDomainIds = explicitRequestedIds.filter(
+      (id) => !selectedDomainIdSet.has(id),
+    );
+
+    if (missingExplicitDomainIds.length > 0) {
+      throw new NotFoundException(
+        'One or more explicitly selected generation domains are unavailable or inactive.',
+      );
+    }
 
     if (selectedDomains.length === 0) {
       throw new NotFoundException('No selected generation domain is active.');
     }
 
-    const requestIntentKeywords = this.buildRequestIntentKeywords(
-      dto.description,
-    );
     const plannedCollectionKeywords = collectionPlan
       ? [
           ...collectionPlan.searchQueries,
@@ -507,14 +581,14 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domain.name,
       ...domain.keywords,
     ]);
-    for (let termIndex = 0; balancedDomainKeywords.length < 24; termIndex += 1) {
+    for (let termIndex = 0; balancedDomainKeywords.length < 36; termIndex += 1) {
       let added = false;
       for (const terms of perDomainTerms) {
         const term = terms[termIndex];
         if (!term) continue;
         balancedDomainKeywords.push(term);
         added = true;
-        if (balancedDomainKeywords.length >= 24) break;
+        if (balancedDomainKeywords.length >= 36) break;
       }
       if (!added) break;
     }
@@ -527,7 +601,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         ...userKeywords,
         bridgeKeyword,
         ...balancedDomainKeywords,
-      ])].slice(0, 36),
+      ])].slice(0, 60),
     };
   }
 
@@ -537,6 +611,60 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
    * about checkout/orders can still be recognized as E-commerce evidence even
    * when the database has not been fully seeded yet.
    */
+  private sanitizePersistentDomainKeywords(
+    domainName: string,
+    keywords: readonly string[],
+  ): string[] {
+    const normalizedDomain = domainName
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    const broadVisibleDomains = new Set([
+      'transportation',
+      'environment',
+      'artificial intelligence',
+      'cybersecurity',
+      'internet of things',
+      'energy',
+      'government',
+      'healthcare',
+      'logistics',
+      'food restaurants',
+      'hr recruitment',
+      'legaltech',
+      'finance',
+      'real estate',
+      'agriculture',
+      'e commerce',
+    ]);
+
+    if (!broadVisibleDomains.has(normalizedDomain)) {
+      return this.normalizeStringArray(keywords);
+    }
+
+    const sentenceLike =
+      /\b(?:often|usually|frequently|commonly|struggle|struggles|increasingly|may struggle|can lead|making it difficult|coordination or record gap|agencies reduce|providers increasingly|delayed decisions? about|become overloaded)\b/iu;
+    const generatedOutcome =
+      /^(?:longer journeys?|unnecessary fuel consumption|higher emissions?|delayed customer orders?|incorrect replacements?|mismatched materials?|lost details?|wasted materials?|repeated work)$/iu;
+
+    return this.normalizeStringArray(keywords).filter((keyword) => {
+      const normalized = keyword
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      if (!normalized) return false;
+      if (sentenceLike.test(normalized) || generatedOutcome.test(normalized)) {
+        return false;
+      }
+      return normalized.split(/\s+/u).length <= 4;
+    });
+  }
+
   private buildFallbackDomainKeywords(domainName: string): string[] {
     const normalized = domainName
       .normalize('NFKC')
@@ -863,7 +991,15 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: dto.domainId,
       description: dto.description,
       keywords: this.mergeCollectionPlanKeywords(dto.keywords, collectionPlan),
+      plannedExistingDomainId:
+        collectionPlan?.selectedExistingDomainId ?? undefined,
+      plannedDomainSelectionMode:
+        collectionPlan?.domainSelectionMode ?? undefined,
       plannedDomainName: collectionPlan?.suggestedDomainName ?? undefined,
+      plannedDomainConfidence:
+        collectionPlan?.aiUsed && !collectionPlan.fallbackUsed
+          ? collectionPlan.confidence
+          : undefined,
       plannedKeywords: collectionPlan
         ? [
             ...collectionPlan.searchQueries,
@@ -902,10 +1038,124 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     };
   }
 
+
+  private handleActiveQueuedRun(
+    activeRun: { readonly id: string; readonly status: IdeaGenerationRunStatus; readonly progressPercent: number; readonly contextSnapshot: Prisma.JsonValue | null },
+    requestFingerprint: string,
+  ): QueuedIdeaGenerationResult {
+    const activeFingerprint = this.extractRunRequestFingerprint(
+      activeRun.contextSnapshot,
+    );
+
+    if (activeFingerprint && activeFingerprint === requestFingerprint) {
+      this.logger.debug(
+        `Coalesced an identical generation request into active run "${activeRun.id}".`,
+      );
+      return {
+        runId: activeRun.id,
+        status: activeRun.status,
+        progressPercent: activeRun.progressPercent,
+      };
+    }
+
+    throw new ConflictException({
+      code: 'IDEA_GENERATION_ALREADY_IN_PROGRESS',
+      message:
+        'A different idea-generation request is already running for this account. The new request was not merged or discarded; retry it after the active run finishes.',
+      activeRunId: activeRun.id,
+    });
+  }
+
+  private extractRunRequestFingerprint(
+    snapshot: Prisma.JsonValue | null,
+  ): string | null {
+    if (!snapshot || Array.isArray(snapshot) || typeof snapshot !== 'object') {
+      return null;
+    }
+
+    const value = (snapshot as Record<string, unknown>).requestFingerprint;
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : null;
+  }
+
+  private buildRegisteredRequestFingerprint(
+    dto: GenerateIdeaDto,
+    generationType: IdeaGenerationType,
+  ): string {
+    return this.hashRequestFingerprint({
+      generationType,
+      description: this.normalizeOptionalValue(dto.description) ?? '',
+      domainIds: this.normalizeExplicitDomainIds(dto.domainIds, dto.domainId),
+      keywords: this.normalizeStringArray(dto.keywords),
+      country: this.normalizeRequiredValue(dto.country, 'Country'),
+      city: this.normalizeOptionalValue(dto.city) ?? '',
+      region: this.normalizeOptionalValue(dto.region) ?? '',
+      radiusKm: dto.radiusKm ?? null,
+      language: dto.language,
+      forceRefresh: dto.forceRefresh === true,
+    });
+  }
+
+  private buildGuestRequestFingerprint(dto: GenerateGuestIdeaDto): string {
+    return this.hashRequestFingerprint({
+      generationType: IdeaGenerationType.GUEST_FREE,
+      description: this.normalizeOptionalValue(dto.description) ?? '',
+      domainIds: this.normalizeExplicitDomainIds(undefined, dto.domainId),
+      keywords: this.normalizeStringArray(dto.keywords),
+      country: this.normalizeRequiredValue(dto.country, 'Country'),
+      city: this.normalizeOptionalValue(dto.city) ?? '',
+      region: this.normalizeOptionalValue(dto.region) ?? '',
+      radiusKm: dto.radiusKm ?? null,
+      language: dto.language,
+      forceRefresh: dto.forceRefresh === true,
+    });
+  }
+
+  private buildRecoveredRequestFingerprint(
+    context: IdeaGenerationContext,
+  ): string {
+    return this.hashRequestFingerprint({
+      generationType: context.generationType,
+      description: context.requestDescription?.trim() ?? '',
+      domainIds: context.selectedDomains
+        .filter((domain) => domain.isExplicitlySelected)
+        .map((domain) => domain.id)
+        .sort(),
+      keywords: this.normalizeStringArray(context.keywords),
+      country: context.location.country,
+      city: context.location.city ?? '',
+      region: context.location.region ?? '',
+      radiusKm: context.location.radiusKm,
+      language: context.location.language,
+      forceRefresh: context.forceRefresh === true,
+    });
+  }
+
+  private normalizeExplicitDomainIds(
+    domainIds: readonly string[] | undefined,
+    domainId: string | undefined,
+  ): string[] {
+    return [...new Set(
+      (domainIds && domainIds.length > 0 ? domainIds : [domainId])
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    )].sort();
+  }
+
+  private hashRequestFingerprint(value: Record<string, unknown>): string {
+    return createHash('sha256')
+      .update(JSON.stringify(value))
+      .digest('hex');
+  }
+
   private async planRequestCollection(input: {
     readonly description?: string | null;
     readonly keywords?: readonly string[];
     readonly generationType: IdeaGenerationType;
+    readonly language?: LanguageCode;
+    readonly requestedDomainIds?: readonly string[];
     readonly userId?: string;
     readonly guestSessionId?: string;
   }): Promise<RequestCollectionPlan | null> {
@@ -918,8 +1168,70 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       description,
       keywords: input.keywords ?? [],
       generationType: input.generationType,
+      language: input.language,
+      requestedDomainIds: input.requestedDomainIds ?? [],
       userId: input.userId,
       guestSessionId: input.guestSessionId,
+    });
+  }
+
+  private filterPersistentKeywordsForCurrentRequest(
+    configuredKeywords: readonly string[],
+    description: string,
+  ): string[] {
+    const normalizedDescription = description
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!normalizedDescription) return [...configuredKeywords];
+
+    const requestTokens = new Set(
+      normalizedDescription
+        .split(' ')
+        .filter((token) => token.length >= 4),
+    );
+    const generic = new Set([
+      'management', 'workflow', 'system', 'platform', 'software', 'operations',
+      'business', 'service', 'services', 'tracking', 'application', 'applications',
+      'workload', 'administrative', 'document', 'documents', 'customer', 'customers',
+    ]);
+
+    return configuredKeywords.filter((keyword) => {
+      const normalized = keyword
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      if (!normalized) return false;
+
+      /*
+       * Persistent domain keywords may have been learned from a previous
+       * request. Never let fraud/security/anomaly vocabulary leak into a new
+       * profitability or operations request merely because both share generic
+       * words such as payment, finance, review, or service.
+       */
+      const containsRiskTemplateVocabulary =
+        /\b(?:fraud|fraudulent|anomal(?:y|ies|ous)?|suspicious|abuse|scam|insurance claim|reimbursement fraud|identity risk|security alert|account compromise|predictive detection)\b/u.test(
+          normalized,
+        );
+      const requestActuallyHasRiskIntent =
+        /\b(?:fraud|fraudulent|anomal(?:y|ies|ous)?|suspicious|abuse|scam|unauthori[sz]ed|compromised|security|insurance claims?|reimbursement fraud|false positive)\b/u.test(
+          normalizedDescription,
+        );
+      if (containsRiskTemplateVocabulary && !requestActuallyHasRiskIntent) {
+        return false;
+      }
+
+      if (normalizedDescription.includes(normalized)) return true;
+      const specificTokens = normalized
+        .split(' ')
+        .filter((token) => token.length >= 4 && !generic.has(token));
+      if (specificTokens.length === 0) return false;
+      const matches = specificTokens.filter((token) => requestTokens.has(token));
+      return matches.length >= Math.min(2, specificTokens.length);
     });
   }
 
@@ -1004,6 +1316,11 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       description: input.dto.description,
       keywords: input.dto.keywords,
       generationType: input.dto.generationType,
+      language: input.dto.language,
+      requestedDomainIds: this.normalizeExplicitDomainIds(
+        input.dto.domainIds,
+        input.dto.domainId,
+      ),
       userId,
     });
     const [policy, collectionPlan] = await Promise.all([
@@ -1025,6 +1342,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       resolvedDomain,
       collectionPlan,
     );
+    const requestFingerprint = this.buildRegisteredRequestFingerprint(
+      input.dto,
+      policy.generationType,
+    );
 
     return this.executeOwnedGeneration({
       owner,
@@ -1038,6 +1359,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
 
       requestDescription: this.normalizeOptionalValue(input.dto.description),
+
+      requestFingerprint,
 
       collectionPlan,
 
@@ -1096,12 +1419,18 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       description: input.dto.description,
       keywords: input.dto.keywords,
       generationType: IdeaGenerationType.GUEST_FREE,
+      language: input.dto.language,
+      requestedDomainIds: this.normalizeExplicitDomainIds(
+        undefined,
+        input.dto.domainId,
+      ),
       guestSessionId: guestSession.id,
     });
     const resolvedDomain = await this.resolveDomainForGuest(
       input.dto,
       collectionPlan,
     );
+    const requestFingerprint = this.buildGuestRequestFingerprint(input.dto);
 
     return this.executeOwnedGeneration({
       owner,
@@ -1115,6 +1444,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
 
       requestDescription: this.normalizeOptionalValue(input.dto.description),
+
+      requestFingerprint,
 
       collectionPlan,
 
@@ -1151,22 +1482,37 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     input: GenerateRegisteredIdeaInput,
   ): Promise<QueuedIdeaGenerationResult> {
     const userId = this.normalizeRequiredValue(input.userId, 'User ID');
+    const requestFingerprint = this.buildRegisteredRequestFingerprint(
+      input.dto,
+      input.dto.generationType,
+    );
 
     /*
-     * Reject unavailable premium/free requests before a queued run is created.
-     * The pipeline entitlement stage still performs the same validation again
-     * to protect against balance changes between queue acceptance and execution.
+     * These preflight reads do not depend on one another. Run the active-run
+     * lookup, entitlement preflight, and collection planning in the same
+     * latency window so a remote database/cache round-trip does not delay the
+     * planner or vice versa. The post-create race check in queueOwnedGeneration
+     * remains authoritative for concurrent clicks.
      */
-    const collectionPlanPromise = this.planRequestCollection({
-      description: input.dto.description,
-      keywords: input.dto.keywords,
-      generationType: input.dto.generationType,
-      userId,
-    });
-    const [policy, collectionPlan] = await Promise.all([
+    const [activeRun, policy, collectionPlan] = await Promise.all([
+      this.runService.findActiveRunForOwner({ userId }),
       this.resolveUserQueuePolicy(userId, input.dto.generationType),
-      collectionPlanPromise,
+      this.planRequestCollection({
+        description: input.dto.description,
+        keywords: input.dto.keywords,
+        generationType: input.dto.generationType,
+        language: input.dto.language,
+        requestedDomainIds: this.normalizeExplicitDomainIds(
+          input.dto.domainIds,
+          input.dto.domainId,
+        ),
+        userId,
+      }),
     ]);
+
+    if (activeRun) {
+      return this.handleActiveQueuedRun(activeRun, requestFingerprint);
+    }
     const resolvedDomain = await this.resolveDomainForUser(
       userId,
       input.dto,
@@ -1185,6 +1531,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       selectedDomains: domainProfile.selectedDomains,
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
       requestDescription: this.normalizeOptionalValue(input.dto.description),
+      requestFingerprint,
       collectionPlan,
       keywords: domainProfile.keywords,
       requestedDataSourceKeys: [],
@@ -1253,12 +1600,26 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     const guestSession = await this.guestSessionService.resolveAvailableSession(
       input.guestSessionToken,
     );
-    const collectionPlan = await this.planRequestCollection({
-      description: input.dto.description,
-      keywords: input.dto.keywords,
-      generationType: IdeaGenerationType.GUEST_FREE,
-      guestSessionId: guestSession.id,
-    });
+    const requestFingerprint = this.buildGuestRequestFingerprint(input.dto);
+    const [activeRun, collectionPlan] = await Promise.all([
+      this.runService.findActiveRunForOwner({
+        guestSessionId: guestSession.id,
+      }),
+      this.planRequestCollection({
+        description: input.dto.description,
+        keywords: input.dto.keywords,
+        generationType: IdeaGenerationType.GUEST_FREE,
+        language: input.dto.language,
+        requestedDomainIds: this.normalizeExplicitDomainIds(
+          undefined,
+          input.dto.domainId,
+        ),
+        guestSessionId: guestSession.id,
+      }),
+    ]);
+    if (activeRun) {
+      return this.handleActiveQueuedRun(activeRun, requestFingerprint);
+    }
     const resolvedDomain = await this.resolveDomainForGuest(
       input.dto,
       collectionPlan,
@@ -1274,6 +1635,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       selectedDomains: [],
       domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
       requestDescription: this.normalizeOptionalValue(input.dto.description),
+      requestFingerprint,
       collectionPlan,
       keywords: this.buildPlannedRequestKeywords(
         input.dto.description,
@@ -1302,15 +1664,21 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
   private async queueOwnedGeneration(
     input: ExecuteOwnedIdeaGenerationInput,
   ): Promise<QueuedIdeaGenerationResult> {
+    const runOwner =
+      input.owner.type === IDEA_OWNER_TYPES.USER
+        ? { userId: input.owner.userId }
+        : { guestSessionId: input.owner.guestSessionId };
     const runId = randomUUID();
     const initialContext = this.buildInitialContext(runId, input);
 
     /*
-     * Persist the normalized request context in the same INSERT that creates
-     * the QUEUED run. If the process stops before setImmediate() executes, the
-     * recovery service still has everything required to restart the pipeline.
+     * Run creation and owner-lock acquisition are independent. Starting both
+     * together removes the previous post-create active-run query + lock wait
+     * from the normal startup path. The cache lock remains the race authority:
+     * if another request wins it, the just-created loser row is cancelled and
+     * the active run is returned exactly as before.
      */
-    const run = await this.runService.createRun({
+    const createRunPromise = this.runService.createRun({
       id: runId,
       ...(input.owner.type === IDEA_OWNER_TYPES.USER
         ? { userId: input.owner.userId }
@@ -1318,6 +1686,72 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       generationType: input.generationType,
       contextSnapshot: this.serializeContextSnapshot(initialContext),
     });
+    const acquireLockPromise = this.lockService.acquire({
+      owner: input.owner,
+      runId,
+    });
+
+    const [runResult, lockResult] = await Promise.allSettled([
+      createRunPromise,
+      acquireLockPromise,
+    ]);
+
+    if (lockResult.status === 'rejected') {
+      if (runResult.status === 'fulfilled') {
+        await this.runService.cancelRun(runResult.value.id).catch(() => undefined);
+      }
+
+      /*
+       * The cache lock can win a few milliseconds before the winning run row
+       * becomes visible through a remote PostgreSQL connection. Resolve that
+       * rare collision from the lock owner first, with a tiny bounded wait only
+       * on the losing request. The normal successful queue path never waits.
+       */
+      const lockedRunId = await this.lockService
+        .getActiveRunId(input.owner)
+        .catch(() => null);
+
+      if (lockedRunId && lockedRunId !== runId) {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          try {
+            const lockedRun = await this.runService.findRunOrThrow(lockedRunId);
+            if (
+              (lockedRun.status === IdeaGenerationRunStatus.QUEUED ||
+                lockedRun.status === IdeaGenerationRunStatus.RUNNING) &&
+              lockedRun.cancelRequestedAt === null
+            ) {
+              return this.handleActiveQueuedRun(
+                lockedRun,
+                input.requestFingerprint,
+              );
+            }
+          } catch {
+            // The winning INSERT may still be committing on another request.
+          }
+
+          if (attempt < 4) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 75));
+          }
+        }
+      }
+
+      const queueWinner = await this.runService.findActiveRunForOwner(runOwner);
+      if (queueWinner) {
+        return this.handleActiveQueuedRun(
+          queueWinner,
+          input.requestFingerprint,
+        );
+      }
+
+      throw lockResult.reason;
+    }
+
+    if (runResult.status === 'rejected') {
+      await this.releaseLockSafely(input.owner, runId);
+      throw runResult.reason;
+    }
+
+    const run = runResult.value;
 
     setImmediate(() => {
       void this.executePreparedRun(
@@ -1325,8 +1759,17 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         input,
         initialContext,
         false,
+        true,
       ).catch((error: unknown) => {
         const normalized = this.normalizeError(error);
+
+        if (error instanceof IdeaGenerationCancelledError) {
+          this.logger.log(
+            `Queued idea-generation run "${run.id}" stopped after user cancellation.`,
+          );
+          return;
+        }
+
         this.logger.error(
           `Queued idea-generation run "${run.id}" failed: ${normalized.message}`,
           normalized.stack,
@@ -1385,12 +1828,15 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     input: ExecuteOwnedIdeaGenerationInput,
     preparedContext?: IdeaGenerationContext,
     resumeFromCheckpoint = false,
+    lockAlreadyAcquired = false,
   ): Promise<IdeaGenerationPipelineResult> {
-    let lockAcquired = false;
+    let lockAcquired = lockAlreadyAcquired;
 
     try {
-      await this.lockService.acquire({ owner: input.owner, runId });
-      lockAcquired = true;
+      if (!lockAlreadyAcquired) {
+        await this.lockService.acquire({ owner: input.owner, runId });
+        lockAcquired = true;
+      }
       this.activeRuns.set(runId, input.owner);
       this.startRunHeartbeat(runId, input.owner);
 
@@ -1411,6 +1857,14 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       return result;
     } catch (error: unknown) {
       const normalizedError = this.normalizeError(error);
+
+      if (error instanceof IdeaGenerationCancelledError) {
+        this.logger.log(
+          `Idea-generation orchestration stopped normally after cancellation for run "${runId}".`,
+        );
+        throw error;
+      }
+
       await this.persistUnfinishedRunFailure(runId, normalizedError);
 
       this.logger.error(
@@ -1459,6 +1913,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
       requestDescription: input.requestDescription,
 
+      requestFingerprint: input.requestFingerprint,
+
       collectionPlan: input.collectionPlan,
 
       keywords: input.keywords,
@@ -1469,6 +1925,126 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
       forceRefresh: input.forceRefresh,
     });
+  }
+
+  /**
+   * Rebuilds request-scoped semantic planning for an interrupted run before
+   * community analysis/ranking resumes. Persisted collector output is never
+   * trusted as a semantic authority: a fresh request plan replaces stale query
+   * families, request-derived hidden-domain keywords are re-scoped to the
+   * current description, and obviously mismatched raw evidence is removed from
+   * the Community AI batch budget. This prevents an interrupted Noise request,
+   * for example, from resuming with an older waste-collection archetype.
+   */
+  private async refreshRecoveredRequestSemantics(
+    context: IdeaGenerationContext,
+  ): Promise<IdeaGenerationContext> {
+    const description = context.requestDescription?.trim();
+    if (!description) return context;
+
+    const checkpointStage = context.recoveryCheckpointStageKey ?? '';
+    const semanticRefreshStages = new Set<string>([
+      IDEA_GENERATION_STAGE_KEYS.DATA_SOURCE_SELECTION,
+      IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION,
+      IDEA_GENERATION_STAGE_KEYS.DATA_COLLECTION,
+      IDEA_GENERATION_STAGE_KEYS.NLP_ANALYSIS,
+      IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS,
+      IDEA_GENERATION_STAGE_KEYS.OPPORTUNITY_RANKING,
+    ]);
+    if (checkpointStage && !semanticRefreshStages.has(checkpointStage)) {
+      return context;
+    }
+
+    try {
+      const planningKeywords = this.buildCollectionRequestIntentKeywords(
+        description,
+        context.collectionPlan ?? null,
+      );
+      const refreshedPlan = await this.planRequestCollection({
+        description,
+        keywords: planningKeywords.slice(0, 8),
+        generationType: context.generationType,
+        language: context.location.language,
+        requestedDomainIds: (context.selectedDomains ?? [])
+          .filter((domain) => domain.isExplicitlySelected)
+          .map((domain) => domain.id),
+        userId:
+          context.owner.type === IDEA_OWNER_TYPES.USER
+            ? context.owner.userId
+            : undefined,
+        guestSessionId:
+          context.owner.type === IDEA_OWNER_TYPES.GUEST
+            ? context.owner.guestSessionId
+            : undefined,
+      });
+      if (!refreshedPlan) return context;
+      const requestIntentKeywords = this.buildCollectionRequestIntentKeywords(
+        description,
+        refreshedPlan,
+      );
+
+      const selectedDomains = context.selectedDomains.map((domain) => {
+        const configuredKeywords = this.filterPersistentKeywordsForCurrentRequest(
+          domain.configuredKeywords ?? [],
+          description,
+        ).slice(0, 12);
+        const domainRequestIntentKeywords = this.buildDomainScopedRequestIntentKeywords({
+          domainName: domain.name,
+          description,
+          collectionPlan: refreshedPlan,
+          configuredKeywords,
+        });
+        const effectiveSearchKeywords = this.normalizeStringArray([
+          ...domainRequestIntentKeywords,
+          domain.name,
+          ...configuredKeywords,
+        ]).slice(0, 20);
+        return {
+          ...domain,
+          keywords: effectiveSearchKeywords,
+          configuredKeywords,
+          requestIntentKeywords: domainRequestIntentKeywords,
+          effectiveSearchKeywords,
+        };
+      });
+
+      const rawEvidenceCorpus = (context.rawEvidenceCorpus ?? []).filter((item) =>
+        RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
+          requestDescription: description,
+          evidenceText: item.text,
+          plannedQueries: refreshedPlan.searchQueries,
+        }),
+      );
+
+      const keywords = this.normalizeStringArray([
+        ...refreshedPlan.searchQueries,
+        ...refreshedPlan.intentConcepts,
+        ...refreshedPlan.evidenceTargets,
+        ...requestIntentKeywords,
+        ...selectedDomains.flatMap((domain) => [
+          domain.name,
+          ...(domain.effectiveSearchKeywords ?? []),
+        ]),
+      ]).slice(0, 60);
+
+      this.logger.log(
+        `Revalidated recovered request semantics for run "${context.runId}" before stage "${checkpointStage || 'unknown'}"; rawEvidence ${context.rawEvidenceCorpus?.length ?? 0}->${rawEvidenceCorpus.length}, queries=${refreshedPlan.searchQueries.length}.`,
+      );
+
+      return {
+        ...context,
+        collectionPlan: refreshedPlan,
+        selectedDomains,
+        keywords,
+        rawEvidenceCorpus,
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Recovered request semantic revalidation failed for run "${context.runId}"; preserving the checkpoint plan. error=${message}`,
+      );
+      return context;
+    }
   }
 
   /**
@@ -1494,6 +2070,11 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestDescription: this.normalizeOptionalValue(
         checkpoint.requestDescription ?? undefined,
       ),
+      requestFingerprint:
+        typeof checkpoint.requestFingerprint === 'string' &&
+        checkpoint.requestFingerprint.trim().length > 0
+          ? checkpoint.requestFingerprint.trim()
+          : null,
       collectionPlan: checkpoint.collectionPlan ?? null,
       keywords: this.normalizeRecoveredStringArray(checkpoint.keywords),
       requestedDataSourceKeys: this.normalizeRecoveredStringArray(
@@ -1576,12 +2157,31 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       }
 
       const keywords = this.normalizeRecoveredStringArray(domain.keywords);
-      const configuredKeywords = this.normalizeRecoveredStringArray(
+      const rawConfiguredKeywords = this.normalizeRecoveredStringArray(
         domain.configuredKeywords,
       );
-      const effectiveSearchKeywords = this.normalizeRecoveredStringArray(
+      const rawEffectiveSearchKeywords = this.normalizeRecoveredStringArray(
         domain.effectiveSearchKeywords,
       );
+      const recoveredDescription = this.normalizeOptionalValue(
+        checkpoint.requestDescription ?? undefined,
+      );
+      const requestIntentKeywords = recoveredDescription
+        ? this.buildRequestIntentKeywords(recoveredDescription)
+        : this.normalizeRecoveredStringArray(domain.requestIntentKeywords);
+      const configuredKeywords = recoveredDescription
+        ? this.filterPersistentKeywordsForCurrentRequest(
+            rawConfiguredKeywords,
+            recoveredDescription,
+          ).slice(0, 12)
+        : rawConfiguredKeywords;
+      const effectiveSearchKeywords = recoveredDescription
+        ? this.normalizeStringArray([
+            ...requestIntentKeywords,
+            name,
+            ...configuredKeywords,
+          ]).slice(0, 20)
+        : rawEffectiveSearchKeywords;
 
       return [
         {
@@ -1592,6 +2192,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
               ? effectiveSearchKeywords
               : keywords,
           configuredKeywords,
+          requestIntentKeywords,
           effectiveSearchKeywords:
             effectiveSearchKeywords.length > 0
               ? effectiveSearchKeywords
@@ -1921,6 +2522,344 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }
 
+  /**
+   * Text-bearing runs should use the AI planner's semantic vocabulary before
+   * the older deterministic intent-expansion catalogue. This prevents broad
+   * presets (for example generic payment-fraud or profitability phrases) from
+   * becoming the shared keyword pool for every selected domain.
+   */
+  private buildCollectionRequestIntentKeywords(
+    description: string | null | undefined,
+    collectionPlan: RequestCollectionPlan | null,
+  ): string[] {
+    const normalized = this.normalizeOptionalValue(description ?? undefined);
+    if (!normalized) return [];
+
+    if (collectionPlan?.aiUsed && !collectionPlan.fallbackUsed) {
+      return this.normalizeStringArray([
+        ...collectionPlan.intentConcepts,
+        ...RequestDynamicQueryUtil.extractWorkflowTerms(normalized),
+        ...RequestDynamicQueryUtil.extractPainTerms(normalized),
+        ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(normalized),
+      ]).slice(0, 14);
+    }
+
+    return this.buildRequestIntentKeywords(normalized);
+  }
+
+  /**
+   * Builds one isolated retrieval lane per selected domain without requiring a
+   * hand-written rule for that domain. The lane keeps the same requester actor,
+   * workflow and pain, then projects those concepts through the selected domain
+   * label. Because the AI planner supplies the semantic concepts, a brand-new
+   * domain still receives useful queries immediately.
+   */
+  private buildDomainScopedRequestIntentKeywords(input: {
+    readonly domainName: string;
+    readonly description: string;
+    readonly collectionPlan: RequestCollectionPlan | null;
+    readonly configuredKeywords: readonly string[];
+  }): string[] {
+    const normalizePhrase = (value: string, maxWords: number): string =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, maxWords)
+        .join(' ');
+
+    const compose = (...parts: string[]): string => {
+      const seen = new Set<string>();
+      const tokens: string[] = [];
+      for (const part of parts) {
+        for (const token of normalizePhrase(part, 12).split(' ')) {
+          if (!token || seen.has(token)) continue;
+          seen.add(token);
+          tokens.push(token);
+          if (tokens.length >= 9) break;
+        }
+        if (tokens.length >= 9) break;
+      }
+      return tokens.join(' ');
+    };
+
+    const description = input.description.trim();
+    if (!description) return [];
+
+    const domainName = normalizePhrase(input.domainName, 5);
+    if (!domainName) return [];
+
+    const plan = input.collectionPlan;
+    const professionalAnchor = normalizePhrase(
+      plan?.suggestedDomainName ?? '',
+      6,
+    );
+    const identityTerms = RequestDynamicQueryUtil.extractEvidenceIdentityTerms(
+      description,
+    ).slice(0, 6);
+    const identityPhrase = identityTerms.slice(0, 3).join(' ');
+    const workflowTerms = this.normalizeStringArray([
+      ...(plan?.intentConcepts ?? []),
+      ...RequestDynamicQueryUtil.extractWorkflowTerms(description),
+    ]).slice(0, 8);
+    const painTerms = this.normalizeStringArray([
+      ...(plan?.evidenceTargets ?? []).flatMap((value) =>
+        RequestDynamicQueryUtil.extractPainTerms(value),
+      ),
+      ...RequestDynamicQueryUtil.extractPainTerms(description),
+    ]).slice(0, 8);
+    const perspectiveTerms = this.resolveDomainPerspectiveTerms(
+      domainName,
+      description,
+      plan,
+    );
+
+    /*
+     * Reuse planner queries that already express this domain's perspective.
+     * This is more semantic than prepending the domain name to one shared
+     * query and works for arbitrary domains when the planner has already used
+     * their professional vocabulary.
+     */
+    const normalizedDomain = domainName.toLocaleLowerCase();
+    const domainAliases = /\b(?:artificial intelligence|machine learning|data science)\b/u.test(normalizedDomain)
+      ? ['ai', 'machine learning', 'ml', 'data science']
+      : /\b(?:cybersecurity|cyber security|information security|identity security)\b/u.test(normalizedDomain)
+        ? ['cybersecurity', 'cyber security', 'security', 'iam']
+        : /\b(?:human resources?|hr|recruitment|workforce|people operations?)\b/u.test(normalizedDomain)
+          ? ['human resources', 'hr', 'workforce', 'people operations']
+          : [];
+    const domainTokens = new Set(
+      normalizePhrase(
+        [domainName, ...domainAliases, ...input.configuredKeywords].join(' '),
+        24,
+      )
+        .split(' ')
+        .filter((token) => token.length >= 2),
+    );
+    const genericPerspectiveTokens = new Set([
+      'employee', 'employees', 'account', 'accounts', 'access', 'identity',
+      'security', 'system', 'systems', 'review', 'management', 'governance',
+      'organization', 'organizations', 'large', 'human', 'resources',
+    ]);
+    const perspectiveTokens = new Set(
+      perspectiveTerms
+        .flatMap((value) => normalizePhrase(value, 6).split(' '))
+        .filter(
+          (token) =>
+            token.length >= 3 && !genericPerspectiveTokens.has(token),
+        ),
+    );
+    const plannerAligned = (plan?.searchQueries ?? [])
+      .map((value) => normalizePhrase(value, 9))
+      .filter(Boolean)
+      .map((query) => {
+        const tokens = new Set(query.split(' '));
+        const domainOverlap = [...domainTokens].filter((token) =>
+          tokens.has(token),
+        ).length;
+        const perspectiveOverlap = [...perspectiveTokens].filter((token) =>
+          tokens.has(token),
+        ).length;
+        return {
+          query,
+          score: domainOverlap * 2 + perspectiveOverlap * 3,
+        };
+      })
+      .filter((entry) => {
+        const tokens = new Set(entry.query.split(' '));
+        const domainOverlap = [...domainTokens].filter((token) =>
+          tokens.has(token),
+        ).length;
+        const perspectiveOverlap = [...perspectiveTokens].filter((token) =>
+          tokens.has(token),
+        ).length;
+        return domainOverlap >= 1 || perspectiveOverlap >= 2;
+      })
+      .sort((left, right) => right.score - left.score)
+      .map((entry) => entry.query)
+      .slice(0, 3);
+
+    const requestCompatibleConfigured =
+      this.filterPersistentKeywordsForCurrentRequest(
+        input.configuredKeywords,
+        description,
+      ).slice(0, 2);
+
+    const candidates = [
+      ...plannerAligned,
+      ...perspectiveTerms.slice(0, 4).map((perspective, index) =>
+        compose(
+          professionalAnchor || identityPhrase,
+          perspective,
+          workflowTerms[index % Math.max(1, workflowTerms.length)] ?? '',
+          painTerms[index % Math.max(1, painTerms.length)] ?? '',
+        ),
+      ),
+      compose(
+        domainName,
+        professionalAnchor,
+        perspectiveTerms[0] ?? workflowTerms[0] ?? '',
+      ),
+      compose(
+        identityPhrase,
+        perspectiveTerms[1] ?? workflowTerms[1] ?? workflowTerms[0] ?? '',
+        painTerms[0] ?? '',
+      ),
+      ...requestCompatibleConfigured.map((keyword) =>
+        compose(keyword, professionalAnchor || identityPhrase, painTerms[0] ?? ''),
+      ),
+    ];
+
+    return this.normalizeStringArray(candidates)
+      .filter((query) => query.split(/\s+/u).length >= 3)
+      .slice(0, 8);
+  }
+
+  /**
+   * Derives a domain perspective from the selected domain plus the requester
+   * semantics. The method uses broad capability families rather than
+   * per-vertical business rules, so an unseen industry still falls back to the
+   * AI planner's professional domain and request concepts.
+   */
+  private resolveDomainPerspectiveTerms(
+    normalizedDomainName: string,
+    description: string,
+    collectionPlan: RequestCollectionPlan | null,
+  ): string[] {
+    const request = description.toLocaleLowerCase();
+    const domain = normalizedDomainName.toLocaleLowerCase();
+    const terms: string[] = [];
+    const add = (value: string) => {
+      if (value && !terms.includes(value)) terms.push(value);
+    };
+
+    const aiDomain = /\b(?:artificial intelligence|machine learning|\bai\b|predictive analytics|data science)\b/u.test(domain);
+    const securityDomain = /\b(?:cybersecurity|cyber security|information security|identity security|security)\b/u.test(domain);
+    const workforceDomain = /\b(?:human resources?|\bhr\b|recruitment|workforce|people operations?)\b/u.test(domain);
+    const healthcareDomain = /\b(?:healthcare|health care|medical|clinical|hospital|patient care)\b/u.test(domain);
+    const financeDomain = /\b(?:finance|financial|banking|payments?|insurance|revenue)\b/u.test(domain);
+
+    if (aiDomain) {
+      const anomalyOrSecurityIntent =
+        /\b(?:unusual|suspicious|anomal|abnormal|fraud|fraudulent|risk|security|unauthori[sz]ed|compromised|privilege|abuse)\w*\b/u.test(
+          request,
+        );
+
+      if (/\b(?:unusual|suspicious|anomal|abnormal)\w*\b/u.test(request)) {
+        add('behavioral anomaly detection');
+      }
+      if (/\b(?:risk|security|unauthori[sz]ed|compromised|privilege)\w*\b/u.test(request)) {
+        add('identity risk scoring');
+      }
+      if (
+        anomalyOrSecurityIntent &&
+        /\b(?:login|activity|behavior|behaviour|usage|transaction|payment)\w*\b/u.test(
+          request,
+        )
+      ) {
+        add('behavioral analytics');
+      }
+      if (/\b(?:forecast|predict|likelihood|early detection)\w*\b/u.test(request)) {
+        add('predictive forecasting');
+      }
+      if (anomalyOrSecurityIntent) {
+        add('human reviewed anomaly prioritization');
+      }
+      if (
+        !anomalyOrSecurityIntent &&
+        /\b(?:profit|profitable|profitability|margin|revenue|cost|pricing|forecast|budget)\w*\b/u.test(
+          request,
+        )
+      ) {
+        add('explainable profitability and forecast analysis');
+      }
+    } else if (securityDomain) {
+      if (/\b(?:permission|privilege|entitlement|access right|role change|offboard|deprovision|account removal)\w*\b/u.test(request)) {
+        add('identity access governance');
+        add('privilege and entitlement review');
+        add('account lifecycle security');
+      }
+      if (/\b(?:login|authentication|account|unauthori[sz]ed|compromised)\w*\b/u.test(request)) {
+        add('account access security');
+      }
+      if (/\b(?:alert|investigation|incident|suspicious)\w*\b/u.test(request)) {
+        add('security alert investigation');
+      }
+    } else if (workforceDomain) {
+      if (/\b(?:role|department|transfer|move|project)\w*\b/u.test(request)) {
+        add('employee role transition access review');
+      }
+      if (/\b(?:leave|leaving|offboard|deprovision|account removal|former employee)\w*\b/u.test(request)) {
+        add('employee offboarding deprovisioning');
+      }
+      if (/\b(?:permission|access|entitlement|account)\w*\b/u.test(request)) {
+        add('joiner mover leaver access lifecycle');
+        add('hr directory permission reconciliation');
+      }
+    } else if (healthcareDomain) {
+      if (/\b(?:billing|invoice|claim|insurance|reimbursement)\w*\b/u.test(request)) {
+        add('patient billing claims abuse');
+        add('medical invoice and insurance claim review');
+        add('healthcare revenue cycle fraud workflow');
+      }
+      if (/\b(?:patient account|patient portal|login|unauthori[sz]ed|compromised)\w*\b/u.test(request)) {
+        add('patient portal account compromise');
+      }
+    } else if (financeDomain) {
+      const fraudOrRiskIntent =
+        /\b(?:fraud|fraudulent|suspicious|anomal|abuse|unauthori[sz]ed|scam|claim fraud|reimbursement fraud|false positive|blocked|freeze)\w*\b/u.test(
+          request,
+        );
+
+      if (
+        fraudOrRiskIntent &&
+        /\b(?:payment|transaction|invoice|claim|reimbursement)\w*\b/u.test(request)
+      ) {
+        add('payment transaction anomaly review');
+      }
+      if (
+        fraudOrRiskIntent &&
+        /\b(?:insurance|claim|claims|reimbursement)\w*\b/u.test(request)
+      ) {
+        add('insurance claim and reimbursement fraud');
+      }
+      if (/\b(?:restriction|false positive|legitimate user|freeze|blocked)\w*\b/u.test(request)) {
+        add('payment restriction false positive review');
+      }
+      if (/\b(?:fraud|fraudulent|financial loss|financial losses)\w*\b/u.test(request)) {
+        add('financial loss and fraud investigation');
+      }
+      if (
+        !fraudOrRiskIntent &&
+        /\b(?:profit|profitable|profitability|margin|revenue|cost|pricing|budget|forecast|cancellation|churn)\w*\b/u.test(
+          request,
+        )
+      ) {
+        add('profitability margin and revenue analysis');
+        add('cost and forecast variance analysis');
+      }
+    }
+
+    /*
+     * Known cross-domain capability families keep their own perspective
+     * vocabulary. Appending every shared request concept here makes the lanes
+     * converge again (for example an AI anomaly query leaking into HR merely
+     * because both contain "employee access"). For an unseen domain, fall
+     * back to the AI planner's professional vocabulary instead of hardcoding a
+     * new industry rule.
+     */
+    if (terms.length === 0) {
+      for (const value of collectionPlan?.intentConcepts ?? []) add(value);
+      if (collectionPlan?.suggestedDomainName) add(collectionPlan.suggestedDomainName);
+    }
+
+    return terms.slice(0, 7);
+  }
+
   private buildRequestIntentKeywords(description?: string): string[] {
     const normalized = this.normalizeOptionalValue(description);
 
@@ -2091,9 +3030,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       ...normalizedContentTokens,
     ];
 
-    const hasAdministrationIntent = tokens.some((token) =>
-      ['administration', 'administrative', 'operations', 'company'].includes(token),
-    );
+    const hasAdministrationIntent =
+      /\b(?:administration|administrative|back[- ]office|office administration|admin workflow|administrative workflow)\b/iu.test(
+        searchableIntent,
+      );
     const hasFinanceIntent = tokens.some((token) =>
       ['finance', 'financial', 'accounting', 'budget', 'invoice', 'expense', 'expenses', 'cost', 'costs', 'payroll', 'procurement', 'reconciliation'].includes(token),
     );
@@ -2119,13 +3059,28 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       /\b(?:detect|identify|spot|discover|predict|early|emerging|warning|anomaly|trend)\w*\b/iu.test(searchableIntent);
     const hasDataAnalysisIntent =
       /\b(?:data|feedback|record|records|insight|insights|analy[sz]|analytics|scattered|fragmented)\w*\b/iu.test(searchableIntent);
-    const hasWardrobeIntent =
-      /\b(?:wardrobe|closet|clothes|clothing|shoes|footwear|accessories|outfit|outfits)\b/iu.test(
+    const hasCustomFootwearProductionIntent =
+      /\b(?:shoemakers?|shoe makers?|shoemaking|shoe making|bespoke shoemakers?|custom shoe makers?|custom footwear|bespoke footwear|handmade shoes?|made[- ]to[- ]measure shoes?|cordwainers?)\b/iu.test(
+        searchableIntent,
+      ) &&
+      /\b(?:foot measurements?|leather selections?|sole types?|stitching preferences?|fitting notes?|design revisions?|approved specifications?|completion deadlines?|handmade shoes?|custom pairs?)\b/iu.test(
+        searchableIntent,
+      );
+    const hasWardrobeCoreIntent =
+      /\b(?:wardrobe|closet|clothes|clothing|accessories|outfit|outfits)\b/iu.test(
         searchableIntent,
       ) &&
       /\b(?:inventory|remember|fit|fits|sizing|cleaning|laundry|repair|maintenance|photos?|receipts?|duplicate purchases?|unused items?|occasion|weather|outfit|coordinate|coordination)\b/iu.test(
         searchableIntent,
       );
+    const hasFootwearWardrobeIntent =
+      /\b(?:shoes|footwear)\b/iu.test(searchableIntent) &&
+      /\b(?:wardrobe|closet|inventory|outfit|shopping|purchase|purchases|receipt|receipts|own|owned|wear|worn|weather|occasion)\b/iu.test(
+        searchableIntent,
+      );
+    const hasWardrobeIntent =
+      !hasCustomFootwearProductionIntent &&
+      (hasWardrobeCoreIntent || hasFootwearWardrobeIntent);
     const hasLaundryOperationsIntent =
       /\b(?:laundry shop|laundry shops|laundromat|laundromats|dry cleaning|dry-cleaning|dry cleaner|dry cleaners|laundry service|garment cleaning|wash and fold)\b/iu.test(
         searchableIntent,
@@ -2134,16 +3089,23 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         searchableIntent,
       );
     const hasTailoringAnchor =
-      /\b(?:tailor|tailoring|custom clothing|custom apparel|made[- ]to[- ]measure|bespoke|garment|fabric|alteration|fitting appointment|design notes?)\b/iu.test(
+      /\b(?:tailor|tailoring|custom clothing|custom apparel|made[- ]to[- ]measure|bespoke clothing|bespoke tailoring|alteration shop|alteration shops|fitting appointment)\b/iu.test(
         searchableIntent,
-      );
+      ) ||
+      (/\b(?:garment|fabric|alteration|design notes?)\b/iu.test(searchableIntent) &&
+        /\b(?:dress|suit|shirt|pants|trousers|clothing|apparel|seamstress|dressmaker|tailor|fitting|body measurements?)\b/iu.test(searchableIntent));
     const hasTailoringMeasurementContext =
       /\bmeasurements?\b/iu.test(searchableIntent) &&
-      /\b(?:customer|client|body|clothing|garment|tailor|tailoring|fitting|size|sizing)\b/iu.test(
+      /\b(?:body|clothing|garment|tailor|tailoring|dress|suit|shirt|pants|trousers|apparel|alteration)\b/iu.test(
+        searchableIntent,
+      );
+    const excludesNonGarmentFitting =
+      /\b(?:hat makers?|milliners?|millinery|custom hats?|headwear|wig makers?|custom wigs?|hairpiece makers?)\b/iu.test(
         searchableIntent,
       );
     const hasTailoringIntent =
-      hasTailoringAnchor || hasTailoringMeasurementContext;
+      !excludesNonGarmentFitting &&
+      (hasTailoringAnchor || hasTailoringMeasurementContext);
     const hasPetCareIntent =
       /\b(?:pet care|pet owners?|pet sitter|veterinarian|veterinary|vaccination|grooming|feeding routine|animal care|pet health)\b/iu.test(
         searchableIntent,
@@ -2349,6 +3311,19 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         'dry cleaning order status handoff',
         'laundry paper tag replacement',
         'laundry customer dispute order traceability',
+      );
+    }
+
+    if (hasCustomFootwearProductionIntent) {
+      terms.unshift(
+        'bespoke shoemaker customer foot measurements',
+        'custom footwear leather selection tracking',
+        'made to measure shoes sole type specification',
+        'shoemaking stitching preference fitting notes',
+        'custom shoe design revision approval',
+        'handmade shoe final approved specification',
+        'bespoke footwear fitting revision history',
+        'custom shoemaking completion deadline tracking',
       );
     }
 

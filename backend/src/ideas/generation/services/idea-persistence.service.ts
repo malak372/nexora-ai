@@ -45,11 +45,13 @@ import type {
   ParsedIdeaAiOutput,
 } from '../types/idea-ai-output.type';
 
+import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 import { IdeaDuplicateDetectionService } from './idea-duplicate-detection.service';
 
 /**
  * Maximum number of attempts used when a serializable transaction
- * fails because of a write conflict or deadlock.
+ * fails because of a retryable write conflict, timeout, or transient
+ * database connection interruption.
  */
 const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
 
@@ -57,7 +59,7 @@ const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
  * Maximum time Prisma may wait to acquire an interactive
  * transaction connection before failing the persistence attempt.
  */
-const SERIALIZABLE_TRANSACTION_MAX_WAIT_MS = 10_000;
+const SERIALIZABLE_TRANSACTION_MAX_WAIT_MS = 2_500;
 
 /**
  * Maximum lifetime of one interactive persistence transaction.
@@ -67,7 +69,23 @@ const SERIALIZABLE_TRANSACTION_MAX_WAIT_MS = 10_000;
  * default timeout from closing the transaction before entitlement
  * consumption and generation-run linking are completed.
  */
-const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 30_000;
+const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 20_000;
+
+/**
+ * Maximum server-side execution time for one SQL statement inside idea
+ * persistence. This is intentionally shorter than the transaction lifetime so
+ * a stalled remote query fails early and the complete atomic transaction can
+ * be retried on a fresh pooled connection.
+ */
+const SERIALIZABLE_STATEMENT_TIMEOUT_MS = 8_000;
+
+/**
+ * Maximum time one persistence statement may wait on a PostgreSQL lock.
+ * Generation persistence should never sit behind a long-running lock while the
+ * user waits on the completion screen; a short lock timeout lets the bounded
+ * serializable retry path recover instead.
+ */
+const SERIALIZABLE_LOCK_TIMEOUT_MS = 2_000;
 
 /**
  * Prisma transaction client accepted by idea-persistence
@@ -366,17 +384,36 @@ export class IdeaPersistenceService {
       attempt <= SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS;
       attempt += 1
     ) {
+      const attemptStartedAt = Date.now();
+
       try {
-        return await this.prisma.$transaction(
+        const transactionInvocationAt = Date.now();
+        let callbackEnteredAt = 0;
+        let callbackExitedAt = 0;
+        const result = await this.prisma.$transaction(
           async (transaction): Promise<IdeaPersistenceTransactionResult> => {
-            const timingStartedAt = Date.now();
-            const [run] = await Promise.all([
-              this.validateGenerationRun(transaction, input),
-              this.duplicateDetectionService.assertNoExactTitleDuplicate(
-                input.parsedOutput.coreIdea,
-                transaction,
-              ),
-            ]);
+            callbackEnteredAt = Date.now();
+            const timingStartedAt = callbackEnteredAt;
+
+            /*
+             * Interactive Prisma transactions use one database connection.
+             * Promise.all does not make queries on that connection execute in
+             * parallel and can make timeout behaviour harder to reason about.
+             * Apply narrow server-side limits and execute the validation reads
+             * in their actual database order.
+             */
+            await transaction.$executeRawUnsafe(
+              `SET LOCAL statement_timeout = '${SERIALIZABLE_STATEMENT_TIMEOUT_MS}ms'`,
+            );
+            await transaction.$executeRawUnsafe(
+              `SET LOCAL lock_timeout = '${SERIALIZABLE_LOCK_TIMEOUT_MS}ms'`,
+            );
+
+            const run = await this.validateGenerationRun(transaction, input);
+            await this.duplicateDetectionService.assertNoExactTitleDuplicate(
+              input.parsedOutput.coreIdea,
+              transaction,
+            );
             const validationMs = Date.now() - timingStartedAt;
             /*
              * CollectionJob is normally attached to the run before this stage.
@@ -403,33 +440,29 @@ export class IdeaPersistenceService {
             const ideaCreateMs = Date.now() - ideaCreateStartedAt;
             const idea = created.idea;
 
-            const parallelWritesStartedAt = Date.now();
-            const entitlementPromise = this.consumeEntitlement(
+            const guardedWritesStartedAt = Date.now();
+            /*
+             * These writes share the same interactive-transaction connection,
+             * so run them explicitly in sequence. If either one fails, Prisma
+             * rolls the whole transaction back, including the newly created
+             * idea and every generated output.
+             */
+            const creditAdjustment = await this.consumeEntitlement(
               transaction,
               input,
               idea.id,
             );
-            const runAttachPromise = this.attachIdeaToGenerationRun(
+            await this.attachIdeaToGenerationRun(
               transaction,
               run.id,
               idea.id,
               input.collectionJobId,
             );
-            /*
-             * Generated outputs and PromptHistory are now nested into the idea
-             * creation query. Only the entitlement deduction and guarded run
-             * attachment remain after the base create, reducing the number of
-             * serial round-trips on Prisma's single interactive-transaction
-             * connection.
-             */
-            const [creditAdjustment] = await Promise.all([
-              entitlementPromise,
-              runAttachPromise,
-            ]);
-            const parallelWritesMs = Date.now() - parallelWritesStartedAt;
+            const guardedWritesMs = Date.now() - guardedWritesStartedAt;
 
+            callbackExitedAt = Date.now();
             this.logger.debug(
-              `Idea persistence DB timing for run "${input.runId}": validation=${validationMs}ms, ideaCreate=${ideaCreateMs}ms, parallelWrites=${parallelWritesMs}ms, transactionBody=${Date.now() - timingStartedAt}ms.`,
+              `Idea persistence DB timing for run "${input.runId}": validation=${validationMs}ms, ideaCreate=${ideaCreateMs}ms, guardedWrites=${guardedWritesMs}ms, transactionBody=${callbackExitedAt - timingStartedAt}ms.`,
             );
 
             return {
@@ -454,6 +487,15 @@ export class IdeaPersistenceService {
             timeout: SERIALIZABLE_TRANSACTION_TIMEOUT_MS,
           },
         );
+        const transactionResolvedAt = Date.now();
+        this.logger.debug(
+          `Idea persistence transaction envelope for run "${input.runId}": ` +
+          `acquireOrBegin=${callbackEnteredAt > 0 ? callbackEnteredAt - transactionInvocationAt : transactionResolvedAt - transactionInvocationAt}ms, ` +
+          `callback=${callbackEnteredAt > 0 && callbackExitedAt >= callbackEnteredAt ? callbackExitedAt - callbackEnteredAt : 0}ms, ` +
+          `commitOrResolve=${callbackExitedAt > 0 ? transactionResolvedAt - callbackExitedAt : 0}ms, ` +
+          `total=${transactionResolvedAt - transactionInvocationAt}ms, attempt=${attempt}.`,
+        );
+        return result;
       } catch (error: unknown) {
         if (
           !this.isRetryableTransactionError(error) ||
@@ -462,9 +504,30 @@ export class IdeaPersistenceService {
           throw error;
         }
 
+        const transientConnectionFailure = isTransientDatabaseError(error);
+        const retryDelayMs = transientConnectionFailure
+          ? Math.min(1_500, 300 * 2 ** (attempt - 1))
+          : Math.min(500, 150 * attempt);
+        const jitterMs = transientConnectionFailure
+          ? Math.floor(Math.random() * 120)
+          : 0;
+        const boundedDelayMs = retryDelayMs + jitterMs;
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const compactError = errorMessage
+          .replace(/\s+/gu, ' ')
+          .trim()
+          .slice(0, 220);
+
         this.logger.warn(
-          `Retrying idea-persistence transaction after a serializable conflict. Attempt ${attempt + 1}/${SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS}.`,
+          `Retrying idea-persistence transaction after a transient ${
+            transientConnectionFailure ? 'database connection' : 'transaction'
+          } failure. Attempt ${attempt + 1}/${SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS} in ${boundedDelayMs}ms; failedAttemptMs=${Date.now() - attemptStartedAt}; reason=${compactError}.`,
         );
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, boundedDelayMs);
+        });
       }
     }
 
@@ -540,6 +603,17 @@ export class IdeaPersistenceService {
   ): ParsedIdeaAiOutput {
     const sanitizeText = (value: string): string => {
       let sanitized = value
+        .replace(/\be\s*\.\s*g\s*\./giu, 'e.g.')
+        .replace(/\bi\s*\.\s*e\s*\./giu, 'i.e.')
+        .replace(/\bai\b/giu, 'AI')
+        .replace(/\bTLS\s*-?\s*(\d+)\s*\.\s*(\d+)\b/giu, 'TLS-$1.$2')
+        .replace(
+          /\b(OAuth|OpenID(?: Connect)?|OIDC|HTTP|SAML)\s+(\d+)\s*\.\s+(\d+)\b/giu,
+          '$1 $2.$3',
+        )
+        .replace(/\b(\d+)\.\s+(\d+)(?=(?:ms|s|sec|secs|second|seconds|%|x)\b)/giu, '$1.$2')
+        .replace(/\bv(\d+)\.\s+(\d+)\b/giu, 'v$1.$2')
+        .replace(/\brobots\s*\.\s*txt\b/giu, 'robots.txt')
         .replace(/\bNext\s*\.\s*js\b/giu, 'Next.js')
         .replace(/\bNest\s*\.\s*js\b/giu, 'NestJS')
         .replace(/\bNode\s*\.\s*js\b/giu, 'Node.js')
@@ -567,6 +641,10 @@ export class IdeaPersistenceService {
           /,?\s*often causing them to\b/giu,
           ', which the report described as causing the observed user to',
         )
+        .replace(
+          /\b((?:Two|Three|Four|Five|\d+) retained direct user reports across (?:two|three|four|five|\d+) independent sources)\s+describes\b/giu,
+          '$1 describe',
+        )
         .trim();
 
       const region = selectedRegion.trim();
@@ -577,7 +655,7 @@ export class IdeaPersistenceService {
           region.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase()),
         );
       }
-      return sanitized;
+      return sanitized.replace(/^([a-z])/u, (letter) => letter.toUpperCase());
     };
 
     const sanitizeJson = (value: JsonValue): JsonValue => {
@@ -1499,15 +1577,33 @@ export class IdeaPersistenceService {
 
   /**
    * Determines whether a Prisma error represents a retryable
-   * serializable write conflict or deadlock.
+   * serializable transaction failure or transient database interruption.
    *
    * @param error Unknown transaction error.
    * @returns Whether the complete transaction may be retried.
    */
   private isRetryableTransactionError(error: unknown): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2034'
+    if (isTransientDatabaseError(error)) {
+      return true;
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (['P2028', 'P2034'].includes(error.code)) {
+        return true;
+      }
+
+      if (error.code === 'P2010') {
+        const metadata = error.meta as Record<string, unknown> | undefined;
+        const databaseCode = String(metadata?.code ?? '');
+        if (['55P03', '57014', '40001', '40P01'].includes(databaseCode)) {
+          return true;
+        }
+      }
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    return /(?:transaction already closed|expired transaction|connection pool|canceling statement due to (?:lock|statement) timeout|lock timeout|statement timeout|deadlock detected|could not serialize access)/iu.test(
+      message,
     );
   }
 

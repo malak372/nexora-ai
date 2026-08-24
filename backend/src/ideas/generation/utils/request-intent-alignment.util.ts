@@ -221,13 +221,27 @@ export function evaluateRequestIntentAlignment(
     requestScript === 'OTHER' ||
     secondaryScript === 'OTHER' ||
     requestScript === secondaryScript;
+  const actorMatch = requestDescription.match(
+    /^(.{3,90}?)\s+(?:often|frequently|regularly|commonly|sometimes)\s+(?:struggle|struggles|have difficulty|find it difficult)\b/iu,
+  );
+  const actorTokens = actorMatch?.[1]
+    ? [...toIntentTokens(actorMatch[1])].filter(
+        (token) =>
+          !/^(?:independent|small|local|professional|provider|providers|business|businesses|company|companies|team|teams)$/iu.test(token),
+      )
+    : [];
+  const actorSharedTokens = actorTokens.filter((token) => narrativeTokens.has(token));
+  const actorIdentitySatisfied =
+    actorTokens.length === 0 ||
+    actorSharedTokens.length >= Math.min(2, actorTokens.length);
 
   const matched =
     !comparableProblemLanguage ||
     (sharedTokens.length >= requiredSharedTokenCount &&
       score >= 0.2 &&
       (problemSharedTokens.length >= 1 || problemScore >= 0.08) &&
-      (!comparableSecondaryLanguage || supportingSectionCount >= 1));
+      (!comparableSecondaryLanguage || supportingSectionCount >= 1) &&
+      actorIdentitySatisfied);
 
   return {
     matched,

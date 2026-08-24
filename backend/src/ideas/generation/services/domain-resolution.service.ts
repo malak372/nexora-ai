@@ -9,6 +9,7 @@ import {
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import { inferDominantRequestDomainName } from '../utils/request-domain-inference.util';
+import { RequestQueryProvenanceUtil } from '../utils/request-query-provenance.util';
 
 /**
  * Result returned after resolving one concrete domain
@@ -65,8 +66,17 @@ type ResolveDomainInput = {
   /** Keywords supplied with the generation request. */
   readonly keywords?: readonly string[];
 
+  /** Existing active domain id explicitly selected by the AI domain classifier. */
+  readonly plannedExistingDomainId?: string;
+
+  /** Whether the AI selected an existing domain or proposed a new hidden one. */
+  readonly plannedDomainSelectionMode?: 'EXISTING' | 'NEW';
+
   /** Professional domain proposed by the pre-collection intent planner. */
   readonly plannedDomainName?: string;
+
+  /** Confidence from the AI pre-collection planner when its domain label was model-generated. */
+  readonly plannedDomainConfidence?: number;
 
   /** Search concepts and evidence targets proposed before collection. */
   readonly plannedKeywords?: readonly string[];
@@ -100,9 +110,11 @@ type HistoricalDomainScore = {
  * 1. Explicit concrete domain selected by the requester, while the current
  *    description may add strongly matched cross-domain search candidates.
  * 2. Description and keywords supplied with the current request.
- * 3. A weighted blend of saved domain preferences, favorite ideas, and recent
- *    generation history when the request contains no current domain/description.
- * 4. A deterministic system-wide domain fallback.
+ * 3. Saved domain preferences when no current domain/description exists.
+ * 4. Favorite-idea domains when no saved preference exists.
+ * 5. The domains the user most frequently generates when neither preference
+ *    nor favorite history provides a usable signal.
+ * 6. A deterministic system-wide domain fallback.
  *
  * The final fallback selects the least-used active concrete domain rather than
  * choosing randomly. This keeps results reproducible and improves domain
@@ -146,14 +158,21 @@ export class DomainResolutionService {
         input.description,
         input.keywords,
       );
+      const plannedRequestDomain = await this.resolveOrCreateRequestDomain(input);
 
-      if (!requestMatch) {
-        return selectedDomainResult;
-      }
-
+      const supportedRequestMatchCandidates =
+        requestMatch?.trace.candidates.filter((candidate) =>
+          this.isStrongCrossDomainRequestMatch(
+            candidate.domainName,
+            input.description,
+            input.keywords,
+          ),
+        ) ?? [];
+      const semanticPrimary = plannedRequestDomain ?? selectedDomainResult;
       const mergedCandidates = [
-        ...requestMatch.trace.candidates,
+        ...semanticPrimary.trace.candidates,
         ...selectedDomainResult.trace.candidates,
+        ...supportedRequestMatchCandidates,
       ]
         .filter(
           (candidate, index, candidates) =>
@@ -161,14 +180,20 @@ export class DomainResolutionService {
               (item) => item.domainId === candidate.domainId,
             ) === index,
         )
-        .slice(0, 3);
+        .slice(0, 4);
 
       return {
-        ...selectedDomainResult,
+        ...semanticPrimary,
         trace: {
           reasons: [
-            ...selectedDomainResult.trace.reasons,
-            'The current description was also analyzed so strongly matched additional domains can participate as cross-domain search constraints without replacing the explicitly selected primary domain.',
+            ...(plannedRequestDomain
+              ? [
+                  'Because request text is present, the AI semantic domain classification is the internal primary domain used for collection and workflow resolution.',
+                  `The AI classified the requester text as "${plannedRequestDomain.domainName}" after seeing the complete visible + hidden domain catalog.`,
+                  `The explicitly selected domain "${selectedDomainResult.domainName}" remains a first-class cross-domain constraint and is not discarded.`,
+                ]
+              : selectedDomainResult.trace.reasons),
+            'Explicit requester domains remain generation/search constraints even when the text belongs to a narrower hidden semantic domain.',
           ],
           matchedInterests: [],
           candidates: mergedCandidates,
@@ -189,6 +214,11 @@ export class DomainResolutionService {
      * user's current problem scope.
      */
     if (hasCurrentRequest) {
+      const aiResolvedDomain = await this.resolveAiPlannedDomain(input);
+      if (aiResolvedDomain) {
+        return aiResolvedDomain;
+      }
+
       const requestText = [
         input.description ?? '',
         ...(input.keywords ?? []),
@@ -204,6 +234,7 @@ export class DomainResolutionService {
       const inferredKnownDomainName = this.chooseRequestDomainName(
         canonicalRequestDomainName,
         plannedDomainName,
+        input.plannedDomainConfidence,
       );
       const inferredKnownDomain = inferredKnownDomainName
         ? domains.find(
@@ -269,9 +300,12 @@ export class DomainResolutionService {
     }
 
     /*
-     * These personalization reads are independent. Load them in one database
-     * latency window, then blend their normalized scores in memory. This keeps
-     * the no-input path personalized without adding sequential database latency.
+     * Personalization is intentionally hierarchical rather than blended.
+     * A saved preference is the strongest durable statement of intent. Only
+     * when no usable saved preference exists do favorites become the selector;
+     * recent generated-idea history is used only when neither explicit signal
+     * exists. The three reads still execute in parallel so this stricter policy
+     * does not add database latency.
      */
     const [
       preferredDomainResult,
@@ -283,15 +317,25 @@ export class DomainResolutionService {
       this.resolveFromGeneratedHistory(input.userId, domains),
     ]);
 
-    const personalizedDomainResult = this.combinePersonalizationSignals(
-      domains,
-      preferredDomainResult,
-      favoriteDomainResult,
-      historicalDomainResult,
-    );
+    if (preferredDomainResult) {
+      return this.withPersonalizationFallbackTrace(
+        preferredDomainResult,
+        'saved preference',
+      );
+    }
 
-    if (personalizedDomainResult) {
-      return personalizedDomainResult;
+    if (favoriteDomainResult) {
+      return this.withPersonalizationFallbackTrace(
+        favoriteDomainResult,
+        'favorite ideas',
+      );
+    }
+
+    if (historicalDomainResult) {
+      return this.withPersonalizationFallbackTrace(
+        historicalDomainResult,
+        'most frequently generated domains from recent history',
+      );
     }
 
     return this.resolveSystemFallback(domains);
@@ -392,146 +436,21 @@ export class DomainResolutionService {
   }
 
   /**
-   * Blends the user's long-lived personalization signals instead of stopping at
-   * the first source that returns a value. Saved preferences remain the strongest
-   * signal, favorites refine ties and durable intent, and recent generation
-   * history supplies a smaller behavioral prior.
-   *
-   * Each source is normalized independently before weighting so a user with many
-   * historical ideas cannot numerically overwhelm an explicit saved preference.
-   * The method is in-memory only and therefore adds no database latency beyond
-   * the three reads that already execute in parallel.
+   * Adds explainability about lower-priority personalization signals without
+   * allowing them to override the selected higher-priority source.
    */
-  private combinePersonalizationSignals(
-    domains: readonly DomainCandidate[],
-    preferredDomainResult: DomainResolutionResult | null,
-    favoriteDomainResult: DomainResolutionResult | null,
-    historicalDomainResult: DomainResolutionResult | null,
-  ): DomainResolutionResult | null {
-    const signals = [
-      {
-        key: 'saved preferences',
-        weight: 0.5,
-        result: preferredDomainResult,
-      },
-      {
-        key: 'favorite ideas',
-        weight: 0.3,
-        result: favoriteDomainResult,
-      },
-      {
-        key: 'recent generation history',
-        weight: 0.2,
-        result: historicalDomainResult,
-      },
-    ] as const;
-
-    const totals = new Map<
-      string,
-      {
-        score: number;
-        reasons: string[];
-        matchedInterests: string[];
-        sources: Set<string>;
-      }
-    >();
-
-    for (const signal of signals) {
-      const candidates = signal.result?.trace.candidates ?? [];
-      const maxScore = Math.max(
-        0,
-        ...candidates.map((candidate) => candidate.score),
-      );
-
-      if (maxScore <= 0) {
-        continue;
-      }
-
-      for (const candidate of candidates) {
-        const contribution =
-          signal.weight * Math.max(0, candidate.score) / maxScore;
-        if (contribution <= 0) {
-          continue;
-        }
-
-        const current = totals.get(candidate.domainId) ?? {
-          score: 0,
-          reasons: [],
-          matchedInterests: [],
-          sources: new Set<string>(),
-        };
-
-        current.score += contribution;
-        current.sources.add(signal.key);
-        current.reasons.push(
-          `${signal.key} contributed ${(contribution * 100).toFixed(1)} weighted points.`,
-        );
-
-        if (
-          signal.result?.domainId === candidate.domainId &&
-          signal.result.trace.matchedInterests.length > 0
-        ) {
-          current.matchedInterests.push(
-            ...signal.result.trace.matchedInterests,
-          );
-        }
-
-        totals.set(candidate.domainId, current);
-      }
-    }
-
-    const domainById = new Map(domains.map((domain) => [domain.id, domain]));
-    const ordered = [...totals.entries()]
-      .map(([domainId, value]) => ({
-        domainId,
-        domainName: domainById.get(domainId)?.name ?? domainId,
-        score: value.score,
-        reasons: value.reasons,
-        matchedInterests: value.matchedInterests,
-        sources: value.sources,
-      }))
-      .filter((candidate) => domainById.has(candidate.domainId))
-      .sort(
-        (first, second) =>
-          second.score - first.score ||
-          first.domainName.localeCompare(second.domainName),
-      );
-
-    const winner = ordered[0];
-    if (!winner) {
-      return null;
-    }
-
-    const runnerUpScore = ordered[1]?.score ?? 0;
-    const margin = Math.max(0, winner.score - runnerUpScore);
-    const confidence = Math.min(
-      0.95,
-      0.68 + Math.min(0.2, winner.score * 0.2) + Math.min(0.07, margin * 0.2),
-    );
-    const preferenceBacked =
-      preferredDomainResult?.trace.candidates.some(
-        (candidate) => candidate.domainId === winner.domainId,
-      ) ?? false;
-
+  private withPersonalizationFallbackTrace(
+    selected: DomainResolutionResult,
+    selectedSignal: string,
+  ): DomainResolutionResult {
     return {
-      domainId: winner.domainId,
-      domainName: winner.domainName,
-      source: preferenceBacked
-        ? DomainResolutionSource.USER_PREFERENCE
-        : DomainResolutionSource.USER_HISTORY,
-      confidence,
+      ...selected,
       trace: {
+        ...selected.trace,
         reasons: [
-          `Selected from blended personalization signals: ${[...winner.sources].join(', ')}.`,
-          'Saved preferences, favorites, and recent generation history are normalized independently so no high-volume history source can overwhelm explicit user intent.',
+          ...selected.trace.reasons,
+          `Personalization hierarchy selected ${selectedSignal}; lower-priority favorite/history signals were not allowed to override or broaden this source.`,
         ],
-        matchedInterests: [...new Set(winner.matchedInterests)],
-        candidates: ordered.slice(0, 3).map((candidate) => ({
-          domainId: candidate.domainId,
-          domainName: candidate.domainName,
-          score: Number(candidate.score.toFixed(4)),
-          reasons: [...new Set(candidate.reasons)],
-        })),
       },
     };
   }
@@ -731,8 +650,8 @@ export class DomainResolutionService {
       domains,
       scores,
       0.72,
-      "No current request, saved preference, or favorite-domain signal was available, so the user's recent generation history selected the domain.",
-      'Recent generated-idea history',
+      "No current request, saved preference, or favorite-domain signal was available, so the most frequently generated domain in the user's recent idea history was selected.",
+      'Most frequently generated domain in recent history',
     );
   }
 
@@ -860,11 +779,57 @@ export class DomainResolutionService {
       'difficult',
       'planning',
       'tracking',
+      'domain',
+      'domains',
+      'antique',
+      'antiques',
+      'historic',
+      'historical',
+      'vintage',
+      'preservation',
+      'preserve',
+      'preserved',
+      'conservation',
+      'conserve',
+      'conserved',
+      'maintenance',
+      'equipment',
+      'cost',
+      'costs',
+      'expense',
+      'expenses',
+      'customer',
+      'customers',
+      'client',
+      'clients',
+      'repair',
+      'repairs',
+      'condition',
+      'history',
       'transportation',
       'budget',
       'schedule',
       'schedules',
       'documents',
+      'document',
+      'record',
+      'records',
+      'incident',
+      'incidents',
+      'delay',
+      'delays',
+      'delayed',
+      'gap',
+      'gaps',
+      'agency',
+      'agencies',
+      'coordination',
+      'issue',
+      'issues',
+      'problem',
+      'problems',
+      'and',
+      'or',
     ]);
 
     const rankedDomains = domains
@@ -879,6 +844,83 @@ export class DomainResolutionService {
 
         let score = 0;
         const reasons: string[] = [];
+        const hiddenAutoDomainRequiresStrongMatch =
+          domain.isAutoGenerated && !domain.isVisible;
+        const normalizedDomainName = this.normalizeSemanticText(domain.name);
+        const transportSpecificDomain =
+          /\b(?:fleet|freight|logistics|transport|transportation|delivery|shipment|route)\b/u.test(
+            normalizedDomainName,
+          );
+        const requestHasTransportContext =
+          /\b(?:fleet|vehicle|vehicles|freight|logistics|transport|transportation|delivery|deliveries|shipment|shipments|route|routes|courier|carrier|last mile|3pl)\b/u.test(
+            normalizedSearchText,
+          );
+        if (transportSpecificDomain && !requestHasTransportContext) {
+          return { domain, score: 0, reasons: [] };
+        }
+        const domainIdentityStopWords = new Set([
+          ...genericTokens,
+          'client',
+          'clients',
+          'project',
+          'projects',
+          'shop',
+          'shops',
+          'workshop',
+          'workshops',
+          'repair',
+          'customer',
+          'customers',
+          // Generic workflow/outcome words must not establish identity for a
+          // hidden auto-generated domain. This prevents domains such as
+          // "Fitness Membership Retention & Revenue Management" from matching
+          // an unrelated subscription-business request only because both talk
+          // about retention and revenue.
+          'analytics',
+          'analysis',
+          'intelligence',
+          'retention',
+          'revenue',
+          'profitability',
+          'performance',
+          'forecast',
+          'forecasting',
+          'prediction',
+          'optimization',
+          'optimisation',
+          'monitoring',
+        ]);
+        const domainIdentityTokens = this.normalizeSemanticText(domain.name)
+          .split(/\s+/u)
+          .filter(
+            (token) =>
+              token.length >= 4 && !domainIdentityStopWords.has(token),
+          );
+        const matchedDomainIdentityTokens = domainIdentityTokens.filter(
+          (token) => searchTokens.has(token),
+        );
+        const requiredIdentityMatches =
+          domainIdentityTokens.length <= 1 ? 1 : 2;
+        const hiddenAutoDomainIdentityMatch =
+          !hiddenAutoDomainRequiresStrongMatch ||
+          this.containsWholeSemanticPhrase(
+            normalizedSearchText,
+            this.normalizeSemanticText(domain.name),
+          ) ||
+          matchedDomainIdentityTokens.length >= requiredIdentityMatches;
+
+        if (!hiddenAutoDomainIdentityMatch) {
+          return { domain, score: 0, reasons: [] };
+        }
+
+        if (
+          normalizedDomainName === 'real estate' &&
+          !/\b(?:real estate|property|properties|property management|property listings?|housing|rental|rentals|tenant|tenants|landlord|landlords|lease|leases|mortgage|mortgages|investment property|commercial property|residential property)\b/iu.test(
+            normalizedSearchText,
+          )
+        ) {
+          return { domain, score: 0, reasons: [] };
+        }
 
         for (const term of [...new Set(configuredTerms)]) {
           const termTokens = term.split(/\s+/).filter(Boolean);
@@ -899,9 +941,6 @@ export class DomainResolutionService {
           const exactPhraseMatch = this.containsWholeSemanticPhrase(normalizedSearchText, term);
           const specificCoverage =
             matchedSpecificTokens.length / specificTermTokens.length;
-          const hiddenAutoDomainRequiresStrongMatch =
-            domain.isAutoGenerated && !domain.isVisible;
-
           if (
             hiddenAutoDomainRequiresStrongMatch &&
             !(
@@ -1682,9 +1721,106 @@ export class DomainResolutionService {
    * configured domain. The operation is idempotent and stores a compact search
    * vocabulary so subsequent collection runs can reuse it immediately.
    */
+  private async resolveAiPlannedDomain(
+    input: ResolveDomainInput,
+  ): Promise<DomainResolutionResult | null> {
+    if (
+      input.plannedDomainSelectionMode === 'EXISTING' &&
+      input.plannedExistingDomainId?.trim()
+    ) {
+      const selected = await this.prisma.domain.findFirst({
+        where: {
+          id: input.plannedExistingDomainId.trim(),
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+      if (selected && !this.isGeneral(selected.name)) {
+        return {
+          domainId: selected.id,
+          domainName: selected.name,
+          source: DomainResolutionSource.KEYWORD_MATCH,
+          confidence: Math.max(
+            0.85,
+            Math.min(1, (input.plannedDomainConfidence ?? 90) / 100),
+          ),
+          trace: {
+            reasons: [
+              'The text-bearing request was classified by AI against the complete active domain catalog, including visible and hidden domains.',
+              `The AI selected the existing domain "${selected.name}" by exact catalog id.`,
+            ],
+            matchedInterests: [],
+            candidates: [
+              {
+                domainId: selected.id,
+                domainName: selected.name,
+                score: 100,
+                reasons: ['Exact AI domain-catalog selection'],
+              },
+            ],
+          },
+        };
+      }
+    }
+
+    if (
+      input.plannedDomainSelectionMode === 'NEW' &&
+      this.normalizePlannedDomainName(input.plannedDomainName)
+    ) {
+      return this.resolveOrCreateRequestDomain(input);
+    }
+
+    return null;
+  }
+
   private async resolveOrCreateRequestDomain(
     input: ResolveDomainInput,
   ): Promise<DomainResolutionResult | null> {
+    if (
+      input.plannedDomainSelectionMode === 'EXISTING' &&
+      input.plannedExistingDomainId?.trim()
+    ) {
+      const selected = await this.prisma.domain.findFirst({
+        where: {
+          id: input.plannedExistingDomainId.trim(),
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+      if (selected && !this.isGeneral(selected.name)) {
+        return {
+          domainId: selected.id,
+          domainName: selected.name,
+          source: DomainResolutionSource.KEYWORD_MATCH,
+          confidence: Math.max(
+            0.85,
+            Math.min(1, (input.plannedDomainConfidence ?? 90) / 100),
+          ),
+          trace: {
+            reasons: [
+              'The AI pre-collection classifier selected this exact existing active domain from the complete visible + hidden domain catalog.',
+            ],
+            matchedInterests: [],
+            candidates: [
+              {
+                domainId: selected.id,
+                domainName: selected.name,
+                score: 100,
+                reasons: ['Exact AI domain-catalog selection'],
+              },
+            ],
+          },
+        };
+      }
+    }
+
     const requestText = [
       input.description ?? '',
       ...(input.keywords ?? []),
@@ -1695,8 +1831,14 @@ export class DomainResolutionService {
       input.plannedDomainName,
     );
     const domainName =
-      this.chooseRequestDomainName(canonicalRequestDomainName, plannedDomainName) ??
-      this.inferDomainName(input.description, input.keywords);
+      input.plannedDomainSelectionMode === 'NEW' && plannedDomainName
+        ? plannedDomainName
+        : this.chooseRequestDomainName(
+            canonicalRequestDomainName,
+            plannedDomainName,
+            input.plannedDomainConfidence,
+          ) ??
+          this.inferDomainName(input.description, input.keywords);
     if (!domainName || this.isGeneral(domainName)) {
       return null;
     }
@@ -1727,29 +1869,42 @@ export class DomainResolutionService {
           return null;
         }
 
+        const equivalentAutoDomain = existing
+          ? null
+          : await this.findEquivalentHiddenAutoDomain(transaction, {
+              domainName,
+              keywordCandidates,
+              language: input.language,
+            });
+
         const resolved = existing
           ? existing
-          : await transaction.domain.create({
-              data: {
-                name: domainName,
-                isActive: true,
-                isVisible: false,
-                isAutoGenerated: true,
-              },
-              select: {
-                id: true,
-                name: true,
-                isActive: true,
-                isVisible: true,
-                isAutoGenerated: true,
-              },
-            });
+          : equivalentAutoDomain
+            ? equivalentAutoDomain
+            : await transaction.domain.create({
+                data: {
+                  name: domainName,
+                  isActive: true,
+                  isVisible: false,
+                  isAutoGenerated: true,
+                },
+                select: {
+                  id: true,
+                  name: true,
+                  isActive: true,
+                  isVisible: true,
+                  isAutoGenerated: true,
+                },
+              });
 
         if (!resolved) {
           return null;
         }
 
-        if (keywordCandidates.length > 0) {
+        const canPersistRequestKeywords =
+          resolved.isAutoGenerated && !resolved.isVisible;
+
+        if (canPersistRequestKeywords && keywordCandidates.length > 0) {
           await transaction.domainKeyword.createMany({
             data: keywordCandidates.map((keyword) => ({
               domainId: resolved.id,
@@ -1799,7 +1954,10 @@ export class DomainResolutionService {
 
       domain = racedDomain;
 
-      if (keywordCandidates.length > 0) {
+      const canPersistRequestKeywords =
+        racedDomain.isAutoGenerated && !racedDomain.isVisible;
+
+      if (canPersistRequestKeywords && keywordCandidates.length > 0) {
         await this.prisma.domainKeyword.createMany({
           data: keywordCandidates.map((keyword) => ({
             domainId: racedDomain.id,
@@ -1823,9 +1981,11 @@ export class DomainResolutionService {
       trace: {
         reasons: [
           input.plannedDomainName
-            ? 'The pre-collection intent planner identified a professional domain that was not configured yet, so a hidden active internal domain was created before evidence collection instead of using an unrelated personalized fallback.'
-            : 'The current request did not match an existing domain strongly enough, so a new active internal domain was created from the requester intent instead of falling back to unrelated personalization. The domain is hidden from user selection until an administrator publishes it.',
-          `Stored ${keywordCandidates.length} request-derived search keyword(s) for future collection.`,
+            ? 'The AI classified the text against every active visible and hidden domain. No existing domain was selected, so the proposed professional domain is reused by exact semantic identity when possible or created as a hidden internal domain before evidence collection.'
+            : 'The current request did not match a visible configured domain strongly enough. A semantically equivalent active hidden domain is reused when available; otherwise a new hidden internal domain is created from requester intent instead of falling back to unrelated personalization.',
+          domain.isAutoGenerated && !domain.isVisible
+            ? `Stored ${keywordCandidates.length} request-derived search keyword(s) on the hidden auto-generated domain for future collection.`
+            : 'Kept request-derived search terms inside the current generation context; existing visible-domain keywords were not mutated.',
         ],
         matchedInterests: [],
         candidates: [
@@ -1833,11 +1993,519 @@ export class DomainResolutionService {
             domainId: domain.id,
             domainName: domain.name,
             score: 1,
-            reasons: ['Auto-created from unmatched current-request intent'],
+            reasons: ['Resolved from current-request intent with hidden-domain semantic deduplication'],
           },
         ],
       },
     };
+  }
+
+  private async findEquivalentHiddenAutoDomain(
+    transaction: Prisma.TransactionClient,
+    input: {
+      readonly domainName: string;
+      readonly keywordCandidates: readonly string[];
+      readonly language: LanguageCode;
+    },
+  ): Promise<{
+    readonly id: string;
+    readonly name: string;
+    readonly isActive: boolean;
+    readonly isVisible: boolean;
+    readonly isAutoGenerated: boolean;
+  } | null> {
+    const candidates = await transaction.domain.findMany({
+      where: {
+        isActive: true,
+        isVisible: false,
+        isAutoGenerated: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        isVisible: true,
+        isAutoGenerated: true,
+        domainKeywords: {
+          where: {
+            language: {
+              in: [input.language, LanguageCode.ANY],
+            },
+          },
+          select: {
+            keyword: true,
+          },
+        },
+      },
+    });
+
+    const requestedNameTokens = this.autoDomainIdentityTokens([
+      input.domainName,
+    ]);
+    const requestedCorpusTokens = this.autoDomainIdentityTokens([
+      input.domainName,
+      ...input.keywordCandidates,
+    ]);
+    const requestedWorkflowFamily = this.autoDomainWorkflowFamily([
+      input.domainName,
+      ...input.keywordCandidates,
+    ]);
+    const requestedObjectIdentity = new Set(
+      RequestQueryProvenanceUtil.extractObjectIdentityTokens([
+        input.domainName,
+        ...input.keywordCandidates,
+      ].join(' ')),
+    );
+
+    const ranked = candidates
+      .map((candidate) => {
+        const candidateNameTokens = this.autoDomainIdentityTokens([
+          candidate.name,
+        ]);
+        const candidateCorpusTokens = this.autoDomainIdentityTokens([
+          candidate.name,
+          ...candidate.domainKeywords.map((item) => item.keyword),
+        ]);
+        const candidateWorkflowFamily = this.autoDomainWorkflowFamily([
+          candidate.name,
+          ...candidate.domainKeywords.map((item) => item.keyword),
+        ]);
+        const candidateObjectIdentity = new Set(
+          RequestQueryProvenanceUtil.extractObjectIdentityTokens([
+            candidate.name,
+            ...candidate.domainKeywords.map((item) => item.keyword),
+          ].join(' ')),
+        );
+        const objectIdentityOverlap = this.tokenIntersectionSize(
+          requestedObjectIdentity,
+          candidateObjectIdentity,
+        );
+        const objectIdentityCompatible =
+          requestedObjectIdentity.size === 0 ||
+          candidateObjectIdentity.size === 0 ||
+          objectIdentityOverlap >= 1;
+        const workflowCompatible =
+          this.autoDomainWorkflowFamiliesCompatible(
+            requestedWorkflowFamily,
+            candidateWorkflowFamily,
+          );
+        const nameOverlap = this.tokenIntersectionSize(
+          requestedNameTokens,
+          candidateNameTokens,
+        );
+        const corpusOverlap = this.tokenIntersectionSize(
+          requestedCorpusTokens,
+          candidateCorpusTokens,
+        );
+        const smallerCorpusSize = Math.max(
+          1,
+          Math.min(requestedCorpusTokens.size, candidateCorpusTokens.size),
+        );
+        const corpusCoverage = corpusOverlap / smallerCorpusSize;
+        const score = nameOverlap * 3 + corpusOverlap + corpusCoverage * 4;
+        return {
+          candidate,
+          nameOverlap,
+          corpusOverlap,
+          corpusCoverage,
+          workflowCompatible,
+          objectIdentityCompatible,
+          objectIdentityOverlap,
+          score: score + objectIdentityOverlap * 6,
+        };
+      })
+      .filter(
+        (entry) =>
+          entry.workflowCompatible &&
+          entry.objectIdentityCompatible &&
+          entry.nameOverlap >= 1 &&
+          entry.corpusOverlap >= 3 &&
+          entry.corpusCoverage >= 0.45,
+      )
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          right.corpusCoverage - left.corpusCoverage ||
+          left.candidate.name.localeCompare(right.candidate.name),
+      );
+
+    const best = ranked[0]?.candidate;
+    if (!best) return null;
+
+    return {
+      id: best.id,
+      name: best.name,
+      isActive: best.isActive,
+      isVisible: best.isVisible,
+      isAutoGenerated: best.isAutoGenerated,
+    };
+  }
+
+  private autoDomainWorkflowFamily(
+    values: readonly string[],
+  ):
+    | 'CUSTOM_FOOTWEAR_PRODUCTION'
+    | 'SHOE_REPAIR'
+    | 'CLOCK_REPAIR'
+    | 'FOUNTAIN_PEN_REPAIR'
+    | 'VIOLIN_BOW_SERVICE'
+    | 'DOLL_RESTORATION'
+    | 'UMBRELLA_REPAIR'
+    | 'PHOTOGRAPH_RESTORATION'
+    | 'WARDROBE_MANAGEMENT'
+    | 'CUSTOM_HEADWEAR'
+    | 'CUSTOM_WIG'
+    | 'TAILORING'
+    | 'EYEGLASS_FRAME_REPAIR'
+    | 'LEATHER_GOODS_REPAIR'
+    | null {
+    const text = this.normalizeSemanticText(values.join(' '));
+
+    if (
+      /\b(?:fountain pen|fountain pens|pen repair specialist|pen repair specialists|fountain pen repair|fountain pen repairs|nib technician|nib technicians|nibmeister|nibmeisters)\b/u.test(
+        text,
+      ) &&
+      /\b(?:nib adjustment|nib adjustments|ink flow|ink flow problem|ink flow problems|replacement part|replacement parts|previous repair|previous repairs|service history|repair history|writing preference|writing preferences|restoration request|restoration requests|diagnostic|diagnostics)\b/u.test(
+        text,
+      )
+    ) {
+      return 'FOUNTAIN_PEN_REPAIR';
+    }
+
+    if (
+      /\b(?:violin bow|violin bows|bow technician|bow technicians|bow maker|bow makers|archetier|archetiers|bow repairer|bow repairers|bow rehair|bow rehairing)\b/u.test(
+        text,
+      ) &&
+      /\b(?:bow condition|rehair date|rehair dates|rehairing date|rehairing dates|hair type|grip|winding|repair note|repair notes|service history|customer preference|customer preferences)\b/u.test(
+        text,
+      )
+    ) {
+      return 'VIOLIN_BOW_SERVICE';
+    }
+
+    const eyeglassRepairActor =
+      /\b(?:eyeglass frame repair|eyeglass repair|eyewear repair|optical frame repair|spectacle frame repair|glasses repair)\b/u.test(text);
+    const eyeglassRepairWorkflow =
+      /\b(?:frame damage|previous repair|repair history|replacement hinge|replacement part|color matching|colour matching|fit preference|customer fit|adjustment note|repeated adjustment|pickup date|promised pickup)\w*\b/u.test(text);
+    if (eyeglassRepairActor && eyeglassRepairWorkflow) {
+      return 'EYEGLASS_FRAME_REPAIR';
+    }
+
+    const leatherGoodsRepairActor =
+      /\b(?:leather goods repair|leather bag repair|bag repair specialist|leather repair specialist|handbag repair|leather restoration)\b/u.test(text);
+    const leatherGoodsRepairWorkflow =
+      /\b(?:leather matching|replacement hardware|zipper|strap|handle|stitching|previous repair|repair history|customer preference|completion date)\w*\b/u.test(text);
+    if (leatherGoodsRepairActor && leatherGoodsRepairWorkflow) {
+      return 'LEATHER_GOODS_REPAIR';
+    }
+
+    const shoeRepairActor =
+      /\b(?:shoe repair|shoe repairs|shoe repair shop|shoe repair shops|cobbler|cobblers|cobbler shop|cobbler shops)\b/u.test(
+        text,
+      );
+    const shoeRepairWorkflow =
+      /\b(?:repair ticket|paper ticket|requested repair|repair status|technician note|misplaced shoe|pickup date|collection date|repair queue)\b/u.test(
+        text,
+      );
+    if (shoeRepairActor && shoeRepairWorkflow) {
+      return 'SHOE_REPAIR';
+    }
+
+    const customFootwearActor =
+      /\b(?:shoemaker|shoemakers|shoe maker|shoe makers|shoemaking|shoe making|bespoke shoemaker|bespoke shoemakers|custom shoe maker|custom shoe makers|custom footwear|bespoke footwear|handmade shoe|handmade shoes|made to measure shoe|made to measure shoes|cordwainer|cordwainers)\b/u.test(
+        text,
+      );
+    const customFootwearWorkflow =
+      /\b(?:foot measurement|foot measurements|leather selection|leather selections|sole type|sole types|stitching preference|stitching preferences|fitting note|fitting notes|design revision|design revisions|approved specification|approved specifications|handmade footwear|custom shoe order)\b/u.test(
+        text,
+      );
+    if (customFootwearActor && customFootwearWorkflow) {
+      return 'CUSTOM_FOOTWEAR_PRODUCTION';
+    }
+
+    const clockRepairActor =
+      /\b(?:clock repair|clock repairs|clock repair specialist|clock repair specialists|clockmaker|clockmakers|horologist|horologists|horology|timepiece repair|antique clock repair)\b/u.test(
+        text,
+      );
+    const clockRepairWorkflow =
+      /\b(?:mechanical fault|mechanical faults|replacement part|replacement parts|previous repair|previous repairs|service history|repair history|restoration instruction|restoration instructions|cost approval|cost approvals|completion date|completion dates|promised completion|diagnostic|diagnostics)\b/u.test(
+        text,
+      );
+    if (clockRepairActor && clockRepairWorkflow) {
+      return 'CLOCK_REPAIR';
+    }
+
+    const umbrellaRepairActor =
+      /\b(?:umbrella repair|umbrella repairs|umbrella repair specialist|umbrella repair specialists|umbrella repairer|umbrella repairers|umbrella restoration|parasol repair|parasol repairs)\b/u.test(text);
+    const umbrellaRepairWorkflow =
+      /\b(?:damaged ribs?|broken ribs?|fabric condition|canopy condition|handle problems?|replacement parts?|previous repairs?|repair history|customer preferences?|pickup dates?|promised pickup|repair notes?|item history)\b/u.test(text);
+    if (umbrellaRepairActor && umbrellaRepairWorkflow) {
+      return 'UMBRELLA_REPAIR';
+    }
+
+    const photographRestorationActor =
+      /\b(?:photograph restoration|photo restoration|photograph restoration specialist|photograph restoration specialists|photo restoration specialist|photo restoration specialists|photograph conservator|photograph conservators|photo conservator|photo conservators)\b/u.test(text);
+    const photographRestorationWorkflow =
+      /\b(?:damaged originals?|scanning details?|requested edits?|retouching|color restoration|colour restoration|revision requests?|restoration notes?|image damage|photo damage|photograph damage)\b/u.test(text);
+    if (photographRestorationActor && photographRestorationWorkflow) {
+      return 'PHOTOGRAPH_RESTORATION';
+    }
+
+    const dollRestorationActor =
+      /\b(?:doll restoration|doll restoration specialist|doll restoration specialists|doll restorer|doll restorers|antique doll restoration|doll repair specialist|doll repair specialists)\b/u.test(
+        text,
+      );
+    const dollRestorationWorkflow =
+      /\b(?:damage photograph|damage photographs|fabric selection|fabric selections|paint matching|restoration note|restoration notes|doll part|doll parts|replacement part|replacement parts|approved restoration|material sample|material samples)\b/u.test(
+        text,
+      );
+    if (dollRestorationActor && dollRestorationWorkflow) {
+      return 'DOLL_RESTORATION';
+    }
+
+    if (
+      /\b(?:wardrobe|digital wardrobe|closet|outfit planning|outfit planner|personal wardrobe)\b/u.test(
+        text,
+      ) &&
+      /\b(?:inventory|outfit|shopping receipt|duplicate purchase|seasonal|weather|cleaning|wardrobe maintenance)\b/u.test(
+        text,
+      )
+    ) {
+      return 'WARDROBE_MANAGEMENT';
+    }
+
+    if (
+      /\b(?:hat maker|hat makers|milliner|milliners|millinery|custom hat|bespoke hat|custom headwear)\b/u.test(
+        text,
+      ) &&
+      /\b(?:head measurement|head circumference|brim dimension|brim width|decorative detail|fitting note|approved specification)\b/u.test(
+        text,
+      )
+    ) {
+      return 'CUSTOM_HEADWEAR';
+    }
+
+    if (
+      /\b(?:wig maker|wig makers|custom wig|custom wigs|hairpiece maker|hairpiece makers|wig studio|wig artisan)\b/u.test(
+        text,
+      )
+    ) {
+      return 'CUSTOM_WIG';
+    }
+
+    if (
+      /\b(?:tailor|tailors|tailoring|alteration shop|alteration shops|bespoke clothing|custom apparel|garment)\b/u.test(
+        text,
+      ) &&
+      /\b(?:body measurement|garment measurement|fabric selection|alteration request|fitting appointment|custom clothing order)\b/u.test(
+        text,
+      )
+    ) {
+      return 'TAILORING';
+    }
+
+    return null;
+  }
+
+  private autoDomainWorkflowFamiliesCompatible(
+    requested:
+      | 'CUSTOM_FOOTWEAR_PRODUCTION'
+      | 'SHOE_REPAIR'
+      | 'CLOCK_REPAIR'
+      | 'FOUNTAIN_PEN_REPAIR'
+      | 'VIOLIN_BOW_SERVICE'
+      | 'DOLL_RESTORATION'
+      | 'UMBRELLA_REPAIR'
+      | 'PHOTOGRAPH_RESTORATION'
+      | 'WARDROBE_MANAGEMENT'
+      | 'CUSTOM_HEADWEAR'
+      | 'CUSTOM_WIG'
+      | 'TAILORING'
+      | 'EYEGLASS_FRAME_REPAIR'
+      | 'LEATHER_GOODS_REPAIR'
+      | null,
+    candidate:
+      | 'CUSTOM_FOOTWEAR_PRODUCTION'
+      | 'SHOE_REPAIR'
+      | 'CLOCK_REPAIR'
+      | 'FOUNTAIN_PEN_REPAIR'
+      | 'VIOLIN_BOW_SERVICE'
+      | 'DOLL_RESTORATION'
+      | 'UMBRELLA_REPAIR'
+      | 'PHOTOGRAPH_RESTORATION'
+      | 'WARDROBE_MANAGEMENT'
+      | 'CUSTOM_HEADWEAR'
+      | 'CUSTOM_WIG'
+      | 'TAILORING'
+      | 'EYEGLASS_FRAME_REPAIR'
+      | 'LEATHER_GOODS_REPAIR'
+      | null,
+  ): boolean {
+    if (requested || candidate) return requested === candidate;
+    return true;
+  }
+
+  private autoDomainIdentityTokens(values: readonly string[]): Set<string> {
+    const stopWords = new Set([
+      'management',
+      'operations',
+      'operation',
+      'workflow',
+      'workflows',
+      'system',
+      'systems',
+      'platform',
+      'platforms',
+      'software',
+      'application',
+      'applications',
+      'service',
+      'services',
+      'business',
+      'businesses',
+      'independent',
+      'professional',
+      'professionals',
+      'specialist',
+      'specialists',
+      'technician',
+      'technicians',
+      'operator',
+      'operators',
+      'provider',
+      'providers',
+      'customer',
+      'customers',
+      'client',
+      'clients',
+      'tracking',
+      'track',
+      'documentation',
+      'document',
+      'documents',
+      'treatment',
+      'treatments',
+      'approval',
+      'approvals',
+      // Heritage/workflow scaffolding is too generic to prove that two hidden
+      // auto-domains describe the same underlying object. Keep the material or
+      // object identity (textile, map, jewelry, fountain, violin, etc.) as the
+      // part that must overlap before an existing hidden domain can be reused.
+      'domain',
+      'domains',
+      'antique',
+      'antiques',
+      'historic',
+      'historical',
+      'vintage',
+      'preservation',
+      'preserve',
+      'preserved',
+      'conservation',
+      'conserve',
+      'conserved',
+      'maintenance',
+      'equipment',
+      'cost',
+      'costs',
+      'expense',
+      'expenses',
+      'condition',
+      'record',
+      'records',
+      'repair',
+      'repairs',
+      'restoration',
+      'history',
+      'practice',
+      'project',
+      'projects',
+      'shop',
+      'shops',
+      'workshop',
+      'workshops',
+      'order',
+      'orders',
+      'data',
+      'digital',
+      'analytics',
+      'analysis',
+      'intelligence',
+      'retention',
+      'revenue',
+      'profitability',
+      'performance',
+      'forecast',
+      'forecasting',
+      'prediction',
+      'optimization',
+      'optimisation',
+      'monitoring',
+      // Risk/security/workflow vocabulary is intentionally non-identifying for
+      // hidden-domain reuse. A marketplace fraud domain must not be considered
+      // equivalent to logistics fraud merely because both names contain
+      // "security", "fraud", or "detection". Reuse now requires the
+      // concrete business/object identity (marketplace, logistics, textile,
+      // camera, hospital, etc.) to overlap as well.
+      'security',
+      'cybersecurity',
+      'fraud',
+      'fraudulent',
+      'detection',
+      'detect',
+      'risk',
+      'risks',
+      'identity',
+      'access',
+      'account',
+      'accounts',
+      'governance',
+      'compliance',
+      'investigation',
+      'investigations',
+      'alert',
+      'alerts',
+      'anomaly',
+      'anomalies',
+    ]);
+
+    return new Set(
+      values
+        .flatMap((value) =>
+          this.normalizeSemanticText(value)
+            .split(/\s+/u)
+            .filter(Boolean),
+        )
+        .map((token) => this.normalizeAutoDomainIdentityToken(token))
+        .filter(
+          (token) => token.length >= 4 && !stopWords.has(token),
+        ),
+    );
+  }
+
+  private normalizeAutoDomainIdentityToken(value: string): string {
+    let token = value.toLocaleLowerCase();
+    if (token.length > 7 && token.endsWith('ing')) {
+      token = token.slice(0, -3);
+    } else if (token.length > 6 && token.endsWith('ers')) {
+      token = token.slice(0, -3);
+    } else if (token.length > 5 && token.endsWith('ies')) {
+      token = `${token.slice(0, -3)}y`;
+    } else if (token.length > 5 && token.endsWith('s')) {
+      token = token.slice(0, -1);
+    }
+    return token;
+  }
+
+  private tokenIntersectionSize(
+    left: ReadonlySet<string>,
+    right: ReadonlySet<string>,
+  ): number {
+    let count = 0;
+    for (const token of left) {
+      if (right.has(token)) count += 1;
+    }
+    return count;
   }
 
   private normalizePlannedDomainName(value?: string): string | null {
@@ -1848,8 +2516,8 @@ export class DomainResolutionService {
       .trim();
 
     if (!normalized || normalized.length > 80) return null;
-    const words = normalized.split(/\s+/u);
-    if (words.length < 2 || words.length > 8) return null;
+    const words = normalized.split(/\s+/u).filter((word) => word !== '&');
+    if (words.length < 2 || words.length > 12) return null;
     if (
       /^(?:people|users|companies|travelers|travellers|members|owners|teams?|students?)\b/iu.test(
         normalized,
@@ -1919,6 +2587,7 @@ export class DomainResolutionService {
   private chooseRequestDomainName(
     canonicalDomainName: string | null,
     plannedDomainName: string | null,
+    plannedDomainConfidence?: number,
   ): string | null {
     if (!plannedDomainName) return canonicalDomainName;
     if (!canonicalDomainName) return plannedDomainName;
@@ -1926,6 +2595,24 @@ export class DomainResolutionService {
     const canonical = this.normalizeSemanticText(canonicalDomainName);
     const planned = this.normalizeSemanticText(plannedDomainName);
     if (canonical === planned) return canonicalDomainName;
+
+    const rawConfidence = Number.isFinite(plannedDomainConfidence)
+      ? Number(plannedDomainConfidence)
+      : 0;
+    const normalizedConfidence = Math.max(
+      0,
+      Math.min(1, rawConfidence > 1 ? rawConfidence / 100 : rawConfidence),
+    );
+    const plannedIsBroad = new Set([
+      'education', 'business operations', 'government', 'logistics', 'healthcare',
+      'tourism', 'media entertainment', 'sports fitness', 'artificial intelligence',
+      'cybersecurity', 'internet of things', 'food restaurants', 'finance',
+      'real estate', 'transportation', 'e commerce', 'agriculture', 'energy',
+      'blockchain', 'hr recruitment', 'legaltech', 'pets', 'pet care',
+    ]).has(planned);
+    if (normalizedConfidence >= 0.85 && !plannedIsBroad) {
+      return plannedDomainName;
+    }
 
     const broadCanonicalDomains = new Set([
       'education',
@@ -1936,11 +2623,58 @@ export class DomainResolutionService {
       'tourism',
       'media entertainment',
       'sports fitness',
+      'wardrobe personal fashion management',
+      'laundry dry cleaning operations',
+      'artificial intelligence',
+      'cybersecurity',
+      'internet of things',
+      'food restaurants',
+      'finance',
+      'real estate',
+      'transportation',
+      'e commerce',
+      'agriculture',
+      'energy',
+      'blockchain',
+      'hr recruitment',
+      'legaltech',
     ]);
 
     return broadCanonicalDomains.has(canonical)
       ? plannedDomainName
       : canonicalDomainName;
+  }
+
+  private isStrongCrossDomainRequestMatch(
+    domainName: string,
+    description?: string,
+    keywords?: readonly string[],
+  ): boolean {
+    const request = this.normalizeSemanticText(
+      [description ?? '', ...(keywords ?? [])].join(' '),
+    );
+    if (!request) return false;
+
+    const domain = this.normalizeSemanticText(domainName);
+    if (domain === 'energy') {
+      return /\b(?:energy|electricity|power|utility|utilities|grid|solar|battery|fuel|hvac|kwh|kilowatt|meter|smart meter|submeter|gas consumption|electricity consumption|energy consumption)\w*\b/u.test(
+        request,
+      );
+    }
+
+    if (domain === 'cybersecurity') {
+      return /\b(?:cybersecurity|security|unauthorized access|account takeover|malicious|attack|breach|fraud|phishing|credential|authentication)\w*\b/u.test(
+        request,
+      );
+    }
+
+    if (domain === 'finance') {
+      return /\b(?:finance|financial|costs?|expenses?|revenue|profitability|margin|budget|payment|payments|billing|cash flow|reimbursement|supplier prices?)\w*\b/u.test(
+        request,
+      );
+    }
+
+    return true;
   }
 
   private inferKnownDomainName(requestText: string): string | null {

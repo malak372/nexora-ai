@@ -205,14 +205,25 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
         const status = requestError?.response?.status ?? null;
 
         if (mountedRef.current && !silent) {
-          setErrorStatus(status);
-          setError(
-            status === 429
-              ? 'Live progress is still running. Status synchronization will retry automatically.'
-              : requestError?.response?.data?.message ||
-                  requestError?.message ||
-                  'Generation progress could not be refreshed.',
-          );
+          const isPermanentAccessError = status === 403 || status === 404;
+
+          if (isPermanentAccessError) {
+            setErrorStatus(status);
+            setError(
+              requestError?.response?.data?.message ||
+                requestError?.message ||
+                'Generation progress could not be refreshed.',
+            );
+          } else {
+            // A temporary REST timeout/rate-limit must never replace the live
+            // generation screen with an error page. Socket.IO remains primary
+            // and the reconciliation loop will retry automatically.
+            setErrorStatus(null);
+            setError('');
+            setConnectionState((current) =>
+              current === 'connected' ? current : 'reconnecting',
+            );
+          }
         }
 
         throw requestError;

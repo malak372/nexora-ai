@@ -117,7 +117,10 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {
+      if (_hasDescriptionText) _personalized = false;
+    });
   }
 
   void _handleSessionChanged() {
@@ -273,7 +276,9 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     if (mounted && result.finalResult) setState(() => _listening = false);
   }
 
+  bool get _hasDescriptionText => _description.text.trim().isNotEmpty;
   bool get _hasSignal => _description.text.trim().length >= _minSignal;
+  bool get _canChooseDomainsInstead => !_hasDescriptionText;
   bool get _isPremium => _session.summary?.isPremium == true;
   int get _creditBalance => _session.summary?.creditBalance ?? 0;
   int get _premiumCost => _asInt(_pricing['premiumIdeaCreditCost']);
@@ -304,7 +309,7 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   bool get _canContinue {
     return switch (_step) {
       0 => _hasSignal,
-      1 => _hasSignal || _selectedDomainIds.isNotEmpty || _personalized,
+      1 => _hasSignal || _selectedDomainIds.isNotEmpty,
       2 => _country.text.trim().isNotEmpty,
       _ => true,
     };
@@ -325,10 +330,15 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     });
   }
 
-  void _togglePersonalized() {
+  void _startPersonalizedDiscovery() {
+    if (!_canChooseDomainsInstead) return;
+
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
-      _personalized = !_personalized;
-      if (_personalized) _selectedDomainIds.clear();
+      _error = '';
+      _personalized = true;
+      _selectedDomainIds.clear();
+      _step = 2;
     });
   }
 
@@ -354,7 +364,7 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     if (_step == 1 && !_canContinue) {
       setState(
         () => _error =
-            'Choose one to three domains, use personalized discovery, or go back and add a problem signal.',
+            'Choose one to three domains, or go back and add a problem signal.',
       );
       return;
     }
@@ -369,10 +379,26 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   }
 
   void _chooseDomainsInstead() {
+    if (!_canChooseDomainsInstead) return;
+
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _error = '';
+      _personalized = false;
       _step = 1;
+    });
+  }
+
+  void _back() {
+    if (_step <= 0) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _error = '';
+      if (_step == 2 && _personalized) {
+        _step = 0;
+      } else {
+        _step -= 1;
+      }
     });
   }
 
@@ -397,6 +423,130 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     setState(() {
       _language = selected;
     });
+  }
+
+  bool _isGenerationAlreadyRunning(ApiException error) {
+    final message = error.message.toLowerCase();
+
+    return message.contains(
+          'an idea-generation run is already active for this owner',
+        ) ||
+        (error.statusCode == 409 &&
+            message.contains('generation') &&
+            (message.contains('already active') ||
+                message.contains('already running')));
+  }
+
+  Future<void> _showGenerationAlreadyRunningDialog() async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      barrierColor: AppColors.primaryDeep.withValues(alpha: .28),
+      builder: (dialogContext) {
+        return Dialog(
+          alignment: Alignment.center,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 410),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFEFD),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: .22),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryDeep.withValues(alpha: .18),
+                    blurRadius: 46,
+                    offset: const Offset(0, 20),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.primarySoft.withValues(alpha: .96),
+                          AppColors.surfaceRose.withValues(alpha: .82),
+                        ],
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: AppColors.primaryDeep,
+                      size: 27,
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  Text(
+                    'GENERATION IN PROGRESS',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppColors.primaryDeep,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.15,
+                        ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    'Another idea is already being generated.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w900,
+                          height: 1.12,
+                        ),
+                  ),
+                  const SizedBox(height: 11),
+                  Text(
+                    'Voxidence is still working on your current generation. Please try later after it finishes.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.textMuted,
+                          height: 1.55,
+                        ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      child: const Text('Close'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _submit() async {
@@ -438,11 +588,43 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
       await Navigator.of(context).pushNamed('/normal/generation/$runId');
     } on ApiException catch (error) {
       if (!mounted) return;
+
+      if (_isGenerationAlreadyRunning(error)) {
+        setState(() => _error = '');
+        await _showGenerationAlreadyRunningDialog();
+        return;
+      }
+
       if ((error.statusCode == 403 || error.statusCode == 409) &&
           error.message.toLowerCase().contains('free')) {
         await _session.load(force: true);
       }
-      setState(() => _error = error.message);
+
+      // A connection drop may hide the accepted response while the backend
+      // continues the durable run. Recover that run instead of reporting a
+      // false timeout and inviting a second generation request.
+      if (error.statusCode == null || error.statusCode! >= 500) {
+        try {
+          final activeRun = await UserApi.instance.getActiveGenerationRun(
+            force: true,
+          );
+          final recoveredRunId = activeRun == null ? '' : _readRunId(activeRun);
+
+          if (recoveredRunId.isNotEmpty) {
+            _resetWizardForNextRun();
+            widget.onGenerationStarted?.call();
+            if (!mounted) return;
+            await Navigator.of(
+              context,
+            ).pushNamed('/normal/generation/$recoveredRunId');
+            return;
+          }
+        } catch (_) {
+          // Preserve the original start error if no durable active run exists.
+        }
+      }
+
+      if (mounted) setState(() => _error = error.message);
     } catch (_) {
       if (mounted) {
         setState(() => _error = 'Idea generation could not be started.');
@@ -579,9 +761,7 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
                   SizedBox(
                     width: 94,
                     child: OutlinedButton.icon(
-                      onPressed: _submitting
-                          ? null
-                          : () => setState(() => _step -= 1),
+                      onPressed: _submitting ? null : _back,
                       icon: const Icon(Icons.arrow_back_rounded, size: 16),
                       label: const Text('Back'),
                       style: OutlinedButton.styleFrom(
@@ -769,14 +949,19 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: _chooseDomainsInstead,
-                            borderRadius: BorderRadius.circular(15),
-                            child: Ink(
-                              height: 42,
-                              padding: const EdgeInsets.symmetric(
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 160),
+                          opacity: _canChooseDomainsInstead ? 1 : .45,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: _canChooseDomainsInstead
+                                  ? _chooseDomainsInstead
+                                  : null,
+                              borderRadius: BorderRadius.circular(15),
+                              child: Ink(
+                                height: 42,
+                                padding: const EdgeInsets.symmetric(
                                 horizontal: 9,
                               ),
                               decoration: BoxDecoration(
@@ -853,11 +1038,24 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
                           ),
                         ),
                       ),
+                    ),
                     ],
                   ),
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 11),
+          _ModeCard(
+            selected: false,
+            disabled: !_canChooseDomainsInstead,
+            icon: Icons.explore_outlined,
+            title: 'I’m not sure what my idea should be yet',
+            subtitle:
+                'Help me discover a direction from my interests and preferences',
+            badge: 'GUIDED DISCOVERY',
+            rose: true,
+            onTap: _startPersonalizedDiscovery,
           ),
           const SizedBox(height: 11),
           Row(
@@ -956,8 +1154,7 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   }
 
   Widget _focusStep() {
-    final autoSelected =
-        _hasSignal && _selectedDomainIds.isEmpty && !_personalized;
+    final autoSelected = _hasSignal && _selectedDomainIds.isEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -993,10 +1190,8 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
                         color: Colors.white.withValues(alpha: .85),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(
-                        _personalized
-                            ? Icons.auto_awesome_rounded
-                            : Icons.layers_outlined,
+                      child: const Icon(
+                        Icons.layers_outlined,
                         size: 17,
                         color: AppColors.primaryDark,
                       ),
@@ -1007,9 +1202,7 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _personalized
-                                ? 'Personalized discovery'
-                                : '${_selectedDomainIds.length} of $_maxDomains selected',
+                            '${_selectedDomainIds.length} of $_maxDomains selected',
                             style: const TextStyle(
                               color: AppColors.textPrimary,
                               fontSize: 10.8,
@@ -1018,11 +1211,9 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _personalized
-                                ? 'Using interests, preferences, favorites and idea history.'
-                                : autoSelected
-                                    ? 'Automatic matching is ready from your signal.'
-                                    : 'Choose related areas rather than unrelated categories.',
+                            autoSelected
+                                ? 'Automatic matching is ready from your signal.'
+                                : 'Choose related areas rather than unrelated categories.',
                             style: const TextStyle(
                               color: AppColors.textMuted,
                               fontSize: 8.7,
@@ -1033,7 +1224,7 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
                         ],
                       ),
                     ),
-                    if (_selectedDomainIds.isNotEmpty || _personalized)
+                    if (_selectedDomainIds.isNotEmpty)
                       TextButton(
                         onPressed: () => setState(() {
                           _selectedDomainIds.clear();
@@ -1058,17 +1249,6 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
               : 'Add a problem signal first to unlock automatic matching',
           badge: 'RECOMMENDED',
           onTap: _selectAuto,
-        ),
-        const SizedBox(height: 8),
-        _ModeCard(
-          selected: _personalized,
-          icon: Icons.person_search_outlined,
-          title: 'Discover around my workspace',
-          subtitle:
-              'Use my interests, preferences, accepted ideas and previous activity',
-          badge: 'PERSONALIZED',
-          rose: true,
-          onTap: _togglePersonalized,
         ),
         if (_selectedDomains.isNotEmpty) ...[
           const SizedBox(height: 12),

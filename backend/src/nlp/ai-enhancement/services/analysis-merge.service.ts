@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { hasDocumentAccessOrDownloadFailure } from '../../common/utils/document-access-evidence.util';
+
 import {
   buildCommunityEvidenceExcerpt,
   hasDirectCommunityComplaint,
@@ -924,18 +926,8 @@ export class AnalysisMergeService {
     }
 
     if (/document|download|syllabus|file access/iu.test(normalizedLabel)) {
-      const hasDocumentObject =
-        /(?:document|download|syllabus|attachment|pdf|file|broken link)/iu.test(
-          normalizedEvidence,
-        );
-      const hasDocumentFailure =
-        /(?:cannot|can['’]?t|unable|won['’]?t|doesn['’]?t|fail|failed|broken|error|null|not open|open)/iu.test(
-          normalizedEvidence,
-        );
-
       return (
-        hasDocumentObject &&
-        hasDocumentFailure &&
+        hasDocumentAccessOrDownloadFailure(normalizedEvidence) &&
         !/(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp)/iu.test(
           normalizedEvidence,
         )
@@ -1012,6 +1004,14 @@ export class AnalysisMergeService {
     if (
       /reliability|crash|stable application|performance/iu.test(normalizedLabel)
     ) {
+      if (
+        /\b(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b[^.!?]{0,120}\b(?:access|available|availability)\b|\b(?:doesn['’]?t|does not|cannot|can['’]?t|unable to)\s+have\s+access\s+to\s+(?:case\s*law|caselaw|legal|law)\s+(?:database|databases|repository|repositories|source|sources)\b/iu.test(
+          normalizedEvidence,
+        )
+      ) {
+        return false;
+      }
+
       if (
         /\b(?:scratch|scratches|sore|sores|bug bite|bug bites|insect bite|wound|skin)\b/iu.test(
           normalizedEvidence,
@@ -1109,7 +1109,11 @@ export class AnalysisMergeService {
       return 'Reliable Account Activation and Login';
     }
 
-    if (/document|download|syllabus|file access/iu.test(normalized)) {
+    if (
+      /document|download|syllabus|file access/iu.test(normalized) &&
+      (evidenceSamples.length === 0 ||
+        evidenceSamples.some((sample) => hasDocumentAccessOrDownloadFailure(sample)))
+    ) {
       return 'Reliable Document Access and Downloads';
     }
 
@@ -1158,6 +1162,14 @@ export class AnalysisMergeService {
       return 'Navigation and Interface Failures';
     }
 
+    if (
+      /blockchain transaction|smart contract|transaction revert|execution revert|reverted without (?:a )?reason|providererror|provider error|failed transaction|gas estimation failed|cannot estimate gas/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Blockchain Transaction Execution and Smart Contract Revert Failures';
+    }
+
     if (/data|sync|recovery/iu.test(normalized)) {
       return 'Data Loss and Synchronization Failures';
     }
@@ -1166,7 +1178,7 @@ export class AnalysisMergeService {
       return 'Account Activation and Login Failures';
     }
 
-    if (/document|download|syllabus|file/iu.test(normalized)) {
+    if (hasDocumentAccessOrDownloadFailure(normalized)) {
       return 'Document Access and Download Failures';
     }
 
@@ -1181,10 +1193,16 @@ export class AnalysisMergeService {
   private canonicalizeProblemTitle(value: string): string {
     const normalized = this.normalizeKey(value);
 
-    // Match concrete workflows before generic terms such as "failure".
+    // Technical failure signatures outrank wrapper nouns such as document, email, or sign.
     if (
-      /document|download|syllabus|file access|broken link/iu.test(normalized)
+      /\b(?:transaction reverted|execution reverted|reverted without (?:a )?reason(?: string)?|providererror|provider error|failed transaction|transaction failed|transaction status (?:is |was )?failed|status (?:is |was )?always failed|smart contract (?:call|transaction|execution) (?:failed|fails|reverted)|gas estimation failed|cannot estimate gas|evm revert)\b/iu.test(normalized) &&
+      /\b(?:blockchain|smart contract|contract|web3|hardhat|alchemy|goerli|ethereum|evm|solidity|transaction)\b/iu.test(normalized)
     ) {
+      return 'Blockchain Transaction Execution and Smart Contract Revert Failures';
+    }
+
+    // Match concrete workflows before generic terms such as "failure".
+    if (hasDocumentAccessOrDownloadFailure(normalized)) {
       return 'Document Access and Download Failures';
     }
 

@@ -36,6 +36,7 @@ import type {
 } from '../../types/idea-ai-output.type';
 
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
+import { RequestProductBlueprintUtil } from '../../utils/request-product-blueprint.util';
 
 import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
@@ -120,7 +121,7 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
       ReturnType<IdeaPersistenceService['persistIdea']>
     > | null = null;
 
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
       const parsedOutput: ParsedIdeaAiOutput = {
         coreIdea: persistenceCoreIdea,
         advancedOutputs: persistenceAdvancedOutputs,
@@ -149,7 +150,7 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
         });
         break;
       } catch (error: unknown) {
-        if (!this.isExactTitleRace(error) || attempt >= 3) {
+        if (!this.isExactTitleRace(error)) {
           throw error;
         }
 
@@ -277,77 +278,38 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
     readonly coreIdea: ParsedIdeaAiOutput['coreIdea'];
     readonly advancedOutputs: ParsedIdeaAiOutput['advancedOutputs'];
   }> {
+    const semanticTitles = this.buildRaceSafeSemanticTitles(
+      context,
+      currentCoreIdea.title,
+    );
     const variants = [
-      {
-        suffix: 'Evidence Trace Edition',
-        focus:
-          'evidence provenance, discrepancy review, reviewer ownership, and traceable closure',
-      },
-      {
-        suffix: 'Case Review Edition',
-        focus:
-          'case intake, exception classification, reviewer handoff, and audited disposition',
-      },
-      {
-        suffix: 'Pilot Operations Edition',
-        focus:
-          'pilot signal capture, unresolved-case aging, ownership transitions, and human-reviewed resolution',
-      },
-      {
-        suffix: 'Decision Audit Edition',
-        focus:
-          'decision provenance, supporting-record comparison, contradiction tracking, and final approval history',
-      },
+      'Trace Review Edition',
+      'Case Review Edition',
+      'Decision Trace Edition',
+      'Integrity Review Edition',
+      'Exception Review Edition',
+      'Pilot Review Edition',
     ] as const;
-    const country = context.location.country?.trim() || 'the selected pilot region';
+    const attempts =
+      this.isNoInputPreferencePath(context) || this.isDomainsOnlyPath(context)
+        ? semanticTitles
+        : variants.map((suffix, offset) =>
+            this.buildRaceSafeTitle(
+              currentCoreIdea.title,
+              context.runId,
+              seedAttempt + offset,
+              suffix,
+            ),
+          );
 
-    for (let offset = 0; offset < variants.length; offset += 1) {
-      const variant = variants[(seedAttempt - 1 + offset) % variants.length];
-      const nextTitle = this.buildRaceSafeTitle(
-        currentCoreIdea.title,
-        context.runId,
-        seedAttempt + offset,
-        variant.suffix,
-      );
-      const nextCoreIdea: ParsedIdeaAiOutput['coreIdea'] = {
-        ...currentCoreIdea,
-        title: nextTitle,
-        problemStatement: [
-          currentCoreIdea.problemStatement,
-          `This edition narrows the implementation to ${variant.focus} so the workflow remains materially distinct while preserving the same grounded problem.`,
-        ]
-          .join(' ')
-          .replace(/\s+/gu, ' ')
-          .trim(),
-        objectives: [
-          `Create a structured intake for ${variant.focus} with source provenance, status, owner, and review history.`,
-          'Separate confirmed evidence from assumptions and route uncertain cases to an authorized reviewer before any downstream action.',
-          'Maintain a focused queue and immutable handoff history so each exception has one visible owner, next action, and reviewed closure state.',
-          `Establish a baseline during the pilot in ${country} and measure directional change in unresolved-case age and coordination errors without unsupported percentage targets.`,
-        ],
-        ...(currentCoreIdea.fullAbstract
-          ? {
-              fullAbstract: `${nextTitle} is a focused workflow for ${variant.focus}. It preserves the already-grounded problem while changing the operational control loop to intake, evidence qualification, reviewer assignment, handoff tracking, and audited closure. Authorized users register only the minimum supporting records, document uncertainty, and route consequential decisions to human review. The implementation uses a NestJS backend, PostgreSQL persistence, a responsive web client, role-based access control, encrypted transport, and immutable audit logging. The pilot in ${country} first establishes a baseline and then measures directional change without claiming unsupported market-wide prevalence.`,
-            }
-          : {}),
-        ...(currentCoreIdea.partialAbstract
-          ? {
-              partialAbstract: `${nextTitle} focuses on ${variant.focus} around the same grounded problem, with explicit evidence provenance and human-reviewed decisions.`,
-            }
-          : {}),
-        ...(currentCoreIdea.limitedAbstract
-          ? {
-              limitedAbstract: `${nextTitle} is a focused pilot for ${variant.focus} with traceable evidence and human-reviewed decisions.`,
-            }
-          : {}),
-      };
-      const duplicateResult = await this.duplicateDetectionService.check(
-        context.domainId,
-        context.collection!.collectionJobId,
-        nextCoreIdea,
+    for (let offset = 0; offset < attempts.length; offset += 1) {
+      const nextTitle = attempts[(seedAttempt - 1 + offset) % attempts.length];
+      const nextCoreIdea = this.rewriteCoreIdeaTitle(
+        currentCoreIdea,
+        nextTitle,
       );
 
-      if (!duplicateResult.isDuplicate) {
+      if (await this.isExactTitleAvailable(nextCoreIdea)) {
         return {
           coreIdea: nextCoreIdea,
           advancedOutputs: this.rewriteOutputTitle(
@@ -359,36 +321,252 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
       }
     }
 
-    const fallbackTitle = this.buildRaceSafeTitle(
-      currentCoreIdea.title,
-      context.runId,
-      seedAttempt + variants.length,
-      'Evidence Qualification Edition',
+    const fallbackTitle = await this.buildGuaranteedCollisionSafeTitle(
+      currentCoreIdea,
+      semanticTitles,
+      seedAttempt,
     );
-    const fallbackCoreIdea: ParsedIdeaAiOutput['coreIdea'] = {
-      ...currentCoreIdea,
-      title: fallbackTitle,
-      problemStatement: `${currentCoreIdea.problemStatement} This bounded edition is an evidence-qualification and implementation-decision workflow rather than another end-to-end operational solution.`,
-      objectives: [
-        'Register traceable evidence and distinguish direct observations, secondary reports, requester statements, and unresolved assumptions.',
-        'Compare source independence, domain fit, contradiction signals, and problem specificity before any implementation decision is approved.',
-        'Maintain a reviewer ledger for accepted, rejected, and unresolved signals so repeated product implementations are not generated from the same weak evidence.',
-        'Produce a human-approved build, narrow, pivot, or stop decision with the exact evidence supporting that decision.',
-      ],
-      ...(currentCoreIdea.fullAbstract
-        ? {
-            fullAbstract: `${fallbackTitle} is an evidence-qualification workspace for deciding whether the grounded problem justifies a new implementation. It stores source provenance, direct-versus-secondary evidence status, contradiction notes, reviewer decisions, and unresolved questions. Its output is a reviewed build, narrow, pivot, or stop recommendation rather than another operational product that repeats an existing idea.`,
-          }
-        : {}),
-    };
 
     return {
-      coreIdea: fallbackCoreIdea,
+      coreIdea: this.rewriteCoreIdeaTitle(currentCoreIdea, fallbackTitle),
       advancedOutputs: this.rewriteOutputTitle(
         currentAdvancedOutputs,
         currentCoreIdea.title,
         fallbackTitle,
       ),
+    };
+  }
+
+  private async isExactTitleAvailable(
+    coreIdea: ParsedIdeaAiOutput['coreIdea'],
+  ): Promise<boolean> {
+    try {
+      await this.duplicateDetectionService.assertNoExactTitleDuplicate(coreIdea);
+      return true;
+    } catch (error: unknown) {
+      if (this.isExactTitleRace(error)) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  private async buildGuaranteedCollisionSafeTitle(
+    currentCoreIdea: ParsedIdeaAiOutput['coreIdea'],
+    semanticTitles: readonly string[],
+    seedAttempt: number,
+  ): Promise<string> {
+    const preferredTitle =
+      semanticTitles[(seedAttempt - 1) % Math.max(semanticTitles.length, 1)] ??
+      currentCoreIdea.title;
+    const cleanBase = preferredTitle
+      .replace(/\s+Workspace$/iu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    const buildBoundedWorkspaceTitle = (identity: string): string => {
+      const trailingIdentity = `${identity} Workspace`;
+      const maximumBaseLength = Math.max(
+        12,
+        100 - trailingIdentity.length - 1,
+      );
+      const boundedBase = cleanBase.slice(0, maximumBaseLength).trim();
+
+      return `${boundedBase} ${trailingIdentity}`
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .slice(0, 100);
+    };
+
+    const humanReadableIdentities = [
+      'Continuity Review',
+      'Recovery Operations',
+      'Resolution Review',
+      'Operational Continuity',
+      'Exception Review',
+      'Service Recovery',
+      'Decision Review',
+      'Follow-up Operations',
+    ] as const;
+
+    for (const identity of humanReadableIdentities) {
+      const candidate = buildBoundedWorkspaceTitle(identity);
+      if (
+        await this.isExactTitleAvailable({
+          ...currentCoreIdea,
+          title: candidate,
+        })
+      ) {
+        return candidate;
+      }
+    }
+
+    /*
+     * Exact-title uniqueness is a persistence concern, not a product-identity
+     * concern. If every semantic and human-readable identity is already used,
+     * advance through readable edition numbers instead of exposing a run UUID
+     * or database-style token to the user. Each candidate is checked against
+     * the database before it is returned. Subsequent outer transaction retries
+     * move to a disjoint edition range if a concurrent insert wins the race.
+     */
+    const editionsPerAttempt = 32;
+    const firstEdition = 2 + Math.max(0, seedAttempt - 1) * editionsPerAttempt;
+    let lastCandidate = buildBoundedWorkspaceTitle(
+      `Review Edition ${firstEdition}`,
+    );
+
+    for (
+      let edition = firstEdition;
+      edition < firstEdition + editionsPerAttempt;
+      edition += 1
+    ) {
+      const candidate = buildBoundedWorkspaceTitle(`Review Edition ${edition}`);
+      lastCandidate = candidate;
+      if (
+        await this.isExactTitleAvailable({
+          ...currentCoreIdea,
+          title: candidate,
+        })
+      ) {
+        return candidate;
+      }
+    }
+
+    return lastCandidate;
+  }
+
+  private isDomainsOnlyPath(context: IdeaGenerationContext): boolean {
+    return (
+      !context.requestDescription?.trim() &&
+      context.domainResolution?.source === 'USER_SELECTED'
+    );
+  }
+
+  private buildDomainsOnlyRaceSafeTitles(currentTitle: string): string[] {
+    const stem = currentTitle
+      .replace(
+        /\s+(?:(?:Trace|Case|Integrity|Exception|Pilot) Review|Decision Trace|Decision Audit|Evidence Trace|Human Review|Exception Resolution|Resolution Trace)(?: Edition| Workspace)?$/iu,
+        '',
+      )
+      .replace(/\s+(?:edition|workspace|hub|platform|console|desk|board|ledger|assistant)$/iu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const hadDecisionSuffix = /\s*&\s*Decision(?:\s+Workspace)?$/iu.test(
+      currentTitle,
+    );
+    const semanticBase = stem.replace(/\s*&\s*Decision$/iu, '').trim() || stem;
+    const decisionAuditTitle = hadDecisionSuffix
+      ? `${semanticBase} & Decision Audit Workspace`
+      : `${semanticBase} Decision Audit Workspace`;
+
+    return [
+      `${semanticBase} Evidence Trace Workspace`,
+      `${semanticBase} Case Review Workspace`,
+      decisionAuditTitle,
+      `${semanticBase} Exception Resolution Workspace`,
+      `${semanticBase} Human Review Workspace`,
+      `${semanticBase} Resolution Trace Workspace`,
+    ].map((title) => title.slice(0, 100));
+  }
+
+  private isNoInputPreferencePath(context: IdeaGenerationContext): boolean {
+    return (
+      !context.requestDescription?.trim() &&
+      context.domainResolution?.source === 'USER_PREFERENCE'
+    );
+  }
+
+  private buildRaceSafeSemanticTitles(
+    context: IdeaGenerationContext,
+    currentTitle: string,
+  ): string[] {
+    if (this.isDomainsOnlyPath(context)) {
+      return this.buildDomainsOnlyRaceSafeTitles(currentTitle);
+    }
+
+    if (!this.isNoInputPreferencePath(context)) return [];
+
+    const semantic = [
+      currentTitle,
+      context.opportunityRanking?.selected.title ?? '',
+      context.benchmarkWinnerOpportunity?.title ?? '',
+      context.coreIdea?.problemStatement ?? '',
+    ]
+      .join(' ')
+      .toLocaleLowerCase();
+    const domainLabel = (
+      context.domainName?.trim() ||
+      context.selectedDomains[0]?.name?.trim() ||
+      'Operational'
+    )
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (
+      /\b(?:authentication|account access|login|sign-in|sign in|two-factor|2fa|identity-provider|identity provider)\b/u.test(
+        semantic,
+      )
+    ) {
+      return [
+        `${domainLabel} Account Access Recovery & Alternative Login Workspace`,
+        `${domainLabel} Authentication Recovery & Access Continuity Workspace`,
+        `${domainLabel} 2FA & Account Access Recovery Workspace`,
+        `${domainLabel} Identity & Account Access Recovery Workspace`,
+        `${domainLabel} Sign-In Recovery & Access Decision Workspace`,
+        `${domainLabel} Account Recovery & Authentication Support Workspace`,
+      ].map((title) => title.slice(0, 100));
+    }
+
+    if (
+      /\b(?:validation[- ]first opportunity|no external problem evidence|no direct community evidence|no independent community evidence|collect direct evidence)\b/u.test(
+        semantic,
+      )
+    ) {
+      return [
+        `${domainLabel} Problem Discovery & Validation Workspace`,
+        `${domainLabel} Validation Evidence & Resolution Workspace`,
+        `${domainLabel} Evidence Qualification & Pilot Validation Workspace`,
+        `${domainLabel} Problem Evidence & Validation Workspace`,
+        `${domainLabel} Validation Intake & Decision Workspace`,
+        `${domainLabel} Evidence Discovery & Validation Workspace`,
+      ].map((title) => title.slice(0, 100));
+    }
+
+    const stem = currentTitle
+      .replace(/\s+(?:workspace|hub|console|desk|platform|board|ledger|assistant)$/iu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    return [
+      `${stem} Evidence & Resolution Workspace`,
+      `${stem} Investigation & Decision Workspace`,
+      `${stem} Exception Resolution Workspace`,
+      `${stem} Case Review & Recovery Workspace`,
+    ].map((title) => title.slice(0, 100));
+  }
+
+  private rewriteCoreIdeaTitle(
+    coreIdea: ParsedIdeaAiOutput['coreIdea'],
+    nextTitle: string,
+  ): ParsedIdeaAiOutput['coreIdea'] {
+    const previousTitle = coreIdea.title;
+    if (!previousTitle.trim() || previousTitle === nextTitle) {
+      return { ...coreIdea, title: nextTitle };
+    }
+
+    const escaped = previousTitle.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const pattern = new RegExp(escaped, 'giu');
+    const rewrite = (value?: string | null): string | undefined => {
+      if (!value) return value ?? undefined;
+      return value.replace(pattern, nextTitle);
+    };
+
+    return {
+      ...coreIdea,
+      title: nextTitle,
+      limitedAbstract: rewrite(coreIdea.limitedAbstract),
+      partialAbstract: rewrite(coreIdea.partialAbstract),
+      fullAbstract: rewrite(coreIdea.fullAbstract),
+      problemStatement: rewrite(coreIdea.problemStatement) ?? coreIdea.problemStatement,
     };
   }
 
@@ -410,15 +588,22 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
     );
     const suffix =
       explicitSuffix ?? suffixes[(hash + attempt - 1) % suffixes.length];
+    const runTrack = `${hash.toString(36).toUpperCase().slice(0, 4)}-${attempt}`;
     const cleanBase = originalTitle
       .replace(
-        /\s+(Evidence Trace Edition|Case Review Edition|Pilot Operations Edition|Decision Audit Edition|Evidence Qualification Edition)$/iu,
+        /\s+(Evidence Trace Edition|Case Review Edition|Pilot Operations Edition|Decision Audit Edition|Evidence Qualification Edition)(?:\s+[A-Z0-9]{1,6}-\d+)?$/iu,
         '',
       )
       .replace(/\s+/gu, ' ')
       .trim();
+    const trailingIdentity = `${suffix} ${runTrack}`;
+    const maximumBaseLength = Math.max(12, 100 - trailingIdentity.length - 1);
+    const boundedBase = cleanBase.slice(0, maximumBaseLength).trim();
 
-    return `${cleanBase} ${suffix}`.replace(/\s+/gu, ' ').trim().slice(0, 100);
+    return `${boundedBase} ${trailingIdentity}`
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, 100);
   }
 
   private rewriteOutputTitle(

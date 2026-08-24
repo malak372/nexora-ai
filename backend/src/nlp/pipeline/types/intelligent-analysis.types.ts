@@ -132,12 +132,27 @@ export type IntelligentTextInput = {
   repliesCount?: number;
 
   /**
+   * Stable collector/data-source key that produced this input.
+   *
+   * FAST_GENERATION keeps this metadata in memory so Community AI can
+   * classify raw collected evidence without losing source provenance.
+   */
+  sourceKey?: string;
+
+  /**
    * Collector-authored protection flag for comments that were already
    * classified as direct complaint/request evidence during central relevance
    * evaluation. This metadata is intentionally optional so persisted/legacy
    * inputs remain backward compatible.
    */
   isComplaintEvidence?: boolean;
+
+  /**
+   * Marks a domain/workflow-aligned comment that should reach Community AI for
+   * semantic evidence classification even when deterministic rules cannot yet
+   * type it as a complaint, request, or unmet need.
+   */
+  requiresAiSemanticTriage?: boolean;
 };
 
 /**

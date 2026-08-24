@@ -45,9 +45,16 @@ export type TextInputContext = {
   platforms: string[];
 
   /**
-   * Unified post and comment inputs.
+   * Unified post and comment inputs admitted to deterministic NLP.
    */
   inputs: IntelligentTextInput[];
+
+  /**
+   * Broader bounded corpus persisted by FAST_GENERATION before semantic
+   * pruning. Community AI may classify these items, but deterministic
+   * evidence guards remain authoritative before ranking.
+   */
+  rawInputs?: IntelligentTextInput[];
 };
 
 /**
@@ -102,6 +109,7 @@ export class TextInputBuilderService {
         location: { ...context.location },
         platforms: [...context.platforms],
         inputs: context.inputs.map((input) => ({ ...input })),
+        rawInputs: (context.rawInputs ?? context.inputs).map((input) => ({ ...input })),
       },
     });
   }
@@ -131,6 +139,7 @@ export class TextInputBuilderService {
       location: { ...cached.context.location },
       platforms: [...cached.context.platforms],
       inputs: cached.context.inputs.map((input) => ({ ...input })),
+      rawInputs: (cached.context.rawInputs ?? cached.context.inputs).map((input) => ({ ...input })),
     };
   }
 
@@ -272,6 +281,7 @@ export class TextInputBuilderService {
       ],
 
       inputs: [...postInputs, ...commentInputs],
+      rawInputs: [...postInputs, ...commentInputs],
     };
   }
 

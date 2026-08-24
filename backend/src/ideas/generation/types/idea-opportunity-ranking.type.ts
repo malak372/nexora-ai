@@ -77,10 +77,21 @@ export type RankedIdeaOpportunity = {
   readonly requestIntentSupportTier?:
     | 'FULL_REQUEST_MATCH'
     | 'PARTIAL_REQUEST_SUPPORT'
+    | 'DOMAIN_SUPPORTED_FALLBACK'
     | 'WEAK_OR_UNRELATED';
 
   /** Evidence score after bounded request-intent reranking. */
   readonly requestIntentAdjustedScore?: number;
+
+  /**
+   * Real external evidence retained after request/workflow alignment when it
+   * cannot be promoted to independently verified community evidence. This is
+   * valid preliminary support for a pilot, but never proof of recurrence.
+   */
+  readonly qualifiedExternalSupportingEvidenceCount?: number;
+
+  /** Distinct known source keys represented by qualified supporting evidence. */
+  readonly qualifiedExternalSupportingSourceCount?: number;
 
   readonly supportingEvidence?: readonly {
     readonly sourceType:

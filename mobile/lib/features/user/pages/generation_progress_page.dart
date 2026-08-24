@@ -153,17 +153,23 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
   Object? _error;
   String? _stageDisplayName;
   bool _cancelling = false;
+  bool _cancelRequested = false;
   bool _realtimeConnected = false;
   bool _socketProven = false;
   bool _refreshInFlight = false;
   bool _terminalRefreshDone = false;
   bool _completionQueued = false;
+  bool _cancelInitiatedHere = false;
+  bool _cancellationDialogQueued = false;
   int _elapsedSeconds = 0;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_refresh());
+    // Socket.IO is the primary live channel. The initial REST read is only a
+    // silent reconciliation safety net, so a temporary HTTP timeout never
+    // replaces the live progress screen with an error state.
+    unawaited(_refresh(silent: true));
     unawaited(_connectRealtime());
     _scheduleReconciliation(after: const Duration(milliseconds: 900));
 
@@ -338,6 +344,8 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
         _error = null;
         _stageDisplayName = _stageDisplayFromRun(merged);
         _elapsedSeconds = _elapsedFromRun(merged);
+        _cancelRequested =
+            _cancelRequested || merged['cancelRequestedAt'] != null;
       });
 
       await _handleTerminal(merged);
@@ -359,6 +367,8 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
       _error = null;
       _stageDisplayName = _stageDisplayFromRun(next);
       _elapsedSeconds = _elapsedFromRun(next);
+      _cancelRequested =
+          _cancelRequested || next['cancelRequestedAt'] != null;
     });
 
     unawaited(_handleTerminal(next));
@@ -714,7 +724,116 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
 
     if (status == 'COMPLETED') {
       await _queueCompletionCelebration(run);
+      return;
     }
+
+    if (status == 'CANCELLED' && _cancelInitiatedHere) {
+      await _queueCancellationSuccessDialog();
+    }
+  }
+
+  Future<void> _queueCancellationSuccessDialog() async {
+    if (_cancellationDialogQueued) return;
+    _cancellationDialogQueued = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        useRootNavigator: true,
+        builder: (dialogContext) => SafeArea(
+          child: Center(
+            child: Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: Colors.white),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryDeep.withValues(alpha: .16),
+                      blurRadius: 40,
+                      offset: const Offset(0, 16),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 62,
+                      height: 62,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppColors.primarySoft,
+                            AppColors.surfaceRose.withValues(alpha: .72),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(
+                        Icons.check_circle_outline_rounded,
+                        size: 31,
+                        color: AppColors.primaryDeep,
+                      ),
+                    ),
+                    const SizedBox(height: 15),
+                    const Text(
+                      'Cancellation completed',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -.35,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    const Text(
+                      'The active generation run was stopped safely. You can return to Generate Idea and start a new run whenever you are ready.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 10.5,
+                        height: 1.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 19),
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop();
+                        if (!mounted) return;
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          '/normal/generate',
+                          (route) => route.isFirst,
+                        );
+                      },
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                      label: const Text('Back to Generate Idea'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
   }
 
   Future<void> _queueCompletionCelebration(Map<String, dynamic> run) async {
@@ -790,8 +909,19 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
   bool _isTerminal(String status) =>
       const {'COMPLETED', 'FAILED', 'CANCELLED', 'NO_RESULT'}.contains(status);
 
+  Future<void> _pollCancellationUntilTerminal() async {
+    for (var attempt = 0; attempt < 60; attempt += 1) {
+      if (!mounted || _isTerminal(_status)) return;
+
+      await _refresh(silent: true);
+      if (!mounted || _isTerminal(_status)) return;
+
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
   Future<void> _cancel() async {
-    if (_cancelling || _isTerminal(_status)) return;
+    if (_cancelling || _cancelRequested || _isTerminal(_status)) return;
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
@@ -843,7 +973,7 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'The pipeline will stop at its next safe checkpoint. Anything already saved remains protected.',
+                'Active AI and collection work will be interrupted where supported. Anything already saved remains protected.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: AppColors.textSecondary,
@@ -881,12 +1011,24 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
 
     if (confirmed != true || !mounted) return;
 
-    setState(() => _cancelling = true);
+    _cancelInitiatedHere = true;
+    setState(() {
+      _cancelling = true;
+      _cancelRequested = true;
+    });
     try {
       await UserApi.instance.cancelGeneration(widget.runId);
-      await _refresh();
+      await _pollCancellationUntilTerminal();
+      _scheduleReconciliation(after: const Duration(milliseconds: 400));
     } catch (error) {
-      if (mounted) setState(() => _error = error);
+      if (mounted) {
+        final backendAlreadyAccepted = _run?['cancelRequestedAt'] != null;
+        if (!backendAlreadyAccepted) _cancelInitiatedHere = false;
+        setState(() {
+          _error = error;
+          _cancelRequested = backendAlreadyAccepted;
+        });
+      }
     } finally {
       if (mounted) setState(() => _cancelling = false);
     }
@@ -900,12 +1042,13 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
         .clamp(0.0, 100.0)
         .toDouble();
 
-    final stage =
-        _stageDisplayName ?? _stageLabel(run?['currentStageKey']?.toString());
-
     final completed = status == 'COMPLETED';
     final failed = status == 'FAILED';
     final cancelled = status == 'CANCELLED';
+    final stage = _cancelRequested && !completed && !failed && !cancelled
+        ? 'Cancelling generation...'
+        : (_stageDisplayName ??
+            _stageLabel(run?['currentStageKey']?.toString()));
 
     final currentIndex = _milestoneIndex(
       run?['currentStageKey']?.toString(),
@@ -1115,8 +1258,8 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
                     const SizedBox(height: 12),
                     if (!completed && !failed && !cancelled)
                       OutlinedButton.icon(
-                        onPressed: _cancelling ? null : _cancel,
-                        icon: _cancelling
+                        onPressed: _cancelling || _cancelRequested ? null : _cancel,
+                        icon: _cancelling || _cancelRequested
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
@@ -1127,8 +1270,8 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
                                 size: 18,
                               ),
                         label: Text(
-                          _cancelling
-                              ? 'Requesting cancellation...'
+                          _cancelling || _cancelRequested
+                              ? 'Cancelling generation...'
                               : 'Cancel generation',
                         ),
                         style: OutlinedButton.styleFrom(

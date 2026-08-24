@@ -50,11 +50,20 @@ export type CollectorInput = {
   keywords?: string[];
 
   /**
+   * Original requester description for source-specific query shaping.
+   * This is never treated as external evidence; it only guides retrieval.
+   */
+  requestDescription?: string;
+
+  /**
    * AI-planned first-pass searches. These remain separate from generic domain
    * keywords so source-specific collectors can preserve requester intent
    * instead of re-expanding an already focused query into a broad search.
    */
   plannedQueries?: string[];
+
+  /** AI source-specific routing hints for this collector. */
+  sourceHints?: string[];
 
   /** Distinguishes normal domain discovery from targeted evidence recovery. */
   collectionMode?: CollectorCollectionMode;

@@ -122,6 +122,13 @@ export type ResolveCollectionJobInput = {
 
   /** AI-planned searches preserved separately for source-aware collectors. */
   readonly plannedQueries?: readonly string[];
+  readonly sourcePlans?: readonly {
+    readonly sourceKey: string;
+    readonly queries: readonly string[];
+    readonly routingHints: readonly string[];
+  }[];
+
+  readonly userDescription?: string;
 
   /**
    * When true, compatible historical jobs are ignored and a fresh collection
@@ -131,6 +138,9 @@ export type ResolveCollectionJobInput = {
 
   readonly collectionMode?: CollectorInput['collectionMode'];
   readonly collectorLimits?: CollectorInput['limits'];
+
+  /** Runtime-only cancellation signal supplied by the active generation stage. */
+  readonly signal?: AbortSignal;
 
   /** Already validated generation metadata used by FAST_GENERATION. */
   readonly resolvedDomain?: {
@@ -181,6 +191,13 @@ export type ResolveCollectionJobResult = {
    * the persisted collection corpus.
    */
   readonly fastEvidenceInputs?: readonly IntelligentTextInput[];
+
+  /**
+   * Broader persisted collector corpus captured before deterministic semantic
+   * pruning. It is offered to Community AI for triage/classification and is
+   * never treated as verified evidence without the normal deterministic guards.
+   */
+  readonly rawEvidenceInputs?: readonly IntelligentTextInput[];
 };
 
 /**
@@ -240,6 +257,8 @@ export class CollectionJobResolverService {
     private readonly dataCollectionService: DataCollectionService,
 
     private readonly intelligentAnalysisService: IntelligentAnalysisService,
+
+    private readonly textInputBuilderService: TextInputBuilderService,
   ) {}
 
   /**
@@ -274,11 +293,16 @@ export class CollectionJobResolverService {
         ? this.mapPersistedAnalysis(reusableJob)
         : await this.intelligentAnalysisService.analyze(reusableJob.id);
 
+      const persistedTextContext =
+        await this.textInputBuilderService.build(reusableJob.id);
       const result: ResolveCollectionJobResult = {
         job: reusableJob,
         nlpOutput,
         reused: true,
         selectedPlatformId: this.resolveSingleDataSourceId(reusableJob),
+        fastEvidenceInputs: persistedTextContext.inputs,
+        rawEvidenceInputs:
+          persistedTextContext.rawInputs ?? persistedTextContext.inputs,
       };
       this.setHotReuseResult(cacheKey, result);
       return result;
@@ -309,8 +333,19 @@ export class CollectionJobResolverService {
         ? [...normalizedInput.plannedQueries]
         : undefined,
 
+      sourcePlans: normalizedInput.sourcePlans
+        ? normalizedInput.sourcePlans.map((plan) => ({
+            sourceKey: plan.sourceKey,
+            queries: [...plan.queries],
+            routingHints: [...plan.routingHints],
+          }))
+        : undefined,
+
+      userDescription: normalizedInput.userDescription,
+
       collectionMode: normalizedInput.collectionMode,
       collectorLimits: normalizedInput.collectorLimits,
+      signal: normalizedInput.signal,
       resolvedDomain: normalizedInput.resolvedDomain,
       resolvedDataSources: normalizedInput.resolvedDataSources,
     };
@@ -329,8 +364,9 @@ export class CollectionJobResolverService {
      * fast context. This gives downstream ranking access to strong direct
      * evidence even when the bounded NLP pass keeps only a smaller top slice.
      */
-    const fastEvidenceInputs =
-      TextInputBuilderService.peekFastContext(startedJob.id)?.inputs ?? [];
+    const fastContext = TextInputBuilderService.peekFastContext(startedJob.id);
+    const fastEvidenceInputs = fastContext?.inputs ?? [];
+    const rawEvidenceInputs = fastContext?.rawInputs ?? fastEvidenceInputs;
 
     /*
      * DataCollectionService.completeJobWithTotals() already returns the
@@ -345,7 +381,12 @@ export class CollectionJobResolverService {
      */
     const completedJob = startedJob as ResolvedCollectionJob;
     const nlpOutput =
-      await this.intelligentAnalysisService.analyze(startedJob.id);
+      normalizedInput.collectionMode === 'TARGETED_RECOVERY'
+        ? this.createTargetedRecoveryNlpOutput(
+            completedJob,
+            fastEvidenceInputs,
+          )
+        : await this.resolveNlpOutput(completedJob);
 
     const result: ResolveCollectionJobResult = {
       job: completedJob,
@@ -353,9 +394,103 @@ export class CollectionJobResolverService {
       reused: false,
       selectedPlatformId: this.resolveSingleDataSourceId(completedJob),
       fastEvidenceInputs,
+      rawEvidenceInputs,
     };
     this.setHotReuseResult(cacheKey, result);
     return result;
+  }
+
+  private createTargetedRecoveryNlpOutput(
+    job: ResolvedCollectionJob,
+    fastEvidenceInputs: readonly IntelligentTextInput[],
+  ): IntelligentAnalysisOutput {
+    if (fastEvidenceInputs.length === 0) {
+      return this.createEmptyNlpOutput(job);
+    }
+
+    const normalizedInputs = fastEvidenceInputs
+      .map((input) => {
+        const content = input.content.replace(/\s+/gu, ' ').trim();
+        const title = input.title?.replace(/\s+/gu, ' ').trim() ?? '';
+        const text =
+          input.sourceType === 'COMMENT' && title
+            ? `${title}. Community comment: ${content}`
+            : content;
+        return { input, text: text.slice(0, 2_400) };
+      })
+      .filter(({ text }) => text.length >= 20);
+
+    const samplePosts = normalizedInputs
+      .filter(({ input }) => input.sourceType === 'POST')
+      .slice(0, 10)
+      .map(({ input, text }) => ({
+        id: input.id,
+        text,
+        sentiment: Sentiment.NEUTRAL,
+      }));
+    const sampleComments = normalizedInputs
+      .filter(({ input }) => input.sourceType === 'COMMENT')
+      .slice(0, 14)
+      .map(({ input, text }) => ({
+        id: input.id,
+        postId: input.postId ?? input.id,
+        text,
+        sentiment: Sentiment.NEUTRAL,
+      }));
+
+    return {
+      collectionJobId: job.id,
+      language: job.language,
+      domain: {
+        id: job.domain.id,
+        name: job.domain.name,
+      },
+      location: {
+        country: job.country,
+        city: job.city,
+        region: job.region,
+      },
+      platforms: job.sources.map((source) => source.dataSource.key),
+      totalTextsAnalyzed: normalizedInputs.length,
+      totalPostsAnalyzed: samplePosts.length,
+      totalCommentsAnalyzed: sampleComments.length,
+      dataQuality: {
+        duplicateTextsRemoved: 0,
+        spamTextsRemoved: 0,
+        irrelevantTextsRemoved: Math.max(
+          0,
+          fastEvidenceInputs.length - normalizedInputs.length,
+        ),
+      },
+      sentimentStats: {
+        positive: 0,
+        negative: 0,
+        neutral: normalizedInputs.length,
+        dominantSentiment: Sentiment.NEUTRAL,
+      },
+      keywords: [],
+      topics: [],
+      recurringProblems: [],
+      extractedNeeds: [],
+      featureRequests: [],
+      opportunities: [],
+      insights: {
+        urgencySignals: [],
+        costConcerns: [],
+        timeConcerns: [],
+        accessibilityConcerns: [],
+        safetyConcerns: [],
+        reliabilityConcerns: [],
+        additionalInsights: [
+          'Targeted recovery preserved collector-filtered evidence directly for deterministic request alignment and provenance verification.',
+        ],
+      },
+      samplePosts,
+      sampleComments,
+      aiUsed: false,
+      confidence: normalizedInputs.length > 0 ? 0.35 : 0,
+      analyzedTexts: [],
+    };
   }
 
   private buildHotReuseCacheKey(input: ResolveCollectionJobInput): string {
@@ -370,6 +505,19 @@ export class CollectionJobResolverService {
       keywords: [...(input.keywords ?? [])]
         .map((value) => value.toLowerCase().replace(/\s+/gu, ' ').trim())
         .sort(),
+      plannedQueries: [...(input.plannedQueries ?? [])]
+        .map((value) => value.toLowerCase().replace(/\s+/gu, ' ').trim())
+        .sort(),
+      sourcePlans: (input.sourcePlans ?? [])
+        .map((plan) => ({
+          sourceKey: plan.sourceKey,
+          queries: [...plan.queries].sort(),
+          routingHints: [...plan.routingHints].sort(),
+        }))
+        .sort((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
+      userDescription: input.userDescription
+        ? input.userDescription.toLowerCase().replace(/\s+/gu, ' ').trim()
+        : null,
       collectionMode: input.collectionMode ?? null,
       collectorLimits: input.collectorLimits ?? null,
     });
@@ -817,9 +965,20 @@ export class CollectionJobResolverService {
 
       plannedQueries: this.normalizeKeywords(input.plannedQueries),
 
+      sourcePlans: input.sourcePlans
+        ?.map((plan) => ({
+          sourceKey: plan.sourceKey.trim().toLocaleLowerCase(),
+          queries: this.normalizeKeywords(plan.queries) ?? [],
+          routingHints: this.normalizeKeywords(plan.routingHints) ?? [],
+        }))
+        .filter((plan) => plan.sourceKey && plan.queries.length > 0),
+
+      userDescription: this.normalizeOptionalText(input.userDescription),
+
       forceRefresh: input.forceRefresh === true,
       collectionMode: input.collectionMode,
       collectorLimits: input.collectorLimits,
+      signal: input.signal,
       resolvedDomain: input.resolvedDomain,
       resolvedDataSources: input.resolvedDataSources,
     };

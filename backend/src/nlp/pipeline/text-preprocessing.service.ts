@@ -255,6 +255,9 @@ export class TextPreprocessingService {
       const collectorProtectedComment =
         item.input.sourceType === 'COMMENT' &&
         item.input.isComplaintEvidence === true;
+      const aiSemanticTriageComment =
+        item.input.sourceType === 'COMMENT' &&
+        item.input.requiresAiSemanticTriage === true;
 
       /*
        * The central collector already classified this exact comment as one of
@@ -264,6 +267,10 @@ export class TextPreprocessingService {
        */
       if (collectorProtectedComment) {
         return this.isDirectUserCommentEvidence(item.input.content);
+      }
+
+      if (aiSemanticTriageComment) {
+        return !this.isTechnicalNoise(item.cleaning.cleanedText);
       }
 
       if (this.isTechnicalNoise(item.cleaning.cleanedText)) {
@@ -334,9 +341,19 @@ export class TextPreprocessingService {
     const relevantItems = shouldApplyRelevanceFilter
       ? evaluatedTexts.filter(
           (item) =>
-            item.text.isComplaintEvidence === true ||
-            item.isRelevant ||
-            this.shouldRetainBorderlineEvidence(item.text),
+            this.passesDescriptionWorkflowEvidencePolicy(
+              item.text,
+              domainKeywords,
+            ) &&
+            (item.text.isComplaintEvidence === true ||
+              (item.text.requiresAiSemanticTriage === true &&
+                this.hasMinimumContextualDomainSignal(item.text)) ||
+              item.isRelevant ||
+              this.shouldRetainBorderlineEvidence(item.text) ||
+              this.shouldRetainSourceAwareSecondaryEvidence(
+                item.text,
+                domainKeywords,
+              )),
         )
       : evaluatedTexts;
     let relevantTexts = relevantItems.map((item) => item.text);
@@ -365,8 +382,10 @@ export class TextPreprocessingService {
         (text) =>
           text.sourceType === 'COMMENT' &&
           !retainedIds.has(text.id) &&
-          this.isDirectUserCommentEvidence(text.content) &&
-          this.hasMinimumContextualDomainSignal(text),
+          (this.isDirectUserCommentEvidence(text.content) ||
+            text.requiresAiSemanticTriage === true) &&
+          this.hasMinimumContextualDomainSignal(text) &&
+          this.passesDescriptionWorkflowEvidencePolicy(text, domainKeywords),
       )
       .sort(
         (first, second) =>
@@ -396,14 +415,21 @@ export class TextPreprocessingService {
      */
     if (relevantTexts.length === 0 && evaluatedTexts.length > 0) {
       const allEvaluatedTexts = evaluatedTexts.map((item) => item.text);
-      const complaintCandidates = allEvaluatedTexts.filter((text) =>
-        this.isRecoverableContextualEvidence(text),
+      const complaintCandidates = allEvaluatedTexts.filter(
+        (text) =>
+          this.isRecoverableContextualEvidence(text) &&
+          this.passesDescriptionWorkflowEvidencePolicy(text, domainKeywords),
       );
       const boundedFallbackPool =
         complaintCandidates.length > 0
           ? complaintCandidates
-          : allEvaluatedTexts.filter((text) =>
-              this.isSafeMinimumFallbackEvidence(text),
+          : allEvaluatedTexts.filter(
+              (text) =>
+                this.isSafeMinimumFallbackEvidence(text) &&
+                this.passesDescriptionWorkflowEvidencePolicy(
+                  text,
+                  domainKeywords,
+                ),
             );
 
       relevantTexts = boundedFallbackPool
@@ -443,7 +469,14 @@ export class TextPreprocessingService {
       const topUpCandidates = evaluatedTexts
         .map((item) => item.text)
         .filter((text) => !currentIds.has(text.id))
-        .filter((text) => this.isDiscoveryEvidenceCandidate(text))
+        .filter(
+          (text) =>
+            this.isDiscoveryEvidenceCandidate(text) &&
+            this.passesDescriptionWorkflowEvidencePolicy(
+              text,
+              domainKeywords,
+            ),
+        )
         .sort(
           (first, second) =>
             this.contextualEvidencePriority(second) -
@@ -646,9 +679,11 @@ export class TextPreprocessingService {
         const evidenceBonus =
           input.isComplaintEvidence === true
             ? 1_000
-            : evidencePattern.test(contextualText)
-              ? 120
-              : 0;
+            : input.requiresAiSemanticTriage === true
+              ? 700
+              : evidencePattern.test(contextualText)
+                ? 120
+                : 0;
         const sourceBonus = input.sourceType === 'COMMENT' ? 55 : 35;
         const engagement =
           Math.min(Math.max(input.likesCount ?? 0, 0), 25) +
@@ -770,6 +805,182 @@ export class TextPreprocessingService {
     return selected;
   }
 
+  private passesDescriptionWorkflowEvidencePolicy(
+    text: PreprocessedTextInput,
+    domainKeywords: ReadonlyArray<string>,
+  ): boolean {
+    const intent = domainKeywords
+      .join(' ')
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const contextual = this.buildContextualAnalysisText(text)
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (!intent || !contextual) {
+      return true;
+    }
+
+    const propertyIntent =
+      /\b(?:property management|property managers?|rental propert|apartment building|maintenance expenses?|operating costs?|operating expenses?|net operating income|\bnoi\b|vacancy|tenant complaints?|property performance|financial inefficien|maintenance priorit)\w*\b/u.test(
+        intent,
+      ) &&
+      /\b(?:maintenance|operating cost|operating expense|vacancy|tenant complaint|property return|building return|net operating income|\bnoi\b|repair expense|maintenance investment|property performance|data silo|separate systems?)\w*\b/u.test(
+        intent,
+      );
+
+    if (propertyIntent) {
+      const propertyAnchor =
+        /\b(?:property management|property manager|rental property|rental properties|building|buildings|apartment|apartments|landlord|real estate portfolio)\b/u.test(
+          contextual,
+        );
+      const workflowAnchor =
+        /\b(?:maintenance expense|maintenance cost|maintenance spend|operating cost|operating expense|vacancy|tenant complaint|repair expense|property performance|building return|lower return|net operating income|\bnoi\b|rental income|expense forecast|maintenance priorit|data silo|separate systems?)\w*\b/u.test(
+          contextual,
+        );
+      const taxOnly =
+        /\b(?:1031 exchange|depreciation recapture|tax loophole|cost segregation|irs)\b/u.test(
+          contextual,
+        ) && !workflowAnchor;
+      return propertyAnchor && workflowAnchor && !taxOnly;
+    }
+
+    const rehabilitationIntent =
+      /\b(?:sports clubs?|rehabilitation centers?|rehab centers?|rehabilitation clinics?|sports medicine|physiotherapists?|physical therapists?|athletes?)\b/u.test(intent) &&
+      /\b(?:injury|injuries|recovery|rehabilitation|training loads?|pain reports?|pain scores?|mobility measurements?|performance data|return to play|return-to-play|reinjury|re-injury)\b/u.test(intent);
+    if (rehabilitationIntent) {
+      const actorAnchor =
+        /\b(?:athlete|athletes|sports club|sports clubs|rehabilitation center|rehab center|sports medicine|physiotherapist|physical therapist)\b/u.test(contextual);
+      const workflowAnchor =
+        /\b(?:injury|injuries|recovery|rehabilitation|training load|training loads|pain report|pain reports|pain score|mobility|performance data|medical assessment|return to play|return-to-play|reinjury|re-injury)\b/u.test(contextual);
+      const problemAnchor =
+        /\b(?:too quickly|too fast|too slowly|slower than expected|overload|overtraining|setback|reinjury|re-injury|injury risk|warning sign|missed sign|fragmented|separate systems?|different specialists?|not shared|not integrated|delay|delayed|unsafe|uncertain)\b/u.test(contextual);
+      return actorAnchor && workflowAnchor && problemAnchor;
+    }
+
+    const restaurantEnergyIntent =
+      /\b(?:restaurants?|commercial kitchens?|restaurant kitchens?|food service kitchens?|kitchen managers?|restaurant managers?)\b/u.test(intent) &&
+      /\b(?:electricity|gas|energy consumption|utility bills?|utility costs?|refrigeration|cooking equipment|ventilation|lighting|heating|equipment usage|equipment runtime|energy waste|energy efficiency|carbon|emissions?|environmental impact|consumption spikes?|energy monitoring)\b/u.test(intent);
+    if (restaurantEnergyIntent) {
+      const kitchenAnchor =
+        /\b(?:restaurant|restaurants|commercial kitchen|commercial kitchens|restaurant kitchen|food service kitchen|kitchen manager|restaurant manager)\b/u.test(contextual);
+      const energyAnchor =
+        /\b(?:electricity|gas|energy|utility bill|utility bills|utility cost|utility costs|refrigeration|refrigerator|freezer|cooking equipment|oven|grill|ventilation|hood|lighting|heating|equipment usage|equipment runtime|meter|submeter|carbon|emissions?)\w*\b/u.test(contextual);
+      const problemAnchor =
+        /\b(?:high utility|high bill|higher bill|energy intensive|high energy|unusual consumption|consumption spike|energy waste|waste|wasted|inefficient|inefficiency|excess consumption|excessive consumption|limited visibility|no visibility|hard to identify|difficult to identify|cannot identify|unable to identify|separate systems?|fragmented|idle|left on|running overnight|cost increase|cost spike|energy saving|efficiency improvement)\w*\b/u.test(contextual);
+      return kitchenAnchor && energyAnchor && problemAnchor;
+    }
+
+    const residentialCleaningIntent =
+      /\b(?:home[- ]cleaning businesses?|home cleaning businesses?|residential cleaning businesses?|residential cleaning services?|house cleaning businesses?|house cleaning services?|cleaning companies?|cleaning teams?)\b/u.test(intent) &&
+      /\b(?:customer preferences?|recurring appointments?|recurring bookings?|room[- ]specific instructions?|room instructions?|employee assignments?|cleaner assignments?|cleaning supplies?|last[- ]minute schedule changes?|schedule changes?|missed tasks?|scheduling conflicts?|forgotten customer requests?|service quality|phone calls?|messaging apps?|handwritten notes?)\b/u.test(intent);
+    if (residentialCleaningIntent) {
+      const cleaningAnchor =
+        /\b(?:home cleaning|house cleaning|residential cleaning|cleaning service|cleaning company|cleaning business|cleaners?|housekeepers?|maid service|cleaning crew|cleaning team)\b/u.test(contextual);
+      const workflowAnchor =
+        /\b(?:customer preference|client preference|recurring appointment|recurring booking|room instruction|room-specific instruction|employee assignment|cleaner assignment|staff assignment|cleaning supplies|supply list|schedule change|appointment change|task list|checklist|customer request|client request|phone call|text message|messaging app|handwritten note)\w*\b/u.test(contextual);
+      const problemAnchor =
+        /\b(?:missed|forgotten|forget|conflict|double book|double-book|scheduling conflict|wrong cleaner|wrong assignment|missing supply|out of supplies|miscommunication|lost note|unclear instruction|inconsistent service|quality issue|last minute|last-minute|not updated|didn't know|did not know|failed to communicate)\w*\b/u.test(contextual);
+      const batteryCollision =
+        /\b(?:home batter(?:y|ies)|residential batter(?:y|ies)|battery storage|solar batter(?:y|ies)|powerwall)\b/u.test(contextual) &&
+        !cleaningAnchor;
+      return cleaningAnchor && workflowAnchor && problemAnchor && !batteryCollision;
+    }
+
+    const agricultureIntent =
+      /\b(?:agricultural cooperatives?|farm cooperatives?|agriculture|fresh produce|produce growers?|cold storage|harvest logistics|produce logistics)\b/u.test(intent) &&
+      /\b(?:harvest|storage|cold chain|temperature|shipment|transport|delivery|spoilage|storage capacity|logistics)\b/u.test(intent);
+    if (agricultureIntent) {
+      const agricultureAnchor =
+        /\b(?:agricultural|agriculture|farm|farmer|fresh produce|produce|grower|cold storage)\b/u.test(contextual);
+      const workflowAnchor =
+        /\b(?:harvest|storage|cold chain|temperature|shipment|transport|delivery|spoil|storage capacity|location|traceability|logistics|market)\w*\b/u.test(contextual);
+      const problemAnchor =
+        /\b(?:delay|delayed|late|spoil|spoiled|spoilage|quality loss|waste|wasted|partial load|partially empty|transport cost|missing|tracking|visibility|fragmented|separate systems?|capacity shortage|coordination problem|temperature excursion)\w*\b/u.test(contextual);
+      return agricultureAnchor && workflowAnchor && problemAnchor;
+    }
+
+    const pictureFramingIntent =
+      /\b(?:picture framing shops?|custom framing shops?|frame shops?|framers?|picture framing shop operations)\b/u.test(intent);
+    if (pictureFramingIntent) {
+      const framingAnchor =
+        /\b(?:picture framing|framing shop|frame shop|custom frame|framer|moulding|mat board|matting)\b/u.test(contextual);
+      const workflowAnchor =
+        /\b(?:measurement|dimensions?|frame|glass|moulding|material|special handling|customer preference|order change|completion date|pickup date|paper form|paper ticket|verbal instruction|work order)\w*\b/u.test(contextual);
+      const problemAnchor =
+        /\b(?:wrong|incorrect|mistake|remeasure|remake|waste|wasted|shortage|out of stock|delay|delayed|late|lost|missing|miscommunication|change request|paper|verbal)\w*\b/u.test(contextual);
+      return framingAnchor && workflowAnchor && problemAnchor;
+    }
+
+    const jewelryIntent =
+      /\b(?:jewelry repair|jewellery repair|jeweler|jeweller|gemstone|repair estimate approval|item condition|customer item tracking)\b/u.test(
+        intent,
+      );
+    if (jewelryIntent) {
+      const jewelryAnchor =
+        /\b(?:jewelry|jewellery|jeweler|jeweller|ring|necklace|bracelet|gemstone)\b/u.test(
+          contextual,
+        );
+      const workflowAnchor =
+        /\b(?:repair ticket|work order|intake|item condition|condition photo|estimate|customer approval|approved modification|gemstone detail|measurement|replacement material|repair status|pickup|collection|lost item|misplaced item|dispute|misunderstanding|incorrect modification|wrong modification|paper ticket|verbal instruction)\w*\b/u.test(
+          contextual,
+        );
+      return jewelryAnchor && workflowAnchor;
+    }
+
+    return true;
+  }
+
+  private shouldRetainSourceAwareSecondaryEvidence(
+    text: PreprocessedTextInput,
+    domainKeywords: ReadonlyArray<string>,
+  ): boolean {
+    const sourceKey = this.getInputSourceKey(text);
+    if (!['news', 'gdelt', 'crossref', 'blog', 'youtube', 'reddit', 'hacker-news', 'forum'].includes(sourceKey)) {
+      return false;
+    }
+
+    const contextual = this.buildContextualAnalysisText(text)
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!contextual) return false;
+
+    const genericTokens = new Set([
+      'application', 'platform', 'software', 'system', 'service', 'services',
+      'workflow', 'management', 'monitoring', 'analysis', 'analytics',
+      'problem', 'problems', 'technology', 'business', 'operations',
+    ]);
+    const anchors = new Set<string>();
+    for (const keyword of domainKeywords) {
+      const normalized = keyword
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      for (const token of normalized.split(/\s+/u)) {
+        if (token.length >= 4 && !genericTokens.has(token)) {
+          anchors.add(token);
+        }
+      }
+    }
+
+    const hasDomainAnchor = [...anchors].some((anchorValue) =>
+      contextual.includes(anchorValue),
+    );
+    if (!hasDomainAnchor) return false;
+
+    return /\b(?:challenge|problem|issue|failure|failed|delay|delayed|missing|misplaced|wrong|incorrect|outdated|conflicting|inconsistent|complaint|complaints|dispute|misunderstanding|overcrowd|crowding|congestion|overtourism|seasonal demand|visitor feedback|visitor complaint|resource allocation|tourism pressure|capacity pressure|paper ticket|paper tag|work order|parts order|customer approval|repair status|pickup|collection|item condition|gemstone|measurement|modification|replacement material|maintenance expense|maintenance cost|operating cost|operating expense|vacancy|tenant complaint|property performance|net operating income|\bnoi\b|lower return|repair expense|maintenance priorit|manual review|regulatory change|compliance risk|fraud|unauthorized|verification failure|stockout|bottleneck|inventory mismatch|fragmented|siloed|limited visibility|no visibility|high utility|utility bills?|utility costs?|high energy|energy intensive|energy waste|energy efficiency|consumption spike|excess consumption|electricity|gas|refrigeration|ventilation|carbon impact|environmental impact|recurring appointment|recurring booking|room specific instruction|room-specific instruction|cleaning supplies?|cleaner assignment|employee assignment|schedule change|scheduling conflict|missed task|forgotten customer request|inconsistent service|lost note|unclear instruction|spoilage|spoiled produce|cold chain|temperature excursion|quality loss|partial load|transport cost|measurement mistake|wrong measurement|frame remake|wrong glass|wrong frame|moulding|material shortage|wasted supplies|paper form|verbal instruction|order change|blind spot|provenance gap|chain of custody|ownership history|authenticity dispute|valuation inconsistency|inconsistent valuation|record fragmentation|scattered archives?|duplicated research|duplicate research|device connectivity|network disruption|unusual device behavior|equipment failure|security alert)\w*\b/iu.test(
+      contextual,
+    );
+  }
+
   private getInputSourceKey(input: IntelligentTextInput): string {
     const fromId = input.id.match(/^([^:]+):(?:post|comment):/u)?.[1];
 
@@ -810,6 +1021,7 @@ export class TextPreprocessingService {
     return (
       kind === 'USER_COMPLAINT' ||
       kind === 'FEATURE_REQUEST' ||
+      kind === 'OBSERVED_UNMET_NEED' ||
       kind === 'GENERAL_COMMENTARY' ||
       kind === 'USER_QUESTION'
     );
@@ -908,6 +1120,45 @@ export class TextPreprocessingService {
       'please improve',
       'feature request',
       'wish ',
+      'spoil',
+      'cold chain',
+      'temperature',
+      'shipment',
+      'transport',
+      'delivery delay',
+      'storage capacity',
+      'tracking',
+      'visibility',
+      'fragmented',
+      'separate systems',
+      'measurement',
+      'dimensions',
+      'wrong glass',
+      'wrong frame',
+      'moulding',
+      'material shortage',
+      'wasted supplies',
+      'paper form',
+      'verbal instruction',
+      'order change',
+      'remake',
+      'injury recovery',
+      'reinjury',
+      'training load',
+      'pain report',
+      'mobility',
+      'return to play',
+      'recovery setback',
+      'missed warning sign',
+      'water quality',
+      'feeding schedule',
+      'filter replacement',
+      'service history',
+      'visit history',
+      'missed maintenance',
+      'equipment failure',
+      'unhealthy aquarium',
+      'repeated treatment',
     ];
 
     return evidenceSignals.some((signal) => normalized.includes(signal));
@@ -932,7 +1183,7 @@ export class TextPreprocessingService {
     }
 
     const hasConcreteEvidence =
-      /\b(?:cannot|can't|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|need|needs|please add|feature request|wish)\b/iu.test(
+      /\b(?:cannot|can't|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|need|needs|please add|feature request|wish|delay(?:ed|s)?|spoil(?:ed|age)?|wast(?:e|ed)|shortage|fragmented|siloed|tracking|visibility|temperature|cold chain|shipment|transport|delivery|measurement|dimensions?|remake|miscommunication|paper form|verbal instruction|order change|injury recovery|reinjury|re-injury|training load|pain report|mobility|return to play|return-to-play|recovery setback|water quality|feeding schedule|filter replacement|service history|visit history|missed maintenance|equipment failure|unhealthy aquarium|repeated treatment)\b/iu.test(
         normalized,
       );
 
@@ -973,7 +1224,7 @@ export class TextPreprocessingService {
     const normalized = `${text.title ?? ''} ${text.content}`
       .replace(/\s+/gu, ' ')
       .toLowerCase();
-    const concreteSignal = /\b(?:cannot|can't|unable|not working|does not work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|deleted|inaccurate|wrong|hallucinat(?:e|es|ed|ion)|unsafe|security|privacy|permission|history|invoice|expense|payroll|procurement|reconciliation|approval|bookkeeping|accounting|cash flow|manual entry|administrative|back office|need|needs|should|please add|please improve|feature request|wish|frustrat(?:e|ed|ing))\b/iu.test(normalized);
+    const concreteSignal = /\b(?:cannot|can't|unable|not working|does not work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|deleted|inaccurate|wrong|hallucinat(?:e|es|ed|ion)|unsafe|security|privacy|permission|history|invoice|expense|payroll|procurement|reconciliation|approval|bookkeeping|accounting|cash flow|manual entry|administrative|back office|need|needs|should|please add|please improve|feature request|wish|frustrat(?:e|ed|ing)|delay(?:ed|s)?|spoil(?:ed|age)?|wast(?:e|ed)|shortage|stockout|fragmented|siloed|tracking|visibility|utility bill|utility cost|high energy|energy waste|energy efficiency|consumption spike|electricity|gas|refrigeration|ventilation|recurring appointment|room specific instruction|cleaning supplies|cleaner assignment|employee assignment|schedule change|scheduling conflict|missed task|forgotten customer request|inconsistent service|temperature excursion|cold chain|shipment|transport cost|partial load|measurement mistake|wrong measurement|remake|wrong glass|wrong frame|moulding|material shortage|paper form|verbal instruction|order change|miscommunication|injury recovery|reinjury|re-injury|training load|pain report|mobility|return to play|return-to-play|recovery setback|missed warning sign|water quality|feeding schedule|filter replacement|service history|visit history|missed maintenance|equipment failure|unhealthy aquarium|repeated treatment)\b/iu.test(normalized);
     if (!concreteSignal) return false;
 
     if (text.sourceType === 'COMMENT' && this.isDirectUserCommentEvidence(text.content)) {

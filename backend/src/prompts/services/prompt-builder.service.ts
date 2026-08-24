@@ -234,7 +234,7 @@ export class PromptBuilderService {
      * Unlock flows still wait for their persisted collection ownership check.
      */
     const prefetchedRecentIdeasPromise = trustedCollectionJob
-      ? this.getRecentIdeasForDiversity(input, trustedCollectionJob)
+      ? this.getRecentIdeasForDiversityWithinFastPath(input, trustedCollectionJob)
       : null;
 
     const [collectionJob, template] = await Promise.all([
@@ -256,7 +256,7 @@ export class PromptBuilderService {
     const [existingIdea, recentIdeas] = await Promise.all([
       this.getExistingIdea(input),
       prefetchedRecentIdeasPromise ??
-        this.getRecentIdeasForDiversity(input, collectionJob),
+        this.getRecentIdeasForDiversityWithinFastPath(input, collectionJob),
     ]);
 
     const outputContract = this.getOutputContract(input);
@@ -695,6 +695,26 @@ export class PromptBuilderService {
 
     const ranking = input.opportunityRanking;
     const selected = ranking.selected;
+    const selectedClaimDomains = new Set(
+      (selected.matchedDomainNames ?? []).map((name) =>
+        name.trim().toLocaleLowerCase(),
+      ),
+    );
+    const verifiedWorkflowDomains = new Set(
+      (selected.workflowDomainNames ?? []).map((name) =>
+        name.trim().toLocaleLowerCase(),
+      ),
+    );
+    const synthesisBundle = (selected.relatedOpportunityBundle ?? []).filter(
+      (item) =>
+        item.matchedDomainNames.some((name) => {
+          const normalized = name.trim().toLocaleLowerCase();
+          return (
+            selectedClaimDomains.has(normalized) ||
+            verifiedWorkflowDomains.has(normalized)
+          );
+        }),
+    );
     const alternatives = ranking.alternatives.slice(0, 5).map((item) => ({
       rank: item.rank,
       title: item.title,
@@ -727,7 +747,7 @@ export class PromptBuilderService {
         selected.problemDomainRelevanceScores ?? {},
       workflowDomainRelevanceScores:
         selected.workflowDomainRelevanceScores ?? {},
-      relatedOpportunityBundle: selected.relatedOpportunityBundle ?? [],
+      relatedOpportunityBundle: synthesisBundle,
       evidenceSamples: selected.evidenceSamples
         .slice(0, 2)
         .map((sample) => sample.replace(/\s+/gu, ' ').trim().slice(0, 1_800)),
@@ -740,6 +760,7 @@ export class PromptBuilderService {
       '- Derive a concrete user workflow from the evidence samples. Treat causal explanations as hypotheses unless the supplied evidence explicitly proves causation.',
       '- Cover the selected opportunity completely. Its matchedDomainNames define the only domain claims allowed in the generated candidate. In normal evidence-backed runs these names must be verified by the selected opportunity or its relatedOpportunityBundle; in validation-fallback runs they define the explicit hypothesis scope and must be described as unvalidated.',
       '- Treat the assigned opportunity as immutable for this candidate: do not silently switch to a different comment, shortlisted problem, feature request, or evidence item merely because it is easier to solve.',
+      '- A user saying they paid for a subscription, lost value, or wasted money does not prove a billing error. Do not introduce billing discrepancies, unauthorized charges, duplicate charges, failed charges, or refund failures unless the retained winning evidence explicitly states that billing failure.',
       '- problemDomainNames answer what kind of problem is verified; workflowDomainNames answer where that verified problem occurs. When both are present, preserve that distinction instead of forcing every domain to describe the same problem type.',
       '- primaryMatchedDomainName is the main problem-domain anchor. Workflow domains may shape users, operational context, integrations, and examples only when they are also present in matchedDomainNames.',
       '- Shortlisted alternatives are diagnostic references only. Do not merge their domains, users, problems, or capabilities into the selected candidate unless the item is explicitly listed in relatedOpportunityBundle or a candidate-specific benchmark assignment selects that alternative.',
@@ -795,7 +816,7 @@ export class PromptBuilderService {
         ? '- problemStatement must be one polished narrative paragraph of 90-180 words that preserves the requester-defined problem as an explicitly unvalidated hypothesis. Do not imply retained evidence proved it. Every material problem dimension must map to at least one concrete objective, affected user role, product capability, or pilot measurement.'
         : '- problemStatement must be one polished narrative paragraph of 90-180 words. Include only evidence-backed problems that the returned objectives and solution capabilities directly address. Cross-domain and multi-problem ideas are allowed, but every included problem must map to at least one concrete objective, one affected user role, and one product capability.',
       '- Do not add legal, HR, recruitment, compliance, AI, or any other selected-domain module that falls outside the selected opportunity matchedDomainNames, even when a separate shortlisted alternative has evidence for it.',
-      '- When evidence contains unrelated problems, select the strongest coherent problem cluster instead of combining unrelated feature bundles. relatedOpportunityBundle is the only exception: its items are separate atomic problems with independent evidence that may be combined only at solution-synthesis time when they form one coherent workflow. Never describe bundle items as recurrence of one problem.',
+      '- When evidence contains unrelated problems, select the strongest coherent problem cluster instead of combining unrelated feature bundles. relatedOpportunityBundle is the only exception: its items are separate atomic problems with independent evidence and may be combined only when the winning opportunity explicitly verifies the other domain as part of the same workflow. Lexical similarity, domain selection, or adjacent subject matter is never sufficient. Never describe bundle items as recurrence of one problem.',
       '- Do not place solutions, objectives, feature lists, "Solution response", numbered portfolio entries, or implementation instructions inside problemStatement.',
       '- Mention a domain as part of the product claim only when it belongs to the selected opportunity matchedDomainNames. Do not promote evidence from a separate alternative opportunity into the final candidate.',
       ...(winnerDomainNames.length > 0
@@ -933,6 +954,46 @@ export class PromptBuilderService {
       return JSON.stringify(value);
     } catch {
       return 'null';
+    }
+  }
+
+  private async getRecentIdeasForDiversityWithinFastPath(
+    input: PromptBuilderInput,
+    collectionJob: CollectionJobPromptContext,
+  ): Promise<
+    Array<{
+      title: string;
+      problemStatement: string;
+      objectives: Prisma.JsonValue;
+      targetUsers: Prisma.JsonValue;
+      partialAbstract: string | null;
+      fullAbstract: string | null;
+    }>
+  > {
+    if (
+      input.purpose !== 'IDEA_GENERATION' ||
+      !input.requestDescription?.trim()
+    ) {
+      return [];
+    }
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.getRecentIdeasForDiversity(input, collectionJob),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error('Recent idea diversity lookup exceeded 1200ms.')),
+            1_200,
+          );
+        }),
+      ]);
+    } catch {
+      return [];
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
     }
   }
 
