@@ -146,11 +146,11 @@ body:has(.admin-shell),
 }
 
 .admin-theme-alerts {
-    --admin-page-accent: #c99550;
-    --admin-page-accent-strong: #9c6c32;
-    --admin-page-soft: #fff7e8;
-    --admin-page-soft-2: #fffbf3;
-    --admin-page-rgb: 201, 149, 80;
+    --admin-page-accent: #5cbdb9;
+    --admin-page-accent-strong: #2f7774;
+    --admin-page-soft: #e8f6f3;
+    --admin-page-soft-2: #f4fbf9;
+    --admin-page-rgb: 92, 189, 185;
 }
 
 .admin-theme-evidence {
@@ -985,8 +985,8 @@ body:has(.admin-shell),
 }
 
 .tone-alerts {
-    --nav-tone: #c99550;
-    --nav-tone-soft: #fff7e8;
+    --nav-tone: #5cbdb9;
+    --nav-tone-soft: #e8f6f3;
 }
 
 .tone-evidence {

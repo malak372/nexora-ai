@@ -1,11 +1,13 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     Param,
     ParseUUIDPipe,
     Patch,
     Post,
+    Query,
     UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -68,6 +70,11 @@ export class AdminTeamChatController {
     @Get('conversations')
     listConversations(@CurrentUser() admin: CurrentAdmin) {
         return this.teamChatService.listConversations(admin.id);
+    }
+
+    @Get('unread-summary')
+    getUnreadSummary(@CurrentUser() admin: CurrentAdmin) {
+        return this.teamChatService.getUnreadSummary(admin.id);
     }
 
     /**
@@ -147,6 +154,23 @@ export class AdminTeamChatController {
         );
     }
 
+
+    @Delete('conversations/:conversationId/messages/:messageId')
+    deleteMessage(
+        @CurrentUser() admin: CurrentAdmin,
+        @Param('conversationId', ParseUUIDPipe) conversationId: string,
+        @Param('messageId', ParseUUIDPipe) messageId: string,
+        @Query('scope') scope = 'me',
+    ) {
+        return this.teamChatService.deleteMessage(
+            admin.id,
+            conversationId,
+            messageId,
+            scope,
+        );
+    }
+
+
     /**
      * Marks a conversation as read for the currently
      * authenticated administrator.
@@ -158,6 +182,7 @@ export class AdminTeamChatController {
      * @param conversationId The UUID of the conversation.
      * @returns The result of the read-status update.
      */
+
     @Patch('conversations/:conversationId/read')
     markRead(
         @CurrentUser() admin: CurrentAdmin,
