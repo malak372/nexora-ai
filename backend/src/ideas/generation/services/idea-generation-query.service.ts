@@ -180,7 +180,10 @@ export class IdeaGenerationQueryService {
         displaySequence: index + 1,
       })),
       benchmarkCandidates,
-      benchmarkSummary: buildIdeaBenchmarkSummary(benchmarkCandidates),
+      benchmarkSummary: buildIdeaBenchmarkSummary(
+        benchmarkCandidates,
+        run.contextSnapshot,
+      ),
     };
   }
   /**

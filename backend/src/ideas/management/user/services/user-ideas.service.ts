@@ -750,7 +750,10 @@ export class UserIdeasService {
       ? {
         ...idea.generationRun,
         benchmarkCandidates,
-        benchmarkSummary: buildIdeaBenchmarkSummary(benchmarkCandidates),
+        benchmarkSummary: buildIdeaBenchmarkSummary(
+          benchmarkCandidates,
+          idea.generationRun.contextSnapshot,
+        ),
       }
       : null;
 

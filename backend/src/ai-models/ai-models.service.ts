@@ -951,6 +951,24 @@ export class AiModelsService {
   }
 
   /**
+   * Returns active structured-output models for one bounded mandatory
+   * enrichment attempt. This deliberately bypasses only the normal
+   * consecutive-failure routing threshold; inactive, unsupported-provider,
+   * non-JSON, and UNAVAILABLE models remain excluded.
+   */
+  async getEmergencyJsonModels(): Promise<AiModel[]> {
+    return this.prisma.aiModel.findMany({
+      where: {
+        isActive: true,
+        supportsJsonOutput: true,
+        providerKey: { in: [...SUPPORTED_AI_PROVIDER_KEYS] },
+        healthStatus: { in: [...ROUTABLE_HEALTH_STATUSES] },
+      },
+      orderBy: AI_MODEL_FALLBACK_ORDER,
+    });
+  }
+
+  /**
    * Finds one AI model using either PrismaService or an active Prisma
    * transaction.
    *

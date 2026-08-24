@@ -16,6 +16,8 @@ import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { CollectorQueryBuilderUtil } from '../base/collector-query-builder.util';
 import { CollectorRegionUtil } from '../base/collector-region.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
+import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
 
 type YouTubeVideoId = {
   videoId?: string;
@@ -92,25 +94,60 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
   private readonly apiBaseUrl = 'https://www.googleapis.com/youtube/v3';
 
   private readonly maxSearchQueries: number;
+  private static quotaCircuitOpenUntil = 0;
+  private static readonly DAILY_QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+  private static readonly TRANSIENT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
   constructor(configService: ConfigService) {
     super(configService, YouTubeCollector.name);
 
     this.maxSearchQueries = this.getPositiveNumber(
       'COLLECTOR_MAX_SEARCH_QUERIES',
-      4,
+      2,
     );
+  }
+
+  /**
+   * Runtime availability includes the shared quota circuit, not only API-key
+   * presence. This lets later recovery waves and subsequent generation runs
+   * rotate away from YouTube immediately after a daily quota/rate limit is
+   * detected instead of spending another source slot on a known-empty call.
+   */
+  isRuntimeAvailable(): boolean {
+    const apiKey = this.configService.get<string>('YOUTUBE_API_KEY')?.trim();
+    return Boolean(apiKey) && YouTubeCollector.quotaCircuitOpenUntil <= Date.now();
+  }
+
+  getRuntimeUnavailableReason(): string | null {
+    const apiKey = this.configService.get<string>('YOUTUBE_API_KEY')?.trim();
+    if (!apiKey) return 'YouTube API key is not configured.';
+    if (YouTubeCollector.quotaCircuitOpenUntil > Date.now()) {
+      return 'YouTube quota/rate-limit circuit is currently open.';
+    }
+    return null;
   }
 
   /**
    * Collects public YouTube videos and comments.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
+    if (YouTubeCollector.quotaCircuitOpenUntil > Date.now()) {
+      const remainingSeconds = Math.ceil(
+        (YouTubeCollector.quotaCircuitOpenUntil - Date.now()) / 1000,
+      );
+      this.logger.warn(
+        `YouTube collection skipped because the quota/rate-limit circuit is open for approximately ${remainingSeconds}s.`,
+      );
+      return [];
+    }
+
     const apiKey = this.getApiKey();
 
     const searchQueries = this.buildSearchQueries(input).slice(
       0,
-      this.maxSearchQueries,
+      input.collectionMode === 'TARGETED_RECOVERY'
+        ? 1
+        : this.maxSearchQueries,
     );
 
     if (!searchQueries.length) {
@@ -123,12 +160,21 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
 
     try {
       /*
-       * FAST_GENERATION uses one isolated query lane per selected domain.
-       * Search + statistics calls for those lanes are independent, so execute
-       * them concurrently instead of paying three sequential network windows.
+       * YouTube search quota is expensive and a quota failure applies to every
+       * query in the same collection wave. Execute the bounded search lanes
+       * adaptively: stop as soon as enough relevant videos exist, and stop
+       * immediately after the shared rate-limit circuit opens. This prevents a
+       * single 429 from being multiplied by already-unnecessary fallback calls.
        */
-      const queryResults = await Promise.allSettled(
-        searchQueries.map(async (query) => {
+      const firstPassItems: Array<{
+        video: YouTubeSearchVideo;
+        statistics?: YouTubeVideoStatistics;
+        score: number;
+      }> = [];
+
+      for (const query of searchQueries) {
+        if (YouTubeCollector.quotaCircuitOpenUntil > Date.now()) break;
+        try {
           const videos = await this.searchVideos(input, apiKey, query);
           const validVideos = videos
             .filter((video) => this.isValidVideo(video))
@@ -138,42 +184,113 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
             .filter((videoId): videoId is string => Boolean(videoId));
           const statisticsMap = await this.fetchVideoStatistics(videoIds, apiKey);
 
-          return validVideos
-            .map((video) => {
-              const videoId = video.id?.videoId;
-              const statistics = videoId
-                ? statisticsMap.get(videoId)
-                : undefined;
-
-              return {
-                video,
-                statistics,
-                score: this.calculateVideoRelevanceScore(
+          firstPassItems.push(
+            ...validVideos
+              .map((video) => {
+                const videoId = video.id?.videoId;
+                const statistics = videoId
+                  ? statisticsMap.get(videoId)
+                  : undefined;
+                return {
                   video,
-                  input,
                   statistics,
-                ),
-              };
-            })
-            .filter((item) => item.score > 5);
-        }),
-      );
+                  score: this.calculateVideoRelevanceScore(
+                    video,
+                    input,
+                    statistics,
+                  ),
+                };
+              })
+              .filter((item) => item.score > 5),
+          );
 
-      const seenVideoIds = new Set<string>();
-      const selectedVideos = queryResults
-        .flatMap((result) =>
-          result.status === 'fulfilled' ? result.value : [],
-        )
-        .sort((first, second) => second.score - first.score)
-        .filter((item) => {
-          const videoId = item.video.id?.videoId;
-          if (!videoId || seenVideoIds.has(videoId)) {
-            return false;
+          if (firstPassItems.length >= 2) break;
+        } catch (error: unknown) {
+          const cooldownMs = this.resolveRateLimitCooldownMs(error);
+          if (cooldownMs > 0) {
+            YouTubeCollector.quotaCircuitOpenUntil = Math.max(
+              YouTubeCollector.quotaCircuitOpenUntil,
+              Date.now() + cooldownMs,
+            );
+            this.logger.warn(
+              `YouTube rate-limit circuit opened for ${Math.ceil(cooldownMs / 1000)}s; later collection/recovery waves will skip YouTube instead of repeating exhausted requests.`,
+            );
+            break;
           }
-          seenVideoIds.add(videoId);
-          return true;
+        }
+      }
+
+      const rankVideos = (items: Array<{
+        video: YouTubeSearchVideo;
+        statistics?: YouTubeVideoStatistics;
+        score: number;
+      }>) => {
+        const seenVideoIds = new Set<string>();
+        return items
+          .sort((first, second) => second.score - first.score)
+          .filter((item) => {
+            const videoId = item.video.id?.videoId;
+            if (!videoId || seenVideoIds.has(videoId)) {
+              return false;
+            }
+            seenVideoIds.add(videoId);
+            return true;
+          })
+          .slice(0, this.maxSavedPosts);
+      };
+
+      let selectedVideos = rankVideos(firstPassItems);
+
+      if (
+        selectedVideos.length < 2 &&
+        input.requestDescription?.trim() &&
+        YouTubeCollector.quotaCircuitOpenUntil <= Date.now()
+      ) {
+        const attempted = new Set(
+          searchQueries.map((query) => this.cleanNormalizedText(query)),
+        );
+        const fallbackQueries = ProblemFirstCollectorQueryUtil.buildProgressiveFallback({
+          sourceKey: this.sourceKey,
+          domainName: input.domainName,
+          requestDescription: input.requestDescription,
+          plannedQueries: input.plannedQueries,
+          keywords: input.keywords,
         })
-        .slice(0, this.maxSavedPosts);
+          .filter((query) => !attempted.has(this.cleanNormalizedText(query)))
+          .slice(0, 2);
+
+        const fallbackResults = await Promise.allSettled(
+          fallbackQueries.map(async (query) => {
+            const videos = await this.searchVideos(input, apiKey, query);
+            const validVideos = videos
+              .filter((video) => this.isValidVideo(video))
+              .filter((video) => this.matchesInputContext(video, input));
+            const videoIds = validVideos
+              .map((video) => video.id?.videoId)
+              .filter((videoId): videoId is string => Boolean(videoId));
+            const statisticsMap = await this.fetchVideoStatistics(videoIds, apiKey);
+
+            return validVideos
+              .map((video) => {
+                const videoId = video.id?.videoId;
+                const statistics = videoId ? statisticsMap.get(videoId) : undefined;
+                return {
+                  video,
+                  statistics,
+                  score: this.calculateVideoRelevanceScore(video, input, statistics),
+                };
+              })
+              .filter((item) => item.score > 5);
+          }),
+        );
+
+        selectedVideos = rankVideos([
+          ...selectedVideos,
+          ...fallbackResults.flatMap((result) =>
+            result.status === 'fulfilled' ? result.value : [],
+          ),
+        ]);
+      }
 
       /*
        * Comment threads are also independent. Fetch them concurrently for the
@@ -217,6 +334,10 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     apiKey: string,
     query: string,
   ): Promise<YouTubeSearchVideo[]> {
+    if (YouTubeCollector.quotaCircuitOpenUntil > Date.now()) {
+      return [];
+    }
+
     const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'search', [
       query,
       input.country,
@@ -235,10 +356,33 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
           cacheTtlMs: this.cacheTtlMs,
           retryAttempts: this.retryAttempts,
           retryDelayMs: this.retryDelayMs,
+          retryOnRateLimit: false,
         },
       );
 
     return data.items ?? [];
+  }
+
+  private resolveRateLimitCooldownMs(error: unknown): number {
+    const message = this.getErrorMessage(error).toLocaleLowerCase();
+    const isRateLimited =
+      message.includes('status code 429') ||
+      message.includes('\"code\":429') ||
+      message.includes('rate_limit_exceeded') ||
+      message.includes('ratelimitexceeded') ||
+      message.includes('resource_exhausted') ||
+      message.includes('quota exceeded');
+
+    if (!isRateLimited) return 0;
+
+    const isDailyQuota =
+      message.includes('per day') ||
+      message.includes('search queries per day') ||
+      message.includes('quota exceeded');
+
+    return isDailyQuota
+      ? YouTubeCollector.DAILY_QUOTA_COOLDOWN_MS
+      : YouTubeCollector.TRANSIENT_RATE_LIMIT_COOLDOWN_MS;
   }
 
   /**
@@ -286,6 +430,16 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
       input.collectionMode === 'FAST_GENERATION' ||
       input.collectionMode === 'TARGETED_RECOVERY';
     const maximumQueries = isBoundedMode ? 3 : this.maxSearchQueries;
+    if (input.requestDescription?.trim()) {
+      return ProblemFirstCollectorQueryUtil.build({
+        sourceKey: this.sourceKey,
+        domainName: input.domainName,
+        requestDescription: input.requestDescription,
+        plannedQueries: input.plannedQueries,
+        keywords: input.keywords,
+      }).slice(0, maximumQueries);
+    }
+
     const plannedQueries = (input.plannedQueries ?? [])
       .map((query) => this.cleanNormalizedText(query))
       .map((query) => query.split(/\s+/u).slice(0, 9).join(' '))
@@ -352,11 +506,53 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
       return false;
     }
 
+    const normalized = this.cleanNormalizedText(content);
+
+    if (
+      input.requestDescription?.trim() &&
+      (input.collectionMode === 'FAST_GENERATION' ||
+        input.collectionMode === 'TARGETED_RECOVERY')
+    ) {
+      const constraint = RequestVerticalConstraintUtil.resolve({
+        requestDescription: input.requestDescription,
+        domainName: input.domainName,
+        plannedQueries: input.plannedQueries,
+      });
+
+      if (constraint.strict) {
+        const verticalMatch = RequestVerticalConstraintUtil.matchesVertical(
+          content,
+          constraint,
+        );
+        if (!verticalMatch) {
+          return false;
+        }
+
+        const workflowMatch = RequestVerticalConstraintUtil.matchesWorkflow(
+          content,
+          constraint,
+        );
+        const serviceContainerMatch =
+          constraint.kind === 'PHYSICAL_SERVICE_VERTICAL' &&
+          /\b(?:shop|business|service|specialist|technician|cleaner|restoration|repair|workshop|customer|client|intake|pickup)\b/iu.test(
+            normalized,
+          );
+
+        /*
+         * A service-specific parent video may contain the useful first-person
+         * pain only in its comments. Keep those containers, but never keep a
+         * generic video that merely shares one broad token with the request.
+         */
+        if (!workflowMatch && !serviceContainerMatch) {
+          return false;
+        }
+      }
+    }
+
     if (input.collectionMode !== 'TARGETED_RECOVERY') {
       return true;
     }
 
-    const normalized = this.cleanNormalizedText(content);
     const planned = this.cleanNormalizedText(
       (input.plannedQueries ?? []).join(' '),
     );
@@ -394,6 +590,26 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
           normalized,
         );
       return infrastructureAnchor && securityAnchor;
+    }
+
+    if (
+      /(?:manufacturing|manufacturer|factory|production line|industrial plant)/iu.test(planned) &&
+      /(?:raw material|supplier|supply chain|inventory|warehouse|shipment|production schedule|bottleneck|demand change|order prioritization)/iu.test(planned)
+    ) {
+      const manufacturingAnchor = /(?:manufacturing|manufacturer|factory|production|plant|industrial)/iu.test(normalized);
+      const supplyAnchor = /(?:raw materials?|supplier|supply chain|inventory|warehouse|shipment|delivery|stock)/iu.test(normalized);
+      const disruptionAnchor = /(?:delay|shortage|stockout|bottleneck|disrupt|shutdown|downtime|demand change|forecast|inventory mismatch|excess stock|overstock|priorit|schedule conflict)/iu.test(normalized);
+      return manufacturingAnchor && supplyAnchor && disruptionAnchor;
+    }
+
+    if (
+      /(?:locksmith|locksmiths|field service|mobile service|service dispatch)/iu.test(planned) &&
+      /(?:dispatch|technician|service request|emergency call|tools?|replacement parts?|parts inventory|availability|repeated trips?)/iu.test(planned)
+    ) {
+      const locksmithAnchor = /(?:locksmith|locksmiths|lock service|lock repair|key service)/iu.test(normalized);
+      const operationsAnchor = /(?:dispatch|dispatcher|technician|service call|service request|emergency call|job assignment|parts?|tools?|van inventory|mobile inventory|scheduling|availability)/iu.test(normalized);
+      const failureAnchor = /(?:delay|late|missing|wrong|incorrect|unavailable|repeat trip|repeated trip|return trip|miscommunication|missed call|poor coordination|stockout|out of stock)/iu.test(normalized);
+      return locksmithAnchor && operationsAnchor && failureAnchor;
     }
 
     const plannedTokens = planned

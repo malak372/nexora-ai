@@ -4,14 +4,19 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 
-import { SocialCollector } from './base/collector.interface';
+import {
+  type CollectorRequestSupportInput,
+  SocialCollector,
+} from './base/collector.interface';
 
 import { AppStoreCollector } from './app-store/app-store.collector';
 import { BlogCollector } from './blog/blog.collector';
+import { CrossrefCollector } from './crossref/crossref.collector';
 import { DevToCollector } from './dev-to/dev-to.collector';
 import { ForumCollector } from './forum/forum.collector';
 import { GitHubCollector } from './github/github.collector';
 import { GooglePlayCollector } from './google-play/google-play.collector';
+import { GdeltCollector } from './gdelt/gdelt.collector';
 import { HackerNewsCollector } from './hacker-news/hacker-news.collector';
 import { NewsCollector } from './news/news.collector';
 import { ProductHuntCollector } from './product-hunt/product-hunt.collector';
@@ -46,9 +51,11 @@ export class CollectorsFactory {
     stackOverflowCollector: StackOverflowCollector,
     forumCollector: ForumCollector,
     blogCollector: BlogCollector,
+    crossrefCollector: CrossrefCollector,
     newsCollector: NewsCollector,
     appStoreCollector: AppStoreCollector,
     googlePlayCollector: GooglePlayCollector,
+    gdeltCollector: GdeltCollector,
     hackerNewsCollector: HackerNewsCollector,
     productHuntCollector: ProductHuntCollector,
     devToCollector: DevToCollector,
@@ -60,9 +67,11 @@ export class CollectorsFactory {
       stackOverflowCollector,
       forumCollector,
       blogCollector,
+      crossrefCollector,
       newsCollector,
       appStoreCollector,
       googlePlayCollector,
+      gdeltCollector,
       hackerNewsCollector,
       productHuntCollector,
       devToCollector,
@@ -103,6 +112,43 @@ export class CollectorsFactory {
    */
   getImplementedSourceKeys(): string[] {
     return [...this.collectors.keys()].sort();
+  }
+
+  /**
+   * Returns collectors that are both implemented and executable with the
+   * current runtime configuration. This keeps credential-gated collectors
+   * such as Reddit out of automatic generation when their OAuth credentials
+   * are absent or still contain placeholder values.
+   */
+  getRuntimeAvailableSourceKeys(): string[] {
+    return [...this.collectors.entries()]
+      .filter(([, collector]) => collector.isRuntimeAvailable?.() ?? true)
+      .map(([key]) => key)
+      .sort();
+  }
+
+  isCollectorRuntimeAvailable(sourceKey: string): boolean {
+    const normalizedKey = this.normalizeSourceKey(sourceKey);
+    const collector = this.collectors.get(normalizedKey);
+    return collector ? (collector.isRuntimeAvailable?.() ?? true) : false;
+  }
+
+  isCollectorRequestAvailable(
+    sourceKey: string,
+    input: CollectorRequestSupportInput,
+  ): boolean {
+    const normalizedKey = this.normalizeSourceKey(sourceKey);
+    const collector = this.collectors.get(normalizedKey);
+    if (!collector || !(collector.isRuntimeAvailable?.() ?? true)) return false;
+    return collector.supportsRequest?.(input) ?? true;
+  }
+
+  getCollectorRuntimeUnavailableReason(sourceKey: string): string | null {
+    const normalizedKey = this.normalizeSourceKey(sourceKey);
+    const collector = this.collectors.get(normalizedKey);
+    if (!collector || (collector.isRuntimeAvailable?.() ?? true)) return null;
+    return collector.getRuntimeUnavailableReason?.() ??
+      'Required runtime configuration is missing.';
   }
 
   /**

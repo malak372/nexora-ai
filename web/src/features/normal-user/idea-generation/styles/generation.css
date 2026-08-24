@@ -2251,6 +2251,16 @@
   background: #edf8f6;
 }
 
+.nx-domain-shortcut:disabled,
+.nx-domain-shortcut:disabled:hover {
+  opacity: .48;
+  cursor: not-allowed;
+  transform: none;
+  border-color: #d8e8e5;
+  background: #f4f7f7;
+  box-shadow: none;
+}
+
 .nx-domain-shortcut svg:last-child {
   margin-left: 2px;
 }
@@ -3691,6 +3701,15 @@
   transform: translateY(-2px);
   border-color: rgba(47, 143, 137, .44);
   box-shadow: 0 16px 38px rgba(47, 119, 116, .10);
+}
+
+.nx-personalized-discovery--signal button:disabled,
+.nx-personalized-discovery--signal button:disabled:hover {
+  opacity: .46;
+  cursor: not-allowed;
+  transform: none;
+  border-color: rgba(92, 189, 185, .16);
+  box-shadow: none;
 }
 
 .nx-personalized-discovery button.is-selected {
@@ -5731,5 +5750,197 @@
 
   .nx-generation-blocker__actions button {
     min-height: 46px;
+  }
+}
+
+/* Cancellation success confirmation. Shown only after the backend reaches the
+   authoritative CANCELLED terminal state. */
+.nx-cancel-success {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 1600;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  padding: 24px;
+  overflow: auto;
+  background: rgba(24, 43, 42, 0.24);
+  backdrop-filter: blur(12px);
+  isolation: isolate;
+}
+
+.nx-cancel-success__dialog {
+  width: min(430px, 100%);
+  padding: 30px 28px 26px;
+  border: 1px solid rgba(91, 174, 165, 0.26);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 28px 80px rgba(42, 74, 71, 0.18);
+  text-align: center;
+}
+
+.nx-cancel-success__icon {
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  color: #277f78;
+  background: linear-gradient(145deg, rgba(219, 244, 240, 0.96), rgba(249, 235, 240, 0.78));
+  box-shadow: 0 12px 30px rgba(68, 156, 147, 0.15);
+}
+
+.nx-cancel-success__eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: #2f847d;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.nx-cancel-success__dialog h2 {
+  margin: 0;
+  color: #30433f;
+  font-size: clamp(1.55rem, 3vw, 2rem);
+  line-height: 1.08;
+}
+
+.nx-cancel-success__dialog p {
+  margin: 12px auto 22px;
+  max-width: 350px;
+  color: #70827f;
+  font-size: 0.94rem;
+  line-height: 1.6;
+}
+
+.nx-cancel-success__dialog button {
+  width: 100%;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #3fa49b, #67b8ae);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 26px rgba(63, 164, 155, 0.22);
+}
+
+.nx-cancel-success__dialog button:hover {
+  transform: translateY(-1px);
+}
+
+/* Active-run conflict is a viewport-level dialog, not an inline form error. */
+.nx-active-run-conflict {
+  position: fixed;
+  inset: 0;
+  z-index: 1750;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  overflow: auto;
+  background: rgba(27, 48, 46, .28);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.nx-active-run-conflict__dialog {
+  width: min(430px, 100%);
+  padding: 30px 28px 26px;
+  border: 1px solid rgba(91, 174, 165, .25);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, .985);
+  box-shadow: 0 28px 80px rgba(42, 74, 71, .2);
+  text-align: center;
+}
+
+.nx-active-run-conflict__icon {
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  color: #277f78;
+  background: linear-gradient(145deg, rgba(219, 244, 240, .98), rgba(249, 235, 240, .82));
+  box-shadow: 0 12px 30px rgba(68, 156, 147, .15);
+}
+
+.nx-active-run-conflict__eyebrow {
+  display: block;
+  margin-bottom: 7px;
+  color: #2f847d;
+  font-size: .74rem;
+  font-weight: 850;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.nx-active-run-conflict__dialog h2 {
+  margin: 0;
+  color: #30433f;
+  font-size: clamp(1.5rem, 3vw, 1.95rem);
+  line-height: 1.1;
+}
+
+.nx-active-run-conflict__dialog p {
+  margin: 12px auto 22px;
+  max-width: 350px;
+  color: #70827f;
+  font-size: .95rem;
+  line-height: 1.6;
+}
+
+.nx-active-run-conflict__dialog button {
+  width: 100%;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #3fa49b, #67b8ae);
+  color: #fff;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+  box-shadow: 0 12px 26px rgba(63, 164, 155, .22);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.nx-active-run-conflict__dialog button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px rgba(63, 164, 155, .26);
+}
+
+.nx-active-run-conflict__dialog button:focus-visible {
+  outline: 3px solid rgba(63, 164, 155, .24);
+  outline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .nx-active-run-conflict {
+    padding: 18px;
+  }
+
+  .nx-active-run-conflict__dialog {
+    padding: 27px 22px 22px;
+    border-radius: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nx-active-run-conflict__dialog,
+  .nx-active-run-conflict__dialog button {
+    animation: none !important;
+    transition: none !important;
   }
 }

@@ -199,10 +199,10 @@ export class DataSourcesService implements OnModuleInit {
   }
 
   async findAvailable() {
-    const implementedKeys =
-      this.collectorsFactory.getImplementedSourceKeys();
+    const availableKeys =
+      this.collectorsFactory.getRuntimeAvailableSourceKeys();
 
-    if (!implementedKeys.length) {
+    if (!availableKeys.length) {
       return [];
     }
 
@@ -211,7 +211,7 @@ export class DataSourcesService implements OnModuleInit {
         isActive: true,
         isImplemented: true,
         key: {
-          in: implementedKeys,
+          in: availableKeys,
         },
       },
 

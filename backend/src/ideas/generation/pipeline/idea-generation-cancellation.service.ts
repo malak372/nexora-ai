@@ -98,6 +98,15 @@ export type FinalizeIdeaGenerationCancellationResult = {
  */
 @Injectable()
 export class IdeaGenerationCancellationService {
+  private readonly activeAbortControllers = new Map<
+    string,
+    Set<AbortController>
+  >();
+
+  private readonly locallyCancelledRunIds = new Set<string>();
+
+  private readonly localCancellationTtlMs = 5 * 60 * 1000;
+
   /**
    * Generation-run statuses after which cancellation no longer
    * changes normal workflow execution.
@@ -135,21 +144,101 @@ export class IdeaGenerationCancellationService {
       run.cancelRequestedAt !== null ||
       run.status === IdeaGenerationRunStatus.CANCELLED;
 
-    if (alreadyTerminal || alreadyRequested) {
+    if (alreadyTerminal) {
       return {
         run,
-        alreadyTerminal,
+        alreadyTerminal: true,
         alreadyRequested,
       };
     }
 
-    const updatedRun = await this.runService.requestCancellation(run.id);
+    if (alreadyRequested) {
+      this.abortActiveExecutions(run.id);
+
+      return {
+        run,
+        alreadyTerminal: false,
+        alreadyRequested: true,
+      };
+    }
+
+    /*
+     * Abort process-local work before waiting for the remote cancellation
+     * checkpoint. The durable cancelRequestedAt write is still awaited before
+     * the endpoint returns, but active collection/AI work stops immediately.
+     */
+    this.abortActiveExecutions(run.id);
+
+    const updatedRun = await this.runService.requestCancellation(run.id, run);
 
     return {
       run: updatedRun,
       alreadyTerminal: false,
       alreadyRequested: false,
     };
+  }
+
+  createExecutionAbortController(runId: string): AbortController {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+    const controller = new AbortController();
+
+    let controllers = this.activeAbortControllers.get(normalizedRunId);
+    if (!controllers) {
+      controllers = new Set<AbortController>();
+      this.activeAbortControllers.set(normalizedRunId, controllers);
+    }
+    controllers.add(controller);
+
+    if (this.locallyCancelledRunIds.has(normalizedRunId)) {
+      controller.abort();
+    }
+
+    return controller;
+  }
+
+  releaseExecutionAbortController(
+    runId: string,
+    controller: AbortController,
+  ): void {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+    const controllers = this.activeAbortControllers.get(normalizedRunId);
+
+    if (!controllers) {
+      return;
+    }
+
+    controllers.delete(controller);
+
+    if (controllers.size === 0) {
+      this.activeAbortControllers.delete(normalizedRunId);
+    }
+  }
+
+  private abortActiveExecutions(runId: string): void {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+
+    this.locallyCancelledRunIds.add(normalizedRunId);
+
+    const controllers = this.activeAbortControllers.get(normalizedRunId);
+    controllers?.forEach((controller) => {
+      if (!controller.signal.aborted) {
+        controller.abort();
+      }
+    });
+
+    const cleanupTimer = setTimeout(() => {
+      this.locallyCancelledRunIds.delete(normalizedRunId);
+    }, this.localCancellationTtlMs);
+    cleanupTimer.unref?.();
   }
 
   /**
@@ -227,7 +316,7 @@ export class IdeaGenerationCancellationService {
       'Generation-run ID',
     );
 
-    return this.prisma.$transaction(async (transaction) => {
+    const result = await this.prisma.$transaction(async (transaction) => {
       const skippedStagesCount = await this.skipPendingStages(
         normalizedRunId,
         transaction,
@@ -240,6 +329,11 @@ export class IdeaGenerationCancellationService {
         skippedStagesCount,
       };
     });
+
+    this.locallyCancelledRunIds.delete(normalizedRunId);
+    this.activeAbortControllers.delete(normalizedRunId);
+
+    return result;
   }
 
   /**

@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 
+import { CollectorAbortContextUtil } from './collector-abort-context.util';
 import { CollectorCacheUtil } from './collector-cache.util';
 
 /**
@@ -40,7 +41,9 @@ export class CollectorExternalCacheUtil {
     }
 
     try {
-      const result = await callback();
+      CollectorAbortContextUtil.throwIfAborted();
+      const result = await CollectorAbortContextUtil.raceWithAbort(callback());
+      CollectorAbortContextUtil.throwIfAborted();
 
       CollectorCacheUtil.set(cacheKey, result, cacheTtlMs);
 

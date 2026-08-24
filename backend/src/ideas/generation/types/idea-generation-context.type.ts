@@ -332,7 +332,14 @@ export type SelectedGenerationDomain = {
   readonly name: string;
   readonly keywords: readonly string[];
   readonly configuredKeywords?: readonly string[];
+  /**
+   * Request-derived search vocabulary for this run only.
+   * These terms must never be persisted onto an existing visible domain.
+   */
+  readonly requestIntentKeywords?: readonly string[];
   readonly effectiveSearchKeywords?: readonly string[];
+  /** True only when this domain was explicitly selected by the requester. */
+  readonly isExplicitlySelected?: boolean;
 };
 
 /**
@@ -375,6 +382,17 @@ export type IdeaGenerationDomainEvidence = {
 
   /** Representative comments retained by the NLP pipeline. */
   readonly sampleComments: Prisma.JsonValue | null;
+};
+
+export type IdeaGenerationRawEvidenceItem = {
+  readonly id: string;
+  readonly sourceKey: string;
+  readonly sourceType: 'POST' | 'COMMENT';
+  readonly postId?: string;
+  readonly title?: string | null;
+  readonly text: string;
+  readonly isComplaintEvidence?: boolean;
+  readonly requiresAiSemanticTriage?: boolean;
 };
 
 export type IdeaGenerationBenchmarkCandidateSnapshot = {
@@ -431,6 +449,8 @@ export type IdeaGenerationContext = {
   domainResolution: IdeaGenerationDomainResolutionTrace | null;
 
   requestDescription: string | null;
+
+  requestFingerprint: string | null;
 
   /** Bounded AI/deterministic plan created before collection when request text exists. */
   collectionPlan: RequestCollectionPlan | null;
@@ -492,6 +512,13 @@ export type IdeaGenerationContext = {
    * AI analysis, and benchmark validation.
    */
   domainEvidence: IdeaGenerationDomainEvidence[];
+
+  /**
+   * Bounded raw collector corpus preserved before deterministic semantic
+   * pruning. Community AI classifies these items, but none of them become
+   * verified evidence until deterministic request/workflow guards accept them.
+   */
+  rawEvidenceCorpus: IdeaGenerationRawEvidenceItem[];
 
   /** Evidence-grounded LLM analysis over the cleaned NLP context. */
   communityAiAnalysis: CommunityAiAnalysis | null;
@@ -608,6 +635,8 @@ export type CreateIdeaGenerationContextInput = {
 
   requestDescription?: string | null;
 
+  requestFingerprint?: string | null;
+
   /** Optional pre-collection intent plan derived from request text. */
   collectionPlan?: RequestCollectionPlan | null;
 
@@ -658,6 +687,7 @@ export function createIdeaGenerationContext(
     domainResolution: input.domainResolution ?? null,
 
     requestDescription: input.requestDescription ?? null,
+    requestFingerprint: input.requestFingerprint ?? null,
     collectionPlan: input.collectionPlan ?? null,
     keywords: input.keywords ?? [],
 
@@ -673,6 +703,7 @@ export function createIdeaGenerationContext(
     collection: null,
     nlp: null,
     domainEvidence: [],
+    rawEvidenceCorpus: [],
     communityAiAnalysis: null,
     opportunityRanking: null,
     benchmarkWinnerOpportunity: null,

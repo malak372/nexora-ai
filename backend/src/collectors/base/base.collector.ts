@@ -164,9 +164,76 @@ export abstract class BaseCollector {
    * Extracts normalized domain keywords.
    */
   protected getDomainKeywords(input: CollectorInput): string[] {
-    return (input.domainKeywords ?? [])
+    const configuredTerms = (input.domainKeywords ?? [])
       .map((keyword) => this.normalizeText(keyword))
       .filter(Boolean);
+
+    /*
+     * Text-bearing generation requests already have an AI-created retrieval
+     * plan. Expose a bounded set of stable terms from that plan to collector
+     * relevance scoring so a niche synonym discovered by the AI (for example a
+     * professional trade term) is not searched successfully and then discarded
+     * merely because it was absent from the stored domain keyword table.
+     *
+     * Manual collection is unchanged because it normally has no plannedQueries.
+     */
+    const plannedTerms = this.extractPlannedRelevanceTerms(
+      input.plannedQueries ?? [],
+    );
+
+    return this.unique([...configuredTerms, ...plannedTerms]).slice(0, 24);
+  }
+
+  private extractPlannedRelevanceTerms(
+    plannedQueries: readonly string[],
+  ): string[] {
+    if (plannedQueries.length === 0) return [];
+
+    const stopWords = new Set([
+      'about', 'after', 'before', 'business', 'businesses', 'complaint',
+      'complaints', 'difficult', 'difficulty', 'discussion', 'discussions',
+      'example', 'examples', 'from', 'issue', 'issues', 'management',
+      'operator', 'operators', 'problem', 'problems', 'report', 'reports',
+      'service', 'services', 'software', 'system', 'systems', 'tracking',
+      'user', 'users', 'workflow', 'workflows', 'with', 'without',
+    ]);
+    const frequency = new Map<string, number>();
+    const tokenized = plannedQueries
+      .map((query) =>
+        this.cleanNormalizedText(query)
+          .split(/[^\p{L}\p{N}]+/u)
+          .filter((token) => token.length >= 4 && !stopWords.has(token)),
+      )
+      .filter((tokens) => tokens.length > 0);
+
+    for (const tokens of tokenized) {
+      for (const token of new Set(tokens)) {
+        frequency.set(token, (frequency.get(token) ?? 0) + 1);
+      }
+    }
+
+    const stableSingles = [...frequency.entries()]
+      .filter(([, count]) => count >= 2)
+      .sort((left, right) => right[1] - left[1] || right[0].length - left[0].length)
+      .map(([token]) => token)
+      .slice(0, 10);
+
+    const compactPhrases: string[] = [];
+    for (const tokens of tokenized.slice(0, 5)) {
+      for (let index = 0; index < tokens.length - 1; index += 1) {
+        const left = tokens[index];
+        const right = tokens[index + 1];
+        if (!left || !right) continue;
+        if (!stableSingles.includes(left) && !stableSingles.includes(right)) {
+          continue;
+        }
+        compactPhrases.push(`${left} ${right}`);
+        if (compactPhrases.length >= 6) break;
+      }
+      if (compactPhrases.length >= 6) break;
+    }
+
+    return this.unique([...stableSingles, ...compactPhrases]).slice(0, 14);
   }
 
   /**

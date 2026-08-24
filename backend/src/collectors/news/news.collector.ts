@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import Parser from 'rss-parser';
 
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
@@ -12,6 +13,7 @@ import { CollectorHeaderUtil } from '../base/collector-header.util';
 import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
 
 type NewsApiSource = {
   id?: string | null;
@@ -35,6 +37,17 @@ type NewsApiResponse = {
   articles?: NewsApiArticle[];
 };
 
+type GoogleNewsRssItem = {
+  guid?: string;
+  link?: string;
+  title?: string;
+  content?: string;
+  contentSnippet?: string;
+  isoDate?: string;
+  pubDate?: string;
+  creator?: string;
+};
+
 /**
  * News collector.
  *
@@ -52,6 +65,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   private readonly apiBaseUrl = 'https://newsapi.org/v2';
   private static unavailableUntil = 0;
   private static readonly RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+  private readonly rssParser = new Parser();
 
   constructor(configService: ConfigService) {
     super(configService, NewsCollector.name);
@@ -62,25 +76,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
-      if (
-        (input.collectionMode === 'FAST_GENERATION' ||
-          input.collectionMode === 'TARGETED_RECOVERY') &&
-        NewsCollector.unavailableUntil > Date.now()
-      ) {
-        this.logger.warn('News collection skipped by rate-limit circuit breaker.');
-        return [];
-      }
-
-      const apiKey = this.getApiKey();
       const searchQueries = this.buildSearchQueries(input);
-
-      if (!apiKey) {
-        this.logger.warn(
-          'News collection skipped because NEWS_API_KEY is missing.',
-        );
-
-        return [];
-      }
 
       if (!searchQueries.length) {
         this.logger.warn(
@@ -90,16 +86,31 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         return [];
       }
 
-      const collectedArticles: NewsApiArticle[] = [];
+      const apiKey = this.getApiKey();
+      const useRssFallback =
+        input.collectionMode === 'FAST_GENERATION' ||
+        input.collectionMode === 'TARGETED_RECOVERY' ||
+        !apiKey ||
+        NewsCollector.unavailableUntil > Date.now();
 
-      for (const searchQuery of searchQueries) {
-        if (collectedArticles.length >= this.maxFetchedPosts) {
-          break;
-        }
+      if (useRssFallback) {
+        this.logger.debug(
+          'Using the bounded no-auth Google News RSS path for fast evidence collection.',
+        );
+        return this.collectFromGoogleNewsRss(searchQueries, input);
+      }
 
-        const articles = await this.searchArticles(searchQuery, input);
+      const queryResults = await Promise.allSettled(
+        searchQueries.map((searchQuery) =>
+          this.searchArticles(searchQuery, input),
+        ),
+      );
+      const collectedArticles = queryResults.flatMap((result) =>
+        result.status === 'fulfilled' ? result.value : [],
+      );
 
-        collectedArticles.push(...articles);
+      if (collectedArticles.length === 0) {
+        return this.collectFromGoogleNewsRss(searchQueries, input);
       }
 
       const seenArticleUrls = new Set<string>();
@@ -147,15 +158,128 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
           input.collectionMode === 'FAST_GENERATION' ||
           input.collectionMode === 'TARGETED_RECOVERY'
         ) {
-          return [];
+          return this.collectFromGoogleNewsRss(
+            this.buildSearchQueries(input),
+            input,
+          );
         }
       }
       this.logger.error('News collection failed', this.getErrorMessage(error));
+
+      if (
+        input.collectionMode === 'FAST_GENERATION' ||
+        input.collectionMode === 'TARGETED_RECOVERY'
+      ) {
+        return this.collectFromGoogleNewsRss(
+          this.buildSearchQueries(input),
+          input,
+        );
+      }
 
       throw new ServiceUnavailableException(
         'News collection failed. Check NEWS_API_KEY, API limits, collector limits, or network connection.',
       );
     }
+  }
+
+  private async collectFromGoogleNewsRss(
+    searchQueries: readonly string[],
+    input: CollectorInput,
+  ): Promise<CollectorPost[]> {
+    const rankArticles = (articles: NewsApiArticle[]): CollectorPost[] => {
+      const seen = new Set<string>();
+      return articles
+        .filter((article) => this.isUsableArticle(article))
+        .filter((article) => {
+          const key = article.url ?? article.title ?? '';
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((article) => ({
+          article,
+          score: this.calculateArticleRelevanceScore(article, input),
+        }))
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, this.maxSavedPosts)
+        .map((entry) => this.mapArticleToCollectorPost(entry.article, input));
+    };
+
+    const queries = searchQueries.slice(0, 3);
+    const results = await Promise.allSettled(
+      queries.map((query) => this.searchGoogleNewsRss(query, input)),
+    );
+    const articles = results.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value : [],
+    );
+    const ranked = rankArticles(articles);
+    if (ranked.length >= 2 || !input.requestDescription?.trim()) {
+      return ranked;
+    }
+
+    const attempted = new Set(queries.map((query) => this.cleanNormalizedText(query)));
+    const fallbackQueries = ProblemFirstCollectorQueryUtil.buildProgressiveFallback({
+      sourceKey: this.sourceKey,
+      domainName: input.domainName,
+      requestDescription: input.requestDescription,
+      plannedQueries: input.plannedQueries,
+      keywords: input.keywords,
+    })
+      .filter((query) => !attempted.has(this.cleanNormalizedText(query)))
+      .slice(0, 2);
+
+    if (fallbackQueries.length === 0) return ranked;
+
+    const fallbackResults = await Promise.allSettled(
+      fallbackQueries.map((query) => this.searchGoogleNewsRss(query, input)),
+    );
+    const fallbackArticles = fallbackResults.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value : [],
+    );
+    return rankArticles([...articles, ...fallbackArticles]);
+  }
+
+  private async searchGoogleNewsRss(
+    searchQuery: string,
+    input: CollectorInput,
+  ): Promise<NewsApiArticle[]> {
+    const query = searchQuery
+      .replace(/\s+(?:OR|AND|NOT)\s+/giu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .split(/\s+/u)
+      .slice(0, 10)
+      .join(' ');
+    if (!query) return [];
+
+    const arabic = CollectorLanguageUtil.isArabic(input.language);
+    const locale = arabic
+      ? { hl: 'ar', gl: 'PS', ceid: 'PS:ar' }
+      : { hl: 'en-US', gl: 'US', ceid: 'US:en' };
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=${locale.hl}&gl=${locale.gl}&ceid=${locale.ceid}`;
+    const response = await axios.get<string>(url, {
+      headers: {
+        Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+        'User-Agent': 'NexoraAI-Graduation-Project',
+      },
+      responseType: 'text',
+      timeout: input.collectionMode === 'TARGETED_RECOVERY' ? 3_000 : 4_000,
+    });
+    const feed = await this.rssParser.parseString(response.data);
+
+    return (feed.items ?? []).slice(0, this.maxFetchedPosts).map((raw) => {
+      const item = raw as GoogleNewsRssItem;
+      return {
+        source: { name: this.cleanPlainText(item.creator ?? feed.title) },
+        author: this.cleanPlainText(item.creator ?? feed.title),
+        title: this.cleanPlainText(item.title),
+        description: this.cleanPlainText(item.contentSnippet ?? item.content),
+        content: this.cleanPlainText(item.content ?? item.contentSnippet),
+        url: item.link,
+        publishedAt: item.isoDate ?? item.pubDate,
+      };
+    });
   }
 
   /**
@@ -214,6 +338,22 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
    * Builds search queries.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
+    if (input.requestDescription?.trim()) {
+      const sourceAwareQueries = ProblemFirstCollectorQueryUtil.build({
+        sourceKey: this.sourceKey,
+        domainName: input.domainName,
+        requestDescription: input.requestDescription,
+        plannedQueries: input.plannedQueries,
+        keywords: input.keywords,
+      });
+      const maximumTextQueries =
+        input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 3;
+      return this.unique(sourceAwareQueries)
+        .map((query) => this.boundNewsApiQuery(query))
+        .filter(Boolean)
+        .slice(0, maximumTextQueries);
+    }
+
     const plannedQueries = (input.plannedQueries ?? [])
       .map((query) => this.cleanNormalizedText(query))
       .map((query) => this.boundNewsApiTerm(query))
@@ -224,7 +364,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         input.collectionMode === 'TARGETED_RECOVERY'
           ? 2
           : input.collectionMode === 'FAST_GENERATION'
-            ? 2
+            ? 3
             : 6;
       return this.unique(plannedQueries)
         .map((query) => this.boundNewsApiQuery(query))
@@ -272,7 +412,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
     ];
 
     const maximumQueries =
-      input.collectionMode === 'FAST_GENERATION' ? 2 : 8;
+      input.collectionMode === 'FAST_GENERATION' ? 3 : 8;
 
     return this.unique(queries)
       .map((query) => this.boundNewsApiQuery(query))

@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { BaseCollector } from '../base/base.collector';
@@ -37,6 +37,22 @@ type HackerNewsItem = {
   dead?: boolean;
 };
 
+type HackerNewsAlgoliaHit = {
+  objectID?: string;
+  title?: string | null;
+  story_text?: string | null;
+  comment_text?: string | null;
+  url?: string | null;
+  author?: string | null;
+  created_at_i?: number | null;
+  points?: number | null;
+  num_comments?: number | null;
+};
+
+type HackerNewsAlgoliaResponse = {
+  hits?: HackerNewsAlgoliaHit[];
+};
+
 /**
  * Hacker News collector.
  *
@@ -67,6 +83,10 @@ export class HackerNewsCollector
    */
   private readonly apiBaseUrl = 'https://hacker-news.firebaseio.com/v0';
 
+  /** Query-driven public search API backed by the Hacker News Algolia index. */
+  private readonly searchApiUrl = 'https://hn.algolia.com/api/v1/search';
+  private readonly searchByDateApiUrl = 'https://hn.algolia.com/api/v1/search_by_date';
+
   /**
    * Public Hacker News site URL.
    */
@@ -85,64 +105,122 @@ export class HackerNewsCollector
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
-      const searchTerms = this.buildSearchTerms(input);
+      const searchQueries = this.buildSearchQueries(input);
 
-      if (searchTerms.length === 0) {
+      if (searchQueries.length === 0) {
         this.logger.warn(
           'Hacker News collection skipped because no search keywords exist.',
         );
-
         return [];
       }
 
-      const storyIds = await this.getStoryIds();
-
-      const stories = await this.collectCandidateStories(storyIds);
-
+      const hitGroups = await Promise.all(
+        searchQueries.slice(0, 3).map((query) => this.searchStories(query)),
+      );
+      const seenIds = new Set<string>();
+      const stories = hitGroups
+        .flat()
+        .filter((hit) => {
+          const id = hit.objectID?.trim();
+          if (!id || seenIds.has(id)) return false;
+          seenIds.add(id);
+          return true;
+        })
+        .map((hit) => this.mapAlgoliaHitToStory(hit))
+        .filter((story): story is HackerNewsItem => this.isValidStory(story))
+        .slice(0, Math.min(this.maxFetchedPosts * 2, 18));
+      const searchTerms = this.buildSearchTerms(input);
       const rankedStories = stories
         .map((story) => ({
           story,
-
           score: this.calculateFinalStoryScore(story, input, searchTerms),
         }))
         .filter((item) => item.score > 0)
-        .sort((first, second) => second.score - first.score);
+        .sort((first, second) => second.score - first.score)
+        .slice(0, this.maxSavedPosts);
 
-      const posts: CollectorPost[] = [];
-
-      for (const item of rankedStories) {
-        if (posts.length >= this.maxSavedPosts) {
-          break;
-        }
-
-        const post = await this.mapStoryToCollectorPost(item.story, input);
-
-        /*
-         * Hacker News comments are important because many
-         * stories contain only a title and URL.
-         */
-        if (post.comments.length === 0) {
-          continue;
-        }
-
-        posts.push(post);
-      }
+      const mapped = await Promise.all(
+        rankedStories.map((item) => this.mapStoryToCollectorPost(item.story, input)),
+      );
+      const posts = mapped.filter(
+        (post) => post.comments.length > 0 || post.content.length >= 80,
+      );
 
       this.logger.log(
-        `Hacker News collection completed. Posts: ${posts.length}`,
+        `Hacker News query-driven collection completed. Queries=${searchQueries.length} Posts=${posts.length}`,
       );
-
       return posts;
     } catch (error: unknown) {
-      this.logger.error(
-        'Hacker News collection failed',
-        this.getErrorMessage(error),
+      this.logger.warn(
+        `Hacker News query-driven collection failed non-fatally. error=${this.getErrorMessage(error)}`,
       );
-
-      throw new ServiceUnavailableException(
-        'Hacker News collection failed. Check collector limits, API availability, or network connection.',
-      );
+      return [];
     }
+  }
+
+  private async searchStories(query: string): Promise<HackerNewsAlgoliaHit[]> {
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'algolia-search', [
+      query,
+    ]);
+    const response = await CollectorHttpUtil.getWithRetryAndCache<HackerNewsAlgoliaResponse>(
+      this.searchApiUrl,
+      {
+        headers: this.buildHeaders(),
+        params: {
+          query,
+          tags: 'story',
+          hitsPerPage: Math.min(Math.max(this.maxFetchedPosts * 2, 8), 20),
+        },
+        timeout: 4_500,
+      },
+      {
+        cacheKey,
+        cacheTtlMs: this.cacheTtlMs,
+        retryAttempts: 0,
+        retryDelayMs: this.retryDelayMs,
+      },
+    );
+    return response.hits ?? [];
+  }
+
+  private buildSearchQueries(input: CollectorInput): string[] {
+    const planned = (input.plannedQueries ?? [])
+      .map((query) => this.relaxSearchQuery(query))
+      .filter(Boolean);
+    const fallback = this.buildSearchTerms(input)
+      .map((term) => this.relaxSearchQuery(term))
+      .filter(Boolean);
+    return this.unique([...planned, ...fallback]).slice(0, 3);
+  }
+
+  private relaxSearchQuery(value: string): string {
+    const stopWords = new Set([
+      'problem', 'problems', 'issue', 'issues', 'complaint', 'complaints',
+      'manual', 'business', 'businesses', 'workflow', 'workflows', 'system',
+      'systems', 'difficult', 'failure', 'failures', 'delay', 'delayed',
+    ]);
+    return this.cleanNormalizedText(value)
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((token) => !stopWords.has(token))
+      .slice(0, 6)
+      .join(' ');
+  }
+
+  private mapAlgoliaHitToStory(hit: HackerNewsAlgoliaHit): HackerNewsItem | null {
+    const id = Number(hit.objectID);
+    if (!Number.isFinite(id) || id <= 0 || !hit.title?.trim()) return null;
+    return {
+      id,
+      type: 'story',
+      title: hit.title,
+      text: hit.story_text ?? undefined,
+      url: hit.url ?? undefined,
+      by: hit.author ?? undefined,
+      time: hit.created_at_i ?? undefined,
+      score: hit.points ?? 0,
+      descendants: hit.num_comments ?? 0,
+    };
   }
 
   /**
@@ -526,52 +604,65 @@ export class HackerNewsCollector
   private async collectStoryComments(
     story: HackerNewsItem,
   ): Promise<CollectorComment[]> {
-    const commentIds = (story.kids ?? []).slice(0, this.maxFetchedComments);
+    if (!story.id || (story.descendants ?? 0) <= 0) return [];
 
-    const comments: CollectorComment[] = [];
+    try {
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'algolia-comments', [
+        story.id,
+      ]);
+      const response = await CollectorHttpUtil.getWithRetryAndCache<HackerNewsAlgoliaResponse>(
+        this.searchByDateApiUrl,
+        {
+          headers: this.buildHeaders(),
+          params: {
+            tags: `comment,story_${story.id}`,
+            hitsPerPage: Math.min(Math.max(this.maxFetchedComments, 8), 30),
+          },
+          timeout: 3_000,
+        },
+        {
+          cacheKey,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: 0,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
 
-    const seenCommentIds = new Set<string>();
-
-    for (const commentId of commentIds) {
-      if (comments.length >= this.maxSavedComments) {
-        break;
-      }
-
-      const comment = await this.getItem(commentId);
-
-      if (!this.isUsefulComment(comment)) {
-        continue;
-      }
-
-      const id = comment.id?.toString();
-
-      if (!id || seenCommentIds.has(id)) {
-        continue;
-      }
-
-      seenCommentIds.add(id);
-
-      comments.push({
-        externalId: id,
-
-        content: this.cleanPlainText(comment.text),
-
-        author: this.cleanPlainText(comment.by),
-
-        /*
-         * Comment language is not detected independently.
-         * Leaving it undefined is more accurate than copying
-         * a requested ANY language value.
-         */
-        languageCode: undefined,
-
-        likesCount: 0,
-
-        publishedAt: this.parseUnixDate(comment.time),
-      });
+      const seen = new Set<string>();
+      return (response.hits ?? [])
+        .map((hit): HackerNewsItem | null => {
+          const id = Number(hit.objectID);
+          if (!Number.isFinite(id) || id <= 0 || !hit.comment_text) return null;
+          return {
+            id,
+            type: 'comment',
+            text: hit.comment_text,
+            by: hit.author ?? undefined,
+            time: hit.created_at_i ?? undefined,
+          };
+        })
+        .filter((comment): comment is HackerNewsItem => this.isUsefulComment(comment))
+        .filter((comment) => {
+          const id = comment.id?.toString() ?? '';
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        })
+        .slice(0, this.maxSavedComments)
+        .map((comment) => ({
+          externalId: comment.id!.toString(),
+          content: this.cleanPlainText(comment.text),
+          author: this.cleanPlainText(comment.by),
+          languageCode: undefined,
+          likesCount: 0,
+          publishedAt: this.parseUnixDate(comment.time),
+        }));
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Hacker News comments could not be collected for story ${story.id}: ${this.getErrorMessage(error)}`,
+      );
+      return [];
     }
-
-    return comments;
   }
 
   /**

@@ -1,8 +1,9 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
+import Parser from 'rss-parser';
 
 import { BaseCollector } from '../base/base.collector';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
@@ -18,6 +19,7 @@ import {
 } from '../base/collector.types';
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
 
 /**
  * Represents a Reddit listing wrapper.
@@ -143,11 +145,25 @@ type RedditCredentials = {
   userAgent: string;
 };
 
+type RedditRssItem = {
+  guid?: string;
+  link?: string;
+  title?: string;
+  content?: string;
+  contentSnippet?: string;
+  creator?: string;
+  author?: string;
+  isoDate?: string;
+  pubDate?: string;
+};
+
 /**
  * Reddit collector.
  *
- * Collects public Reddit posts and top-level comments through
- * Reddit's OAuth Data API.
+ * Collects public Reddit posts and comments. OAuth is preferred when valid
+ * application credentials exist; otherwise the collector uses Reddit's public
+ * read-only RSS feeds. Public JSON is intentionally not required because it may
+ * reject unauthenticated requests.
  *
  * Data-source identity is provided through sourceKey.
  * The sourceKey must match DataSource.key in the database.
@@ -157,12 +173,13 @@ type RedditCredentials = {
  * - It does not access private user data.
  * - It does not submit posts, comments, votes, or messages.
  * - It collects only public posts and public comments.
- * - It requires approved Reddit API credentials.
+ * - No credentials are required for the read-only RSS mode.
  *
- * Environment variables:
+ * Optional OAuth acceleration:
  * - REDDIT_CLIENT_ID
  * - REDDIT_CLIENT_SECRET
  * - REDDIT_USER_AGENT
+ * - REDDIT_PUBLIC_READ_ENABLED=false to disable anonymous RSS fallback
  *
  * Optional:
  * - REDDIT_DEFAULT_SUBREDDITS
@@ -192,6 +209,13 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
    */
   private readonly oauthApiBaseUrl = 'https://oauth.reddit.com';
 
+  /** Legacy anonymous endpoint retained only by dormant helper methods.
+   * Automatic generation never uses it without valid OAuth credentials.
+   */
+  private readonly publicApiBaseUrl = 'https://www.reddit.com';
+
+  private readonly rssParser = new Parser();
+
   /**
    * Maximum number of search queries executed
    * for one collection request.
@@ -208,6 +232,16 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
    * unnecessary rate-limit pressure.
    */
   private readonly requestDelayMs: number;
+
+  private readonly maxFastCommentThreads: number;
+
+  private readonly fastCollectionBudgetMs: number;
+
+  private readonly targetedCollectionBudgetMs: number;
+
+  private readonly publicRateLimitCooldownMs: number;
+
+  private publicRssCircuitOpenUntil = 0;
 
   /**
    * In-memory OAuth token cache.
@@ -233,123 +267,266 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
       'REDDIT_REQUEST_DELAY_MS',
       500,
     );
+
+    this.maxFastCommentThreads = this.getPositiveNumber(
+      'REDDIT_MAX_FAST_COMMENT_THREADS',
+      2,
+    );
+
+    this.fastCollectionBudgetMs = this.getPositiveNumber(
+      'REDDIT_FAST_COLLECTION_BUDGET_MS',
+      6_600,
+    );
+
+    this.targetedCollectionBudgetMs = this.getPositiveNumber(
+      'REDDIT_TARGETED_COLLECTION_BUDGET_MS',
+      5_800,
+    );
+
+    this.publicRateLimitCooldownMs = this.getPositiveNumber(
+      'REDDIT_PUBLIC_RATE_LIMIT_COOLDOWN_MS',
+      60_000,
+    );
   }
 
   /**
    * Collects public Reddit posts and their useful comments.
    *
    * Workflow:
-   * 1. Validate Reddit credentials.
-   * 2. Obtain or reuse an OAuth token.
-   * 3. Build search queries.
-   * 4. Search Reddit globally or in configured subreddits.
-   * 5. Deduplicate and rank posts.
-   * 6. Collect useful top-level comments.
-   * 7. Return normalized CollectorPost objects.
+   * 1. Build request-specific search queries.
+   * 2. Require valid OAuth credentials and reuse the cached access token.
+   * 3. Search globally for bounded generation and recovery.
+   * 4. Deduplicate and rank posts.
+   * 5. Collect useful comments when the JSON API exposes a thread.
+   * 6. Return normalized CollectorPost objects.
    *
    * @param input Collection job configuration.
    * @returns Relevant public Reddit posts and comments.
    */
-  async collect(input: CollectorInput): Promise<CollectorPost[]> {
-    const credentials = this.getCredentials();
+  isRuntimeAvailable(): boolean {
+    if (this.getCredentials() !== undefined) return true;
+    if (!this.isPublicReadEnabled()) return false;
+    return !this.isPublicRssCircuitOpen();
+  }
 
-    if (!credentials) {
-      this.logger.warn(
-        'Reddit collection skipped because Reddit API credentials are missing.',
-      );
-
-      return [];
+  getRuntimeUnavailableReason(): string | null {
+    if (this.getCredentials() !== undefined) return null;
+    if (!this.isPublicReadEnabled()) {
+      return 'Reddit OAuth is unavailable and public read-only RSS collection is disabled.';
     }
+    if (this.isPublicRssCircuitOpen()) {
+      return 'Reddit public RSS is temporarily rate-limited; the collector circuit is cooling down.';
+    }
+    return null;
+  }
 
+  async collect(input: CollectorInput): Promise<CollectorPost[]> {
     const searchQueries = this.buildSearchQueries(input);
+    const collectionDeadlineMs = this.resolveCollectionDeadlineMs(
+      input.collectionMode,
+    );
 
     if (!searchQueries.length) {
       this.logger.warn(
         'Reddit collection skipped because no search keywords exist.',
       );
+      return [];
+    }
 
+    const credentials = this.getCredentials();
+    const userAgent = credentials?.userAgent ?? this.getPublicUserAgent();
+    let accessToken: string | undefined;
+    if (credentials) {
+      try {
+        accessToken = await this.getAccessToken(credentials);
+      } catch (error: unknown) {
+        this.logger.debug(
+          `Reddit OAuth unavailable; falling back to public read-only RSS. error=${this.getErrorMessage(error)}`,
+        );
+      }
+    }
+    if (!accessToken && !this.isPublicReadEnabled()) {
+      this.logger.debug('Reddit collection skipped because OAuth failed and public RSS is disabled.');
+      return [];
+    }
+    if (!accessToken && this.isPublicRssCircuitOpen()) {
+      this.logger.debug(
+        'Reddit public RSS collection skipped because the rate-limit circuit is cooling down.',
+      );
       return [];
     }
 
     try {
-      const accessToken = await this.getAccessToken(credentials);
-
       const subreddits = this.getConfiguredSubreddits();
+      const queryWindow = searchQueries.slice(
+        0,
+        input.collectionMode === 'STANDARD'
+          ? this.maxSearchQueries
+          : Math.min(3, this.maxSearchQueries),
+      );
+      const useConfiguredSubreddits =
+        input.collectionMode === 'STANDARD' && subreddits.length > 0;
 
-      const collectedPosts: RedditPostData[] = [];
-
-      for (const query of searchQueries) {
-        if (collectedPosts.length >= this.maxFetchedPosts) {
-          break;
-        }
-
-        const posts =
-          subreddits.length > 0
+      /*
+       * A static subreddit allow-list is useful for long-running standard
+       * collection but is harmful for arbitrary generation requests. A newly
+       * inferred domain such as personal styling or aquarium maintenance must
+       * be able to search all public Reddit communities instead of being
+       * trapped inside programming/startup subreddits configured months ago.
+       */
+      let collectedPosts: RedditPostData[] = [];
+      if (accessToken) {
+        collectedPosts = (
+          await Promise.all(
+            queryWindow.map((query) =>
+              useConfiguredSubreddits
+                ? this.searchConfiguredSubreddits(
+                    query,
+                    subreddits,
+                    accessToken,
+                    userAgent,
+                  )
+                : this.searchReddit(query, undefined, accessToken, userAgent),
+            ),
+          )
+        ).flat();
+      } else {
+        for (const [index, query] of queryWindow.entries()) {
+          if (
+            this.isPublicRssCircuitOpen() ||
+            !this.hasCollectionBudget(collectionDeadlineMs, 3_100)
+          ) {
+            break;
+          }
+          const posts = useConfiguredSubreddits
             ? await this.searchConfiguredSubreddits(
                 query,
                 subreddits,
-                accessToken,
-                credentials.userAgent,
-              )
-            : await this.searchReddit(
-                query,
                 undefined,
-                accessToken,
-                credentials.userAgent,
+                userAgent,
+              )
+            : await this.searchRedditRss(query, '', userAgent);
+          collectedPosts.push(...posts);
+          if (
+            index < queryWindow.length - 1 &&
+            !this.isPublicRssCircuitOpen() &&
+            this.hasCollectionBudget(
+              collectionDeadlineMs,
+              this.requestDelayMs + 3_100,
+            )
+          ) {
+            await this.delay(this.requestDelayMs);
+          }
+        }
+      }
+
+      if (
+        collectedPosts.length === 0 &&
+        input.requestDescription?.trim() &&
+        input.collectionMode !== 'STANDARD' &&
+        this.hasCollectionBudget(collectionDeadlineMs, 3_100)
+      ) {
+        const attempted = new Set(queryWindow.map((query) => this.cleanNormalizedText(query)));
+        const fallbackQueries = ProblemFirstCollectorQueryUtil.buildProgressiveFallback({
+          sourceKey: this.sourceKey,
+          domainName: input.domainName,
+          requestDescription: input.requestDescription,
+          plannedQueries: input.plannedQueries,
+          keywords: input.keywords,
+        })
+          .filter((query) => !attempted.has(this.cleanNormalizedText(query)))
+          .slice(0, 3);
+
+        if (fallbackQueries.length > 0) {
+          if (accessToken) {
+            collectedPosts = (
+              await Promise.all(
+                fallbackQueries.map((query) =>
+                  this.searchReddit(
+                    query,
+                    undefined,
+                    accessToken,
+                    userAgent,
+                    'all',
+                  ),
+                ),
+              )
+            ).flat();
+          } else {
+            const fallbackPosts: RedditPostData[] = [];
+            for (const [index, query] of fallbackQueries.entries()) {
+              if (
+                this.isPublicRssCircuitOpen() ||
+                !this.hasCollectionBudget(collectionDeadlineMs, 3_100)
+              ) {
+                break;
+              }
+              fallbackPosts.push(
+                ...(await this.searchRedditRss(query, '', userAgent, 'all')),
               );
-
-        collectedPosts.push(...posts);
-
-        await this.delay(this.requestDelayMs);
+              if (
+                index < fallbackQueries.length - 1 &&
+                !this.isPublicRssCircuitOpen() &&
+                this.hasCollectionBudget(
+                  collectionDeadlineMs,
+                  this.requestDelayMs + 3_100,
+                )
+              ) {
+                await this.delay(this.requestDelayMs);
+              }
+            }
+            collectedPosts = fallbackPosts;
+          }
+        }
       }
 
       const rankedPosts = this.rankAndDeduplicatePosts(collectedPosts, input);
-
-      const result: CollectorPost[] = [];
-
-      for (const item of rankedPosts) {
-        if (result.length >= this.maxSavedPosts) {
-          break;
-        }
-
-        const mappedPost = await this.mapPostToCollectorPost(
-          item.post,
-          input,
-          accessToken,
-          credentials.userAgent,
+      const mapped: CollectorPost[] = [];
+      const rankedWindow = rankedPosts.slice(0, this.maxSavedPosts);
+      for (const [index, item] of rankedWindow.entries()) {
+        const collectComments = Boolean(
+          accessToken ||
+            input.collectionMode === 'STANDARD' ||
+            (index < this.maxFastCommentThreads &&
+              !this.isPublicRssCircuitOpen() &&
+              this.hasCollectionBudget(collectionDeadlineMs, 3_800)),
         );
-
-        /*
-         * Comments are especially useful for extracting
-         * user problems, needs, and repeated complaints.
-         *
-         * A post is still retained when it has useful
-         * textual body content but no comments.
-         */
+        mapped.push(
+          await this.mapPostToCollectorPost(
+            item.post,
+            input,
+            accessToken,
+            userAgent,
+            collectComments,
+          ),
+        );
         if (
-          mappedPost.comments.length === 0 &&
-          mappedPost.content.length < 80
+          !accessToken &&
+          collectComments &&
+          index < rankedWindow.length - 1 &&
+          !this.isPublicRssCircuitOpen() &&
+          this.hasCollectionBudget(
+            collectionDeadlineMs,
+            this.requestDelayMs + 3_800,
+          )
         ) {
-          continue;
+          await this.delay(this.requestDelayMs);
         }
-
-        result.push(mappedPost);
-
-        await this.delay(this.requestDelayMs);
       }
+      const result = mapped.filter(
+        (post) => post.comments.length > 0 || post.content.length >= 80,
+      );
 
-      this.logger.log(`Reddit collection completed. Posts: ${result.length}`);
+      this.logger.log(
+        `Reddit collection completed. mode=${accessToken ? 'oauth' : 'public-rss'} Posts: ${result.length}`,
+      );
 
       return result;
     } catch (error: unknown) {
-      this.logger.error(
-        'Reddit collection failed',
-        this.getErrorMessage(error),
+      this.logger.warn(
+        `Reddit collection failed non-fatally. error=${this.getErrorMessage(error)}`,
       );
-
-      throw new ServiceUnavailableException(
-        'Reddit collection failed. Check Reddit API approval, credentials, rate limits, or network connection.',
-      );
+      return [];
     }
   }
 
@@ -365,7 +542,7 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
   private async searchConfiguredSubreddits(
     query: string,
     subreddits: string[],
-    accessToken: string,
+    accessToken: string | undefined,
     userAgent: string,
   ): Promise<RedditPostData[]> {
     const posts: RedditPostData[] = [];
@@ -375,12 +552,18 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
         break;
       }
 
-      const subredditPosts = await this.searchReddit(
-        query,
-        subreddit,
-        accessToken,
-        userAgent,
-      );
+      const subredditPosts = accessToken
+        ? await this.searchReddit(
+            query,
+            subreddit,
+            accessToken,
+            userAgent,
+          )
+        : await this.searchRedditRss(
+            query,
+            this.normalizeSubredditName(subreddit),
+            userAgent,
+          );
 
       posts.push(...subredditPosts);
 
@@ -402,63 +585,154 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
   private async searchReddit(
     query: string,
     subreddit: string | undefined,
-    accessToken: string,
+    accessToken: string | undefined,
     userAgent: string,
+    timeRange: 'year' | 'all' = 'year',
   ): Promise<RedditPostData[]> {
     const normalizedSubreddit = this.normalizeSubredditName(subreddit);
 
+    if (!accessToken) {
+      return this.searchRedditRss(query, normalizedSubreddit, userAgent, timeRange);
+    }
+
     const scope = normalizedSubreddit ? `r/${normalizedSubreddit}` : 'all';
 
-    const endpoint = normalizedSubreddit
-      ? `${this.oauthApiBaseUrl}/r/${normalizedSubreddit}/search`
-      : `${this.oauthApiBaseUrl}/search`;
+    const endpoint = accessToken
+      ? normalizedSubreddit
+        ? `${this.oauthApiBaseUrl}/r/${normalizedSubreddit}/search`
+        : `${this.oauthApiBaseUrl}/search`
+      : normalizedSubreddit
+        ? `${this.publicApiBaseUrl}/r/${normalizedSubreddit}/search.json`
+        : `${this.publicApiBaseUrl}/search.json`;
 
     const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'search', [
       scope,
       query,
     ]);
 
-    const response = await CollectorHttpUtil.getWithRetryAndCache<
-      RedditListing<RedditPostData>
-    >(
-      endpoint,
-      {
-        headers: this.buildAuthenticatedHeaders(accessToken, userAgent),
-
-        params: {
-          q: query,
-
-          restrict_sr: normalizedSubreddit ? 'true' : 'false',
-
-          sort: 'relevance',
-
-          /*
-           * Recent content is generally more useful for
-           * discovering current software problems.
-           */
-          t: 'year',
-
-          limit: Math.min(this.maxFetchedPosts, 100),
-
-          raw_json: 1,
+    try {
+      const response = await CollectorHttpUtil.getWithRetryAndCache<
+        RedditListing<RedditPostData>
+      >(
+        endpoint,
+        {
+          headers: this.buildRequestHeaders(accessToken, userAgent),
+          params: {
+            q: query,
+            restrict_sr: normalizedSubreddit ? 'true' : 'false',
+            sort: 'relevance',
+            t: timeRange,
+            limit: Math.min(this.maxFetchedPosts, 100),
+            raw_json: 1,
+          },
+          timeout: accessToken ? 7_000 : 2_800,
         },
+        {
+          cacheKey,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: accessToken ? this.retryAttempts : 0,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
 
-        timeout: 10_000,
-      },
-      {
-        cacheKey,
+      return (response.data?.children ?? [])
+        .map((child) => child.data)
+        .filter((post): post is RedditPostData => Boolean(post));
+    } catch (error: unknown) {
+      if (accessToken) throw error;
+      this.logger.debug(
+        `Reddit public JSON search failed; trying RSS fallback. query=${query} error=${this.getErrorMessage(error)}`,
+      );
+      return this.searchRedditRss(
+        query,
+        normalizedSubreddit,
+        userAgent,
+        timeRange,
+      );
+    }
+  }
 
-        cacheTtlMs: this.cacheTtlMs,
+  private async searchRedditRss(
+    query: string,
+    subreddit: string,
+    userAgent: string,
+    timeRange: 'year' | 'all' = 'year',
+  ): Promise<RedditPostData[]> {
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'rss-search', [
+      subreddit || 'all',
+      query,
+      timeRange,
+    ]);
+    const cached = CollectorCacheUtil.get<RedditPostData[]>(cacheKey);
+    if (cached) return cached;
+    if (this.isPublicRssCircuitOpen()) return [];
 
-        retryAttempts: this.retryAttempts,
+    const endpoint = subreddit
+      ? `${this.publicApiBaseUrl}/r/${subreddit}/search.rss`
+      : `${this.publicApiBaseUrl}/search.rss`;
+    const url = `${endpoint}?${new URLSearchParams({
+      q: query,
+      sort: 'relevance',
+      t: timeRange,
+    }).toString()}`;
 
-        retryDelayMs: this.retryDelayMs,
-      },
-    );
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<string>(url, {
+          headers: {
+            Accept: 'application/rss+xml, application/xml, text/xml',
+            'User-Agent': userAgent,
+          },
+          timeout: 2_800,
+          responseType: 'text',
+        }),
+      );
+      const feed = await this.rssParser.parseString(response.data);
+      const posts = (feed.items ?? [])
+        .map((item): RedditPostData | null => {
+          const rssItem = item as RedditRssItem;
+          const link = rssItem.link?.trim() ?? '';
+          const idMatch = link.match(/\/comments\/([a-z0-9]+)\//iu);
+          const subredditMatch = link.match(/\/r\/([^/]+)\/comments\//iu);
+          const id = idMatch?.[1] ?? this.cleanPlainText(rssItem.guid);
+          const title = this.cleanPlainText(rssItem.title);
+          const selftext = this.cleanPlainText(
+            rssItem.contentSnippet ?? rssItem.content,
+          );
+          if (!id || !title) return null;
+          return {
+            id,
+            title,
+            selftext,
+            author: this.cleanPlainText(rssItem.creator ?? rssItem.author),
+            subreddit: (subredditMatch?.[1] ?? subreddit) || undefined,
+            permalink: link.startsWith(this.publicApiBaseUrl)
+              ? link.slice(this.publicApiBaseUrl.length)
+              : undefined,
+            url: link || undefined,
+            created_utc: this.parseRssDate(rssItem.isoDate ?? rssItem.pubDate),
+            score: 0,
+            ups: 0,
+            num_comments: 0,
+          };
+        })
+        .filter((post): post is RedditPostData => Boolean(post))
+        .slice(0, this.maxFetchedPosts);
+      CollectorCacheUtil.set(cacheKey, posts, this.cacheTtlMs);
+      return posts;
+    } catch (error: unknown) {
+      this.openPublicRssCircuitOnRateLimit(error);
+      this.logger.debug(
+        `Reddit RSS fallback failed non-fatally. query=${query} error=${this.getErrorMessage(error)}`,
+      );
+      return [];
+    }
+  }
 
-    return (response.data?.children ?? [])
-      .map((child) => child.data)
-      .filter((post): post is RedditPostData => Boolean(post));
+  private parseRssDate(value?: string): number | undefined {
+    if (!value) return undefined;
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? Math.floor(timestamp / 1_000) : undefined;
   }
 
   /**
@@ -468,16 +742,56 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
    * @param input Collection job configuration.
    * @returns Normalized search queries.
    */
+  private resolveCollectionDeadlineMs(
+    mode: CollectorInput['collectionMode'],
+  ): number | null {
+    if (mode === 'STANDARD') return null;
+
+    const budgetMs =
+      mode === 'TARGETED_RECOVERY'
+        ? this.targetedCollectionBudgetMs
+        : this.fastCollectionBudgetMs;
+
+    return Date.now() + Math.max(1_500, budgetMs);
+  }
+
+  private hasCollectionBudget(
+    deadlineMs: number | null,
+    requiredMs: number,
+  ): boolean {
+    if (deadlineMs === null) return true;
+    return deadlineMs - Date.now() >= Math.max(0, requiredMs);
+  }
+
   private buildSearchQueries(input: CollectorInput): string[] {
+    if (input.requestDescription?.trim()) {
+      const sourceAwareQueries = ProblemFirstCollectorQueryUtil.build({
+        sourceKey: this.sourceKey,
+        domainName: input.domainName,
+        requestDescription: input.requestDescription,
+        plannedQueries: input.plannedQueries,
+        keywords: input.keywords,
+      });
+      return this.unique(sourceAwareQueries)
+        .map((query) => this.relaxSearchQuery(query))
+        .filter(Boolean)
+        .slice(0, this.maxSearchQueries);
+    }
+
     const plannedQueries = (input.plannedQueries ?? [])
       .map((query) => this.cleanNormalizedText(query))
       .filter(Boolean);
 
     if (plannedQueries.length > 0) {
       const domainAnchor = this.cleanNormalizedText(input.domainName);
+      const relaxed = plannedQueries
+        .map((query) => this.relaxSearchQuery(query))
+        .filter(Boolean);
+
       return this.unique([
-        ...plannedQueries.slice(0, 5),
-        ...(domainAnchor ? [domainAnchor] : []),
+        ...relaxed.slice(0, 3),
+        ...plannedQueries.slice(0, 3),
+        ...(domainAnchor ? [this.relaxSearchQuery(domainAnchor)] : []),
       ]).slice(0, this.maxSearchQueries);
     }
 
@@ -517,6 +831,22 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     ];
 
     return this.unique(queries).slice(0, this.maxSearchQueries);
+  }
+
+  private relaxSearchQuery(value: string): string {
+    const stopWords = new Set([
+      'problem', 'problems', 'issue', 'issues', 'complaint', 'complaints',
+      'difficult', 'difficulty', 'business', 'businesses', 'system', 'systems',
+      'reports', 'analysis', 'analyze', 'organization', 'organizing', 'app',
+      'application', 'tracker', 'tool', 'for', 'and', 'the', 'of', 'to',
+    ]);
+
+    return this.cleanNormalizedText(value)
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((token) => !stopWords.has(token))
+      .slice(0, 7)
+      .join(' ');
   }
 
   /**
@@ -683,8 +1013,9 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
   private async mapPostToCollectorPost(
     post: RedditPostData,
     input: CollectorInput,
-    accessToken: string,
+    accessToken: string | undefined,
     userAgent: string,
+    collectComments = true,
   ): Promise<CollectorPost> {
     const postId = this.getPostId(post);
 
@@ -692,12 +1023,14 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
 
     const body = this.cleanPlainText(post.selftext);
 
-    const comments = await this.collectPostComments(
-      post,
-      accessToken,
-      userAgent,
-      input,
-    );
+    const comments = collectComments
+      ? await this.collectPostComments(
+          post,
+          accessToken,
+          userAgent,
+          input,
+        )
+      : [];
 
     return {
       externalId: postId,
@@ -742,7 +1075,7 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
    */
   private async collectPostComments(
     post: RedditPostData,
-    accessToken: string,
+    accessToken: string | undefined,
     userAgent: string,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
@@ -750,7 +1083,13 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
 
     const subreddit = this.normalizeSubredditName(post.subreddit);
 
-    if (!postId || !subreddit || (post.num_comments ?? 0) <= 0) {
+    if (!postId || !subreddit) {
+      return [];
+    }
+    if (!accessToken) {
+      return this.collectPostCommentsRss(postId, subreddit, userAgent, input);
+    }
+    if ((post.num_comments ?? 0) <= 0) {
       return [];
     }
 
@@ -763,9 +1102,11 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
       const response = await CollectorHttpUtil.getWithRetryAndCache<
         Array<RedditListing<RedditPostData | RedditCommentData>>
       >(
-        `${this.oauthApiBaseUrl}/r/${subreddit}/comments/${postId}`,
+        accessToken
+          ? `${this.oauthApiBaseUrl}/r/${subreddit}/comments/${postId}`
+          : `${this.publicApiBaseUrl}/r/${subreddit}/comments/${postId}.json`,
         {
-          headers: this.buildAuthenticatedHeaders(accessToken, userAgent),
+          headers: this.buildRequestHeaders(accessToken, userAgent),
 
           params: {
             sort: 'top',
@@ -777,7 +1118,7 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
             raw_json: 1,
           },
 
-          timeout: 10_000,
+          timeout: accessToken ? 7_000 : 4_500,
         },
         {
           cacheKey,
@@ -919,6 +1260,147 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     return lowValuePatterns.some((pattern) => pattern.test(content));
   }
 
+  private async collectPostCommentsRss(
+    postId: string,
+    subreddit: string,
+    userAgent: string,
+    input: CollectorInput,
+  ): Promise<CollectorComment[]> {
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'rss-comments', [
+      subreddit,
+      postId,
+    ]);
+    const cached = CollectorCacheUtil.get<CollectorComment[]>(cacheKey);
+    if (cached) return cached;
+    if (this.isPublicRssCircuitOpen()) return [];
+
+    const url = `${this.publicApiBaseUrl}/r/${subreddit}/comments/${postId}/.rss`;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<string>(url, {
+          headers: {
+            Accept: 'application/rss+xml, application/xml, text/xml',
+            'User-Agent': userAgent,
+          },
+          timeout: 3_500,
+          responseType: 'text',
+        }),
+      );
+      const feed = await this.rssParser.parseString(response.data);
+      const seen = new Set<string>();
+      const comments: CollectorComment[] = [];
+      for (const item of feed.items ?? []) {
+        const rssItem = item as RedditRssItem;
+        const content = this.cleanPlainText(
+          rssItem.contentSnippet ?? rssItem.content,
+        );
+        if (content.length < 40) continue;
+        if (!CollectorLanguageUtil.matchesRequestedLanguage(content, input.language)) continue;
+        const link = rssItem.link?.trim() ?? '';
+        const id =
+          link.match(/\/comments\/[a-z0-9]+\/[^/]+\/([a-z0-9]+)\/?/iu)?.[1] ??
+          this.cleanPlainText(rssItem.guid) ??
+          '';
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        comments.push({
+          externalId: id.slice(0, 120),
+          content,
+          author: this.cleanPlainText(rssItem.creator ?? rssItem.author),
+          languageCode: this.resolveStoredLanguageCode(input.language),
+          publishedAt: this.parseRssDate(rssItem.isoDate ?? rssItem.pubDate)
+            ? new Date((this.parseRssDate(rssItem.isoDate ?? rssItem.pubDate) ?? 0) * 1_000)
+            : undefined,
+        });
+        if (comments.length >= this.maxSavedComments) break;
+      }
+      CollectorCacheUtil.set(cacheKey, comments, this.cacheTtlMs);
+      return comments;
+    } catch (error: unknown) {
+      this.openPublicRssCircuitOnRateLimit(error);
+      this.logger.debug(
+        `Reddit comments RSS failed non-fatally. post=${postId} error=${this.getErrorMessage(error)}`,
+      );
+      return [];
+    }
+  }
+
+  private isPublicRssCircuitOpen(): boolean {
+    return this.publicRssCircuitOpenUntil > Date.now();
+  }
+
+  private openPublicRssCircuitOnRateLimit(error: unknown): void {
+    const errorRecord =
+      error && typeof error === 'object'
+        ? (error as Record<string, unknown>)
+        : null;
+    const responseRecord =
+      errorRecord?.response && typeof errorRecord.response === 'object'
+        ? (errorRecord.response as Record<string, unknown>)
+        : null;
+    const statusValue =
+      error instanceof AxiosError
+        ? error.response?.status
+        : responseRecord?.status ?? errorRecord?.statusCode ?? errorRecord?.status;
+    const status = typeof statusValue === 'number'
+      ? statusValue
+      : Number(statusValue);
+    const message = this.getErrorMessage(error);
+    if (status !== 429 && !/(?:\b429\b|too many requests)/iu.test(message)) {
+      return;
+    }
+
+    const headersRecord: Record<string, unknown> | null =
+      error instanceof AxiosError && error.response?.headers
+        ? (error.response.headers as unknown as Record<string, unknown>)
+        : responseRecord?.headers && typeof responseRecord.headers === 'object'
+          ? (responseRecord.headers as Record<string, unknown>)
+          : null;
+    const retryAfterHeader = headersRecord?.['retry-after'];
+    const retryAfterValue = Array.isArray(retryAfterHeader)
+      ? retryAfterHeader[0]
+      : retryAfterHeader;
+    const retryAfterSeconds = Number(retryAfterValue);
+    const parsedHttpDate =
+      typeof retryAfterValue === 'string' && !Number.isFinite(retryAfterSeconds)
+        ? Date.parse(retryAfterValue)
+        : Number.NaN;
+    const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds * 1_000
+      : Number.isFinite(parsedHttpDate)
+        ? Math.max(0, parsedHttpDate - Date.now())
+        : 0;
+    const cooldownMs = Math.max(
+      this.publicRateLimitCooldownMs,
+      Math.min(retryAfterMs, 5 * 60_000),
+    );
+    const nextOpenUntil = Date.now() + cooldownMs;
+    const wasOpen = this.isPublicRssCircuitOpen();
+    this.publicRssCircuitOpenUntil = Math.max(
+      this.publicRssCircuitOpenUntil,
+      nextOpenUntil,
+    );
+
+    if (!wasOpen) {
+      this.logger.warn(
+        `Reddit public RSS rate-limit circuit opened for ${Math.ceil(cooldownMs / 1_000)}s; later searches, comment fetches, and recovery waves will skip Reddit instead of repeating 429 requests.`,
+      );
+    }
+  }
+
+  private isPublicReadEnabled(): boolean {
+    const configured = this.configService.get<string>('REDDIT_PUBLIC_READ_ENABLED');
+    if (configured == null || configured.trim() === '') return true;
+    return !['0', 'false', 'no', 'off'].includes(configured.trim().toLocaleLowerCase());
+  }
+
+  private getPublicUserAgent(): string {
+    const configured = this.configService.get<string>('REDDIT_USER_AGENT')?.trim();
+    return configured && !/your[_ -]?reddit[_ -]?username|your[_ -]?user/iu.test(configured)
+      ? configured
+      : 'web:voxidence-public-evidence:v1.0.0';
+  }
+
   /**
    * Obtains a Reddit OAuth access token.
    *
@@ -1023,15 +1505,38 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
       .get<string>('REDDIT_USER_AGENT')
       ?.trim();
 
-    if (!clientId || !clientSecret || !userAgent) {
+    if (
+      !this.isRealCredential(clientId, ['your-client-id', 'client-id']) ||
+      !this.isRealCredential(clientSecret, [
+        'your-client-secret',
+        'client-secret',
+      ])
+    ) {
       return undefined;
     }
+
+    const safeUserAgent =
+      userAgent && !/your[_ -]?reddit[_ -]?username|your[_ -]?user/iu.test(userAgent)
+        ? userAgent
+        : 'web:voxidence:v1.0.0';
 
     return {
       clientId,
       clientSecret,
-      userAgent,
+      userAgent: safeUserAgent,
     };
+  }
+
+  private isRealCredential(
+    value: string | undefined,
+    placeholders: readonly string[],
+  ): value is string {
+    if (!value) return false;
+    const normalized = value.trim().toLocaleLowerCase();
+    if (!normalized) return false;
+    return !placeholders.some((placeholder) =>
+      normalized.includes(placeholder.toLocaleLowerCase()),
+    );
   }
 
   /**
@@ -1137,13 +1642,13 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
    * @param userAgent Reddit User-Agent.
    * @returns Request headers.
    */
-  private buildAuthenticatedHeaders(
-    accessToken: string,
+  private buildRequestHeaders(
+    accessToken: string | undefined,
     userAgent: string,
   ): Record<string, string> {
     return {
-      ...CollectorHeaderUtil.bearer(accessToken),
-
+      ...(accessToken ? CollectorHeaderUtil.bearer(accessToken) : {}),
+      Accept: 'application/json',
       'User-Agent': userAgent,
     };
   }

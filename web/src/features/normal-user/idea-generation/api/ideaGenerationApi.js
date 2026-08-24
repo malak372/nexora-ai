@@ -60,6 +60,14 @@ export async function startIdeaGeneration(payload) {
     const response = await normalUserApi.post(
         '/users/ideas/generate',
         payload,
+        {
+            // The backend accepts the run asynchronously, but request
+            // preparation can legitimately outlive the shared 20s Axios
+            // timeout. Never abort this start request while the server is
+            // still creating the durable run. Generation progress itself is
+            // delivered through Socket.IO after the run ID is returned.
+            timeout: 0,
+        },
     );
 
     invalidateRequestCache('active-generation-run:');

@@ -511,23 +511,26 @@ export class IdeaGenerationRunService {
    * @param runId Generation-run identifier.
    * @returns Current generation run.
    */
-  async requestCancellation(runId: string): Promise<IdeaGenerationRun> {
+  async requestCancellation(
+    runId: string,
+    knownRun?: IdeaGenerationRun,
+  ): Promise<IdeaGenerationRun> {
     const normalizedRunId = this.normalizeRequiredValue(
       runId,
       'Generation-run ID',
     );
 
-    const run = await this.findRunOrThrow(normalizedRunId);
+    const run =
+      knownRun?.id === normalizedRunId
+        ? knownRun
+        : await this.findRunOrThrow(normalizedRunId);
 
-    if (this.terminalStatuses.has(run.status)) {
+    if (this.terminalStatuses.has(run.status) || run.cancelRequestedAt) {
       return run;
     }
 
-    if (run.cancelRequestedAt) {
-      return run;
-    }
-
-    await this.prisma.ideaGenerationRun.updateMany({
+    const cancelRequestedAt = new Date();
+    const updateResult = await this.prisma.ideaGenerationRun.updateMany({
       where: {
         id: normalizedRunId,
         status: {
@@ -536,9 +539,16 @@ export class IdeaGenerationRunService {
         cancelRequestedAt: null,
       },
       data: {
-        cancelRequestedAt: new Date(),
+        cancelRequestedAt,
       },
     });
+
+    if (updateResult.count === 1) {
+      return {
+        ...run,
+        cancelRequestedAt,
+      };
+    }
 
     return this.findRunOrThrow(normalizedRunId);
   }
@@ -615,6 +625,7 @@ export class IdeaGenerationRunService {
   async completeRun(
     runId: string,
     db: IdeaGenerationRunDatabaseClient = this.prisma,
+    contextSnapshot?: Prisma.InputJsonValue,
   ): Promise<IdeaGenerationRun> {
     const normalizedRunId = this.normalizeRequiredValue(
       runId,
@@ -643,6 +654,9 @@ export class IdeaGenerationRunService {
           lastHeartbeatAt: now,
           errorCode: null,
           errorMessage: null,
+          ...(contextSnapshot !== undefined
+            ? { contextSnapshot }
+            : {}),
         },
       });
     } catch (error: unknown) {
@@ -704,6 +718,7 @@ export class IdeaGenerationRunService {
       where: {
         id: runId,
         status: run.status,
+        cancelRequestedAt: null,
       },
       data: {
         status: IdeaGenerationRunStatus.FAILED,
@@ -718,6 +733,13 @@ export class IdeaGenerationRunService {
 
     if (result.count !== 1) {
       const latestRun = await this.findRunOrThrow(runId, db);
+
+      if (
+        latestRun.cancelRequestedAt !== null ||
+        latestRun.status === IdeaGenerationRunStatus.CANCELLED
+      ) {
+        return this.cancelRun(runId, db);
+      }
 
       if (latestRun.status === IdeaGenerationRunStatus.FAILED) {
         return latestRun;
@@ -737,19 +759,41 @@ export class IdeaGenerationRunService {
     runId: string,
     context: Prisma.InputJsonValue,
     db: IdeaGenerationRunDatabaseClient = this.prisma,
-  ): Promise<IdeaGenerationRun> {
+  ): Promise<IdeaGenerationRun | null> {
     const normalizedRunId = this.normalizeRequiredValue(
       runId,
       'Generation-run ID',
     );
 
-    return db.ideaGenerationRun.update({
-      where: { id: normalizedRunId },
+    /*
+     * Deferred checkpoints must never overwrite the authoritative terminal
+     * snapshot written by completeRun()/cancelRun()/failRun(). Use a guarded
+     * update so a checkpoint that finishes late becomes a no-op instead of
+     * replacing final persisted context with a stale pre-persistence snapshot.
+     */
+    const updated = await db.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.RUNNING,
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
+        completedAt: null,
+      },
       data: {
         contextSnapshot: context,
         lastHeartbeatAt: new Date(),
       },
     });
+
+    if (updated.count !== 1) {
+      return null;
+    }
+
+    return this.findRunOrThrow(normalizedRunId, db);
   }
 
   /** Moves an active run into RETRYING after a transient infrastructure error. */
@@ -848,6 +892,47 @@ export class IdeaGenerationRunService {
   }
 
   /**
+   * Returns the oldest active generation run for one owner.
+   *
+   * The queue uses this to coalesce repeated Generate requests instead of
+   * creating a second row that immediately fails on the owner lock. This is
+   * also race-safe enough for multi-instance deployments because callers can
+   * re-check after inserting their own QUEUED row and keep only the oldest
+   * active run.
+   */
+  async findActiveRunForOwner(
+    owner: IdeaGenerationRunOwner,
+  ): Promise<IdeaGenerationRun | null> {
+    const ownerWhere: Prisma.IdeaGenerationRunWhereInput =
+      'userId' in owner && typeof owner.userId === 'string'
+        ? { userId: this.normalizeRequiredValue(owner.userId, 'User ID') }
+        : {
+            guestSessionId: this.normalizeRequiredValue(
+              owner.guestSessionId,
+              'Guest-session ID',
+            ),
+          };
+
+    return this.prisma.ideaGenerationRun.findFirst({
+      where: {
+        ...ownerWhere,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.QUEUED,
+            IdeaGenerationRunStatus.RUNNING,
+          ],
+        },
+        completedAt: null,
+        cancelRequestedAt: null,
+      },
+      orderBy: [
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
+    });
+  }
+
+  /**
    * Lightweight guard used by the background recovery scanner.
    *
    * Recovery must not compete with a user-facing pipeline for the same
@@ -856,7 +941,13 @@ export class IdeaGenerationRunService {
   async hasActiveRuns(): Promise<boolean> {
     const activeRun = await this.prisma.ideaGenerationRun.findFirst({
       where: {
-        status: IdeaGenerationRunStatus.RUNNING,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.QUEUED,
+            IdeaGenerationRunStatus.RUNNING,
+          ],
+        },
+        completedAt: null,
         cancelRequestedAt: null,
       },
       select: { id: true },

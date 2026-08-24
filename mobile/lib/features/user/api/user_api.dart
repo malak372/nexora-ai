@@ -1037,7 +1037,15 @@ class UserApi {
     Map<String, dynamic> payload,
   ) async {
     final result = _map(
-      await _api.post('/users/ideas/generate', data: payload),
+      await _api.post(
+        '/users/ideas/generate',
+        data: payload,
+        // Request preparation can take longer than the shared mobile receive
+        // timeout while the backend is still successfully creating the run.
+        // Duration.zero disables only the response wait timeout for this
+        // endpoint; progress is then streamed through the realtime socket.
+        receiveTimeout: Duration.zero,
+      ),
     );
     _api.invalidate('/users/summary');
     _api.invalidate('/users/ideas');

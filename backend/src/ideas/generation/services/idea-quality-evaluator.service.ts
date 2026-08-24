@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { IDEA_MIN_ACCEPTED_QUALITY_SCORE } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
+import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
 
 /**
  * Individual deterministic quality issue detected in a generated idea.
@@ -31,6 +32,8 @@ export type IdeaQualityIssue = {
     | 'INACCURATE_NLP_SUMMARY'
     | 'AWKWARD_PRODUCT_COPY'
     | 'NO_DIRECT_EVIDENCE'
+    | 'REQUEST_SCOPE_TITLE_DRIFT'
+    | 'CATASTROPHIC_REQUEST_SCOPE_DRIFT'
     | 'SECONDARY_DOMAIN_LEAKAGE';
   readonly message: string;
   readonly penalty: number;
@@ -74,7 +77,9 @@ export type IdeaQualityEvaluationContext = {
   readonly targetRegion?: string | null;
   readonly localEvidenceVerified?: boolean;
   readonly directEvidenceCount?: number;
+  readonly externalSupportingEvidenceCount?: number;
   readonly verifiedIndependentSourceCount?: number;
+  readonly requesterDescription?: string | null;
   readonly primaryDomainName?: string | null;
   readonly secondaryDomainNames?: readonly string[];
 };
@@ -266,6 +271,49 @@ export class IdeaQualityEvaluatorService {
         message:
           'Use a distinctive public-facing product title that communicates the product value. Do not expose internal pipeline labels such as Cross-Domain, Validation, Request Validation, Validation Pilot, Evidence Validation, Opportunity Discovery, or a plus-sign-joined domain list.',
         penalty: 14,
+      });
+    }
+
+    if (
+      context.requesterDescription?.trim() &&
+      this.hasRequestScopeTitleDrift(
+        idea.title,
+        context.requesterDescription,
+      )
+    ) {
+      issues.push({
+        code: 'REQUEST_SCOPE_TITLE_DRIFT',
+        message:
+          "Keep the public-facing title centered on the requester's actual operational problem. Do not let a narrow sub-signal such as billing or payment recovery replace a broader transit-security, public-spending, or commission-versioning workflow.",
+        penalty: 20,
+      });
+    }
+
+    const requesterDescription = context.requesterDescription?.trim() ?? '';
+    const strictWorkflowIdentityRequired =
+      RequestEvidenceAlignmentUtil.requiresStrictWorkflowIdentity({
+        requestDescription: requesterDescription,
+      });
+    const strictWorkflowAligned =
+      !strictWorkflowIdentityRequired ||
+      RequestEvidenceAlignmentUtil.isAligned({
+        requestDescription: requesterDescription,
+        evidenceText: [
+          idea.title,
+          idea.problemStatement,
+          ...idea.objectives,
+          ...idea.targetUsers,
+          idea.fullAbstract ?? '',
+          idea.partialAbstract ?? '',
+          idea.limitedAbstract ?? '',
+        ].join(' '),
+      });
+    if (requesterDescription && strictWorkflowIdentityRequired && !strictWorkflowAligned) {
+      issues.push({
+        code: 'CATASTROPHIC_REQUEST_SCOPE_DRIFT',
+        message:
+          "The generated product left the requester's concrete actor/vertical or workflow identity. Reject this candidate instead of substituting a better-evidenced problem from a nearby or incidental domain.",
+        penalty: 100,
       });
     }
 
@@ -474,14 +522,20 @@ export class IdeaQualityEvaluatorService {
       0,
       context.directEvidenceCount ?? context.totalTextsAnalyzed ?? 0,
     );
+    const externalSupportingEvidenceCount = Math.max(
+      0,
+      context.externalSupportingEvidenceCount ?? 0,
+    );
     const hasNoDirectEvidence = directEvidenceCount === 0;
 
     if (hasNoDirectEvidence) {
       issues.push({
         code: 'NO_DIRECT_EVIDENCE',
         message:
-          'No direct community evidence was retained. The candidate may continue only as a clearly labeled validation hypothesis and must not receive a market-fit pass.',
-        penalty: 35,
+          externalSupportingEvidenceCount > 0
+            ? 'No direct community complaint was retained, but at least one real external supporting problem signal exists. Keep the candidate preliminary and do not claim recurrence or market-wide demand.'
+            : 'No direct community evidence was retained. The candidate may continue only as a clearly labeled validation hypothesis and must not receive a market-fit pass.',
+        penalty: externalSupportingEvidenceCount > 0 ? 18 : 35,
       });
     }
 
@@ -512,7 +566,13 @@ export class IdeaQualityEvaluatorService {
       ),
       marketFit: this.clamp(
         Math.min(
-          hasNoDirectEvidence ? 35 : directEvidenceCount === 1 ? 85 : 100,
+          hasNoDirectEvidence
+            ? externalSupportingEvidenceCount > 0
+              ? 55
+              : 35
+            : directEvidenceCount === 1
+              ? 85
+              : 100,
           35 +
             Math.min(problem.length / 8, 30) +
             concreteTargets * 8 +
@@ -557,7 +617,12 @@ export class IdeaQualityEvaluatorService {
      * penalty for the benchmark score so this number measures idea quality
      * rather than duplicating evidence-density penalties.
      */
-    const score = this.clamp(weightedScore - issuePenalty * 0.18);
+    const hasCatastrophicRequestDrift = issues.some(
+      (issue) => issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT',
+    );
+    const score = hasCatastrophicRequestDrift
+      ? Math.min(19, this.clamp(weightedScore - issuePenalty * 0.18))
+      : this.clamp(weightedScore - issuePenalty * 0.18);
     const hasBlockingIssue = issues.some(
       (issue) =>
         issue.code === 'UNSUPPORTED_LOCAL_CLAIM' ||
@@ -566,7 +631,8 @@ export class IdeaQualityEvaluatorService {
         issue.code === 'UNSUPPORTED_IMPACT_TARGET' ||
         issue.code === 'COMMON_TITLE_MISSPELLING' ||
         issue.code === 'NO_DIRECT_EVIDENCE' ||
-        issue.code === 'SECONDARY_DOMAIN_LEAKAGE',
+        issue.code === 'SECONDARY_DOMAIN_LEAKAGE' ||
+        issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT',
     );
 
     return {
@@ -836,6 +902,43 @@ export class IdeaQualityEvaluatorService {
         inLocationClaim.test(claimText)
       );
     });
+  }
+
+  private hasRequestScopeTitleDrift(
+    title: string,
+    requesterDescription: string,
+  ): boolean {
+    const request = this.normalize(requesterDescription);
+    const normalizedTitle = this.normalize(title);
+
+    const transitSecurityRequest =
+      /\b(?:public transportation|public transport|transit|digital ticketing|fare system|connected vehicle|passenger application)\b/u.test(request) &&
+      /\b(?:cyberattack|cybersecurity|unusual login|payment anomal|device behavior|service disruption|security incident|technical failure)\w*\b/u.test(request);
+    if (transitSecurityRequest) {
+      return !/\b(?:transit|transport|ticket|fare|passenger|vehicle|incident|security|cyber|anomaly|threat)\w*\b/u.test(
+        normalizedTitle,
+      );
+    }
+
+    const publicFiscalRequest =
+      /\b(?:public institution|government|public sector|public administration)\w*\b/u.test(request) &&
+      /\b(?:public budget|public funds|government spending|public spending|procurement|invoice|duplicate payment|overspending|expenditure)\w*\b/u.test(request);
+    if (publicFiscalRequest) {
+      return !/\b(?:public|government|budget|spending|procurement|invoice|payment|expenditure|audit|fraud|fund)\w*\b/u.test(
+        normalizedTitle,
+      );
+    }
+
+    const commissionVersionRequest =
+      /\b(?:commission|custom order|design revision|approved version|dimension|engraving|material choice)\w*\b/u.test(request) &&
+      /\b(?:artist|artisan|glass|craft|studio|maker)\w*\b/u.test(request);
+    if (commissionVersionRequest) {
+      return !/\b(?:glass|craft|commission|design|version|order|studio|artisan|artist)\w*\b/u.test(
+        normalizedTitle,
+      );
+    }
+
+    return false;
   }
 
   private escapeRegExp(value: string): string {

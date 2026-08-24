@@ -142,8 +142,11 @@ export class CollectionJobService {
   async resolveActiveImplementedDataSources(
     requestedKeys?: string[],
   ): Promise<ResolvedCollectionDataSource[]> {
-    const runtimeKeys = new Set(
+    const implementedRuntimeKeys = new Set(
       this.collectorsFactory.getImplementedSourceKeys(),
+    );
+    const runtimeKeys = new Set(
+      this.collectorsFactory.getRuntimeAvailableSourceKeys(),
     );
 
     const selectedKeys = [
@@ -161,7 +164,7 @@ export class CollectionJobService {
     }
 
     const missingRuntimeImplementations = selectedKeys.filter(
-      (key) => !runtimeKeys.has(key),
+      (key) => !implementedRuntimeKeys.has(key),
     );
 
     if (missingRuntimeImplementations.length) {
@@ -169,6 +172,22 @@ export class CollectionJobService {
         `Collector implementations not found: ${missingRuntimeImplementations.join(
           ', ',
         )}.`,
+      );
+    }
+
+    const runtimeUnavailable = selectedKeys.filter(
+      (key) => implementedRuntimeKeys.has(key) && !runtimeKeys.has(key),
+    );
+    if (runtimeUnavailable.length) {
+      const details = runtimeUnavailable
+        .map((key) => {
+          const reason =
+            this.collectorsFactory.getCollectorRuntimeUnavailableReason(key);
+          return reason ? `${key} (${reason})` : key;
+        })
+        .join(', ');
+      throw new BadRequestException(
+        `Collector runtime configuration is unavailable: ${details}.`,
       );
     }
 

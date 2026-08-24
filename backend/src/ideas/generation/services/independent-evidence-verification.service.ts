@@ -3,7 +3,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import {
   classifyDirectCommunityEvidence,
+  isExplicitTechnicalFeatureRequestEvidence,
   isPositiveFeedbackWithoutProblem,
+  isPositiveTestimonialWithPreExistingNeed,
+  isRelayedCommunityIssueReport,
   segmentCommunityEvidenceIssues,
 } from '../../../nlp/common/utils/community-evidence.util';
 import {
@@ -19,6 +22,7 @@ import type {
   IdeaOpportunityRanking,
   RankedIdeaOpportunity,
 } from '../types/idea-opportunity-ranking.type';
+import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
 
 const MIN_VERIFIED_RECURRENCE_COUNT = 3;
 const MIN_VERIFIED_SOURCE_COUNT = 2;
@@ -64,8 +68,8 @@ const COMPLAINT_PATTERNS: readonly RegExp[] = [
 
 const REVIEW_SOURCE_KEYS = new Set(['google-play', 'app-store']);
 const EDITORIAL_SOURCE_KEYS = new Set(['dev-to', 'blog']);
-const NEWS_SOURCE_KEYS = new Set(['news']);
-const SECONDARY_REPORT_SOURCE_KEYS = new Set(['product-hunt']);
+const NEWS_SOURCE_KEYS = new Set(['news', 'gdelt']);
+const SECONDARY_REPORT_SOURCE_KEYS = new Set(['product-hunt', 'crossref']);
 const PUBLISHER_POST_SOURCE_KEYS = new Set([
   'google-play',
   'app-store',
@@ -172,6 +176,107 @@ export class IndependentEvidenceVerificationService {
       evidenceCoverage: this.calculateEvidenceCoverage(sorted),
       selectionReason: this.buildSelectionReason(selected),
       qualityWarnings: this.mergeWarnings(ranking.qualityWarnings, selected),
+    };
+  }
+
+  /**
+   * Re-applies independently verified provenance after any downstream ranking
+   * reconciliation. Domain/family reconciliation is allowed to change labels
+   * and ordering, but it must never reclassify a TECHNICAL_TICKET or secondary
+   * report as community evidence. This method is intentionally idempotent and
+   * safe to call at the final ranking boundary.
+   */
+  /**
+   * Verifies collector-backed evidence provenance without requiring the item
+   * to represent the complete selected problem family.
+   *
+   * This is intentionally narrower than verifyRanking(): Community AI may
+   * classify an item as SUPPORTING_SIGNAL because it validates only one part
+   * of a requester workflow. Re-running full problem-family selection would
+   * incorrectly erase that legitimate partial support. The caller must only
+   * use this method for evidence that already passed semantic triage and the
+   * deterministic requester/domain guard.
+   */
+  verifyProvenanceHints(
+    provenanceHints: readonly EvidenceProvenanceHint[],
+  ): readonly IndependentEvidence[] {
+    const records: readonly EvidenceRecord[] = provenanceHints
+      .filter(
+        (hint) =>
+          hint.text.trim().length > 0 &&
+          hint.sourceKey.trim().length > 0 &&
+          hint.postExternalId.trim().length > 0,
+      )
+      .map((hint) => ({
+        ...hint,
+        author: null,
+      }));
+
+    return this.deduplicateIndependentEvidence(
+      provenanceHints
+        .map((hint) => {
+          const resolved = this.resolveEvidence(hint.text, records);
+          if (!resolved) return null;
+
+          /*
+           * This method is called only after Community AI semantic triage and
+           * the deterministic requester/workflow guard have already accepted
+           * the item as partial support. Some collector-backed publisher/video
+           * posts are intentionally UNKNOWN to the direct-evidence classifier
+           * because they are not first-person complaints. Do not erase that
+           * valid contextual support here; preserve its provenance as
+           * non-recurrence editorial/general commentary. This never upgrades
+           * the item to a complaint, review, feature request, or recurrence
+           * evidence.
+           */
+          if (resolved.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.UNKNOWN) {
+            return {
+              ...resolved,
+              evidenceKind:
+                resolved.commentExternalId === null
+                  ? INDEPENDENT_EVIDENCE_KINDS.EDITORIAL_ANALYSIS
+                  : INDEPENDENT_EVIDENCE_KINDS.GENERAL_COMMENTARY,
+              qualifiesForRecurrence: false,
+            } satisfies IndependentEvidence;
+          }
+
+          return resolved;
+        })
+        .filter((evidence): evidence is IndependentEvidence => Boolean(evidence))
+        .filter(
+          (evidence) =>
+            evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.SPECIFICATION &&
+            evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.POSITIVE_FEEDBACK,
+        ),
+    ).slice(0, MAX_VERIFIED_EVIDENCE_SAMPLES);
+  }
+
+  normalizeVerifiedRankingProvenance(
+    ranking: IdeaOpportunityRanking,
+  ): IdeaOpportunityRanking {
+    const normalizeCandidate = (
+      candidate: RankedIdeaOpportunity,
+    ): RankedIdeaOpportunity => {
+      const retainedEvidence = candidate.independentEvidence ?? [];
+      if (retainedEvidence.length === 0) return candidate;
+
+      return {
+        ...candidate,
+        supportingEvidence: this.synchronizeSupportingEvidenceMetadata(
+          retainedEvidence,
+          candidate.supportingEvidence,
+        ),
+        raw: this.synchronizeRawEvidenceMetadata(
+          candidate.raw,
+          retainedEvidence,
+        ),
+      };
+    };
+
+    return {
+      ...ranking,
+      selected: normalizeCandidate(ranking.selected),
+      alternatives: ranking.alternatives.map(normalizeCandidate),
     };
   }
 
@@ -418,6 +523,15 @@ export class IndependentEvidenceVerificationService {
     const verifiedEvidenceSourceCount = new Set(
       classifiedEvidence.map((evidence) => evidence.sourceKey),
     ).size;
+    const synchronizedSupportingEvidence =
+      this.synchronizeSupportingEvidenceMetadata(
+        retainedEvidence,
+        candidate.supportingEvidence,
+      );
+    const synchronizedRaw = this.synchronizeRawEvidenceMetadata(
+      candidate.raw,
+      retainedEvidence,
+    );
     const weightedEvidenceScore = Math.min(
       1,
       verifiedProblemMatchedDirectCount / 5 +
@@ -539,6 +653,8 @@ export class IndependentEvidenceVerificationService {
 
     return {
       ...candidate,
+      raw: synchronizedRaw,
+      supportingEvidence: synchronizedSupportingEvidence,
       frequency: verifiedProblemMatchedEvidenceCount,
       evidenceSamples: retainedEvidence.map((evidence) => evidence.text),
       evidenceScore: verifiedEvidenceScore,
@@ -586,6 +702,103 @@ export class IndependentEvidenceVerificationService {
 
   }
 
+  /**
+   * Rebuilds candidate-level evidence provenance from independently verified
+   * evidence. Provider/ranking classifications are intentionally discarded for
+   * evidence-bearing entries so `selected.supportingEvidence`, `raw`, and the
+   * independent-evidence counters cannot disagree after verification.
+   *
+   * Requester/domain/personalization entries are trace metadata rather than
+   * external evidence, so they are preserved without being promoted to
+   * community evidence.
+   */
+  private synchronizeSupportingEvidenceMetadata(
+    retainedEvidence: readonly IndependentEvidence[],
+    existingSupportingEvidence: RankedIdeaOpportunity['supportingEvidence'],
+  ): NonNullable<RankedIdeaOpportunity['supportingEvidence']> {
+    type SupportingEvidenceEntry = NonNullable<
+      RankedIdeaOpportunity['supportingEvidence']
+    >[number];
+
+    const verifiedEntries: SupportingEvidenceEntry[] = retainedEvidence.map(
+      (evidence) => {
+        const direct = this.isDirectUserEvidence(evidence.evidenceKind);
+        const technical =
+          evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET;
+
+        return {
+          text: evidence.text,
+          sourceType: direct
+            ? 'COMMUNITY_EVIDENCE'
+            : technical
+              ? 'TECHNICAL_EVIDENCE'
+              : 'SECONDARY_EVIDENCE',
+          qualifiesAsCommunityEvidence: direct,
+        };
+      },
+    );
+
+    const traceEntries: SupportingEvidenceEntry[] = (
+      existingSupportingEvidence ?? []
+    ).filter(
+      (entry) =>
+        entry.sourceType === 'REQUESTER_STATEMENT' ||
+        entry.sourceType === 'REQUESTER_DOMAIN_SELECTION' ||
+        entry.sourceType === 'PERSONALIZATION_SIGNAL',
+    );
+
+    const seen = new Set<string>();
+    return [...verifiedEntries, ...traceEntries].filter((entry) => {
+      const normalizedText = entry.text.replace(/\s+/gu, ' ').trim().toLowerCase();
+      if (!normalizedText) return false;
+
+      const key = `${entry.sourceType}:${normalizedText}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private synchronizeRawEvidenceMetadata(
+    raw: RankedIdeaOpportunity['raw'],
+    retainedEvidence: readonly IndependentEvidence[],
+  ): RankedIdeaOpportunity['raw'] {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return raw;
+    }
+
+    const complaintCount = retainedEvidence.filter((evidence) =>
+      this.isComplaintEvidence(evidence.evidenceKind),
+    ).length;
+    const featureRequestCount = retainedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST,
+    ).length;
+    const observedUnmetNeedCount = retainedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind ===
+        INDEPENDENT_EVIDENCE_KINDS.OBSERVED_UNMET_NEED,
+    ).length;
+    const technicalTicketCount = retainedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET,
+    ).length;
+
+    const supportingEvidence = this.synchronizeSupportingEvidenceMetadata(
+      retainedEvidence,
+      [],
+    );
+
+    return {
+      ...(raw as Record<string, unknown>),
+      directComplaintCount: complaintCount,
+      featureRequestCount,
+      observedUnmetNeedCount,
+      technicalTicketCount,
+      supportingEvidence,
+    } as unknown as RankedIdeaOpportunity['raw'];
+  }
+
 
   /**
    * Chooses one coherent problem family from the resolved candidate evidence.
@@ -600,11 +813,78 @@ export class IndependentEvidenceVerificationService {
     evidence: readonly IndependentEvidence[],
     problemDescriptor: string,
   ): IndependentEvidence[] {
-    if (evidence.length <= 1) {
-      return [...evidence];
+    const rawCandidate =
+      candidate.raw && typeof candidate.raw === 'object' && !Array.isArray(candidate.raw)
+        ? candidate.raw as Record<string, unknown>
+        : null;
+    const requesterDescription =
+      rawCandidate && typeof rawCandidate.requestDescription === 'string'
+        ? rawCandidate.requestDescription.trim()
+        : '';
+    const rawSource =
+      rawCandidate && typeof rawCandidate.source === 'string'
+        ? rawCandidate.source.trim().toUpperCase()
+        : '';
+    const requesterDefinedCandidate =
+      rawSource === 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS' ||
+      candidate.title.trim().toLocaleLowerCase() ===
+        'requester-defined workflow opportunity';
+
+    const requestScopedEvidence = requesterDescription
+      ? evidence.filter((item) => {
+          const exact = RequestEvidenceAlignmentUtil.isAligned({
+            requestDescription: requesterDescription,
+            evidenceText: item.text,
+          });
+          if (exact) return true;
+          return RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
+            requestDescription: requesterDescription,
+            evidenceText: item.text,
+          });
+        })
+      : [...evidence];
+
+    if (requestScopedEvidence.length === 0) return [];
+
+    /*
+     * External evidence-backed candidates must preserve BOTH identities:
+     * requester workflow and candidate problem family. Previously a single
+     * request-aligned sample could verify a completely different candidate
+     * (for example employee-access evidence validating a crypto/MCP family).
+     * Requester-defined validation hypotheses are the only exception because
+     * their problem descriptor intentionally wraps the request itself.
+     */
+    const evidenceForSelection = requesterDefinedCandidate
+      ? requestScopedEvidence
+      : requestScopedEvidence.filter((item) =>
+          matchEvidenceToProblemFamily(problemDescriptor, item.text).matched,
+        );
+
+    if (evidenceForSelection.length === 0) return [];
+
+    if (evidenceForSelection.length === 1) {
+      return [evidenceForSelection[0]];
+    }
+    const compositeEvidence =
+      RequestEvidenceAlignmentUtil.selectCompositeAlignedEvidence({
+        requestDescription: requesterDescription || problemDescriptor,
+        evidenceTexts: evidenceForSelection.map((item) => item.text),
+        maxSamples: MAX_VERIFIED_EVIDENCE_SAMPLES,
+      });
+    if (compositeEvidence.length >= 2) {
+      const selected = new Set(
+        compositeEvidence.map((text) =>
+          text.toLocaleLowerCase().replace(/\s+/gu, ' ').trim(),
+        ),
+      );
+      return evidenceForSelection.filter((item) =>
+        selected.has(
+          item.text.toLocaleLowerCase().replace(/\s+/gu, ' ').trim(),
+        ),
+      );
     }
 
-    const segmentedEvidence = evidence.flatMap((item) =>
+    const segmentedEvidence = evidenceForSelection.flatMap((item) =>
       segmentCommunityEvidenceIssues(item.text).map((text) => ({ item, text })),
     );
     const clusters = clusterEvidenceByProblemFamily(
@@ -612,7 +892,7 @@ export class IndependentEvidenceVerificationService {
     );
 
     if (clusters.length === 0) {
-      return evidence.filter((item) =>
+      return evidenceForSelection.filter((item) =>
         matchEvidenceToProblemFamily(problemDescriptor, item.text).matched,
       );
     }
@@ -622,7 +902,7 @@ export class IndependentEvidenceVerificationService {
 
     const scoredClusters = clusters.map((cluster) => {
       const clusterTexts = new Set(cluster.evidenceSamples.map(normalized));
-      const items = evidence.filter((item) =>
+      const items = evidenceForSelection.filter((item) =>
         segmentedEvidence.some(
           (entry) =>
             entry.item === item && clusterTexts.has(normalized(entry.text)),
@@ -673,7 +953,7 @@ export class IndependentEvidenceVerificationService {
     )[0];
 
     if (!selected || selected.items.length === 0) {
-      return evidence.filter((item) =>
+      return evidenceForSelection.filter((item) =>
         matchEvidenceToProblemFamily(problemDescriptor, item.text).matched,
       );
     }
@@ -803,8 +1083,39 @@ export class IndependentEvidenceVerificationService {
       : text;
     const normalizedSourceKey = sourceKey.trim().toLowerCase();
 
+    if (
+      (isComment || REVIEW_SOURCE_KEYS.has(normalizedSourceKey)) &&
+      isPositiveTestimonialWithPreExistingNeed(evidenceText)
+    ) {
+      return INDEPENDENT_EVIDENCE_KINDS.OBSERVED_UNMET_NEED;
+    }
+
     if (isComment && isPositiveFeedbackWithoutProblem(evidenceText)) {
       return INDEPENDENT_EVIDENCE_KINDS.POSITIVE_FEEDBACK;
+    }
+
+    if (
+      !isComment &&
+      normalizedSourceKey === 'github' &&
+      isRelayedCommunityIssueReport(evidenceText)
+    ) {
+      return INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET;
+    }
+
+    const explicitTechnicalFeatureRequest =
+      !isComment &&
+      isExplicitTechnicalFeatureRequestEvidence(evidenceText, 'POST');
+
+    if (explicitTechnicalFeatureRequest) {
+      return INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST;
+    }
+
+    if (
+      !isComment &&
+      normalizedSourceKey === 'github' &&
+      this.isEditorialOrGuidePostWithoutDirectExperience(evidenceText)
+    ) {
+      return INDEPENDENT_EVIDENCE_KINDS.SECONDARY_REPORT;
     }
 
     const githubPlanningOrAcceptanceText =
@@ -840,16 +1151,46 @@ export class IndependentEvidenceVerificationService {
       (normalizedSourceKey === 'github' || normalizedSourceKey === 'stackoverflow')
     ) {
       const structuredTechnicalIssue =
-        /(?:^|\n|\r|\b)(?:#{1,6}\s*)?(?:summary|issue|environment|steps? to reproduce|reproduction|expected(?: result)?|actual(?: result)?|error message|stack trace|log excerpt|lua\.log)\s*:/iu.test(
+        /(?:^|\n|\r|\b)(?:#{1,6}\s*)?(?:summary|issue|environment|steps? to reproduce|reproduction|expected(?: result| behavior)?|actual(?: result| behavior)?|error message|stack trace|log excerpt|lua\.log)(?:\s*:|\s+(?=[A-Z0-9]))/iu.test(
           evidenceText,
-        );
+        ) ||
+        (/(?:^|\n|\r)\s*#{1,6}\s*(?:problem|expected behavior|actual behavior|impact)\b/iu.test(evidenceText) &&
+          /\b(?:bug|issue|expected behavior|actual behavior|impact|requested by)\b/iu.test(evidenceText));
       const hasTechnicalFailure =
         !/\bcrash[- ]course\b/iu.test(evidenceText) &&
         /\b(?:cannot|can['’]?t|unable|fails?|failure|failed|error|bug|crash|broken|missing|blocked|timeout|exception|incorrect|unexpected|freeze|freezes|frozen|hang|hung|unresponsive|inaccessible|404|no visible candidate|focus remains|focus trapped|keystrokes? (?:are )?(?:captured|consumed))\b/iu.test(
           evidenceText,
         );
+      const technicalArtifactContext =
+        /\b(?:stack trace|traceback|exception|runtime|compiler|build|repository|repo|commit|pull request|branch|function|method|class|api|endpoint|http|json|yaml|sql|database|query|javascript|typescript|python|java|kotlin|swift|dart|flutter|react|angular|node\.js|docker|kubernetes|sdk|cli|package\.json|config|log excerpt|error message|steps? to reproduce|expected result|actual result)\b/iu.test(
+          evidenceText,
+        );
+      const structuredDomainProblem =
+        /(?:^|\n|\r)\s*(?:#{1,6}\s*)?(?:problem|job to be done|jtbd|user problem|pain point|unmet need)\s*:/iu.test(
+          evidenceText,
+        ) &&
+        /\b(?:patient|healthcare|health care|medical|medication|preventive|screening|appointment|caregiver|energy|electricity|grid|inverter|mental health|therapy|delivery|shipment|logistics|booking|tourism|government|workforce)\b/iu.test(
+          evidenceText,
+        );
 
-      if (structuredTechnicalIssue || hasTechnicalFailure) {
+      /*
+       * GitHub is a hosting platform, not an evidence intent. A structured
+       * JTBD/problem record without implementation artifacts is retained as a
+       * secondary problem report instead of being upgraded to TECHNICAL_TICKET.
+       */
+      if (
+        normalizedSourceKey === 'github' &&
+        structuredDomainProblem &&
+        !technicalArtifactContext
+      ) {
+        return INDEPENDENT_EVIDENCE_KINDS.SECONDARY_REPORT;
+      }
+
+      if (
+        structuredTechnicalIssue ||
+        (hasTechnicalFailure &&
+          (normalizedSourceKey === 'stackoverflow' || technicalArtifactContext))
+      ) {
         return INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET;
       }
     }
@@ -878,6 +1219,10 @@ export class IndependentEvidenceVerificationService {
       return INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST;
     }
 
+    if (directKind === 'OBSERVED_UNMET_NEED') {
+      return INDEPENDENT_EVIDENCE_KINDS.OBSERVED_UNMET_NEED;
+    }
+
     if (directKind === 'USER_COMPLAINT') {
       return REVIEW_SOURCE_KEYS.has(normalizedSourceKey)
         ? INDEPENDENT_EVIDENCE_KINDS.REVIEW
@@ -899,12 +1244,43 @@ export class IndependentEvidenceVerificationService {
     return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
   }
 
+  private isEditorialOrGuidePostWithoutDirectExperience(value: string): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    if (!normalized) return false;
+
+    const directExperience =
+      /\b(?:i|we|my|our)\b[^.!?]{0,160}\b(?:paid|tried|used|submitted|applied|encountered|experienced|was charged|were charged|cannot|can['’]?t|unable|failed|declined|blocked|stuck)\b/iu.test(
+        normalized,
+      );
+
+    if (directExperience) return false;
+
+    const questionHeadings =
+      normalized.match(
+        /\b(?:how|what|why|when|where|who|can|should|are|is|do|does)\b[^?]{8,180}\?/giu,
+      ) ?? [];
+    const guideStructure =
+      /\b(?:guide|requirements?|expected wait time|conclusion|frequently asked|faq|step[- ]by[- ]step|eligibility|application guide|before applying|after applying|best practices?|recommendations?|key risks?|key benefits?|future of|final thoughts|what is|how to address|how to implement|organizations should|businesses should)\b/iu.test(
+        normalized,
+      );
+    const articleStructure =
+      /(?:^|\s)(?:what is|why |how to |key |best practices?|future of|final thoughts|conclusion)\b/iu.test(normalized) &&
+      (normalized.match(/\b(?:organizations?|businesses?|companies?|teams?)\b/giu) ?? []).length >= 2;
+    const instructionalDensity =
+      (normalized.match(/\b(?:implement|use|apply|monitor|review|validate|secure|protect|ensure|organizations should|teams should)\b/giu) ?? []).length >= 4;
+
+    return (questionHeadings.length >= 3 && guideStructure) ||
+      (guideStructure && articleStructure) ||
+      (guideStructure && instructionalDensity);
+  }
+
   private isDirectUserEvidence(kind: IndependentEvidenceKind): boolean {
     return (
       kind === INDEPENDENT_EVIDENCE_KINDS.DIRECT_USER_COMPLAINT ||
       kind === INDEPENDENT_EVIDENCE_KINDS.USER_COMPLAINT ||
       kind === INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST ||
-      kind === INDEPENDENT_EVIDENCE_KINDS.REVIEW
+      kind === INDEPENDENT_EVIDENCE_KINDS.REVIEW ||
+      kind === INDEPENDENT_EVIDENCE_KINDS.OBSERVED_UNMET_NEED
     );
   }
 

@@ -1349,6 +1349,7 @@ export class AdminIdeasService {
             completedAt: true,
             createdAt: true,
             updatedAt: true,
+            contextSnapshot: true,
 
             stages: {
               orderBy: {
@@ -1862,7 +1863,10 @@ export class AdminIdeasService {
         ? {
             ...idea.generationRun,
             benchmarkCandidates,
-            benchmarkSummary: buildIdeaBenchmarkSummary(benchmarkCandidates),
+            benchmarkSummary: buildIdeaBenchmarkSummary(
+              benchmarkCandidates,
+              idea.generationRun.contextSnapshot,
+            ),
           }
         : null,
     };

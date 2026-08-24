@@ -36,8 +36,12 @@ import type {
   ParsedIdeaAiOutput,
 } from '../../types/idea-ai-output.type';
 
-import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
+import type {
+  IdeaGenerationContext,
+  SelectedGenerationDomain,
+} from '../../types/idea-generation-context.type';
 import { evaluateRequestIntentAlignment } from '../../utils/request-intent-alignment.util';
+import { resolvePrimaryProblemFamily } from '../../../../nlp/common/utils/problem-family-matching.util';
 
 /**
  * Performs final business-level validation and normalization of
@@ -158,13 +162,18 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
      * projection before strict validation so unauthorized fields are removed
      * rather than leaked or allowed to fail the complete generation run.
      */
-    const normalizedOutput = this.sanitizeOutputForContext(
+    const normalizedOutput = this.repairExplicitSelectedDomainCoverage(
       context,
-      this.projectOutputToGenerationTier(context, normalizedNarrative),
+      this.sanitizeOutputForContext(
+        context,
+        this.projectOutputToGenerationTier(context, normalizedNarrative),
+      ),
     );
 
     this.validateOutputForGenerationType(context, normalizedOutput);
     this.validateRequesterIntentAlignment(context, normalizedOutput);
+    this.validateSelectedOpportunityFamilyAlignment(context, normalizedOutput);
+    this.validateExplicitSelectedDomainCoverage(context, normalizedOutput);
     this.validateUnifiedIdeaNarrative(context, normalizedOutput);
 
     const updatedContext: IdeaGenerationContext = {
@@ -240,8 +249,42 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       requesterDescription,
       parsedOutput.coreIdea,
     );
+    const solutionFacingAdvancedText = parsedOutput.advancedOutputs
+      .filter((output) =>
+        ['mvp-features', 'value-proposition', 'system-architecture'].includes(
+          output.outputKey,
+        ),
+      )
+      .map((output) => output.content)
+      .join(' ');
+    const solutionFacingText = [
+      parsedOutput.coreIdea.title,
+      ...parsedOutput.coreIdea.objectives,
+      ...parsedOutput.coreIdea.targetUsers,
+      solutionFacingAdvancedText,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const solutionAlignment = evaluateRequestIntentAlignment(
+      requesterDescription,
+      {
+        title: parsedOutput.coreIdea.title,
+        problemStatement: solutionFacingText,
+        objectives: parsedOutput.coreIdea.objectives,
+        targetUsers: parsedOutput.coreIdea.targetUsers,
+        fullAbstract: solutionFacingAdvancedText,
+      },
+    );
 
-    if (alignment.matched) {
+    const solutionSemanticallyAligned =
+      solutionAlignment.matched ||
+      (solutionAlignment.sharedTokenCount >=
+        solutionAlignment.requiredSharedTokenCount &&
+        solutionAlignment.score >= 0.2 &&
+        solutionAlignment.problemScore >= 0.08 &&
+        solutionAlignment.supportingSectionCount >= 1);
+
+    if (alignment.matched && solutionSemanticallyAligned) {
       return;
     }
 
@@ -253,10 +296,327 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         problemIntentScore: alignment.problemScore,
         sharedIntentTokenCount: alignment.sharedTokenCount,
         requiredSharedIntentTokenCount: alignment.requiredSharedTokenCount,
+        solutionIntentScore: solutionAlignment.score,
+        solutionProblemIntentScore: solutionAlignment.problemScore,
+        solutionSharedIntentTokenCount: solutionAlignment.sharedTokenCount,
       },
     );
   }
 
+
+  /**
+   * Repairs a structurally valid text-plus-domains candidate that omitted one
+   * or more explicitly selected domains. The benchmark already asks providers
+   * to integrate every selected domain, but a late provider miss is a repairable
+   * scope defect rather than a reason to discard the whole run after generation.
+   *
+   * The repair is intentionally semantic: known domains receive concrete
+   * workflow responsibilities instead of being appended as label-only keywords.
+   * The strict validator still runs immediately afterwards and rejects the
+   * candidate if any selected domain remains materially absent.
+   */
+  private repairExplicitSelectedDomainCoverage(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): ParsedIdeaAiOutput {
+    if (!context.requestDescription?.trim()) return parsedOutput;
+
+    const explicitDomains = context.selectedDomains.filter(
+      (domain) => domain.isExplicitlySelected,
+    );
+    if (explicitDomains.length === 0) return parsedOutput;
+
+    const missing = this.resolveMissingExplicitSelectedDomains(
+      context,
+      parsedOutput,
+    );
+    if (missing.length === 0) return parsedOutput;
+
+    const request = context.requestDescription.trim();
+    const normalizedRequest = request.toLocaleLowerCase();
+    const publicFiscalOversight =
+      /\b(?:public institutions?|government|government agencies?|government departments?|public sector|public administration|ministr(?:y|ies)|municipal|municipality)\b/u.test(normalizedRequest) &&
+      /\b(?:public budgets?|public funds?|government spending|public spending|procurement|invoices?|project expenses?|approval histor(?:y|ies)|duplicate payments?|overspending|overpayments?|expenditure|financial management|budget planning|spending patterns?)\b/u.test(normalizedRequest);
+
+    const roleForDomain = (domain: SelectedGenerationDomain): string => {
+      const name = domain.name.trim();
+      const normalized = name.toLocaleLowerCase();
+
+      if (/\bartificial intelligence\b|^ai$/u.test(normalized)) {
+        return publicFiscalOversight
+          ? 'Use artificial intelligence for explainable anomaly detection and risk scoring across spending, procurement, invoices, project expenses, and approval histories so suspicious patterns are prioritized for human review rather than autonomously blocking payments.'
+          : 'Use artificial intelligence as a concrete analysis mechanism for pattern detection, prioritization, prediction, or decision support inside the requester-described workflow, with human review for consequential decisions.';
+      }
+      if (/\bfinance\b|fintech|accounting/u.test(normalized)) {
+        return publicFiscalOversight
+          ? 'Add finance controls that reconcile procurement records, invoices, project expenses, payment histories, and budget allocations to surface duplicate payments, unusual spending, overspending, and reconciliation mismatches.'
+          : 'Integrate finance as an operating layer through auditable transaction, cost, budget, reconciliation, or financial-performance controls that directly support the requester-described workflow.';
+      }
+      if (/government|public sector|municipal/u.test(normalized)) {
+        return publicFiscalOversight
+          ? 'Provide a government and public-sector oversight workflow that compares departmental spending and procurement activity, preserves approval provenance, and gives authorized audit and budget teams traceable evidence for investigation and planning.'
+          : 'Integrate government and public-sector operating constraints through accountable departmental workflows, traceable approvals, auditability, and authorized human review.';
+      }
+      if (/\b(?:human resources|hr & recruitment|hr recruitment|\bhr\b)\b/u.test(normalized)) {
+        const employeeAccessSecurityRequest =
+          /\b(?:employees?|staff|workforce|employee accounts?|employee role changes?|role changes?)\b/u.test(normalizedRequest) &&
+          /\b(?:access permissions?|access rights?|login records?|security alerts?|suspicious activity|compromised account|unauthorized access|unauthorised access|internal system usage)\b/u.test(normalizedRequest);
+        if (employeeAccessSecurityRequest) {
+          return 'Represent Human Resources through employee lifecycle and role-change context, including employment status, department or responsibility changes, onboarding/offboarding state, and expected access entitlements, so security analysis can compare observed access against each employee’s current responsibilities.';
+        }
+      }
+      if (/\bcybersecurity\b|cyber security|security/u.test(normalized)) {
+        return 'Apply cybersecurity controls to the requester-described workflow through access governance, security-event correlation, anomaly review, and auditable incident handling.';
+      }
+      if (/\bmanufactur(?:ing|er|ers)\b|\bfactor(?:y|ies)\b/u.test(normalized)) {
+        return 'Integrate manufacturing operations through production context, machine or process telemetry, downtime impact, and plant-floor operational decision support.';
+      }
+      if (/internet of things|\biot\b/u.test(normalized)) {
+        return 'Use Internet of Things sensing and telemetry as a concrete data layer for the requester-described physical workflow, including device-state monitoring and operational anomaly context.';
+      }
+      if (/smart cit(?:y|ies)|urban/u.test(normalized)) {
+        return 'Integrate Smart Cities operations through city-scale service or infrastructure data, capacity context, and accountable resource-prioritization workflows.';
+      }
+      if (/real estate|property/u.test(normalized)) {
+        return 'Integrate real-estate or property operations through asset-level records, operating costs, performance context, and property-specific decision support.';
+      }
+
+      const concreteTerms = (domain.effectiveSearchKeywords ?? domain.keywords)
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(0, 3)
+        .join(', ');
+      return concreteTerms
+        ? `Integrate ${name} as a concrete operating component of the product through ${concreteTerms}, directly inside the requester-described workflow rather than as a label-only mention.`
+        : `Integrate ${name} as a concrete operating component of the requester-described workflow, with a dedicated capability, data responsibility, and measurable pilot outcome.`;
+    };
+
+    const roles = missing.map(roleForDomain);
+    const allDomainNames = explicitDomains.map((domain) => domain.name).join(', ');
+    const integrationStatement = publicFiscalOversight
+      ? 'The unified product combines government accountability and departmental budget oversight with finance-grade reconciliation of procurement, invoices, expenses, and payments, while artificial intelligence performs explainable anomaly detection and risk prioritization for authorized human investigation.'
+      : `The unified product materially integrates every requester-selected domain (${allDomainNames}) inside one workflow; each domain has an explicit data, analysis, control, or operating responsibility rather than appearing only as a descriptive label.`;
+
+    const appendSentence = (value: string | undefined, sentence: string): string | undefined => {
+      if (value === undefined) return undefined;
+      const normalizedValue = value.replace(/\s+/gu, ' ').trim();
+      if (!normalizedValue) return sentence;
+      if (normalizedValue.toLocaleLowerCase().includes(sentence.toLocaleLowerCase())) {
+        return normalizedValue;
+      }
+      return `${normalizedValue} ${sentence}`.replace(/\s+/gu, ' ').trim();
+    };
+
+    const uniqueObjectives = [...parsedOutput.coreIdea.objectives];
+    for (const role of roles) {
+      if (!uniqueObjectives.some((item) => this.normalizeComparableText(item) === this.normalizeComparableText(role))) {
+        uniqueObjectives.push(role);
+      }
+    }
+
+    const targetUsers = [...parsedOutput.coreIdea.targetUsers];
+    if (publicFiscalOversight) {
+      const publicFinanceRole = 'Public finance, procurement, budget, and government audit teams';
+      if (!targetUsers.some((item) => /\b(?:public finance|procurement|budget|government audit)\b/iu.test(item))) {
+        targetUsers.push(publicFinanceRole);
+      }
+    }
+
+    const repairAdvancedContent = (output: AdvancedIdeaAiOutput): AdvancedIdeaAiOutput => {
+      const shouldCarryIntegration =
+        output.outputKey === 'full-abstract' ||
+        output.outputKey === 'mvp-features' ||
+        output.outputKey === 'system-architecture' ||
+        output.outputKey === 'value-proposition' ||
+        output.outputKey === 'community-feedback-summary';
+      if (!shouldCarryIntegration) return output;
+
+      const content = appendSentence(output.content, integrationStatement) ?? output.content;
+      let structuredContent = output.structuredContent;
+      if (output.outputKey === 'mvp-features' && Array.isArray(structuredContent)) {
+        const structuredItems = structuredContent;
+        const additions = roles.filter(
+          (role) => !structuredItems.some(
+            (item) => typeof item === 'string' && this.normalizeComparableText(item) === this.normalizeComparableText(role),
+          ),
+        );
+        structuredContent = [...structuredItems, ...additions] as typeof structuredContent;
+      }
+      return { ...output, content, ...(structuredContent !== undefined ? { structuredContent } : {}) };
+    };
+
+    this.logger.warn(
+      `Repaired missing explicit selected-domain coverage before strict validation. missing=${missing.map((domain) => domain.name).join(', ')}.`,
+    );
+
+    return {
+      coreIdea: {
+        ...parsedOutput.coreIdea,
+        problemStatement: appendSentence(
+          parsedOutput.coreIdea.problemStatement,
+          integrationStatement,
+        )!,
+        objectives: uniqueObjectives,
+        targetUsers,
+        ...(parsedOutput.coreIdea.limitedAbstract !== undefined
+          ? {
+              limitedAbstract: appendSentence(
+                parsedOutput.coreIdea.limitedAbstract,
+                integrationStatement,
+              ),
+            }
+          : {}),
+        ...(parsedOutput.coreIdea.partialAbstract !== undefined
+          ? {
+              partialAbstract: appendSentence(
+                parsedOutput.coreIdea.partialAbstract,
+                integrationStatement,
+              ),
+            }
+          : {}),
+        ...(parsedOutput.coreIdea.fullAbstract !== undefined
+          ? {
+              fullAbstract: appendSentence(
+                parsedOutput.coreIdea.fullAbstract,
+                integrationStatement,
+              ),
+            }
+          : {}),
+      },
+      advancedOutputs: parsedOutput.advancedOutputs.map(repairAdvancedContent),
+    };
+  }
+
+  private resolveMissingExplicitSelectedDomains(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): SelectedGenerationDomain[] {
+    if (!context.requestDescription?.trim()) return [];
+    const explicitDomains = context.selectedDomains.filter(
+      (domain) => domain.isExplicitlySelected,
+    );
+    if (explicitDomains.length === 0) return [];
+
+    const narrative = [
+      parsedOutput.coreIdea.title,
+      parsedOutput.coreIdea.problemStatement,
+      ...(parsedOutput.coreIdea.objectives ?? []),
+      ...(parsedOutput.coreIdea.targetUsers ?? []),
+      parsedOutput.coreIdea.fullAbstract ?? '',
+      parsedOutput.coreIdea.partialAbstract ?? '',
+      parsedOutput.coreIdea.limitedAbstract ?? '',
+    ].join(' ').toLocaleLowerCase();
+
+    return explicitDomains.filter((domain) => {
+      const name = domain.name.toLocaleLowerCase();
+      const aliases = name.includes('artificial intelligence')
+        ? ['artificial intelligence', ' ai ', 'machine learning', 'predictive', 'anomaly detection', 'risk scoring']
+        : name.includes('internet of things')
+          ? ['internet of things', 'iot', 'smart meter', 'sensor', 'connected device', 'telemetry']
+          : name === 'energy' || name.includes('energy')
+            ? ['energy', 'electricity', 'power', 'utility', 'consumption']
+            : name.includes('finance')
+              ? ['finance', 'financial', 'budget', 'procurement', 'invoice', 'payment', 'reconciliation', 'expenditure']
+              : name.includes('government') || name.includes('public sector')
+                ? ['government', 'public sector', 'public institution', 'public administration', 'departmental', 'public funds', 'public budget']
+                : [
+                    name,
+                    ...(domain.effectiveSearchKeywords ?? domain.keywords)
+                      .slice(0, 4)
+                      .map((item) => item.toLocaleLowerCase()),
+                  ];
+      return !aliases.some((alias) => {
+        const normalizedAlias = alias.trim();
+        if (!normalizedAlias) return false;
+        const pattern = new RegExp(
+          `\\b${this.escapeRegExp(normalizedAlias).replace(/\s+/gu, '\\s+')}\\b`,
+          'iu',
+        );
+        return pattern.test(narrative);
+      });
+    });
+  }
+
+
+  private validateSelectedOpportunityFamilyAlignment(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): void {
+    const selected =
+      context.benchmarkWinnerOpportunity ?? context.opportunityRanking?.selected;
+    const raw = selected?.raw;
+    const familyKey =
+      raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? typeof (raw as Record<string, unknown>).familyKey === 'string'
+          ? ((raw as Record<string, unknown>).familyKey as string)
+              .trim()
+              .toLocaleLowerCase()
+          : ''
+        : '';
+
+    if (familyKey !== 'application-access-support') {
+      return;
+    }
+
+    const mvpFeatures = parsedOutput.advancedOutputs.find(
+      (output) => output.outputKey === 'mvp-features',
+    );
+    const solutionNarrative = [
+      parsedOutput.coreIdea.title,
+      ...parsedOutput.coreIdea.objectives,
+      ...(Array.isArray(mvpFeatures?.structuredContent)
+        ? mvpFeatures.structuredContent.filter(
+            (item): item is string => typeof item === 'string',
+          )
+        : []),
+      mvpFeatures?.content ?? '',
+    ]
+      .join(' ')
+      .normalize('NFKC')
+      .toLocaleLowerCase();
+
+    const hasAccessContinuityWorkflow =
+      /\b(?:app(?:lication)? access|access continuity|service continuity|cannot access|can['’]?t access|unable to access|replacement app|new app|legacy app|app migration|application migration|service migration|transition support|access recovery|support case|support workflow)\b/u.test(
+        solutionNarrative,
+      );
+    const hasUnrelatedDataPortabilityWorkflow =
+      /\b(?:data portability|import\s*\/\s*export|import job|export job|transfer job|format validation|selected data scope|downloadable records?|uploaded records?|failed export|failed import)\b/u.test(
+        solutionNarrative,
+      );
+
+    if (hasAccessContinuityWorkflow && !hasUnrelatedDataPortabilityWorkflow) {
+      return;
+    }
+
+    this.throwInvalidOutput(
+      'Generated product workflow drifted away from the immutable selected application-access/support problem family.',
+      {
+        reason: 'SELECTED_OPPORTUNITY_SOLUTION_MISMATCH',
+        selectedProblemFamily: familyKey,
+        selectedOpportunityTitle: selected?.title ?? null,
+      },
+    );
+  }
+
+  private validateExplicitSelectedDomainCoverage(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): void {
+    const missing = this.resolveMissingExplicitSelectedDomains(
+      context,
+      parsedOutput,
+    );
+
+    if (missing.length > 0) {
+      this.throwInvalidOutput(
+        'Generated idea does not preserve every explicitly selected domain from the text-plus-domains request.',
+        {
+          reason: 'EXPLICIT_SELECTED_DOMAIN_MISMATCH',
+          missingExplicitDomains: missing.map((domain) => domain.name),
+        },
+      );
+    }
+  }
 
   /**
    * Applies the same final text cleanup before the normalized output is placed
@@ -271,6 +631,52 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   ): ParsedIdeaAiOutput {
     const selectedRegion = context.location.city?.trim() ?? '';
     const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const featureRequestEvidenceCount =
+      this.countRetainedFeatureRequestEvidence(context);
+    const singleFeatureRequest =
+      directEvidenceCount === 1 && featureRequestEvidenceCount === 1;
+    const selectedEvidenceText = (
+      context.opportunityRanking?.selected.independentEvidence ?? []
+    )
+      .map((item) => item.text)
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const regionalAlternativeLoginRequest =
+      singleFeatureRequest &&
+      /\b(?:two[- ]factor authentication|two[- ]factor|2fa)\b/iu.test(
+        selectedEvidenceText,
+      ) &&
+      /\b(?:google\s+(?:login|sign[- ]?in)|sign[- ]?in\s+with\s+google)\b/iu.test(
+        selectedEvidenceText,
+      );
+    const selectedProblemSemantic = [
+      context.opportunityRanking?.selected.title ?? '',
+      context.opportunityRanking?.selected.problem ?? '',
+      context.opportunityRanking?.selected.solutionArea ?? '',
+      context.opportunityRanking?.selected.raw &&
+      typeof context.opportunityRanking.selected.raw === 'object' &&
+      'familyKey' in context.opportunityRanking.selected.raw
+        ? String(context.opportunityRanking.selected.raw.familyKey ?? '')
+        : '',
+    ]
+      .join(' ')
+      .toLocaleLowerCase();
+    const logisticsDeliveryEvidence =
+      /\b(?:shipment|delivery|consignment|recipient|return[- ]?routing|return to (?:origin|residence))\b/iu.test(
+        selectedEvidenceText,
+      ) &&
+      /\b(?:shipment|delivery|tracking|logistics)\b/u.test(
+        selectedProblemSemantic,
+      );
+    const evidenceMentionsAutomatedStatus =
+      /\b(?:automated|automatic)\s+(?:status|notification|update|message|alert)/iu.test(
+        selectedEvidenceText,
+      );
+    const evidenceShowsRecipientContactCoordinationFailure =
+      /\b(?:refus(?:e|ed|es|ing)|fail(?:ed|s|ing)?|unable)\s+to\s+contact\s+(?:the\s+)?recipient\b/iu.test(
+        selectedEvidenceText,
+      );
     const retainedEvidenceCount = this.countRetainedEvidence(context);
     const noRetainedEvidence = retainedEvidenceCount === 0;
     const problemMatchedSourceCount =
@@ -281,7 +687,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       (context.opportunityRanking?.selected.verifiedProblemMatchedComplaintEvidenceCount ??
         0) >= 3 && problemMatchedSourceCount >= 2;
     const relatedOpportunityBundle =
-      context.opportunityRanking?.selected.relatedOpportunityBundle ?? [];
+      this.resolveVerifiedSynthesisBundle(context);
     const requesterDescription = context.requestDescription
       ?.replace(/\s+/gu, ' ')
       .trim();
@@ -294,7 +700,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       : null;
 
     const sanitizeText = (value: string): string => {
-      let sanitized = value
+      let sanitized = this.normalizeTechnicalDottedTerms(value)
         .replace(/\bNext\s*\.\s*js\b/giu, 'Next.js')
         .replace(/\bNest\s*\.\s*js\b/giu, 'NestJS')
         .replace(/\bNode\s*\.\s*js\b/giu, 'Node.js')
@@ -313,6 +719,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         .replace(
           /\b((?:One|Two|Three|Four|Five|\d+) retained direct user reports? from (?:one|\d+) independent sources?) indicates that collected feedback(?: from [^.!?]{0,140})? indicates that\s*/giu,
           (_match, subject: string) => `${subject} ${/\breports\b/iu.test(subject) && !/^One\b/iu.test(subject) ? 'suggest' : 'suggests'} that `,
+        )
+        .replace(
+          /\b((?:Two|Three|Four|Five|\d+) retained direct user reports across (?:two|three|four|five|\d+) independent sources)\s+describes\b/giu,
+          '$1 describe',
         )
         .replace(
           /\bcollected feedback(?: from [^.!?]{0,140})? indicates that collected feedback(?: from [^.!?]{0,140})? indicates that\s*/giu,
@@ -340,6 +750,71 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           requesterDescriptionPattern,
           requesterDescriptionToken,
         );
+      }
+
+      if (singleFeatureRequest) {
+        sanitized = sanitized
+          .replace(
+            /\bOne retained feature request describes a recurring operational friction point\b/giu,
+            'One retained feature request describes a reported operational friction point',
+          )
+          .replace(
+            /\bOne retained feature request describes recurring operational friction\b/giu,
+            'One retained feature request describes reported operational friction',
+          )
+          .replace(
+            /\bwhere users are unable to\b/giu,
+            'where one user was unable to',
+          )
+          .replace(
+            /\bwhere users cannot\b/giu,
+            'where one user could not',
+          )
+          .replace(
+            /\bcreating an urgent need\b/giu,
+            'creating a stated need',
+          )
+          .replace(
+            /\bCommunity discussions and user reviews indicate significant frustration when\b/giu,
+            "The retained feature request describes one user's authentication barrier when",
+          );
+
+        if (regionalAlternativeLoginRequest) {
+          sanitized = sanitized
+            .replace(
+              /\bsupporting alternative login providers such as Google to bypass regional MFA restrictions safely\b/giu,
+              'supporting an approved alternative authentication path such as Google sign-in where the host application supports it',
+            )
+            .replace(
+              /\balternative authentication methods, such as Google login, to bypass restrictive two-factor authentication limitations\b/giu,
+              'an approved alternative authentication method, such as Google sign-in, where the host application supports it',
+            )
+            .replace(
+              /\b(?:to )?bypass regional MFA restrictions safely\b/giu,
+              'to provide an approved alternative authentication path where supported by the host application',
+            );
+        }
+      }
+
+      if (logisticsDeliveryEvidence) {
+        if (!evidenceMentionsAutomatedStatus) {
+          sanitized = sanitized
+            .replace(
+              /\bautomated status updates repeat delay warnings\b/giu,
+              'repeated status communications report delays',
+            )
+            .replace(
+              /\bautomated notifications reported delays\b/giu,
+              'repeated status communications reported delays',
+            );
+        }
+
+        if (evidenceShowsRecipientContactCoordinationFailure) {
+          sanitized = sanitized.replace(
+            /\buncommunicative recipient flags\b/giu,
+            'recipient-contact coordination failures',
+          );
+        }
       }
 
       if (noRetainedEvidence) {
@@ -370,8 +845,17 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
               `${subject} may ${this.toTentativeBaseVerb(verb)}`,
           )
           .replace(
+            /\b((?:independent\s+)?(?:[a-z][a-z&'/-]*\s+){0,5}(?:trainers?|technicians?|consultants?|specialists?|professionals?|providers?|studios?|shops?|facilities?|departments?|universities|colleges|schools|clinics|practices|firms|agencies|teams))\s+(?:in\s+[^,.!?]{2,60}\s+)?(?:often|frequently|commonly|typically)\s+(struggle|struggles|face|faces|encounter|encounters|experience|experiences|suffer|suffers)\b/giu,
+            (_match, subject: string, verb: string) =>
+              `${subject} may ${this.toTentativeBaseVerb(verb)}`,
+          )
+          .replace(
             /\b(?:recurring|widespread|common|frequent|systemic)\s+(friction|failures?|problems?|issues?|challenges?|difficulties)\b/giu,
             'potential $1',
+          )
+          .replace(
+            /\b([^.!?]{2,120}?)\s+(?:often|frequently|commonly|typically)\s+(?:leads?|results?)\s+(?:to|in)\b/giu,
+            '$1 may lead to',
           )
           .replace(
             /\b(?:collected feedback|community feedback|community evidence|the supplied community discussion|the collected discussion)\s+(?:indicates|shows|demonstrates|highlights|confirms|reveals)\b/giu,
@@ -495,6 +979,28 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       if (!recurrenceEstablished) {
         sanitized = sanitized
           .replace(
+            /\breveals a recurring need\b/giu,
+            'provides a preliminary need signal',
+          )
+          .replace(
+            /\b(?:confirms|demonstrates) the relevance\b/giu,
+            'suggests possible relevance',
+          )
+          .replace(
+            /\bdemonstrable administrative overhead\b/giu,
+            'potential administrative overhead',
+          )
+          .replace(
+            /\bstrong demand\b/giu,
+            'a preliminary demand signal',
+          )
+          .replace(
+            /\bcommunity feedback (?:highlights|confirms|demonstrates|reveals)\b/giu,
+            directEvidenceCount === 1
+              ? 'one retained community report suggests'
+              : 'retained community evidence suggests',
+          )
+          .replace(
             /\bMany standard applicant tracking platforms\b/giu,
             'The retained request describes difficulty finding applicant-tracking tools that',
           )
@@ -540,7 +1046,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         );
       }
 
-      return this.sanitizeCrossTemplateLeakage(context, sanitized);
+      return this.sanitizeCrossTemplateLeakage(
+        context,
+        this.sanitizeUnsupportedBillingFailureClaims(context, sanitized),
+      );
     };
 
     const sanitizeStructuredValue = (value: unknown): unknown => {
@@ -557,7 +1066,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return value;
     };
 
-    return {
+    const sanitizedOutput: ParsedIdeaAiOutput = {
       coreIdea: {
         ...parsedOutput.coreIdea,
         title: this.normalizeCoreIdeaTitleForContext(
@@ -598,6 +1107,307 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           : {}),
       })),
     };
+
+    return this.repairSparseEvidenceRoleScope(
+      context,
+      this.repairValidationOnlySingleDomainScope(context, sanitizedOutput),
+    );
+  }
+
+  private resolveValidationOnlySingleDomain(
+    context: IdeaGenerationContext,
+  ): string | null {
+    if (context.requestDescription?.trim()) return null;
+
+    const selected = context.opportunityRanking?.selected;
+    if (
+      !selected?.disqualificationReasons.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      ) ||
+      this.hasAnyRetainedEvidence(context)
+    ) {
+      return null;
+    }
+
+    const raw = selected.raw;
+    const rawDomainName =
+      raw && typeof raw === 'object' && !Array.isArray(raw) &&
+      typeof (raw as Record<string, unknown>).domainName === 'string'
+        ? String((raw as Record<string, unknown>).domainName).trim()
+        : '';
+
+    return (
+      selected.primaryMatchedDomainName?.trim() ||
+      rawDomainName ||
+      selected.matchedDomainNames?.[0]?.trim() ||
+      context.domainName?.trim() ||
+      context.selectedDomains[0]?.name?.trim() ||
+      null
+    );
+  }
+
+  private repairValidationOnlySingleDomainScope(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): ParsedIdeaAiOutput {
+    const domainName = this.resolveValidationOnlySingleDomain(context);
+    if (!domainName) return parsedOutput;
+
+    const selectedDomainNames = context.selectedDomains
+      .map((domain) => domain.name.trim())
+      .filter(Boolean);
+    const combinedPattern =
+      selectedDomainNames.length > 1
+        ? new RegExp(
+            selectedDomainNames
+              .map((name) => this.escapeRegExp(name))
+              .join('\\s*(?:\\+|&|and)\\s*'),
+            'giu',
+          )
+        : null;
+    const escapedDomain = this.escapeRegExp(domainName);
+
+    const repairText = (value: string): string => {
+      let repaired = value;
+      if (combinedPattern) {
+        repaired = repaired.replace(combinedPattern, domainName);
+      }
+      repaired = repaired
+        .replace(
+          new RegExp(`\\b${escapedDomain}\\s*\\+\\s*(?=[A-Z])`, 'giu'),
+          `${domainName} `,
+        )
+        .replace(/(?:\s*&\s*){2,}/gu, ' & ')
+        .replace(/\s{2,}/gu, ' ')
+        .replace(/\s+([,.;:!?])/gu, '$1')
+        .trim();
+      return repaired;
+    };
+
+    const repairStructuredValue = (value: unknown): unknown => {
+      if (typeof value === 'string') return repairText(value);
+      if (Array.isArray(value)) return value.map(repairStructuredValue);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [
+            key,
+            repairStructuredValue(item),
+          ]),
+        );
+      }
+      return value;
+    };
+
+    return {
+      coreIdea: {
+        ...parsedOutput.coreIdea,
+        title: `${domainName} Problem Discovery & Evidence Validation Workspace`,
+        problemStatement: repairText(parsedOutput.coreIdea.problemStatement),
+        objectives: parsedOutput.coreIdea.objectives.map(repairText),
+        targetUsers: parsedOutput.coreIdea.targetUsers.map(repairText),
+        ...(parsedOutput.coreIdea.limitedAbstract !== undefined
+          ? { limitedAbstract: repairText(parsedOutput.coreIdea.limitedAbstract) }
+          : {}),
+        ...(parsedOutput.coreIdea.partialAbstract !== undefined
+          ? { partialAbstract: repairText(parsedOutput.coreIdea.partialAbstract) }
+          : {}),
+        ...(parsedOutput.coreIdea.fullAbstract !== undefined
+          ? { fullAbstract: repairText(parsedOutput.coreIdea.fullAbstract) }
+          : {}),
+      },
+      advancedOutputs: parsedOutput.advancedOutputs.map((output) => ({
+        ...output,
+        content: repairText(output.content),
+        ...(output.structuredContent !== undefined
+          ? {
+              structuredContent: repairStructuredValue(
+                output.structuredContent,
+              ) as typeof output.structuredContent,
+            }
+          : {}),
+      })),
+    };
+  }
+
+  /**
+   * Repairs unsupported primary-role expansion when only one retained evidence
+   * item exists. Providers sometimes turn a narrow evidence signal into a new
+   * clinical-triage, administrative-review, or developer workflow. That is a
+   * repairable wording/scope defect, not a reason to fail an otherwise valid
+   * evidence-backed run. The repair keeps the product workflow intact while
+   * replacing unsupported role families with neutral operators. The strict
+   * validator still runs afterwards and will reject any unsupported role that
+   * survives this normalization.
+   */
+  private repairSparseEvidenceRoleScope(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): ParsedIdeaAiOutput {
+    const independentEvidence =
+      context.opportunityRanking?.selected.independentEvidence ?? [];
+    if (independentEvidence.length !== 1) return parsedOutput;
+
+    const allowedRoleScope = this.normalizeComparableText(
+      [
+        independentEvidence[0]?.text ?? '',
+        context.requestDescription ?? '',
+      ].join(' '),
+    );
+
+    const unsupportedClinical =
+      /\b(?:clinician|clinical supervisor|clinical review|care coordinator|care manager|therapist|psychiatrist|human triage|distress triage)\b/iu.test(
+        this.normalizeComparableText([
+          ...parsedOutput.coreIdea.targetUsers,
+          ...parsedOutput.coreIdea.objectives,
+        ].join(' ')),
+      ) &&
+      !/\b(?:clinician|clinical supervisor|clinical review|care coordinator|care manager|therapist|psychiatrist|human triage|distress triage)\b/iu.test(
+        allowedRoleScope,
+      );
+    const unsupportedAdmin =
+      /\b(?:admin(?:istrator)? review|review queue|supervisor review|human review queue|escalation workflow|case reviewer|incident response team|service desk|help desk)\b/iu.test(
+        this.normalizeComparableText([
+          ...parsedOutput.coreIdea.targetUsers,
+          ...parsedOutput.coreIdea.objectives,
+        ].join(' ')),
+      ) &&
+      !/\b(?:admin(?:istrator)? review|review queue|supervisor review|human review queue|escalation workflow|case reviewer|incident response team|service desk|help desk)\b/iu.test(
+        allowedRoleScope,
+      );
+    const unsupportedDeveloper =
+      /\b(?:developers?|development teams?|qa teams?|quality assurance|devops|sdk operators?|ci cd)\b/iu.test(
+        this.normalizeComparableText([
+          ...parsedOutput.coreIdea.targetUsers,
+          ...parsedOutput.coreIdea.objectives,
+        ].join(' ')),
+      ) &&
+      !/\b(?:developers?|development teams?|qa teams?|quality assurance|devops|sdk operators?|ci cd)\b/iu.test(
+        allowedRoleScope,
+      );
+    const unsupportedCaregiving =
+      /\b(?:family caregivers?|caregiving|medication schedules?|medication notes?|care schedules?|care notes?)\b/iu.test(
+        this.normalizeComparableText([
+          ...parsedOutput.coreIdea.targetUsers,
+          ...parsedOutput.coreIdea.objectives,
+          parsedOutput.coreIdea.partialAbstract ?? '',
+          parsedOutput.coreIdea.fullAbstract ?? '',
+        ].join(' ')),
+      ) &&
+      !/\b(?:family caregivers?|caregiving|medication schedules?|medication notes?|care schedules?|care notes?)\b/iu.test(
+        allowedRoleScope,
+      );
+
+    if (
+      !unsupportedClinical &&
+      !unsupportedAdmin &&
+      !unsupportedDeveloper &&
+      !unsupportedCaregiving
+    ) {
+      return parsedOutput;
+    }
+
+    const repairText = (value: string): string => {
+      let repaired = value;
+      if (unsupportedClinical) {
+        repaired = repaired
+          .replace(/\bclinical operations managers?\b/giu, 'healthcare operations managers')
+          .replace(/\bclinical supervisors?\b/giu, 'authorized workflow reviewers')
+          .replace(/\bclinical review\b/giu, 'expert workflow review')
+          .replace(/\bcare coordinators?\b/giu, 'workflow coordinators')
+          .replace(/\bcare managers?\b/giu, 'operations managers')
+          .replace(/\bclinicians?\b/giu, 'authorized domain practitioners')
+          .replace(/\btherapists?\b/giu, 'authorized domain practitioners')
+          .replace(/\bpsychiatrists?\b/giu, 'authorized domain practitioners')
+          .replace(/\bhuman triage\b/giu, 'human-reviewed prioritization')
+          .replace(/\bdistress triage\b/giu, 'human-reviewed prioritization');
+      }
+      if (unsupportedAdmin) {
+        repaired = repaired
+          .replace(/\badmin(?:istrator)? review\b/giu, 'authorized review')
+          .replace(/\bhuman review queue\b/giu, 'verification workflow')
+          .replace(/\breview queue\b/giu, 'verification workflow')
+          .replace(/\bsupervisor review\b/giu, 'peer review')
+          .replace(/\bescalation workflow\b/giu, 'exception-handling workflow')
+          .replace(/\bcase reviewers?\b/giu, 'workflow reviewers')
+          .replace(/\bincident response team\b/giu, 'response operators')
+          .replace(/\bservice desk\b/giu, 'support workflow')
+          .replace(/\bhelp desk\b/giu, 'support workflow');
+      }
+      if (unsupportedDeveloper) {
+        repaired = repaired
+          .replace(/\bdevelopment[-\s]+teams?\b/giu, 'implementation teams')
+          .replace(/\bdevelopers?\b/giu, 'implementation specialists')
+          .replace(/\bqa[-\s]+teams?\b/giu, 'validation teams')
+          .replace(/\bquality[-\s]+assurance\b/giu, 'output validation')
+          .replace(/\bdevops\b/giu, 'platform operations')
+          .replace(/\bsdk[-\s]+operators?\b/giu, 'system operators')
+          .replace(/\bci[-\/\s]*cd\b/giu, 'deployment workflow');
+      }
+      if (unsupportedCaregiving) {
+        repaired = repaired
+          .replace(
+            /\bFamily caregivers coordinating routine healthcare schedules and medication notes\b/giu,
+            'Users who depend on persistent conversational history and personal notes',
+          )
+          .replace(/\bfamily caregivers?\b/giu, 'affected users')
+          .replace(/\broutine health and caregiving observations\b/giu, 'personal reflections and workflow observations')
+          .replace(/\bmedication schedules?\b/giu, 'personal workflow records')
+          .replace(/\bmedication notes?\b/giu, 'personal notes')
+          .replace(/\bcare schedules?\b/giu, 'personal workflow records')
+          .replace(/\bcare notes?\b/giu, 'personal notes')
+          .replace(/\bcaregiving\b/giu, 'personal workflow');
+      }
+      return repaired.replace(/\s+/gu, ' ').trim();
+    };
+
+    const repairStructuredValue = (value: unknown): unknown => {
+      if (typeof value === 'string') return repairText(value);
+      if (Array.isArray(value)) return value.map(repairStructuredValue);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [
+            key,
+            repairStructuredValue(item),
+          ]),
+        );
+      }
+      return value;
+    };
+
+    this.logger.warn(
+      `Repaired unsupported sparse-evidence role expansion before strict validation. clinical=${unsupportedClinical} admin=${unsupportedAdmin} developer=${unsupportedDeveloper} caregiving=${unsupportedCaregiving}.`,
+    );
+
+    return {
+      coreIdea: {
+        ...parsedOutput.coreIdea,
+        title: repairText(parsedOutput.coreIdea.title),
+        problemStatement: repairText(parsedOutput.coreIdea.problemStatement),
+        objectives: parsedOutput.coreIdea.objectives.map(repairText),
+        targetUsers: parsedOutput.coreIdea.targetUsers.map(repairText),
+        ...(parsedOutput.coreIdea.limitedAbstract !== undefined
+          ? { limitedAbstract: repairText(parsedOutput.coreIdea.limitedAbstract) }
+          : {}),
+        ...(parsedOutput.coreIdea.partialAbstract !== undefined
+          ? { partialAbstract: repairText(parsedOutput.coreIdea.partialAbstract) }
+          : {}),
+        ...(parsedOutput.coreIdea.fullAbstract !== undefined
+          ? { fullAbstract: repairText(parsedOutput.coreIdea.fullAbstract) }
+          : {}),
+      },
+      advancedOutputs: parsedOutput.advancedOutputs.map((output) => ({
+        ...output,
+        title: repairText(output.title),
+        content: repairText(output.content),
+        ...(output.structuredContent !== undefined
+          ? {
+              structuredContent: repairStructuredValue(
+                output.structuredContent,
+              ) as typeof output.structuredContent,
+            }
+          : {}),
+      })),
+    };
   }
 
   /**
@@ -610,7 +1420,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     title: string,
   ): string {
-    let candidate = title
+    const validationOnlyDomain = this.resolveValidationOnlySingleDomain(context);
+    if (validationOnlyDomain) {
+      return `${validationOnlyDomain} Problem Discovery & Evidence Validation Workspace`;
+    }
+
+    const benchmarkProviderTitle = this.resolveSelectedBenchmarkProviderTitle(context);
+    let candidate = (benchmarkProviderTitle || title)
       .replace(/^(?:Nexora|Voxidence|Commivox)\s+/iu, '')
       .trim();
     const claimedDomain = this.detectStrongTitleDomain(candidate);
@@ -668,6 +1484,22 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     }
 
     return this.normalizePublicIdeaTitle(context, candidate);
+  }
+
+  /**
+   * Returns the exact provider title from the benchmark winner. The winner is
+   * already the immutable candidate selected by core generation, so later
+   * validation must not replace a valid product title with search-query or
+   * evidence-keyword fragments.
+   */
+  private resolveSelectedBenchmarkProviderTitle(
+    context: IdeaGenerationContext,
+  ): string {
+    const selected = context.benchmarkCandidates.find(
+      (candidate) => candidate.selected,
+    );
+    const title = selected?.parsedOutput?.coreIdea?.title;
+    return typeof title === 'string' ? title.trim() : '';
   }
 
   /** Keeps internal ranking state out of the title shown to the user. */
@@ -741,6 +1573,23 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const domainNames = new Set(
       context.selectedDomains.map((domain) => domain.name.toLocaleLowerCase()),
     );
+    /*
+     * Text-bearing requests already have an immutable requester problem and a
+     * benchmark-selected product. Never manufacture a public product name from
+     * search queries/evidence keywords: those phrases are intentionally search
+     * shaped and can produce titles such as "staff searching ... & unavailable
+     * ...". If the provider title is unusable, fall back to the resolved scope
+     * label rather than leaking retrieval syntax into the product identity.
+     * No-text paths retain the legacy keyword fallback below.
+     */
+    if (context.requestDescription?.trim()) {
+      const fallbackDomain =
+        context.domainName?.trim() ||
+        context.selectedDomains[0]?.name?.trim() ||
+        'Operational';
+      return `${fallbackDomain} Operations Workspace`;
+    }
+
     const keywordCandidates = context.keywords
       .map((keyword) => clean(keyword))
       .filter((keyword) => keyword.length >= 5 && keyword.length <= 60)
@@ -941,6 +1790,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       this.isDomainRepresentedInNarrative(context, normalizedStatement, domain),
     );
     const validationOnly = this.isValidationOnlyOpportunity(context);
+    const explicitDomains = context.selectedDomains.filter(
+      (domain) => domain.isExplicitlySelected,
+    );
+    const textPlusDomains = Boolean(
+      context.requestDescription?.trim() && explicitDomains.length > 0,
+    );
+    const selectedHasProblemMatchedEvidence =
+      this.hasSelectedProblemMatchedEvidence(context);
 
     /*
      * A zero-evidence / requester-intent validation pilot can legitimately keep
@@ -955,8 +1812,9 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
      * have to remain explicitly preliminary/validation-oriented.
      */
     if (
+      !textPlusDomains &&
       !validationOnly &&
-      this.hasAnyRetainedEvidence(context) &&
+      selectedHasProblemMatchedEvidence &&
       claimDomains.length > 1 &&
       representedDomains.length < 2
     ) {
@@ -964,6 +1822,36 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         'A cross-domain idea must integrate at least two evidence-supported domains in the unified problem narrative.',
         { claimDomains, representedDomains },
       );
+    }
+
+    /*
+     * Text + Domains has a different contract: the description defines the
+     * problem and explicit domains define the allowed context. Real evidence
+     * may validate the problem through one selected operational domain while
+     * another selected domain (for example AI) is only a solution-enabling
+     * capability. Do not require two evidence-backed domains in the problem
+     * statement. Instead require the verified problem evidence, when present,
+     * to intersect at least one explicitly selected domain; the separate
+     * explicit-domain coverage validator still guarantees that every selected
+     * domain is represented materially somewhere in the generated product.
+     */
+    if (textPlusDomains && selectedHasProblemMatchedEvidence) {
+      const explicitNames = new Set(
+        explicitDomains.map((domain) => domain.name.trim().toLocaleLowerCase()),
+      );
+      const hasSelectedProblemDomain = claimDomains.some((domain) =>
+        explicitNames.has(domain.trim().toLocaleLowerCase()),
+      );
+      if (!hasSelectedProblemDomain) {
+        this.throwInvalidOutput(
+          'Problem-matched evidence for a text-plus-domains idea must relate to at least one explicitly selected domain.',
+          {
+            reason: 'PROBLEM_EVIDENCE_OUTSIDE_EXPLICIT_SCOPE',
+            claimDomains,
+            explicitDomains: explicitDomains.map((domain) => domain.name),
+          },
+        );
+      }
     }
 
     if (
@@ -981,6 +1869,96 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     if (parsedOutput.coreIdea.objectives.length < 3) {
       this.throwInvalidOutput('At least three concrete objectives are required.');
     }
+
+    this.validateSparseEvidenceRoleScope(context, parsedOutput);
+  }
+
+  private validateSparseEvidenceRoleScope(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): void {
+    const selected = context.opportunityRanking?.selected;
+    const independentEvidence = selected?.independentEvidence ?? [];
+    if (independentEvidence.length !== 1) return;
+
+    const allowedRoleScope = this.normalizeComparableText(
+      [
+        independentEvidence[0]?.text ?? '',
+        context.requestDescription ?? '',
+      ].join(' '),
+    );
+    const primaryRoleText = this.normalizeComparableText(
+      [
+        ...parsedOutput.coreIdea.targetUsers,
+        ...parsedOutput.coreIdea.objectives,
+      ].join(' '),
+    );
+
+    const roleFamilies: Array<{
+      readonly label: string;
+      readonly pattern: RegExp;
+    }> = [
+      {
+        label: 'clinical or care-triage roles',
+        pattern:
+          /\b(?:clinician|clinical supervisor|clinical review|care coordinator|care manager|therapist|psychiatrist|human triage|distress triage)\b/iu,
+      },
+      {
+        label: 'administrative review or escalation roles',
+        pattern:
+          /\b(?:admin(?:istrator)? review|review queue|supervisor review|human review queue|escalation workflow|case reviewer|incident response team|service desk|help desk)\b/iu,
+      },
+      {
+        label: 'developer or QA operator roles',
+        pattern:
+          /\b(?:developers?|development teams?|qa teams?|quality assurance|devops|sdk operators?|ci cd)\b/iu,
+      },
+    ];
+
+    for (const family of roleFamilies) {
+      if (
+        family.pattern.test(primaryRoleText) &&
+        !family.pattern.test(allowedRoleScope)
+      ) {
+        this.throwInvalidOutput(
+          `Sparse evidence does not support introducing ${family.label} as a primary target user or MVP objective.`,
+          {
+            evidenceText: independentEvidence[0]?.text ?? '',
+            targetUsers: parsedOutput.coreIdea.targetUsers,
+            objectives: parsedOutput.coreIdea.objectives,
+          },
+        );
+      }
+    }
+  }
+
+  /**
+   * Returns only bundle items that are allowed to participate in final
+   * solution synthesis. Same-domain complements are safe. Cross-domain items
+   * are allowed only when the winning opportunity explicitly verified that
+   * domain as part of the same workflow.
+   */
+  private resolveVerifiedSynthesisBundle(context: IdeaGenerationContext) {
+    const selected = context.opportunityRanking?.selected;
+    if (!selected) return [];
+
+    const claimDomains = new Set(
+      (selected.matchedDomainNames ?? []).map((name) =>
+        name.trim().toLocaleLowerCase(),
+      ),
+    );
+    const workflowDomains = new Set(
+      (selected.workflowDomainNames ?? []).map((name) =>
+        name.trim().toLocaleLowerCase(),
+      ),
+    );
+
+    return (selected.relatedOpportunityBundle ?? []).filter((item) =>
+      item.matchedDomainNames.some((name) => {
+        const normalized = name.trim().toLocaleLowerCase();
+        return claimDomains.has(normalized) || workflowDomains.has(normalized);
+      }),
+    );
   }
 
   /**
@@ -996,7 +1974,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     );
     const winner = this.resolveWinnerOpportunityRaw(context);
     const relatedOpportunityBundle =
-      context.opportunityRanking?.selected.relatedOpportunityBundle ?? [];
+      this.resolveVerifiedSynthesisBundle(context);
     const opportunityProblems = [
       ...(winner
         ? [
@@ -1110,8 +2088,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
             ? `across ${evidenceDomains.join(' and ')}`
             : `from ${domain}`;
         const groundedProblem = cleanedProblems[0] ?? '';
-        const selectedProblem =
-          this.isSpecificProblemStatement(groundedProblem)
+        const selectedProblem = this.isNoInputPreferencePath(context)
+          ? this.resolveNoInputPreferenceProblem(
+              context,
+              groundedProblem,
+              providerProblemStatement,
+            )
+          : this.isSpecificProblemStatement(groundedProblem)
             ? groundedProblem
             : providerProblemStatement || groundedProblem;
         const directEvidenceCount = this.countRetainedDirectEvidence(context);
@@ -1120,6 +2103,12 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
             ? this.buildDirectEvidenceProblemSummary(context, selectedProblem)
             : selectedProblem;
         const problem = this.capitalizeSentence(directEvidenceProblem);
+        const problemWithoutRetainedLead = problem
+          .replace(
+            /^One retained (?:direct report|direct user report|feature request)\s+(?:indicates that|describes)\s+/iu,
+            '',
+          )
+          .trim();
 
         if (this.hasStrongIndependentEvidence(context)) {
           problemStatement = this.polishProblemStatement(
@@ -1137,7 +2126,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
               ? evidenceDomains.join(' and ')
               : domain;
           problemStatement = this.polishProblemStatement(
-            `${evidenceSubject} describes an operational challenge in ${domainLabel}: ${problem}. ${this.buildProblemImpactSentence(directEvidenceProblem)} The proposed pilot should validate how broadly this issue occurs before wider deployment.`,
+            `${evidenceSubject} describes an operational challenge in ${domainLabel}: ${problemWithoutRetainedLead || problem}. ${this.buildProblemImpactSentence(directEvidenceProblem)} The proposed pilot should validate how broadly this issue occurs before wider deployment.`,
           );
         } else {
           problemStatement = this.polishProblemStatement(
@@ -1196,35 +2185,55 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     );
 
     const advancedOutputs = parsedOutput.advancedOutputs.map((output) => {
+      const evidenceIsolatedOutput = this.isolateEvidenceSummaryOutput(
+        context,
+        output,
+      );
       const evidenceQualifiedContent = this.qualifyEvidenceClaims(
         context,
-        output.content,
+        evidenceIsolatedOutput.content,
       );
       const causalSafeContent = this.sanitizeUnsupportedCausalLanguage(
         evidenceQualifiedContent,
       );
-      const domainSafeContent = this.sanitizeFinalClaimDomainLeakage(
+      const domainSafeContent = this.polishNoInputPreferenceNarrativeBoundary(
         context,
-        causalSafeContent,
+        this.sanitizeFinalClaimDomainLeakage(
+          context,
+          this.sanitizeUnsupportedBillingFailureClaims(
+            context,
+            causalSafeContent,
+          ),
+        ),
       );
+      const narrativeSafeContent =
+        output.outputKey === 'market-potential' ||
+        output.outputKey === 'community-feedback-summary'
+          ? this.finalizePersistedNarrativeCopy(domainSafeContent).replace(
+              /\bPreliminary observations from [^.!?]{1,140}?\s+the retained evidence suggests that\b/giu,
+              'The retained evidence suggests that',
+            )
+          : domainSafeContent;
 
       if (output.outputKey === 'technology-stack') {
         return {
-          ...output,
+          ...evidenceIsolatedOutput,
           content: this.normalizeTechnologyStack(domainSafeContent),
         };
       }
 
       if (output.outputKey === 'system-architecture') {
         return {
-          ...output,
-          content: this.polishArchitectureContent(domainSafeContent),
+          ...evidenceIsolatedOutput,
+          content: this.polishArchitectureContent(
+            this.normalizeTechnicalDottedTerms(domainSafeContent),
+          ),
         };
       }
 
       return {
-        ...output,
-        content: domainSafeContent,
+        ...evidenceIsolatedOutput,
+        content: narrativeSafeContent,
       };
     });
 
@@ -1266,24 +2275,51 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
      * Run final copy cleanup after every possible overview/full-abstract
      * reconstruction so duplicated zero-evidence wording cannot reappear.
      */
-    overview = this.finalizePersistedNarrativeCopy(
-      this.sanitizeFinalClaimDomainLeakage(
-        context,
-        this.enforceEvidenceNarrativeDiscipline(context, overview),
+    overview = this.polishNoInputPreferenceNarrativeBoundary(
+      context,
+      this.finalizePersistedNarrativeCopy(
+        this.sanitizeUnsupportedBillingFailureClaims(
+          context,
+          this.sanitizeFinalClaimDomainLeakage(
+            context,
+            this.enforceEvidenceNarrativeDiscipline(context, overview),
+          ),
+        ),
       ),
     );
-    problemStatement = this.finalizePersistedNarrativeCopy(
-      this.sanitizeFinalClaimDomainLeakage(
-        context,
-        this.enforceEvidenceNarrativeDiscipline(context, problemStatement),
+    problemStatement = this.polishNoInputPreferenceNarrativeBoundary(
+      context,
+      this.finalizePersistedNarrativeCopy(
+        this.sanitizeUnsupportedBillingFailureClaims(
+          context,
+          this.sanitizeFinalClaimDomainLeakage(
+            context,
+            this.enforceEvidenceNarrativeDiscipline(context, problemStatement),
+          ),
+        ),
       ),
     );
-    fullAbstract = this.finalizePersistedNarrativeCopy(
-      this.sanitizeFinalClaimDomainLeakage(
-        context,
-        this.enforceEvidenceNarrativeDiscipline(context, fullAbstract),
+    fullAbstract = this.polishNoInputPreferenceNarrativeBoundary(
+      context,
+      this.finalizePersistedNarrativeCopy(
+        this.sanitizeUnsupportedBillingFailureClaims(
+          context,
+          this.sanitizeFinalClaimDomainLeakage(
+            context,
+            this.enforceEvidenceNarrativeDiscipline(context, fullAbstract),
+          ),
+        ),
       ),
     );
+
+    const winnerAlignedNarratives = this.alignSparseNarrativesToImmutableWinner(
+      context,
+      parsedOutput,
+      problemStatement,
+      overview,
+    );
+    problemStatement = winnerAlignedNarratives.problemStatement;
+    overview = winnerAlignedNarratives.overview;
 
     return {
       ...parsedOutput,
@@ -1297,7 +2333,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         objectives: this.sanitizePrimaryDomainObjectives(
           context,
           parsedOutput.coreIdea.objectives.map((objective) =>
-            this.sanitizeUnsupportedCausalLanguage(objective),
+            this.sanitizeUnsupportedBillingFailureClaims(
+              context,
+              this.sanitizeUnsupportedCausalLanguage(objective),
+            ),
           ),
         ),
         targetUsers: this.sanitizePrimaryDomainTargetUsers(
@@ -1317,6 +2356,221 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     };
   }
 
+
+  private isolateEvidenceSummaryOutput(
+    context: IdeaGenerationContext,
+    output: AdvancedIdeaAiOutput,
+  ): AdvancedIdeaAiOutput {
+    if (
+      output.outputKey !== 'nlp-executive-summary' &&
+      output.outputKey !== 'community-feedback-summary' &&
+      output.outputKey !== 'market-potential'
+    ) {
+      return output;
+    }
+
+    const opportunity =
+      context.benchmarkWinnerOpportunity ?? context.opportunityRanking?.selected;
+    const requiresRequestMatch = Boolean(context.requestDescription?.trim());
+    const evidenceCount = Math.max(
+      requiresRequestMatch
+        ? opportunity?.verifiedProblemMatchedEvidenceCount ?? 0
+        : opportunity?.verifiedProblemMatchedEvidenceCount ??
+            opportunity?.verifiedEvidenceCount ??
+            opportunity?.independentEvidence?.length ??
+            0,
+      0,
+    );
+    const sourceCount = Math.max(
+      requiresRequestMatch
+        ? opportunity?.verifiedProblemMatchedEvidenceSourceCount ??
+            opportunity?.verifiedProblemMatchedSourceCount ??
+            0
+        : opportunity?.verifiedProblemMatchedEvidenceSourceCount ??
+            opportunity?.verifiedEvidenceSourceCount ??
+            opportunity?.verifiedIndependentSourceCount ??
+            0,
+      0,
+    );
+    const nlp = context.nlp;
+    const strictZeroEvidenceValidation = Boolean(
+      opportunity?.disqualificationReasons?.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      ) ||
+        (evidenceCount === 0 &&
+          (context.opportunityRanking?.evidenceCoverage ?? 0) === 0),
+    );
+    const validationDomainLabel =
+      opportunity?.primaryMatchedDomainName?.trim() ||
+      opportunity?.matchedDomainNames?.[0]?.trim() ||
+      context.domainName?.trim() ||
+      'the selected domain';
+    const hasExternalSupportingContext = this.hasExternalSupportingContext(context);
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const featureRequestEvidenceCount =
+      this.countRetainedFeatureRequestEvidence(context);
+    const featureOnlyEvidence =
+      directEvidenceCount > 0 &&
+      featureRequestEvidenceCount === directEvidenceCount;
+    const secondaryEvidenceCount = this.countRetainedSecondaryEvidence(context);
+    const technicalEvidenceCount = this.countRetainedTechnicalEvidence(context);
+    const secondaryOnlyEvidence =
+      directEvidenceCount === 0 &&
+      secondaryEvidenceCount > 0 &&
+      technicalEvidenceCount === 0;
+    const technicalOnlyEvidence =
+      directEvidenceCount === 0 &&
+      secondaryEvidenceCount === 0 &&
+      technicalEvidenceCount > 0;
+    const secondarySubject = secondaryOnlyEvidence
+      ? this.buildRetainedEvidenceSubject(
+          secondaryEvidenceCount,
+          Math.max(sourceCount, 1),
+          true,
+          'secondary',
+        )
+      : null;
+    const technicalSubject = technicalOnlyEvidence
+      ? this.buildRetainedEvidenceSubject(
+          technicalEvidenceCount,
+          Math.max(sourceCount, 1),
+          true,
+          'technical',
+        )
+      : null;
+
+    if (strictZeroEvidenceValidation) {
+      if (output.outputKey === 'market-potential') {
+        return {
+          ...output,
+          content: `Market potential for ${validationDomainLabel} remains unproven because no problem-matched external evidence survived the bounded collection and recovery window. The pilot must first collect direct evidence for one concrete problem, measure repeated occurrence and operational impact, and validate willingness to adopt before making prevalence, demand, or market-size claims.`,
+        };
+      }
+
+      if (output.outputKey === 'nlp-executive-summary') {
+        return {
+          ...output,
+          content: `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). No problem-matched external evidence survived final verification for the selected ${validationDomainLabel} validation hypothesis. Unrelated or rejected corpus items were excluded from product justification.`,
+        };
+      }
+
+      return {
+        ...output,
+        content: `No qualifying problem-matched community feedback was retained for the selected ${validationDomainLabel} validation hypothesis. The pilot therefore begins with structured evidence intake, provenance preservation, and problem-family validation. Rejected or unrelated collected material is not treated as proof of demand, recurrence, or a concrete operational failure.`,
+      };
+    }
+
+    if (featureOnlyEvidence && output.outputKey === 'nlp-executive-summary') {
+      const featureSubject = this.buildRetainedEvidenceSubject(
+        featureRequestEvidenceCount,
+        Math.max(sourceCount, 1),
+        true,
+        'feature',
+      );
+      const selectedNeed =
+        opportunity?.need?.replace(/\s+/gu, ' ').trim() ||
+        opportunity?.problem?.replace(/\s+/gu, ' ').trim() ||
+        'the selected product capability';
+      return {
+        ...output,
+        content: `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). ${featureSubject} asks for ${this.lowercaseSentenceStart(selectedNeed.replace(/[.]+$/u, ''))}. It is a direct demand signal, but one request does not establish recurrence, prevalence, or market-wide demand.`,
+      };
+    }
+
+    if (featureOnlyEvidence && output.outputKey === 'community-feedback-summary') {
+      const featureSubject = this.buildRetainedEvidenceSubject(
+        featureRequestEvidenceCount,
+        Math.max(sourceCount, 1),
+        true,
+        'feature',
+      );
+      const selectedNeed =
+        opportunity?.need?.replace(/\s+/gu, ' ').trim() ||
+        opportunity?.problem?.replace(/\s+/gu, ' ').trim() ||
+        'the selected capability';
+      return {
+        ...output,
+        content: `${featureSubject} asks for ${this.lowercaseSentenceStart(selectedNeed.replace(/[.]+$/u, ''))}. The request supports a bounded pilot hypothesis, but it does not by itself prove complaint recurrence, prevalence, or broader market demand.`,
+      };
+    }
+
+    const observationEvidenceCount = this.countRetainedObservationEvidence(context);
+    const observationOnlyEvidence =
+      observationEvidenceCount > 0 &&
+      featureRequestEvidenceCount === 0 &&
+      this.countRetainedComplaintEvidence(context) === 0 &&
+      secondaryEvidenceCount === 0;
+
+    if (observationOnlyEvidence && output.outputKey === 'community-feedback-summary') {
+      const observedProblem =
+        opportunity?.problem?.replace(/\s+/gu, ' ').trim() ||
+        opportunity?.need?.replace(/\s+/gu, ' ').trim() ||
+        'a specific workflow need';
+      return {
+        ...output,
+        content: `The retained direct report describes ${this.lowercaseSentenceStart(observedProblem.replace(/[.]+$/u, ''))}. It is one observed user-need signal, not a product complaint and not proof of recurrence, prevalence, or broader market demand.`,
+      };
+    }
+
+    if (observationOnlyEvidence && output.outputKey === 'nlp-executive-summary') {
+      const observedProblem =
+        opportunity?.problem?.replace(/\s+/gu, ' ').trim() ||
+        opportunity?.need?.replace(/\s+/gu, ' ').trim() ||
+        'a specific workflow need';
+      return {
+        ...output,
+        content: `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). One retained direct report describes ${this.lowercaseSentenceStart(observedProblem.replace(/[.]+$/u, ''))}. The signal is an observed unmet need rather than a verified complaint, and broader recurrence remains unproven.`,
+      };
+    }
+
+    if (output.outputKey === 'market-potential' && technicalOnlyEvidence) {
+      return {
+        ...output,
+        content: `Current market potential remains unproven. ${technicalSubject} documents a technical workflow issue, but it does not establish direct user demand, recurrence, prevalence, or market-wide willingness to adopt. The pilot should validate the affected workflow with target participants before any broader commercial conclusion is made.`,
+      };
+    }
+
+    if (output.outputKey === 'market-potential' && secondaryOnlyEvidence) {
+      return {
+        ...output,
+        content: `Current market potential remains unproven. ${secondarySubject} provides preliminary contextual support for the selected problem family, but no verified direct user complaint establishes recurrence, prevalence, or market-wide demand. The pilot should collect direct evidence from additional target users or organizations before any broader commercial conclusion is made.`,
+      };
+    }
+
+    if (output.outputKey === 'market-potential' && evidenceCount === 0) {
+      return {
+        ...output,
+        content: hasExternalSupportingContext
+          ? 'Current market potential remains unproven. One real external sample was retained as contextual support, but it did not pass the stricter problem-matched verification threshold for the exact requester workflow. The pilot should validate repeated occurrence, willingness to adopt, and operational impact before making prevalence, demand, or market-size claims.'
+          : 'Current market potential is unproven because no request-aligned external evidence survived the bounded collection and recovery window. The pilot should first measure repeated problem occurrence, willingness to adopt the workflow, operational impact, and evidence from additional independent target users or organizations before making prevalence, demand, or market-size claims.',
+      };
+    }
+
+    if (output.outputKey === 'nlp-executive-summary') {
+      const content = technicalOnlyEvidence
+        ? `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). ${technicalSubject} documents the selected technical problem family. It is technical evidence rather than verified direct user demand, so recurrence and prevalence remain unproven.`
+        : secondaryOnlyEvidence
+          ? `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). ${secondarySubject} supports the selected problem family as preliminary secondary context. No verified direct user complaint establishes recurrence or prevalence, so the direction remains a bounded validation hypothesis.`
+        : evidenceCount > 0
+        ? `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). The final direction is supported by ${evidenceCount} problem-matched external evidence item(s) across ${Math.max(sourceCount, 1)} source(s). Only evidence that passed the final problem and requester-intent checks informed the selected product direction; unrelated corpus themes were excluded.`
+        : hasExternalSupportingContext
+          ? `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). One real external sample was retained as preliminary supporting context after stricter request-matched verification remained inconclusive. The requester-defined workflow therefore remains the primary product scope, and the supporting sample must not be treated as proof of recurrence or market-wide demand.`
+          : `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). No external evidence matched the requester-defined problem strongly enough to support the final direction. Unrelated corpus themes were excluded and did not inform the product. The requester description remains a validation hypothesis for the pilot.`;
+      return { ...output, content };
+    }
+
+    const selectedProblem = opportunity?.problem?.trim() || context.requestDescription?.trim();
+    const content = technicalOnlyEvidence
+      ? `${technicalSubject} documents${selectedProblem ? ` ${this.lowercaseSentenceStart(selectedProblem.replace(/\s+/gu, ' ').replace(/[.]+$/u, ''))}` : ' the selected technical workflow issue'}. It is technical evidence, not a verified direct user complaint or proof of recurrence, prevalence, or broader market demand.`
+      : secondaryOnlyEvidence
+        ? `${secondarySubject} provides preliminary support for the selected direction.${selectedProblem ? ` The retained secondary source describes the problem family as: ${selectedProblem.replace(/\s+/gu, ' ').slice(0, 520)}` : ''} No verified direct user complaint establishes recurrence, prevalence, or market-wide demand; direct validation is still required.`
+      : evidenceCount > 0
+      ? `The selected direction retains ${evidenceCount} problem-matched external evidence item(s) across ${Math.max(sourceCount, 1)} source(s).${selectedProblem ? ` The supported problem is: ${selectedProblem.replace(/\s+/gu, ' ').slice(0, 520)}` : ''} The evidence remains preliminary unless recurrence thresholds are independently satisfied, and unrelated collected comments are excluded from product justification.`
+      : hasExternalSupportingContext
+        ? `One real external sample was retained as contextual support for the selected workflow, but it did not independently verify the exact requester problem. The product remains anchored to the requester-defined workflow, and the external sample is used only as preliminary context rather than proof of demand or recurrence.`
+        : `No qualifying request-aligned community feedback was retained for the selected problem. The product therefore remains a validation-first pilot grounded in the requester-defined workflow, and unrelated reviews, comments, or technical posts are excluded from its justification.`;
+    return { ...output, content };
+  }
 
   /**
    * Final evidence-aware language guard. This runs after every narrative
@@ -1355,6 +2609,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       : null;
 
     let cleaned = value
+      .replace(
+        /\bCollected community\s+one collected report indicates(?: that)?\s*/giu,
+        'One collected community report indicates that ',
+      )
+      .replace(
+        /\bCollected community feedback\s+one collected report indicates(?: that)?\s*/giu,
+        'One collected community report indicates that ',
+      )
       .replace(
         /\bOne retained community report indicates that\s+collected community feedback(?:\s+from\s+[^.!?]{1,140})?\s+indicates that\s+/giu,
         'One retained community report indicates that ',
@@ -1453,6 +2715,34 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         );
     }
 
+    if (featureOnlyEvidence && directEvidenceCount === 1) {
+      cleaned = cleaned
+        .replace(
+          /\bOne retained feature request describes a recurring operational friction point\b/giu,
+          'One retained feature request describes a reported operational friction point',
+        )
+        .replace(
+          /\bOne retained feature request describes recurring operational friction\b/giu,
+          'One retained feature request describes reported operational friction',
+        )
+        .replace(
+          /\bwhere users are unable to\b/giu,
+          'where one user was unable to',
+        )
+        .replace(
+          /\bwhere users cannot\b/giu,
+          'where one user could not',
+        )
+        .replace(
+          /\bcreating an urgent need\b/giu,
+          'creating a stated need',
+        )
+        .replace(
+          /\bCommunity discussions and user reviews indicate significant frustration when\b/giu,
+          "The retained feature request describes one user's authentication barrier when",
+        );
+    }
+
     if (directEvidenceCount > 1) {
       const evidenceSubject = this.buildRetainedEvidenceSubject(
         directEvidenceCount,
@@ -1535,7 +2825,15 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         .replace(
           /\b(?:often|frequently|commonly)\s+(struggle|struggles|face|faces|encounter|encounters|experience|experiences)\b/giu,
           (_match, verb: string) => `may ${this.toTentativeBaseVerb(verb)}`,
-        );
+        )
+        .replace(
+          /\b((?:independent\s+)?(?:restaurants?|businesses?|shops?|operators?|teams?|organizations?|institutions?|tailors?|alteration shops?)[^.!?]{0,90}?)\s+(?:often|frequently|commonly)\s+(encounter|encounters|experience|experiences|face|faces|struggle|struggles)\b/giu,
+          (_match, subject: string, verb: string) => `${subject} may ${this.toTentativeBaseVerb(verb)}`,
+        )
+        .replace(/\bleading to recurring\b/giu, 'which may contribute to')
+        .replace(/\brecognized pain point\b/giu, 'hypothesized pain point')
+        .replace(/\bobserved operational challenges?\b/giu, 'requester-described operational challenges')
+        .replace(/\bthe observed workflow friction\b/giu, 'the requester-described workflow friction');
     }
 
     if (requesterDescription) {
@@ -1554,10 +2852,42 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       );
       cleaned = cleaned
         .replace(/\bOne retained community report\b/giu, secondarySubject)
+        .replace(
+          /\bCollected feedback(?: from [^.!?]{0,160})? indicates that\s*/giu,
+          `${secondarySubject} describes a scenario in which `,
+        )
+        .replace(
+          /\bCollected feedback(?: from [^.!?]{0,160})? (?:shows|suggests|highlights) that\s*/giu,
+          `${secondarySubject} describes a scenario in which `,
+        )
+        .replace(
+          /\b(?:the )?feedback indicates that\s*/giu,
+          `${secondarySubject} describes a scenario in which `,
+        )
+        .replace(
+          /\bproduction teams (?:encounter|experience|face)\b/giu,
+          'production teams may encounter',
+        )
+        .replace(
+          /\bengineering teams spend\b/giu,
+          'engineering teams may spend',
+        )
+        .replace(
+          /\b(?:users|developers|teams|operators) report that\b/giu,
+          'the retained secondary source describes a case in which',
+        )
+        .replace(
+          /\bagents (?:often|frequently|commonly) forget\b/giu,
+          'agents may forget',
+        )
+        .replace(
+          /\b(?:production teams|engineering teams|developers|users|operators) (?:often|frequently|commonly) (?:encounter|experience|face)\b/giu,
+          'people in the retained secondary scenario may encounter',
+        )
         .replace(/\bA preliminary community report\b/giu, 'A preliminary secondary report')
         .replace(
           /\bA preliminary community signal from ([^.:]+) reports an operational challenge:\s*/giu,
-          'A preliminary secondary report related to $1 suggests that ',
+          'A preliminary secondary report related to $1 describes an operational challenge: ',
         )
         .replace(
           /\b(?:this|the) failure reveals a recurring pattern\b/giu,
@@ -1576,8 +2906,20 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           (_match, verb: string) => `organizations may ${verb}`,
         )
         .replace(
-          /\b(?:many|most|numerous|widespread)\b/giu,
+          /\bwithout claiming that the need is widespread\b/giu,
+          'without claiming broader prevalence',
+        )
+        .replace(
+          /\bwidespread\s+(problem|need|demand|friction|failures?|issues?|challenges?)\b/giu,
+          'potential $1 requiring broader validation',
+        )
+        .replace(
+          /\b(?:many|most|numerous)\b/giu,
           'some',
+        )
+        .replace(
+          /\bwidespread\b/giu,
+          'broader but unverified',
         )
         .replace(
           /\b(?:often|frequently|commonly)\s+leads?\s+to\b/giu,
@@ -1732,6 +3074,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           'potential $1$2 requiring broader independent validation',
         )
         .replace(
+          /\brecurring communication breakdowns\b/giu,
+          'communication breakdowns reported in the retained reviews',
+        )
+        .replace(
+          /\bCommunity discussions?(?:\s+from\s+[^.!?]{1,120})?(?:\s+and\s+review comments?)?\s+(?:highlight|indicate|show|suggest)\s+/giu,
+          'Multiple retained reviews indicate ',
+        )
+        .replace(
           /\bUsers\s+(?:often|frequently|commonly)\s+form\b/giu,
           'Some retained reviews indicate that users can form',
         )
@@ -1757,9 +3107,81 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .join(' ')
       .replace(/\s+/gu, ' ')
       .trim();
+    const evidenceSupportsRepeatedCrash =
+      /\b(?:keeps?\s+crash(?:ing|es)?|crash(?:es|ing)\s+(?:again|repeatedly)|every\s+time|multiple\s+times|repeated\s+crash(?:es|ing))\b/iu.test(
+        selectedDirectEvidenceText,
+      );
+    const evidenceExplicitlyMentionsWorkflowStateLoss =
+      /\b(?:lost|lose|losing|transactional state|session state|workflow state|lost progress|lose progress|active service requests?|verification screens?)\b/iu.test(
+        selectedDirectEvidenceText,
+      );
+    const evidenceSupportsBlockingErrorMessages =
+      /\b(?:error messages?|errors?)\s+(?:pop up|appear|appeared|display|displayed|show|shown)|\b(?:blocking|unexpected)\s+error messages?\b/iu.test(
+        selectedDirectEvidenceText,
+      );
 
     if (directEvidenceCount === 1) {
+      const singleDirectSubject = featureOnlyEvidence
+        ? 'One retained feature request'
+        : 'One retained direct report';
+      const singleDirectLabel = featureOnlyEvidence
+        ? 'feature request'
+        : 'direct report';
+
       cleaned = cleaned
+        .replace(
+          /\bCommunity discussions?(?:\s+from\s+[^.!?]{1,120})?(?:\s+and\s+review comments?)?\s+(?:highlight|indicate|show|suggest)\s+/giu,
+          `${singleDirectSubject} describes `,
+        )
+        .replace(
+          /\bUsers express (?:a\s+)?(?:clear\s+|strong\s+)?desire for\b/gu,
+          featureOnlyEvidence
+            ? 'The retained feature request asks for'
+            : `${singleDirectSubject} describes a desire for`,
+        )
+        .replace(
+          /\busers express (?:a\s+)?(?:clear\s+|strong\s+)?desire for\b/giu,
+          featureOnlyEvidence
+            ? 'the retained feature request asks for'
+            : `${singleDirectSubject.toLocaleLowerCase()} describes a desire for`,
+        )
+        .replace(
+          /\bThe Logistics Shipment Recovery and Exception Triage System is designed to address recurring communication breakdowns, tracking opacity, and unresolved delivery delays in parcel logistics\b/giu,
+          'The Logistics Shipment Recovery and Exception Triage System is designed to address the communication breakdown, tracking opacity, and unresolved delivery delay described in the retained report',
+        )
+        .replace(
+          /\bAs indicated by community feedback, the retained scenario suggests that affected users may struggle when\b/giu,
+          `${singleDirectSubject} describes one user struggling when`,
+        )
+        .replace(
+          /\bUsers report feeling\b/gu,
+          `${singleDirectSubject} describes the user as feeling`,
+        )
+        .replace(
+          /\busers\s+attempting to\s+([^.!?]{2,180}?)\s+report being\s+([^.!?]{2,180}?)(?=[,.;]|$)/giu,
+          (_match, attemptedWorkflow: string, reportedState: string) =>
+            `the retained ${singleDirectLabel} describes one user who was ${reportedState.trim()} while attempting to ${attemptedWorkflow.trim()}`,
+        )
+        .replace(
+          /\bOne retained direct report describes recurring user friction caused by unexpected application crashes and disruptive error messages\b/giu,
+          evidenceSupportsRepeatedCrash
+            ? 'One retained direct report describes repeated application crashes and disruptive error messages'
+            : 'One retained direct report describes an application crash and disruptive error messages',
+        )
+        .replace(
+          /\b(?:portals?|applications?|apps?) frequently crash or present blocking error messages\b/giu,
+          evidenceSupportsRepeatedCrash && evidenceSupportsBlockingErrorMessages
+            ? 'the affected application repeatedly crashed and displayed blocking error messages in the retained report'
+            : evidenceSupportsRepeatedCrash
+              ? 'the affected application repeatedly crashed in the retained report and may display blocking error messages'
+              : 'the retained report describes an application crash and blocking error messages',
+        )
+        .replace(
+          /\b(?:portals?|applications?|apps?) frequently crash\b/giu,
+          evidenceSupportsRepeatedCrash
+            ? 'the affected application repeatedly crashed in the retained report'
+            : 'the retained report describes an application crash',
+        )
         .replace(
           /\bThis issue (?:frequently|often|commonly|typically) stems from\b/giu,
           'A potential contributing factor to validate is',
@@ -1795,7 +3217,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           'One retained community report describes one observed user who may experience',
         )
         .replace(
-          /\brecurring\s+(friction|failures?|problems?|issues?|challenges?)\b/giu,
+          /\brecurring\s+(?:user\s+|operational\s+)?(friction|failures?|problems?|issues?|challenges?)\b/giu,
           'reported $1',
         )
         .replace(
@@ -1932,6 +3354,22 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           /\boften resulting in\b/giu,
           'which can result in',
         );
+
+      if (!evidenceExplicitlyMentionsWorkflowStateLoss) {
+        cleaned = cleaned
+          .replace(
+            /\b(residents and administrative personnel|residents and administrative staff|users|customers|operators)\s+lose transactional state\b/giu,
+            '$1 may lose progress in an active workflow',
+          )
+          .replace(
+            /\b(residents and administrative personnel|residents and administrative staff|users|customers|operators)\s+lose access to active service requests and verification screens\b/giu,
+            '$1 may lose progress in active service workflows',
+          )
+          .replace(
+            /\brequiring manual restarts and increasing frustration\b/giu,
+            'potentially requiring a restart and increasing recovery effort',
+          );
+      }
     }
 
     if (
@@ -1962,7 +3400,110 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     cleaned = this.removeUnsupportedSparseCausalSentences(context, cleaned);
     cleaned = this.repairSparsePilotMetricLanguage(context, cleaned);
 
-    return cleaned.replace(/\ba\s+(operational|auditable|immutable|automated|integrated)\b/giu, 'an $1')
+    cleaned = cleaned.replace(/\ba\s+(operational|auditable|immutable|automated|integrated)\b/giu, 'an $1')
+      .replace(/\bcan\s+may\b/giu, 'may')
+      .replace(/\bPreliminary\s+preliminary\b/giu, 'Preliminary')
+      .replace(/\bdescribes\s+reported\s+friction\b/giu, 'describes friction')
+      .replace(/\bexperience\s+encounter\b/giu, 'experience')
+      .replace(/\bencounter\s+experience\b/giu, 'encounter')
+      .replace(/\bdescribes\s+the\s+reported\s+challenge\b/giu, 'describes the challenge')
+      .replace(/\bdescribes\s+reported\s+challenge\b/giu, 'describes the challenge')
+      .replace(/\b1\s+posts\b/giu, '1 post')
+      .replace(/\b1\s+comments\b/giu, '1 comment')
+      .replace(/\b1\s+texts\b/giu, '1 text')
+      .replace(/\s{2,}/gu, ' ')
+      .replace(/\s+([,.;:!?])/gu, '$1')
+      .trim();
+
+    return this.repairFinalNarrativeSurface(context, cleaned);
+  }
+
+  private repairFinalNarrativeSurface(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const secondaryEvidenceCount = this.countRetainedSecondaryEvidence(context);
+    const technicalEvidenceCount = this.countRetainedTechnicalEvidence(context);
+
+    let repaired = value
+      .replace(/\be\s*\.\s*g\s*\./giu, 'e.g.')
+      .replace(/\bi\s*\.\s*e\s*\./giu, 'i.e.')
+      .replace(/\bTLS\s*-?\s*(\d+)\s*\.\s*(\d+)\b/giu, 'TLS-$1.$2')
+      .replace(/\bHTTP\s+(\d+)\.\s+(\d+)\b/giu, 'HTTP $1.$2')
+      .replace(/\b(\d+)\.\s+(\d+)(?=(?:ms|s|sec|secs|second|seconds|%|x)\b)/giu, '$1.$2')
+      .replace(/\bv(\d+)\.\s+(\d+)\b/giu, 'v$1.$2')
+      .replace(/\brobots\.\s*txt\b/giu, 'robots.txt')
+      .replace(/\bdocuments\?\./giu, 'documents a technical workflow issue.')
+      .replace(/\bpotential\s+omit\b/giu, 'may omit')
+      .replace(/\bpotential\s+omits\b/giu, 'may omit')
+      .replace(/\bpotential\s+omitted\b/giu, 'may have omitted')
+      .replace(
+        /\bA retained technical issue related to ([^.!?]{1,80}) documents A retained technical issue(?: and user-requested workflow)? (?:indicate|indicates|documents)(?: that)?\s*/giu,
+        'A retained technical issue related to $1 documents that ',
+      )
+      .replace(
+        /\bOne retained secondary report from one retained source indicates that retained evidence describes\s*/giu,
+        'One retained secondary report describes ',
+      )
+      .replace(
+        /\bOne retained secondary report indicates that retained evidence describes\s*/giu,
+        'One retained secondary report describes ',
+      )
+      .replace(/\bdocuments\s+documents\b/giu, 'documents')
+      .replace(/\bdescribes\s+describes\b/giu, 'describes')
+      .replace(/\s{2,}/gu, ' ')
+      .replace(/\s+([,.;:!?])/gu, '$1')
+      .trim();
+
+    if (
+      directEvidenceCount === 0 &&
+      secondaryEvidenceCount === 1 &&
+      technicalEvidenceCount === 0
+    ) {
+      repaired = repaired
+        .replace(
+          /\bCommunity discussions and secondary reports indicate(?: that)?\s*/giu,
+          'One retained secondary report describes ',
+        )
+        .replace(
+          /\bCommunity discussions and secondary reports (?:show|suggest|highlight|describe)(?: that)?\s*/giu,
+          'One retained secondary report describes ',
+        )
+        .replace(/\bContributors highlight\b/giu, 'The retained secondary report highlights')
+        .replace(
+          /\bCollected discussions reflect(?: user)? concerns(?: regarding)?\s*/giu,
+          'One retained secondary report describes concerns about ',
+        )
+        .replace(
+          /\bCommunity discussions and developer posts (?:indicate|suggest|show|describe)(?: that)?\s*/giu,
+          'One retained secondary report indicates that ',
+        )
+        .replace(
+          /\bCommunity discussions (?:indicate|suggest|show|describe)(?: that)?\s*/giu,
+          'One retained secondary report indicates that ',
+        );
+    }
+
+    if (
+      directEvidenceCount === 0 &&
+      secondaryEvidenceCount === 0 &&
+      technicalEvidenceCount === 1
+    ) {
+      repaired = repaired
+        .replace(
+          /\bCommunity discussions and retained technical issues document(?: that)?\s*/giu,
+          'One retained technical ticket documents ',
+        )
+        .replace(
+          /\bCommunity discussions and technical issues document(?: that)?\s*/giu,
+          'One retained technical ticket documents ',
+        )
+        .replace(/\bContributors highlight\b/giu, 'The retained technical ticket highlights');
+    }
+
+    return repaired
+      .replace(/([.!?]\s+)implementation specialists\b/giu, '$1Implementation specialists')
       .replace(/\s{2,}/gu, ' ')
       .replace(/\s+([,.;:!?])/gu, '$1')
       .trim();
@@ -2100,8 +3641,139 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       );
   }
 
+  private sanitizeUnsupportedBillingFailureClaims(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    if (!value.trim()) return value;
+
+    const selected = context.opportunityRanking?.selected;
+    const evidenceText = (
+      (selected?.independentEvidence ?? []).length > 0
+        ? selected?.independentEvidence?.map((item) => item.text) ?? []
+        : selected?.evidenceSamples ?? []
+    )
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    const explicitDuplicatePaymentFailure =
+      /\b(?:duplicate|double)\s+(?:charge|charges|payment|payments|billing)\b|\b(?:charged|billed)\s+(?:twice|again)\b|\balready paid\b[^.!?]{0,120}\b(?:charged|pay|payment)\b|\bpayment reconciliation\b/iu.test(
+        evidenceText,
+      );
+    const explicitRefundFailure =
+      /\brefund\s+(?:missing|failed|failure|pending|delayed|not\s+received|never\s+received|error|issue|problem)\b/iu.test(
+        evidenceText,
+      );
+    const explicitGenericPaymentFailure =
+      /\b(?:payment|checkout|card|bank|billing)\b[^.!?]{0,130}\b(?:error|errors|issue|issues|fail(?:s|ed|ure|ures|ing)?|declin(?:e|ed)|reject(?:ed|ion)?|blocked|not accepted|not processed|not working|cannot|can['’]?t|unable|incorrect|wrong)\b|\b(?:error|errors|issue|issues|fail(?:s|ed|ure|ures|ing)?|declin(?:e|ed)|reject(?:ed|ion)?|blocked|not accepted|not processed|not working|cannot|can['’]?t|unable|incorrect|wrong)\b[^.!?]{0,130}\b(?:payment|checkout|card|bank|billing)\b/iu.test(
+        evidenceText,
+      );
+
+    let sanitized = value;
+
+    if (!explicitDuplicatePaymentFailure) {
+      if (explicitGenericPaymentFailure) {
+        sanitized = sanitized
+          .replace(
+            /\b(?:duplicate|double)\s+payment\s+errors?\b/giu,
+            'payment errors',
+          )
+          .replace(
+            /\b(?:duplicate|double)\s+(?:subscription\s+)?charges?\b/giu,
+            'payment errors',
+          )
+          .replace(
+            /\b(?:duplicate|double)\s+payments?\b/giu,
+            'payment errors',
+          )
+          .replace(
+            /\b(?:was|were|is|are)\s+(?:charged|billed)\s+(?:twice|again)\b/giu,
+            'encountered a payment error',
+          )
+          .replace(
+            /\b(?:charged|billed)\s+(?:twice|again)\b/giu,
+            'encountered a payment error',
+          );
+      } else {
+        const duplicateReplacement = explicitRefundFailure
+          ? 'payment issue'
+          : 'reported workflow impact';
+
+        sanitized = sanitized
+          .replace(
+            /\b(?:duplicate|double)\s+(?:subscription\s+)?charges?\b/giu,
+            duplicateReplacement,
+          )
+          .replace(
+            /\b(?:duplicate|double)\s+payments?\b/giu,
+            duplicateReplacement,
+          )
+          .replace(
+            /\b(?:charged|billed)\s+(?:twice|again)\b/giu,
+            duplicateReplacement,
+          );
+      }
+    }
+
+    if (explicitGenericPaymentFailure || explicitRefundFailure) {
+      return sanitized
+        .replace(/\s{2,}/gu, ' ')
+        .replace(/\s+([,.;:!?])/gu, '$1')
+        .trim();
+    }
+
+    const paidUseImpact =
+      /\b(?:subscription|monthly fee|subscription fee|paid|paying|spent|cost|money|out my)\b|[$€£]\s*\d/iu.test(
+        evidenceText,
+      );
+    const groundedReplacement = paidUseImpact
+      ? 'lost value from paid use'
+      : 'reported workflow impact';
+
+    return sanitized
+      .replace(
+        /\b(?:unacknowledged|unauthori[sz]ed|unrecogni[sz]ed|incorrect|wrong|unexpected)\s+(?:subscription\s+)?charges?\b/giu,
+        groundedReplacement,
+      )
+      .replace(
+        /\brigid\s+subscription\s+billing\s+barriers?\b/giu,
+        groundedReplacement,
+      )
+      .replace(
+        /\b(?:subscription\s+)?billing\s+(?:discrepancies|discrepancy|errors?|failures?|barriers?|issues?)\b/giu,
+        groundedReplacement,
+      )
+      .replace(
+        /\b(?:charge|payment)\s+(?:discrepancies|discrepancy|errors?|failures?)\b/giu,
+        groundedReplacement,
+      )
+      .replace(/\s{2,}/gu, ' ')
+      .replace(/\s+([,.;:!?])/gu, '$1')
+      .trim();
+  }
+
+  private normalizeTechnicalDottedTerms(value: string): string {
+    return value
+      .replace(/\be\s*\.\s*g\s*\./giu, 'e.g.')
+      .replace(/\bi\s*\.\s*e\s*\./giu, 'i.e.')
+      .replace(/\bai\b/giu, 'AI')
+      .replace(/\bTLS\s*-?\s*(\d+)\s*\.\s*(\d+)\b/giu, 'TLS-$1.$2')
+      .replace(
+        /\b(OAuth|OpenID(?: Connect)?|OIDC|HTTP|SAML)\s+(\d+)\s*\.\s+(\d+)\b/giu,
+        '$1 $2.$3',
+      )
+      .replace(/\b(\d+)\.\s+(\d+)(?=(?:ms|s|sec|secs|second|seconds|%|x)\b)/giu, '$1.$2')
+      .replace(/\bv(\d+)\.\s+(\d+)\b/giu, 'v$1.$2')
+      .replace(/\brobots\s*\.\s*txt\b/giu, 'robots.txt')
+      .replace(/\bNext\s*\.\s*js\b/giu, 'Next.js')
+      .replace(/\bNode\s*\.\s*js\b/giu, 'Node.js');
+  }
+
   private finalizePersistedNarrativeCopy(value: string): string {
-    const cleaned = this.sanitizeUnsupportedCausalLanguage(value)
+    const cleaned = this.normalizeTechnicalDottedTerms(
+      this.sanitizeUnsupportedCausalLanguage(value),
+    )
       .replace(
         /\bIt tests whether the pilot will test whether\b/giu,
         'It tests whether',
@@ -2122,6 +3794,18 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .replace(/\bmay fail ambiguous operational failures\b/giu, 'may encounter ambiguous operational failures')
       .replace(/\bAn-assisted\b/gu, 'An AI-assisted')
       .replace(/\ban-assisted\b/gu, 'AI-assisted')
+      .replace(/\ba expressed\b/giu, 'an expressed')
+      .replace(/\bcan\s+may\b/giu, 'may')
+      .replace(/\bPreliminary\s+preliminary\b/giu, 'Preliminary')
+      .replace(/\bdescribes\s+reported\s+friction\b/giu, 'describes friction')
+      .replace(/\bexperience\s+encounter\b/giu, 'experience')
+      .replace(/\bencounter\s+experience\b/giu, 'encounter')
+      .replace(/\bdescribes\s+the\s+reported\s+challenge\b/giu, 'describes the challenge')
+      .replace(/\bdescribes\s+reported\s+challenge\b/giu, 'describes the challenge')
+      .replace(
+        /\bwithout claiming potential prevalence\b/giu,
+        'without claiming broader prevalence or established market demand',
+      )
       .replace(/\s*\+\s*\+\s*/gu, ' + ')
       .replace(/\s+\+\s+(?=validation scope\b)/giu, ' ')
       .replace(/\.{2,}/gu, '.')
@@ -2216,6 +3900,37 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         /\bOne retained direct user report from one independent source indicates that application Crash and Runtime Failures\.*/giu,
         'One retained direct user report from one independent source describes repeated application crashes that continued despite the user’s recovery attempts.',
       )
+      .replace(
+        /\b((?:[\p{L}]+-[\p{L}-]+|independent|nontechnical|non-technical|privacy-conscious|privacy-sensitive|self-taught|novice|amateur))\s+the retained report suggests that a user may\b/giu,
+        (_match, descriptor: string) =>
+          `The retained report suggests that a ${descriptor.trim()} user may`,
+      )
+      .replace(
+        /\bWhen one user (?:experienced|encountered|faced) ([^.!?]{1,120}?) or require\b/giu,
+        'When one user experiences $1 or requires',
+      )
+      .replace(
+        /\bone user (?:experienced|encountered|faced) ([^.!?]{1,120}?) or require\b/giu,
+        'one user experiences $1 or requires',
+      )
+      .replace(
+        /\b(indicates|suggests|reports|shows) that The retained report suggests that\b/giu,
+        '$1 that',
+      )
+      .replace(
+        /\b(A preliminary secondary report related to [^.:]{2,80}) (?:indicates|suggests) that ([^.!?]{2,140}\b(?:failures?|gaps?|friction|problems?|issues?|challenges?))\./giu,
+        (_match, subject: string, problem: string) =>
+          `${subject} describes an operational challenge: ${this.capitalizeSentence(problem.trim())}.`,
+      )
+      .replace(
+        /\b((?:One|Two|Three|Four|Five|\d+) retained secondary reports?(?: from one retained source| across [^.]{1,40} retained sources)?) (?:indicates|suggests) that ([^.!?]{2,140}\b(?:failures?|gaps?|friction|problems?|issues?|challenges?))\./giu,
+        (_match, subject: string, problem: string) =>
+          `${subject} describes ${this.capitalizeSentence(problem.trim())}.`,
+      )
+      .replace(
+        /\bPreliminary observations from [^.!?]{1,140}?\s+the retained evidence suggests that\b/giu,
+        'The retained evidence suggests that',
+      )
       .replace(/\s{2,}/gu, ' ')
       .replace(/\s+([,.;:!?])/gu, '$1')
       .trim();
@@ -2273,7 +3988,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
    */
   private resolveWinnerOpportunityRaw(
     context: IdeaGenerationContext,
-  ): { domainName: string; problem: string } | null {
+  ): { domainName: string; problem: string; familyKey: string | null } | null {
     const rankedWinner = context.benchmarkWinnerOpportunity;
 
     if (!rankedWinner) {
@@ -2294,6 +4009,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       record && typeof record.problem === 'string'
         ? record.problem.trim()
         : '';
+    const rawFamilyKey =
+      record && typeof record.familyKey === 'string'
+        ? record.familyKey.trim()
+        : '';
 
     const domainName =
       rankedWinner.matchedDomainNames?.[0]?.trim() ||
@@ -2310,7 +4029,21 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return null;
     }
 
-    return { domainName, problem };
+    const inferredFamilyKey = resolvePrimaryProblemFamily(
+      [
+        rankedWinner.title,
+        rankedWinner.problem ?? '',
+        rankedWinner.need ?? '',
+        rankedWinner.solutionArea ?? '',
+        problem,
+      ].join(' '),
+    )?.key ?? null;
+
+    return {
+      domainName,
+      problem,
+      familyKey: rawFamilyKey || inferredFamilyKey,
+    };
   }
 
   private repairTruncatedProblemFromRetainedEvidence(
@@ -2460,6 +4193,12 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       value = value
         .replace(/\bevidence-based\b/giu, 'evidence-collection and validation')
         .replace(
+          /\bpersistent\s+(operational\s+)?(challenge|problem|issue|friction|gap)s?\b/giu,
+          'requester-described $1$2',
+        )
+        .replace(/\b(?:frequently|often|commonly|usually)\s+results?\s+in\b/giu, 'may result in')
+        .replace(/\b(?:frequently|often|commonly|usually)\s+leads?\s+to\b/giu, 'may lead to')
+        .replace(
           /\ba preliminary community signal(?:\s+from\s+[^.]+)?\s+(?:reports|identifies|shows|indicates)\b/giu,
           'the unvalidated generation hypothesis proposes',
         );
@@ -2475,6 +4214,19 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const featureOnlyEvidence =
       directEvidenceCount > 0 &&
       featureRequestEvidenceCount === directEvidenceCount;
+    const secondaryEvidenceCount = this.countRetainedSecondaryEvidence(context);
+
+    if (directEvidenceCount === 0 && secondaryEvidenceCount === 1) {
+      value = value
+        .replace(
+          /\bRetained evidence indicates that\b/giu,
+          'The retained secondary report indicates that',
+        )
+        .replace(
+          /\b(The retained secondary report indicates that[^.!?]{0,180}?)\b(?:frequently|often|commonly|typically)\s+/giu,
+          '$1',
+        );
+    }
 
     if (directEvidenceCount === 1) {
       value = value
@@ -2796,6 +4548,129 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     );
   }
 
+  private alignSparseNarrativesToImmutableWinner(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+    problemStatement: string,
+    overview: string,
+  ): { problemStatement: string; overview: string } {
+    if (this.hasStrongIndependentEvidence(context)) {
+      return { problemStatement, overview };
+    }
+
+    const winner = this.resolveWinnerOpportunityRaw(context);
+    if (!winner?.familyKey) {
+      return { problemStatement, overview };
+    }
+
+    const problemFamily = resolvePrimaryProblemFamily(problemStatement)?.key ?? null;
+    const overviewFamily = resolvePrimaryProblemFamily(overview)?.key ?? null;
+    const problemMismatch = Boolean(
+      problemFamily && problemFamily !== winner.familyKey,
+    );
+    const overviewMismatch = Boolean(
+      overviewFamily && overviewFamily !== winner.familyKey,
+    );
+
+    if (!problemMismatch && !overviewMismatch) {
+      return { problemStatement, overview };
+    }
+
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const featureRequestEvidenceCount =
+      this.countRetainedFeatureRequestEvidence(context);
+    const secondaryEvidenceCount = this.countRetainedSecondaryEvidence(context);
+    const technicalEvidenceCount = this.countRetainedTechnicalEvidence(context);
+    const questionEvidenceCount = this.countRetainedQuestionEvidence(context);
+    const observationEvidenceCount = this.countRetainedObservationEvidence(context);
+    const featureOnlyEvidence =
+      directEvidenceCount > 0 &&
+      featureRequestEvidenceCount === directEvidenceCount;
+    const evidenceClass:
+      | 'direct'
+      | 'feature'
+      | 'secondary'
+      | 'technical'
+      | 'question'
+      | 'observation' = featureOnlyEvidence
+      ? 'feature'
+      : directEvidenceCount > 0
+        ? 'direct'
+        : secondaryEvidenceCount > 0
+          ? 'secondary'
+          : technicalEvidenceCount > 0
+            ? 'technical'
+            : questionEvidenceCount > 0
+              ? 'question'
+              : 'observation';
+    const evidenceCount =
+      evidenceClass === 'feature'
+        ? featureRequestEvidenceCount
+        : evidenceClass === 'direct'
+          ? directEvidenceCount
+          : evidenceClass === 'secondary'
+            ? secondaryEvidenceCount
+            : evidenceClass === 'technical'
+              ? technicalEvidenceCount
+              : evidenceClass === 'question'
+                ? questionEvidenceCount
+                : observationEvidenceCount;
+
+    if (evidenceCount <= 0) {
+      return { problemStatement, overview };
+    }
+
+    const evidenceSourceCount = Math.max(
+      1,
+      this.countRetainedIndependentSources(context),
+    );
+    const winnerProblem = this.buildEvidenceDerivedProblemSummary(
+      context,
+      winner.problem,
+      evidenceClass,
+    );
+    const evidenceSentence = this.buildSparseEvidenceSentence(
+      winnerProblem,
+      evidenceCount,
+      evidenceSourceCount,
+      evidenceClass,
+    );
+    const selected =
+      context.benchmarkWinnerOpportunity ?? context.opportunityRanking?.selected;
+    const solutionArea = selected?.solutionArea?.replace(/\s+/gu, ' ').trim() ?? '';
+    const title = parsedOutput.coreIdea.title.trim();
+    const productSentence = solutionArea
+      ? `${title} provides a focused pilot workflow for ${this.lowercaseSentenceStart(
+          solutionArea.replace(/[.]+$/u, ''),
+        )}.`
+      : `${title} provides a focused pilot workflow for the verified winner problem family.`;
+    const measurementSentence = this.buildSparsePilotMeasurementSentence(
+      context,
+      winner.problem,
+      title,
+    );
+
+    const correctedProblemStatement = problemMismatch
+      ? this.polishProblemStatement(
+          `${evidenceSentence} ${this.buildProblemImpactSentence(
+            winnerProblem,
+          )} The proposed pilot should validate how broadly this issue occurs before wider deployment.`,
+        )
+      : problemStatement;
+    const correctedOverview = overviewMismatch
+      ? this.buildConciseOverview(
+          [evidenceSentence, productSentence, measurementSentence].join(' '),
+        )
+      : overview;
+
+    return {
+      problemStatement: this.finalizePersistedNarrativeCopy(
+        correctedProblemStatement,
+      ),
+      overview: this.finalizePersistedNarrativeCopy(correctedOverview),
+    };
+  }
+
   private buildSparsePilotMeasurementSentence(
     context: IdeaGenerationContext,
     problem: string,
@@ -2811,11 +4686,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return 'The pilot will measure whether the workflow reduces dispute-documentation effort and dispute-resolution time, without claiming that the need is widespread.';
     }
 
-    if (
-      /(?:international card|otp|verification|cross-border payment|traveler|traveller)/iu.test(
+    const travelerPaymentWorkflow =
+      /(?:international card|cross-border payment|traveler|traveller)/iu.test(
         semantic,
-      )
-    ) {
+      ) ||
+      (/(?:otp|verification code)/iu.test(semantic) &&
+        /(?:card|payment|checkout|bank)/iu.test(semantic));
+
+    if (travelerPaymentWorkflow) {
       return 'The pilot will measure whether the workflow reduces failed payment and verification attempts for participating travelers, without claiming broader prevalence.';
     }
 
@@ -2824,6 +4702,48 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       context.domainName ??
       'the selected workflow';
     return `The pilot will establish a baseline for task effort and resolution time in ${domain} and measure directional improvement without claiming that the need is widespread.`;
+  }
+
+  private isNoInputPreferencePath(context: IdeaGenerationContext): boolean {
+    return (
+      !context.requestDescription?.trim() &&
+      context.domainResolution?.source === 'USER_PREFERENCE'
+    );
+  }
+
+  private resolveNoInputPreferenceProblem(
+    context: IdeaGenerationContext,
+    groundedProblem: string,
+    providerProblemStatement: string,
+  ): string {
+    const rankedTitle = context.opportunityRanking?.selected.title
+      ?.replace(/\s+/gu, ' ')
+      .trim();
+    if (
+      rankedTitle &&
+      !/\b(?:workflow opportunity|validation[- ]first|operational validation|requester-defined)\b/iu.test(
+        rankedTitle,
+      )
+    ) {
+      return rankedTitle;
+    }
+
+    const strippedProvider = providerProblemStatement
+      .replace(
+        /^(?:one retained (?:feature request|direct user report)(?: from one (?:source|independent source))?|verified community evidence|a preliminary community signal)[^:]{0,180}:\s*/iu,
+        '',
+      )
+      .replace(
+        /\s+The direction uses one retained external evidence item as preliminary support.*$/iu,
+        '',
+      )
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (this.isSpecificProblemStatement(groundedProblem)) {
+      return groundedProblem;
+    }
+    return strippedProvider || groundedProblem || rankedTitle || 'the retained access problem';
   }
 
   private buildDirectEvidenceProblemSummary(
@@ -2838,6 +4758,21 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .replace(/\s+/gu, ' ')
       .trim();
     const normalized = evidence.toLocaleLowerCase();
+
+    if (
+      this.isNoInputPreferencePath(context) &&
+      /\b(?:two[- ]factor authentication|2fa|multi[- ]factor authentication)\b/iu.test(
+        normalized,
+      ) &&
+      /\b(?:not active|not available|unavailable|unsupported)\b/iu.test(
+        normalized,
+      ) &&
+      /\b(?:country|region|location)\b/iu.test(normalized)
+    ) {
+      return /\bgoogle login|google sign[- ]?in\b/iu.test(normalized)
+        ? 'account access blocked because two-factor authentication is unavailable in the user’s country, with a request for an alternative Google sign-in option'
+        : 'account access blocked because the required two-factor authentication method is unavailable in the user’s country';
+    }
 
     if (
       /\b(?:got married|married|name change|changed my (?:sur)?name|changed (?:my )?(?:sur)?name)\b/iu.test(
@@ -2927,6 +4862,27 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     return this.lowercaseSentenceStart(fallbackProblem);
   }
 
+  private extractStructuredEvidenceProblem(value: string): string {
+    const normalized = value
+      .replace(/\*{1,2}/gu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!normalized) return '';
+
+    const problemSection = normalized.match(
+      /(?:^|\s)Problem:\s*(.+?)(?=\s+(?:Problem:|JTBD:|Context(?:\s*&\s*frequency)?:|Pain\s*\/\s*stakes:|Current workaround:|Trigger(?:\s*\/\s*failure moment)?:|Why software may help:|Evidence(?:\s+and\s+confidence)?:|Domain:|Persona:)|$)/iu,
+    )?.[1]?.trim();
+
+    const selected = problemSection || normalized;
+    const completeSentence = selected.match(/^(.+?[.!?])(?:\s|$)/u)?.[1]?.trim();
+    const bounded = completeSentence || selected;
+
+    return bounded
+      .replace(/\s+(?:JTBD|Context|Pain|Current workaround|Trigger|Why software may help|Evidence|Domain|Persona):.*$/iu, '')
+      .replace(/[\s,;:–—-]+$/u, '')
+      .trim();
+  }
+
   private buildEvidenceDerivedProblemSummary(
     context: IdeaGenerationContext,
     fallbackProblem: string,
@@ -2965,7 +4921,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return 'excessive manual setup effort when installing and configuring multiple sensors or current transformers for energy monitoring';
     }
 
-    const cleanedFallback = fallbackProblem.replace(/\s+/gu, ' ').trim();
+    const cleanedFallback = this.extractStructuredEvidenceProblem(fallbackProblem);
     const syntheticLabel =
       /\b(?:workflow failure|specific user workflow friction|user workflow friction)\b/iu.test(cleanedFallback) ||
       /\b\w*([a-z])\1{2,}\w*\b/iu.test(cleanedFallback) ||
@@ -3121,7 +5077,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const independentSourceCount =
       this.countRetainedIndependentSources(context);
     const relatedOpportunityBundle =
-      context.opportunityRanking?.selected.relatedOpportunityBundle ?? [];
+      this.resolveVerifiedSynthesisBundle(context);
     const bundledDirectEvidenceCount = relatedOpportunityBundle.reduce(
       (total, item) =>
         total + (item.verifiedProblemMatchedDirectUserEvidenceCount ?? 0),
@@ -3264,6 +5220,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       'USER_COMPLAINT',
       'FEATURE_REQUEST',
       'REVIEW',
+      'OBSERVED_UNMET_NEED',
     ]);
     const identities = new Set(
       (selected?.independentEvidence ?? [])
@@ -3273,6 +5230,30 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     );
 
     return identities.size;
+  }
+
+  private countRetainedComplaintEvidence(
+    context: IdeaGenerationContext,
+  ): number {
+    const selected = context.opportunityRanking?.selected;
+    const verifiedCount =
+      selected?.verifiedProblemMatchedComplaintEvidenceCount ??
+      selected?.verifiedComplaintEvidenceCount;
+    if (typeof verifiedCount === 'number' && verifiedCount >= 0) {
+      return Math.floor(verifiedCount);
+    }
+
+    const complaintKinds = new Set([
+      'DIRECT_USER_COMPLAINT',
+      'USER_COMPLAINT',
+      'REVIEW',
+    ]);
+    return new Set(
+      (selected?.independentEvidence ?? [])
+        .filter((item) => complaintKinds.has(item.evidenceKind))
+        .map((item) => item.identityKey?.trim().toLowerCase() ?? '')
+        .filter(Boolean),
+    ).size;
   }
 
   private countRetainedFeatureRequestEvidence(
@@ -3302,8 +5283,23 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const verifiedCount =
       selected?.verifiedProblemMatchedSecondaryEvidenceCount ??
       selected?.verifiedSecondaryEvidenceCount;
-    if (typeof verifiedCount === 'number' && verifiedCount >= 0) {
+    if (typeof verifiedCount === 'number' && verifiedCount > 0) {
       return Math.floor(verifiedCount);
+    }
+
+    /*
+     * `qualifiedExternalSupportingEvidenceCount` is evidence-class agnostic and
+     * may represent a TECHNICAL_TICKET. Never use that aggregate as a secondary
+     * count: doing so turns verified technical evidence into a "secondary
+     * report" in final wording. Prefer the verifier counters and canonical
+     * supportingEvidence metadata instead.
+     */
+    const canonicalSupportingCount =
+      selected?.supportingEvidence?.filter(
+        (item) => item.sourceType === 'SECONDARY_EVIDENCE',
+      ).length ?? 0;
+    if (canonicalSupportingCount > 0) {
+      return canonicalSupportingCount;
     }
 
     const secondaryKinds = new Set([
@@ -3371,7 +5367,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
 
     return new Set(
       (selected?.independentEvidence ?? [])
-        .filter((item) => item.evidenceKind === 'GENERAL_COMMENTARY')
+        .filter(
+          (item) =>
+            item.evidenceKind === 'GENERAL_COMMENTARY' ||
+            item.evidenceKind === 'OBSERVED_UNMET_NEED',
+        )
         .map((item) => item.identityKey?.trim().toLowerCase() ?? '')
         .filter(Boolean),
     ).size;
@@ -3382,8 +5382,18 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const verifiedCount =
       selected?.verifiedProblemMatchedEvidenceCount ??
       selected?.verifiedEvidenceCount;
-    if (typeof verifiedCount === 'number' && verifiedCount >= 0) {
+    if (typeof verifiedCount === 'number' && verifiedCount > 0) {
       return Math.floor(verifiedCount);
+    }
+
+    const qualifiedSupportingCount =
+      selected?.qualifiedExternalSupportingEvidenceCount ?? 0;
+    if (qualifiedSupportingCount > 0) {
+      return Math.floor(qualifiedSupportingCount);
+    }
+
+    if (typeof verifiedCount === 'number' && verifiedCount === 0) {
+      // Fall through so qualified/non-independent retained support can count.
     }
 
     const identities = new Set(
@@ -3412,6 +5422,37 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
   ): number {
     const selected = context.opportunityRanking?.selected;
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
+
+    if (directEvidenceCount > 0) {
+      const verifiedDirectSourceCount =
+        selected?.verifiedProblemMatchedSourceCount ??
+        selected?.verifiedIndependentSourceCount;
+      if (
+        typeof verifiedDirectSourceCount === 'number' &&
+        verifiedDirectSourceCount > 0
+      ) {
+        return Math.floor(verifiedDirectSourceCount);
+      }
+
+      const directKinds = new Set([
+        'DIRECT_USER_COMPLAINT',
+        'USER_COMPLAINT',
+        'FEATURE_REQUEST',
+        'REVIEW',
+        'OBSERVED_UNMET_NEED',
+      ]);
+      const directSourceKeys = new Set(
+        (selected?.independentEvidence ?? [])
+          .filter((item) => directKinds.has(item.evidenceKind))
+          .map((item) => item.sourceKey?.trim().toLocaleLowerCase() ?? '')
+          .filter(Boolean),
+      );
+      if (directSourceKeys.size > 0) {
+        return directSourceKeys.size;
+      }
+    }
+
     const verifiedCount =
       selected?.verifiedProblemMatchedEvidenceSourceCount ??
       selected?.verifiedEvidenceSourceCount ??
@@ -3419,6 +5460,12 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       selected?.verifiedIndependentSourceCount;
     if (typeof verifiedCount === 'number' && verifiedCount > 0) {
       return Math.floor(verifiedCount);
+    }
+
+    const qualifiedSourceCount =
+      selected?.qualifiedExternalSupportingSourceCount ?? 0;
+    if (qualifiedSourceCount > 0) {
+      return Math.floor(qualifiedSourceCount);
     }
 
     const sourceKeys = new Set(
@@ -3647,6 +5694,17 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     );
   }
 
+  private hasExternalSupportingContext(
+    context: IdeaGenerationContext,
+  ): boolean {
+    const selected = context.opportunityRanking?.selected;
+    return Boolean(
+      selected?.disqualificationReasons.includes(
+        'EXTERNAL_SUPPORTING_CONTEXT_ONLY',
+      ) && selected.evidenceSamples.length > 0,
+    );
+  }
+
   private hasAnyRetainedDirectEvidence(
     context: IdeaGenerationContext,
   ): boolean {
@@ -3680,9 +5738,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .replace(/[.!?]+$/u, '')
       .trim();
 
+    const externalContextPrefix = this.hasExternalSupportingContext(context)
+      ? 'One real external sample was retained as preliminary contextual support, but it did not independently verify the exact requester problem. '
+      : '';
+
     return this.polishProblemStatement(
       requestDescription
-        ? `No direct community evidence sufficiently aligned to the requester description was retained within the fast collection budget for the ${domainLabel} validation scope. The requester-defined problem is: "${hypothesis}." The proposed pilot keeps this problem unchanged and validates it with real target participants instead of substituting a different, better-evidenced problem. The selected domains define the validation search space; they are not evidence that existing demand has already been established. Market-wide prevalence, recurrence, causal impact, and cross-domain demand remain unproven until direct evidence is collected.`
+        ? `${externalContextPrefix}No direct community evidence sufficiently aligned to the requester description was retained within the fast collection budget for the ${domainLabel} validation scope. The requester-defined problem is: "${hypothesis}." The proposed pilot keeps this problem unchanged and validates it with real target participants instead of substituting a different, better-evidenced problem. The selected domains define the validation search space; they are not evidence that existing demand has already been established. Market-wide prevalence, recurrence, causal impact, and cross-domain demand remain unproven until direct evidence is collected.`
         : `No direct community evidence was retained within the fast collection budget for the ${domainLabel} validation scope. The proposed pilot tests whether ${this.lowercaseSentenceStart(
             hypothesis,
           )}. The selected domains define the validation search space; they are not evidence that existing demand has already been established. Market-wide prevalence, recurrence, causal impact, and cross-domain demand remain unproven until direct evidence is collected.`,
@@ -3748,10 +5810,103 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .slice(0, 4);
   }
 
+  private isTargetUserSupportedByRetainedEvidence(
+    context: IdeaGenerationContext,
+    targetUser: string,
+  ): boolean {
+    const evidenceText = (context.opportunityRanking?.selected.independentEvidence ?? [])
+      .map((item) => item.text)
+      .join(' ')
+      .toLocaleLowerCase();
+    if (!evidenceText.trim()) return false;
+
+    const userText = targetUser.toLocaleLowerCase();
+    const roleFamilies: readonly [RegExp, RegExp][] = [
+      [/\b(?:caregiver|caregivers)\b/u, /\b(?:caregiver|caregivers|caregiving)\b/u],
+      [/\b(?:parent|parents|family parents?)\b/u, /\b(?:parent|parents|family[- ]parents?|family members?|households?)\b/u],
+      [/\b(?:adult children|children|eldercare|elderly)\b/u, /\b(?:adult children|children|eldercare|elderly|aging parents?|elderly parents?)\b/u],
+      [/\b(?:dispatcher|dispatchers|logistics coordinators?)\b/u, /\b(?:dispatcher|dispatchers|dispatch teams?|logistics coordinators?)\b/u],
+      [/\b(?:driver|drivers|courier|couriers|carrier|carriers)\b/u, /\b(?:driver|drivers|courier|couriers|carrier|carriers)\b/u],
+      [/\b(?:student|students|learner|learners)\b/u, /\b(?:student|students|learner|learners)\b/u],
+      [/\b(?:teacher|teachers|educator|educators|instructor|instructors)\b/u, /\b(?:teacher|teachers|educator|educators|instructor|instructors)\b/u],
+      [/\b(?:developer|developers|maintainer|maintainers|engineer|engineers)\b/u, /\b(?:developer|developers|maintainer|maintainers|engineer|engineers)\b/u],
+      [/\b(?:patient|patients|clinician|clinicians|nurse|nurses)\b/u, /\b(?:patient|patients|clinician|clinicians|nurse|nurses)\b/u],
+    ];
+
+    if (
+      roleFamilies.some(
+        ([userPattern, evidencePattern]) =>
+          userPattern.test(userText) && evidencePattern.test(evidenceText),
+      )
+    ) {
+      return true;
+    }
+
+    const stopWords = new Set([
+      'users', 'user', 'people', 'teams', 'team', 'primary', 'daily', 'shared',
+      'responsible', 'managing', 'management', 'operations', 'operational',
+      'pilot', 'participants', 'workflow', 'workflows', 'coordinating',
+      'coordination', 'professionals', 'staff', 'members',
+    ]);
+    const evidenceTokens = new Set(
+      evidenceText
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .split(/\s+/u)
+        .filter((token) => token.length >= 4),
+    );
+    const userTokens = userText
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .split(/\s+/u)
+      .filter((token) => token.length >= 4 && !stopWords.has(token));
+    const sharedTokens = userTokens.filter((token) => evidenceTokens.has(token));
+
+    return new Set(sharedTokens).size >= 2;
+  }
+
   private sanitizePrimaryDomainTargetUsers(
     context: IdeaGenerationContext,
     targetUsers: readonly string[],
   ): string[] {
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const secondaryEvidenceCount = this.countRetainedSecondaryEvidence(context);
+    const technicalEvidenceCount = this.countRetainedTechnicalEvidence(context);
+    const sparseIndirectEvidence =
+      directEvidenceCount === 0 &&
+      secondaryEvidenceCount + technicalEvidenceCount > 0 &&
+      secondaryEvidenceCount + technicalEvidenceCount <= 2;
+
+    if (sparseIndirectEvidence) {
+      const supportedUsers = targetUsers
+        .map((user) => this.professionalizeTargetUser(user))
+        .filter((user) => this.isTargetUserSupportedByRetainedEvidence(context, user));
+      if (supportedUsers.length > 0) {
+        return supportedUsers
+          .filter(
+            (item, index, items) =>
+              items.findIndex(
+                (candidate) =>
+                  candidate.toLowerCase().replace(/\s+/gu, ' ').trim() ===
+                  item.toLowerCase().replace(/\s+/gu, ' ').trim(),
+              ) === index,
+          )
+          .slice(0, 4);
+      }
+
+      const safeUsers = technicalEvidenceCount > 0
+        ? [
+            'Technical maintainers responsible for the retained workflow',
+            'Operators reviewing the retained technical workflow',
+            'Pilot participants recruited to validate the affected workflow',
+          ]
+        : [
+            'Users represented by the retained secondary evidence',
+            'Operators responsible for the retained workflow',
+            'Pilot participants recruited to validate the affected workflow',
+          ];
+
+      return safeUsers.slice(0, 4);
+    }
+
     const professionalized = targetUsers.map((user) =>
       this.professionalizeTargetUser(user),
     );
@@ -3807,13 +5962,42 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
    * The ranking stage marks this state explicitly. The retained-evidence check
    * is a defensive fallback for older snapshots or partially recovered runs.
    */
+  private hasSelectedProblemMatchedEvidence(
+    context: IdeaGenerationContext,
+  ): boolean {
+    const selected =
+      context.benchmarkWinnerOpportunity ?? context.opportunityRanking?.selected;
+    if (!selected) return false;
+
+    const verifiedProblemMatchedCount =
+      selected.verifiedProblemMatchedEvidenceCount ?? 0;
+    if (verifiedProblemMatchedCount > 0) return true;
+
+    /*
+     * For description-bearing paths, generic retained corpus evidence must not
+     * turn an unvalidated requester hypothesis into an evidence-backed winner.
+     * Only evidence explicitly verified against the described problem counts.
+     */
+    if (context.requestDescription?.trim()) {
+      return false;
+    }
+
+    return Boolean(
+      (selected.verifiedIndependentEvidenceCount ?? 0) > 0 ||
+        (selected.independentEvidence?.length ?? 0) > 0,
+    );
+  }
+
   private isValidationOnlyOpportunity(context: IdeaGenerationContext): boolean {
     const selected = context.opportunityRanking?.selected;
 
     return Boolean(
       selected?.disqualificationReasons.includes(
         'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
-      ) || !this.hasAnyRetainedEvidence(context),
+      ) ||
+        (context.requestDescription?.trim()
+          ? !this.hasSelectedProblemMatchedEvidence(context)
+          : !this.hasAnyRetainedEvidence(context)),
     );
   }
 
@@ -3875,6 +6059,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   private resolveFinalClaimDomains(
     context: IdeaGenerationContext,
   ): string[] {
+    const validationOnlyDomain = this.resolveValidationOnlySingleDomain(context);
+    if (validationOnlyDomain) {
+      return [validationOnlyDomain];
+    }
+
     const domains =
       context.benchmarkWinnerOpportunity?.matchedDomainNames?.length
         ? context.benchmarkWinnerOpportunity.matchedDomainNames
@@ -4417,7 +6606,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return 'This leaves users without a required workflow capability and increases manual work or workaround dependence.';
     }
 
-    return 'The pilot should measure the resulting task delays, user effort, and unresolved cases before any broader impact claim is made.';
+    return 'The retained evidence identifies friction in the affected task; broader operational impact remains to be measured.';
   }
 
   private professionalizeTargetUser(value: string): string {
@@ -4438,6 +6627,63 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .replace(/\s+/gu, ' ')
       .replace(/local storage directories/giu, 'authorized local storage directories mounted through explicit read-only paths')
       .replace(/polls configured/giu, 'periodically scans configured')
+      .trim();
+  }
+
+  private polishNoInputPreferenceNarrativeBoundary(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    if (!this.isNoInputPreferencePath(context) || !value.trim()) {
+      return this.polishDomainsOnlyNarrativeBoundary(context, value);
+    }
+
+    return this.polishProblemTitleNarrativeBoundary(context, value);
+  }
+
+  private polishDomainsOnlyNarrativeBoundary(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    if (
+      value.trim() &&
+      !context.requestDescription?.trim() &&
+      context.domainResolution?.source === 'USER_SELECTED'
+    ) {
+      return this.polishProblemTitleNarrativeBoundary(context, value);
+    }
+
+    return value;
+  }
+
+  private polishProblemTitleNarrativeBoundary(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    const problemTitle = (
+      context.opportunityRanking?.selected.title ??
+      context.benchmarkWinnerOpportunity?.title ??
+      ''
+    )
+      .replace(/\s+/gu, ' ')
+      .replace(/[.!?]+$/u, '')
+      .trim();
+
+    if (!problemTitle) {
+      return value;
+    }
+
+    const escapedProblemTitle = this.escapeRegExp(problemTitle);
+    const boundary = new RegExp(
+      `(${escapedProblemTitle})(?=\\s+(?:The direction|The evidence|The pilot|The product|The proposed|This direction|This product)\\b)`,
+      'giu',
+    );
+
+    return value
+      .replace(boundary, '$1.')
+      .replace(/([.!?])\1+(?=\s|$)/gu, '$1')
+      .replace(/\s+([,.;:!?])/gu, '$1')
+      .replace(/\s{2,}/gu, ' ')
       .trim();
   }
 

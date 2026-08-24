@@ -316,7 +316,17 @@ export class AppStoreCollector
       input.collectionMode === 'TARGETED_RECOVERY';
 
     if (plannedQueries.length > 0 && isBoundedMode) {
-      return this.unique(plannedQueries).slice(0, 3);
+      const domainDiscovery = this.toStoreDiscoveryQuery(input.domainName);
+      const requesterActor = this.toStoreDiscoveryQuery(
+        input.requestDescription?.split(/\b(?:often|frequently|usually|commonly)\b/iu)[0] ?? '',
+      );
+      const boundedBudget =
+        input.collectionMode === 'TARGETED_RECOVERY' ? 1 : 2;
+      return this.unique([
+        ...(requesterActor ? [requesterActor] : []),
+        ...(domainDiscovery ? [domainDiscovery] : []),
+        ...plannedQueries.slice(0, 1),
+      ]).slice(0, boundedBudget);
     }
 
     const userKeywords = (input.keywords ?? [])
@@ -371,13 +381,15 @@ export class AppStoreCollector
     const stopWords = new Set([
       'conflict', 'conflicts', 'missing', 'forgotten', 'fragmented', 'problem',
       'problems', 'complaint', 'complaints', 'review', 'reviews', 'difficult',
-      'coordination', 'tracking', 'records', 'record',
+      'coordination', 'tracking', 'records', 'record', 'detecting',
+      'identify', 'identifying', 'analysis', 'analyze', 'organization',
+      'organizing', 'bottleneck', 'risk', 'risks', 'for', 'and', 'the', 'of', 'to',
     ]);
     return this.cleanNormalizedText(value)
       .split(/\s+/u)
       .filter(Boolean)
       .filter((word) => !stopWords.has(word))
-      .slice(0, 4)
+      .slice(0, 3)
       .join(' ');
   }
 

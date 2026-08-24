@@ -6,10 +6,12 @@ import { CollectorsFactory } from './collectors.factory';
 
 import { AppStoreCollector } from './app-store/app-store.collector';
 import { BlogCollector } from './blog/blog.collector';
+import { CrossrefCollector } from './crossref/crossref.collector';
 import { DevToCollector } from './dev-to/dev-to.collector';
 import { ForumCollector } from './forum/forum.collector';
 import { GitHubCollector } from './github/github.collector';
 import { GooglePlayCollector } from './google-play/google-play.collector';
+import { GdeltCollector } from './gdelt/gdelt.collector';
 import { HackerNewsCollector } from './hacker-news/hacker-news.collector';
 import { NewsCollector } from './news/news.collector';
 import { ProductHuntCollector } from './product-hunt/product-hunt.collector';
@@ -51,10 +53,12 @@ import { DiscourseForumAdapter } from './forum/adapters/discourse-forum.adapter'
 
     ForumCollector,
     BlogCollector,
+    CrossrefCollector,
     NewsCollector,
 
     AppStoreCollector,
     GooglePlayCollector,
+    GdeltCollector,
 
     HackerNewsCollector,
     ProductHuntCollector,

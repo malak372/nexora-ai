@@ -61,6 +61,54 @@ export class CollectorQueryBuilderUtil {
       'shipment status',
       'driver workflow',
     ],
+    'commercial building energy equipment operations': [
+      'commercial building electricity spike utility bill',
+      'building hvac energy consumption anomaly',
+      'elevator lighting office equipment energy waste',
+      'smart meter building equipment anomaly',
+      'facility energy readings separate systems',
+      'building equipment fault energy consumption',
+    ],
+    'commercial building energy & equipment operations': [
+      'commercial building electricity spike utility bill',
+      'building hvac energy consumption anomaly',
+      'elevator lighting office equipment energy waste',
+      'smart meter building equipment anomaly',
+      'facility energy readings separate systems',
+      'building equipment fault energy consumption',
+    ],
+    'costume rental wardrobe management': [
+      'costume rental double booking wrong size',
+      'costume shop missing accessories reservation',
+      'formalwear rental measurement fitting problem',
+      'costume return date garment damage tracking',
+      'theatrical wardrobe inventory missing costume',
+      'dress rental alteration pickup delay',
+    ],
+    'costume rental & wardrobe management': [
+      'costume rental double booking wrong size',
+      'costume shop missing accessories reservation',
+      'formalwear rental measurement fitting problem',
+      'costume return date garment damage tracking',
+      'theatrical wardrobe inventory missing costume',
+      'dress rental alteration pickup delay',
+    ],
+    'calligraphy commission design management': [
+      'calligraphy commission wrong wording revision',
+      'calligrapher approved design version tracking',
+      'custom stationery client revision mistake',
+      'commissioned artwork client instructions scattered messages',
+      'paper ink waste wrong approved version',
+      'art commission deadline rework client change',
+    ],
+    'calligraphy commission & design management': [
+      'calligraphy commission wrong wording revision',
+      'calligrapher approved design version tracking',
+      'custom stationery client revision mistake',
+      'commissioned artwork client instructions scattered messages',
+      'paper ink waste wrong approved version',
+      'art commission deadline rework client change',
+    ],
     'artificial intelligence': [
       'model accuracy',
       'computer vision segmentation',
@@ -138,13 +186,118 @@ export class CollectorQueryBuilderUtil {
       'traveler preference matching',
     ],
     manufacturing: [
+      'raw material delivery delay',
+      'production schedule bottleneck',
+      'supplier delay production disruption',
+      'inventory mismatch factory planning',
+      'warehouse stock production demand',
       'machine energy consumption',
       'idle equipment electricity waste',
       'production energy efficiency',
-      'machine anomaly energy usage',
       'predictive maintenance energy signal',
-      'factory cooling electricity use',
-      'production demand energy load',
+    ],
+    'locksmith service dispatch inventory management': [
+      'locksmith emergency dispatch delay',
+      'technician availability scheduling',
+      'locksmith replacement parts inventory',
+      'missing tools repeated service trip',
+      'locksmith job details phone coordination',
+      'field technician dispatch workflow',
+    ],
+    'locksmith service dispatch & inventory management': [
+      'locksmith emergency dispatch delay',
+      'technician availability scheduling',
+      'locksmith replacement parts inventory',
+      'missing tools repeated service trip',
+      'locksmith job details phone coordination',
+      'field technician dispatch workflow',
+    ],
+
+    'jewelry repair shop operations intake management': [
+      'jewelry repair customer dispute',
+      'jewelry repair lost item',
+      'jeweler repair estimate approval',
+      'jewelry repair item condition',
+      'jewelry repair paper ticket',
+      'jewelry repair wrong modification',
+      'jewelry repair replacement material',
+      'jewelry repair pickup status',
+    ],
+    'jewelry repair shop operations & intake management': [
+      'jewelry repair customer dispute',
+      'jewelry repair lost item',
+      'jeweler repair estimate approval',
+      'jewelry repair item condition',
+      'jewelry repair paper ticket',
+      'jewelry repair wrong modification',
+      'jewelry repair replacement material',
+      'jewelry repair pickup status',
+    ],
+    'property asset operating performance': [
+      'property management maintenance costs',
+      'rental property operating expenses',
+      'property manager net operating income',
+      'property vacancy maintenance costs',
+      'tenant complaints maintenance spend',
+      'building operating costs',
+      'property performance maintenance',
+      'rental income operating costs',
+    ],
+    'upholstery workshop project management': [
+      'upholstery lost fabric sample customer note',
+      'upholstery wrong furniture measurement rework',
+      'upholstery fabric order mistake',
+      'upholstery customer design change tracking',
+      'upholstery material shortage delayed furniture',
+      'upholstery paper work order lost request',
+    ],
+    'upholstery workshop & project management': [
+      'upholstery lost fabric sample customer note',
+      'upholstery wrong furniture measurement rework',
+      'upholstery fabric order mistake',
+      'upholstery customer design change tracking',
+      'upholstery material shortage delayed furniture',
+      'upholstery paper work order lost request',
+    ],
+    'watch repair shop operations client management': [
+      'watch repair customer ticket management',
+      'watchmaker repair order tracking',
+      'customer watch intake record',
+      'repair estimate customer approval',
+      'watch repair parts order tracking',
+      'technician repair notes',
+      'watch pickup collection date',
+      'paper repair ticket lost watch',
+    ],
+    'watch repair shop operations & client management': [
+      'watch repair customer ticket management',
+      'watchmaker repair order tracking',
+      'customer watch intake record',
+      'repair estimate customer approval',
+      'watch repair parts order tracking',
+      'technician repair notes',
+      'watch pickup collection date',
+      'paper repair ticket lost watch',
+    ],
+    'enterprise human resources policy compliance management': [
+      'hr policy version control',
+      'employee handbook outdated policy',
+      'conflicting leave rules departments',
+      'regulatory policy update tracking',
+      'employment contract policy comparison',
+      'repeated employee policy questions',
+      'hr compliance document review',
+      'internal procedure synchronization',
+    ],
+    'enterprise human resources policy & compliance management': [
+      'hr policy version control',
+      'employee handbook outdated policy',
+      'conflicting leave rules departments',
+      'regulatory policy update tracking',
+      'employment contract policy comparison',
+      'repeated employee policy questions',
+      'hr compliance document review',
+      'internal procedure synchronization',
     ],
     'internet of things': [
       'industrial equipment telemetry',
@@ -511,6 +664,20 @@ export class CollectorQueryBuilderUtil {
       /\b(?:compare|comparison|prices?|availability|reviews?|preferences?|budget|different platforms?|booking platforms?|missed opportunities?|expenses?)\b/iu.test(
         userIntent,
       );
+    const manufacturingSupplyChainIntent =
+      /\b(?:manufacturing|manufacturer|manufacturers|factory|factories|production line|production lines|production planner|production planners|industrial plant|industrial plants)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:raw materials?|supplier deliveries?|supplier updates?|supply chain|inventory|warehouse|warehouses|shipment|shipments|production schedules?|demand changes?|demand forecast|bottlenecks?|order prioritization|stock)\b/iu.test(
+        userIntent,
+      );
+    const locksmithDispatchIntent =
+      /\b(?:locksmith|locksmiths|lock service|lock services|field service|mobile service)\b/iu.test(
+        userIntent,
+      ) &&
+      /\b(?:dispatch|technician|technicians|service requests?|emergency calls?|locations?|tools?|replacement parts?|parts inventory|job assignment|availability|repeated trips?|payment status)\b/iu.test(
+        userIntent,
+      );
     const industrialEnergyIntent =
       /\b(?:manufacturing plants?|factories|factory|production lines?|machines?|industrial equipment)\b/iu.test(
         userIntent,
@@ -612,6 +779,26 @@ export class CollectorQueryBuilderUtil {
               'multi platform trip planning traveler preferences difficult',
               'travel booking missed deals price availability complaint',
               'trip planning reviews activities transport budget comparison',
+            ]
+        : manufacturingSupplyChainIntent &&
+            /(?:manufactur|logistics|supply chain|industrial)/u.test(domainName)
+          ? [
+              'manufacturing raw material delay production shutdown',
+              'factory inventory mismatch production schedule supplier delay',
+              'production bottleneck raw material shortage manufacturing',
+              'warehouse stock inaccurate production planning problem',
+              'manufacturing demand change excess inventory order priority',
+              'supplier delivery delay interrupts production line',
+            ]
+        : locksmithDispatchIntent &&
+            /(?:locksmith|field service|service dispatch|inventory management)/u.test(domainName)
+          ? [
+              'locksmith delayed dispatch technician availability',
+              'locksmith repeated trip missing tools parts',
+              'locksmith emergency call dispatch coordination problem',
+              'locksmith wrong replacement part service call',
+              'locksmith van inventory job scheduling problem',
+              'locksmith phone messaging dispatch missed request',
             ]
         : industrialEnergyIntent &&
             /(?:manufactur|energy|internet of things|\biot\b)/u.test(domainName)

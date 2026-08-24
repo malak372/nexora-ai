@@ -58,32 +58,6 @@ const STAGE_SEQUENCE = new Map([
   ['finalization', 99],
 ]);
 
-function resolveForwardStage(currentKey, incomingKey) {
-  if (!incomingKey) return currentKey ?? null;
-  if (!currentKey) return incomingKey;
-
-  const currentSequence = STAGE_SEQUENCE.get(currentKey) ?? 0;
-  const incomingSequence = STAGE_SEQUENCE.get(incomingKey) ?? 0;
-
-  return incomingSequence >= currentSequence ? incomingKey : currentKey;
-}
-
-function resolveFurthestStageKey(stages = []) {
-  return stages.reduce((resolvedKey, stage) => {
-    const stageKey = stage?.stageKey ?? stage?.key;
-    const status = String(stage?.status ?? '').toUpperCase();
-
-    if (
-      !stageKey ||
-      !['RUNNING', 'COMPLETED', 'SUCCEEDED', 'SKIPPED'].includes(status)
-    ) {
-      return resolvedKey;
-    }
-
-    return resolveForwardStage(resolvedKey, stageKey);
-  }, null);
-}
-
 const TERMINAL_STATUSES = new Set([
   'COMPLETED',
   'FAILED',
@@ -91,56 +65,135 @@ const TERMINAL_STATUSES = new Set([
   'NO_RESULT',
 ]);
 
+function resolveForwardStage(currentKey, incomingKey) {
+  if (!incomingKey) {
+    return currentKey ?? null;
+  }
+
+  if (!currentKey) {
+    return incomingKey;
+  }
+
+  const currentSequence =
+    STAGE_SEQUENCE.get(currentKey) ?? 0;
+
+  const incomingSequence =
+    STAGE_SEQUENCE.get(incomingKey) ?? 0;
+
+  return incomingSequence >= currentSequence
+    ? incomingKey
+    : currentKey;
+}
+
+function resolveFurthestStageKey(stages = []) {
+  return stages.reduce((resolvedKey, stage) => {
+    const stageKey =
+      stage?.stageKey ??
+      stage?.key;
+
+    const status = String(
+      stage?.status ?? '',
+    ).toUpperCase();
+
+    if (
+      !stageKey ||
+      ![
+        'RUNNING',
+        'COMPLETED',
+        'SUCCEEDED',
+        'SKIPPED',
+      ].includes(status)
+    ) {
+      return resolvedKey;
+    }
+
+    return resolveForwardStage(
+      resolvedKey,
+      stageKey,
+    );
+  }, null);
+}
+
 function getRunIdeaId(run) {
-  return run?.ideaId ?? run?.idea?.id ?? run?.idea?.ideaId ?? null;
+  return (
+    run?.ideaId ??
+    run?.idea?.id ??
+    run?.idea?.ideaId ??
+    null
+  );
 }
 
 function statusRank(status) {
-  switch (String(status ?? '').trim().toUpperCase()) {
+  switch (
+    String(status ?? '')
+      .trim()
+      .toUpperCase()
+  ) {
     case 'QUEUED':
       return 0;
+
     case 'RUNNING':
       return 1;
+
     case 'RETRYING':
       return 2;
+
     case 'NO_RESULT':
       return 3;
+
     case 'FAILED':
     case 'CANCELLED':
       return 4;
+
     case 'COMPLETED':
       return 5;
+
     default:
       return -1;
   }
 }
 
 function isFullyResolvedTerminalRun(run) {
-  const status = String(run?.status ?? '').toUpperCase();
+  const status = String(
+    run?.status ?? '',
+  ).toUpperCase();
 
   if (!TERMINAL_STATUSES.has(status)) {
     return false;
   }
 
-  return status !== 'COMPLETED' || Boolean(getRunIdeaId(run));
+  return (
+    status !== 'COMPLETED' ||
+    Boolean(getRunIdeaId(run))
+  );
 }
 
 function toTimestamp(value) {
-  const timestamp = value ? Date.parse(value) : 0;
+  const timestamp = value
+    ? Date.parse(value)
+    : 0;
 
-  return Number.isFinite(timestamp) ? timestamp : 0;
+  return Number.isFinite(timestamp)
+    ? timestamp
+    : 0;
 }
 
 function mergeStage(stages, nextStage) {
-  const incomingKey = nextStage.stageKey ?? nextStage.key;
+  const incomingKey =
+    nextStage.stageKey ??
+    nextStage.key;
 
   const index = stages.findIndex(
-    (stage) => (stage.stageKey ?? stage.key) === incomingKey,
+    (stage) =>
+      (stage.stageKey ?? stage.key) ===
+      incomingKey,
   );
 
   if (index === -1) {
     return [...stages, nextStage].sort(
-      (a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0),
+      (a, b) =>
+        Number(a.sequence ?? 0) -
+        Number(b.sequence ?? 0),
     );
   }
 
@@ -148,41 +201,66 @@ function mergeStage(stages, nextStage) {
 
   if (
     toTimestamp(nextStage.updatedAt) > 0 &&
-    toTimestamp(current.updatedAt) > toTimestamp(nextStage.updatedAt)
+    toTimestamp(current.updatedAt) >
+      toTimestamp(nextStage.updatedAt)
   ) {
     return stages;
   }
 
   const copy = [...stages];
-  copy[index] = { ...current, ...nextStage };
+
+  copy[index] = {
+    ...current,
+    ...nextStage,
+  };
 
   return copy;
 }
 
-function mergeStages(currentStages = [], incomingStages = []) {
+function mergeStages(
+  currentStages = [],
+  incomingStages = [],
+) {
   return incomingStages.reduce(
-    (merged, stage) => mergeStage(merged, stage),
+    (merged, stage) =>
+      mergeStage(merged, stage),
     currentStages,
   );
 }
 
-function mergeRunSnapshot(current, incoming) {
+function mergeRunSnapshot(
+  current,
+  incoming,
+) {
   if (!current) {
     return {
       ...incoming,
-      id: incoming?.id ?? incoming?.runId,
-      runId: incoming?.runId ?? incoming?.id,
+
+      id:
+        incoming?.id ??
+        incoming?.runId,
+
+      runId:
+        incoming?.runId ??
+        incoming?.id,
+
       ideaId:
         incoming?.ideaId ??
         incoming?.idea?.id ??
         incoming?.idea?.ideaId ??
         null,
-      stages: incoming?.stages ?? [],
+
+      stages:
+        incoming?.stages ??
+        [],
     };
   }
 
-  const incomingTimestamp = toTimestamp(incoming?.updatedAt);
-  const currentTimestamp = toTimestamp(current?.updatedAt);
+  const incomingTimestamp =
+    toTimestamp(incoming?.updatedAt);
+
+  const currentTimestamp =
+    toTimestamp(current?.updatedAt);
 
   const incomingIsNewer =
     incomingTimestamp === 0 ||
@@ -190,8 +268,13 @@ function mergeRunSnapshot(current, incoming) {
     incomingTimestamp >= currentTimestamp;
 
   const merged = incomingIsNewer
-    ? { ...current, ...incoming }
-    : { ...current };
+    ? {
+        ...current,
+        ...incoming,
+      }
+    : {
+        ...current,
+      };
 
   if (!incomingIsNewer) {
     [
@@ -227,7 +310,8 @@ function mergeRunSnapshot(current, incoming) {
     incomingStatus &&
     (
       resumedFromRetry ||
-      statusRank(incomingStatus) >= statusRank(currentStatus)
+      statusRank(incomingStatus) >=
+        statusRank(currentStatus)
     )
   ) {
     merged.status = incomingStatus;
@@ -269,17 +353,24 @@ function mergeRunSnapshot(current, incoming) {
     current?.cancelRequestedAt ??
     null;
 
-  merged.currentStageKey = resolveForwardStage(
-    current?.currentStageKey,
+  merged.currentStageKey =
     resolveForwardStage(
-      incoming?.currentStageKey,
-      resolveFurthestStageKey(incoming?.stages ?? []),
-    ),
-  );
+      current?.currentStageKey,
+      resolveForwardStage(
+        incoming?.currentStageKey,
+        resolveFurthestStageKey(
+          incoming?.stages ?? [],
+        ),
+      ),
+    );
 
   merged.progressPercent = Math.max(
-    Number(current?.progressPercent ?? 0),
-    Number(incoming?.progressPercent ?? 0),
+    Number(
+      current?.progressPercent ?? 0,
+    ),
+    Number(
+      incoming?.progressPercent ?? 0,
+    ),
   );
 
   merged.stages = mergeStages(
@@ -289,7 +380,7 @@ function mergeRunSnapshot(current, incoming) {
 
   merged.updatedAt =
     incomingTimestamp >= currentTimestamp &&
-      incoming?.updatedAt != null
+    incoming?.updatedAt != null
       ? incoming.updatedAt
       : current?.updatedAt;
 
@@ -301,37 +392,65 @@ export function useIdeaGenerationSocket(
   initialRun = null,
 ) {
   const socketRef = useRef(null);
-  const mountedRef = useRef(true);
-  const requestInFlightRef = useRef(false);
-  const reconciliationTimerRef = useRef(null);
-  const runRef = useRef(initialRun);
-  const socketProvenRef = useRef(false);
 
-  const [run, setRun] = useState(initialRun);
-  const [connectionState, setConnectionState] =
-    useState('connecting');
+  const mountedRef =
+    useRef(true);
 
-  const [error, setError] = useState('');
-  const [errorStatus, setErrorStatus] = useState(null);
+  const requestInFlightRef =
+    useRef(false);
+
+  const reconciliationTimerRef =
+    useRef(null);
+
+  const runRef =
+    useRef(initialRun);
+
+  const socketProvenRef =
+    useRef(false);
+
+  const [run, setRun] =
+    useState(initialRun);
+
+  const [
+    connectionState,
+    setConnectionState,
+  ] = useState('connecting');
+
+  const [error, setError] =
+    useState('');
+
+  const [
+    errorStatus,
+    setErrorStatus,
+  ] = useState(null);
 
   useEffect(() => {
     runRef.current = run;
   }, [run]);
 
   const loadSnapshot = useCallback(
-    async ({ silent = false } = {}) => {
-      if (!runId || requestInFlightRef.current) {
+    async ({
+      silent = false,
+    } = {}) => {
+      if (
+        !runId ||
+        requestInFlightRef.current
+      ) {
         return runRef.current;
       }
 
       requestInFlightRef.current = true;
 
       try {
-        const data = await getGenerationRun(runId);
+        const data =
+          await getGenerationRun(runId);
 
         if (mountedRef.current) {
           setRun((current) =>
-            mergeRunSnapshot(current, data),
+            mergeRunSnapshot(
+              current,
+              data,
+            ),
           );
 
           setError('');
@@ -341,18 +460,45 @@ export function useIdeaGenerationSocket(
         return data;
       } catch (requestError) {
         const status =
-          requestError?.response?.status ?? null;
+          requestError?.response?.status ??
+          null;
 
-        if (mountedRef.current && !silent) {
-          setErrorStatus(status);
+        if (
+          mountedRef.current &&
+          !silent
+        ) {
+          const isPermanentAccessError =
+            status === 403 ||
+            status === 404;
 
-          setError(
-            status === 429
-              ? 'Live progress is still running. Status synchronization will retry automatically.'
-              : requestError?.response?.data?.message ||
-              requestError?.message ||
-              'Generation progress could not be refreshed.',
-          );
+          if (isPermanentAccessError) {
+            setErrorStatus(status);
+
+            setError(
+              requestError?.response
+                ?.data?.message ||
+                requestError?.message ||
+                'Generation progress could not be refreshed.',
+            );
+          } else {
+            /*
+             * Temporary HTTP failures must not replace
+             * the active generation screen.
+             *
+             * Socket.IO remains the primary source for
+             * live progress and the reconciliation loop
+             * will keep retrying automatically.
+             */
+            setErrorStatus(null);
+            setError('');
+
+            setConnectionState(
+              (current) =>
+                current === 'connected'
+                  ? current
+                  : 'reconnecting',
+            );
+          }
         }
 
         throw requestError;
@@ -363,12 +509,20 @@ export function useIdeaGenerationSocket(
     [runId],
   );
 
-  const resolvedIdeaId = getRunIdeaId(run);
+  const resolvedIdeaId =
+    getRunIdeaId(run);
 
   const runStatus = String(
     run?.status ?? '',
   ).toUpperCase();
 
+  /*
+   * A COMPLETED socket event may arrive a fraction
+   * before the final idea relationship is hydrated.
+   *
+   * Reconcile once more until the idea id becomes
+   * available instead of treating the run as incomplete.
+   */
   useEffect(() => {
     if (
       runStatus !== 'COMPLETED' ||
@@ -396,60 +550,83 @@ export function useIdeaGenerationSocket(
 
     const seededRun =
       initialRun &&
-        String(
-          initialRun?.runId ??
+      String(
+        initialRun?.runId ??
           initialRun?.id ??
           '',
-        ) === String(runId)
+      ) === String(runId)
         ? initialRun
         : null;
 
     setRun(seededRun);
     runRef.current = seededRun;
 
-    const clearReconciliationTimer = () => {
-      if (reconciliationTimerRef.current) {
-        window.clearTimeout(
-          reconciliationTimerRef.current,
-        );
+    setError('');
+    setErrorStatus(null);
+    setConnectionState('connecting');
 
-        reconciliationTimerRef.current = null;
-      }
-    };
+    const clearReconciliationTimer =
+      () => {
+        if (
+          reconciliationTimerRef.current
+        ) {
+          window.clearTimeout(
+            reconciliationTimerRef.current,
+          );
 
-    const scheduleReconciliation = (delay) => {
-      clearReconciliationTimer();
+          reconciliationTimerRef.current =
+            null;
+        }
+      };
 
-      if (
-        !mountedRef.current ||
-        isFullyResolvedTerminalRun(runRef.current)
-      ) {
-        return;
-      }
+    const scheduleReconciliation =
+      (delay) => {
+        clearReconciliationTimer();
 
-      reconciliationTimerRef.current =
-        window.setTimeout(async () => {
-          let nextDelay =
-            socketProvenRef.current
-              ? SOCKET_RECONCILIATION_MS
-              : FALLBACK_RECONCILIATION_MS;
+        if (
+          !mountedRef.current ||
+          isFullyResolvedTerminalRun(
+            runRef.current,
+          )
+        ) {
+          return;
+        }
 
-          try {
-            await loadSnapshot({
-              silent: true,
-            });
-          } catch (requestError) {
-            if (
-              requestError?.response?.status === 429
-            ) {
-              nextDelay = RATE_LIMIT_RETRY_MS;
-            }
-          } finally {
-            scheduleReconciliation(nextDelay);
-          }
-        }, delay);
-    };
+        reconciliationTimerRef.current =
+          window.setTimeout(
+            async () => {
+              let nextDelay =
+                socketProvenRef.current
+                  ? SOCKET_RECONCILIATION_MS
+                  : FALLBACK_RECONCILIATION_MS;
 
+              try {
+                await loadSnapshot({
+                  silent: true,
+                });
+              } catch (requestError) {
+                if (
+                  requestError
+                    ?.response?.status ===
+                  429
+                ) {
+                  nextDelay =
+                    RATE_LIMIT_RETRY_MS;
+                }
+              } finally {
+                scheduleReconciliation(
+                  nextDelay,
+                );
+              }
+            },
+            delay,
+          );
+      };
+
+    /*
+     * Give Socket.IO a short opportunity to establish
+     * the realtime stream before starting REST fallback.
+     */
     scheduleReconciliation(
       INITIAL_SOCKET_GRACE_MS,
     );
@@ -462,11 +639,19 @@ export function useIdeaGenerationSocket(
             token: getAccessToken(),
           });
         },
+
         withCredentials: true,
+
         reconnection: true,
-        reconnectionAttempts: Infinity,
+
+        reconnectionAttempts:
+          Infinity,
+
         reconnectionDelay: 350,
-        reconnectionDelayMax: 3_000,
+
+        reconnectionDelayMax:
+          3_000,
+
         timeout: 8_000,
       },
     );
@@ -476,58 +661,105 @@ export function useIdeaGenerationSocket(
     const markRealtimeEvent = () => {
       socketProvenRef.current = true;
 
-      setConnectionState('connected');
+      setConnectionState(
+        'connected',
+      );
 
       clearReconciliationTimer();
 
+      /*
+       * Once realtime is proven healthy, REST becomes
+       * only an occasional consistency check.
+       */
       scheduleReconciliation(
         SOCKET_RECONCILIATION_MS,
       );
     };
 
-    socket.on('connect', () => {
-      setConnectionState('joining');
+    socket.on(
+      'connect',
+      () => {
+        setConnectionState(
+          'joining',
+        );
 
-      socket.emit(
-        'idea-generation.join',
-        { runId },
-        (acknowledgement) => {
-          if (!mountedRef.current) {
-            return;
-          }
+        socket.emit(
+          'idea-generation.join',
+          {
+            runId,
+          },
+          (acknowledgement) => {
+            if (!mountedRef.current) {
+              return;
+            }
 
-          if (acknowledgement?.success) {
-            setConnectionState('connected');
-            setError('');
-            setErrorStatus(null);
-            return;
-          }
+            if (
+              acknowledgement?.success
+            ) {
+              setConnectionState(
+                'connected',
+              );
 
-          setConnectionState('fallback');
-        },
-      );
-    });
+              setError('');
+              setErrorStatus(null);
 
-    socket.on('disconnect', () => {
-      socketProvenRef.current = false;
+              return;
+            }
 
-      setConnectionState('reconnecting');
+            /*
+             * Socket connected but room join failed.
+             * Keep the page alive using HTTP fallback.
+             */
+            setConnectionState(
+              'fallback',
+            );
 
-      scheduleReconciliation(250);
-    });
+            scheduleReconciliation(
+              FALLBACK_RECONCILIATION_MS,
+            );
+          },
+        );
+      },
+    );
 
-    socket.on('connect_error', () => {
-      socketProvenRef.current = false;
+    socket.on(
+      'disconnect',
+      () => {
+        socketProvenRef.current =
+          false;
 
-      setConnectionState('fallback');
+        setConnectionState(
+          'reconnecting',
+        );
 
-      scheduleReconciliation(250);
-    });
+        scheduleReconciliation(
+          250,
+        );
+      },
+    );
+
+    socket.on(
+      'connect_error',
+      () => {
+        socketProvenRef.current =
+          false;
+
+        setConnectionState(
+          'fallback',
+        );
+
+        scheduleReconciliation(
+          250,
+        );
+      },
+    );
 
     socket.on(
       'idea-generation.snapshot',
       (payload) => {
-        if (payload?.runId !== runId) {
+        if (
+          payload?.runId !== runId
+        ) {
           return;
         }
 
@@ -548,7 +780,9 @@ export function useIdeaGenerationSocket(
     socket.on(
       'idea-generation.run.updated',
       (payload) => {
-        if (payload?.runId !== runId) {
+        if (
+          payload?.runId !== runId
+        ) {
           return;
         }
 
@@ -560,86 +794,119 @@ export function useIdeaGenerationSocket(
             payload,
           ),
         );
+
+        setError('');
+        setErrorStatus(null);
       },
     );
 
     socket.on(
       'idea-generation.stage.updated',
       (payload) => {
-        if (payload?.runId !== runId) {
+        if (
+          payload?.runId !== runId
+        ) {
           return;
         }
 
         markRealtimeEvent();
 
         setRun((current) => {
-          const stages = mergeStage(
-            current?.stages ?? [],
-            payload,
-          );
+          const stages =
+            mergeStage(
+              current?.stages ?? [],
+              payload,
+            );
+
+          const payloadStatus =
+            String(
+              payload?.status ?? '',
+            ).toUpperCase();
+
+          const currentStatus =
+            String(
+              current?.status ??
+                'QUEUED',
+            ).toUpperCase();
+
+          let nextStatus =
+            currentStatus;
+
+          if (
+            currentStatus ===
+              'QUEUED' &&
+            payloadStatus ===
+              'RUNNING'
+          ) {
+            nextStatus =
+              'RUNNING';
+          }
 
           return {
-            ...(current ?? {
-              id: runId,
-              runId,
-              status: 'QUEUED',
-              progressPercent: 0,
-              currentStageKey: null,
-              startedAt: null,
-              stages: [],
-            }),
+            ...(
+              current ?? {
+                id: runId,
+                runId,
+                status: 'QUEUED',
+                progressPercent: 0,
+                currentStageKey:
+                  null,
+                startedAt: null,
+                stages: [],
+              }
+            ),
 
-            status:
-              current?.status === 'QUEUED' &&
-                String(
-                  payload.status ?? '',
-                ).toUpperCase() === 'RUNNING'
-                ? 'RUNNING'
-                : current?.status ??
-                'RUNNING',
+            status: nextStatus,
 
             startedAt:
               current?.startedAt ??
               (
-                String(
-                  payload.status ?? '',
-                ).toUpperCase() ===
+                payloadStatus ===
                   'RUNNING'
-                  ? payload.startedAt ??
-                  null
+                  ? payload
+                      ?.startedAt ??
+                    null
                   : null
               ),
 
-            progressPercent: Math.max(
-              Number(
-                current?.progressPercent ??
-                0,
+            progressPercent:
+              Math.max(
+                Number(
+                  current
+                    ?.progressPercent ??
+                    0,
+                ),
+                Number(
+                  payload
+                    ?.progressPercent ??
+                    0,
+                ),
               ),
-              Number(
-                payload.progressPercent ??
-                0,
-              ),
-            ),
 
-            currentStageKey: [
-              'RUNNING',
-              'COMPLETED',
-              'SUCCEEDED',
-              'SKIPPED',
-            ].includes(
-              String(
-                payload.status ?? '',
-              ).toUpperCase(),
-            )
-              ? resolveForwardStage(
-                current?.currentStageKey,
-                payload.stageKey,
+            currentStageKey:
+              [
+                'RUNNING',
+                'COMPLETED',
+                'SUCCEEDED',
+                'SKIPPED',
+              ].includes(
+                payloadStatus,
               )
-              : current?.currentStageKey,
+                ? resolveForwardStage(
+                    current
+                      ?.currentStageKey,
+                    payload
+                      ?.stageKey,
+                  )
+                : current
+                    ?.currentStageKey,
 
             stages,
           };
         });
+
+        setError('');
+        setErrorStatus(null);
       },
     );
 
@@ -651,7 +918,9 @@ export function useIdeaGenerationSocket(
       if (socket.connected) {
         socket.emit(
           'idea-generation.leave',
-          { runId },
+          {
+            runId,
+          },
           () => undefined,
         );
       }
@@ -672,6 +941,8 @@ export function useIdeaGenerationSocket(
     connectionState,
     error,
     errorStatus,
-    refresh: () => loadSnapshot(),
+
+    refresh: () =>
+      loadSnapshot(),
   };
 }

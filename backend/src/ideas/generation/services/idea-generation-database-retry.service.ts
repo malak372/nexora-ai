@@ -11,6 +11,8 @@ export type DatabaseRetryOptions = {
   readonly operationName: string;
   readonly runId?: string;
   readonly maxAttempts?: number;
+  readonly baseDelayMs?: number;
+  readonly maxDelayMs?: number;
 };
 
 /** Executes critical Prisma operations with bounded exponential backoff. */
@@ -22,8 +24,18 @@ export class IdeaGenerationDatabaseRetryService {
     operation: () => Promise<T>,
     options: DatabaseRetryOptions,
   ): Promise<T> {
-    const maxAttempts =
-      options.maxAttempts ?? GENERATION_DATABASE_RETRY_MAX_ATTEMPTS;
+    const maxAttempts = Math.max(
+      1,
+      options.maxAttempts ?? GENERATION_DATABASE_RETRY_MAX_ATTEMPTS,
+    );
+    const baseDelayMs = Math.max(
+      0,
+      options.baseDelayMs ?? GENERATION_DATABASE_RETRY_BASE_DELAY_MS,
+    );
+    const maxDelayMs = Math.max(
+      baseDelayMs,
+      options.maxDelayMs ?? GENERATION_DATABASE_RETRY_MAX_DELAY_MS,
+    );
 
     let lastError: unknown;
 
@@ -38,13 +50,13 @@ export class IdeaGenerationDatabaseRetryService {
         }
 
         const exponentialDelayMs = Math.min(
-          GENERATION_DATABASE_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1),
-          GENERATION_DATABASE_RETRY_MAX_DELAY_MS,
+          baseDelayMs * 2 ** (attempt - 1),
+          maxDelayMs,
         );
 
         // A small jitter prevents several concurrent pipeline queries from
         // retrying against the pooled database at the exact same instant.
-        const jitterMs = Math.floor(Math.random() * 120);
+        const jitterMs = Math.floor(Math.random() * 180);
         const delayMs = exponentialDelayMs + jitterMs;
 
         this.logger.warn(

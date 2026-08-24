@@ -68,7 +68,7 @@ export const AdvancedIdeaFields = {
    * Recommended technologies, frameworks, databases, infrastructure,
    * and supporting tools.
    */
-  technologyStack: z.array(z.string().trim().min(1).max(100)).min(1).max(12),
+  technologyStack: z.array(z.string().trim().min(1).max(180)).min(1).max(12),
 
   /**
    * High-level system architecture recommendation.

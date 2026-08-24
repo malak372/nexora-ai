@@ -113,8 +113,39 @@ export function mapIdeaBenchmarkCandidate(
 /** Builds a concise dashboard summary without hiding full candidate details. */
 export function buildIdeaBenchmarkSummary(
   candidates: readonly ReturnType<typeof mapIdeaBenchmarkCandidate>[],
+  contextSnapshot?: unknown,
 ) {
   const selectedCandidate = candidates.find((candidate) => candidate.selected);
+  const postRescueSelection = resolvePostBenchmarkRescueSelection(contextSnapshot);
+
+  const persistedSelection = selectedCandidate
+    ? {
+        candidateId: selectedCandidate.id,
+        aiModelId: selectedCandidate.aiModelId,
+        providerKey: selectedCandidate.providerKey,
+        apiModelId: selectedCandidate.apiModelId,
+        modelName: selectedCandidate.modelName,
+        displayName: selectedCandidate.displayName,
+        opportunityRank: selectedCandidate.opportunityRank,
+        opportunityTitle: selectedCandidate.opportunityTitle,
+        deterministicScore: selectedCandidate.deterministicScore,
+        overallScore: selectedCandidate.overallScore,
+        semanticDiversityAdjustedScore:
+          selectedCandidate.semanticDiversityAdjustedScore,
+        judgeScore: selectedCandidate.judgeScore,
+        hybridFinalScore: selectedCandidate.hybridFinalScore,
+        finalScore: selectedCandidate.hybridFinalScore,
+        judgeReason: selectedCandidate.judgeReason,
+        judgeConfidence: selectedCandidate.judgeConfidence,
+        requiresLegalVerification:
+          selectedCandidate.requiresLegalVerification,
+      }
+    : null;
+
+  const contextFallbackSelection =
+    persistedSelection === null && postRescueSelection === null
+      ? resolveContextFallbackSelection(contextSnapshot)
+      : null;
 
   return {
     totalCandidates: candidates.length,
@@ -129,28 +160,139 @@ export function buildIdeaBenchmarkSummary(
         candidate.errorCode !== null &&
         candidate.errorCode !== 'QUALITY_GATE_REJECTED',
     ).length,
-    selectedCandidate: selectedCandidate
-      ? {
-          candidateId: selectedCandidate.id,
-          aiModelId: selectedCandidate.aiModelId,
-          providerKey: selectedCandidate.providerKey,
-          apiModelId: selectedCandidate.apiModelId,
-          modelName: selectedCandidate.modelName,
-          displayName: selectedCandidate.displayName,
-          opportunityRank: selectedCandidate.opportunityRank,
-          opportunityTitle: selectedCandidate.opportunityTitle,
-          deterministicScore: selectedCandidate.deterministicScore,
-          overallScore: selectedCandidate.overallScore,
-          semanticDiversityAdjustedScore:
-            selectedCandidate.semanticDiversityAdjustedScore,
-          judgeScore: selectedCandidate.judgeScore,
-          hybridFinalScore: selectedCandidate.hybridFinalScore,
-          finalScore: selectedCandidate.hybridFinalScore,
-          judgeReason: selectedCandidate.judgeReason,
-          judgeConfidence: selectedCandidate.judgeConfidence,
-          requiresLegalVerification:
-            selectedCandidate.requiresLegalVerification,
-        }
-      : null,
+    selectedCandidate:
+      postRescueSelection ?? persistedSelection ?? contextFallbackSelection,
+    postBenchmarkRescueApplied:
+      postRescueSelection !== null || contextFallbackSelection !== null,
   };
+}
+
+function resolvePostBenchmarkRescueSelection(contextSnapshot: unknown) {
+  if (!isRecord(contextSnapshot)) return null;
+  const rawCandidates = contextSnapshot.benchmarkCandidates;
+  if (!Array.isArray(rawCandidates)) return null;
+
+  const rescueCandidate = rawCandidates.find((candidate) => {
+    if (!isRecord(candidate) || candidate.selected !== true) return false;
+    return (
+      typeof candidate.candidateId === 'string' &&
+      candidate.candidateId.includes(':duplicate-rescue:')
+    );
+  });
+
+  if (!isRecord(rescueCandidate)) return null;
+
+  const score = firstFiniteNumber(
+    rescueCandidate.finalScore,
+    rescueCandidate.qualityScore,
+  );
+  if (score === null) return null;
+
+  const opportunityRank = firstFiniteNumber(rescueCandidate.opportunityRank);
+  const parsedOutput = isRecord(rescueCandidate.parsedOutput)
+    ? rescueCandidate.parsedOutput
+    : null;
+  const coreIdea =
+    parsedOutput && isRecord(parsedOutput.coreIdea)
+      ? parsedOutput.coreIdea
+      : null;
+  const finalTitle =
+    coreIdea && typeof coreIdea.title === 'string'
+      ? coreIdea.title.trim()
+      : '';
+  const strategy = String(rescueCandidate.candidateId)
+    .split(':duplicate-rescue:')[1]
+    ?.replace(/[-_]+/gu, ' ')
+    .trim();
+
+  return {
+    candidateId: String(rescueCandidate.candidateId),
+    aiModelId: null,
+    providerKey: 'deterministic-rescue',
+    apiModelId: 'post-benchmark-duplicate-rescue',
+    modelName: 'deterministic-duplicate-rescue',
+    displayName: 'Deterministic duplicate rescue',
+    opportunityRank:
+      opportunityRank === null ? 1 : Math.max(1, Math.round(opportunityRank)),
+    opportunityTitle:
+      typeof rescueCandidate.opportunityTitle === 'string'
+        ? rescueCandidate.opportunityTitle
+        : finalTitle || 'Post-benchmark duplicate rescue',
+    deterministicScore: score,
+    overallScore: score,
+    semanticDiversityAdjustedScore: null,
+    judgeScore: null,
+    hybridFinalScore: score,
+    finalScore: score,
+    judgeReason: strategy
+      ? `Final product was re-evaluated after deterministic duplicate rescue (${strategy}).`
+      : 'Final product was re-evaluated after deterministic duplicate rescue.',
+    judgeConfidence: null,
+    requiresLegalVerification: null,
+  };
+}
+
+function resolveContextFallbackSelection(contextSnapshot: unknown) {
+  if (!isRecord(contextSnapshot)) return null;
+  const rawCandidates = contextSnapshot.benchmarkCandidates;
+  if (!Array.isArray(rawCandidates)) return null;
+
+  const selected = rawCandidates.find(
+    (candidate) => isRecord(candidate) && candidate.selected === true,
+  );
+  if (!isRecord(selected)) return null;
+
+  const candidateId =
+    typeof selected.candidateId === 'string' ? selected.candidateId.trim() : '';
+  const score = firstFiniteNumber(selected.finalScore, selected.qualityScore);
+  if (!candidateId || score === null) return null;
+
+  const parsedOutput = isRecord(selected.parsedOutput)
+    ? selected.parsedOutput
+    : null;
+  const coreIdea =
+    parsedOutput && isRecord(parsedOutput.coreIdea)
+      ? parsedOutput.coreIdea
+      : null;
+  const finalTitle =
+    coreIdea && typeof coreIdea.title === 'string'
+      ? coreIdea.title.trim()
+      : '';
+  const opportunityRank = firstFiniteNumber(selected.opportunityRank);
+
+  return {
+    candidateId,
+    aiModelId: null,
+    providerKey: 'availability-fallback',
+    apiModelId: 'post-benchmark-availability-fallback',
+    modelName: 'availability-fallback',
+    displayName: 'Structurally valid availability fallback',
+    opportunityRank:
+      opportunityRank === null ? 1 : Math.max(1, Math.round(opportunityRank)),
+    opportunityTitle:
+      typeof selected.opportunityTitle === 'string'
+        ? selected.opportunityTitle
+        : finalTitle || 'Requester-defined availability fallback',
+    deterministicScore: score,
+    overallScore: score,
+    semanticDiversityAdjustedScore: null,
+    judgeScore: null,
+    hybridFinalScore: score,
+    finalScore: score,
+    judgeReason:
+      'The model benchmark did not retain a normally successful candidate, but the pipeline preserved and validated a structurally usable requester-aligned fallback so the run could complete without substituting another problem.',
+    judgeConfidence: null,
+    requiresLegalVerification: null,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function firstFiniteNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
 }

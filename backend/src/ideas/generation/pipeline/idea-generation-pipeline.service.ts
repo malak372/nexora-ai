@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 
 import {
+  IdeaGenerationRunStatus,
   IdeaGenerationStageStatus,
   IdeaGenerationType,
   Prisma,
@@ -126,6 +127,25 @@ type ResolvedPipelineStage = {
 };
 
 /**
+ * Signals that another durable lifecycle path already moved the run into a
+ * recoverable state. The active pipeline must stop without overwriting that
+ * RETRYING/PAUSED state with FAILED; the recovery worker will resume from the
+ * latest saved checkpoint.
+ */
+class IdeaGenerationRunHandoffError extends Error {
+  constructor(
+    readonly runId: string,
+    readonly stageKey: IdeaGenerationStageKey,
+    readonly status: IdeaGenerationRunStatus,
+  ) {
+    super(
+      `Generation run "${runId}" moved to ${status} before stage "${stageKey}" and will resume from its durable checkpoint.`,
+    );
+    this.name = IdeaGenerationRunHandoffError.name;
+  }
+}
+
+/**
  * Service responsible for orchestrating the ordered execution of
  * all stages belonging to one idea-generation pipeline.
  *
@@ -243,13 +263,10 @@ export class IdeaGenerationPipelineService {
     ]);
     this.realtime.publishRunUpdated(startedRun);
 
-    // The run already exists durably. Queue the initial recovery snapshot so
-    // request validation can begin without another remote database round-trip.
-    void this.enqueueContextCheckpoint(
-      input.context,
-      input.context.recoveryCheckpointStageKey,
-    );
-
+    /*
+     * createRun() already persisted the initial context snapshot. Avoid writing
+     * the same payload a second time before request validation.
+     */
     let currentContext = input.context;
 
     const processedStages: IdeaGenerationPipelineStageResult[] = [];
@@ -358,20 +375,22 @@ export class IdeaGenerationPipelineService {
       this.assertCompletionIntegrity(currentContext);
 
       /*
-       * A no-result outcome is a durable product result, not an error. Persist
-       * its final context synchronously before completing the run so API clients
-       * receive the real recovery metadata, collection job IDs, and no-result
-       * payload instead of the last asynchronous pre-ranking snapshot.
+       * Persist the final compact context in the same database update that
+       * transitions the run to COMPLETED. This keeps recovery/audit metadata
+       * durable without an extra post-persistence round-trip.
        */
-      if (currentContext.noResultOutcome) {
-        await this.enqueueContextCheckpoint(
-          currentContext,
-          IDEA_GENERATION_STAGE_KEYS.OPPORTUNITY_RANKING,
-        );
-      }
+      const finalCheckpointStageKey = currentContext.noResultOutcome
+        ? IDEA_GENERATION_STAGE_KEYS.OPPORTUNITY_RANKING
+        : IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE;
+      const finalSnapshot = this.buildCompactContextSnapshot({
+        ...currentContext,
+        recoveryCheckpointStageKey: finalCheckpointStageKey,
+      });
 
       const completedRun = await this.runService.completeRun(
         currentContext.runId,
+        this.prisma,
+        finalSnapshot,
       );
       this.realtime.publishRunUpdated(completedRun);
 
@@ -394,7 +413,24 @@ export class IdeaGenerationPipelineService {
         throw error;
       }
 
+      if (error instanceof IdeaGenerationRunHandoffError) {
+        this.logger.warn(error.message);
+        throw error;
+      }
+
       const normalizedError = this.normalizeError(error);
+
+      if (await this.isCancellationRequestedSafely(currentContext.runId)) {
+        await this.cancelRunSafely(currentContext.runId);
+        const cancelled = new IdeaGenerationCancelledError(
+          currentContext.runId,
+          this.resolveCurrentStageKey(currentContext.runId, processedStages),
+        );
+        this.logger.warn(
+          `Idea-generation pipeline observed a cancellation request while handling another stage error for run "${currentContext.runId}". Cancellation took precedence over failure persistence.`,
+        );
+        throw cancelled;
+      }
 
       if (isTransientDatabaseError(error)) {
         await this.markRunRetryingSafely(currentContext.runId, normalizedError);
@@ -879,11 +915,11 @@ export class IdeaGenerationPipelineService {
      * recovery metadata; generation quality, entitlement atomicity, duplicate
      * protection, and generated outputs are unchanged.
      */
-    if (
-      definition.key === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
-    ) {
-      await this.flushContextCheckpoints(runId);
-    }
+    /*
+     * Compact recovery snapshots do not feed IdeaPersistenceService. Let them
+     * finish in the background instead of stalling the persistence boundary.
+     * The final snapshot is committed atomically with completeRun().
+     */
     this.realtime.publishStageTransition({
       runId,
       stageKey: definition.key,
@@ -952,9 +988,36 @@ export class IdeaGenerationPipelineService {
       );
 
       if (runUpdate.count !== 1) {
-        throw new ConflictException(
-          'The generation run is no longer active or cancellation was requested.',
+        const state = await this.databaseRetry.execute(
+          () => this.runService.getCancellationState(runId),
+          {
+            operationName: 'resolve generation run state after guarded stage-start miss',
+            runId,
+          },
         );
+
+        if (state.isCancellationRequested) {
+          throw new IdeaGenerationCancelledError(runId, definition.key);
+        }
+
+        if (
+          state.status === IdeaGenerationRunStatus.RETRYING ||
+          state.status === IdeaGenerationRunStatus.PAUSED ||
+          state.status === IdeaGenerationRunStatus.QUEUED
+        ) {
+          throw new IdeaGenerationRunHandoffError(
+            runId,
+            definition.key,
+            state.status,
+          );
+        }
+
+        throw new ConflictException({
+          code: 'IDEA_GENERATION_RUN_NOT_ACTIVE',
+          message: `Generation run "${runId}" cannot start stage "${definition.key}" from status ${state.status}.`,
+          status: state.status,
+          stageKey: definition.key,
+        });
       }
     }
 
@@ -1071,16 +1134,16 @@ export class IdeaGenerationPipelineService {
   }
 
   /**
-   * Persistence and finalization checkpoints are awaited because they define
-   * the durable success boundary. Earlier completion checkpoints are ordered
-   * in the background to remove repeated network idle time only.
+   * The finalization checkpoint is awaited before completeRun() so the durable
+   * stage timeline cannot show the run as COMPLETED before finalization itself
+   * is recorded as complete. Earlier stage checkpoints remain ordered in the
+   * background to preserve the performance gains from removing per-stage
+   * database waits.
    */
   private requiresSynchronousCompletionCheckpoint(
     stageKey: IdeaGenerationStageKey,
   ): boolean {
-    return (
-      stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
-    );
+    return stageKey === IDEA_GENERATION_STAGE_KEYS.FINALIZATION;
   }
 
   /** Enqueues one ordered stage-checkpoint write for a generation run. */
@@ -1167,24 +1230,53 @@ export class IdeaGenerationPipelineService {
     definition: IdeaGenerationStageDefinition,
     attempt: number,
   ): Promise<void> {
-    const stage = await this.prisma.ideaGenerationStage.update({
-      where: {
-        runId_stageKey: {
-          runId,
-          stageKey: definition.key,
-        },
-      },
-      data: {
-        status: IdeaGenerationStageStatus.SKIPPED,
-        progressPercent: definition.progressStart,
-        attemptCount: attempt,
-        resultPreview: Prisma.JsonNull,
-        errorMessage: 'Stage execution was cancelled.',
-        completedAt: new Date(),
-      },
+    /*
+     * Terminal run cancellation is user-visible and more important than the
+     * stage-row observability checkpoint. Publish the transition immediately
+     * and queue the durable stage update behind any already-started stage
+     * checkpoint instead of delaying IdeaGenerationRun.CANCELLED by another
+     * remote database round-trip. Queue ordering preserves RUNNING -> SKIPPED
+     * lifecycle consistency for the stage record.
+     */
+    this.realtime.publishStageTransition({
+      runId,
+      stageKey: definition.key,
+      displayName: definition.displayName,
+      sequence: definition.sequence,
+      status: IdeaGenerationStageStatus.SKIPPED,
+      progressPercent: definition.progressStart,
+      attemptCount: attempt,
+      maxAttempts: definition.maxAttempts,
+      errorMessage: 'Stage execution was cancelled.',
     });
 
-    this.realtime.publishStageUpdated(stage);
+    void this.enqueueStageCheckpoint(runId, async () => {
+      const stage = await this.databaseRetry.execute(
+        () =>
+          this.prisma.ideaGenerationStage.update({
+            where: {
+              runId_stageKey: {
+                runId,
+                stageKey: definition.key,
+              },
+            },
+            data: {
+              status: IdeaGenerationStageStatus.SKIPPED,
+              progressPercent: definition.progressStart,
+              attemptCount: attempt,
+              resultPreview: Prisma.JsonNull,
+              errorMessage: 'Stage execution was cancelled.',
+              completedAt: new Date(),
+            },
+          }),
+        {
+          operationName: 'checkpoint cancelled generation stage',
+          runId,
+        },
+      );
+
+      this.realtime.publishStageUpdated(stage);
+    });
   }
 
   /**
@@ -1419,37 +1511,24 @@ export class IdeaGenerationPipelineService {
     return checkpoint?.definition.sequence ?? null;
   }
 
-  /** Waits only for recovery snapshots that were already queued for this run. */
-  private async flushContextCheckpoints(runId: string): Promise<void> {
-    const pending = this.contextCheckpointQueues.get(runId);
-
-    if (!pending) {
-      return;
-    }
-
-    try {
-      await pending;
-    } catch {
-      // enqueueContextCheckpoint already records the failure. A recovery
-      // snapshot must never replace a valid generation result.
-    }
-  }
 
   private shouldCheckpointAfterStage(stageKey: IdeaGenerationStageKey): boolean {
+    /*
+     * Collection is the durable evidence boundary and core generation is the
+     * durable candidate boundary. Community analysis can be reconstructed from
+     * persisted NLP/evidence state, while final context is saved with run
+     * completion. This removes redundant large JSON updates.
+     */
     return (
       stageKey === IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION ||
-      stageKey === IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS ||
-      stageKey === IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION ||
-      stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
+      stageKey === IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION
     );
   }
 
-  /** Idea persistence is the only snapshot boundary that must finish before
-   * the pipeline advances. Finalization contains no recovery-critical payload. */
   private requiresSynchronousContextCheckpoint(
-    stageKey: IdeaGenerationStageKey,
+    _stageKey: IdeaGenerationStageKey,
   ): boolean {
-    return stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE;
+    return false;
   }
 
   /** Queues compact context snapshots in run order and coalesces work with the
@@ -1487,17 +1566,14 @@ export class IdeaGenerationPipelineService {
     return current;
   }
 
-  private async saveContextCheckpoint(
+  private buildCompactContextSnapshot(
     context: IdeaGenerationContext,
-  ): Promise<void> {
+  ): Prisma.InputJsonValue {
     const compactContext: IdeaGenerationContext = {
       ...context,
       nlp: context.nlp
         ? {
             ...context.nlp,
-            // Representative samples already exist in persisted collection and
-            // NLP tables. Keeping them in every run checkpoint duplicates large
-            // text payloads without improving recovery.
             samplePosts: null,
             sampleComments: null,
           }
@@ -1505,25 +1581,22 @@ export class IdeaGenerationPipelineService {
       prompt: context.prompt
         ? {
             ...context.prompt,
-            // After core generation succeeds the persisted candidate/output is
-            // the recovery source of truth, so the rendered prompt no longer
-            // needs to remain inside the run row.
             promptText: context.coreIdea ? '' : context.prompt.promptText,
             responseSchema: context.coreIdea
               ? { type: 'object' }
               : context.prompt.responseSchema,
           }
         : null,
-      // Persisted output rows are referenced by generatedOutputIdsByKey. An
-      // empty array after ideaId is assigned means "content compacted after
-      // persistence", not "no outputs generated". The generated IDs remain the
-      // canonical checkpoint representation.
       advancedOutputs: context.ideaId ? [] : context.advancedOutputs,
     };
 
-    const snapshot = JSON.parse(
-      JSON.stringify(compactContext),
-    ) as Prisma.InputJsonValue;
+    return JSON.parse(JSON.stringify(compactContext)) as Prisma.InputJsonValue;
+  }
+
+  private async saveContextCheckpoint(
+    context: IdeaGenerationContext,
+  ): Promise<void> {
+    const snapshot = this.buildCompactContextSnapshot(context);
 
     const run = await this.databaseRetry.execute(
       () => this.runService.saveContextCheckpoint(context.runId, snapshot),
@@ -1533,7 +1606,9 @@ export class IdeaGenerationPipelineService {
       },
     );
 
-    this.realtime.publishRunUpdated(run);
+    if (run) {
+      this.realtime.publishRunUpdated(run);
+    }
   }
 
   /** Records a recoverable infrastructure interruption without failing the run. */
@@ -1567,6 +1642,37 @@ export class IdeaGenerationPipelineService {
         normalized.stack,
       );
     }
+  }
+
+  /** Returns cancellation state without replacing the original pipeline error. */
+  private async isCancellationRequestedSafely(runId: string): Promise<boolean> {
+    try {
+      const state = await this.runService.getCancellationState(runId);
+      return state.isCancellationRequested;
+    } catch (error: unknown) {
+      const normalized = this.normalizeError(error);
+      this.logger.warn(
+        `Could not resolve cancellation state for run "${runId}" while handling a pipeline error: ${normalized.message}`,
+      );
+      return false;
+    }
+  }
+
+  /** Resolves the most recent stage key for cancellation diagnostics. */
+  private resolveCurrentStageKey(
+    runId: string,
+    processedStages: readonly IdeaGenerationPipelineStageResult[],
+  ): IdeaGenerationStageKey {
+    const latest =
+      processedStages.length > 0
+        ? processedStages[processedStages.length - 1]?.stageKey
+        : undefined;
+    if (latest) return latest;
+
+    this.logger.debug(
+      `Cancellation for run "${runId}" occurred before the first stage completed.`,
+    );
+    return IDEA_GENERATION_STAGE_KEYS.REQUEST_VALIDATION;
   }
 
   private normalizeError(error: unknown): Error {

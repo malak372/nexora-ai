@@ -128,16 +128,20 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
         return [];
       }
 
-      const collectedArticles: DevToArticle[] = [];
+      const searchResults = await Promise.allSettled(
+        searchQueries.map((query) => this.searchArticles(query)),
+      );
 
-      for (const query of searchQueries) {
-        if (collectedArticles.length >= this.maxFetchedPosts) {
-          break;
+      const collectedArticles = searchResults.flatMap((result) =>
+        result.status === 'fulfilled' ? result.value : [],
+      );
+
+      for (const [index, result] of searchResults.entries()) {
+        if (result.status === 'rejected') {
+          this.logger.warn(
+            `DEV.to tag query failed without blocking parallel collection | tag=${searchQueries[index]} | error=${this.getErrorMessage(result.reason)}`,
+          );
         }
-
-        const articles = await this.searchArticles(query);
-
-        collectedArticles.push(...articles);
       }
 
       const seenArticleIds = new Set<string>();
