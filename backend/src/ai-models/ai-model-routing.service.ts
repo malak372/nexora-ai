@@ -31,6 +31,9 @@ const MODEL_TRANSIENT_ERROR_CODES = new Set([
   'NETWORK',
 ]);
 
+/** A single transient provider hiccup must not disable a proven model across runs. */
+const MODEL_TRANSIENT_FAILURES_REQUIRED_FOR_COOLDOWN = 2;
+
 /**
  * Service responsible for resolving the order in which routable
  * AI models should be executed.
@@ -71,9 +74,10 @@ export class AiModelRoutingService {
   private readonly providerQuotaCooldownMs: number;
 
   /**
-   * Duration for which one model with TIMEOUT/RATE_LIMIT/NETWORK/provider
-   * failure is skipped. Ten minutes prevents the next generation run from
-   * immediately paying the same timeout again while keeping recovery automatic.
+   * Duration used to inspect recent transient model failures. A model is
+   * skipped across runs only after repeated consecutive failures; one isolated
+   * timeout remains eligible on the next run while same-run blocking is handled
+   * by the caller.
    */
   private readonly modelTransientCooldownMs: number;
 
@@ -170,6 +174,7 @@ export class AiModelRoutingService {
   async resolveSpecificModel(
     modelId: string,
     allowTemporaryCooldownBypass = false,
+    allowBoundedEmergencyAttempt = false,
   ): Promise<AiModel> {
     const normalizedModelId = modelId.trim();
 
@@ -178,9 +183,20 @@ export class AiModelRoutingService {
     }
 
     const routableModels = await this.aiModelsService.getRoutableModels();
-    const configuredModel = routableModels.find(
+    let configuredModel = routableModels.find(
       (candidate) => candidate.id === normalizedModelId,
     );
+
+    if (!configuredModel && allowBoundedEmergencyAttempt) {
+      const emergencyModels =
+        await this.aiModelsService.getFallbackModels();
+      configuredModel = emergencyModels.find(
+        (candidate) => candidate.id === normalizedModelId,
+      );
+      if (configuredModel) {
+        return configuredModel;
+      }
+    }
 
     if (!configuredModel) {
       throw new ServiceUnavailableException(
@@ -195,7 +211,7 @@ export class AiModelRoutingService {
     );
 
     if (!model) {
-      if (allowTemporaryCooldownBypass) {
+      if (allowTemporaryCooldownBypass || allowBoundedEmergencyAttempt) {
         return configuredModel;
       }
 
@@ -212,9 +228,9 @@ export class AiModelRoutingService {
    *
    * Provider-wide blocking is reserved for INSUFFICIENT_QUOTA because a
    * generic OpenRouter 429 may affect only one free model or upstream host.
-   * RATE_LIMIT and PROVIDER_UNAVAILABLE therefore create a short model-level
-   * cooldown while other models from the same provider remain eligible.
-   * A later successful request immediately clears either cooldown.
+   * RATE_LIMIT and PROVIDER_UNAVAILABLE therefore create a model-level
+   * cooldown only after repeated consecutive transient failures. Other models
+   * from the same provider remain eligible, and a later success resets the run.
    */
   async filterTemporarilyUnavailableProviders(
     models: readonly AiModel[],
@@ -256,13 +272,13 @@ export class AiModelRoutingService {
         readonly createdAt: Date;
       }
     >();
-    const latestLogByModel = new Map<
+    const recentLogsByModel = new Map<
       string,
-      {
+      Array<{
         readonly isSuccess: boolean;
         readonly errorCode: string | null;
         readonly createdAt: Date;
-      }
+      }>
     >();
 
     for (const log of recentLogs) {
@@ -278,16 +294,14 @@ export class AiModelRoutingService {
         });
       }
 
-      if (
-        log.aiModelId &&
-        log.createdAt >= modelCutoff &&
-        !latestLogByModel.has(log.aiModelId)
-      ) {
-        latestLogByModel.set(log.aiModelId, {
+      if (log.aiModelId && log.createdAt >= modelCutoff) {
+        const modelLogs = recentLogsByModel.get(log.aiModelId) ?? [];
+        modelLogs.push({
           isSuccess: log.isSuccess,
           errorCode: log.errorCode,
           createdAt: log.createdAt,
         });
+        recentLogsByModel.set(log.aiModelId, modelLogs);
       }
     }
 
@@ -303,11 +317,27 @@ export class AiModelRoutingService {
       }
     }
 
-    for (const [modelId, latestLog] of latestLogByModel) {
+    for (const [modelId, modelLogs] of recentLogsByModel) {
+      let consecutiveTransientFailures = 0;
+
+      for (const log of modelLogs) {
+        if (log.isSuccess) {
+          break;
+        }
+
+        if (
+          log.errorCode === null ||
+          !MODEL_TRANSIENT_ERROR_CODES.has(log.errorCode)
+        ) {
+          break;
+        }
+
+        consecutiveTransientFailures += 1;
+      }
+
       if (
-        !latestLog.isSuccess &&
-        latestLog.errorCode !== null &&
-        MODEL_TRANSIENT_ERROR_CODES.has(latestLog.errorCode)
+        consecutiveTransientFailures >=
+        MODEL_TRANSIENT_FAILURES_REQUIRED_FOR_COOLDOWN
       ) {
         blockedModels.add(modelId);
       }

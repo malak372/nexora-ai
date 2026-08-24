@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 
 import { PrismaService } from '../../../prisma/prisma.service';
+import { CollectorsFactory } from '../../../collectors/collectors.factory';
 import type { SelectedIdeaDataSource } from '../types/idea-generation-context.type';
 
 type ResolveIdeaGenerationSelectionInput = {
@@ -36,11 +37,22 @@ type IdeaGenerationSelectionResult = {
  */
 @Injectable()
 export class IdeaGenerationSelectionService {
-  constructor(private readonly prisma: PrismaService) {}
+  private collectorRegistrySyncedAt = 0;
+  private collectorRegistrySyncPromise: Promise<void> | null = null;
+  private static readonly COLLECTOR_REGISTRY_SYNC_TTL_MS = 10 * 60 * 1000;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly collectorsFactory: CollectorsFactory,
+  ) {}
 
   async resolveSelection(
     input: ResolveIdeaGenerationSelectionInput,
   ): Promise<IdeaGenerationSelectionResult> {
+    await this.ensureRuntimeCollectorRegistrySynced();
+    const runtimeAvailableKeys =
+      this.collectorsFactory.getRuntimeAvailableSourceKeys();
+
     const [domain, dataSources] = await Promise.all([
       this.prisma.domain.findFirst({
         where: {
@@ -64,6 +76,7 @@ export class IdeaGenerationSelectionService {
         where: {
           isActive: true,
           isImplemented: true,
+          key: { in: runtimeAvailableKeys },
         },
         select: {
           id: true,
@@ -86,7 +99,7 @@ export class IdeaGenerationSelectionService {
 
     if (dataSources.length === 0) {
       throw new BadRequestException(
-        'No active and implemented data sources are available for idea generation.',
+        'No active, implemented, and runtime-configured data sources are available for idea generation.',
       );
     }
 
@@ -94,7 +107,8 @@ export class IdeaGenerationSelectionService {
       domain: {
         id: domain.id,
         name: domain.name,
-        keywords: this.normalizeKeywords(
+        keywords: this.sanitizePersistentDomainKeywords(
+          domain.name,
           domain.domainKeywords.map((item) => item.keyword),
         ),
       },
@@ -110,6 +124,129 @@ export class IdeaGenerationSelectionService {
    * optimization belongs in per-collector timeouts/cache and in downstream
    * recovery decisions, not in silently dropping evidence sources.
    */
+
+  /**
+   * Reconciles the persisted source registry with collectors deployed in this
+   * backend. Migrations remain the source of truth for normal deployment, but
+   * this lightweight cached repair prevents a missed seed/migration from
+   * silently removing working collectors from generation.
+   *
+   * Existing administrator-disabled sources are preserved. Only the impossible
+   * stale state `isActive=true/isImplemented=false` is repaired for a runtime
+   * collector; missing built-in public collectors are created active once.
+   */
+  private async ensureRuntimeCollectorRegistrySynced(): Promise<void> {
+    const now = Date.now();
+    if (
+      now - this.collectorRegistrySyncedAt <
+      IdeaGenerationSelectionService.COLLECTOR_REGISTRY_SYNC_TTL_MS
+    ) {
+      return;
+    }
+
+    if (this.collectorRegistrySyncPromise) {
+      return this.collectorRegistrySyncPromise;
+    }
+
+    this.collectorRegistrySyncPromise = (async () => {
+      const implementedKeys = this.collectorsFactory.getImplementedSourceKeys();
+
+      const builtIns = [
+        {
+          key: 'reddit',
+          displayName: 'Reddit',
+          description:
+            'Collects public Reddit discussions through OAuth when configured, with public read-only RSS fallback when OAuth is unavailable.',
+          supportsPosts: true,
+          supportsComments: true,
+          supportsRegion: false,
+          supportsLanguage: true,
+        },
+        {
+          key: 'gdelt',
+          displayName: 'GDELT',
+          description:
+            'Collects public news reports through the no-auth GDELT DOC API.',
+          supportsPosts: true,
+          supportsComments: false,
+          supportsRegion: true,
+          supportsLanguage: true,
+        },
+        {
+          key: 'crossref',
+          displayName: 'Crossref Research',
+          description:
+            'Collects public scholarly metadata and abstracts from the Crossref REST API for evidence discovery.',
+          supportsPosts: true,
+          supportsComments: false,
+          supportsRegion: false,
+          supportsLanguage: true,
+        },
+      ] as const;
+
+      const deployableBuiltIns = builtIns.filter((source) =>
+        implementedKeys.includes(source.key),
+      );
+
+      const staleReddit = await this.prisma.dataSource.findUnique({
+        where: { key: 'reddit' },
+        select: {
+          isActive: true,
+          isImplemented: true,
+          description: true,
+        },
+      });
+
+      /*
+       * Older deployments seeded Reddit as a reserved unavailable source.
+       * Repair only that recognizable stale bootstrap state. A source that an
+       * administrator disabled after the collector became implemented keeps
+       * its explicit isActive=false setting.
+       */
+      const staleReservedReddit =
+        staleReddit != null &&
+        !staleReddit.isImplemented &&
+        /reserved data source|currently unavailable/iu.test(
+          staleReddit.description ?? '',
+        );
+
+      await Promise.all([
+        this.prisma.dataSource.updateMany({
+          where: {
+            key: { in: implementedKeys },
+            isImplemented: false,
+          },
+          data: { isImplemented: true },
+        }),
+        staleReservedReddit
+          ? this.prisma.dataSource.update({
+              where: { key: 'reddit' },
+              data: {
+                isActive: true,
+                isImplemented: true,
+                description:
+                  'Collects public Reddit discussions through OAuth when configured, with public read-only RSS fallback when OAuth is unavailable.',
+              },
+            })
+          : Promise.resolve(null),
+        this.prisma.dataSource.createMany({
+          data: deployableBuiltIns.map((source) => ({
+            ...source,
+            isActive: true,
+            isImplemented: true,
+          })),
+          skipDuplicates: true,
+        }),
+      ]);
+
+      this.collectorRegistrySyncedAt = Date.now();
+    })().finally(() => {
+      this.collectorRegistrySyncPromise = null;
+    });
+
+    return this.collectorRegistrySyncPromise;
+  }
+
   private selectAllEvidenceSources<T extends { readonly key: string }>(
     sources: readonly T[],
   ): T[] {
@@ -121,10 +258,12 @@ export class IdeaGenerationSelectionService {
       'stackoverflow',
       'dev-to',
       'reddit',
+      'forum',
       'hacker-news',
       'product-hunt',
-      'forum',
       'news',
+      'gdelt',
+      'crossref',
       'blog',
     ];
     const rank = new Map(priority.map((key, index) => [key, index]));
@@ -134,6 +273,54 @@ export class IdeaGenerationSelectionService {
         (rank.get(left.key) ?? Number.MAX_SAFE_INTEGER) -
         (rank.get(right.key) ?? Number.MAX_SAFE_INTEGER),
     );
+  }
+
+  private sanitizePersistentDomainKeywords(
+    domainName: string,
+    keywords: readonly string[],
+  ): string[] {
+    const normalizedDomain = domainName
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    const broadVisibleDomains = new Set([
+      'transportation',
+      'environment',
+      'artificial intelligence',
+      'cybersecurity',
+      'internet of things',
+      'energy',
+      'government',
+      'healthcare',
+      'logistics',
+      'food restaurants',
+      'hr recruitment',
+      'legaltech',
+      'finance',
+      'real estate',
+      'agriculture',
+      'e commerce',
+    ]);
+
+    const normalizedKeywords = this.normalizeKeywords(keywords);
+    if (!broadVisibleDomains.has(normalizedDomain)) {
+      return normalizedKeywords;
+    }
+
+    const sentenceLike =
+      /\b(?:often|usually|frequently|commonly|struggle|struggles|increasingly|may struggle|can lead|making it difficult|coordination or record gap|agencies reduce|providers increasingly|delayed decisions? about|become overloaded)\b/iu;
+    const generatedOutcome =
+      /^(?:longer journeys?|unnecessary fuel consumption|higher emissions?|delayed customer orders?|incorrect replacements?|mismatched materials?|lost details?|wasted materials?|repeated work)$/iu;
+
+    return normalizedKeywords.filter((keyword) => {
+      if (sentenceLike.test(keyword) || generatedOutcome.test(keyword)) {
+        return false;
+      }
+      return keyword.split(/\s+/u).length <= 4;
+    });
   }
 
   private normalizeKeywords(keywords: readonly string[]): string[] {

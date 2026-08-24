@@ -5,6 +5,7 @@ import { AiModelsModule } from '../../ai-models/ai-models.module';
 import { AiModule } from '../../ai/ai.module';
 import { AlertsModule } from '../../alerts/alerts.module';
 import { CreditsModule } from '../../credits/credits.module';
+import { CollectorsModule } from '../../collectors/collectors.module';
 import { DataCollectionModule } from '../../data-collection/data-collection.module';
 import { NlpModule } from '../../nlp/nlp.module';
 import { PrismaModule } from '../../prisma/prisma.module';
@@ -88,6 +89,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     NlpModule,
     PromptsModule,
     DataCollectionModule,
+    CollectorsModule,
     CreditsModule,
   ],
   controllers: [

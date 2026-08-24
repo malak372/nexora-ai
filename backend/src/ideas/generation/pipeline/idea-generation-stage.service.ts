@@ -9,7 +9,8 @@ import type { IdeaGenerationContext } from '../types/idea-generation-context.typ
 
 import type { IdeaGenerationStageKey } from '../constants/idea-generation-stages.constants';
 
-import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
+import { IdeaGenerationCancellationService } from './idea-generation-cancellation.service';
+import { IDEA_GENERATION_STAGE_KEYS } from '../constants/idea-generation-stages.constants';
 
 /**
  * Input required to execute one idea-generation pipeline stage.
@@ -159,7 +160,7 @@ export class IdeaGenerationStageService {
   private readonly logger = new Logger(IdeaGenerationStageService.name);
 
   constructor(
-    private readonly generationRunService: IdeaGenerationRunService,
+    private readonly cancellationService: IdeaGenerationCancellationService,
   ) {}
 
   /**
@@ -201,15 +202,19 @@ export class IdeaGenerationStageService {
 
     this.validateProgressOrder(startProgressPercent, completedProgressPercent);
 
-    /*
-     * Cancellation is already enforced atomically by
-     * IdeaGenerationPipelineService.markStageRunning(), whose guarded
-     * update requires cancelRequestedAt to remain null. Avoiding this extra
-     * remote read removes one PostgreSQL round-trip before every stage while
-     * preserving cancellation safety.
-     */
+    const controller =
+      this.cancellationService.createExecutionAbortController(context.runId);
+
     try {
+      if (controller.signal.aborted) {
+        throw new IdeaGenerationCancelledError(context.runId, stage.key);
+      }
+
       const shouldExecute = await this.shouldExecuteStage(stage, context);
+
+      if (controller.signal.aborted) {
+        throw new IdeaGenerationCancelledError(context.runId, stage.key);
+      }
 
       if (!shouldExecute) {
         this.logger.debug(
@@ -227,14 +232,17 @@ export class IdeaGenerationStageService {
         `Started idea-generation stage "${stage.key}" for run "${context.runId}".`,
       );
 
-      /*
-       * Pipeline tracking and run progress are persisted together by
-       * IdeaGenerationPipelineService. Keeping those writes here as well used
-       * to duplicate two remote PostgreSQL round-trips for every stage.
-       * Execute only the stage workload here; the outer pipeline owns the
-       * atomic tracking write and realtime publication.
-       */
-      const executionResult = await stage.execute(context);
+      const executionPromise = stage.execute(context, controller.signal);
+      const executionResult = await this.awaitStageExecution(
+        executionPromise,
+        controller.signal,
+        context,
+        stage,
+      );
+
+      if (controller.signal.aborted) {
+        throw new IdeaGenerationCancelledError(context.runId, stage.key);
+      }
 
       this.validateExecutionResult(executionResult, stage.key, context.runId);
 
@@ -260,8 +268,13 @@ export class IdeaGenerationStageService {
           : {}),
       };
     } catch (error: unknown) {
-      if (error instanceof IdeaGenerationCancelledError) {
-        throw error;
+      if (
+        error instanceof IdeaGenerationCancelledError ||
+        controller.signal.aborted
+      ) {
+        await this.handleStageCancellation(stage, context);
+
+        throw new IdeaGenerationCancelledError(context.runId, stage.key);
       }
 
       const normalizedError = this.normalizeError(error);
@@ -269,7 +282,56 @@ export class IdeaGenerationStageService {
       await this.handleStageFailure(stage, context, normalizedError);
 
       throw normalizedError;
+    } finally {
+      this.cancellationService.releaseExecutionAbortController(
+        context.runId,
+        controller,
+      );
     }
+  }
+
+  private async awaitStageExecution(
+    executionPromise: Promise<IdeaGenerationStageExecutionResult>,
+    signal: AbortSignal,
+    context: IdeaGenerationContext,
+    stage: IdeaGenerationStage,
+  ): Promise<IdeaGenerationStageExecutionResult> {
+    if (!this.shouldInterruptStageImmediately(stage.key)) {
+      return executionPromise;
+    }
+
+    if (signal.aborted) {
+      throw new IdeaGenerationCancelledError(context.runId, stage.key);
+    }
+
+    return new Promise<IdeaGenerationStageExecutionResult>((resolve, reject) => {
+      const onAbort = () => {
+        reject(new IdeaGenerationCancelledError(context.runId, stage.key));
+      };
+
+      signal.addEventListener('abort', onAbort, { once: true });
+
+      executionPromise.then(
+        (result) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(result);
+        },
+        (error: unknown) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      );
+    });
+  }
+
+  private shouldInterruptStageImmediately(
+    stageKey: IdeaGenerationStageKey,
+  ): boolean {
+    return (
+      stageKey === IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION
+    );
   }
 
   /**
@@ -293,34 +355,6 @@ export class IdeaGenerationStageService {
     return stage.shouldExecute(context);
   }
 
-  /**
-   * Checks whether cancellation was requested for the active run.
-   *
-   * When cancellation is detected:
-   * - The optional onCancel() hook is invoked.
-   * - IdeaGenerationCancelledError is thrown.
-   *
-   * Cleanup failures are logged but do not replace the original
-   * cancellation state.
-   *
-   * @param context Current generation context.
-   * @param stage Active pipeline stage.
-   */
-  private async throwIfCancellationRequested(
-    context: IdeaGenerationContext,
-    stage: IdeaGenerationStage,
-  ): Promise<void> {
-    const cancellationRequested =
-      await this.generationRunService.isCancellationRequested(context.runId);
-
-    if (!cancellationRequested) {
-      return;
-    }
-
-    await this.handleStageCancellation(stage, context);
-
-    throw new IdeaGenerationCancelledError(context.runId, stage.key);
-  }
 
   /**
    * Invokes the optional stage cancellation cleanup hook.

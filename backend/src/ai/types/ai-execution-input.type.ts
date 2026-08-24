@@ -122,6 +122,18 @@ type AiExecutionBaseInput = {
   readonly allowTemporaryModelCooldownBypass?: boolean;
 
   /**
+   * Allows one explicitly selected model to be attempted by a bounded
+   * emergency flow even when repeated recent failures removed it from the
+   * normal routable set. The model must still be active, use a supported
+   * provider, and must not have healthStatus=UNAVAILABLE.
+   *
+   * This is reserved for Community AI evidence triage and core idea
+   * generation so a stale failure counter cannot silently turn an AI-required
+   * path into deterministic-only execution.
+   */
+  readonly allowBoundedEmergencyModelAttempt?: boolean;
+
+  /**
    * Optional model identifiers excluded from automatic routing.
    *
    * This is intended for bounded domain-level recovery flows that must avoid

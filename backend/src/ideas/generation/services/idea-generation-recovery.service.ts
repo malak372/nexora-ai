@@ -289,7 +289,10 @@ export class IdeaGenerationRecoveryService
        *
        * The existing hasActiveRuns() method checks QUEUED / RUNNING rows.
        */
-      if (await this.runService.hasActiveRuns()) {
+      if (
+        this.orchestrator.getLocallyActiveRunIds().length > 0 ||
+        (await this.runService.hasActiveRuns())
+      ) {
         return;
       }
 
@@ -396,7 +399,10 @@ export class IdeaGenerationRecoveryService
        * A foreground request may have been queued while the recoverable row
        * was being loaded.
        */
-      if (await this.runService.hasActiveRuns()) {
+      if (
+        this.orchestrator.getLocallyActiveRunIds().length > 0 ||
+        (await this.runService.hasActiveRuns())
+      ) {
         return;
       }
 

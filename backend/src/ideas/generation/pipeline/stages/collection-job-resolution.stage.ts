@@ -22,6 +22,11 @@ import type {
 } from '../../types/idea-generation-context.type';
 import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 import { classifyDirectCommunityEvidence } from '../../../../nlp/common/utils/community-evidence.util';
+import { RequestEvidenceAlignmentUtil } from '../../utils/request-evidence-alignment.util';
+import { RequestDynamicQueryUtil } from '../../utils/request-dynamic-query.util';
+import { RequestQueryProvenanceUtil } from '../../utils/request-query-provenance.util';
+import { RequestWorkflowArchetypeUtil } from '../../utils/request-workflow-archetype.util';
+import { RequestWorkflowIntentProfileUtil } from '../../utils/request-workflow-intent-profile.util';
 
 /**
  * Resolves one bounded collection job for the complete generation request.
@@ -47,6 +52,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
 
   async execute(
     context: IdeaGenerationContext,
+    signal?: AbortSignal,
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
@@ -68,10 +74,45 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
      * persistence. One merged job keeps every collector while removing the
      * multiplicative domain fan-out.
      */
+    const aiOwnedTextPlan = Boolean(
+      context.requestDescription?.trim() &&
+      context.collectionPlan?.aiUsed &&
+      !context.collectionPlan?.fallbackUsed &&
+      (context.collectionPlan?.searchQueries.length ?? 0) >= 6,
+    );
+    const baseDomainAwarePlannedQueries: string[] = aiOwnedTextPlan
+      ? [...new Set<string>((context.collectionPlan?.searchQueries ?? []).map((query) => String(query)))].slice(0, 16)
+      : [...this.buildDomainAwarePlannedQueries(context, domains)];
+    const smartExpansionQueries = aiOwnedTextPlan
+      ? []
+      : this.buildSmartFirstPassExpansionQueries(
+          context,
+          baseDomainAwarePlannedQueries,
+        );
+    const domainAwarePlannedQueries: string[] = [
+      ...new Set<string>([
+        ...baseDomainAwarePlannedQueries,
+        ...smartExpansionQueries,
+      ]),
+    ].slice(0, 30);
+
+    /*
+     * All permitted request-scoped sources now participate in one parallel
+     * first pass. Problem-family expansion queries are injected into that same
+     * pass instead of launching a second sequential collection job when the
+     * first corpus is sparse. This preserves breadth while removing the
+     * 15-25s sparse-expansion tax observed on niche restoration requests.
+     */
     const result = await this.resolveUnifiedCollection(
       context,
       primaryDomain,
       domains,
+      domainAwarePlannedQueries,
+      signal,
+    );
+    const smartFirstPassExpanded = smartExpansionQueries.length > 0;
+    const rawEvidenceCorpus = this.buildRawEvidenceCorpus(
+      result.rawEvidenceInputs ?? result.fastEvidenceInputs ?? [],
     );
 
     const nlp = result.nlpOutput;
@@ -82,6 +123,11 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
      * that first collection here so ranking never needs to recollect a bug or
      * complaint that was already found initially.
      */
+    const compositeFastEvidenceTexts = this.buildCompositeFastEvidenceTextSet(
+      result.fastEvidenceInputs ?? [],
+      context,
+      domains,
+    );
     const fastEvidenceByDomain = new Map(
       domains.map((domain) => [
         domain.id,
@@ -89,6 +135,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
           result.fastEvidenceInputs ?? [],
           domain,
           domains,
+          compositeFastEvidenceTexts,
         ),
       ]),
     );
@@ -173,6 +220,19 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       20,
     );
 
+    const effectiveTotalPostsAnalyzed = Math.max(
+      nlp.totalPostsAnalyzed,
+      firstPassPosts.length,
+    );
+    const effectiveTotalCommentsAnalyzed = Math.max(
+      nlp.totalCommentsAnalyzed,
+      firstPassComments.length,
+    );
+    const effectiveTotalTextsAnalyzed = Math.max(
+      nlp.totalTextsAnalyzed,
+      effectiveTotalPostsAnalyzed + effectiveTotalCommentsAnalyzed,
+    );
+
     const updatedContext: IdeaGenerationContext = {
       ...context,
       domainId: result.job.domain.id,
@@ -180,15 +240,15 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       collection: {
         collectionJobId: result.job.id,
         reused: result.reused,
-        totalPosts: nlp.totalPostsAnalyzed,
-        totalComments: nlp.totalCommentsAnalyzed,
+        totalPosts: effectiveTotalPostsAnalyzed,
+        totalComments: effectiveTotalCommentsAnalyzed,
       },
       nlp: {
         nlpAnalysisId:
           result.job.nlpAnalysis?.id ?? nlp.collectionJobId,
-        totalTextsAnalyzed: nlp.totalTextsAnalyzed,
-        totalPostsAnalyzed: nlp.totalPostsAnalyzed,
-        totalCommentsAnalyzed: nlp.totalCommentsAnalyzed,
+        totalTextsAnalyzed: effectiveTotalTextsAnalyzed,
+        totalPostsAnalyzed: effectiveTotalPostsAnalyzed,
+        totalCommentsAnalyzed: effectiveTotalCommentsAnalyzed,
         sentimentStats: this.toJsonValue(nlp.sentimentStats) as Prisma.JsonObject,
         keywords: this.toJsonValue(nlp.keywords) as Prisma.JsonArray,
         topics: this.toJsonValue(nlp.topics) as Prisma.JsonArray,
@@ -204,24 +264,33 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         confidence: nlp.confidence,
       },
       domainEvidence,
+      rawEvidenceCorpus,
+      collectionPlan: context.collectionPlan
+        ? {
+            ...context.collectionPlan,
+            searchQueries: domainAwarePlannedQueries,
+          }
+        : context.collectionPlan,
     };
 
     return {
       context: updatedContext,
       resultPreview:
-        `Executed all selected collectors once in parallel and analyzed ${nlp.totalTextsAnalyzed} text(s) for ${domains.length} selected domain(s).`,
+        `Executed smart selective parallel collection and retained ${effectiveTotalTextsAnalyzed} evidence text(s) for ${domains.length} selected domain(s).`,
       metadata: {
-        stageRole: 'UNIFIED_PARALLEL_COLLECTION',
+        stageRole: 'SMART_ALL_SOURCE_PARALLEL_COLLECTION',
+        smartFirstPassExpanded,
         collectionMode: 'FAST_GENERATION',
         domainCount: domains.length,
         collectionJobIds: [result.job.id],
         primaryCollectionJobId: result.job.id,
         reusedCollectionJobs: result.reused ? 1 : 0,
-        totalTextsAnalyzed: nlp.totalTextsAnalyzed,
-        totalPostsAnalyzed: nlp.totalPostsAnalyzed,
-        totalCommentsAnalyzed: nlp.totalCommentsAnalyzed,
+        totalTextsAnalyzed: effectiveTotalTextsAnalyzed,
+        totalPostsAnalyzed: effectiveTotalPostsAnalyzed,
+        totalCommentsAnalyzed: effectiveTotalCommentsAnalyzed,
         firstPassDirectEvidenceCount:
           firstPassPosts.length + firstPassComments.length,
+        rawEvidenceCandidateCount: rawEvidenceCorpus.length,
         nlpAnalysisId:
           result.job.nlpAnalysis?.id ?? nlp.collectionJobId,
         nlpAiUsed: nlp.aiUsed,
@@ -230,10 +299,257 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     };
   }
 
+  private buildDomainAwarePlannedQueries(
+    context: IdeaGenerationContext,
+    domains: readonly SelectedGenerationDomain[],
+  ): string[] {
+    const base: string[] = (context.collectionPlan?.searchQueries ?? [])
+      .filter((query): query is string => typeof query === 'string')
+      .filter((query) =>
+        this.isRequestCompatiblePlannedQuery(
+          context.requestDescription?.trim() ?? '',
+          query,
+        ),
+      );
+    const explicitDomains = domains.filter((domain) => domain.isExplicitlySelected);
+    const latentRequestContexts = this.resolveLatentRequestContexts(
+      context,
+      explicitDomains,
+    );
+    const requestDescription = context.requestDescription?.trim() ?? '';
+    const actorAnchoredQueries = requestDescription
+      ? RequestDynamicQueryUtil.build({
+          requestDescription,
+          intentConcepts: context.collectionPlan?.intentConcepts ?? [],
+          evidenceTargets: context.collectionPlan?.evidenceTargets ?? [],
+          maxQueries: 6,
+        })
+      : [];
+    const priorityQueries = Array.from(
+      { length: Math.max(actorAnchoredQueries.length, base.length) },
+      (_unused, index) => [actorAnchoredQueries[index], base[index]],
+    )
+      .flat()
+      .filter((value): value is string => Boolean(value?.trim()));
+
+    if (!requestDescription) {
+      return [...new Set(base)].slice(0, 24);
+    }
+
+    /*
+     * Text-only requests need the same actor/workflow-anchored queries as
+     * Text+Domains. Several collectors inspect only the first few planned
+     * queries, so keeping these first prevents truncation from dropping the
+     * niche actor (for example "fitness center" or "taxidermy").
+     */
+    if (explicitDomains.length === 0) {
+      return [...new Set(priorityQueries)].slice(0, 24);
+    }
+
+    const requestSeed = (context.collectionPlan?.intentConcepts ?? [])
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(' ') || context.requestDescription!.slice(0, 140);
+    const latentQueries = latentRequestContexts.map(
+      (latentDomain) => `${requestSeed} ${latentDomain}`,
+    );
+
+    /*
+     * Every explicitly selected domain gets request-specific retrieval lanes,
+     * including domains that have never existed in our configured catalogue.
+     * The lane is composed from the domain label plus AI intent/evidence
+     * concepts and request-derived identity terms; no per-domain rule is
+     * required for new verticals. Legacy bridge rules below remain as bounded
+     * precision fallbacks for previously tuned cases.
+     */
+    const genericDomainQueries = explicitDomains.flatMap((domain) =>
+      this.buildGenericDomainRetrievalQueries(context, domain, requestDescription),
+    );
+
+    /*
+     * Text-derived planner queries are authoritative and must stay at the
+     * front. Several collectors intentionally inspect only the first one to
+     * three planned queries in FAST_GENERATION; placing generic domain lanes
+     * first starved the AI's exact requester queries.
+     */
+    const ordered = [
+      ...priorityQueries.slice(0, 6),
+      ...genericDomainQueries,
+      ...priorityQueries.slice(6),
+      ...latentQueries,
+    ];
+
+    return [...new Set(ordered)].slice(0, 30);
+  }
+
+  private buildGenericDomainRetrievalQueries(
+    context: IdeaGenerationContext,
+    domain: SelectedGenerationDomain,
+    requestDescription: string,
+  ): string[] {
+    const compact = (value: string, maxWords: number): string =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, maxWords)
+        .join(' ');
+
+    const semanticDomainLane: string[] = (domain.requestIntentKeywords ?? [])
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => compact(value, 9))
+      .filter((query) => query.split(/\s+/u).length >= 3);
+    if (semanticDomainLane.length >= 2) {
+      return [...new Set<string>(semanticDomainLane)].slice(0, 4);
+    }
+
+    const domainSeeds = [
+      domain.name,
+      ...(domain.effectiveSearchKeywords ?? domain.keywords ?? []),
+    ]
+      .map((value) => compact(value, 4))
+      .filter(Boolean);
+    const uniqueDomainSeeds = [...new Set(domainSeeds)].slice(0, 2);
+    if (uniqueDomainSeeds.length === 0) return [];
+
+    const identity = RequestDynamicQueryUtil.extractEvidenceIdentityTerms(
+      requestDescription,
+    );
+    const primaryDomainTokens = new Set(
+      compact(uniqueDomainSeeds[0] ?? '', 6).split(' ').filter(Boolean),
+    );
+    const identityPhrase = identity
+      .filter((token) => !primaryDomainTokens.has(token.toLocaleLowerCase()))
+      .slice(0, 3)
+      .join(' ');
+
+    const workflowCandidates = [
+      ...(context.collectionPlan?.intentConcepts ?? []),
+      ...RequestDynamicQueryUtil.extractWorkflowTerms(requestDescription),
+    ]
+      .map((value) => compact(value, 3))
+      .filter(Boolean);
+    const painCandidates = [
+      ...(context.collectionPlan?.evidenceTargets ?? []).flatMap((value) =>
+        RequestDynamicQueryUtil.extractPainTerms(value),
+      ),
+      ...RequestDynamicQueryUtil.extractPainTerms(requestDescription),
+    ]
+      .map((value) => compact(value, 3))
+      .filter(Boolean);
+
+    const workflow = workflowCandidates[0] ?? '';
+    const secondaryWorkflow = workflowCandidates[1] ?? workflow;
+    const pain = painCandidates[0] ?? '';
+    const secondaryPain = painCandidates[1] ?? pain;
+    const queries = [
+      `${uniqueDomainSeeds[0]} ${identityPhrase} ${workflow}`,
+      `${uniqueDomainSeeds[0]} ${identityPhrase} ${pain}`,
+      `${uniqueDomainSeeds[1] ?? uniqueDomainSeeds[0]} ${secondaryWorkflow} ${secondaryPain}`,
+    ];
+
+    return [...new Set(
+      queries
+        .map((query) => compact(query, 9))
+        .filter((query) => query.split(/\s+/u).length >= 3),
+    )].slice(0, 3);
+  }
+
+  private resolveLatentRequestContexts(
+    context: IdeaGenerationContext,
+    explicitDomains: readonly SelectedGenerationDomain[],
+  ): string[] {
+    if (!context.requestDescription?.trim()) return [];
+
+    const normalize = (value: string) =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+    const explicit = new Set(explicitDomains.map((domain) => normalize(domain.name)));
+    /*
+     * Explicitly selected domains are authoritative. Do not re-inject broad
+     * keyword-match candidates (for example E-commerce beside an explicitly
+     * selected Real Estate + Cybersecurity + AI request) into text retrieval.
+     * When there are no explicit domains, the planner/domain-resolution trace
+     * may still provide useful latent context for text-only discovery.
+     */
+    const values = explicitDomains.length > 0
+      ? [context.collectionPlan?.suggestedDomainName ?? '']
+      : [
+          context.collectionPlan?.suggestedDomainName ?? '',
+          ...(context.domainResolution?.candidates ?? []).map(
+            (candidate) => candidate.domainName,
+          ),
+        ];
+    const output: string[] = [];
+    const seen = new Set<string>();
+
+    for (const value of values) {
+      const trimmed = value.trim();
+      const normalized = normalize(trimmed);
+      if (!normalized || explicit.has(normalized) || seen.has(normalized)) {
+        continue;
+      }
+      const transportSpecific =
+        /\b(?:fleet|freight|logistics|transport|transportation|delivery|shipment|route)\b/u.test(
+          normalized,
+        );
+      const normalizedRequest = normalize(context.requestDescription ?? '');
+      const requestHasTransportContext =
+        /\b(?:fleet|vehicle|vehicles|freight|logistics|transport|transportation|delivery|deliveries|shipment|shipments|route|routes|courier|carrier|last mile|3pl)\b/u.test(
+          normalizedRequest,
+        );
+      if (transportSpecific && !requestHasTransportContext) continue;
+      const energySpecific = /^(?:energy|energy operations?|power|utilities?)$/u.test(normalized);
+      const requestHasEnergyContext =
+        /\b(?:energy|electricity|power|utility|utilities|hvac|fuel|grid|meter|meters|kilowatt|kwh|electric consumption|energy consumption)\b/u.test(normalizedRequest);
+      if (energySpecific && !requestHasEnergyContext) continue;
+      if (normalized.split(/\s+/u).length > 9) continue;
+      seen.add(normalized);
+      output.push(trimmed);
+      if (output.length >= 2) break;
+    }
+
+    return output;
+  }
+
+  private isRequestCompatiblePlannedQuery(
+    requestDescription: string,
+    query: string,
+  ): boolean {
+    if (!requestDescription) return true;
+    const request = requestDescription.toLocaleLowerCase();
+    const candidate = query.toLocaleLowerCase();
+
+    const hasHrActor = /\b(?:human resources|\bhr\b|employee|employees|workforce|staffing|recruitment|recruiting|hiring|candidate|candidates|applicant|applicants|payroll)\b/u.test(request);
+    if (!hasHrActor && /\bhr\s*&\s*recruitment\b/u.test(candidate)) {
+      return false;
+    }
+
+    const weddingPreservation =
+      /\b(?:wedding dress|wedding gown|bridal gown|bridal dress)\b/u.test(request) &&
+      /\b(?:preservation|textile restoration|garment restoration|cleaning restriction|cleaning restrictions|fabric|stains?|decorative|alterations?)\b/u.test(request);
+    if (weddingPreservation && /\b(?:venue|photographer|catering|guest list|event schedule|event vendor|wedding budget|event planning)\b/u.test(candidate)) {
+      return false;
+    }
+
+    return true;
+  }
+
   private async resolveUnifiedCollection(
     context: IdeaGenerationContext,
     primaryDomain: SelectedGenerationDomain,
     domains: readonly SelectedGenerationDomain[],
+    domainAwarePlannedQueries: readonly string[],
+    signal?: AbortSignal,
   ): Promise<ResolveCollectionJobResult> {
     const sourceKeys = this.selectAllActiveSourceKeys(
       context.selectedDataSources.map((source) => source.key),
@@ -253,10 +569,16 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       dataSourceKeys: sourceKeys,
       keywords: this.buildUnifiedKeywords(context, domains),
       plannedQueries: context.collectionPlan
-        ? [...context.collectionPlan.searchQueries]
+        ? [...domainAwarePlannedQueries]
         : undefined,
+      sourcePlans:
+        context.collectionPlan?.aiUsed && !context.collectionPlan.fallbackUsed
+          ? context.collectionPlan.sourcePlans
+          : undefined,
+      userDescription: context.requestDescription?.trim() || undefined,
       forceRefresh: context.forceRefresh,
       collectionMode: 'FAST_GENERATION',
+      signal,
       resolvedDomain: {
         id: primaryDomain.id,
         name: primaryDomain.name,
@@ -279,19 +601,172 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
        * collectors still execute in parallel, therefore the additional depth
        * improves recall without creating one sequential request chain.
        */
-      collectorLimits: context.collectionPlan
-        ? {
-            maxFetchedPosts: 10,
-            maxSavedPosts: 8,
-            maxFetchedComments: 18,
-            maxSavedComments: 12,
-          }
-        : {
-            maxFetchedPosts: 14,
-            maxSavedPosts: 10,
-            maxFetchedComments: 24,
-            maxSavedComments: 16,
-          },
+      collectorLimits: this.resolveFirstPassCollectorLimits(context),
+    });
+  }
+
+  private resolveFirstPassCollectorLimits(
+    context: IdeaGenerationContext,
+  ): {
+    readonly maxFetchedPosts: number;
+    readonly maxSavedPosts: number;
+    readonly maxFetchedComments: number;
+    readonly maxSavedComments: number;
+  } {
+    const requestDescription = context.requestDescription?.trim() ?? '';
+    if (!requestDescription) {
+      return {
+        maxFetchedPosts: 28,
+        maxSavedPosts: 18,
+        maxFetchedComments: 52,
+        maxSavedComments: 34,
+      };
+    }
+    const archetype = RequestWorkflowArchetypeUtil.classify({
+      requestDescription,
+      plannedQueries: context.collectionPlan?.searchQueries ?? [],
+      selectedDomainNames: context.selectedDomains.map((domain) => domain.name),
+    });
+    if (archetype.archetype === 'FACILITY_RESOURCE_MONITORING_OPERATIONS') {
+      return {
+        maxFetchedPosts: 24,
+        maxSavedPosts: 14,
+        maxFetchedComments: 32,
+        maxSavedComments: 16,
+      };
+    }
+    if (
+      archetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' ||
+      archetype.archetype === 'RENTAL_INVENTORY_OPERATIONS' ||
+      archetype.archetype === 'CUSTOM_COMMISSION_APPROVAL_OPERATIONS' ||
+      archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS'
+    ) {
+      /*
+       * Niche professional/craft requests have a lower hit rate per search
+       * result than mainstream software domains. Fetch a wider parallel pool
+       * but keep persistence bounded so downstream NLP cost does not explode.
+       */
+      return {
+        maxFetchedPosts: 24,
+        maxSavedPosts: 14,
+        maxFetchedComments: 36,
+        maxSavedComments: 18,
+      };
+    }
+    if (archetype.archetype === 'TOURISM_DESTINATION_OPERATIONS') {
+      return {
+        maxFetchedPosts: 12,
+        maxSavedPosts: 7,
+        maxFetchedComments: 16,
+        maxSavedComments: 8,
+      };
+    }
+    return {
+      maxFetchedPosts: 20,
+      maxSavedPosts: 12,
+      maxFetchedComments: 28,
+      maxSavedComments: 14,
+    };
+  }
+
+  private buildSmartFirstPassExpansionQueries(
+    context: IdeaGenerationContext,
+    currentQueries: readonly string[],
+  ): string[] {
+    const requestDescription = context.requestDescription?.trim() ?? '';
+    if (!requestDescription) return [];
+    const professionalEvidenceQueries =
+      RequestDynamicQueryUtil.buildProfessionalEvidenceQueries({
+        requestDescription,
+        intentConcepts: context.collectionPlan?.intentConcepts ?? [],
+        evidenceTargets: context.collectionPlan?.evidenceTargets ?? [],
+        plannedQueries: context.collectionPlan?.searchQueries ?? currentQueries,
+        maxQueries: 8,
+      });
+    const relaxedAiQueries = RequestDynamicQueryUtil.buildRelaxedRetrievalQueries({
+      requestDescription,
+      plannedQueries: context.collectionPlan?.searchQueries ?? currentQueries,
+      maxQueries: 6,
+    });
+    const dynamic = RequestDynamicQueryUtil.build({
+      requestDescription,
+      intentConcepts: context.collectionPlan?.intentConcepts ?? [],
+      evidenceTargets: context.collectionPlan?.evidenceTargets ?? [],
+      maxQueries: 8,
+    });
+    const painTargets = (context.collectionPlan?.evidenceTargets ?? [])
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    return [...new Set([
+      ...professionalEvidenceQueries,
+      ...relaxedAiQueries,
+      ...dynamic,
+      ...painTargets,
+      ...currentQueries,
+    ])]
+      .filter((query) => query.length >= 12)
+      .filter((query) =>
+        RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(requestDescription, query) &&
+        RequestQueryProvenanceUtil.isQueryGrounded({ requestDescription, query }),
+      )
+      .slice(0, 16);
+  }
+
+  private async resolveSparseFirstPassExpansion(
+    context: IdeaGenerationContext,
+    primaryDomain: SelectedGenerationDomain,
+    domains: readonly SelectedGenerationDomain[],
+    expansionQueries: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<ResolveCollectionJobResult> {
+    const preferredOrder = ['reddit', 'forum', 'youtube', 'blog', 'news', 'crossref', 'gdelt'];
+    const selected = new Set(
+      context.selectedDataSources.map((source) => source.key.trim().toLowerCase()),
+    );
+    const sourceKeys = preferredOrder.filter((key) => selected.has(key)).slice(0, 4);
+    const effectiveSourceKeys = sourceKeys.length >= 2
+      ? sourceKeys
+      : this.selectAllActiveSourceKeys(
+          context.selectedDataSources.map((source) => source.key),
+        ).slice(0, 4);
+
+    return this.collectionJobResolver.resolve({
+      userId:
+        context.owner.type === IDEA_OWNER_TYPES.USER
+          ? context.owner.userId
+          : undefined,
+      domainId: primaryDomain.id,
+      country: context.location.country,
+      city: context.location.city ?? undefined,
+      region: context.location.region ?? undefined,
+      language: context.location.language,
+      radiusKm: context.location.radiusKm ?? undefined,
+      dataSourceKeys: effectiveSourceKeys,
+      keywords: this.buildUnifiedKeywords(context, domains),
+      plannedQueries: [...expansionQueries],
+      userDescription: context.requestDescription?.trim() || undefined,
+      forceRefresh: true,
+      collectionMode: 'FAST_GENERATION',
+      signal,
+      resolvedDomain: {
+        id: primaryDomain.id,
+        name: primaryDomain.name,
+        keywords: this.buildCollectorVocabulary(context, domains),
+      },
+      resolvedDataSources: context.selectedDataSources
+        .filter((source) => effectiveSourceKeys.includes(source.key.toLowerCase()))
+        .map((source) => ({
+          id: source.id,
+          key: source.key,
+          displayName: source.displayName,
+        })),
+      collectorLimits: {
+        maxFetchedPosts: 8,
+        maxSavedPosts: 5,
+        maxFetchedComments: 12,
+        maxSavedComments: 6,
+      },
     });
   }
 
@@ -353,14 +828,25 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       }
     };
 
-    for (const query of context.collectionPlan?.searchQueries ?? []) {
+    for (const query of (context.collectionPlan?.searchQueries ?? []).slice(
+      0,
+      12,
+    )) {
       addUnique(query);
-      if (balanced.length >= 8) break;
     }
 
-    for (const target of context.collectionPlan?.evidenceTargets ?? []) {
+    for (const target of (context.collectionPlan?.evidenceTargets ?? []).slice(
+      0,
+      6,
+    )) {
       addUnique(target);
-      if (balanced.length >= 12) break;
+    }
+
+    for (const latentDomain of this.resolveLatentRequestContexts(
+      context,
+      domains.filter((domain) => domain.isExplicitlySelected),
+    )) {
+      addUnique(latentDomain);
     }
 
     if (!context.collectionPlan) {
@@ -381,6 +867,21 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       addUnique(domain.name);
     }
 
+    /*
+     * In Text + Domains, project each explicit domain through the requester
+     * description before falling back to its generic configured vocabulary.
+     * This prevents broad Logistics terms such as shipment/fleet/warehouse from
+     * dominating a hospital operating-room coordination request while keeping
+     * the domain materially present in search.
+     */
+    if (context.requestDescription?.trim()) {
+      for (const domain of domains.filter((item) => item.isExplicitlySelected)) {
+        for (const keyword of (domain.requestIntentKeywords ?? []).slice(0, 4)) {
+          addUnique(keyword);
+        }
+      }
+    }
+
     // Keep direct requester terms near the front without sacrificing one slot
     // per selected domain. In text-only requests these terms are the strongest
     // available intent signal.
@@ -389,12 +890,14 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     }
 
     const buckets = domains.map((domain) => {
-      const focused = this.buildProblemFocusedQueries(domain).slice(0, 3);
-      const specific = this.selectSpecificDomainTerms(domain, 4);
+      const focused = this.buildProblemFocusedQueries(context, domain).slice(0, 3);
+      const specific = this.selectSpecificDomainTerms(domain, 4).filter((term) =>
+        this.isDomainKeywordRequestCompatible(context, term),
+      );
       return [domain.name, ...specific, ...focused];
     });
 
-    for (let index = 1; balanced.length < 14; index += 1) {
+    for (let index = 1; balanced.length < 24; index += 1) {
       let added = false;
 
       for (const bucket of buckets) {
@@ -403,7 +906,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         const before = balanced.length;
         addUnique(value);
         added = added || balanced.length > before;
-        if (balanced.length >= 14) break;
+        if (balanced.length >= 24) break;
       }
 
       if (!added) break;
@@ -411,11 +914,11 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
 
     // Fill the remaining budget with the orchestrator's request-first terms.
     for (const keyword of context.keywords) {
-      if (balanced.length >= 20) break;
+      if (balanced.length >= 32) break;
       addUnique(keyword);
     }
 
-    return balanced.slice(0, 20);
+    return balanced.slice(0, 32);
   }
 
   private buildCollectorVocabulary(
@@ -423,14 +926,18 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     domains: readonly SelectedGenerationDomain[],
   ): string[] {
     if (!context.collectionPlan) {
-      return this.buildBalancedDomainVocabulary(domains);
+      return this.buildBalancedDomainVocabulary(context, domains);
     }
 
     const values = [
-      ...context.collectionPlan.searchQueries.slice(0, 6),
-      ...context.collectionPlan.intentConcepts.slice(0, 4),
-      ...context.collectionPlan.evidenceTargets.slice(0, 3),
-      ...this.buildBalancedDomainVocabulary(domains),
+      ...context.collectionPlan.searchQueries.slice(0, 12),
+      ...context.collectionPlan.intentConcepts.slice(0, 8),
+      ...context.collectionPlan.evidenceTargets.slice(0, 6),
+      ...this.resolveLatentRequestContexts(
+        context,
+        domains.filter((domain) => domain.isExplicitlySelected),
+      ),
+      ...this.buildBalancedDomainVocabulary(context, domains),
     ];
     const output: string[] = [];
     const seen = new Set<string>();
@@ -442,7 +949,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       if (seen.has(key)) continue;
       seen.add(key);
       output.push(value);
-      if (output.length >= 20) break;
+      if (output.length >= 36) break;
     }
 
     return output;
@@ -455,16 +962,25 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
    * behind a primary-domain flatMap().slice().
    */
   private buildBalancedDomainVocabulary(
+    context: IdeaGenerationContext,
     domains: readonly SelectedGenerationDomain[],
   ): string[] {
     const output: string[] = [];
     const seen = new Set<string>();
+    const hasRequesterText = Boolean(context.requestDescription?.trim());
     const buckets = domains.map((domain) => [
       this.resolveCollectionDomainAnchor(domain),
-      ...domain.keywords,
+      ...(hasRequesterText && domain.isExplicitlySelected
+        ? (domain.requestIntentKeywords ?? []).slice(0, 8)
+        : []),
+      ...domain.keywords.filter((keyword) =>
+        !hasRequesterText ||
+        !domain.isExplicitlySelected ||
+        this.isDomainKeywordRequestCompatible(context, keyword),
+      ),
     ]);
 
-    for (let index = 0; output.length < 24; index += 1) {
+    for (let index = 0; output.length < 36; index += 1) {
       let added = false;
       for (const bucket of buckets) {
         const value = bucket[index]?.trim();
@@ -474,7 +990,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         seen.add(normalized);
         output.push(value);
         added = true;
-        if (output.length >= 24) break;
+        if (output.length >= 36) break;
       }
       if (!added) break;
     }
@@ -576,12 +1092,20 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
 
   /** Builds high-intent queries that describe a user problem, not a topic. */
   private buildProblemFocusedQueries(
+    context: IdeaGenerationContext,
     domain: SelectedGenerationDomain,
   ): string[] {
-    const specificTerms = this.selectSpecificDomainTerms(domain, 5);
-    const baseTerms = specificTerms.length > 0
-      ? specificTerms
-      : [domain.name];
+    const specificTerms = this.selectSpecificDomainTerms(domain, 5).filter((term) =>
+      this.isDomainKeywordRequestCompatible(context, term),
+    );
+    const projectedTerms = context.requestDescription?.trim() && domain.isExplicitlySelected
+      ? (domain.requestIntentKeywords ?? []).slice(0, 5)
+      : [];
+    const baseTerms = projectedTerms.length > 0
+      ? projectedTerms
+      : specificTerms.length > 0
+        ? specificTerms
+        : [domain.name];
 
     const intentSuffixes = [
       'user complaint problem',
@@ -649,6 +1173,52 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       .slice(0, limit);
   }
 
+
+  /**
+   * Generic domain dictionaries are useful when no description exists, but in
+   * Text + Domains they can pull collection toward an unrelated sub-workflow
+   * (for example Logistics -> shipment/fleet for a hospital OR request). Keep
+   * the explicit domain anchor itself, then admit configured/domain keywords
+   * only when they share a meaningful lexical identity with the requester
+   * problem. Request-derived intent keywords are handled separately and are
+   * always preferred for explicit domains.
+   */
+  private isDomainKeywordRequestCompatible(
+    context: IdeaGenerationContext,
+    keyword: string,
+  ): boolean {
+    const request = context.requestDescription?.trim();
+    if (!request) return true;
+
+    const stop = new Set([
+      'and', 'the', 'for', 'with', 'from', 'into', 'system', 'systems',
+      'platform', 'platforms', 'application', 'applications', 'software',
+      'dashboard', 'management', 'monitoring', 'analytics', 'automation',
+      'optimization', 'operations', 'operational', 'service', 'services',
+      'business', 'businesses', 'solution', 'solutions', 'smart', 'digital',
+      'data', 'information', 'tracking', 'track', 'using', 'use',
+    ]);
+    const normalizeToken = (token: string): string => {
+      let value = token.toLocaleLowerCase();
+      if (value.length > 5 && value.endsWith('ies')) value = `${value.slice(0, -3)}y`;
+      else if (value.length > 5 && value.endsWith('es')) value = value.slice(0, -2);
+      else if (value.length > 4 && value.endsWith('s')) value = value.slice(0, -1);
+      return value;
+    };
+    const tokens = (value: string): Set<string> =>
+      new Set(
+        this.normalizeTerm(value)
+          .split(/[^\p{L}\p{N}]+/gu)
+          .map(normalizeToken)
+          .filter((token) => token.length >= 3 && !stop.has(token)),
+      );
+
+    const requestTokens = tokens(request);
+    const keywordTokens = [...tokens(keyword)];
+    if (keywordTokens.length === 0) return false;
+    return keywordTokens.some((token) => requestTokens.has(token));
+  }
+
   private validateContext(context: IdeaGenerationContext): void {
     if (!context.policy) {
       throw new BadRequestException({
@@ -684,6 +1254,93 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
    * centrally relevance-filtered; this method adds the stricter selected-domain
    * and direct-problem gates required by idea generation.
    */
+  private buildRawEvidenceCorpus(
+    inputs: readonly {
+      readonly id: string;
+      readonly sourceType: 'POST' | 'COMMENT';
+      readonly postId?: string;
+      readonly title?: string | null;
+      readonly content: string;
+      readonly sourceKey?: string;
+      readonly isComplaintEvidence?: boolean;
+      readonly requiresAiSemanticTriage?: boolean;
+    }[],
+  ): IdeaGenerationContext['rawEvidenceCorpus'] {
+    const normalized = inputs
+      .map((input) => {
+        const title = input.title?.replace(/\s+/gu, ' ').trim() ?? '';
+        const content = input.content.replace(/\s+/gu, ' ').trim();
+        const text =
+          input.sourceType === 'COMMENT' && title
+            ? `${title}. Community comment: ${content}`
+            : [title, content].filter(Boolean).join(' ');
+
+        return {
+          id: input.id,
+          sourceKey:
+            input.sourceKey?.trim().toLocaleLowerCase() ||
+            input.id.split(':')[0]?.trim().toLocaleLowerCase() ||
+            'unknown',
+          sourceType: input.sourceType,
+          ...(input.postId ? { postId: input.postId } : {}),
+          title: title || null,
+          text: text.slice(0, 2_400),
+          isComplaintEvidence: input.isComplaintEvidence === true,
+          requiresAiSemanticTriage: input.requiresAiSemanticTriage === true,
+        };
+      })
+      .filter((item) => item.text.length >= 12);
+
+    const seen = new Set<string>();
+    const deduplicated = normalized.filter((item) => {
+      const identity = `${item.sourceKey}|${item.sourceType}|${item.id}`;
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
+
+    /*
+     * Keep a bounded but source-diverse raw corpus in the generation context.
+     * Direct complaint/triage candidates are prioritized, then the remaining
+     * collector records are round-robin sampled by source. This prevents a
+     * single high-volume source from crowding out all other evidence while
+     * still letting Community AI see far more than deterministic NLP retained.
+     */
+    const priority = deduplicated.filter(
+      (item) => item.isComplaintEvidence || item.requiresAiSemanticTriage,
+    );
+    const remaining = deduplicated.filter(
+      (item) => !item.isComplaintEvidence && !item.requiresAiSemanticTriage,
+    );
+    const bySource = new Map<string, typeof remaining>();
+    for (const item of remaining) {
+      const bucket = bySource.get(item.sourceKey) ?? [];
+      bucket.push(item);
+      bySource.set(item.sourceKey, bucket);
+    }
+
+    const output = [...priority];
+    let index = 0;
+    while (output.length < deduplicated.length) {
+      let added = false;
+      for (const bucket of bySource.values()) {
+        const item = bucket[index];
+        if (!item) continue;
+        output.push(item);
+        added = true;
+      }
+      if (!added) break;
+      index += 1;
+    }
+
+    /*
+     * Persistence is already bounded by the collector limits. Do not apply a
+     * second generation-layer cap here: every persisted, deduplicated raw
+     * record must remain available to the semantic triage stage.
+     */
+    return output;
+  }
+
   private buildFastEvidenceForDomain(
     inputs: readonly {
       readonly id: string;
@@ -695,6 +1352,7 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     }[],
     domain: SelectedGenerationDomain,
     domains: readonly SelectedGenerationDomain[],
+    compositeEvidenceTexts: ReadonlySet<string> = new Set<string>(),
   ): {
     readonly posts: unknown[];
     readonly comments: unknown[];
@@ -718,7 +1376,8 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
 
         return (
           input.isComplaintEvidence === true ||
-          this.isRepresentativeProblemEvidence(text)
+          this.isRepresentativeProblemEvidence(text) ||
+          compositeEvidenceTexts.has(this.normalizeEvidenceIdentity(text))
         );
       });
 
@@ -729,6 +1388,11 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         id: input.id,
         text,
         sentiment: 'NEUTRAL',
+        evidenceRole:
+          input.isComplaintEvidence === true ||
+          this.isRepresentativeProblemEvidence(text)
+            ? 'DIRECT_OR_REPRESENTATIVE'
+            : 'SUPPORTING_SIGNAL',
       }));
     const comments = candidates
       .filter(({ input }) => input.sourceType === 'COMMENT')
@@ -738,9 +1402,69 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         postId: input.postId ?? input.id,
         text,
         sentiment: 'NEUTRAL',
+        evidenceRole:
+          input.isComplaintEvidence === true ||
+          this.isRepresentativeProblemEvidence(text)
+            ? 'DIRECT_OR_REPRESENTATIVE'
+            : 'SUPPORTING_SIGNAL',
       }));
 
     return { posts, comments };
+  }
+
+  /**
+   * Keeps a small request-aligned supporting corpus for Community AI when no
+   * single collector item states the whole problem. The set is admitted only
+   * when the retained texts collectively satisfy the same strict requester
+   * workflow contract. This is deliberately computed before per-domain
+   * projection so complementary evidence from two explicitly selected domains
+   * can support one cross-domain requester problem without either quote being
+   * promoted to direct evidence on its own.
+   */
+  private buildCompositeFastEvidenceTextSet(
+    inputs: readonly {
+      readonly id: string;
+      readonly sourceType: 'POST' | 'COMMENT';
+      readonly postId?: string;
+      readonly title?: string | null;
+      readonly content: string;
+      readonly isComplaintEvidence?: boolean;
+    }[],
+    context: IdeaGenerationContext,
+    domains: readonly SelectedGenerationDomain[],
+  ): ReadonlySet<string> {
+    const requestDescription = context.requestDescription?.trim() ?? '';
+    if (!requestDescription || inputs.length < 2) {
+      return new Set<string>();
+    }
+
+    const candidateTexts = inputs
+      .map((input) => {
+        const title = input.title?.replace(/\s+/gu, ' ').trim() ?? '';
+        const content = input.content.replace(/\s+/gu, ' ').trim();
+        return input.sourceType === 'COMMENT' && title
+          ? `${title}. Community comment: ${content}`
+          : [title, content].filter(Boolean).join(' ');
+      })
+      .filter((text) => text.length >= 24)
+      .filter((text) =>
+        domains.some((domain) =>
+          this.evidenceBelongsToDomain(text, domain, domains),
+        ),
+      );
+
+    const selected = RequestEvidenceAlignmentUtil.selectCompositeAlignedEvidence({
+      requestDescription,
+      evidenceTexts: candidateTexts,
+      plannedQueries: context.collectionPlan?.searchQueries ?? [],
+      maxSamples: 8,
+    });
+
+    return new Set(selected.map((text) => this.normalizeEvidenceIdentity(text)));
+  }
+
+  private normalizeEvidenceIdentity(value: string): string {
+    return value.toLocaleLowerCase().replace(/\s+/gu, ' ').trim();
   }
 
   /**
@@ -830,7 +1554,11 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         if (text.length < 20) continue;
         const body = text.replace(/^.*?\bCommunity comment:\s*/isu, '').trim();
         const kind = classifyDirectCommunityEvidence(body, 'COMMENT');
-        if (kind !== 'USER_COMPLAINT' && kind !== 'FEATURE_REQUEST') continue;
+        if (
+          kind !== 'USER_COMPLAINT' &&
+          kind !== 'FEATURE_REQUEST' &&
+          kind !== 'OBSERVED_UNMET_NEED'
+        ) continue;
 
         const original = findOriginal(text);
         /*
@@ -951,7 +1679,9 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     const contextBonus = /\bCommunity comment:\s*/iu.test(normalized) ? 120 : 0;
     const directKind = classifyDirectCommunityEvidence(directBody, 'COMMENT');
     const problemBonus =
-      directKind === 'USER_COMPLAINT' || directKind === 'FEATURE_REQUEST'
+      directKind === 'USER_COMPLAINT' ||
+      directKind === 'FEATURE_REQUEST' ||
+      directKind === 'OBSERVED_UNMET_NEED'
         ? 80
         : 0;
     const detailBonus = Math.min(120, directBody.split(/\s+/u).length * 3);
@@ -1053,7 +1783,9 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       evidenceText,
       match ? 'COMMENT' : 'POST',
     );
-    return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
+    return kind === 'USER_COMPLAINT' ||
+      kind === 'FEATURE_REQUEST' ||
+      kind === 'OBSERVED_UNMET_NEED';
   }
 
   /**
@@ -1115,6 +1847,13 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
+
+    if (
+      domain.isExplicitlySelected === false &&
+      !this.hasInferredDomainIdentityAnchor(text, domain)
+    ) {
+      return 0;
+    }
 
     if (/^(?:environment|environmental)$/u.test(domainName)) {
       const environmentalAnchor = /\b(?:environmental monitoring|environmental compliance|pollution|air quality|water quality|waste management|recycling|emissions?|carbon footprint|sustainability|ecosystem|conservation|biodiversity|environmental impact|climate risk|climate adaptation)\b/iu.test(
@@ -1188,6 +1927,50 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     }
 
     return 0;
+  }
+
+  private hasInferredDomainIdentityAnchor(
+    text: string,
+    domain: SelectedGenerationDomain,
+  ): boolean {
+    const broad = new Set([
+      'business', 'client', 'company', 'condition', 'cost', 'customer',
+      'data', 'digital', 'equipment', 'expense', 'history', 'maintenance',
+      'management', 'operation', 'operations', 'platform', 'record',
+      'records', 'repair', 'repairs', 'restoration', 'service', 'services',
+      'software', 'system', 'tracking', 'workflow', 'workflows',
+    ]);
+    const tokenize = (value: string): string[] =>
+      this.normalizeTerm(value)
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .split(/\s+/gu)
+        .filter((token) => token.length >= 4 && !broad.has(token));
+
+    const nameTokens = [...new Set(tokenize(domain.name))];
+    if (nameTokens.some((token) => this.containsSemanticTerm(text, token))) {
+      return true;
+    }
+
+    const phrases = [
+      ...(domain.effectiveSearchKeywords ?? []),
+      ...(domain.configuredKeywords ?? []),
+      ...(domain.keywords ?? []),
+    ];
+    return phrases.some((phrase) => {
+      const normalizedPhrase = this.normalizeTerm(phrase)
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      const distinctive = tokenize(normalizedPhrase);
+      if (distinctive.length < 1) return false;
+      if (normalizedPhrase.split(/\s+/gu).length >= 2 && this.containsSemanticTerm(text, normalizedPhrase)) {
+        return true;
+      }
+      const overlap = distinctive.filter((token) =>
+        this.containsSemanticTerm(text, token),
+      ).length;
+      return distinctive.length >= 2 && overlap >= 2;
+    });
   }
 
   private buildDomainSemanticTerms(

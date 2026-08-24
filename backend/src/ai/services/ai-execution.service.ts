@@ -395,6 +395,7 @@ export class AiExecutionService {
       const selectedModel = await this.modelRoutingService.resolveSpecificModel(
         input.aiModelId,
         input.allowTemporaryModelCooldownBypass ?? false,
+        input.allowBoundedEmergencyModelAttempt ?? false,
       );
 
       if (

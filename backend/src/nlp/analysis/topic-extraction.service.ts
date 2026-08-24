@@ -196,10 +196,28 @@ export class TopicExtractionService {
   }
 
   private findCanonicalTopic(keyword: string): string | null {
+    const matched = CANONICAL_TOPIC_DEFINITIONS.find((definition) =>
+      definition.patterns.some((pattern) => pattern.test(keyword)),
+    );
+    if (!matched) return null;
+
+    if (
+      matched.topic === 'Application Reliability' &&
+      !this.hasSoftwareReliabilityContext(keyword)
+    ) {
+      return null;
+    }
+
+    return matched.topic;
+  }
+
+  private hasSoftwareReliabilityContext(value: string): boolean {
+    if (/\b(?:application reliability|application crash|app crash|software crash|runtime error|runtime failure)\b/iu.test(value)) {
+      return true;
+    }
     return (
-      CANONICAL_TOPIC_DEFINITIONS.find((definition) =>
-        definition.patterns.some((pattern) => pattern.test(keyword)),
-      )?.topic ?? null
+      /\b(?:app|application|software|program|server|browser|website|web app|mobile app|desktop app|system|api|runtime)\b/iu.test(value) &&
+      /\b(?:crash|freeze|frozen|unstable|unresponsive|error|glitch|slow)\b/iu.test(value)
     );
   }
 

@@ -1,7 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
-import { COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES } from '../../constants/community-ai-analysis.constants';
+import {
+  COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES,
+  COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
+  COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS,
+  COMMUNITY_AI_ANALYSIS_COMPOSITE_REQUEST_TIMEOUT_MS,
+  COMMUNITY_AI_ANALYSIS_COMPOSITE_TOTAL_TIMEOUT_MS,
+} from '../../constants/community-ai-analysis.constants';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -22,7 +28,11 @@ import type {
   IdeaGenerationContext,
   IdeaGenerationNlpContext,
 } from '../../types/idea-generation-context.type';
-import { classifyDirectCommunityEvidence } from '../../../../nlp/common/utils/community-evidence.util';
+import {
+  classifyDirectCommunityEvidence,
+  isStructuredOperationalProblemEvidence,
+} from '../../../../nlp/common/utils/community-evidence.util';
+import { resolvePrimaryProblemFamily } from '../../../../nlp/common/utils/problem-family-matching.util';
 import { RequestEvidenceAlignmentUtil } from '../../utils/request-evidence-alignment.util';
 
 /**
@@ -46,6 +56,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
 
   async execute(
     context: IdeaGenerationContext,
+    signal?: AbortSignal,
   ): Promise<IdeaGenerationStageExecutionResult> {
     if (!context.nlp) {
       return {
@@ -68,89 +79,163 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     const hasRequestAlignedEvidence = plannedRequest
       ? this.hasAnyRetainedRequestAlignedEvidence(context)
       : hasSelectedDomainEvidence;
-    const skipOnlineAnalysisForUngroundedPlannedRequest =
-      plannedRequest && (!hasSelectedDomainEvidence || !hasRequestAlignedEvidence);
+    const hasGroundedEvidenceForOnlineAi = plannedRequest
+      ? hasRequestAlignedEvidence
+      : hasSelectedDomainEvidence;
+    const retainedEvidenceCount = this.countRetainedEvidenceTexts(context);
+    const rawEvidenceCandidateCount = context.rawEvidenceCorpus?.length ?? 0;
+    const hasRawAiTriageCorpus = plannedRequest && rawEvidenceCandidateCount > 0;
+    const hasCompositeSynthesisCorpus =
+      plannedRequest &&
+      !hasGroundedEvidenceForOnlineAi &&
+      (retainedEvidenceCount >= 2 || rawEvidenceCandidateCount >= 2);
 
     let baseAnalysis: CommunityAiAnalysis;
+
+    /*
+     * A requester description is a hypothesis, not evidence. If both retained
+     * and raw external corpora are empty there is nothing legitimate for an
+     * online model to synthesize, so skip the network call entirely. Targeted
+     * recovery in the ranking stage remains responsible for finding evidence.
+     */
     if (
-      context.nlp.totalTextsAnalyzed > 0 &&
-      !skipOnlineAnalysisForUngroundedPlannedRequest
+      plannedRequest &&
+      retainedEvidenceCount === 0 &&
+      rawEvidenceCandidateCount === 0
     ) {
-      try {
-        baseAnalysis = await this.communityAiAnalysisService.analyze(context);
-      } catch (error: unknown) {
-        const reason =
-          error instanceof Error ? error.message : 'Unknown Community AI failure.';
-        this.logger.error(
-          `Community AI analysis failed unexpectedly; deterministic NLP remains active. error=${reason}`,
-        );
-        const emergencyFallback = this.buildFallbackAnalysis(context);
-        baseAnalysis = {
-          ...emergencyFallback,
-          aiAttempted: true,
-          fallbackReason: `Unexpected Community AI service failure: ${reason}`,
-          attemptDiagnostics: [
-            {
-              attempt: 1,
-              modelId: null,
-              apiModelId: null,
-              providerKey: null,
-              status: 'EXECUTION_FAILED',
-              durationMs: 0,
-              reason,
-            },
-          ],
-          attemptCount: 1,
-          onlineAttemptCount: 1,
-          executionFailureCount: 1,
-        };
-      }
+      baseAnalysis = this.buildFallbackAnalysis(context);
     } else {
-      const fallback = this.buildFallbackAnalysis(context);
-      baseAnalysis = skipOnlineAnalysisForUngroundedPlannedRequest
-        ? {
-            ...fallback,
-            summary:
-              'The planned first-pass collection retained no request-aligned selected-domain evidence, so online Community AI enrichment was skipped and the requester-defined validation direction was preserved without fabricating demand.',
-            qualityWarnings: [
-              'No request-aligned selected-domain evidence survived the first-pass grounding guard; unrelated domain mentions were excluded from Community AI synthesis.',
-            ],
-            fallbackReason:
-              'No request-aligned selected-domain evidence was retained for the planned requester workflow.',
-          }
-        : fallback;
+
+    /*
+     * Community AI is executed when there is actual retained/raw evidence. The online service
+     * already launches provider-diverse attempts concurrently and falls back to
+     * retained evidence when providers are unavailable or their output is not
+     * grounded. This keeps the semantic layer active on every generation path
+     * without letting provider failures block deterministic ranking.
+     *
+     * When no grounded corpus exists, keep the online window short because an
+     * LLM cannot manufacture evidence; targeted recovery remains authoritative.
+     */
+    try {
+      baseAnalysis = await this.communityAiAnalysisService.analyze(context, {
+        maxAttempts: hasGroundedEvidenceForOnlineAi
+          ? 3
+          : hasCompositeSynthesisCorpus || hasRawAiTriageCorpus
+            ? 2
+            : 1,
+        requestTimeoutMs: hasGroundedEvidenceForOnlineAi
+          ? COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS
+          : hasCompositeSynthesisCorpus || hasRawAiTriageCorpus
+            ? COMMUNITY_AI_ANALYSIS_COMPOSITE_REQUEST_TIMEOUT_MS
+            : 2_800,
+        totalTimeoutMs: hasGroundedEvidenceForOnlineAi
+          ? COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS
+          : hasCompositeSynthesisCorpus || hasRawAiTriageCorpus
+            ? COMMUNITY_AI_ANALYSIS_COMPOSITE_TOTAL_TIMEOUT_MS
+            : 3_000,
+        signal,
+      });
+    } catch (error: unknown) {
+      const reason =
+        error instanceof Error ? error.message : 'Unknown Community AI failure.';
+      this.logger.error(
+        `Community AI analysis failed unexpectedly; deterministic NLP remains active. error=${reason}`,
+      );
+      const emergencyFallback = this.buildFallbackAnalysis(context);
+      baseAnalysis = {
+        ...emergencyFallback,
+        aiAttempted: true,
+        fallbackReason: `Unexpected Community AI service failure: ${reason}`,
+        qualityWarnings: [
+          ...emergencyFallback.qualityWarnings,
+          ...(plannedRequest && !hasRequestAlignedEvidence
+            ? [
+                'Community AI executed as required, but the retained first-pass corpus did not contain request-aligned evidence; provider output cannot establish demand until targeted recovery contributes external evidence.',
+              ]
+            : []),
+        ],
+        attemptDiagnostics: [
+          {
+            attempt: 1,
+            modelId: null,
+            apiModelId: null,
+            providerKey: null,
+            status: 'EXECUTION_FAILED',
+            durationMs: 0,
+            reason,
+          },
+        ],
+        attemptCount: Math.max(1, emergencyFallback.attemptCount),
+        onlineAttemptCount: Math.max(1, emergencyFallback.onlineAttemptCount),
+        executionFailureCount: Math.max(
+          1,
+          emergencyFallback.executionFailureCount,
+        ),
+      };
     }
+    }
+
     const analysis = this.ensureSelectedDomainCoverage(context, baseAnalysis);
 
     const enrichedNlp: IdeaGenerationNlpContext = {
       ...context.nlp,
-      recurringProblems: this.mergeJsonArrays(
-        context.nlp.recurringProblems,
-        analysis.opportunities.map((opportunity) => ({
-          domainName: opportunity.domainName,
-          title: opportunity.title,
-          problem: opportunity.problem,
-          frequency: opportunity.frequency,
-          severity: opportunity.severity,
-          evidenceSamples: [...opportunity.evidenceSamples],
-          source: 'COMMUNITY_LLM_ANALYSIS',
-          aiConfidence: opportunity.confidence,
-        })),
-      ),
-      extractedNeeds: this.mergeJsonArrays(
-        context.nlp.extractedNeeds,
-        analysis.opportunities.map((opportunity) => ({
-          domainName: opportunity.domainName,
-          title: opportunity.unmetNeed,
-          need: opportunity.unmetNeed,
-          problem: opportunity.problem,
-          solutionArea: opportunity.solutionArea,
-          frequency: opportunity.frequency,
-          severity: opportunity.severity,
-          evidenceSamples: [...opportunity.evidenceSamples],
-          source: 'COMMUNITY_LLM_ANALYSIS',
-        })),
-      ),
+      recurringProblems: plannedRequest
+        ? this.toJsonArray(
+            analysis.opportunities.map((opportunity) => ({
+              domainName: opportunity.domainName,
+              title: opportunity.title,
+              problem: opportunity.problem,
+              frequency: opportunity.frequency,
+              severity: opportunity.severity,
+              evidenceSamples: [...opportunity.evidenceSamples],
+              source: 'COMMUNITY_LLM_ANALYSIS',
+              aiConfidence: opportunity.confidence,
+            })),
+          )
+        : this.mergeJsonArrays(
+            context.nlp.recurringProblems,
+            analysis.opportunities.map((opportunity) => ({
+              domainName: opportunity.domainName,
+              title: opportunity.title,
+              problem: opportunity.problem,
+              frequency: opportunity.frequency,
+              severity: opportunity.severity,
+              evidenceSamples: [...opportunity.evidenceSamples],
+              source: 'COMMUNITY_LLM_ANALYSIS',
+              aiConfidence: opportunity.confidence,
+            })),
+          ),
+      extractedNeeds: plannedRequest
+        ? this.toJsonArray(
+            analysis.opportunities.map((opportunity) => ({
+              domainName: opportunity.domainName,
+              title: opportunity.unmetNeed,
+              need: opportunity.unmetNeed,
+              problem: opportunity.problem,
+              solutionArea: opportunity.solutionArea,
+              frequency: opportunity.frequency,
+              severity: opportunity.severity,
+              evidenceSamples: [...opportunity.evidenceSamples],
+              source: 'COMMUNITY_LLM_ANALYSIS',
+            })),
+          )
+        : this.mergeJsonArrays(
+            context.nlp.extractedNeeds,
+            analysis.opportunities.map((opportunity) => ({
+              domainName: opportunity.domainName,
+              title: opportunity.unmetNeed,
+              need: opportunity.unmetNeed,
+              problem: opportunity.problem,
+              solutionArea: opportunity.solutionArea,
+              frequency: opportunity.frequency,
+              severity: opportunity.severity,
+              evidenceSamples: [...opportunity.evidenceSamples],
+              source: 'COMMUNITY_LLM_ANALYSIS',
+            })),
+          ),
+      featureRequests: plannedRequest
+        ? this.toJsonArray([])
+        : context.nlp.featureRequests,
       /*
        * The AI portfolio is authoritative. Deterministic NLP no longer creates
        * opportunities, so replacing the array avoids duplicate ranking work
@@ -179,6 +264,39 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           unvalidatedDomainHypotheses: analysis.unvalidatedDomainHypotheses.map(
             (item) => ({ ...item, risks: [...item.risks] }),
           ),
+          evidenceClassifications: (analysis.evidenceClassifications ?? []).map(
+            (item) => ({ ...item }),
+          ),
+          rawEvidenceCandidateCount,
+          /*
+           * Keep the two evidence funnels explicit in the run snapshot. Raw
+           * collector candidates may be triaged by Community AI even when the
+           * stricter trusted-NLP preprocessing corpus is empty. These counters
+           * make that distinction observable instead of presenting it as a
+           * contradictory "0 analyzed vs N classified" result.
+           */
+          triageEligibleEvidenceCount: rawEvidenceCandidateCount,
+          nlpProcessedEvidenceCount: context.nlp.totalTextsAnalyzed ?? 0,
+          trustedNlpEvidenceCount:
+            (analysis.evidenceClassifications ?? []).filter(
+              (item) =>
+                item.classification === 'DIRECT_PROBLEM' ||
+                item.classification === 'SUPPORTING_SIGNAL',
+            ).length,
+          evidencePipelineSemantics:
+            'Raw collector candidates are semantically triaged before final trusted evidence admission. nlpProcessedEvidenceCount measures preprocessing throughput; trustedNlpEvidenceCount counts only DIRECT_PROBLEM + SUPPORTING_SIGNAL classifications.',
+          directEvidenceClassificationCount:
+            (analysis.evidenceClassifications ?? []).filter(
+              (item) => item.classification === 'DIRECT_PROBLEM',
+            ).length,
+          supportingEvidenceClassificationCount:
+            (analysis.evidenceClassifications ?? []).filter(
+              (item) => item.classification === 'SUPPORTING_SIGNAL',
+            ).length,
+          unrelatedEvidenceClassificationCount:
+            (analysis.evidenceClassifications ?? []).filter(
+              (item) => item.classification === 'UNRELATED',
+            ).length,
         },
       ]),
       aiUsed: context.nlp.aiUsed || analysis.aiAttempted || analysis.aiSucceeded,
@@ -213,7 +331,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       metadata: {
         analysisLayer: 'IDEA_OPPORTUNITY_ENRICHMENT',
         duplicatesNlpAiEnhancement: false,
-        aiAnalysisApplied: true,
+        aiAnalysisApplied: analysis.aiAttempted || analysis.aiSucceeded,
         opportunityCount: analysis.opportunities.length,
         overallConfidence: analysis.overallConfidence,
         modelId: analysis.modelId,
@@ -270,8 +388,12 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         context,
         domain.id,
       );
+      const hasRetainedDirectEvidence = this.hasRetainedDirectDomainEvidence(
+        context,
+        domain.id,
+      );
 
-      if (hasRetainedEvidence) {
+      if (hasRetainedEvidence || hasRetainedDirectEvidence) {
         continue;
       }
 
@@ -293,7 +415,9 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     }
 
     const qualityWarnings = analysis.qualityWarnings.filter(
-      (warning) => !this.isProviderDomainCoverageWarning(warning, context),
+      (warning) =>
+        !this.isCanonicalMissingEvidenceWarning(warning) &&
+        !this.isProviderDomainCoverageWarning(warning, context),
     );
 
     return {
@@ -301,11 +425,42 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       unvalidatedDomainHypotheses: hypotheses,
       qualityWarnings: [
         ...qualityWarnings,
-        ...(missingEvidenceDomains.length > 0
+        ...(missingEvidenceDomains.length > 0 &&
+        context.domainResolution?.source === 'USER_SELECTED'
           ? [`No direct retained evidence was available for selected domain(s): ${missingEvidenceDomains.join(', ')}.`]
           : []),
       ],
     };
+  }
+
+  private countRetainedEvidenceTexts(context: IdeaGenerationContext): number {
+    const profileCount = context.domainEvidence.reduce(
+      (sum, profile) => sum + Math.max(0, profile.totalTextsAnalyzed ?? 0),
+      0,
+    );
+    const nlpCount = Math.max(0, context.nlp?.totalTextsAnalyzed ?? 0);
+
+    if (profileCount > 0 || nlpCount > 0) {
+      return Math.max(profileCount, nlpCount);
+    }
+
+    const samples = [
+      ...context.domainEvidence.flatMap((profile) => [
+        ...(Array.isArray(profile.samplePosts) ? profile.samplePosts : []),
+        ...(Array.isArray(profile.sampleComments) ? profile.sampleComments : []),
+      ]),
+      ...(Array.isArray(context.nlp?.samplePosts) ? context.nlp.samplePosts : []),
+      ...(Array.isArray(context.nlp?.sampleComments) ? context.nlp.sampleComments : []),
+    ];
+
+    return samples.filter(
+      (entry) =>
+        entry !== null &&
+        typeof entry === 'object' &&
+        !Array.isArray(entry) &&
+        typeof (entry as Prisma.JsonObject)['text'] === 'string' &&
+        ((entry as Prisma.JsonObject)['text'] as string).trim().length > 0,
+    ).length;
   }
 
   private hasAnyRetainedRequestAlignedEvidence(
@@ -314,21 +469,29 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     const description = context.requestDescription?.trim();
     if (!description) return true;
 
-    const samples = context.domainEvidence.flatMap((profile) => [
-      ...(Array.isArray(profile.samplePosts) ? profile.samplePosts : []),
-      ...(Array.isArray(profile.sampleComments) ? profile.sampleComments : []),
-    ]);
+    const samples = [
+      ...context.domainEvidence.flatMap((profile) => [
+        ...(Array.isArray(profile.samplePosts) ? profile.samplePosts : []),
+        ...(Array.isArray(profile.sampleComments) ? profile.sampleComments : []),
+      ]),
+      ...(Array.isArray(context.nlp?.samplePosts) ? context.nlp.samplePosts : []),
+      ...(Array.isArray(context.nlp?.sampleComments) ? context.nlp.sampleComments : []),
+    ];
 
-    return samples.some((entry) => {
-      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-        return false;
-      }
-      const text = typeof entry.text === 'string' ? entry.text : '';
-      return RequestEvidenceAlignmentUtil.isAligned({
-        requestDescription: description,
-        evidenceText: text,
-        plannedQueries: context.collectionPlan?.searchQueries ?? [],
-      });
+    const evidenceTexts = samples
+      .filter(
+        (entry): entry is Prisma.JsonObject =>
+          entry !== null && typeof entry === 'object' && !Array.isArray(entry),
+      )
+      .map((entry) =>
+        typeof entry['text'] === 'string' ? entry['text'] : '',
+      )
+      .filter((text) => text.trim().length > 0);
+
+    return RequestEvidenceAlignmentUtil.isCompositeAligned({
+      requestDescription: description,
+      evidenceTexts,
+      plannedQueries: context.collectionPlan?.searchQueries ?? [],
     });
   }
 
@@ -339,8 +502,84 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       ? context.selectedDomains.map((domain) => domain.id)
       : [context.domainId];
 
-    return domainIds.some((domainId) =>
-      this.hasRetainedDomainEvidence(context, domainId),
+    if (
+      domainIds.some((domainId) => this.hasRetainedDomainEvidence(context, domainId))
+    ) {
+      return true;
+    }
+
+    if (context.domainEvidence.length > 0) {
+      return false;
+    }
+
+    const nlpPosts = Array.isArray(context.nlp?.samplePosts)
+      ? context.nlp.samplePosts.length
+      : 0;
+    const nlpComments = Array.isArray(context.nlp?.sampleComments)
+      ? context.nlp.sampleComments.length
+      : 0;
+    const nlpTexts = context.nlp?.totalTextsAnalyzed ?? 0;
+
+    return nlpTexts > 0 || nlpPosts + nlpComments > 0;
+  }
+
+  private hasRetainedDirectDomainEvidence(
+    context: IdeaGenerationContext,
+    domainId: string,
+  ): boolean {
+    const profile = context.domainEvidence.find(
+      (item) => item.domainId === domainId,
+    );
+    if (!profile) return false;
+
+    const directSample = (
+      entry: unknown,
+      sourceType: 'POST' | 'COMMENT',
+    ): boolean => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return false;
+      }
+      const rawText =
+        typeof (entry as Record<string, unknown>).text === 'string'
+          ? ((entry as Record<string, unknown>).text as string)
+          : '';
+      const body = rawText
+        .replace(/^.*?\bCommunity comment:\s*/isu, '')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      if (!body) return false;
+
+      if (isStructuredOperationalProblemEvidence(rawText, sourceType)) {
+        return true;
+      }
+
+      const kind = classifyDirectCommunityEvidence(body, sourceType);
+      if (
+        kind === 'USER_COMPLAINT' ||
+        kind === 'FEATURE_REQUEST' ||
+        kind === 'OBSERVED_UNMET_NEED'
+      ) {
+        if (sourceType === 'COMMENT') return true;
+        return /\b(?:i|i['’]?m|i['’]?ve|my|me|we|we['’]?ve|our)\b/iu.test(
+          body,
+        );
+      }
+
+      const explicitRequestSignal =
+        /\b(?:i wish|i hope|please add|please support|would be helpful|need an? option|need support for|feature request)\b/iu.test(
+          body,
+        ) &&
+        /\b(?:add|support|enable|login|sign[- ]?in|authentication|2fa|two[- ]factor|google|apple|email|option|access)\b/iu.test(
+          body,
+        );
+      return sourceType === 'COMMENT' && explicitRequestSignal;
+    };
+
+    return (
+      (Array.isArray(profile.sampleComments) &&
+        profile.sampleComments.some((entry) => directSample(entry, 'COMMENT'))) ||
+      (Array.isArray(profile.samplePosts) &&
+        profile.samplePosts.some((entry) => directSample(entry, 'POST')))
     );
   }
 
@@ -352,22 +591,86 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       (item) => item.domainId === domainId,
     );
 
-    if (!profile?.evidenceAvailable) {
+    if (!profile) {
       return false;
     }
 
-    const totalTexts =
-      typeof profile.totalTextsAnalyzed === 'number'
-        ? profile.totalTextsAnalyzed
-        : 0;
-    const posts = Array.isArray(profile.samplePosts)
-      ? profile.samplePosts.length
-      : 0;
-    const comments = Array.isArray(profile.sampleComments)
-      ? profile.sampleComments.length
-      : 0;
+    const postSamples = Array.isArray(profile.samplePosts)
+      ? profile.samplePosts
+      : [];
+    const commentSamples = Array.isArray(profile.sampleComments)
+      ? profile.sampleComments
+      : [];
 
-    return totalTexts > 0 || posts + comments > 0;
+    return (
+      postSamples.some((entry) => this.isGroundedRetainedSample(entry, 'POST')) ||
+      commentSamples.some((entry) =>
+        this.isGroundedRetainedSample(entry, 'COMMENT'),
+      )
+    );
+  }
+
+  private isGroundedRetainedSample(
+    entry: unknown,
+    sourceType: 'POST' | 'COMMENT',
+  ): boolean {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return false;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const rawText = typeof record.text === 'string' ? record.text : '';
+    const body = rawText
+      .replace(/^.*?\bCommunity comment:\s*/isu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!body) return false;
+
+    const kind = classifyDirectCommunityEvidence(body, sourceType);
+    const userAuthoredPostSignal =
+      sourceType === 'POST' &&
+      /\b(?:i|i['’]?m|i['’]?ve|my|me|we|we['’]?ve|our)\b/iu.test(body);
+    const technicalTicketSignal =
+      sourceType === 'POST' &&
+      /\b(?:the problem is|problem details|what i tried|i am trying|i['’]?m trying|i get (?:the following )?error|exception|traceback|stack trace|error message|fails? when|stuck at)\b/iu.test(
+        body,
+      );
+    if (
+      (kind === 'USER_COMPLAINT' ||
+        kind === 'FEATURE_REQUEST' ||
+        kind === 'OBSERVED_UNMET_NEED') &&
+      (sourceType === 'COMMENT' ||
+        userAuthoredPostSignal ||
+        technicalTicketSignal ||
+        isStructuredOperationalProblemEvidence(rawText, sourceType))
+    ) {
+      return true;
+    }
+
+    if (isStructuredOperationalProblemEvidence(rawText, sourceType)) {
+      return true;
+    }
+
+    const family = resolvePrimaryProblemFamily(body);
+    if (!family || family.key.startsWith('lexical:')) {
+      return false;
+    }
+
+    const explicitProblemSignal =
+      /\b(?:error|failed|failure|failing|cannot|can['’]?t|unable|blocked|missing|lost|delayed|stuck|outage|downtime|unavailable|legal risk|compliance risk|privacy risk|security risk|reverted|incorrect|wrong|stale|not updating|hallucination|shortage|overloaded)\b/iu.test(
+        body,
+      );
+
+    return (
+      explicitProblemSignal &&
+      (sourceType === 'COMMENT' || userAuthoredPostSignal || technicalTicketSignal)
+    );
+  }
+
+  private isCanonicalMissingEvidenceWarning(warning: string): boolean {
+    return /\bno\s+(?:direct\s+)?retained\s+evidence\s+was\s+available\s+for\s+selected\s+domain\(s\)/iu.test(
+      warning,
+    );
   }
 
   private isProviderDomainCoverageWarning(
@@ -581,11 +884,14 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       return 'Legal Research Documentation Cost and AI Reliability Barriers';
     }
     if (
-      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation)/u.test(
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|payment reconciliation)/u.test(
         normalized,
       )
     ) {
-      return 'Cash Payment Reconciliation and Duplicate Charge Failures';
+      return 'Payment Reconciliation and Duplicate Charge Failures';
+    }
+    if (/\brefund\b/u.test(normalized)) {
+      return 'Refund Processing and Recovery Failures';
     }
     if (
       /(?:international card|foreign card|international number|foreign number|traveling from abroad|travelling from abroad|traveler|traveller)/u.test(
@@ -628,11 +934,27 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       return 'Recommendation quality diagnostics and explainable validation';
     }
     if (
-      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|refund|payment reconciliation)/u.test(
+      /(?:paid .*cash|cash .*paid|already paid|charged .*again|double charg|duplicate charg|payment reconciliation)/u.test(
         normalized,
       )
     ) {
       return 'Payment Reconciliation and Duplicate Charge Recovery';
+    }
+    if (
+      /\brefund\b/u.test(normalized) &&
+      /(?:missing|failed|failure|pending|delayed|not received|never received|error|issue|problem)/u.test(
+        normalized,
+      )
+    ) {
+      return 'Refund Status and Recovery';
+    }
+    if (
+      /(?:payment|checkout|card|bank|billing)/u.test(normalized) &&
+      /(?:error|fail(?:s|ed|ure|ing)?|declin(?:e|ed)|reject(?:ed|ion)?|blocked|not accepted|not processed|not working|cannot|can t|unable)/u.test(
+        normalized,
+      )
+    ) {
+      return 'Payment Error Diagnosis and Recovery';
     }
     if (
       /(?:international card|foreign card|international number|foreign number|traveling from abroad|travelling from abroad)/u.test(
@@ -731,7 +1053,9 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     const body =
       value.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? value;
     const kind = classifyDirectCommunityEvidence(body, sourceType);
-    return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
+    return kind === 'USER_COMPLAINT' ||
+      kind === 'FEATURE_REQUEST' ||
+      kind === 'OBSERVED_UNMET_NEED';
   }
 
   private scoreFallbackEvidence(
@@ -746,6 +1070,10 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     if (/\b(?:i|we|my|our)\b/iu.test(normalized)) score += 10;
     if (/https?:\/\/|\b(?:check out|download|app review|subscribe|tutorial)\b/iu.test(normalized)) score -= 50;
     return score;
+  }
+
+  private toJsonArray(values: readonly unknown[]): Prisma.JsonArray {
+    return values as Prisma.JsonArray;
   }
 
   private mergeJsonArrays(

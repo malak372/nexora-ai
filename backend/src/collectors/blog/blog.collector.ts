@@ -5,7 +5,10 @@ import Parser from 'rss-parser';
 import { BaseCollector } from '../base/base.collector';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorExternalCacheUtil } from '../base/collector-external-cache.util';
-import { SocialCollector } from '../base/collector.interface';
+import {
+  type CollectorRequestSupportInput,
+  SocialCollector,
+} from '../base/collector.interface';
 import { CollectorInput, CollectorPost } from '../base/collector.types';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
@@ -48,6 +51,15 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
     super(configService, BlogCollector.name);
   }
 
+  supportsRequest(input: CollectorRequestSupportInput): boolean {
+    const bounded =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
+    if (!bounded) return true;
+
+    return this.hasDedicatedFeedsForDomain(input.domainName ?? undefined);
+  }
+
   /**
    * Collects and ranks RSS blog articles.
    */
@@ -60,6 +72,16 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
           'Blog collection skipped because no search keywords exist.',
         );
 
+        return [];
+      }
+
+      if (
+        input.requestDescription?.trim() &&
+        !this.hasDedicatedFeedsForDomain(input.domainName)
+      ) {
+        this.logger.debug(
+          `Blog collection skipped for request-scoped niche domain "${input.domainName ?? 'unknown'}" because only generic RSS feeds are configured.`,
+        );
         return [];
       }
 
@@ -106,19 +128,21 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
     input: CollectorInput,
   ): Promise<CollectorPost[]> {
     const feeds = this.getFeedsForDomain(input.domainName);
-    const collectedPosts: CollectorPost[] = [];
+    const feedResults = await Promise.allSettled(
+      feeds.map((feedUrl) => this.collectFromFeed(feedUrl, input)),
+    );
 
-    for (const feedUrl of feeds) {
-      const posts = await this.collectFromFeed(feedUrl, input);
-
-      collectedPosts.push(...posts);
-
-      if (collectedPosts.length >= this.maxFetchedPosts) {
-        break;
+    for (const [index, result] of feedResults.entries()) {
+      if (result.status === 'rejected') {
+        this.logger.warn(
+          `Blog feed skipped after parallel fetch failure: ${feeds[index]} - ${this.getErrorMessage(result.reason)}`,
+        );
       }
     }
 
-    return collectedPosts;
+    return feedResults.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value : [],
+    );
   }
 
   /**
@@ -261,6 +285,22 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       replies: post.repliesCount ?? 0,
       publishedAt: post.publishedAt,
     });
+  }
+
+  private hasDedicatedFeedsForDomain(domainName?: string): boolean {
+    const domain = this.cleanNormalizedText(domainName);
+    return new Set([
+      'education',
+      'healthcare',
+      'health',
+      'finance',
+      'cybersecurity',
+      'security',
+      'artificial intelligence',
+      'ai',
+      'technology',
+      'tech',
+    ]).has(domain);
   }
 
   /**

@@ -60,7 +60,11 @@ const REQUEST_DOMAIN_TOPIC_DEFINITIONS: readonly RequestDomainTopicDefinition[] 
     supportingPatterns: [
       /\b(?:photographers?|decorators?|catering|guest lists?|vendor coordination|event vendors?|booking conflicts?|last[- ]minute changes?|event schedules?)\b/iu,
     ],
-    negativePatterns: [/\b(?:funeral|memorial|burial|cemetery)\b/iu],
+    negativePatterns: [
+      /\b(?:funeral|memorial|burial|cemetery)\b/iu,
+      /\b(?:bridal|wedding dress|gown)\b[^.!?]{0,140}\b(?:alteration|alterations|alteration specialist|alteration specialists|seamstress|seamstresses|dressmaker|dressmakers|tailor|tailors|tailoring|fitting notes?|dress measurements?|customer measurements?)\b/iu,
+      /\b(?:alteration specialist|alteration specialists|seamstress|seamstresses|dressmaker|dressmakers|tailor|tailors|tailoring)\b[^.!?]{0,140}\b(?:bridal|wedding dress|gown|fitting|measurements?|fabric|approved alterations?)\b/iu,
+    ],
     minimumScore: 7,
   },
   {
@@ -102,16 +106,32 @@ const REQUEST_DOMAIN_TOPIC_DEFINITIONS: readonly RequestDomainTopicDefinition[] 
     minimumScore: 7,
   },
   {
+    name: 'Embroidery & Garment Customization',
+    primaryPatterns: [
+      /\b(?:embroidery|embroider|embroidered|embroiderer|embroiderers|monogramming|monogram|applique|appliqu[ée]|custom stitching|stitch pattern|stitch patterns)\b/iu,
+      /\b(?:thread colou?rs?|thread colou?r|design placement|placement instructions?|stitching error|stitching mistake|embroidery order|embroidery orders|embroidery design|embroidery designs|approved design version)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:thread colou?rs?|garment sizes?|design revisions?|order quantity|order quantities|wasted garments?|approved design|design version|artwork proof|artwork proofs|digitizing|digitized design|hoop|hooping)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:laundromat|dry cleaning|dry-cleaning|dry cleaner|wash and fold|stain treatment|stain details?)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
     name: 'Laundry & Dry-Cleaning Operations',
     primaryPatterns: [
       /\b(?:laundry shop|laundry shops|laundromat|laundromats|dry cleaning|dry-cleaning|dry cleaner|dry cleaners|laundry service|laundry services|garment cleaning|wash and fold)\b/iu,
-      /\b(?:garments?|clothes|clothing)\b[^.!?]{0,150}\b(?:stains?|cleaning instructions?|care instructions?|pickup|pick up|deadlines?|treatment|lost|missing|delayed|tag|tags|ticket|tickets)\b/iu,
+      /\b(?:garments?|clothes|clothing)\b[^.!?]{0,150}\b(?:stains?|cleaning instructions?|care instructions?|pickup|pick up|dry cleaning ticket|dry cleaning tickets|laundry tag|laundry tags|laundry ticket|laundry tickets)\b/iu,
     ],
     supportingPatterns: [
       /\b(?:stain details?|special cleaning instructions?|care labels?|paper tags?|pickup deadlines?|additional treatment|lost garments?|incorrect cleaning|delayed orders?|customer disputes?|order status|garment tracking)\b/iu,
     ],
     negativePatterns: [
       /\b(?:employee burnout|employee turnover|workforce retention|recruitment|hiring|candidate screening|talent acquisition)\b/iu,
+      /\b(?:tailor|tailoring|alteration shop|alteration shops|clothing alterations?|custom apparel|made[- ]to[- ]measure|bespoke|customer measurements?|body measurements?|fitting dates?|fitting appointments?|requested changes?)\b/iu,
+      /\b(?:embroidery|embroider|embroidered|monogramming|monogram|applique|appliqu[ée]|custom stitching|thread colou?rs?|design placement|digitizing)\b/iu,
     ],
     minimumScore: 7,
   },
@@ -130,6 +150,79 @@ const REQUEST_DOMAIN_TOPIC_DEFINITIONS: readonly RequestDomainTopicDefinition[] 
     minimumScore: 7,
   },
   {
+    name: 'Fountain Pen Repair & Service History',
+    primaryPatterns: [
+      /\b(?:fountain pen repair|fountain pen repairs|fountain pen repair specialist|fountain pen repair specialists|pen repair specialist|pen repair specialists|nib technician|nib technicians|nibmeister|nibmeisters)\b/iu,
+      /\b(?:fountain pens?|pens?)\b[^.!?]{0,180}\b(?:nib adjustments?|ink[- ]?flow problems?|replacement parts?|previous repairs?|service history|writing preferences?|restoration requests?)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:nib adjustments?|ink[- ]?flow problems?|replacement parts?|previous repairs?|customer writing preferences?|service history|repair history|restoration requests?|repeated diagnostics?|incorrect parts?|forgotten adjustments?)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:doll restoration|bookbinding|bookbinders?|furniture refinishing|upholstery)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
+    name: 'Violin Bow Repair & Rehair Service History',
+    primaryPatterns: [
+      /\b(?:violin bow technician|violin bow technicians|bow technician|bow technicians|bow maker|bow makers|archetier|archetiers|bow rehair|bow rehairing specialist|bow repairer|bow repairers)\b/iu,
+      /\bviolin bows?\b[^.!?]{0,180}\b(?:condition|rehair(?:ing)? dates?|hair type|grip|winding|repair notes?|customer preferences?|service history)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:bow condition|rehair(?:ing)? dates?|hair type preferences?|grip details?|winding details?|repair notes?|customer preferences?|service history)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:violin lesson|music streaming|concert ticket|orchestra schedule)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
+    name: 'Clock Repair Practice & Service History Management',
+    primaryPatterns: [
+      /\b(?:clock repair specialist|clock repair specialists|clock repairer|clock repairers|clockmaker|clockmakers|horologist|horologists|horology|antique clock repair|timepiece repair)\b/iu,
+      /\b(?:clocks?|timepieces?)\b[^.!?]{0,180}\b(?:mechanical faults?|replacement parts?|previous repairs?|repair history|service history|restoration instructions?|cost approvals?|completion dates?|diagnostics?)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:customer items?|mechanical faults?|replacement parts?|previous repairs?|restoration instructions?|cost approvals?|paper receipts?|handwritten notes?|service history|repair history|repeated diagnostics?|incorrect replacement parts?|forgotten customer requests?|unexpected costs?|delayed repairs?)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:doll restoration|doll restorers?|antique doll|toy restoration|fabric selections?|paint matching)\b/iu,
+      /\b(?:watch app|clock app|alarm clock|time tracking software)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
+    name: 'Independent Shoemakers Operations & Client Management',
+    primaryPatterns: [
+      /\b(?:shoemaker|shoemakers|shoe maker|shoe makers|shoemaking|shoe making|bespoke shoemaker|bespoke shoemakers|custom shoe maker|custom shoe makers|cordwainer|cordwainers|bespoke footwear|custom footwear|handmade shoes?|made[- ]to[- ]measure shoes?)\b/iu,
+      /\b(?:handmade shoes?|custom shoes?|bespoke shoes?|custom footwear|bespoke footwear)\b[^.!?]{0,180}\b(?:foot measurements?|leather selections?|sole types?|stitching preferences?|fitting notes?|design revisions?|approved specifications?|completion deadlines?)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:foot measurements?|leather selections?|sole types?|stitching preferences?|fitting notes?|design revisions?|latest approved specifications?|final approved specifications?|sizing errors?|incorrect material choices?|repeated fittings?|wasted materials?|delayed orders?)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:shoe repair shop|shoe repair shops|repair tickets?|paper tickets?|requested repairs?|technician notes?|misplaced shoes?|repair status|resole ticket|heel repair)\b/iu,
+      /\b(?:digital wardrobe|outfit planning|closet inventory|shoe shopping|sneaker release)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
+    name: 'Shoe Repair Shop Operations & Ticket Management',
+    primaryPatterns: [
+      /\b(?:shoe repair shop|shoe repair shops|cobbler|cobblers|cobbler shop|cobbler shops|shoe repair service|shoe repair services)\b/iu,
+      /\b(?:shoes?|boots?|footwear)\b[^.!?]{0,180}\b(?:repair tickets?|requested repairs?|technician notes?|material choices?|payment status|collection dates?|pickup dates?|misplaced|repair status)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:paper tickets?|repair tickets?|customer items?|repair instructions?|material choices?|technician notes?|payment status|promised collection|pickup date|misplaced shoes?|incorrect repairs?|delayed orders?)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:digital wardrobe|outfit planning|closet inventory|virtual shoe app|shoe shopping)\b/iu,
+      /\b(?:shoemaker|shoemakers|shoemaking|shoe making|bespoke shoemaker|bespoke footwear|custom footwear|handmade shoes?|made[- ]to[- ]measure shoes?|cordwainer|cordwainers|foot measurements?|stitching preferences?|design revisions?|latest approved specifications?)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
     name: 'Wardrobe & Personal Fashion Management',
     primaryPatterns: [
       /\b(?:wardrobe|digital wardrobe|closet|clothing inventory|clothes inventory|personal wardrobe|fashion wardrobe|outfit planning|outfit planner|outfit coordination)\b/iu,
@@ -140,16 +233,23 @@ const REQUEST_DOMAIN_TOPIC_DEFINITIONS: readonly RequestDomainTopicDefinition[] 
     ],
     negativePatterns: [
       /\b(?:tailor shop|custom clothing order|made[- ]to[- ]measure|bespoke order|alteration request|fitting appointment)\b/iu,
+      /\b(?:shoemaker|shoemakers|shoemaking|shoe making|bespoke footwear|custom footwear|handmade shoes?|cordwainer|foot measurements?|leather selections?|sole types?|stitching preferences?)\b/iu,
     ],
     minimumScore: 7,
   },
   {
     name: 'Tailoring & Custom Apparel',
     primaryPatterns: [
-      /\b(?:tailor|tailoring|tailoring shop|custom clothing|custom apparel|made to measure|made-to-measure|bespoke|garment|clothing alterations?)\b/iu,
+      /\b(?:tailor|tailors|tailoring|tailoring shop|tailoring shops|alteration shop|alteration shops|alteration specialist|alteration specialists|bridal alteration specialist|bridal alteration specialists|seamstress|seamstresses|bridal seamstress|bridal seamstresses|dressmaker|dressmakers|bridal dressmaker|bridal dressmakers|clothing alteration specialist|clothing alteration specialists|clothing alteration shop|clothing alteration shops|independent clothing alterations?|custom clothing|custom apparel|made to measure|made-to-measure|bespoke clothing|bespoke tailoring|clothing alterations?|wedding dress alterations?|bridal alterations?)\b/iu,
+      /\b(?:garment|garments|clothing)\b[^.!?]{0,180}\b(?:customer measurements?|body measurements?|requested changes?|alteration requests?|fitting dates?|fitting appointments?|fabric details?|payment status|collection times?|promised collection|paper receipts?)\b/iu,
     ],
     supportingPatterns: [
-      /\b(?:fabric selection|customer measurements?|body measurements?|alteration requests?|fitting appointments?|design notes?)\b/iu,
+      /\b(?:fabric selection|fabric details?|customer measurements?|body measurements?|alteration requests?|requested changes?|fitting dates?|fitting appointments?|design notes?|payment status|promised collection|collection times?|paper receipts?|lost garments?|incorrect alterations?|repeated fittings?|delayed orders?)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:laundromat|dry cleaning|dry-cleaning|dry cleaner|wash and fold|stain treatment|cleaning instructions?)\b/iu,
+      /\b(?:embroidery|embroider|embroidered|monogramming|monogram|applique|appliqu[ée]|custom stitching|thread colou?rs?|digitizing)\b/iu,
+      /\b(?:perfume|perfumer|perfumers|fragrance|scent formulation|ingredient concentration|formula revision)\b/iu,
     ],
     minimumScore: 7,
   },
@@ -176,10 +276,21 @@ const REQUEST_DOMAIN_TOPIC_DEFINITIONS: readonly RequestDomainTopicDefinition[] 
   {
     name: 'Finance',
     primaryPatterns: [
-      /\b(?:finance|financial|accounting|bookkeeping|invoice|invoices|payroll|reconciliation|cash flow|bank|banks|banking|payment provider|payment providers|digital payment|digital payments|transaction fraud|payment fraud)\b/iu,
+      /\b(?:finance|financial management|financial operations|accounting|bookkeeping|payroll|reconciliation|cash flow|bank|banks|banking|payment provider|payment providers|digital payment|digital payments|transaction fraud|payment fraud)\b/iu,
+      /\b(?:invoice|invoices|billing|budget|budgets?|expenses?|transactions?)\b[^.!?]{0,100}\b(?:reconciliation|cash flow|accounts payable|accounts receivable|payment|payments|financial reporting|fraud|audit|accounting)\b/iu,
     ],
     supportingPatterns: [
-      /\b(?:transactions?|expenses?|budgeting|budgets?|false positives?|false decline|fraud detection|suspicious transactions?)\b/iu,
+      /\b(?:invoice|invoices|billing|transactions?|expenses?|budgeting|budgets?|false positives?|false decline|fraud detection|suspicious transactions?)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
+    name: 'Academic Platform Security & Integrity Monitoring',
+    primaryPatterns: [
+      /\b(?:school|schools|university|universities|learning platform|learning platforms|learning management system|learning management systems|lms|online assessment|online assessments|online exam|online exams)\b[^.!?]{0,220}\b(?:suspicious account|account takeover|security alerts?|login records?|unusual behavior|academic misuse|academic integrity|security monitoring|anomaly detection)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:student records?|assessment behavior|false positives?|login activity|learning activity|security events?|identity provider|exam integrity|administrative review)\b/iu,
     ],
     minimumScore: 7,
   },

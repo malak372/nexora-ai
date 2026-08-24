@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { BaseCollector } from '../base/base.collector';
+import { CollectorAbortContextUtil } from '../base/collector-abort-context.util';
 import { SocialCollector } from '../base/collector.interface';
 
 import {
@@ -164,6 +165,7 @@ export class ProductHuntCollector
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
+      CollectorAbortContextUtil.throwIfAborted();
       const token = this.getToken();
 
       const searchTerms = this.buildSearchTerms(input);
@@ -185,6 +187,7 @@ export class ProductHuntCollector
       }
 
       const rawPosts = await this.collectPostsByPagination(token);
+      CollectorAbortContextUtil.throwIfAborted();
 
       const filteredPosts = this.filterPostsByInput(
         rawPosts,
@@ -216,19 +219,13 @@ export class ProductHuntCollector
         .sort((first, second) => second.score - first.score)
         .slice(0, this.maxSavedPosts);
 
-      const result: CollectorPost[] = [];
+      const result = await this.mapPostsWithBoundedConcurrency(
+        rankedPosts.map((item) => item.post),
+        input,
+        token,
+      );
 
-      for (const item of rankedPosts) {
-        const mappedPost = await this.mapProductToCollectorPost(
-          item.post,
-          input,
-          token,
-        );
-
-        result.push(mappedPost);
-
-        await this.delay(this.requestDelayMs);
-      }
+      CollectorAbortContextUtil.throwIfAborted();
 
       this.logger.log(
         `Product Hunt collection completed. Posts: ${result.length}`,
@@ -236,6 +233,9 @@ export class ProductHuntCollector
 
       return result;
     } catch (error: unknown) {
+      if (CollectorAbortContextUtil.isAbortError(error)) {
+        throw error;
+      }
       this.logger.error(
         'Product Hunt collection failed',
         this.getErrorMessage(error),
@@ -245,6 +245,49 @@ export class ProductHuntCollector
         'Product Hunt collection failed. Check PRODUCT_HUNT_TOKEN, API limits, or network connection.',
       );
     }
+  }
+
+  /**
+   * Maps ranked Product Hunt posts with bounded concurrency.
+   *
+   * The previous implementation fetched comments for every retained post one
+   * after another and slept 500ms after each item. The API requests are
+   * independent, so a small concurrency window preserves the same posts and
+   * comments while removing artificial serial latency and avoiding an
+   * unbounded request burst.
+   */
+  private async mapPostsWithBoundedConcurrency(
+    posts: readonly ProductHuntPost[],
+    input: CollectorInput,
+    token: string,
+  ): Promise<CollectorPost[]> {
+    const concurrency = Math.min(4, Math.max(1, posts.length));
+    const output = new Array<CollectorPost>(posts.length);
+    let nextIndex = 0;
+
+    const worker = async (): Promise<void> => {
+      while (true) {
+        CollectorAbortContextUtil.throwIfAborted();
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= posts.length) return;
+
+        output[index] = await this.mapProductToCollectorPost(
+          posts[index],
+          input,
+          token,
+        );
+
+        // Keep a per-worker throttle so bounded parallelism improves the tail
+        // without turning retained-post comment enrichment into an API burst.
+        if (nextIndex < posts.length) {
+          await this.delay(this.requestDelayMs);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    return output;
   }
 
   /**
@@ -288,6 +331,7 @@ export class ProductHuntCollector
     let after: string | null = null;
 
     while (collectedPosts.length < this.maxFetchedPosts) {
+      CollectorAbortContextUtil.throwIfAborted();
       const response: ProductHuntPostsResponse =
         await this.graphqlRequest<ProductHuntPostsResponse>(
           query,
@@ -424,6 +468,10 @@ export class ProductHuntCollector
           }),
         );
     } catch (error: unknown) {
+      if (CollectorAbortContextUtil.isAbortError(error)) {
+        throw error;
+      }
+
       this.logger.warn(
         `Product Hunt comments collection failed for post ${postId}`,
         this.getErrorMessage(error),
@@ -449,16 +497,22 @@ export class ProductHuntCollector
     token: string,
     validator: GraphqlResponseValidator<T>,
   ): Promise<T> {
-    const response = await fetch(this.apiUrl, {
-      method: 'POST',
+    const signal = CollectorAbortContextUtil.getSignal();
+    CollectorAbortContextUtil.throwIfAborted(signal);
 
-      headers: this.buildHeaders(token),
+    const response = await CollectorAbortContextUtil.raceWithAbort(
+      fetch(this.apiUrl, {
+        method: 'POST',
 
-      body: JSON.stringify({
-        query,
-        variables,
+        headers: this.buildHeaders(token),
+
+        body: JSON.stringify({
+          query,
+          variables,
+        }),
+        signal,
       }),
-    });
+    );
 
     if (!response.ok) {
       throw new Error(
@@ -874,8 +928,6 @@ export class ProductHuntCollector
    * Adds a delay between API requests.
    */
   private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      setTimeout(resolve, ms);
-    });
+    return CollectorAbortContextUtil.sleep(ms);
   }
 }

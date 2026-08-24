@@ -6,6 +6,8 @@ import axios, {
   AxiosResponse,
 } from 'axios';
 
+import { CollectorAbortContextUtil } from './collector-abort-context.util';
+
 /**
  * Represents one cached value and its expiration time.
  *
@@ -150,9 +152,13 @@ export class CollectorHttpUtil {
     const etagValue =
       typeof cachedEtag?.data === 'string' ? cachedEtag.data : undefined;
 
+    const activeAbortSignal = CollectorAbortContextUtil.getSignal();
+    CollectorAbortContextUtil.throwIfAborted(activeAbortSignal);
+
     const requestConfig: AxiosRequestConfig = {
       ...config,
       timeout: config.timeout ?? 10_000,
+      signal: activeAbortSignal ?? config.signal,
       headers: {
         ...(config.headers ?? {}),
         ...(etagValue
@@ -233,6 +239,13 @@ export class CollectorHttpUtil {
         }
 
         const requestFailureKind = this.getRequestFailureKind(axiosError);
+
+        if (
+          requestFailureKind === 'CANCELED' &&
+          activeAbortSignal?.aborted
+        ) {
+          throw error;
+        }
 
         if (requestFailureKind === 'TIMEOUT') {
           this.logger.warn(
@@ -557,8 +570,6 @@ export class CollectorHttpUtil {
    * @param ms Delay in milliseconds.
    */
   private static sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      setTimeout(resolve, ms);
-    });
+    return CollectorAbortContextUtil.sleep(ms);
   }
 }

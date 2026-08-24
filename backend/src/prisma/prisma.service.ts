@@ -8,7 +8,8 @@ import { PrismaClient } from '@prisma/client';
  * Prisma pool deliberately small prevents idea generation, WebSockets and
  * authenticated HTTP requests from exhausting the upstream session limit.
  *
- * Set PRISMA_CONNECTION_LIMIT when a deployment has a larger verified pool.
+ * PRISMA_CONNECTION_LIMIT may override the bounded default when a deployment
+ * has a smaller or larger verified upstream session-pool allowance.
  */
 @Injectable()
 export class PrismaService
@@ -109,19 +110,27 @@ export class PrismaService
     try {
       const url = new URL(databaseUrl);
       const requestedLimit = Number.parseInt(
-        process.env.PRISMA_CONNECTION_LIMIT ?? '2',
+        process.env.PRISMA_CONNECTION_LIMIT ?? '5',
         10,
       );
       const safeLimit = Number.isFinite(requestedLimit)
-        ? Math.min(3, Math.max(1, requestedLimit))
-        : 2;
+        ? Math.min(8, Math.max(2, requestedLimit))
+        : 5;
 
       const currentLimit = Number.parseInt(
         url.searchParams.get('connection_limit') ?? '',
         10,
       );
 
-      if (!Number.isFinite(currentLimit) || currentLimit > safeLimit) {
+      /*
+       * A three-connection pool was shown to starve authenticated HTTP work
+       * while generation persistence and background writes overlap. Keep one
+       * explicit bounded value per process so a connection_limit embedded in
+       * DATABASE_URL cannot silently force the application below the configured
+       * capacity. Deployments with a smaller upstream allowance can set
+       * PRISMA_CONNECTION_LIMIT explicitly.
+       */
+      if (!Number.isFinite(currentLimit) || currentLimit !== safeLimit) {
         url.searchParams.set('connection_limit', String(safeLimit));
       }
 
