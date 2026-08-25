@@ -93,6 +93,15 @@ export class RequestValidationStage implements IdeaGenerationStage {
         context.requestDescription,
       ),
 
+      requestedDomainIds: normalizeGenerationStringArray(
+        context.requestedDomainIds ?? [],
+        {
+          lowercase: true,
+          maxItems: 8,
+          maxItemLength: 64,
+        },
+      ),
+
       keywords: normalizeGenerationKeywords(context.keywords, 24, 120),
 
       requestedDataSourceKeys: normalizeGenerationStringArray(

@@ -7,6 +7,9 @@ import { BaseCollector } from '../base/base.collector';
 import type { SocialCollector } from '../base/collector.interface';
 import type { CollectorInput, CollectorPost } from '../base/collector.types';
 import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
+import { CollectorAbortContextUtil } from '../base/collector-abort-context.util';
+import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
+import { RequestEvidenceAlignmentUtil } from '../../ideas/generation/utils/request-evidence-alignment.util';
 
 /** Minimal fields returned by GDELT DOC 2.0 ArticleList JSON. */
 type GdeltArticle = {
@@ -64,27 +67,33 @@ export class GdeltCollector extends BaseCollector implements SocialCollector {
       return [];
     }
 
-    const queryBudget = input.collectionMode === 'TARGETED_RECOVERY' ? 1 : 2;
+    const queryBudget = input.collectionMode === 'TARGETED_RECOVERY' ? 1 : 3;
     const queries = ProblemFirstCollectorQueryUtil.build({
       sourceKey: this.sourceKey,
       domainName: input.domainName,
       requestDescription: input.requestDescription,
       plannedQueries: input.plannedQueries,
       keywords: input.keywords,
+      authoritativePlannedQueries: input.authoritativePlannedQueries,
     }).slice(0, queryBudget);
 
     if (queries.length === 0) return [];
 
-    const articles: GdeltArticle[] = [];
-    for (const query of queries) {
-      if (!this.isRuntimeAvailable()) break;
-      articles.push(...(await this.search(query, input)));
-      if (articles.length >= 2) break;
-    }
+    const settled = await Promise.allSettled(
+      queries.map((query) =>
+        this.isRuntimeAvailable()
+          ? this.search(query, input)
+          : Promise.resolve<GdeltArticle[]>([]),
+      ),
+    );
+    const articles = settled.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value : [],
+    );
 
     const seen = new Set<string>();
     return articles
       .filter((article) => Boolean(article.url && article.title))
+      .filter((article) => this.passesRequestIdentityGate(article, input))
       .filter((article) => {
         const key = article.url?.trim() ?? '';
         if (!key || seen.has(key)) return false;
@@ -93,6 +102,36 @@ export class GdeltCollector extends BaseCollector implements SocialCollector {
       })
       .slice(0, this.resolveMaxSavedPosts(input))
       .map((article) => this.mapArticle(article, input));
+  }
+
+  private passesRequestIdentityGate(
+    article: GdeltArticle,
+    input: CollectorInput,
+  ): boolean {
+    const request = this.cleanNormalizedText(input.requestDescription);
+    if (!request) return true;
+    const title = this.cleanPlainText(article.title);
+    if (!title) return false;
+
+    const constraint = RequestVerticalConstraintUtil.resolve({
+      requestDescription: request,
+      domainName: input.domainName,
+      plannedQueries: input.plannedQueries,
+    });
+    if ([
+      'PUBLIC_PROGRAM_COST_ATTRIBUTION',
+      'OPERATIONAL_COST_ATTRIBUTION',
+      'HEALTHCARE_SUPPLY_COST_EFFICIENCY',
+      'AGRICULTURE_DISTRIBUTION_PROFITABILITY',
+      'AGRICULTURE_EXPORT_PROFITABILITY',
+    ].includes(constraint.kind)) {
+      return RequestEvidenceAlignmentUtil.classifyForRequest({
+        requestDescription: request,
+        evidenceText: title,
+        plannedQueries: input.plannedQueries ?? [],
+      }) !== 'UNRELATED';
+    }
+    return true;
   }
 
   private async search(
@@ -123,7 +162,8 @@ export class GdeltCollector extends BaseCollector implements SocialCollector {
           Accept: 'application/json',
           'User-Agent': 'NexoraAI-Graduation-Project',
         },
-        timeout: input.collectionMode === 'TARGETED_RECOVERY' ? 2_100 : 1_900,
+        timeout: input.collectionMode === 'TARGETED_RECOVERY' ? 3_200 : 3_500,
+        signal: CollectorAbortContextUtil.getSignal(),
       });
 
       GdeltCollector.consecutiveTransientFailures = 0;

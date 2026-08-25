@@ -14,6 +14,10 @@ import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
+import { CollectorAbortContextUtil } from '../base/collector-abort-context.util';
+import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
+import { RequestNicheCustomCraftUtil } from '../../ideas/generation/utils/request-niche-custom-craft.util';
+import { RequestOperationalCostAttributionUtil } from '../../ideas/generation/utils/request-operational-cost-attribution.util';
 
 type NewsApiSource = {
   id?: string | null;
@@ -117,6 +121,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
 
       const rankedArticles = collectedArticles
         .filter((article) => this.isUsableArticle(article))
+        .filter((article) => this.passesRequestIdentityGate(article, input))
         .filter((article) => {
           const url = article.url;
 
@@ -190,6 +195,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
       const seen = new Set<string>();
       return articles
         .filter((article) => this.isUsableArticle(article))
+        .filter((article) => this.passesRequestIdentityGate(article, input))
         .filter((article) => {
           const key = article.url ?? article.title ?? '';
           if (!key || seen.has(key)) return false;
@@ -206,38 +212,38 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         .map((entry) => this.mapArticleToCollectorPost(entry.article, input));
     };
 
-    const queries = searchQueries.slice(0, 3);
+    const primaryBudget = input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 5;
+    const primaryQueries = searchQueries.slice(0, primaryBudget);
+    const attempted = new Set(
+      primaryQueries.map((query) => this.cleanNormalizedText(query)),
+    );
+    const progressiveFallback = input.requestDescription?.trim()
+      ? ProblemFirstCollectorQueryUtil.buildProgressiveFallback({
+          sourceKey: this.sourceKey,
+          domainName: input.domainName,
+          requestDescription: input.requestDescription,
+          plannedQueries: input.plannedQueries,
+          keywords: input.keywords,
+          authoritativePlannedQueries: input.authoritativePlannedQueries,
+        })
+          .filter((query) => !attempted.has(this.cleanNormalizedText(query)))
+          .slice(0, input.collectionMode === 'TARGETED_RECOVERY' ? 0 : 2)
+      : [];
+
+    /*
+     * The old fast path paid for a second serial RSS wave when the first five
+     * queries returned fewer than two ranked articles. Put the bounded fallback
+     * facets in the SAME parallel wave instead. Recall is preserved (and often
+     * improved) while worst-case wall time is one network round instead of two.
+     */
+    const queries = [...new Set([...primaryQueries, ...progressiveFallback])];
     const results = await Promise.allSettled(
       queries.map((query) => this.searchGoogleNewsRss(query, input)),
     );
     const articles = results.flatMap((result) =>
       result.status === 'fulfilled' ? result.value : [],
     );
-    const ranked = rankArticles(articles);
-    if (ranked.length >= 2 || !input.requestDescription?.trim()) {
-      return ranked;
-    }
-
-    const attempted = new Set(queries.map((query) => this.cleanNormalizedText(query)));
-    const fallbackQueries = ProblemFirstCollectorQueryUtil.buildProgressiveFallback({
-      sourceKey: this.sourceKey,
-      domainName: input.domainName,
-      requestDescription: input.requestDescription,
-      plannedQueries: input.plannedQueries,
-      keywords: input.keywords,
-    })
-      .filter((query) => !attempted.has(this.cleanNormalizedText(query)))
-      .slice(0, 2);
-
-    if (fallbackQueries.length === 0) return ranked;
-
-    const fallbackResults = await Promise.allSettled(
-      fallbackQueries.map((query) => this.searchGoogleNewsRss(query, input)),
-    );
-    const fallbackArticles = fallbackResults.flatMap((result) =>
-      result.status === 'fulfilled' ? result.value : [],
-    );
-    return rankArticles([...articles, ...fallbackArticles]);
+    return rankArticles(articles);
   }
 
   private async searchGoogleNewsRss(
@@ -265,6 +271,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
       },
       responseType: 'text',
       timeout: input.collectionMode === 'TARGETED_RECOVERY' ? 3_000 : 4_000,
+      signal: CollectorAbortContextUtil.getSignal(),
     });
     const feed = await this.rssParser.parseString(response.data);
 
@@ -345,11 +352,16 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         requestDescription: input.requestDescription,
         plannedQueries: input.plannedQueries,
         keywords: input.keywords,
+        authoritativePlannedQueries: input.authoritativePlannedQueries,
       });
       const maximumTextQueries =
-        input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 3;
+        input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 5;
       return this.unique(sourceAwareQueries)
-        .map((query) => this.boundNewsApiQuery(query))
+        .map((query) =>
+          input.authoritativePlannedQueries
+            ? query.trim()
+            : this.boundNewsApiQuery(query),
+        )
         .filter(Boolean)
         .slice(0, maximumTextQueries);
     }
@@ -364,7 +376,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         input.collectionMode === 'TARGETED_RECOVERY'
           ? 2
           : input.collectionMode === 'FAST_GENERATION'
-            ? 3
+            ? 5
             : 6;
       return this.unique(plannedQueries)
         .map((query) => this.boundNewsApiQuery(query))
@@ -631,6 +643,51 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   /**
    * Maps one NewsAPI article.
    */
+  private passesRequestIdentityGate(
+    article: NewsApiArticle,
+    input: CollectorInput,
+  ): boolean {
+    const request = input.requestDescription?.trim() ?? '';
+    if (!request) return true;
+    const evidence = this.cleanNormalizedText([
+      article.title ?? '', article.description ?? '', article.content ?? '', article.source?.name ?? '',
+    ].join(' '));
+    if (!evidence) return false;
+
+    const constraint = RequestVerticalConstraintUtil.resolve({
+      requestDescription: request,
+      domainName: input.domainName,
+      plannedQueries: input.plannedQueries,
+    });
+    if (constraint.kind === 'OPERATIONAL_COST_ATTRIBUTION') {
+      return RequestOperationalCostAttributionUtil.isPlausibleRetrievalCandidate(
+        request,
+        evidence,
+      );
+    }
+
+    if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
+      const publicContext = /\b(?:government|public sector|public agency|government agency|government department|public program|government program|public administration)\b/u.test(evidence);
+      const costDriver = /\b(?:staffing|payroll|procurement|purchasing|contractor|vendor payment|service usage|departmental spending|program expenditure|operating expense|operating cost|public expenditure)\w*\b/u.test(evidence);
+      const budgetPressure = /\b(?:budget overrun|overspend|cost overrun|cost pressure|cost driver|cost attribution|budget variance|spending analysis|expenditure analysis|financial oversight|inefficien|waste)\w*\b/u.test(evidence);
+      const personalCollision = /\b(?:personal finance|boyfriend|girlfriend|house down payment|stock portfolio|retirement account)\b/u.test(evidence);
+      return publicContext && costDriver && budgetPressure && !personalCollision;
+    }
+
+    if (constraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY') {
+      const healthcare = /\b(?:healthcare|health system|hospital|hospitals|clinic|medical center|hospital pharmacy)\b/u.test(evidence);
+      const supply = /\b(?:procurement|purchasing|emergency purchase|emergency order|medical suppl(?:y|ies)|inventory|stockout|overstock|expired|expiration|expiry|inter[- ]facility transfer|stock redistribution|supplier invoice|transportation cost|delivery cost|logistics cost)\w*\b/u.test(evidence);
+      const impact = /\b(?:cost|expense|spend|budget|financial|waste|loss|avoidable|inefficien|overstock|expired|stockout|emergency)\w*\b/u.test(evidence);
+      return healthcare && supply && impact;
+    }
+
+    const niche = RequestNicheCustomCraftUtil.resolve(request);
+    if (niche) {
+      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(request, evidence);
+    }
+    return true;
+  }
+
   private mapArticleToCollectorPost(
     article: NewsApiArticle,
     input: CollectorInput,
@@ -665,11 +722,22 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
    * Builds clean article content.
    */
   private buildArticleContent(article: NewsApiArticle): string {
-    return this.cleanPlainText(
-      [article.description, article.content, article.title]
-        .filter(Boolean)
-        .join('\n\n'),
-    );
+    const parts = [article.description, article.content, article.title]
+      .map((value) => this.cleanPlainText(value))
+      .filter(Boolean);
+    const unique: string[] = [];
+    const normalized = new Set<string>();
+    for (const part of parts) {
+      const key = this.cleanNormalizedText(part);
+      if (!key || normalized.has(key)) continue;
+      if (unique.some((existing) => {
+        const existingKey = this.cleanNormalizedText(existing);
+        return existingKey.includes(key) || key.includes(existingKey);
+      })) continue;
+      normalized.add(key);
+      unique.push(part);
+    }
+    return this.cleanPlainText(unique.join('\n\n'));
   }
 
   /**

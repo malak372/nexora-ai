@@ -1,12 +1,15 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CollectorsFactory } from '../../../collectors/collectors.factory';
 import type { SelectedIdeaDataSource } from '../types/idea-generation-context.type';
+import { IdeaGenerationDatabaseRetryService } from './idea-generation-database-retry.service';
+import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 
 type ResolveIdeaGenerationSelectionInput = {
   readonly domainId: string;
@@ -37,6 +40,7 @@ type IdeaGenerationSelectionResult = {
  */
 @Injectable()
 export class IdeaGenerationSelectionService {
+  private readonly logger = new Logger(IdeaGenerationSelectionService.name);
   private collectorRegistrySyncedAt = 0;
   private collectorRegistrySyncPromise: Promise<void> | null = null;
   private static readonly COLLECTOR_REGISTRY_SYNC_TTL_MS = 10 * 60 * 1000;
@@ -44,6 +48,7 @@ export class IdeaGenerationSelectionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly collectorsFactory: CollectorsFactory,
+    private readonly databaseRetry: IdeaGenerationDatabaseRetryService,
   ) {}
 
   async resolveSelection(
@@ -53,43 +58,49 @@ export class IdeaGenerationSelectionService {
     const runtimeAvailableKeys =
       this.collectorsFactory.getRuntimeAvailableSourceKeys();
 
-    const [domain, dataSources] = await Promise.all([
-      this.prisma.domain.findFirst({
-        where: {
-          id: input.domainId,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          name: true,
-          domainKeywords: {
+    const [domain, dataSources] = await this.databaseRetry.execute(
+      () =>
+        Promise.all([
+          this.prisma.domain.findFirst({
+            where: {
+              id: input.domainId,
+              isActive: true,
+            },
             select: {
-              keyword: true,
+              id: true,
+              name: true,
+              domainKeywords: {
+                select: {
+                  keyword: true,
+                },
+                orderBy: {
+                  createdAt: 'asc',
+                },
+              },
             },
-            orderBy: {
-              createdAt: 'asc',
+          }),
+          this.prisma.dataSource.findMany({
+            where: {
+              isActive: true,
+              isImplemented: true,
+              key: { in: runtimeAvailableKeys },
             },
-          },
-        },
-      }),
-      this.prisma.dataSource.findMany({
-        where: {
-          isActive: true,
-          isImplemented: true,
-          key: { in: runtimeAvailableKeys },
-        },
-        select: {
-          id: true,
-          key: true,
-          displayName: true,
-          supportsPosts: true,
-          supportsComments: true,
-          supportsRegion: true,
-          supportsLanguage: true,
-        },
-        orderBy: [{ displayName: 'asc' }, { key: 'asc' }],
-      }),
-    ]);
+            select: {
+              id: true,
+              key: true,
+              displayName: true,
+              supportsPosts: true,
+              supportsComments: true,
+              supportsRegion: true,
+              supportsLanguage: true,
+            },
+            orderBy: [{ displayName: 'asc' }, { key: 'asc' }],
+          }),
+        ]),
+      {
+        operationName: 'resolve idea-generation domain and data sources',
+      },
+    );
 
     if (!domain) {
       throw new NotFoundException(
@@ -188,14 +199,18 @@ export class IdeaGenerationSelectionService {
         implementedKeys.includes(source.key),
       );
 
-      const staleReddit = await this.prisma.dataSource.findUnique({
-        where: { key: 'reddit' },
-        select: {
-          isActive: true,
-          isImplemented: true,
-          description: true,
-        },
-      });
+      const staleReddit = await this.databaseRetry.execute(
+        () =>
+          this.prisma.dataSource.findUnique({
+            where: { key: 'reddit' },
+            select: {
+              isActive: true,
+              isImplemented: true,
+              description: true,
+            },
+          }),
+        { operationName: 'inspect runtime collector registry' },
+      );
 
       /*
        * Older deployments seeded Reddit as a reserved unavailable source.
@@ -210,39 +225,60 @@ export class IdeaGenerationSelectionService {
           staleReddit.description ?? '',
         );
 
-      await Promise.all([
-        this.prisma.dataSource.updateMany({
-          where: {
-            key: { in: implementedKeys },
-            isImplemented: false,
-          },
-          data: { isImplemented: true },
-        }),
-        staleReservedReddit
-          ? this.prisma.dataSource.update({
-              where: { key: 'reddit' },
-              data: {
+      await this.databaseRetry.execute(
+        () =>
+          Promise.all([
+            this.prisma.dataSource.updateMany({
+              where: {
+                key: { in: implementedKeys },
+                isImplemented: false,
+              },
+              data: { isImplemented: true },
+            }),
+            staleReservedReddit
+              ? this.prisma.dataSource.update({
+                  where: { key: 'reddit' },
+                  data: {
+                    isActive: true,
+                    isImplemented: true,
+                    description:
+                      'Collects public Reddit discussions through OAuth when configured, with public read-only RSS fallback when OAuth is unavailable.',
+                  },
+                })
+              : Promise.resolve(null),
+            this.prisma.dataSource.createMany({
+              data: deployableBuiltIns.map((source) => ({
+                ...source,
                 isActive: true,
                 isImplemented: true,
-                description:
-                  'Collects public Reddit discussions through OAuth when configured, with public read-only RSS fallback when OAuth is unavailable.',
-              },
-            })
-          : Promise.resolve(null),
-        this.prisma.dataSource.createMany({
-          data: deployableBuiltIns.map((source) => ({
-            ...source,
-            isActive: true,
-            isImplemented: true,
-          })),
-          skipDuplicates: true,
-        }),
-      ]);
+              })),
+              skipDuplicates: true,
+            }),
+          ]),
+        { operationName: 'synchronize runtime collector registry' },
+      );
 
       this.collectorRegistrySyncedAt = Date.now();
-    })().finally(() => {
-      this.collectorRegistrySyncPromise = null;
-    });
+    })()
+      .catch((error: unknown) => {
+        /*
+         * Registry reconciliation is a deployment self-heal, not a required
+         * generation read. If the database is transiently unavailable after
+         * bounded retries, let resolveSelection perform its normal retried read
+         * instead of failing the whole data-source-selection stage here.
+         */
+        if (isTransientDatabaseError(error)) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `Runtime collector registry sync deferred after transient database failure: ${message}`,
+          );
+          return;
+        }
+        throw error;
+      })
+      .finally(() => {
+        this.collectorRegistrySyncPromise = null;
+      });
 
     return this.collectorRegistrySyncPromise;
   }

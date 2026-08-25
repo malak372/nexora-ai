@@ -1,4 +1,6 @@
 import { RequestWorkflowIntentProfileUtil } from './request-workflow-intent-profile.util';
+import { RequestNicheCustomCraftUtil } from './request-niche-custom-craft.util';
+import { RequestOnlinePharmacyFraudUtil } from './request-online-pharmacy-fraud.util';
 
 export type DynamicRequestQueryInput = {
   readonly requestDescription?: string | null;
@@ -529,6 +531,49 @@ export class RequestDynamicQueryUtil {
     const normalized = this.cleanText(description).toLocaleLowerCase();
     const intentProfile = RequestWorkflowIntentProfileUtil.resolve(description);
 
+    /*
+     * High-value first-pass retrieval contracts for the two recurrent failure
+     * modes seen in QA: logistics shipment-integrity incidents and professional
+     * book conservation/restoration. These queries deliberately name the
+     * concrete object + failure mechanism so generic routing/AI/book-content
+     * results do not dominate the raw corpus.
+     */
+    if (
+      /\b(?:logistics companies?|logistics providers?|3pl|third[- ]party logistics|parcel carriers?|freight companies?|delivery operators?|warehouses?)\b/u.test(normalized) &&
+      /\b(?:suspicious shipment|shipment changes?|unauthorized access|delivery accounts?|unusual routing|redirected|rerout|cargo fraud|shipment fraud|stolen goods?|false claims?|tracking records?|warehouse scans?|security alerts?)\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        '3PL missing packages warehouse carrier handoff scans proof of receipt',
+        'shipment rerouting fraud unauthorized delivery account destination change',
+        'cargo theft tracking discrepancy warehouse scan carrier handoff',
+        'parcel redirected after account takeover unauthorized address change',
+        'logistics shipment chain of custody missing scan lost package investigation',
+        'carrier warehouse conflicting tracking records missing shipment',
+        'freight cargo fraud unusual route diversion tracking anomaly',
+        'delivery account unauthorized access shipment reroute security alert',
+        'shipment compromise warehouse scan driver update tracking mismatch',
+        'false delivery claim proof of handoff missing carrier scan logistics',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
+      /\b(?:book restoration specialists?|book restorers?|book conservation|book conservators?|book repair specialists?|rare book restoration|manuscript conservation)\b/u.test(normalized) &&
+      /\b(?:damaged bindings?|torn pages?|missing sections?|previous repairs?|paper condition|preservation preferences?|restoration history|treatment history|repair history|condition assessment)\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'book conservator condition report binding damage previous repairs documentation',
+        'book restoration torn pages missing sections treatment history records',
+        'rare book conservation previous treatment repair history paper condition',
+        'bookbinding restoration material selection repair documentation rework',
+        'book conservation treatment records photographs notes client preferences',
+        'book repair unsuitable materials previous repair history paper damage',
+        'manuscript conservation missing leaves binding repair condition assessment',
+        'book restoration workshop records material samples treatment decisions',
+        'book conservator repeated treatment missing documentation previous repairs',
+        'book preservation client preferences repair history binding condition',
+      ]).slice(0, maxQueries);
+    }
+
     if (
       /\b(?:digital media companies?|media companies?|streaming platforms?|streaming services?|digital publishers?|online media platforms?|video platforms?|content platforms?)\b/u.test(normalized) &&
       /\b(?:shows?|videos?|content|subscription plans?|subscription tiers?|production costs?|advertising revenue|subscription activity|audience engagement|cancellation patterns?|churn|profitability|sustainable profit|budgeting|revenue forecasts?)\b/u.test(normalized)
@@ -543,6 +588,52 @@ export class RequestDynamicQueryUtil {
         `${actor} content cost attribution subscriber activity profitability`,
         `${actor} show investment audience engagement revenue performance`,
         `${actor} content portfolio unnecessary production expense budgeting forecast`,
+      ]).slice(0, maxQueries);
+    }
+
+
+    if (
+      /\b(?:public education authorities?|education authorities?|school districts?|education departments?|ministr(?:y|ies) of education|public school systems?)\b/u.test(normalized) &&
+      /\b(?:teachers?|staffing|learning resources?|intervention programs?|enrollment|attendance|assessment|school reports?|resource distribution|overcrowded classrooms?|education spending)\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'school district teacher shortage resource allocation staffing needs',
+        'public schools overcrowded classrooms staffing resource allocation',
+        'education authority enrollment attendance staffing early warning resource gaps',
+        'school district assessment attendance data intervention resource allocation',
+        'education management information systems fragmented school records resource planning',
+        'public school funding allocation uneven resources student needs',
+        'school staffing levels enrollment trends resource planning delayed support',
+        'education authority school performance data resource allocation intervention',
+      ]).slice(0, maxQueries);
+    }
+
+    const nicheCraftProfile = RequestNicheCustomCraftUtil.resolve(description);
+    if (nicheCraftProfile) {
+      const nicheQueries = RequestNicheCustomCraftUtil.buildSourceQueries(
+        description,
+        'generic',
+      );
+      if (nicheQueries.length > 0) {
+        return this.deduplicate(nicheQueries).slice(0, maxQueries);
+      }
+    }
+
+    const watchStrapSpecification =
+      /\b(?:watch straps?|watch bands?|leather watch straps?|leather watch bands?|watch strap makers?|watch band makers?|bespoke straps?)\b/u.test(normalized) &&
+      /\b(?:wrist measurements?|wrist sizes?|strap lengths?|strap widths?|lug widths?|leather types?|material choices?|stitching styles?|buckle selections?|design revisions?|customer approvals?|approved specifications?|wrong sizes?|sizing errors?|remakes?|rework|wasted leather|delayed orders?)\b/u.test(normalized);
+    if (watchStrapSpecification) {
+      return this.deduplicate([
+        'custom watch strap wrong size wrist measurement remake',
+        'watch band lug width strap length sizing mistake',
+        'leather watch strap customer design revision approval rework',
+        'bespoke watch strap leather material selection customer approval',
+        'watch strap wrong leather stitching buckle order remake',
+        'custom leather watch band approved specification changed revision',
+        'watch strap maker customer measurement wrong size delayed order',
+        'leathercraft custom order measurement material revision remake',
+        'custom leather order customer changed design approval rework',
+        'leatherworker bespoke order measurement mistake wasted leather',
       ]).slice(0, maxQueries);
     }
 
@@ -576,18 +667,78 @@ export class RequestDynamicQueryUtil {
       ]).slice(0, maxQueries);
     }
 
-    if (intentProfile.family === 'TRANSACTION_ACCOUNT_ABUSE') {
-      const actor = this.extractActor(description) || 'transportation company';
+    if (RequestOnlinePharmacyFraudUtil.isRequest(description)) {
+      return this.deduplicate(
+        RequestOnlinePharmacyFraudUtil.buildSourceQueries('generic'),
+      ).slice(0, maxQueries);
+    }
+
+    if (
+      intentProfile.family === 'TRANSACTION_ACCOUNT_ABUSE' &&
+      /\b(?:smart cities|smart city|cities|city governments?|municipalit(?:y|ies)|municipal governments?|local authorities?|public services?)\b/u.test(normalized) &&
+      /\b(?:payments?|transactions?|parking fees?|parking payments?|transit payments?|fare payments?|utility payments?|utility bills?|municipal fees?|public service fees?)\b/u.test(normalized)
+    ) {
       return this.deduplicate([
-        `${actor} fraudulent refund ticket booking scam`,
-        `${actor} payment fraud refund abuse investigation`,
-        `${actor} passenger account takeover device signals`,
-        `${actor} suspicious booking coordinated abuse`,
-        `${actor} security alerts false positive passenger restriction`,
-        `${actor} payment transaction anomaly refund investigation`,
-        `${actor} compromised passenger account fraudulent payment`,
-        `${actor} ticket refund fraud financial loss`,
+        'municipal payment fraud detection unauthorized transactions',
+        'smart city payments parking transit utility fraud detection',
+        'city service payment account compromise unauthorized payment',
+        'municipal payment systems fragmented fraud monitoring security alerts',
+        'parking transit utility payments false positive fraud alerts',
+        'public service payment transaction monitoring account takeover',
+        'city payment records security alerts fraud investigation fragmented systems',
+        'municipal digital payments suspicious activity account compromise',
       ]).slice(0, maxQueries);
+    }
+
+    if (
+      intentProfile.family === 'TRANSACTION_ACCOUNT_ABUSE' &&
+      /\b(?:financial institutions?|banks?|legal departments?|legal teams?|compliance teams?)\b/u.test(normalized) &&
+      /\b(?:contract payments?|approval logs?|contract records?|payment histories?|financial misconduct|unauthorized account changes?|security alerts?|identity information)\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'financial institution suspicious contract payment investigation approval logs',
+        'bank contract payment fraud unauthorized account changes investigation',
+        'legal compliance payment history approval log security alert correlation',
+        'financial misconduct investigation contract records payment history identity events',
+        'cross system financial investigation approval logs account changes security alerts',
+        'contract payment anomaly legal compliance investigation fragmented records',
+        'financial institution coordinated fraud payment approval identity event reconstruction',
+        'legitimate transaction delayed fraud investigation false positive compliance review',
+      ]).slice(0, maxQueries);
+    }
+
+    if (intentProfile.family === 'TRANSACTION_ACCOUNT_ABUSE') {
+      /*
+       * This family is intentionally domain-agnostic. Older code generated a
+       * transportation template (passenger/ticket/booking) for every account-
+       * abuse request, which contaminated procurement, education, healthcare,
+       * marketplace, insurance, and other workflows whenever PREPARING fell
+       * back to deterministic planning. Build every query only from identity,
+       * workflow, failure, and outcome terms extracted from THIS request.
+       */
+      const actor = this.extractActor(description) ||
+        intentProfile.actorIdentityTerms.slice(0, 2).join(' ') ||
+        'request operator';
+      const object = intentProfile.objectIdentityTerms.slice(0, 3).join(' ');
+      const workflow = intentProfile.workflowIdentityTerms.slice(0, 3).join(' ');
+      const failures = intentProfile.failureIdentityTerms.slice(0, 3);
+      const outcomes = intentProfile.outcomeIdentityTerms.slice(0, 2);
+      const primaryFailure = failures[0] || 'fraud unauthorized access';
+      const secondaryFailure = failures[1] || 'suspicious activity';
+      const primaryOutcome = outcomes[0] || 'financial loss';
+
+      return this.deduplicate([
+        `${actor} ${object} ${primaryFailure}`,
+        `${actor} ${workflow} ${primaryFailure}`,
+        `${object} ${workflow} ${secondaryFailure}`,
+        `${actor} ${primaryFailure} ${primaryOutcome}`,
+        `${object} unauthorized account access security alerts`,
+        `${workflow} coordinated fraud pattern investigation`,
+        `${actor} fragmented records ${primaryFailure}`,
+        `${object} identity verification suspicious activity`,
+      ].map((query) => query.replace(/\s+/gu, ' ').trim()))
+        .filter(Boolean)
+        .slice(0, maxQueries);
     }
 
     if (intentProfile.family === 'FOOD_STORAGE_CONDITION') {
@@ -607,15 +758,35 @@ export class RequestDynamicQueryUtil {
     if (intentProfile.family === 'RESTORATION_CONSERVATION') {
       const actor = this.extractActor(description) || 'restoration specialist';
       const subject = intentProfile.restorationSubject || actor;
+      const shoeRestoration = /\b(?:shoe|footwear|boot|sneaker|cobbler)\b/iu.test(
+        `${subject} ${actor} ${description}`,
+      );
+      const shoeQueries = shoeRestoration
+        ? [
+            'cobbler shoe repair customer notes repair history wrong materials',
+            'shoe repair shop leather sole stitching restoration records customer preferences',
+            'footwear restoration material matching color formula previous repair notes',
+            'shoe restoration workshop scattered photos notes customer requests rework',
+          ]
+        : [];
+      const hasHistory = /\b(?:history|previous coatings?|previous treatments?|previous repairs?|records?|documentation|notes?|formulas?|photos?|photographs?|samples?)\b/iu.test(description);
+      const hasSurface = /\b(?:surface condition|condition|damaged areas?|damage|color variations?|colour variations?|color matching|colour matching)\b/iu.test(description);
+      const hasMaterials = /\b(?:material mixtures?|materials?|coatings?|varnish|finish|resin|pigment)\b/iu.test(description);
+      const hasTechnique = /\b(?:application techniques?|treatment techniques?|methods?|process)\b/iu.test(description);
+      const hasPreferences = /\b(?:customer|client|owner|preservation preferences?|preferences?)\b/iu.test(description);
+      const derived = [
+        hasHistory ? `${subject} restoration treatment history documentation records` : '',
+        hasHistory && hasSurface ? `${subject} condition history photos notes restoration` : '',
+        hasMaterials ? `${subject} restoration coating material formula records` : '',
+        hasMaterials && hasSurface ? `${subject} color matching material treatment history` : '',
+        hasTechnique ? `${subject} restoration application technique treatment record` : '',
+        hasPreferences ? `${subject} restoration preservation preferences treatment history` : '',
+        `${subject} restoration documentation history problem`,
+        `${subject} conservation treatment records condition history`,
+      ];
       return this.deduplicate([
-        `${subject} restoration condition previous repairs documentation`,
-        `${subject} restoration original design details lost records`,
-        `${subject} restoration replacement material matching problem`,
-        `${subject} restoration cracked damaged missing sections condition report`,
-        `${subject} conservation restoration history handwritten notes photos`,
-        `${subject} restoration physical samples material matching rework`,
-        `${subject} restoration customer preferences previous treatment records`,
-        `${subject} restoration incorrect material match delayed project`,
+        ...shoeQueries,
+        ...derived.filter(Boolean),
       ]).slice(0, maxQueries);
     }
 
@@ -765,6 +936,22 @@ export class RequestDynamicQueryUtil {
     }
 
     if (
+      /\b(?:shoe restoration|footwear restoration|shoe repair|shoe repairer|shoe repairers|cobbler|cobblers|boot repair|sneaker restoration|shoe refinishing|resoling|re-?soling)\b/u.test(normalized) &&
+      /\b(?:leather condition|sole damage|stitching|previous repairs?|repair history|color matching|colour matching|replacement materials?|customer preferences?|customer requests?|restoration history|scattered notes?|photographs?|physical samples?|repeated work|incorrect materials?|delayed restoration)\w*\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'cobbler shoe repair customer notes repair history wrong materials',
+        'shoe repair shop leather sole stitching restoration records customer preferences',
+        'footwear restoration material matching color formula previous repair notes',
+        'shoe restoration workshop scattered photos notes customer requests rework',
+        'cobbler repair ticket material choice repeated work delayed pickup',
+        'shoe repair previous repairs sole leather stitching condition history',
+        'footwear restoration wrong material color mismatch customer approval rework',
+        'shoe repair shop restoration history customer preference record keeping',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
       /\b(?:shoe dyeing|shoe dye service|shoe restoration|footwear restoration|leather recoloring|leather dyeing|shoe refinishing|sneaker restoration|cobbler dye)\b/u.test(normalized) &&
       /\b(?:requested shade|original color|finish preference|previous treatment|damage note|pickup deadline|mismatched color|repeated work|wrong treatment|color sample|customer message)\w*\b/u.test(normalized)
     ) {
@@ -876,6 +1063,22 @@ export class RequestDynamicQueryUtil {
         'government document version history access anomaly compliance incident',
         'public records compromised credentials suspicious change audit trail',
         'government records security incident access reconstruction legal compliance',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
+      /\b(?:energy companies?|energy providers?|electric utilities?|power utilities?|utility companies?|power producers?|power plants?|generation companies?)\b/u.test(normalized) &&
+      /\b(?:operating costs?|operating expenses?|fuel expenses?|fuel costs?|maintenance costs?|equipment efficiency|asset efficiency|outage records?|production data|energy production|profitability|financial forecasts?|investment decisions?|cost attribution|maintenance priorities)\w*\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'electric utility maintenance cost asset profitability operating expense',
+        'power plant equipment efficiency operating cost maintenance spending',
+        'utility outage maintenance cost financial performance asset reliability',
+        'energy asset cost attribution maintenance fuel production data',
+        'power generation fuel cost asset performance profitability',
+        'utility operational financial data silos maintenance forecasting',
+        'power plant maintenance prioritization cost overruns asset efficiency',
+        'energy utility operating expense stable demand profitability assets',
       ]).slice(0, maxQueries);
     }
 
@@ -1235,6 +1438,15 @@ export class RequestDynamicQueryUtil {
     }
     if (/\bdelivery\b/iu.test(withoutOrgSuffix)) {
       tradeVariants.push(withoutOrgSuffix.replace(/\bdelivery\b/giu, 'courier'));
+    }
+    if (/\b(?:shoe|footwear|cobbler|sneaker)\b/iu.test(withoutOrgSuffix)) {
+      tradeVariants.push(
+        'cobbler',
+        'shoe repairer',
+        'shoe repair shop',
+        'footwear repair specialist',
+        'shoe restoration specialist',
+      );
     }
     if (/\balteration(?:s)?\b/iu.test(withoutOrgSuffix)) {
       const bridal = /\bbridal\b/iu.test(withoutOrgSuffix);

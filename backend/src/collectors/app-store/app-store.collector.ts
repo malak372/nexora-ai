@@ -16,6 +16,7 @@ import {
 } from '../base/collector.types';
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+import { RequestReviewStoreQueryUtil } from '../../ideas/generation/utils/request-review-store-query.util';
 
 /**
  * Represents an App Store application returned by
@@ -121,7 +122,14 @@ export class AppStoreCollector
       }
 
       const searchResults = await Promise.allSettled(
-        searchQueries.map((query) => this.searchApps(query, input)),
+        searchQueries.map((query) =>
+          this.settleWithinSoftBudget(
+            this.searchApps(query, input),
+            6_500,
+            [],
+            `App Store app discovery for "${query}"`,
+          ),
+        ),
       );
       const apps = this.deduplicateApps(
         searchResults.flatMap((result) =>
@@ -142,7 +150,7 @@ export class AppStoreCollector
           0,
           input.collectionMode === 'FAST_GENERATION' ||
           input.collectionMode === 'TARGETED_RECOVERY'
-            ? Math.min(2, this.resolveMaxSavedPosts(input))
+            ? Math.min(3, this.resolveMaxSavedPosts(input))
             : this.resolveMaxSavedPosts(input),
         );
 
@@ -308,6 +316,24 @@ export class AppStoreCollector
 
   /** Builds focused queries instead of relying on one broad domain term. */
   private buildSearchQueries(input: CollectorInput): string[] {
+    if (input.authoritativePlannedQueries && (input.plannedQueries?.length ?? 0) > 0) {
+      const boundedBudget = input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 3;
+      return this.unique(
+        (input.plannedQueries ?? []).map((query) => query.trim()).filter(Boolean),
+      ).slice(0, boundedBudget);
+    }
+
+    const reviewStoreQueries = RequestReviewStoreQueryUtil.build({
+      requestDescription: input.requestDescription,
+      domainName: input.domainName,
+      plannedQueries: input.plannedQueries ?? [],
+      maxQueries:
+        input.collectionMode === 'TARGETED_RECOVERY' ? 3 : 4,
+    });
+    if (reviewStoreQueries.length > 0) {
+      return reviewStoreQueries;
+    }
+
     const plannedQueries = (input.plannedQueries ?? [])
       .map((query) => this.toStoreDiscoveryQuery(query))
       .filter(Boolean);
@@ -321,7 +347,7 @@ export class AppStoreCollector
         input.requestDescription?.split(/\b(?:often|frequently|usually|commonly)\b/iu)[0] ?? '',
       );
       const boundedBudget =
-        input.collectionMode === 'TARGETED_RECOVERY' ? 1 : 2;
+        input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 3;
       return this.unique([
         ...(requesterActor ? [requesterActor] : []),
         ...(domainDiscovery ? [domainDiscovery] : []),
@@ -449,15 +475,33 @@ export class AppStoreCollector
       return false;
     }
 
-    const directTerms = this.unique([
-      ...(input.keywords ?? []),
-      ...this.getDomainKeywords(input),
+    /*
+     * The store is a discovery source, not the final relevance judge. Requiring
+     * an entire long request/domain phrase here used to hide useful apps before
+     * their reviews could ever reach Community AI. Keep only a light lexical
+     * identity/workflow gate and let all returned reviews be semantically
+     * classified by Community downstream.
+     */
+    const stopWords = new Set([
+      'often', 'frequently', 'usually', 'struggle', 'struggles', 'manage',
+      'management', 'problem', 'problems', 'difficult', 'difficulty', 'the',
+      'and', 'for', 'with', 'from', 'into', 'across', 'separately', 'higher',
+      'lower', 'delayed', 'delay', 'inaccurate', 'unnecessary',
+    ]);
+    const requestTokens = this.cleanNormalizedText([
+      input.requestDescription ?? '',
       input.domainName ?? '',
-    ])
-      .map((term) => this.cleanNormalizedText(term))
-      .filter((term) => term.length >= 3);
+      ...(input.plannedQueries ?? []).slice(0, 4),
+      ...(input.keywords ?? []).slice(0, 6),
+    ].join(' '))
+      .split(/\s+/u)
+      .filter((token) => token.length >= 4 && !stopWords.has(token));
+    const searchableTokens = new Set(searchableText.split(/\s+/u));
+    const overlap = [...new Set(requestTokens)].filter((token) =>
+      searchableTokens.has(token),
+    );
 
-    return directTerms.some((term) => searchableText.includes(term));
+    return overlap.length >= 1;
   }
 
   /** Detects whether the requested domain intentionally targets games. */
@@ -568,20 +612,26 @@ export class AppStoreCollector
       ]);
 
       const requestedCountry =
-        input.collectionMode === 'FAST_GENERATION'
+        input.collectionMode === 'FAST_GENERATION' ||
+        input.collectionMode === 'TARGETED_RECOVERY'
           ? 'us'
           : this.resolveCountry(input.country);
       let reviews: AppStoreReview[];
 
       try {
-        reviews = await CollectorExternalCacheUtil.remember<AppStoreReview[]>(
-          cacheKey,
-          this.cacheTtlMs,
-          () =>
-            appStoreClient.reviews({
-              id: appId,
-              country: requestedCountry,
-            }),
+        reviews = await this.settleWithinSoftBudget(
+          CollectorExternalCacheUtil.remember<AppStoreReview[]>(
+            cacheKey,
+            this.cacheTtlMs,
+            () =>
+              appStoreClient.reviews({
+                id: appId,
+                country: requestedCountry,
+              }),
+          ),
+          7_500,
+          [],
+          `App Store reviews for ${String(appId)}`,
         );
       } catch (error: unknown) {
         if (requestedCountry === 'us') {
@@ -600,10 +650,15 @@ export class AppStoreCollector
           )}; retrying with the US storefront.`,
         );
 
-        reviews = await CollectorExternalCacheUtil.remember<AppStoreReview[]>(
-          fallbackCacheKey,
-          this.cacheTtlMs,
-          () => appStoreClient.reviews({ id: appId, country: 'us' }),
+        reviews = await this.settleWithinSoftBudget(
+          CollectorExternalCacheUtil.remember<AppStoreReview[]>(
+            fallbackCacheKey,
+            this.cacheTtlMs,
+            () => appStoreClient.reviews({ id: appId, country: 'us' }),
+          ),
+          7_500,
+          [],
+          `App Store US fallback reviews for ${String(appId)}`,
         );
       }
 

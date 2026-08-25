@@ -1,21 +1,17 @@
 import type { AiJsonSchema } from '../../../ai/types/ai-json-schema.type';
 
-export function buildRequestCollectionPlanSchema(
-  _activeSourceKeys: readonly string[] = [],
-): AiJsonSchema {
-  /*
-   * Keep the provider schema byte-for-byte stable across requests. The active
-   * source catalog is request-specific, so embedding it as an enum while
-   * reusing one responseSchemaName makes providers reject later requests with
-   * "schema name reused with a different JSON Schema". Source keys are
-   * still validated against the live catalog in RequestCollectionPlanningService.
-   */
-  const sourceKeySchema = {
-    type: 'string',
-    minLength: 2,
-    maxLength: 60,
-  } as const;
-
+/**
+ * Strict provider-facing PREPARING schema.
+ *
+ * The prompt contract requires exactly one JSON object. Previous versions used
+ * a root-level anyOf to also accept one-item arrays and wrapper objects. Some
+ * Gemini/OpenRouter structured-output implementations reject that union before
+ * application-side unwrapping can run, which unnecessarily forces the pipeline
+ * into deterministic fallback. Keep the provider schema simple and canonical;
+ * RequestCollectionPlanningService still performs defensive JSON unwrapping for
+ * providers that ignore the schema and return a harmless wrapper as plain text.
+ */
+export function buildRequestCollectionPlanSchema(): AiJsonSchema {
   return {
     type: 'object',
     additionalProperties: false,
@@ -24,89 +20,46 @@ export function buildRequestCollectionPlanSchema(
       'selectedExistingDomainId',
       'suggestedDomainName',
       'domainIdentity',
-      'existingDomainMatchScore',
       'searchQueries',
-      'evidenceTargets',
-      'intentConcepts',
-      'sourcePlans',
+      'selectedSourceKeys',
       'confidence',
     ],
     properties: {
       domainSelectionMode: {
         type: 'string',
-        minLength: 2,
-        maxLength: 40,
+        enum: ['EXISTING', 'NEW'],
       },
       selectedExistingDomainId: {
-        anyOf: [
-          { type: 'string', minLength: 8, maxLength: 80 },
-          { type: 'null' },
-        ],
+        type: 'string',
+        maxLength: 180,
       },
       suggestedDomainName: {
-        anyOf: [
-          { type: 'string', minLength: 3, maxLength: 100 },
-          { type: 'null' },
-        ],
+        type: 'string',
+        maxLength: 180,
       },
       domainIdentity: {
         type: 'object',
         additionalProperties: false,
         required: ['actor', 'object', 'workflow', 'failure'],
         properties: {
-          actor: { type: 'string', minLength: 3, maxLength: 160 },
-          object: { type: 'string', minLength: 3, maxLength: 160 },
-          workflow: { type: 'string', minLength: 3, maxLength: 160 },
-          failure: { type: 'string', minLength: 3, maxLength: 160 },
+          actor: { type: 'string', minLength: 1, maxLength: 160 },
+          object: { type: 'string', minLength: 1, maxLength: 180 },
+          workflow: { type: 'string', minLength: 1, maxLength: 220 },
+          failure: { type: 'string', minLength: 1, maxLength: 220 },
         },
-      },
-      existingDomainMatchScore: {
-        type: 'number',
-        minimum: 0,
-        maximum: 100,
       },
       searchQueries: {
         type: 'array',
-        minItems: 8,
-        maxItems: 16,
-        items: { type: 'string', minLength: 8, maxLength: 200 },
+        minItems: 6,
+        maxItems: 6,
+        items: { type: 'string', minLength: 8, maxLength: 140 },
       },
-      evidenceTargets: {
+      selectedSourceKeys: {
         type: 'array',
         minItems: 3,
-        maxItems: 8,
-        items: { type: 'string', minLength: 6, maxLength: 260 },
-      },
-      intentConcepts: {
-        type: 'array',
-        minItems: 3,
-        maxItems: 12,
-        items: { type: 'string', minLength: 3, maxLength: 140 },
-      },
-      sourcePlans: {
-        type: 'array',
-        minItems: 1,
-        maxItems: 7,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['sourceKey', 'queries', 'routingHints'],
-          properties: {
-            sourceKey: sourceKeySchema,
-            queries: {
-              type: 'array',
-              minItems: 1,
-              maxItems: 5,
-              items: { type: 'string', minLength: 6, maxLength: 200 },
-            },
-            routingHints: {
-              type: 'array',
-              minItems: 0,
-              maxItems: 4,
-              items: { type: 'string', minLength: 3, maxLength: 180 },
-            },
-          },
-        },
+        maxItems: 6,
+        uniqueItems: true,
+        items: { type: 'string', minLength: 2, maxLength: 80 },
       },
       confidence: { type: 'number', minimum: 0, maximum: 100 },
     },

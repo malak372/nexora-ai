@@ -1,6 +1,9 @@
 import { RequestWorkflowArchetypeUtil } from './request-workflow-archetype.util';
 import { RequestDynamicQueryUtil } from './request-dynamic-query.util';
 import { RequestWorkflowIntentProfileUtil } from './request-workflow-intent-profile.util';
+import { RequestNicheCustomCraftUtil } from './request-niche-custom-craft.util';
+import { RequestOnlinePharmacyFraudUtil } from './request-online-pharmacy-fraud.util';
+import { RequestOperationalCostAttributionUtil } from './request-operational-cost-attribution.util';
 
 export class RequestEvidenceAlignmentUtil {
   static isAligned(input: {
@@ -29,12 +32,24 @@ export class RequestEvidenceAlignmentUtil {
       return this.isFoodStorageConditionEvidence(request, evidence);
     }
 
-    if (archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS') {
+    if (this.isLogisticsShipmentIntegrityRequest(request)) {
+      return this.isLogisticsShipmentIntegrityEvidence(evidence);
+    }
+
+    if (this.isBookRestorationRequest(request)) {
+      return this.isBookRestorationSupportingEvidence(evidence);
+    }
+
+    if (this.isRestorationConservationRequest(request, input.plannedQueries ?? [])) {
       return this.isRestorationConservationEvidence(request, evidence);
     }
 
     if (archetype.archetype === 'TRANSACTION_ACCOUNT_ABUSE_OPERATIONS') {
       return this.isTransactionAccountAbuseDirectEvidence(request, evidence);
+    }
+
+    if (this.isAgriculturalDistributionProfitabilityRequest(request)) {
+      return this.isAgriculturalDistributionProfitabilityEvidence(evidence);
     }
 
     if (this.isAgriculturalExportProfitabilityRequest(request)) {
@@ -117,6 +132,14 @@ export class RequestEvidenceAlignmentUtil {
       return this.isDeliveryFuelEmissionsEvidence(evidence);
     }
 
+    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
+      return RequestOnlinePharmacyFraudUtil.isDirectEvidence(request, evidence);
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      return RequestNicheCustomCraftUtil.isDirectEvidence(request, evidence);
+    }
+
     if (this.isCustomFootwearSpecificationRequest(request)) {
       return this.isCustomFootwearSpecificationEvidence(evidence);
     }
@@ -147,6 +170,10 @@ export class RequestEvidenceAlignmentUtil {
 
     if (this.isLogisticsProfitabilityRequest(request)) {
       return this.isLogisticsProfitabilityEvidence(evidence);
+    }
+
+    if (this.isPublicTransportationProfitabilityRequest(request)) {
+      return this.isPublicTransportationProfitabilityEvidence(evidence);
     }
 
     if (this.isTransportationProfitabilityRequest(request)) {
@@ -185,6 +212,14 @@ export class RequestEvidenceAlignmentUtil {
       const operationalImpact =
         /\b(?:service quality|visitor experience|transport|public space|local service|capacity|resource|support|delay|wait|queue|pressure|management|city|destination|attraction)\w*\b/iu.test(evidence);
       return tourismAnchor && crowdingAnchor && operationalImpact;
+    }
+
+    if (this.isPublicProgramCostAttributionRequest(request)) {
+      return this.isPublicProgramCostAttributionDirectEvidence(evidence);
+    }
+
+    if (RequestOperationalCostAttributionUtil.resolve(request)) {
+      return RequestOperationalCostAttributionUtil.isDirectEvidence(request, evidence);
     }
 
     if (this.isPublicFiscalOversightRequest(request)) {
@@ -336,6 +371,18 @@ export class RequestEvidenceAlignmentUtil {
       if (!healthcareAnchor || !equipmentAnchor || !workflowAnchor) return false;
     }
 
+    if (this.isBookRestorationRequest(request)) {
+      if (!this.isBookRestorationEvidenceIdentity(evidence)) {
+        return false;
+      }
+    }
+
+    if (this.isLogisticsShipmentIntegrityRequest(request)) {
+      if (!this.isLogisticsShipmentIntegrityEvidence(evidence)) {
+        return false;
+      }
+    }
+
     if (this.isAthleteRecoveryRequest(request)) {
       const athleteAnchor = /\b(?:athlete|athletes|sports club|sports clubs|rehabilitation center|rehab center|sports medicine|physiotherapist|physical therapist)\b/iu.test(evidence);
       const recoveryAnchor = /\b(?:injury|injuries|recovery|rehabilitation|return to play|return-to-play|training load|training loads|pain report|pain reports|pain score|mobility|performance data|medical assessment|reinjury|re-injury)\b/iu.test(evidence);
@@ -344,11 +391,10 @@ export class RequestEvidenceAlignmentUtil {
     }
 
     if (this.isFrameRestorationWorkflowRequest(request)) {
-      const frameAnchor = /\b(?:frame restoration|picture frame restoration|frame restorer|picture frame restorer|antique frame restorer|gilded frame|frame conservation|frame conservator)\b/iu.test(evidence);
-      const workflowAnchor = /\b(?:damaged frame|condition|repair note|restoration note|treatment record|material selection|material sample|decorative detail|finish preference|finish sample|customer approval|client approval|approved restoration|completion date|photograph|photo|handwritten note|physical sample)\w*\b/iu.test(evidence);
-      const frictionAnchor = /\b(?:scattered|fragmented|missing|lost|incorrect|wrong finish|repeated repair|rework|wasted material|delay|delayed|miscommunication|outdated approval|missed detail|lost detail)\w*\b/iu.test(evidence);
-      const digitalFrameCollision = /\b(?:digital photo frame|photo frame app|video frame|frame rate|iframe|react frame|css frame)\b/iu.test(evidence);
-      if (!frameAnchor || !workflowAnchor || !frictionAnchor || digitalFrameCollision) return false;
+      if (!this.isExactPictureFrameRestorationEvidenceIdentity(evidence)) return false;
+      const workflowAnchor = /\b(?:damaged frame|condition|repair note|restoration note|treatment record|material selection|material sample|decorative detail|finish preference|finish sample|customer approval|client approval|approved restoration|completion date|photograph|photo|handwritten note|physical sample|gesso|gilding|gold leaf|molding|moulding)\w*\b/iu.test(evidence);
+      const frictionAnchor = /\b(?:scattered|fragmented|missing|lost|incorrect|wrong finish|repeated repair|rework|wasted material|delay|delayed|miscommunication|outdated approval|missed detail|lost detail|damaged|deteriorat|overpaint)\w*\b/iu.test(evidence);
+      if (!workflowAnchor || !frictionAnchor) return false;
       return true;
     }
 
@@ -493,6 +539,38 @@ export class RequestEvidenceAlignmentUtil {
     const evidence = this.normalize(input.evidenceText);
     if (!request || !evidence) return 'UNRELATED';
 
+    if (this.isPromotionalProductListingEvidence(evidence)) {
+      return 'UNRELATED';
+    }
+
+    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
+      if (RequestOnlinePharmacyFraudUtil.isDirectEvidence(request, evidence)) {
+        return 'DIRECT_PROBLEM';
+      }
+      return RequestOnlinePharmacyFraudUtil.isSupportingEvidence(request, evidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      if (RequestNicheCustomCraftUtil.isDirectEvidence(request, evidence)) {
+        return 'DIRECT_PROBLEM';
+      }
+      return RequestNicheCustomCraftUtil.isSupportingEvidence(request, evidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isAgriculturalDistributionProfitabilityRequest(request)) {
+      if (!this.isAgriculturalDistributionProfitabilitySupportingEvidence(evidence)) {
+        return 'UNRELATED';
+      }
+      return this.hasDeterministicProblemExpression(input.evidenceText) &&
+        this.isAgriculturalDistributionProfitabilityEvidence(evidence)
+        ? 'DIRECT_PROBLEM'
+        : 'SUPPORTING_SIGNAL';
+    }
+
     if (this.isAgriculturalExportProfitabilityRequest(request)) {
       if (!this.isAgriculturalExportProfitabilitySupportingEvidence(evidence)) {
         return 'UNRELATED';
@@ -523,6 +601,33 @@ export class RequestEvidenceAlignmentUtil {
           evidenceText: input.evidenceText,
           plannedQueries: input.plannedQueries ?? [],
         })
+        ? 'DIRECT_PROBLEM'
+        : 'SUPPORTING_SIGNAL';
+    }
+
+    if (this.isTransactionAccountAbuseRequest(request)) {
+      if (!this.isTransactionAccountAbuseSupportingEvidence(request, evidence)) {
+        return 'UNRELATED';
+      }
+      return this.isTransactionAccountAbuseDirectEvidence(request, evidence)
+        ? 'DIRECT_PROBLEM'
+        : 'SUPPORTING_SIGNAL';
+    }
+
+    if (this.isPublicProgramCostAttributionRequest(request)) {
+      if (!this.isPublicProgramCostAttributionSupportingEvidence(evidence)) {
+        return 'UNRELATED';
+      }
+      return this.isPublicProgramCostAttributionDirectEvidence(evidence)
+        ? 'DIRECT_PROBLEM'
+        : 'SUPPORTING_SIGNAL';
+    }
+
+    if (RequestOperationalCostAttributionUtil.resolve(request)) {
+      if (!RequestOperationalCostAttributionUtil.isSupportingEvidence(request, evidence)) {
+        return 'UNRELATED';
+      }
+      return RequestOperationalCostAttributionUtil.isDirectEvidence(request, evidence)
         ? 'DIRECT_PROBLEM'
         : 'SUPPORTING_SIGNAL';
     }
@@ -571,6 +676,14 @@ export class RequestEvidenceAlignmentUtil {
           evidenceText: input.evidenceText,
           plannedQueries: input.plannedQueries ?? [],
         })
+        ? 'DIRECT_PROBLEM'
+        : 'SUPPORTING_SIGNAL';
+    }
+
+    if (this.isHealthcareSupplyCostEfficiencyRequest(request)) {
+      if (!this.isHealthcareSupplyCostEfficiencySupportingEvidence(evidence)) return 'UNRELATED';
+      return this.isHealthcareSupplyCostEfficiencyDirectEvidence(evidence) &&
+        this.isAligned({ requestDescription: request, evidenceText: input.evidenceText, plannedQueries: input.plannedQueries ?? [] })
         ? 'DIRECT_PROBLEM'
         : 'SUPPORTING_SIGNAL';
     }
@@ -639,6 +752,37 @@ export class RequestEvidenceAlignmentUtil {
         : 'SUPPORTING_SIGNAL';
     }
 
+    const requestArchetype = RequestWorkflowArchetypeUtil.classify({
+      requestDescription: request,
+      plannedQueries: input.plannedQueries ?? [],
+    });
+    if (this.isLogisticsShipmentIntegrityRequest(request)) {
+      if (!this.isLogisticsShipmentIntegrityEvidence(evidence)) {
+        return 'UNRELATED';
+      }
+      return this.hasDeterministicProblemExpression(input.evidenceText)
+        ? 'DIRECT_PROBLEM'
+        : 'SUPPORTING_SIGNAL';
+    }
+
+    if (this.isBookRestorationRequest(request)) {
+      if (!this.isBookRestorationSupportingEvidence(evidence)) {
+        return 'UNRELATED';
+      }
+      return this.isRestorationConservationEvidence(request, evidence)
+        ? 'DIRECT_PROBLEM'
+        : 'SUPPORTING_SIGNAL';
+    }
+
+    if (this.isRestorationConservationRequest(request, input.plannedQueries ?? [])) {
+      if (!this.isRestorationConservationSupportingEvidence(request, evidence)) {
+        return 'UNRELATED';
+      }
+      return this.isRestorationConservationEvidence(request, evidence)
+        ? 'DIRECT_PROBLEM'
+        : 'SUPPORTING_SIGNAL';
+    }
+
     if (
       this.isAligned({
         requestDescription: request,
@@ -670,6 +814,128 @@ export class RequestEvidenceAlignmentUtil {
    * share a concrete requester object/workflow/problem axis or strongly match
    * one of the AI-planned problem queries.
    */
+  /**
+   * Cheap lexical/raw-corpus hygiene used before online Community AI.
+   *
+   * This is deliberately NOT a semantic relevance gate. It only removes
+   * unambiguous entity/term collisions that cannot represent the requester
+   * workflow (for example Citizen watches or Star Citizen when the requester
+   * means municipal citizen complaints, or JVM garbage collection when the
+   * requester means municipal waste collection). Grey-area evidence remains
+   * eligible for AI triage.
+   */
+  static passesRawCorpusLexicalHygieneGuard(input: {
+    readonly requestDescription?: string | null;
+    readonly evidenceText: string;
+  }): boolean {
+    const request = this.normalize(input.requestDescription ?? '');
+    const evidence = this.normalize(input.evidenceText);
+    if (!request || !evidence) return true;
+
+    const citizenPublicServiceRequest =
+      /\b(?:citizen complaints?|citizen reports?|resident complaints?|resident reports?)\b/iu.test(request) ||
+      (this.isMunicipalWasteCollectionRequest(request) && /\bcitizen\b/iu.test(request));
+    if (citizenPublicServiceRequest) {
+      const citizenEntityCollision =
+        /\b(?:star citizen|citizen watches?|citizen watch|citizen chronographs?|citizen eco[- ]?drive|citizen promaster|citizenship interviews?|citizenship test|naturalization interviews?)\b/iu.test(
+          evidence,
+        );
+      const publicServiceAnchor =
+        /\b(?:municipal|municipality|city government|public works|sanitation|waste|garbage|refuse|trash|dumping|dumpster|bin|collection route|pickup|resident complaint|citizen complaint|inspection|environmental measurement)\w*\b/iu.test(
+          evidence,
+        );
+      if (citizenEntityCollision && !publicServiceAnchor) return false;
+    }
+
+    if (this.isMunicipalWasteCollectionRequest(request)) {
+      const runtimeGarbageCollectionCollision =
+        /\b(?:java|javascript|node\.js|jvm|runtime|heap|memory management|gc pause|garbage collector|garbage collection algorithm|mark[- ]and[- ]sweep|source code)\b/iu.test(
+          evidence,
+        );
+      const physicalWasteAnchor =
+        /\b(?:municipal|sanitation|solid waste|waste collection|garbage truck|refuse collection|trash pickup|missed pickup|illegal dumping|dumpster|landfill)\b/iu.test(
+          evidence,
+        );
+      if (runtimeGarbageCollectionCollision && !physicalWasteAnchor) return false;
+    }
+
+    if (this.isWatchStrapSpecificationRequest(request)) {
+      const exactWatchIdentity = this.hasWatchStrapIdentity(evidence);
+      const adjacentLeathercraftIdentity =
+        /\b(?:leathercraft|leather craft|leatherwork|leather worker|leatherworker|leather artisan|leather goods maker|custom leather|bespoke leather|leather workshop|leather shop)\b/iu.test(evidence);
+      const softwareOrConnectorCollision =
+        /\b(?:custom workflow forms?|workflow engine|workflow designer|visual studio workflow|android widgets?|custom widgets?|software widgets?|rf connectors?|radio frequency connectors?|source code|github issues?|programming|api|sdk)\b/iu.test(evidence);
+      const genericWearableCollision =
+        /\b(?:wearable skin|electronic skin|smartwatch app|wearable sensor|fitness tracker|android wear|wear os)\b/iu.test(evidence) &&
+        !/\b(?:strap|band|leather|sizing|measurement|lug width|buckle|stitching)\b/iu.test(evidence);
+      if (
+        (softwareOrConnectorCollision || genericWearableCollision) &&
+        !exactWatchIdentity &&
+        !adjacentLeathercraftIdentity
+      ) {
+        return false;
+      }
+    }
+
+    if (this.isInstrumentCaseSpecificationRequest(request)) {
+      const musicalCaseAnchor =
+        /\b(?:musical instrument cases?|instrument case makers?|instrument case builders?|violin cases?|viola cases?|cello cases?|guitar cases?|double bass cases?|flight cases?\s+(?:for|for a|for an)?\s*(?:violin|viola|cello|guitar|instrument)|custom fitted cases?|case padding|case foam|interior padding|instrument fit)\b/iu.test(
+          evidence,
+        );
+      const nonMusicalInstrumentCollision =
+        /\b(?:texas instruments?|scientific instruments?|laboratory instruments?|medical instruments?|precision instruments?|optical instruments?|financial instruments?|instrument jewels?|experimental psychology|measuring instruments?|analytical instruments?)\b/iu.test(
+          evidence,
+        );
+      const nonMusicalCaseCollision =
+        /\b(?:camera cases?|computer cases?|phone cases?|server cases?|raspberry pi.{0,24}cases?|electronic enclosures?|protective phone cases?)\b/iu.test(
+          evidence,
+        );
+      if (
+        (nonMusicalInstrumentCollision || nonMusicalCaseCollision) &&
+        !musicalCaseAnchor
+      ) {
+        return false;
+      }
+    }
+
+    if (this.isBookRestorationRequest(request)) {
+      if (!this.isBookRestorationEvidenceIdentity(evidence)) {
+        return false;
+      }
+    }
+
+    if (this.isLogisticsShipmentIntegrityRequest(request)) {
+      if (!this.isLogisticsShipmentIntegrityEvidence(evidence)) {
+        return false;
+      }
+    }
+
+    if (this.isAthleteRecoveryRequest(request)) {
+      /*
+       * Hard pre-AI identity hygiene for sports-rehabilitation monitoring.
+       * Generic sports headlines, politics, entertainment, wildlife rescue and
+       * everyday uses of words such as "delayed", "progressing" or "rehab"
+       * previously consumed most of the full-corpus context window. Keep broad
+       * rehabilitation research (including adjacent remote-rehab studies), but
+       * require an actual rehabilitation/recovery/clinical-monitoring axis.
+       */
+      const rehabilitationAxis =
+        /\b(?:sports rehabilitation|athletic rehabilitation|injury rehabilitation|rehabilitation monitoring|remote rehabilitation|remote monitoring|physical therapy|physical therapist|physiotherapy|physiotherapist|sports medicine|return to play|return-to-play|injury recovery|recovery monitoring|wearable sensor|wearable device|pain score|pain report|mobility measurement|exercise adherence|therapeutic exercise|rehabilitation exercise)\b/iu.test(
+          evidence,
+        );
+      const athleteInjuryAxis =
+        /\b(?:athlete|athletes|player|players|sports|sport)\b/iu.test(evidence) &&
+        /\b(?:injury|injuries|reinjury|re-injury|recovery|rehabilitation|therapy|therapeutic|return to play|return-to-play|mobility|training load)\b/iu.test(
+          evidence,
+        );
+      if (!rehabilitationAxis && !athleteInjuryAxis) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   static passesPreAiTriageCandidateGuard(input: {
     readonly requestDescription?: string | null;
     readonly evidenceText: string;
@@ -678,6 +944,14 @@ export class RequestEvidenceAlignmentUtil {
     const request = this.normalize(input.requestDescription ?? '');
     const evidence = this.normalize(input.evidenceText);
     if (!request || !evidence || evidence.length < 12) return false;
+    if (
+      !this.passesRawCorpusLexicalHygieneGuard({
+        requestDescription: request,
+        evidenceText: evidence,
+      })
+    ) {
+      return false;
+    }
 
     const archetype = RequestWorkflowArchetypeUtil.classify({
       requestDescription: request,
@@ -688,6 +962,24 @@ export class RequestEvidenceAlignmentUtil {
       this.isDeveloperOnlyEvidence(evidence)
     ) {
       return false;
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(request, evidence);
+    }
+
+    if (this.isMediaContentProfitabilityRequest(request)) {
+      return (
+        this.isMediaContentProfitabilityEvidence(evidence) ||
+        this.isMediaContentProfitabilitySupportingSignal(evidence)
+      );
+    }
+
+    if (this.isInstrumentCaseSpecificationRequest(request)) {
+      return (
+        this.isInstrumentCaseSpecificationEvidence(evidence) ||
+        this.isInstrumentCaseSpecificationSupportingSignal(evidence)
+      );
     }
 
     const intentProfile = RequestWorkflowIntentProfileUtil.resolve(request);
@@ -708,7 +1000,10 @@ export class RequestEvidenceAlignmentUtil {
       return this.isFoodStorageConditionTriageCandidate(request, evidence);
     }
     if (intentProfile.family === 'RESTORATION_CONSERVATION') {
-      return this.isRestorationConservationTriageCandidate(request, evidence);
+      return (
+        this.isRestorationConservationTriageCandidate(request, evidence) ||
+        this.isExactObjectRestorationPartialTriageCandidate(request, evidence)
+      );
     }
 
     if (intentProfile.family === 'FACILITY_RESOURCE_MONITORING') {
@@ -798,16 +1093,79 @@ export class RequestEvidenceAlignmentUtil {
       return false;
     }
 
+    /*
+     * Specific semantic contracts must run before coarse workflow archetypes.
+     * A higher-education security request, for example, can legitimately share
+     * account-abuse vocabulary without becoming a generic transaction problem.
+     */
+    if (this.isAcademicPlatformSecurityRequest(request)) {
+      return this.isAcademicPlatformSecuritySupportingEvidence(evidence);
+    }
+
     if (archetype.archetype === 'FOOD_STORAGE_CONDITION_OPERATIONS') {
       return this.isFoodStorageConditionSupportingEvidence(request, evidence);
     }
 
-    if (archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS') {
-      return this.isRestorationConservationSupportingEvidence(request, evidence);
+    if (this.isPublicEducationResourceAllocationRequest(request)) {
+      return this.isPublicEducationResourceAllocationSupportingEvidence(evidence);
     }
 
-    if (archetype.archetype === 'TRANSACTION_ACCOUNT_ABUSE_OPERATIONS') {
-      return this.isTransactionAccountAbuseSupportingEvidence(request, evidence);
+    if (this.isPublicProgramCostAttributionRequest(request)) {
+      return this.isPublicProgramCostAttributionSupportingEvidence(evidence);
+    }
+
+    if (RequestOperationalCostAttributionUtil.resolve(request)) {
+      return RequestOperationalCostAttributionUtil.isSupportingEvidence(request, evidence);
+    }
+
+    if (this.isPublicFiscalOversightRequest(request)) {
+      return this.isPublicFiscalOversightSupportingEvidence(evidence);
+    }
+
+    if (this.isLogisticsShipmentIntegrityRequest(request)) {
+      return this.isLogisticsShipmentIntegrityEvidence(evidence);
+    }
+
+    if (this.isBookRestorationRequest(request)) {
+      return this.isBookRestorationSupportingEvidence(evidence);
+    }
+
+    if (this.isRestorationConservationRequest(request, input.plannedQueries ?? [])) {
+      return (
+        this.isRestorationConservationSupportingEvidence(request, evidence) ||
+        this.isProfessionalRestorationWorkflowSupportingEvidence(request, evidence) ||
+        this.isAdjacentPhysicalWorkflowExactPainSupportingEvidence(request, evidence)
+      );
+    }
+
+    if (this.isEcommerceProfitabilityRequest(request)) {
+      return this.isEcommerceProfitabilitySupportingEvidence(evidence);
+    }
+
+    if (this.isPublicTransportationProfitabilityRequest(request)) {
+      return this.isPublicTransportationProfitabilitySupportingEvidence(evidence);
+    }
+
+    if (this.isBridalAlterationWorkflowRequest(request)) {
+      return this.isBridalAlterationWorkflowSupportingEvidence(evidence);
+    }
+
+    if (this.isMunicipalWasteCollectionRequest(request)) {
+      return this.isMunicipalWasteCollectionSupportingSignal(evidence);
+    }
+
+    if (this.isOperationalDigitalSecurityRequest(request)) {
+      return this.isOperationalDigitalSecuritySupportingEvidence(
+        request,
+        evidence,
+      );
+    }
+
+    if (
+      archetype.archetype === 'TRANSACTION_ACCOUNT_ABUSE_OPERATIONS' &&
+      this.isTransactionAccountAbuseSupportingEvidence(request, evidence)
+    ) {
+      return true;
     }
 
     const requestTokens = this.extractTokens(request);
@@ -867,16 +1225,67 @@ export class RequestEvidenceAlignmentUtil {
       return false;
     }
 
+    /*
+     * Specific semantic contracts must run before coarse workflow archetypes.
+     * A higher-education security request, for example, can legitimately share
+     * account-abuse vocabulary without becoming a generic transaction problem.
+     */
+    if (this.isAcademicPlatformSecurityRequest(request)) {
+      return this.isAcademicPlatformSecuritySupportingEvidence(evidence);
+    }
+
     if (archetype.archetype === 'FOOD_STORAGE_CONDITION_OPERATIONS') {
       return this.isFoodStorageConditionSupportingEvidence(request, evidence);
     }
 
-    if (archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS') {
-      return this.isRestorationConservationSupportingEvidence(request, evidence);
+    if (this.isPublicEducationResourceAllocationRequest(request)) {
+      return this.isPublicEducationResourceAllocationSupportingEvidence(evidence);
     }
 
-    if (archetype.archetype === 'TRANSACTION_ACCOUNT_ABUSE_OPERATIONS') {
-      return this.isTransactionAccountAbuseSupportingEvidence(request, evidence);
+    if (this.isLogisticsShipmentIntegrityRequest(request)) {
+      return this.isLogisticsShipmentIntegrityEvidence(evidence);
+    }
+
+    if (this.isBookRestorationRequest(request)) {
+      return this.isBookRestorationSupportingEvidence(evidence);
+    }
+
+    if (this.isRestorationConservationRequest(request, input.plannedQueries ?? [])) {
+      return (
+        this.isRestorationConservationSupportingEvidence(request, evidence) ||
+        this.isProfessionalRestorationWorkflowSupportingEvidence(request, evidence) ||
+        this.isAdjacentPhysicalWorkflowExactPainSupportingEvidence(request, evidence)
+      );
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      return RequestNicheCustomCraftUtil.isSupportingEvidence(request, evidence);
+    }
+
+    if (this.isPublicTransportationProfitabilityRequest(request)) {
+      return this.isPublicTransportationProfitabilitySupportingEvidence(evidence);
+    }
+
+    if (this.isBridalAlterationWorkflowRequest(request)) {
+      return this.isBridalAlterationWorkflowSupportingEvidence(evidence);
+    }
+
+    if (this.isMunicipalWasteCollectionRequest(request)) {
+      return this.isMunicipalWasteCollectionSupportingSignal(evidence);
+    }
+
+    if (this.isOperationalDigitalSecurityRequest(request)) {
+      return this.isOperationalDigitalSecuritySupportingEvidence(
+        request,
+        evidence,
+      );
+    }
+
+    if (
+      archetype.archetype === 'TRANSACTION_ACCOUNT_ABUSE_OPERATIONS' &&
+      this.isTransactionAccountAbuseSupportingEvidence(request, evidence)
+    ) {
+      return true;
     }
 
     if (this.isAgriculturalExportProfitabilityRequest(request)) {
@@ -904,10 +1313,6 @@ export class RequestEvidenceAlignmentUtil {
       return this.isHealthcareBillingFraudSecuritySupportingEvidence(evidence);
     }
 
-    if (this.isAcademicPlatformSecurityRequest(request)) {
-      return this.isAcademicPlatformSecuritySupportingEvidence(evidence);
-    }
-
     if (this.isDecorativeFountainRestorationRequest(request)) {
       return this.isDecorativeFountainRestorationSupportingEvidence(evidence);
     }
@@ -918,6 +1323,10 @@ export class RequestEvidenceAlignmentUtil {
 
     if (this.isTourismTransitSurgeCapacityRequest(request)) {
       return this.isTourismTransitSurgeCapacitySupportingEvidence(evidence);
+    }
+
+    if (this.isHealthcareSupplyCostEfficiencyRequest(request)) {
+      return this.isHealthcareSupplyCostEfficiencySupportingEvidence(evidence);
     }
 
     if (this.isHospitalCostResourceEfficiencyRequest(request)) {
@@ -1028,10 +1437,318 @@ export class RequestEvidenceAlignmentUtil {
   }
 
   /**
+   * Broad pre-AI admission for a partial evidence fragment that can participate
+   * in a later source-diverse composite. This never proves the requester problem
+   * by itself; it only preserves actor/workflow-specific fragments so multiple
+   * independent sources can jointly support different facets.
+   */
+  static passesCompositeEvidenceCandidateGuard(input: {
+    readonly requestDescription?: string | null;
+    readonly evidenceText: string;
+    readonly plannedQueries?: readonly string[];
+  }): boolean {
+    const request = this.normalize(input.requestDescription ?? '');
+    const evidence = this.normalize(input.evidenceText);
+    if (!request || !evidence || evidence.length < 12) return false;
+    if (
+      !this.passesRawCorpusLexicalHygieneGuard({
+        requestDescription: request,
+        evidenceText: evidence,
+      })
+    ) {
+      return false;
+    }
+    if (!RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(request, evidence)) {
+      return false;
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      return RequestNicheCustomCraftUtil.isSupportingEvidence(request, evidence);
+    }
+
+    if (this.isEcommerceProfitabilityRequest(request)) {
+      return this.isEcommerceProfitabilitySupportingEvidence(evidence);
+    }
+
+    if (this.isMediaContentProfitabilityRequest(request)) {
+      return this.isMediaContentProfitabilitySupportingSignal(evidence);
+    }
+    if (this.isInstrumentCaseSpecificationRequest(request)) {
+      return this.isInstrumentCaseSpecificationSupportingSignal(evidence);
+    }
+    if (RequestWorkflowIntentProfileUtil.resolve(request).family === 'RESTORATION_CONSERVATION') {
+      return (
+        this.isRestorationConservationSupportingEvidence(request, evidence) ||
+        this.isProfessionalRestorationWorkflowSupportingEvidence(request, evidence) ||
+        this.isAdjacentPhysicalWorkflowExactPainSupportingEvidence(request, evidence) ||
+        this.isExactObjectRestorationPartialTriageCandidate(request, evidence)
+      );
+    }
+    if (this.isRequestSupportingSignal(request, evidence)) {
+      return true;
+    }
+
+    const actorAligned = this.dynamicActorAligned(request, evidence);
+    const plannedAlignment = (input.plannedQueries ?? []).some((query) => {
+      const queryTokens = new Set(
+        this.normalize(query)
+          .split(/[^\p{L}\p{N}]+/u)
+          .filter((token) => token.length >= 4),
+      );
+      if (queryTokens.size === 0) return false;
+      const evidenceTokens = new Set(
+        evidence
+          .split(/[^\p{L}\p{N}]+/u)
+          .filter((token) => token.length >= 4),
+      );
+      let overlap = 0;
+      for (const token of queryTokens) {
+        if (evidenceTokens.has(token)) overlap += 1;
+      }
+      return overlap >= 3;
+    });
+    const pain =
+      /\b(?:abandon|drop[- ]?off|churn|cancel|failed|failure|wrong|incorrect|inaccurate|unsuitable|missing|lost|scattered|fragmented|siloed|separate systems?|rework|repeat|waste|wasted|delay|delayed|inefficien|overspend|missed sales?|poor recommendation|low conversion|hard to|difficult to|unable to)\w*\b/iu.test(
+        evidence,
+      );
+
+    return (actorAligned && pain) || (actorAligned && plannedAlignment);
+  }
+
+  /**
+   * Post-AI semantic safety gate for evidence that the model labelled DIRECT or
+   * SUPPORTING. Unlike the broad pre-AI candidate gate, this requires a real
+   * requester pain/workflow facet before evidence can enter the trusted ledger.
+   *
+   * GENERAL/local-service requests are intentionally stricter here because
+   * same-domain vocabulary is common and was previously enough to admit nearby
+   * but different problems (for example wedding-party costs for a bridal
+   * alterations records problem).
+   */
+  static passesPostAiPainAwareEvidenceGuard(input: {
+    readonly requestDescription?: string | null;
+    readonly evidenceText: string;
+    readonly plannedQueries?: readonly string[];
+  }): boolean {
+    const request = this.normalize(input.requestDescription ?? '');
+    const evidence = this.normalize(input.evidenceText);
+    if (!request || !evidence || evidence.length < 12) return false;
+
+    /*
+     * Transaction/account-abuse is a specialized evidence family. Let its
+     * actor/workflow/fraud contract establish atomic SUPPORTING_SIGNAL before
+     * the generic fragmented-information guard below asks the same source to
+     * repeat the request's full causal mechanism. Without this precedence a
+     * documented municipal phishing loss could be rejected merely because the
+     * headline does not say that payment/security records were analyzed
+     * separately.
+     */
+    if (
+      this.isTransactionAccountAbuseRequest(request) &&
+      this.isTransactionAccountAbuseSupportingEvidence(request, evidence)
+    ) {
+      return true;
+    }
+
+    /*
+     * SUPPORTING evidence does not have to restate the request verbatim. A
+     * request-aligned actor/object/workflow item may support one facet when it
+     * contains a real problem-bearing observation (failure, risk, downtime,
+     * error, delay, rework, cost, shortage, etc.). Research recruitment and
+     * promotional/context-only material are excluded by the helpers below.
+     */
+    if (
+      !this.isResearchContextOnlyEvidence(evidence) &&
+      this.hasProblemBearingClaim(evidence) &&
+      this.isRequestWorkflowContextEvidence({
+        requestDescription: request,
+        evidenceText: evidence,
+        plannedQueries: input.plannedQueries ?? [],
+      })
+    ) {
+      return true;
+    }
+
+    /*
+     * Generic causal-mechanism guard for requests whose root problem is
+     * fragmented/separate information preventing diagnosis, confirmation, or
+     * attribution. A source that merely repeats a downstream consequence (for
+     * example a delayed policy/standard) is not support for that workflow.
+     * This is intentionally domain-agnostic so the same protection applies to
+     * building energy, public budgets, custom commissions, logistics, and new
+     * future domains with the same information-fragmentation pattern.
+     */
+    const fragmentedDiagnosticRequest =
+      /\b(?:scattered|fragmented|disconnected|siloed|silos?|analy[sz]ed separately|analysed separately|separate systems?|managed separately|stored separately)\b/u.test(request) &&
+      /\b(?:identify|understand|confirm|detect|diagnos|attribute|reconcile|trace|determine|pinpoint|compare)\w*\b/u.test(request);
+    if (fragmentedDiagnosticRequest) {
+      const sameMechanism = /\b(?:scattered|fragmented|disconnected|siloed|silos?|separate systems?|data|records?|logs?|metrics?|measurements?|monitoring|benchmark|anomal(?:y|ies)|diagnos|correlat|reconcil|trace|version|approval|specification|notes?|messages?|history|telemetry|usage|performance)\w*\b/u.test(evidence);
+      const concreteOperationalFailure = /\b(?:wrong|incorrect|mismatch|missed|lost|missing|rework|repeat(?:ed)? work|waste|abnormal|unexplained|inefficient|excess|overrun|overspend|unexpected consumption|higher consumption|fault|failure|error|delay caused by)\w*\b/u.test(evidence);
+      const policyOrStandardOnly =
+        /\b(?:regulation|regulatory|standard|standards|legislation|policy|mandate|compliance deadline)\w*\b/u.test(evidence) &&
+        !sameMechanism &&
+        !concreteOperationalFailure;
+      if (policyOrStandardOnly || (!sameMechanism && !concreteOperationalFailure)) {
+        return false;
+      }
+    }
+
+    /*
+     * Public-procurement evidence often uses audit/records/supplier terminology
+     * instead of repeating the request's longer anomaly-detection phrasing. The
+     * dedicated contract below is stricter than generic lexical overlap, so let
+     * it rescue legitimate partial support before the broad hygiene gate.
+     */
+    if (
+      this.isPublicProgramCostAttributionRequest(request) &&
+      this.isPublicProgramCostAttributionSupportingEvidence(evidence)
+    ) {
+      return true;
+    }
+    if (
+      this.isPublicFiscalOversightRequest(request) &&
+      this.isPublicFiscalOversightSupportingEvidence(evidence)
+    ) {
+      return true;
+    }
+
+    /*
+     * Exact-object professional conservation material is allowed to support a
+     * requester restoration workflow even when the source is written as a
+     * condition/specification report rather than a complaint. Crossref/news/blog
+     * provenance is capped to SUPPORTING later, so this recall lane cannot turn
+     * a scholarly specification into a direct-user complaint.
+     */
+    if (
+      this.isRestorationConservationRequest(request, input.plannedQueries ?? []) &&
+      this.isProfessionalRestorationWorkflowSupportingEvidence(request, evidence)
+    ) {
+      return true;
+    }
+
+    if (
+      !this.passesRawCorpusLexicalHygieneGuard({
+        requestDescription: request,
+        evidenceText: evidence,
+      })
+    ) {
+      return false;
+    }
+
+    if (this.isBridalAlterationWorkflowRequest(request)) {
+      return (
+        this.isBridalAlterationWorkflowEvidence(evidence) ||
+        this.isBridalAlterationWorkflowSupportingEvidence(evidence)
+      );
+    }
+
+    if (this.isMunicipalWasteCollectionRequest(request)) {
+      return (
+        this.isMunicipalWasteCollectionEvidence(evidence) ||
+        this.isMunicipalWasteCollectionSupportingSignal(evidence)
+      );
+    }
+
+    if (this.isLogisticsShipmentIntegrityRequest(request)) {
+      return this.isLogisticsShipmentIntegrityEvidence(evidence);
+    }
+
+    if (this.isBookRestorationRequest(request)) {
+      return this.isBookRestorationSupportingEvidence(evidence);
+    }
+
+    if (this.isOperationalDigitalSecurityRequest(request)) {
+      return this.isOperationalDigitalSecuritySupportingEvidence(
+        request,
+        evidence,
+      );
+    }
+
+    if (this.isPublicTransportationProfitabilityRequest(request)) {
+      return this.isPublicTransportationProfitabilitySupportingEvidence(evidence);
+    }
+
+    if (this.isPublicFiscalOversightRequest(request)) {
+      return this.isPublicFiscalOversightSupportingEvidence(evidence);
+    }
+
+    if (this.isDecorativeFountainRestorationRequest(request)) {
+      return this.isDecorativeFountainRestorationSupportingEvidence(evidence);
+    }
+
+    if (this.isMediaContentProfitabilityRequest(request)) {
+      return this.isMediaContentProfitabilitySupportingSignal(evidence);
+    }
+
+    if (this.isInstrumentCaseSpecificationRequest(request)) {
+      return this.isInstrumentCaseSpecificationSupportingSignal(evidence);
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      return RequestNicheCustomCraftUtil.isSupportingEvidence(request, evidence);
+    }
+
+    const archetype = RequestWorkflowArchetypeUtil.classify({
+      requestDescription: request,
+      plannedQueries: input.plannedQueries ?? [],
+    });
+    const intentProfile = RequestWorkflowIntentProfileUtil.resolve(request);
+    const genericPainSensitive =
+      intentProfile.family === 'GENERAL' ||
+      archetype.archetype === 'GENERAL_OPERATIONAL' ||
+      archetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' ||
+      archetype.archetype === 'CUSTOM_COMMISSION_APPROVAL_OPERATIONS' ||
+      archetype.archetype === 'RENTAL_INVENTORY_OPERATIONS';
+
+    if (genericPainSensitive) {
+      return (
+        this.passesAtomicSupportingProblemGuard(input) ||
+        this.isDomainAgnosticSupportingEvidence({
+          requestDescription: request,
+          evidenceText: evidence,
+        })
+      );
+    }
+
+    return this.passesAiEvidenceAdmissionGuard(input);
+  }
+
+  /**
    * Always produces a conservative classification for fallback execution.
    * Strict deterministic matches remain DIRECT; semantically admissible but
    * incomplete evidence is kept as SUPPORTING instead of being silently lost.
    */
+  static hasProblemBearingClaim(evidenceText: string): boolean {
+    const value = evidenceText
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!value) return false;
+    if (this.isResearchContextOnlyEvidence(value)) return false;
+
+    return /\b(?:fail(?:ed|ure|ures|ing)?|faults?|errors?|incorrect|wrong|mismatch(?:es|ed)?|missing|lost|damage(?:d)?|shortages?|stockouts?|downtime|outages?|disrupt(?:ion|ions|ed)?|delay(?:s|ed)?|backlogs?|rework|repeat(?:ed)?|waste(?:d)?|inefficien\w*|bottlenecks?|fragment(?:ed|ation)?|silo(?:ed|s)?|separate systems?|lack of visibility|poor visibility|hard to|difficult to|unable to|cannot|risk(?:s)?|threat(?:s)?|attack(?:s|ed)?|breach(?:es)?|unauthori[sz]ed|fraud(?:ulent)?|compromis(?:e|ed|es)|costly|costs?|loss(?:es)?|challenges?|barriers?|limitations?|unreliable|reliability problem|quality problem|manual burden|time-consuming)\b/iu.test(value) ||
+      /\b(?:results?|findings?|study|report|analysis|data|respondents?|participants?)\b.{0,80}\b(?:found|show(?:s|ed)?|indicat(?:e|es|ed)|report(?:ed|s)?|observ(?:ed|es)?|document(?:ed|s)?|identif(?:ied|ies)|experienced?)\b/iu.test(value);
+  }
+
+  static isResearchContextOnlyEvidence(evidenceText: string): boolean {
+    const value = evidenceText
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!value) return false;
+
+    const recruitment =
+      /\b(?:academic survey|survey link|answer (?:a|this) (?:short )?survey|take (?:a|this) survey|questionnaire|looking for (?:people|participants|respondents)|seeking participants|master(?:'s|s) student|doctoral student|phd student|dissertation|thesis survey|responses? (?:genuinely )?help)\b/u.test(value);
+    const studyDescriptionOnly =
+      /\b(?:research project|study (?:explores?|examines?|evaluates?|investigates?)|technology acceptance model|tam)\b/u.test(value);
+    const reportedFinding =
+      /\b(?:results? (?:show|shows|showed|indicate|indicates|indicated|found)|findings? (?:show|shows|indicate|indicates)|study (?:found|finds|reported|reports|shows|showed|identified|observed|documented)|respondents? (?:reported|report|experienced|experience)|participants? (?:reported|experienced)|data (?:show|shows|showed|indicate|indicates))\b/u.test(value);
+
+    return (recruitment || studyDescriptionOnly) && !reportedFinding;
+  }
+
   static classifyForRequestFallback(input: {
     readonly requestDescription?: string | null;
     readonly evidenceText: string;
@@ -1039,6 +1756,32 @@ export class RequestEvidenceAlignmentUtil {
   }): 'DIRECT_PROBLEM' | 'SUPPORTING_SIGNAL' | 'UNRELATED' {
     const normalizedRequest = this.normalize(input.requestDescription ?? '');
     const normalizedEvidence = this.normalize(input.evidenceText);
+    if (!normalizedRequest || !normalizedEvidence) return 'UNRELATED';
+    if (this.isPromotionalProductListingEvidence(normalizedEvidence)) return 'UNRELATED';
+    if (RequestOnlinePharmacyFraudUtil.isRequest(normalizedRequest)) {
+      if (RequestOnlinePharmacyFraudUtil.isDirectEvidence(normalizedRequest, normalizedEvidence)) {
+        return 'DIRECT_PROBLEM';
+      }
+      return RequestOnlinePharmacyFraudUtil.isSupportingEvidence(normalizedRequest, normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(normalizedRequest)) {
+      if (RequestNicheCustomCraftUtil.isDirectEvidence(normalizedRequest, normalizedEvidence)) {
+        return 'DIRECT_PROBLEM';
+      }
+      return RequestNicheCustomCraftUtil.isSupportingEvidence(normalizedRequest, normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isAgriculturalDistributionProfitabilityRequest(normalizedRequest)) {
+      return this.isAgriculturalDistributionProfitabilitySupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
     if (
       this.isEnterpriseEmployeeAccessSecurityRequest(normalizedRequest) &&
       (this.isEnterpriseEmployeeAccessSecurityEvidence(normalizedEvidence) ||
@@ -1065,8 +1808,145 @@ export class RequestEvidenceAlignmentUtil {
         : 'UNRELATED';
     }
 
+    /*
+     * Public procurement contains words such as platform, account, suspicious,
+     * and fraud that can look like generic cybersecurity. Resolve the narrower
+     * procurement/oversight contract first so valid audit, supplier, records,
+     * and anomaly evidence is not destroyed by the broader security matcher.
+     */
+    if (this.isPublicProgramCostAttributionRequest(normalizedRequest)) {
+      return this.isPublicProgramCostAttributionSupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (RequestOperationalCostAttributionUtil.resolve(normalizedRequest)) {
+      return RequestOperationalCostAttributionUtil.isSupportingEvidence(
+        normalizedRequest,
+        normalizedEvidence,
+      )
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isPublicFiscalOversightRequest(normalizedRequest)) {
+      return this.isPublicFiscalOversightSupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isLogisticsShipmentIntegrityRequest(normalizedRequest)) {
+      return this.isLogisticsShipmentIntegrityEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isBookRestorationRequest(normalizedRequest)) {
+      return this.isBookRestorationSupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isOperationalDigitalSecurityRequest(normalizedRequest)) {
+      return this.isOperationalDigitalSecuritySupportingEvidence(
+        normalizedRequest,
+        normalizedEvidence,
+      )
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isTransactionAccountAbuseRequest(normalizedRequest)) {
+      if (
+        this.isTransactionAccountAbuseSupportingEvidence(
+          normalizedRequest,
+          normalizedEvidence,
+        )
+      ) {
+        return 'SUPPORTING_SIGNAL';
+      }
+      // Do not let a coarse account-abuse family veto later generic/specific
+      // semantic checks when its own vocabulary does not fit the request.
+    }
+
+    if (this.isPublicEducationResourceAllocationRequest(normalizedRequest)) {
+      return this.isPublicEducationResourceAllocationSupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
     if (this.isDecorativeFountainRestorationRequest(normalizedRequest)) {
       return this.isDecorativeFountainRestorationSupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isBridalAlterationWorkflowRequest(normalizedRequest)) {
+      if (this.isBridalAlterationWorkflowEvidence(normalizedEvidence)) {
+        return 'DIRECT_PROBLEM';
+      }
+      return this.isBridalAlterationWorkflowSupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isMunicipalWasteCollectionRequest(normalizedRequest)) {
+      if (this.isMunicipalWasteCollectionEvidence(normalizedEvidence)) {
+        return 'DIRECT_PROBLEM';
+      }
+      return this.isMunicipalWasteCollectionSupportingSignal(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    const fallbackArchetype = RequestWorkflowArchetypeUtil.classify({
+      requestDescription: normalizedRequest,
+      plannedQueries: input.plannedQueries ?? [],
+    });
+    if (this.isRestorationConservationRequest(normalizedRequest, input.plannedQueries ?? [])) {
+      return (
+        this.isRestorationConservationSupportingEvidence(
+          normalizedRequest,
+          normalizedEvidence,
+        ) ||
+        this.isProfessionalRestorationWorkflowSupportingEvidence(
+          normalizedRequest,
+          normalizedEvidence,
+        ) ||
+        this.isAdjacentPhysicalWorkflowExactPainSupportingEvidence(
+          normalizedRequest,
+          normalizedEvidence,
+        )
+      )
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isEcommerceProfitabilityRequest(normalizedRequest)) {
+      if (this.isEcommerceProfitabilityEvidence(normalizedEvidence)) {
+        return 'DIRECT_PROBLEM';
+      }
+      return this.isEcommerceProfitabilitySupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isPublicTransportationProfitabilityRequest(normalizedRequest)) {
+      return this.isPublicTransportationProfitabilitySupportingEvidence(
+        normalizedEvidence,
+      )
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isMediaContentProfitabilityRequest(normalizedRequest)) {
+      return this.isMediaContentProfitabilitySupportingSignal(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isInstrumentCaseSpecificationRequest(normalizedRequest)) {
+      return this.isInstrumentCaseSpecificationSupportingSignal(normalizedEvidence)
         ? 'SUPPORTING_SIGNAL'
         : 'UNRELATED';
     }
@@ -1081,6 +1961,12 @@ export class RequestEvidenceAlignmentUtil {
 
     if (this.isTourismTransitSurgeCapacityRequest(normalizedRequest)) {
       return this.isTourismTransitSurgeCapacitySupportingEvidence(normalizedEvidence)
+        ? 'SUPPORTING_SIGNAL'
+        : 'UNRELATED';
+    }
+
+    if (this.isHealthcareSupplyCostEfficiencyRequest(normalizedRequest)) {
+      return this.isHealthcareSupplyCostEfficiencySupportingEvidence(normalizedEvidence)
         ? 'SUPPORTING_SIGNAL'
         : 'UNRELATED';
     }
@@ -1273,7 +2159,13 @@ export class RequestEvidenceAlignmentUtil {
     readonly evidenceText: string;
     readonly plannedQueries?: readonly string[];
   }): boolean {
-    if (!this.passesAiEvidenceAdmissionGuard(input)) return false;
+    /*
+     * Availability fallback must obey the same pain-aware admission contract
+     * as a successful online AI classification. The broad pre-AI admission
+     * guard is intentionally permissive for discovery and must never become
+     * evidence admission when providers time out.
+     */
+    if (!this.passesPostAiPainAwareEvidenceGuard(input)) return false;
 
     const request = this.normalize(input.requestDescription ?? '');
     const evidence = this.normalize(input.evidenceText);
@@ -1473,7 +2365,11 @@ export class RequestEvidenceAlignmentUtil {
       if (
         (archetype.archetype === 'PROPERTY_ASSET_PERFORMANCE_OPERATIONS' ||
           archetype.archetype === 'RESTAURANT_DELIVERY_FRAUD_OPERATIONS' ||
-          archetype.archetype === 'AGRICULTURAL_EXPORT_PROFITABILITY_OPERATIONS') &&
+          archetype.archetype === 'AGRICULTURAL_DISTRIBUTION_PROFITABILITY_OPERATIONS' ||
+          archetype.archetype === 'AGRICULTURAL_EXPORT_PROFITABILITY_OPERATIONS' ||
+          this.isMediaContentProfitabilityRequest(request) ||
+          this.isInstrumentCaseSpecificationRequest(request) ||
+          Boolean(RequestNicheCustomCraftUtil.resolve(request))) &&
         candidates.length >= 2 &&
         candidates.every((entry) => entry.requestSupportingSignal)
       ) {
@@ -1516,8 +2412,19 @@ export class RequestEvidenceAlignmentUtil {
       return this.isFoodStorageConditionSupportingEvidence(request, evidence);
     }
 
-    if (archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS') {
-      return this.isRestorationConservationSupportingEvidence(request, evidence);
+    if (this.isRestorationConservationRequest(request)) {
+      return (
+        this.isRestorationConservationSupportingEvidence(request, evidence) ||
+        this.isAdjacentPhysicalWorkflowExactPainSupportingEvidence(request, evidence)
+      );
+    }
+
+    if (this.isPublicTransportationProfitabilityRequest(request)) {
+      return this.isPublicTransportationProfitabilitySupportingEvidence(evidence);
+    }
+
+    if (this.isMediaContentProfitabilityRequest(request)) {
+      return this.isMediaContentProfitabilitySupportingSignal(evidence);
     }
 
     if (
@@ -1538,6 +2445,10 @@ export class RequestEvidenceAlignmentUtil {
       return this.isMunicipalWasteCollectionSupportingSignal(evidence);
     }
 
+    if (this.isBridalAlterationWorkflowRequest(request)) {
+      return this.isBridalAlterationWorkflowSupportingEvidence(evidence);
+    }
+
     if (this.isMusicalManuscriptRestorationRequest(request)) {
       return this.isMusicalManuscriptRestorationSupportingSignal(evidence);
     }
@@ -1550,6 +2461,10 @@ export class RequestEvidenceAlignmentUtil {
       return this.isPublicTransitDisruptionCoordinationSupportingSignal(
         evidence,
       );
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      return RequestNicheCustomCraftUtil.isSupportingEvidence(request, evidence);
     }
 
     if (this.isInstrumentCaseSpecificationRequest(request)) {
@@ -1568,10 +2483,212 @@ export class RequestEvidenceAlignmentUtil {
   }
 
   /**
+   * Detects requester-defined digital account/security workflows without
+   * hard-coding one business vertical. This covers property-management,
+   * education, healthcare, government, marketplace, and similar operational
+   * systems when the request explicitly combines a digital account/access
+   * workflow with a security/fraud failure.
+   */
+  private static isOperationalDigitalSecurityRequest(request: string): boolean {
+    const normalized = this.normalize(request);
+    if (!normalized) return false;
+
+    /*
+     * Transaction/account-abuse requests have their own evidence contract.
+     * Do not let this broader digital-security matcher steal those requests
+     * before municipal/payment/account-abuse supporting logic can run.
+     */
+    if (
+      RequestWorkflowIntentProfileUtil.resolve(normalized).family ===
+      'TRANSACTION_ACCOUNT_ABUSE'
+    ) {
+      return false;
+    }
+
+    const digitalWorkflow =
+      /\b(?:digital platforms?|software platforms?|online platforms?|portals?|login activity|logins?|accounts?|rental payments?|payments?|transactions?|permission changes?|permissions?|access permissions?|access logs?|authentication|credentials?|security alerts?|building records?|tenant records?|resident records?)\b/iu.test(
+        normalized,
+      );
+    const securityProblem =
+      /\b(?:cybersecurity|security|compromis\w*|unauthori[sz]ed|fraud\w*|suspicious|anomal\w*|account takeover|identity theft|data breach|exposed|privacy|permission changes?|access abuse|false positive|unnecessary restrictions?)\b/iu.test(
+        normalized,
+      );
+
+    return digitalWorkflow && securityProblem;
+  }
+
+  /**
+   * Pain-aware supporting contract for generic digital security workflows.
+   *
+   * Same-domain security news is not enough. Evidence must retain requester
+   * actor/object identity, describe a real digital/security incident, and
+   * overlap at least one security facet from the request. This rejects generic
+   * breaches and record/document stories while preserving a property-platform
+   * breach, tenant-account takeover, payment fraud, permission abuse, or
+   * exposed tenant-record incident when the vertical identity is actually in
+   * the evidence.
+   */
+  private static isOperationalDigitalSecuritySupportingEvidence(
+    request: string,
+    evidence: string,
+  ): boolean {
+    const normalizedRequest = this.normalize(request);
+    const normalizedEvidence = this.normalize(evidence);
+    if (!normalizedRequest || !normalizedEvidence) return false;
+
+    if (
+      !this.passesRawCorpusLexicalHygieneGuard({
+        requestDescription: normalizedRequest,
+        evidenceText: normalizedEvidence,
+      })
+    ) {
+      return false;
+    }
+
+    const evidenceTokens = this.extractTokens(normalizedEvidence);
+    const identityTerms =
+      RequestDynamicQueryUtil.extractEvidenceIdentityTerms(normalizedRequest);
+    const genericSecurityIdentityTerms = new Set([
+      'digital',
+      'online',
+      'platform',
+      'platforms',
+      'system',
+      'systems',
+      'account',
+      'accounts',
+      'payment',
+      'payments',
+      'transaction',
+      'transactions',
+      'access',
+      'permission',
+      'permissions',
+      'security',
+      'alert',
+      'alerts',
+      'data',
+      'records',
+      'information',
+      'increasingly',
+      'rely',
+      'however',
+    ]);
+    const verticalIdentityOverlap = identityTerms
+      .filter((term) => !genericSecurityIdentityTerms.has(term))
+      .filter((term) => this.semanticTokenAligned(term, evidenceTokens)).length;
+    const actorAligned = this.dynamicActorAligned(
+      normalizedRequest,
+      normalizedEvidence,
+    );
+
+    const identityGate = actorAligned || verticalIdentityOverlap >= 2;
+    if (!identityGate) return false;
+
+    const digitalSystemSignal =
+      /\b(?:software|platforms?|portals?|systems?|applications?|apps?|databases?|online|digital|login|logins|accounts?|authentication|credentials?|permissions?|access controls?|access logs?|payments?|transactions?|security alerts?|tenant data|resident data|customer data|building records?)\b/iu.test(
+        normalizedEvidence,
+      );
+    const concreteSecurityIncident =
+      /\b(?:data breach|security incident|cyberattack|cyber attack|account takeover|compromis\w*|credential theft|stolen credentials?|unauthori[sz]ed access|fraud\w*|fraudulent transactions?|payment fraud|permission changes?|privilege changes?|access abuse|exposed (?:tenant|resident|customer|personal|sensitive)? ?(?:data|information|records?)|privacy breach|identity theft|suspicious activit\w*|security alerts?|anomal\w*)\b/iu.test(
+        normalizedEvidence,
+      );
+    if (!digitalSystemSignal || !concreteSecurityIncident) return false;
+
+    const sharedFacetGroups = [
+      [
+        /\b(?:login|account|authentication|credential|account takeover|compromis)\w*\b/iu,
+        /\b(?:login|account|authentication|credential|account takeover|compromis)\w*\b/iu,
+      ],
+      [
+        /\b(?:payment|transaction|fraud|fraudulent)\w*\b/iu,
+        /\b(?:payment|transaction|fraud|fraudulent)\w*\b/iu,
+      ],
+      [
+        /\b(?:permission|access|authorization|authorisation|privilege)\w*\b/iu,
+        /\b(?:permission|access|authorization|authorisation|privilege)\w*\b/iu,
+      ],
+      [
+        /\b(?:records?|data|information|privacy|exposed)\w*\b/iu,
+        /\b(?:records?|data|information|privacy|exposed|breach)\w*\b/iu,
+      ],
+      [
+        /\b(?:alert|anomaly|anomalies|suspicious|monitoring|detect)\w*\b/iu,
+        /\b(?:alert|anomaly|anomalies|suspicious|monitoring|detect)\w*\b/iu,
+      ],
+    ] as const;
+
+    const sharedSecurityFacet = sharedFacetGroups.some(
+      ([requestPattern, evidencePattern]) =>
+        requestPattern.test(normalizedRequest) &&
+        evidencePattern.test(normalizedEvidence),
+    );
+
+    return sharedSecurityFacet;
+  }
+
+  /**
    * Domain-agnostic supporting-evidence contract. It derives identity,
    * workflow, and pain facets from the requester text itself. This is only a
    * SUPPORTING gate; DIRECT_PROBLEM still uses the stricter full-problem rules.
    */
+  /**
+   * Identifies request-aligned workflow/market context that is useful for
+   * terminology expansion and recovery, but is NOT evidence of user pain.
+   * This deliberately omits any problem-expression requirement.
+   */
+  static isRequestWorkflowContextEvidence(input: {
+    readonly requestDescription?: string | null;
+    readonly evidenceText: string;
+    readonly plannedQueries?: readonly string[];
+  }): boolean {
+    const request = this.normalize(input.requestDescription ?? '');
+    const evidence = this.normalize(input.evidenceText);
+    if (!request || !evidence || evidence.length < 12) return false;
+    if (this.isDeveloperOnlyEvidence(evidence) && !/\b(?:api|sdk|developer|software engineering|programming|source code)\b/iu.test(request)) {
+      return false;
+    }
+    if (!this.passesRawCorpusLexicalHygieneGuard({ requestDescription: request, evidenceText: evidence })) {
+      return false;
+    }
+
+    if (this.isRestorationConservationRequest(request, input.plannedQueries ?? [])) {
+      if (this.isRestorationConservationTriageCandidate(request, evidence)) return true;
+      // CONTEXT_ONLY may use adjacent professional conservation workflows even
+      // when the exact object differs. This is intentionally broader than the
+      // evidence gate because it cannot count as demand/problem evidence.
+      const professionalConservation =
+        /\b(?:conservation professionals?|conservators?|museum curators?|art collectors?|artworks?|historical artifacts?|artifact conservation|object conservation|condition reports?|treatment reports?)\b/iu.test(evidence);
+      const documentationWorkflow =
+        /\b(?:condition reports?|annotated (?:pictures|photos)|damage(?:s)? types?|materials?|treatment reports?|subsequent reports?|archive|archiving|documentation|records?|photos?|recommendations?)\b/iu.test(evidence);
+      return professionalConservation && documentationWorkflow;
+    }
+
+    if (this.isTransactionAccountAbuseRequest(request)) {
+      // Context for fraud/account-abuse must still describe the relevant
+      // transaction/account workflow; generic finance or relationship content
+      // is not useful recovery context.
+      return this.isTransactionAccountAbuseTriageCandidate(request, evidence);
+    }
+
+    const requestTokens = this.extractTokens(request);
+    const evidenceTokens = this.extractTokens(evidence);
+    const identityTerms = RequestDynamicQueryUtil.extractEvidenceIdentityTerms(request);
+    const identityOverlap = identityTerms.filter((term) =>
+      this.semanticTokenAligned(term, evidenceTokens),
+    ).length;
+    const workflowOverlap = RequestDynamicQueryUtil.extractWorkflowTerms(request)
+      .filter((facet) => this.facetPhraseAligned(facet, evidenceTokens)).length;
+    const distinctiveOverlap = [...requestTokens]
+      .filter((token) => this.isDistinctiveRequestAnchorToken(token))
+      .filter((token) => evidenceTokens.has(token)).length;
+    const actorAligned = this.dynamicActorAligned(request, evidence);
+
+    return (actorAligned && (identityOverlap >= 1 || workflowOverlap >= 1)) ||
+      (identityOverlap >= 1 && workflowOverlap >= 1) ||
+      (distinctiveOverlap >= 2 && workflowOverlap >= 1);
+  }
+
   static isDomainAgnosticSupportingEvidence(input: {
     readonly requestDescription?: string | null;
     readonly evidenceText: string;
@@ -1579,6 +2696,8 @@ export class RequestEvidenceAlignmentUtil {
     const request = this.normalize(input.requestDescription ?? '');
     const evidence = this.normalize(input.evidenceText);
     if (!request || !evidence || evidence.length < 12) return false;
+    if (this.isResearchContextOnlyEvidence(evidence)) return false;
+    if (!this.hasProblemBearingClaim(evidence)) return false;
 
     const archetype = RequestWorkflowArchetypeUtil.classify({
       requestDescription: request,
@@ -1594,6 +2713,21 @@ export class RequestEvidenceAlignmentUtil {
     const evidenceTokens = this.extractTokens(evidence);
     if (requestTokens.size === 0 || evidenceTokens.size === 0) return false;
 
+    /*
+     * Restoration is collision-prone: "restoration", "damaged", and
+     * "missing" also occur in image restoration, software/data recovery, and
+     * unrelated engineering papers. Route this archetype through the
+     * restoration-specific actor/object guard before the generic supporting
+     * logic so object identity is mandatory while partial practitioner evidence
+     * can still qualify.
+     */
+    if (this.isRestorationConservationRequest(request)) {
+      return (
+        this.isRestorationConservationSupportingEvidence(request, evidence) ||
+        this.isAdjacentPhysicalWorkflowExactPainSupportingEvidence(request, evidence)
+      );
+    }
+
     const identityTerms = RequestDynamicQueryUtil.extractEvidenceIdentityTerms(request);
     const identityOverlap = identityTerms.filter((token) =>
       this.semanticTokenAligned(token, evidenceTokens),
@@ -1606,11 +2740,13 @@ export class RequestEvidenceAlignmentUtil {
     const outcomeOverlap = [...requestTokens]
       .filter((token) => this.isOutcomeAxisToken(token))
       .filter((token) => evidenceTokens.has(token)).length;
+    const distinctiveOverlap = [...requestTokens]
+      .filter((token) => this.isDistinctiveRequestAnchorToken(token))
+      .filter((token) => evidenceTokens.has(token)).length;
     const problemExpression = this.hasDeterministicProblemExpression(evidence);
 
     const physicalOrSpecificationWorkflow =
       archetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' ||
-      archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS' ||
       archetype.archetype === 'FOOD_STORAGE_CONDITION_OPERATIONS' ||
       archetype.archetype === 'RENTAL_INVENTORY_OPERATIONS' ||
       archetype.archetype === 'CUSTOM_COMMISSION_APPROVAL_OPERATIONS' ||
@@ -1625,6 +2761,24 @@ export class RequestEvidenceAlignmentUtil {
     }
 
     if (identityOverlap >= 2 && supportProblemGate) {
+      return true;
+    }
+
+    /*
+     * Cross-domain corroboration may use a different actor label while still
+     * proving the same causal mechanism (for example fulfillment inventory +
+     * freight cost + cash impact supporting a manufacturing order-margin
+     * workflow). Relax literal actor identity only for non-physical workflows
+     * and only when several distinctive requester concepts, workflow facets,
+     * and a real pain/outcome expression co-occur.
+     */
+    if (
+      !physicalOrSpecificationWorkflow &&
+      distinctiveOverlap >= 2 &&
+      workflowFacetOverlap >= 2 &&
+      hasConcretePainOrOutcome &&
+      problemExpression
+    ) {
       return true;
     }
 
@@ -1714,7 +2868,7 @@ export class RequestEvidenceAlignmentUtil {
      */
     if (
       archetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' ||
-      archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS' ||
+      this.isRestorationConservationRequest(request) ||
       archetype.archetype === 'FOOD_STORAGE_CONDITION_OPERATIONS' ||
       archetype.archetype === 'RENTAL_INVENTORY_OPERATIONS' ||
       archetype.archetype === 'CUSTOM_COMMISSION_APPROVAL_OPERATIONS' ||
@@ -2002,10 +3156,11 @@ export class RequestEvidenceAlignmentUtil {
 
   private static isDecorativeFountainRestorationSupportingEvidence(value: string): boolean {
     if (this.isDeveloperOnlyEvidence(value)) return false;
-    const objectIdentity = /\b(?:decorative fountain|ornamental fountain|historic fountain|fountain restoration|fountain repair|fountain restorer|fountain pump|fountain basin|fountain stonework|water feature restoration|water feature maintenance)\b/iu.test(value);
-    const workflow = /\b(?:pump condition|pump repair|water[- ]?flow|water circulation|circulation system|stone damage|stone deterioration|metal damage|metal corrosion|replacement parts?|replacement components?|finish preferences?|finish matching|material matching|previous repairs?|repair history|restoration history|maintenance history|customer requests?|repair notes?|restoration notes?)\w*\b/iu.test(value);
-    const collision = /\b(?:wall paintings?|decorative laminates?|satoumi|electronic components?|fountain pen|software restoration|data restoration|ecosystem restoration)\b/iu.test(value) && !objectIdentity;
-    return objectIdentity && workflow && !collision;
+    const fountainIdentity = /\b(?:decorative fountain|ornamental fountain|historic fountain|stone fountain|public fountain|fountain|water feature)\b/iu.test(value);
+    const restorationContext = /\b(?:restor(?:e|ed|ation)|repair|conserv(?:e|ed|ation)|preservation|maintenance|refinish|refinishing|rehabilitation)\w*\b/iu.test(value);
+    const workflow = /\b(?:pump condition|pump repair|water[- ]?flow|water circulation|circulation system|stone damage|stone deterioration|stone object|metal damage|metal corrosion|replacement parts?|replacement components?|finish|finishes|stain|sealer|material matching|previous repairs?|repairs? throughout history|repair history|restoration history|maintenance history|previous interventions?|intervention history|customer requests?|repair notes?|restoration notes?|prolonged contact with water|exposed concrete|surface deterioration)\w*\b/iu.test(value);
+    const collision = /\b(?:fountain pen|software restoration|data restoration|ecosystem restoration|ram pump|water supply systems?|hot water circulation pump)\b/iu.test(value);
+    return fountainIdentity && restorationContext && workflow && !collision;
   }
 
   private static isDecorativeFountainRestorationEvidence(value: string): boolean {
@@ -2057,7 +3212,7 @@ export class RequestEvidenceAlignmentUtil {
 
   private static isHealthcareBillingFraudSecurityRequest(value: string): boolean {
     const actor =
-      /\b(?:private healthcare providers?|healthcare providers?|medical practices?|clinics?|hospitals?|patient billing systems?|medical billing systems?|health insurance systems?)\b/iu.test(value);
+      /\b(?:private healthcare providers?|healthcare providers?|healthcare organizations?|health care organizations?|health systems?|medical practices?|clinics?|hospitals?|patient billing systems?|medical billing systems?|health insurance systems?)\b/iu.test(value);
     const workflow =
       /\b(?:patient billing|medical billing|insurance records?|insurance claims?|patient invoices?|login history|login activity|payment transactions?|payment activity|security alerts?|patient accounts?|patient portals?)\b/iu.test(value);
     const risk =
@@ -2404,23 +3559,245 @@ export class RequestEvidenceAlignmentUtil {
     return causalMechanism && concreteImpact;
   }
 
+  private static isRestorationConservationRequest(
+    request: string,
+    plannedQueries: readonly string[] = [],
+  ): boolean {
+    const profile = RequestWorkflowIntentProfileUtil.resolve(request);
+    if (profile.restorationIntent) return true;
+    return RequestWorkflowArchetypeUtil.classify({
+      requestDescription: request,
+      plannedQueries,
+    }).archetype === 'RESTORATION_CONSERVATION_OPERATIONS';
+  }
+
   private static isRestorationConservationTriageCandidate(
     request: string,
     evidence: string,
   ): boolean {
-    if (!RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(request, evidence)) {
-      return false;
+    if (this.isFrameRestorationWorkflowRequest(request)) {
+      if (!this.isExactPictureFrameRestorationEvidenceIdentity(evidence)) return false;
     }
     const profile = RequestWorkflowIntentProfileUtil.resolve(request);
     const subject = this.normalize(profile.restorationSubject ?? '');
-    const evidenceTokens = this.extractTokens(evidence);
     const subjectTokens = subject ? [...this.extractTokens(subject)] : [];
-    const subjectOverlap = subjectTokens.filter((token) => this.semanticTokenAligned(token, evidenceTokens)).length;
-    const restorationActor = /\b(?:restoration|restorer|restorers|conservation|conservator|conservators|repair specialist|repair specialists|restoration workshop|conservation workshop)\b/iu.test(evidence);
-    const conditionObject = /\b(?:cracked|damaged|broken|missing|condition|original design|original color|original colour|previous repair|prior repair|repair history|restoration history|treatment history|replacement material|material match|color match|colour match|physical sample|condition report|condition record)\w*\b/iu.test(evidence);
-    const pain = /\b(?:wrong|incorrect|mismatch\w*|lost|missing|overlook\w*|rework|repeated work|waste\w*|delay\w*|scattered|fragmented|poor documentation|incomplete record|lost detail|material mismatch)\b/iu.test(evidence);
-    const commissionOnly = /\b(?:new custom commission|custom order|made[- ]to[- ]order|wrong dimensions?|approved design revision|personalization)\b/iu.test(evidence) && !/\b(?:restoration|conservation|repair history|previous repair|condition)\b/iu.test(evidence);
-    return !commissionOnly && (restorationActor || subjectOverlap >= Math.min(2, Math.max(1, subjectTokens.length))) && conditionObject && pain;
+    const evidenceTokens = this.extractTokens(evidence);
+    const dynamicSubjectOverlap = subjectTokens.filter((token) =>
+      this.semanticTokenAligned(token, evidenceTokens),
+    ).length;
+    const distinctiveSubjectTokens = this.normalize(subject)
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((token) => token.length >= 3)
+      .filter(
+        (token) =>
+          !/^(?:antique|vintage|old|historic|historical|restoration|restore|repair|conservation|specialist|specialists)$/u.test(token),
+      );
+    const evidenceIdentityTokens = new Set(
+      this.normalize(evidence)
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .split(/\s+/u)
+        .filter(Boolean),
+    );
+    const distinctiveSubjectOverlap = distinctiveSubjectTokens.filter((token) =>
+      evidenceIdentityTokens.has(token) ||
+      evidenceIdentityTokens.has(`${token}s`) ||
+      (token.endsWith('s') && evidenceIdentityTokens.has(token.slice(0, -1))),
+    ).length;
+    const subjectFamilyAligned = this.isRestorationSubjectFamilyAligned(subject, evidence);
+    const explicitObjectIdentity =
+      subjectFamilyAligned || distinctiveSubjectOverlap >= 1;
+    const requestCompatible =
+      distinctiveSubjectTokens.length > 0
+        ? explicitObjectIdentity
+        : RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(request, evidence) ||
+          subjectFamilyAligned ||
+          dynamicSubjectOverlap >= 1;
+    if (!requestCompatible) return false;
+    const subjectOverlap = distinctiveSubjectTokens.length > 0
+      ? distinctiveSubjectOverlap
+      : dynamicSubjectOverlap;
+    const restorationActor = /\b(?:restoration|restorer|restorers|conservation|conservator|conservators|repair specialist|repair specialists|restoration workshop|conservation workshop|repair shop|repair technician|jeweler|jeweller|goldsmith|bench jeweler|bench jeweller)\b/iu.test(evidence);
+    const conditionObject = /\b(?:cracked|damaged|damage|broken|missing|condition|dented|chipped|ruined|stone|gemstone|diamond|emerald|clasp|shank|enamel|nib|filling mechanism|original design|original detail|historical detail|period[- ]correct|previous repair|prior repair|repair history|restoration history|treatment history|replacement material|replacement part|replacement stone|material match|color match|colour match|finish match|physical sample|condition report|condition record|customer preference|client preference|customer instruction|client instruction|writing preference|tuning preference|approved treatment|approved work|workshop note|repair note)\w*\b/iu.test(evidence);
+    const pain = /\b(?:wrong|incorrect|mismatch\w*|lost|missing|overlook\w*|rework|repeated work|waste\w*|delay\w*|scattered|fragmented|poor documentation|incomplete record|no details?|unknown history|history unknown|uncertain history|repair history unknown|previous repair unknown|might have been repaired|looks like a repair|lost detail|material mismatch|ruined|chipped|dented|damaged|damage|broke|broken|failed|failure)\b/iu.test(evidence);
+    const commissionOnly = /\b(?:new custom commission|custom order|made[- ]to[- ]order|wrong dimensions?|approved design revision|personalization)\b/iu.test(evidence) && !/\b(?:restoration|conservation|repair history|previous repair|condition|antique|vintage|repair)\b/iu.test(evidence);
+    const identityAligned =
+      subjectFamilyAligned ||
+      subjectOverlap >= 1 ||
+      (distinctiveSubjectTokens.length === 0 && restorationActor);
+    return !commissionOnly && identityAligned && conditionObject && pain;
+  }
+
+  /**
+   * Pre-AI only recall lane for exact-object restoration material that proves a
+   * concrete condition/treatment/documentation facet but does not itself state a
+   * business pain. It may reach Community AI and participate in a multi-source
+   * composite, but it is never promoted to SUPPORTING by this helper alone.
+   * Generic furniture/sculpture/piano restoration remains excluded when the
+   * requester object is porcelain, ceramic, jewelry, camera, etc.
+   */
+  private static isExactObjectRestorationPartialTriageCandidate(
+    request: string,
+    evidence: string,
+  ): boolean {
+    const profile = RequestWorkflowIntentProfileUtil.resolve(request);
+    if (!profile.restorationIntent) return false;
+
+    const subject = this.normalize(profile.restorationSubject ?? '');
+    if (this.isFrameRestorationWorkflowRequest(request) &&
+      !this.isExactPictureFrameRestorationEvidenceIdentity(evidence)) {
+      return false;
+    }
+    if (!subject || !this.isRestorationSubjectFamilyAligned(subject, evidence)) {
+      return false;
+    }
+
+    const restorationWorkflow =
+      /\b(?:restor\w*|conserv\w*|repair\w*|treat\w*|condition report|condition record|condition documentation|treatment documentation|treatment record|repair history|restoration history|previous repairs?|prior repairs?|photograph\w*|document\w*|record\w*|glaze|crack\w*|chip\w*|missing fragments?|replacement material\w*|material match\w*|decorative detail\w*|original detail\w*)\b/iu.test(
+        evidence,
+      );
+    const unrelatedObjectOnly =
+      /\b(?:furniture|wood chairs?|rocking chairs?|piano|top hats?|binoculars?|ship models?|chronometers?|sculptures?)\b/iu.test(
+        evidence,
+      ) &&
+      !this.isRestorationSubjectFamilyAligned(subject, evidence);
+
+    return restorationWorkflow && !unrelatedObjectOnly;
+  }
+
+  private static isBookRestorationRequest(value: string): boolean {
+    const normalized = this.normalize(value);
+    return (
+      /\b(?:book restoration specialists?|book restorers?|book conservators?|book conservation|book repair specialists?|bookbinders?|rare book restoration|manuscript conservation)\b/iu.test(normalized) &&
+      /\b(?:bindings?|pages?|missing sections?|paper condition|previous repairs?|repair history|restoration history|treatment history|material choices?|preservation preferences?|condition records?|photographs?|handwritten notes?|physical samples?|customer messages?)\b/iu.test(normalized)
+    );
+  }
+
+  private static isBookRestorationEvidenceIdentity(value: string): boolean {
+    const evidence = this.normalize(value);
+    if (!evidence || this.isDeveloperOnlyEvidence(evidence)) return false;
+
+    const explicitBookRestorationIdentity =
+      /\b(?:book conservation|book restoration|book repair|bookbinding restoration|rare book conservation|rare book restoration|manuscript conservation|manuscript restoration)\b/iu.test(evidence);
+    const concreteBookObject =
+      /\b(?:rare books?|old books?|antique books?|historic books?|manuscripts?|codices?|volumes?|bookbindings?|bindings?|book blocks?|text blocks?|pages?|leaves|folios?|paper)\b/iu.test(evidence);
+    const conservationWorkflow =
+      /\b(?:book conservation|book restoration|book repair|bookbinding|rebinding|conservator|conservation treatment|restoration treatment|binding repair|page repair|paper repair|paper conservation|manuscript conservation|condition assessment|condition report|treatment record|previous treatment|previous repair|repair history|restoration history)\b/iu.test(evidence);
+    const physicalTreatmentFacet =
+      /\b(?:torn pages?|missing pages?|missing leaves|missing sections?|damaged bindings?|broken sewing|loose signatures?|detached boards?|spine damage|paper tears?|paper loss|foxing|acidification|deacidification|hinge repair|mending tissue|japanese tissue|wheat starch paste|leather binding|cloth binding|binding material|paper condition)\b/iu.test(evidence);
+
+    const fictionOrEditorialCollision =
+      /\b(?:novel|story|chapter|spoilers?|fiction|movie|television|podcast|disclosure day|magic school|character|plot|review thread|book review|author interview)\b/iu.test(evidence) &&
+      !conservationWorkflow &&
+      !physicalTreatmentFacet;
+    if (fictionOrEditorialCollision) return false;
+
+    const unrelatedRepairCollision =
+      /\b(?:hernia repair|pavement repair|road repair|building restoration|city restoration|software repair|vehicle repair)\b/iu.test(evidence) &&
+      !conservationWorkflow;
+    if (unrelatedRepairCollision) return false;
+
+    return (
+      (explicitBookRestorationIdentity || concreteBookObject) &&
+      (conservationWorkflow || physicalTreatmentFacet)
+    );
+  }
+
+  private static isBookRestorationSupportingEvidence(value: string): boolean {
+    const evidence = this.normalize(value);
+    if (!this.isBookRestorationEvidenceIdentity(evidence)) return false;
+
+    const documentationOrHistory =
+      /\b(?:condition report|condition assessment|condition record|documentation|documented|record|records|treatment record|repair history|restoration history|previous repairs?|previous treatment|prior treatment|photographs?|photos?|notes?|material choices?|material selection|preservation preference|client preference|customer preference)\b/iu.test(evidence);
+    const physicalProblem =
+      /\b(?:damaged|damage|torn|tear|missing|loss|detached|broken|loose|deteriorat\w*|acidif\w*|foxing|stain\w*|insect damage|water damage|spine damage|binding damage|paper loss)\b/iu.test(evidence);
+    const treatmentRisk =
+      /\b(?:wrong|incorrect|unsuitable|incompatible|rework|repeat\w*|inconsistent|delay\w*|uncertain|unknown|previous repair|prior repair|material match|preserv\w* original)\b/iu.test(evidence);
+
+    return documentationOrHistory || physicalProblem || treatmentRisk;
+  }
+
+  private static isLogisticsShipmentIntegrityRequest(value: string): boolean {
+    const normalized = this.normalize(value);
+    const logisticsActor =
+      /\b(?:logistics companies?|logistics providers?|3pl|third[- ]party logistics|parcel carriers?|freight companies?|delivery operators?|warehouse operators?|supply chain operators?)\b/iu.test(normalized);
+    const integrityWorkflow =
+      /\b(?:suspicious shipment|shipment changes?|unauthorized access|delivery accounts?|unusual routing|redirected|rerout\w*|tracking records?|warehouse scans?|driver updates?|security alerts?|coordinated fraud|shipment compromised|packages? (?:lost|redirected)|stolen goods?|false claims?)\b/iu.test(normalized);
+    return logisticsActor && integrityWorkflow;
+  }
+
+  private static isLogisticsShipmentIntegrityEvidence(value: string): boolean {
+    const evidence = this.normalize(value);
+    if (!evidence || this.isDeveloperOnlyEvidence(evidence)) return false;
+
+    const shipmentIdentity =
+      /\b(?:shipment|shipments|package|packages|parcel|parcels|cargo|freight|3pl|carrier|carriers|warehouse|warehouses|fulfillment|fulfilment|proof of delivery|proof of receipt|handoff|hand[- ]off)\b/iu.test(evidence);
+    if (!shipmentIdentity) return false;
+
+    const integrityOrIncident =
+      /\b(?:missing|lost|stolen|theft|cargo fraud|shipment fraud|delivery fraud|diversion|diverted|redirected|rerouted|rerouting|unauthorized|account takeover|compromised account|destination change|address change|tracking discrepancy|tracking mismatch|scan discrepancy|missing scan|awaiting receipt|cannot locate|can't locate|couldn['’]?t locate|not delivered|handoff|proof of handoff|proof of receipt|signature mismatch|chain of custody|custody gap|liability gap|false claim|fraudulent claim|suspicious routing|route deviation|tampered tracking|altered tracking)\b/iu.test(evidence);
+    const fragmentedInformation =
+      /\b(?:conflicting records?|inconsistent records?|tracking records?|warehouse scans?|receiving report|carrier scans?|delivery confirmations?|driver updates?|security alerts?|information gathering|information processing|shipment information centre|shipment information center|audit trail)\b/iu.test(evidence);
+
+    const genericOptimizationOnly =
+      /\b(?:route optimization|routing optimization|shipment consolidation|capacity expansion|linear costs?|empty miles?|packaging|kidney shipment|train departure|mathematical programming)\b/iu.test(evidence) &&
+      !integrityOrIncident;
+    if (genericOptimizationOnly) return false;
+
+    const unrelatedFraudOnly =
+      /\b(?:public benefits fraud|credit card fraud|digital payment fraud|tax fraud|gst fraud|email scam)\b/iu.test(evidence) &&
+      !/\b(?:shipment|package|parcel|cargo|freight|carrier|warehouse|delivery)\b/iu.test(evidence);
+    if (unrelatedFraudOnly) return false;
+
+    return integrityOrIncident || fragmentedInformation;
+  }
+
+  private static isRestorationSubjectFamilyAligned(
+    subject: string,
+    evidence: string,
+  ): boolean {
+    const normalizedSubject = this.normalize(subject);
+    if (!normalizedSubject) return false;
+
+    const families: ReadonlyArray<readonly [RegExp, RegExp]> = [
+      [/\b(?:jewelry|jewellery)\b/iu, /\b(?:jewelry|jewellery|jeweler|jeweller|goldsmith|bench jeweler|bench jeweller|ring|pendant|bracelet|necklace|earring|brooch|gemstone|stone|diamond|emerald|sapphire|ruby|platinum|gold|silver)\b/iu],
+      [/\b(?:fountain pen|pen)\b/iu, /\b(?:fountain pen|pen restorer|pen repair|nib|filling mechanism|ink[- ]flow|piston filler|lever filler)\b/iu],
+      [/\b(?:camera|film camera|vintage camera)\b/iu, /\b(?:camera|film camera|lens|shutter|aperture|viewfinder|camera repair)\b/iu],
+      [/\b(?:textile|fabric|garment)\b/iu, /\b(?:textile|fabric|garment|embroidery|dye|weave|fiber|fibre|stitching)\b/iu],
+      [/\b(?:clock|watch)\b/iu, /\b(?:clock|watch|movement|escapement|mainspring|dial|horology|horological)\b/iu],
+      [/\b(?:typewriter)\b/iu, /\b(?:typewriter|key lever|typebar|ribbon mechanism|platen)\b/iu],
+      [/\b(?:frame|picture frame)\b/iu, /\b(?:picture frame|antique picture frame|antique frame|gilded frame|picture-frame restoration|picture frame restoration|frame conservator|frame conservation|gilding|gold leaf|gesso|molding|moulding)\b/iu],
+      [/\b(?:doll)\b/iu, /\b(?:doll|porcelain doll|composition doll|doll repair|doll restoration)\b/iu],
+      [/\b(?:porcelain|ceramic|china)\b/iu, /\b(?:porcelain|ceramic|ceramics|china repair|china restoration|earthenware|stoneware|glaze|ceramic conservation)\b/iu],
+    ];
+
+    if (families.some(
+      ([subjectPattern, evidencePattern]) =>
+        subjectPattern.test(normalizedSubject) && evidencePattern.test(evidence),
+    )) {
+      return true;
+    }
+
+    /* Generic future-proof fallback: the concrete restored object itself is
+     * the identity boundary. This supports lamp, book, fountain, ceramic,
+     * instrument, textile, furniture, or future niches without adding another
+     * hard-coded branch, while still rejecting a different restored object. */
+    const genericSubjectTokens = [...this.extractTokens(normalizedSubject)]
+      .filter((token) => !/^(?:antique|vintage|old|historic|historical|restoration|restore|repair|conservation|specialist|specialists|piece|pieces|component|components|mechanism|mechanisms)$/u.test(token));
+    const evidenceTokens = this.extractTokens(evidence);
+    const alignedTokenCount = genericSubjectTokens.filter((token) =>
+      this.semanticTokenAligned(token, evidenceTokens),
+    ).length;
+
+    /*
+     * Multi-token restored objects are an identity phrase, not an OR-list.
+     * Requiring two aligned distinctive tokens prevents a broad modifier such
+     * as "musical" from turning a flute into a music-box signal, while
+     * one-token objects such as mirror/toy/lamp still work normally.
+     */
+    const requiredObjectTokenCount = genericSubjectTokens.length >= 2 ? 2 : 1;
+    return alignedTokenCount >= requiredObjectTokenCount;
   }
 
   private static isRestorationConservationSupportingEvidence(
@@ -2428,8 +3805,111 @@ export class RequestEvidenceAlignmentUtil {
     evidence: string,
   ): boolean {
     if (!this.isRestorationConservationTriageCandidate(request, evidence)) return false;
-    const workflow = /\b(?:document\w*|record\w*|track\w*|condition|repair history|restoration history|treatment history|material match|color match|colour match|replacement material|original design|physical sample|photograph\w*)\b/iu.test(evidence);
-    return workflow && this.hasDeterministicProblemExpression(evidence);
+    const workflow = /\b(?:restor\w*|repair\w*|document\w*|record\w*|track\w*|condition|frame|glass|silvering|gilding|previous repairs?|prior repairs?|repair history|restoration history|treatment history|diagnos\w*|reshank\w*|reset\w*|filling mechanisms?|nib condition|ink[- ]flow|stone|gemstone|clasp|shank|enamel|engraving|period[- ]correct|period appropriate|material match|color match|colour match|finish match|replac\w*|original piece|vintage piece|original design|original detail|historical detail|physical samples?|photograph\w*|workshop notes?|repair notes?|service notes?|customer preferences?|client preferences?|customer instructions?|client instructions?|approved instructions?|confirmed instructions?|writing preferences?|tuning preferences?|approved treatments?|approved work|message\w*)\b/iu.test(evidence);
+    const partialHistoryProblem = /\b(?:no details?|no info(?:rmation)?|unknown history|history unknown|uncertain history|repair history unknown|previous repair unknown|might have been repaired|looks like a repair|unclear previous repair|undocumented repair|not sure|unsure|don['’]t know|do not know|without ruining|avoid ruining|preserv\w* original|period appropriate)\b/iu.test(evidence);
+    return workflow && (this.hasDeterministicProblemExpression(evidence) || partialHistoryProblem);
+  }
+
+  /**
+   * Professional secondary evidence for the exact restored object.
+   *
+   * Conservation papers, condition reports, and restoration specifications are
+   * often written as procedures rather than complaints. Requiring words such as
+   * "wrong", "delay", or "problem" therefore created false negatives even
+   * when the source directly established the requester's condition-assessment,
+   * treatment-specification, previous-repair, or material-matching workflow.
+   *
+   * This helper is deliberately SUPPORTING-only. The caller still applies
+   * source-provenance caps, canonical-family normalization, and Community-AI
+   * classification before the item can enter the trusted ledger.
+   */
+  private static isProfessionalRestorationWorkflowSupportingEvidence(
+    request: string,
+    evidence: string,
+  ): boolean {
+    if (this.isDeveloperOnlyEvidence(evidence)) return false;
+
+    const profile = RequestWorkflowIntentProfileUtil.resolve(request);
+    if (!profile.restorationIntent) return false;
+    const subject = this.normalize(profile.restorationSubject ?? '');
+    if (!subject || !this.isRestorationSubjectFamilyAligned(subject, evidence)) {
+      return false;
+    }
+
+    const normalized = this.normalize(evidence);
+    const meaningfulWordCount = normalized.split(/\s+/u).filter(Boolean).length;
+    if (meaningfulWordCount < 18) return false;
+
+    const restorationWorkflow =
+      /\b(?:restor\w*|conserv\w*|repair\w*|treat\w*|reinstall\w*|remove\w*|rejoin\w*|stabiliz\w*|preserv\w*)\b/iu.test(normalized);
+    const conditionAxis =
+      /\b(?:condition (?:analysis|assessment|report|record)|deteriorat\w*|damage\w*|crack\w*|broken|missing|structural integrity|support\w*|frame\w*|came|lead deterioration|material condition)\b/iu.test(normalized);
+    const documentationAxis =
+      /\b(?:specification\w*|document\w*|record\w*|treatment histor\w*|repair histor\w*|restoration histor\w*|previous repairs?|prior repairs?|workshop notes?|photograph\w*|pattern\w*|approved treatment|approved restoration)\b/iu.test(normalized);
+    const treatmentOrMaterialAxis =
+      /\b(?:material\w*|procedure\w*|replacement\w*|matching|color match\w*|colour match\w*|paint consolidation|rejoining broken|removal|reinstallation|craftsmanship|original (?:detail|design|pattern|material)|protective material\w*)\b/iu.test(normalized);
+
+    const axisCount = [conditionAxis, documentationAxis, treatmentOrMaterialAxis]
+      .filter(Boolean).length;
+    return restorationWorkflow && axisCount >= 2;
+  }
+
+  /**
+   * Weak partial-support lane for craft/restoration evidence that proves the
+   * exact requester pain but comes from an adjacent practitioner/object inside
+   * the same material/craft family. This is intentionally SUPPORTING-only.
+   * It is designed for evidence such as a leatherworker describing scattered
+   * photos/notes and lost material/finish history when the requester is a
+   * leather-bag restoration specialist. Generic tutorials and unrelated
+   * restored objects remain excluded.
+   */
+  private static isAdjacentPhysicalWorkflowExactPainSupportingEvidence(
+    request: string,
+    evidence: string,
+  ): boolean {
+    if (this.isDeveloperOnlyEvidence(evidence)) return false;
+
+    const requestProfile = RequestWorkflowIntentProfileUtil.resolve(request);
+    const subject = this.normalize(requestProfile.restorationSubject ?? '');
+    const subjectTokens = [...this.extractTokens(subject)].filter(
+      (token) =>
+        token.length >= 4 &&
+        !/^(?:antique|vintage|restoration|restore|repair|conservation|specialist|specialists|bag|bags|piece|pieces)$/u.test(token),
+    );
+    const evidenceTokens = this.extractTokens(evidence);
+    const familyOverlap = subjectTokens.filter((token) =>
+      this.semanticTokenAligned(token, evidenceTokens),
+    ).length;
+
+    const requestRecordsPain =
+      /\b(?:scattered|photographs?|photos?|handwritten notes?|notes?|messages?|records?|history|previous repairs?|prior repairs?|material selections?|customer preferences?|client preferences?|forgotten|repeated work|inconsistent finishes?|lost)\b/iu.test(
+        request,
+      );
+    if (!requestRecordsPain) return false;
+
+    const sameCraftOrMaterial =
+      familyOverlap >= 1 ||
+      (/\b(?:leather|textile|fabric|wood|metal|ceramic|porcelain|glass|paper|book|instrument|jewelry|jewellery)\b/iu.test(subject) &&
+        new RegExp(
+          `\\b(?:${subjectTokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\w*\\b`,
+          'iu',
+        ).test(evidence));
+    if (!sameCraftOrMaterial) return false;
+
+    const practitionerWorkflow =
+      /\b(?:leatherwork|leathercraft|craft|crafter|maker|makers|artisan|artisans|workshop|project|projects|restor\w*|repair\w*|commission|commissions|client|customer|inventory|materials?|finishes?|hardware|thread|dye|paint)\b/iu.test(
+        evidence,
+      );
+    const exactDocumentationPain =
+      /\b(?:documentation (?:was|is) (?:a )?mess|scattered (?:photos?|photographs?|notes?|records?)|photos? in (?:one|a) folder|notes? app|no (?:real )?record|no record of|lost (?:notes?|records?|history)|missing (?:notes?|records?|history)|forgot(?:ten)? (?:details?|preferences?|materials?|finishes?)|cannot remember|can['’]?t remember|unable to reproduce|reproduc(?:e|ing) previous|which (?:leather|material|thread|finish|paint|dye|hardware) (?:i|we) used|history (?:was|is) missing|records? (?:were|are) scattered|fragmented documentation)\b/iu.test(
+        evidence,
+      );
+    const materialHistoryAxis =
+      /\b(?:photos?|photographs?|notes?|record|records|history|materials?|leather|hardware|thread|dyes?|finishes?|edge paint|previous work|prior work|project history|versioned|searchable)\b/iu.test(
+        evidence,
+      );
+
+    return practitionerWorkflow && exactDocumentationPain && materialHistoryAxis;
   }
 
   private static isRestorationConservationEvidence(
@@ -2453,7 +3933,7 @@ export class RequestEvidenceAlignmentUtil {
       plannedQueries: input.plannedQueries ?? [],
     });
     return archetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' ||
-      archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS' ||
+      this.isRestorationConservationRequest(request, input.plannedQueries ?? []) ||
       archetype.archetype === 'FOOD_STORAGE_CONDITION_OPERATIONS' ||
       archetype.archetype === 'RENTAL_INVENTORY_OPERATIONS' ||
       this.isEnterpriseEmployeeAccessSecurityRequest(request) ||
@@ -2474,6 +3954,7 @@ export class RequestEvidenceAlignmentUtil {
       this.isHospitalOperatingRoomCoordinationRequest(request) ||
       this.isHospitalEquipmentTrackingRequest(request) ||
       this.isTransitCyberIncidentRequest(request) ||
+      this.isPublicProgramCostAttributionRequest(request) ||
       this.isPublicFiscalOversightRequest(request) ||
       this.isEcommerceProfitabilityRequest(request) ||
       this.isClockRepairServiceHistoryRequest(request) ||
@@ -2485,11 +3966,73 @@ export class RequestEvidenceAlignmentUtil {
       this.hasGenericWorkflowContract(request);
   }
 
+  private static isPromotionalProductListingEvidence(value: string): boolean {
+    const text = this.normalize(value);
+    if (!text) return false;
+    const marketplaceListing =
+      /\b(?:install(?:ing)?|download|launcher|built in game|launcher features|free and ad supported|ads keep|play anytime|quick setup|help center|app features|game features|available on google play|available on the app store)\b/iu.test(text);
+    const gameOrMarketing =
+      /\b(?:game|gaming|asmr|tap based|puzzle|home screen|ad supported|features|launcher)\b/iu.test(text);
+    const realComplaint =
+      /\b(?:review|complaint|problem|issue|failed|failure|lost|missing|wrong|incorrect|cannot|can'?t|difficult|frustrat|refund|charged|crash|bug|delay|rework|waste|missed)\w*\b/iu.test(text);
+    return marketplaceListing && gameOrMarketing && !realComplaint;
+  }
+
+  private static isPublicProgramCostAttributionRequest(value: string): boolean {
+    const publicActor = /\b(?:government agencies?|government departments?|public agencies?|public sector agencies?|ministr(?:y|ies)|municipalit(?:y|ies)|public authorities?)\b/iu.test(value);
+    const programBudget = /\b(?:public programs?|government programs?|service programs?|program budgets?|departmental budgets?|operating budgets?|public services?)\b/iu.test(value);
+    const costDrivers = /\b(?:staffing expenses?|staffing costs?|payroll|personnel costs?|procurement costs?|procurement spending|contractor payments?|contractor costs?|vendor payments?|service usage|service costs?|departmental spending|program expenditures?|operating expenses?|operating costs?)\b/iu.test(value);
+    const pressure = /\b(?:exceed(?:s|ed|ing)? (?:their )?budgets?|budget overruns?|overspending|cost pressure|financial pressure|cost attribution|cost drivers?|budget variance|inaccurate budget planning|financial oversight|identify where overspending|greatest financial pressure)\b/iu.test(value);
+    return publicActor && programBudget && costDrivers && pressure;
+  }
+
+  private static isPublicProgramCostAttributionSupportingEvidence(value: string): boolean {
+    if (this.isDeveloperOnlyEvidence(value)) return false;
+    const publicContext = /\b(?:government|public sector|public agency|public agencies|government agency|government agencies|government department|government departments|public authority|public authorities|municipal|municipality|ministr(?:y|ies)|public administration|public program|government program)\b/iu.test(value);
+    const costDriver = /\b(?:staffing|payroll|personnel cost|procurement|purchasing|contractor|vendor payment|supplier payment|service usage|service cost|departmental spending|program expenditure|operating expense|operating cost|public expenditure|government expenditure)\w*\b/iu.test(value);
+    const pressureOrAnalysis = /\b(?:budget overrun|overspend|overspending|cost overrun|cost pressure|financial pressure|cost driver|cost attribution|budget variance|expenditure analysis|spending analysis|budget planning|financial oversight|inefficien|waste|value for money|cost growth|higher costs?|lower costs?|cost reduction)\w*\b/iu.test(value);
+    const personalFinanceCollision = /\b(?:boyfriend|girlfriend|house down payment|personal savings?|personal finance|cheese wheel|stock portfolio|retirement account)\b/iu.test(value);
+    const constructionAuctionOnly = /\b(?:auction format|combinatorial auction|public works auction|road resurfacing|construction project|reserve price)\b/iu.test(value) && !/\b(?:program budget|departmental budget|staffing|contractor payment|service usage|operating expense|cost attribution)\b/iu.test(value);
+    return publicContext && costDriver && pressureOrAnalysis && !personalFinanceCollision && !constructionAuctionOnly;
+  }
+
+  private static isPublicProgramCostAttributionDirectEvidence(value: string): boolean {
+    if (!this.isPublicProgramCostAttributionSupportingEvidence(value)) return false;
+    const programIdentity = /\b(?:public program|government program|service program|program budget|departmental budget|government service|public service)\b/iu.test(value);
+    const attributionWorkflow = /\b(?:cost attribution|cost drivers?|identify where|identify which|departmental spending|staffing costs?|procurement costs?|contractor payments?|service usage|analyzed separately|analysed separately|fragmented|siloed|budget variance|budget overruns?)\b/iu.test(value);
+    const operationalImpact = /\b(?:budget overruns?|exceed(?:s|ed|ing)?\s+(?:(?:its|their|the)\s+)?budgets?|overspend|overspending|inaccurate budget(?:ing| planning)?|inefficient allocation|financial pressure|delay(?:ed|ing)? corrective(?: action)?|financial oversight|operating expenses?|operating costs?)\b/iu.test(value);
+    return programIdentity && attributionWorkflow && operationalImpact;
+  }
+
   private static isPublicFiscalOversightRequest(value: string): boolean {
-    return (
-      /\b(?:public institutions?|government|government agencies?|government departments?|public sector|public administration|ministr(?:y|ies)|municipal|municipality)\b/iu.test(value) &&
-      /\b(?:public budgets?|public funds?|government spending|public spending|procurement|procurement records?|invoices?|project expenses?|approval histor(?:y|ies)|duplicate payments?|duplicate invoices?|overspending|overpayments?|expenditure|financial management|budget planning|spending patterns?)\b/iu.test(value)
-    );
+    const explicitProcurementScope =
+      /\b(?:public procurement|government procurement|public purchasing|government purchasing|procurement platforms?|procurement officers?|procurement auditors?)\b/iu.test(value);
+    const publicActor =
+      /\b(?:public institutions?|government|government agencies?|government departments?|public sector|public administration|ministr(?:y|ies)|municipal|municipality|public authorities?|public agencies?|county governments?|local governments?)\b/iu.test(value);
+    const fiscalWorkflow =
+      /\b(?:public budgets?|public funds?|government spending|public spending|procurement|procurement records?|purchase orders?|vendors?|suppliers?|contracts?|pricing data|invoices?|project expenses?|approval histor(?:y|ies)|duplicate payments?|duplicate invoices?|overspending|overpayments?|expenditure|financial management|budget planning|spending patterns?)\b/iu.test(value);
+    return explicitProcurementScope || (publicActor && fiscalWorkflow);
+  }
+
+  private static isPublicFiscalOversightSupportingEvidence(value: string): boolean {
+    if (this.isDeveloperOnlyEvidence(value)) return false;
+    const explicitProcurement =
+      /\b(?:public procurement|government procurement|government purchasing|public purchasing|e-government procurement|procurement oversight|public tender|open tender|austender)\b/iu.test(value);
+    const publicActor =
+      /\b(?:government|public sector|public institutions?|public authorities?|public agencies?|county governments?|local governments?|ministr(?:y|ies)|municipal(?:ity|ities)?)\b/iu.test(value);
+    const procurementAnchor =
+      /\b(?:procurement|purchasing|tender|tenders|vendor|vendors|supplier|suppliers|purchase orders?|public contracts?|government contracts?)\b/iu.test(value);
+    const publicProcurement =
+      explicitProcurement || (publicActor && procurementAnchor) ||
+      /\b(?:public spending|government spending|public expenditure|government expenditure)\b/iu.test(value);
+    const procurementWorkflow =
+      /\b(?:procurement|purchasing|vendor|vendors|supplier|suppliers|purchase orders?|contracts?|contract histories?|procurement records?|records management|pricing|prices?|tender|tenders|spend|spending|audit|auditing|oversight|monitoring|selection|market structure|supplier concentration|control indicators?)\w*\b/iu.test(value);
+    const supportedFacet =
+      /\b(?:suspicious|anomal(?:y|ies|ous)|fraud|fraudulent|corruption|collusion|mark[- ]?ups?|inflation|irregularit(?:y|ies)|inefficien(?:cy|t)|waste|wasted|overspend|duplicate|concentration|dominance|dependency risk|reactive|risk[- ]based|probity audit|weak oversight|limited oversight|record management|records management|transparency|value for money|supplier monitoring|supplier selection|preventive risk|control indicator|investigation|investigations|accountability|performance challenge)\w*\b/iu.test(value);
+    const unrelatedFinance =
+      /\b(?:dodd[- ]frank|financial officers?' negotiation|ifrs|stock market|private equity|personal finance)\b/iu.test(value) &&
+      !publicProcurement;
+    return publicProcurement && procurementWorkflow && supportedFacet && !unrelatedFinance;
   }
 
   private static isMunicipalInfrastructureMaintenanceRequest(value: string): boolean {
@@ -2526,11 +4069,32 @@ export class RequestEvidenceAlignmentUtil {
     return retailActor && marginOrProfit && costDriver && frictionOrDecision && !receiptOnlyPraise;
   }
 
+  private static isEcommerceProfitabilitySupportingEvidence(value: string): boolean {
+    if (this.isDeveloperOnlyEvidence(value)) return false;
+
+    const ecommerceOrFulfillmentContext =
+      /\b(?:online retailers?|online stores?|e-?commerce|ecommerce merchants?|online merchants?|digital retailers?|merchants?|sellers?|fulfillment|fulfilment|3pl|warehouse|warehousing|carrier|carriers|last[- ]mile|parcel|delivery|deliveries|returns?|refunds?)\b/iu.test(value);
+    const logisticsCostMechanism =
+      /\b(?:shipping (?:costs?|charges?|delays?)|carrier charges?|freight costs?|fulfillment costs?|fulfilment costs?|warehouse costs?|storage costs?|return costs?|return rates?|refund costs?|damaged orders?|failed deliveries?|delivery failures?|inventory carrying costs?|landed cost|reverse logistics)\b/iu.test(value);
+    const financialImpact =
+      /\b(?:profitability|profit margins?|gross margins?|contribution margins?|unit economics|margin erosion|margin compression|unprofitable|financial impact|cost per order|product margin|product profitability|cash tied up|working capital|pricing decisions?|logistics spending|carrier selection)\b/iu.test(value);
+    const concreteFriction =
+      /\b(?:delay\w*|failure\w*|damag\w*|return\w*|refund\w*|cost\w*|expense\w*|overspend\w*|loss\w*|erosion|difficult|hard to|separate systems?|fragmented|siloed|inaccurate|poor selection|little real profit)\b/iu.test(value);
+
+    return ecommerceOrFulfillmentContext && logisticsCostMechanism &&
+      financialImpact && concreteFriction;
+  }
+
   private static isMediaContentProfitabilityRequest(value: string): boolean {
-    return (
-      /\b(?:streaming and digital entertainment companies?|streaming companies?|streaming services?|streaming platforms?|digital entertainment companies?|media and entertainment companies?|media companies?|content platforms?)\b/iu.test(value) &&
-      /\b(?:content profitability|sustainable revenue|subscription activity|subscription revenue|advertising income|ad revenue|production costs?|viewing behavior|viewer behavior|cancellations?|churn|promotional campaigns?|shows?|creators?|content categories?|financial return|revenue forecasts?|content investment|investment decisions?)\b/iu.test(value)
-    );
+    const actor =
+      /\b(?:streaming and digital entertainment companies?|streaming companies?|streaming services?|streaming platforms?|digital entertainment companies?|digital entertainment platforms?|entertainment platforms?|media and entertainment companies?|media companies?|digital content platforms?|content platforms?|video platforms?|gaming platforms?|game platforms?)\b/iu.test(
+        value,
+      );
+    const monetizationWorkflow =
+      /\b(?:content profitability|sustainable revenue|subscription activity|subscription revenue|advertising income|ad revenue|production costs?|viewing behavior|viewer behavior|content engagement|browsing behavior|content discovery|discover content|purchases?|purchase abandonment|checkout abandonment|paid experiences?|conversion|conversion funnel|transaction history|cancellations?|churn|promotional campaigns?|offers?|customer feedback|content recommendations?|missed sales|marketing spend|content categories?|shows?|creators?|financial return|revenue forecasts?|content investment|investment decisions?)\b/iu.test(
+        value,
+      );
+    return actor && monetizationWorkflow;
   }
 
   private static isMediaContentProfitabilityEvidence(value: string): boolean {
@@ -2538,21 +4102,54 @@ export class RequestEvidenceAlignmentUtil {
 
     const developerStreamingCollision =
       /\b(?:llm streaming|streaming llm|large language model|first token|time to first token|token streaming|next\.js|openai api|chat completion|server[- ]sent events?|sse)\b/iu.test(value);
-    const automotiveCollision =
-      /\b(?:automotive retail|car shopping|car buyers?|vehicle buyers?|carmax|dealerships?)\b/iu.test(value) &&
-      !/\b(?:streaming service|streaming platform|digital entertainment|media company|content catalog|show performance|subscriber)\b/iu.test(value);
-    if (developerStreamingCollision || automotiveCollision) return false;
+    const genericNonEntertainmentCollision =
+      /\b(?:digital teaching platforms?|education platforms?|classroom|mental health|body image|social media marketing strategy|b2b marketing|sales calls?|microsoft fabric|standard operating procedures?|sops?|travel blog|brompton|booking\.com)\b/iu.test(value) &&
+      !/\b(?:digital entertainment|streaming|gaming platform|game platform|video platform|media and entertainment|paid content|subscription content)\b/iu.test(
+        value,
+      );
+    if (developerStreamingCollision || genericNonEntertainmentCollision) return false;
 
     const mediaActor =
-      /\b(?:streaming services?|streaming platforms?|video streaming|digital entertainment|media and entertainment|media companies?|content platforms?|content catalogs?|streaming catalogs?|netflix|hulu|disney\+|prime video)\b/iu.test(value);
-    const revenueOrCost =
-      /\b(?:subscription revenue|subscriber revenue|advertising revenue|ad revenue|content revenue|production costs?|content costs?|licensing costs?|profitability|profit margin|financial return|return on investment|content roi|revenue forecast|investment return)\b/iu.test(value);
-    const performanceDriver =
-      /\b(?:viewing behavior|viewer behavior|watch time|audience engagement|subscriber retention|subscriber churn|cancellations?|show performance|series performance|creator performance|content category|content categories|promotion(?:al)? campaigns?|marketing spend|campaign roi|content investment|production spend)\b/iu.test(value);
-    const decisionOrFriction =
-      /\b(?:difficult to determine|hard to determine|unable to determine|attribution|attribute|siloed|separate systems?|fragmented|overspend|overspending|underperforming|low[- ]performing|poor investment|investment decision|forecast(?:ing)?|budget(?:ing)?|allocate|allocation|renewal decision|cancellation impact|profitability analysis)\b/iu.test(value);
+      /\b(?:streaming services?|streaming platforms?|video streaming|digital entertainment platforms?|digital entertainment|media and entertainment|media companies?|digital content platforms?|content platforms?|gaming platforms?|game platforms?|paid content platforms?|netflix|hulu|disney\+|prime video)\b/iu.test(
+        value,
+      );
+    const monetization =
+      /\b(?:purchases?|checkout|paid experiences?|paid content|subscription|subscription revenue|subscriber revenue|transactions?|transaction history|advertising revenue|ad revenue|content revenue|sales|revenue|profitability|financial return|return on investment|content roi)\b/iu.test(
+        value,
+      );
+    const behaviorOrOffer =
+      /\b(?:browsing behavior|content discovery|discover(?:ed|ing)? content|content engagement|viewing behavior|viewer behavior|watch time|audience engagement|subscriber retention|promotional campaigns?|promotion|offers?|recommendations?|customer feedback|purchase intent|conversion funnel)\b/iu.test(
+        value,
+      );
+    const friction =
+      /\b(?:abandon(?:ed|ment|ing)?|drop[- ]?off|conversion loss|low conversion|failed checkout|cancel(?:led|lation|ing)?|churn|lost interest|missed sales?|ineffective promotions?|poor recommendations?|marketing waste|overspend|overspending|difficult to identify|hard to identify|unable to identify|attribution|siloed|separate systems?|fragmented|underperforming)\b/iu.test(
+        value,
+      );
 
-    return mediaActor && revenueOrCost && performanceDriver && decisionOrFriction;
+    return mediaActor && monetization && behaviorOrOffer && friction;
+  }
+
+  private static isMediaContentProfitabilitySupportingSignal(
+    value: string,
+  ): boolean {
+    if (this.isDeveloperOnlyEvidence(value)) return false;
+    const mediaActor =
+      /\b(?:streaming services?|streaming platforms?|video streaming|digital entertainment platforms?|digital entertainment|media and entertainment|digital content platforms?|gaming platforms?|game platforms?|paid content platforms?|netflix|hulu|disney\+|prime video)\b/iu.test(
+        value,
+      );
+    const monetization =
+      /\b(?:purchase|purchases|checkout|paid experience|paid content|subscription|transaction|conversion|sales|revenue|profitability|ad revenue)\w*\b/iu.test(
+        value,
+      );
+    const relevantFacet =
+      /\b(?:abandon|drop[- ]?off|cancel|churn|conversion|content discovery|browsing|engagement|promotion|offer|recommendation|customer feedback|missed sales|marketing spend|transaction history|attribution|siloed|fragmented)\w*\b/iu.test(
+        value,
+      );
+    const genericCollision =
+      /\b(?:digital teaching platforms?|education platforms?|mental health|body image|b2b marketing|sales calls?|microsoft fabric|travel blog|brompton)\b/iu.test(
+        value,
+      ) && !mediaActor;
+    return mediaActor && monetization && relevantFacet && !genericCollision;
   }
 
   private static isLogisticsProfitabilityRequest(value: string): boolean {
@@ -2588,6 +4185,51 @@ export class RequestEvidenceAlignmentUtil {
       frictionOrDecision &&
       !custodyOnlyCollision &&
       !consumerOrTechnicalCollision
+    );
+  }
+
+  private static isPublicTransportationProfitabilityRequest(
+    value: string,
+  ): boolean {
+    return (
+      /\b(?:public transportation|public transport|public transit|transit operators?|transit agencies?|transit authorities?|bus operators?|bus network|metro operators?|rail transit|municipal transit)\b/iu.test(value) &&
+      /\b(?:operating costs?|fuel expenses?|fuel costs?|maintenance costs?|passenger demand|passenger volumes?|driver hours?|driver schedules?|ticket revenue|fare revenue|route profitability|route efficiency|financially inefficient|budget forecasts?|underused services?|schedule adjustments?)\b/iu.test(value)
+    );
+  }
+
+  private static isPublicTransportationProfitabilitySupportingEvidence(
+    value: string,
+  ): boolean {
+    if (this.isDeveloperOnlyEvidence(value)) return false;
+
+    const publicTransitIdentity =
+      /\b(?:public transportation|public transport|public transit|transit operators?|transit agencies?|transit authorities?|municipal transit|city transit|bus service|bus services|bus network|bus route|bus routes|bus operators?|metro|subway|rail transit|urban rail|mass transit)\b/iu.test(value);
+    if (!publicTransitIdentity) return false;
+
+    const aviationOrFreightOnly =
+      /\b(?:airline|airlines|air canada|jetblue|lufthansa|qantas|flight|flights|airfare|airport|aviation|jet fuel|air cargo|shipping|container shipping|freight forwarding)\b/iu.test(value) &&
+      !publicTransitIdentity;
+    if (aviationOrFreightOnly) return false;
+
+    const costOrRevenue =
+      /\b(?:operating costs?|network operating costs?|fuel expenses?|fuel costs?|maintenance costs?|maintenance expenses?|ticket revenue|fare revenue|route revenue|route profitability|cost per route|cost efficiency|financial efficiency|budget forecast|budget forecasts|cost savings?|reduce costs?|reducing costs?|minimi[sz]e costs?|financially inefficient|unprofitable)\w*\b/iu.test(value);
+    const routeScheduleDemand =
+      /\b(?:route|routes|route performance|route profitability|route efficiency|schedule|schedules|schedule adjustments?|service adjustments?|passenger demand|passenger volumes?|ridership|driver hours?|driver schedules?|travel times?|bus travel times?|vehicle utilization|fleet utilization|underused services?|service frequency|network design)\w*\b/iu.test(value);
+    const problemOrDecision =
+      /\b(?:higher|rising|unnecessary|waste|wasted|inefficient|inefficiency|underused|unprofitable|poor scheduling|reduce|reduction|reducing|minimi[sz]e|optimi[sz]e|profitability|cost pressure|budget|forecast|decision|adjustment|performance)\w*\b/iu.test(value);
+
+    return costOrRevenue && routeScheduleDemand && problemOrDecision;
+  }
+
+  private static isPublicTransportationProfitabilityEvidence(
+    value: string,
+  ): boolean {
+    if (!this.isPublicTransportationProfitabilitySupportingEvidence(value)) {
+      return false;
+    }
+
+    return /\b(?:separate systems?|analy[sz]ed separately|siloed|fragmented|difficult to identify|hard to identify|unable to identify|resource waste|wasted resources?|financially inefficient|poor scheduling decisions?|inaccurate budget forecasts?|underused services?)\b/iu.test(
+      value,
     );
   }
 
@@ -2720,7 +4362,7 @@ export class RequestEvidenceAlignmentUtil {
 
   private static isBridalAlterationWorkflowRequest(value: string): boolean {
     return (
-      /\b(?:alteration specialists?|bridal alteration specialists?|clothing alteration specialists?|seamstresses?|bridal seamstresses?|dressmakers?|bridal dressmakers?|tailors?|tailoring|alteration shops?|wedding dress alterations?|bridal alterations?)\b/iu.test(value) &&
+      /\b(?:alteration specialists?|bridal alterations? specialists?|clothing alteration specialists?|seamstress(?:es)?|bridal seamstress(?:es)?|dressmakers?|bridal dressmakers?|tailors?|tailoring|alteration shops?|wedding dress alterations?|bridal alterations?)\b/iu.test(value) &&
       /\b(?:dress measurements?|customer measurements?|fitting notes?|requested modifications?|requested changes?|alteration requests?|fabric details?|accessory requirements?|customer approvals?|approved alterations?|pickup deadlines?|fitting appointments?|incorrect adjustments?|repeated fittings?|forgotten requests?|fabric damage|delayed completion)\b/iu.test(value)
     );
   }
@@ -2728,20 +4370,53 @@ export class RequestEvidenceAlignmentUtil {
   private static isBridalAlterationWorkflowEvidence(value: string): boolean {
     if (this.isDeveloperOnlyEvidence(value)) return false;
 
+    /*
+     * DIRECT requires an actual alterations provider/practitioner identity.
+     * Merely saying "dress alterations" describes an activity, not evidence
+     * that a bridal alteration specialist experienced the requester workflow.
+     */
     const tradeActor =
-      /\b(?:bridal alterations?|wedding dress alterations?|alteration specialists?|alteration shops?|seamstresses?|dressmakers?|tailors?|tailoring|dress alterations?|gown alterations?)\b/iu.test(value);
+      /\b(?:alteration specialists?|bridal alterations? specialists?|alteration shops?|bridal alteration shops?|seamstress(?:es)?|bridal seamstress(?:es)?|dressmakers?|bridal dressmakers?|tailors?|tailoring businesses?|tailoring shops?)\b/iu.test(
+        value,
+      );
     const workflow =
-      /\b(?:measurements?|fitting notes?|fittings?|alteration requests?|requested changes?|requested modifications?|hemming|bustle|taking in|letting out|fabric details?|fabric samples?|accessories|customer approval|client approval|approved alterations?|revision|pickup date|pickup deadline|completion date)\b/iu.test(value);
+      /\b(?:measurements?|fitting notes?|fittings?|alteration requests?|requested changes?|requested modifications?|hemming|bustle|taking in|letting out|fabric details?|fabric samples?|beadwork|accessories|customer approval|client approval|approved alterations?|revision|pickup date|pickup deadline|completion date)\b/iu.test(value);
     const friction =
       /\b(?:wrong|incorrect|missed|forgotten|lost|scattered|handwritten|paper notes?|messages?|miscommunication|repeated fittings?|rework|fabric damage|damaged fabric|delay|delayed|late|wrong alteration|wrong measurement|measurement error|approval confusion|wrong version)\b/iu.test(value);
     const weddingPlanningOnly =
-      /\b(?:wedding planner|wedding planning app|guest list|venue booking|vendor directory|rsvp|seating chart)\b/iu.test(value) &&
-      !tradeActor;
+      /\b(?:wedding planner|wedding planning app|guest list|venue booking|vendor directory|rsvp|seating chart|bachelorette|airbnb|flights?|venmo|maid of honor|wedding party costs?)\b/iu.test(value) &&
+      !/\b(?:alteration specialist|alteration shop|seamstress|dressmaker|tailor|fitting note|measurement|hemming|bustle)\b/iu.test(value);
     const apparelShoppingOnly =
       /\b(?:shopping cart|bridesmaid shopping|dress shopping|quick ship|checkout)\b/iu.test(value) &&
-      !/\b(?:alteration|seamstress|dressmaker|tailor|fitting)\b/iu.test(value);
+      !/\b(?:alteration specialist|alteration shop|seamstress|dressmaker|tailor|fitting)\b/iu.test(value);
 
     return tradeActor && workflow && friction && !weddingPlanningOnly && !apparelShoppingOnly;
+  }
+
+  /**
+   * Partial bridal-alterations evidence may be SUPPORTING when it proves one
+   * fitting/measurement/alteration failure on the same garment workflow, even
+   * if the person doing the alteration is not a professional. It must never be
+   * promoted to DIRECT unless the provider identity contract above is met.
+   */
+  private static isBridalAlterationWorkflowSupportingEvidence(
+    value: string,
+  ): boolean {
+    if (this.isDeveloperOnlyEvidence(value)) return false;
+
+    const weddingCostOrParticipationOnly =
+      /\b(?:maid of honor|bachelorette|airbnb|flights?|venmo|split costs?|wedding party costs?|bridesmaid costs?|travel costs?|hotel costs?|spreadsheet)\b/iu.test(value) &&
+      !/\b(?:alteration|alterations|seamstress|dressmaker|tailor|fitting|measurement|hemming|hemmed|bustle|taking in|letting out|beadwork)\b/iu.test(value);
+    if (weddingCostOrParticipationOnly) return false;
+
+    const sameGarmentOrAlterationWorkflow =
+      /\b(?:bridal gown|wedding gown|wedding dress|bridal dress|bridesmaid dress|bridesmaid dresses|formal gown|dress alterations?|gown alterations?|bridal alterations?|alteration appointment|alteration appointments?|fitting appointment|fitting appointments?|first alteration|seamstress|dressmaker|tailor)\b/iu.test(value);
+    const alterationAxis =
+      /\b(?:alteration|alterations|measurement|measurements|fitting|fittings|hemming|hemmed|hem|bustle|taking in|letting out|resize|resizing|fit|fabric|beadwork|requested change|approved change|pickup|completion)\w*\b/iu.test(value);
+    const painOrOutcome =
+      /\b(?:wrong|incorrect|mismatch|different|doesn['’]?t fit|didn['’]?t fit|poor fit|too tight|too loose|missed|forgotten|lost|rework|redo|mishap|mistake|error|damage|damaged|delay|delayed|late|not ready|unfinished|last[- ]minute|uncertain|uncertainty|confusion)\w*\b/iu.test(value);
+
+    return sameGarmentOrAlterationWorkflow && alterationAxis && painOrOutcome;
   }
 
   private static isClockRepairServiceHistoryRequest(value: string): boolean {
@@ -2945,6 +4620,44 @@ export class RequestEvidenceAlignmentUtil {
       ) && !transitIdentity;
 
     return transitIdentity && disruption && operations && !freightCollision;
+  }
+
+  private static isWatchStrapSpecificationRequest(value: string): boolean {
+    return (
+      /\b(?:watch strap makers?|watch band makers?|custom watch straps?|custom watch bands?|bespoke watch straps?|leather watch straps?|leather watch bands?|watch straps?|watch bands?)\b/iu.test(value) &&
+      /\b(?:wrist measurements?|wrist sizes?|strap measurements?|strap lengths?|strap widths?|lug widths?|leather types?|material choices?|stitching styles?|buckle selections?|color preferences?|colour preferences?|design revisions?|revision requests?|customer approvals?|approved specifications?|wrong sizes?|sizing errors?|remakes?|rework|wasted leather|wasted supplies?|delayed orders?)\b/iu.test(value)
+    );
+  }
+
+  private static hasWatchStrapIdentity(value: string): boolean {
+    return /\b(?:watch straps?|watch bands?|wristwatch straps?|wristwatch bands?|leather watch straps?|leather watch bands?|custom watch straps?|bespoke watch straps?|watch strap makers?|watch band makers?)\b/iu.test(value);
+  }
+
+  private static isWatchStrapDirectEvidence(value: string): boolean {
+    if (this.isDeveloperOnlyEvidence(value) || !this.hasWatchStrapIdentity(value)) {
+      return false;
+    }
+    const workflow =
+      /\b(?:wrist measurements?|wrist sizes?|strap measurements?|strap lengths?|strap widths?|lug widths?|leather types?|material selections?|material choices?|stitching styles?|thread colors?|buckles?|buckle selections?|color preferences?|colour preferences?|custom orders?|design revisions?|revision requests?|customer approvals?|approved specifications?|final approved|customer messages?)\b/iu.test(value);
+    const pain =
+      /\b(?:wrong sizes?|incorrect sizes?|sizing errors?|measurement errors?|measurement mistakes?|wrong measurements?|incorrect measurements?|wrong leather|incorrect leather|wrong materials?|incorrect materials?|material mismatch(?:es)?|changed designs?|changed mind|missed revisions?|lost revisions?|wrong versions?|outdated versions?|approval confusion|unapproved|remakes?|remade|rework|repeated adjustments?|wasted leather|wasted materials?|wasted supplies|delays?|delayed orders?|hard to confirm|difficult to confirm|scattered|lost notes?|missing instructions?)\b/iu.test(value);
+    return workflow && pain;
+  }
+
+  private static isWatchStrapSupportingEvidence(value: string): boolean {
+    if (this.isWatchStrapDirectEvidence(value)) return true;
+    if (this.isDeveloperOnlyEvidence(value)) return false;
+
+    const adjacentLeathercraft =
+      /\b(?:leathercraft|leather craft|leatherwork|leather worker|leatherworker|leather artisan|leather goods maker|custom leather|bespoke leather|leather workshop|leather shop)\b/iu.test(value);
+    const workflowFacet =
+      /\b(?:measurements?|sizing|dimensions?|leather types?|material selections?|material choices?|stitching|thread colors?|hardware|buckles?|custom orders?|client orders?|customer orders?|design revisions?|revision requests?|customer approvals?|client approvals?|approved specifications?|final approved|customer messages?|client messages?)\b/iu.test(value);
+    const samePain =
+      /\b(?:wrong sizes?|incorrect sizes?|sizing errors?|measurement errors?|measurement mistakes?|wrong measurements?|wrong leather|incorrect leather|wrong materials?|material mismatch(?:es)?|changed designs?|changed mind|missed revisions?|lost revisions?|wrong versions?|approval confusion|remakes?|remade|rework|repeated work|repeated adjustments?|wasted leather|wasted materials?|wasted supplies|delays?|delayed orders?|scattered notes?|lost notes?|missing instructions?)\b/iu.test(value);
+    const genericFashionOnly =
+      /\b(?:fashion trends?|style trends?|runway|celebrity fashion|wearable technology|smart textile)\b/iu.test(value) &&
+      !/\b(?:custom order|measurement|sizing|revision|approval|remake|rework|material selection)\b/iu.test(value);
+    return adjacentLeathercraft && workflowFacet && samePain && !genericFashionOnly;
   }
 
   private static isInstrumentCaseSpecificationRequest(value: string): boolean {
@@ -3184,12 +4897,20 @@ export class RequestEvidenceAlignmentUtil {
       /\b(?:manufacturing|manufacturer|manufacturers|factory|factories|industrial production|production line|production lines|shop floor|plant operations|just[- ]in[- ]time manufacturing|smart manufacturing)\b/iu.test(
         evidence,
       );
+    const adjacentSupplyChainIdentity =
+      /\b(?:supply chain|logistics|fulfillment|fulfilment|warehouse|warehousing|inventory|freight|shipping|shipment|shipments|distribution|3pl|third[- ]party logistics|procurement|supplier|suppliers|landed cost)\w*\b/iu.test(
+        evidence,
+      );
     const costOrLossDriver =
-      /\b(?:production costs?|manufacturing costs?|cost per unit|cost variance|cost overrun|raw material variability|raw material costs?|material costs?|supplier prices?|supplier costs?|uncertain costs?|machine downtime|downtime|labor costs?|labour costs?|defect rates?|quality defects?|scrap rates?|scrap|rework|maintenance spending|maintenance costs?|bottleneck|bottlenecks|yield loss|productivity loss|margin|profitability)\w*\b/iu.test(
+      /\b(?:production costs?|manufacturing costs?|cost per unit|cost variance|cost overrun|raw material variability|raw material costs?|material costs?|supplier prices?|supplier costs?|supplier delays?|inventory shortages?|inventory carrying costs?|inventory holding costs?|storage costs?|warehouse costs?|freight costs?|shipping costs?|transportation costs?|landed costs?|hidden fees?|cash tied up|working capital|delivery delays?|machine downtime|downtime|labor costs?|labour costs?|defect rates?|quality defects?|scrap rates?|scrap|rework|maintenance spending|maintenance costs?|bottleneck|bottlenecks|yield loss|productivity loss|margin|profitability)\w*\b/iu.test(
+        evidence,
+      );
+    const financialImpact =
+      /\b(?:cost|costs|expense|expenses|profit|profitability|margin|margins|cash|working capital|payback|roi|return on investment|landed cost|financial impact|financial loss|financial losses)\w*\b/iu.test(
         evidence,
       );
     const analysisOrPressure =
-      /\b(?:bottleneck analysis|bottleneck management|reduction of bottleneck|cost analysis|cost driver|variance|variability|uncertain|increase|rising|higher|reduce|reduction|efficien|inefficien|optimization|optimisation|profit|margin|planning|sequencing|root cause|data[- ]driven)\w*\b/iu.test(
+      /\b(?:bottleneck analysis|bottleneck management|reduction of bottleneck|cost analysis|cost driver|variance|variability|uncertain|increase|rising|higher|reduce|reduction|efficien|inefficien|optimization|optimisation|profit|margin|planning|sequencing|root cause|data[- ]driven|compare|comparison|trade[- ]off|cash cycle|delivery window|inventory days?|total cost)\w*\b/iu.test(
         evidence,
       );
     const unrelatedOnly =
@@ -3200,12 +4921,43 @@ export class RequestEvidenceAlignmentUtil {
         evidence,
       );
 
-    return (
+    const directManufacturingSupport =
       manufacturingIdentity &&
       costOrLossDriver &&
-      (analysisOrPressure || /\b(?:cost|profitability|margin)\w*\b/iu.test(evidence)) &&
-      !unrelatedOnly
-    );
+      (analysisOrPressure || financialImpact);
+    const crossDomainMechanismSupport =
+      adjacentSupplyChainIdentity &&
+      costOrLossDriver &&
+      financialImpact &&
+      (analysisOrPressure ||
+        /\b(?:delay|shortage|storage|warehouse|freight|shipping|transport|inventory|supplier)\w*\b/iu.test(
+          evidence,
+        ));
+
+    return (directManufacturingSupport || crossDomainMechanismSupport) && !unrelatedOnly;
+  }
+
+  private static isHealthcareSupplyCostEfficiencyRequest(value: string): boolean {
+    const request = this.normalize(value);
+    return /\b(?:healthcare networks?|health systems?|hospital networks?|hospital systems?|hospitals?|clinics?|medical centers?)\b/iu.test(request) &&
+      /\b(?:procurement|emergency purchases?|emergency orders?|medical inventory|supply inventory|expired supplies?|inventory expiration|stock distribution|inventory imbalance|inter[- ]facility transfers?|transfer activity|supplier invoices?|usage data|transportation costs?|delivery costs?)\b/iu.test(request) &&
+      /\b(?:operating expenses?|operating costs?|unnecessary costs?|excess inventory|avoidable emergency orders?|inefficient transfers?|budget|budgeting|cost attribution|financial expenses?)\b/iu.test(request);
+  }
+
+  private static isHealthcareSupplyCostEfficiencySupportingEvidence(value: string): boolean {
+    const evidence = this.normalize(value);
+    if (!evidence || this.isDeveloperOnlyEvidence(evidence)) return false;
+    const healthcare = /\b(?:healthcare|health system|hospital|hospitals|clinic|clinics|medical center|hospital pharmacy|pharmacy department)\b/iu.test(evidence);
+    const supply = /\b(?:procurement|purchasing|purchase order|emergency purchase|emergency order|medical suppl(?:y|ies)|inventory|stockout|stock[- ]out|overstock|excess stock|expired inventory|expired suppl(?:y|ies)|expiration|expiry|inter[- ]facility transfer|inventory transfer|stock redistribution|supplier invoice|transportation cost|delivery cost|logistics cost)\w*\b/iu.test(evidence);
+    const impact = /\b(?:cost|expense|spend|budget|financial|waste|loss|avoidable|emergency|inefficien|overstock|excess inventory|expired|stockout)\w*\b/iu.test(evidence);
+    const wrong = /\b(?:salary|career|resume|cv|job application|how much would i make|diagnostic accuracy|disease detection|treatment efficacy)\b/iu.test(evidence) && !/\b(?:inventory|procurement|supply|stock|cost)\w*\b/iu.test(evidence);
+    return healthcare && supply && impact && !wrong;
+  }
+
+  private static isHealthcareSupplyCostEfficiencyDirectEvidence(value: string): boolean {
+    if (!this.isHealthcareSupplyCostEfficiencySupportingEvidence(value)) return false;
+    const evidence = this.normalize(value);
+    return /\b(?:separate systems?|silo|fragmented|excess inventory|expired|stockout|emergency order|emergency purchase|unnecessary cost|avoidable cost|inefficient transfer|inventory imbalance|uneven stock|budget variance|waste|delay|shortage|overstock)\w*\b/iu.test(evidence);
   }
 
   private static isHospitalCostResourceEfficiencyRequest(value: string): boolean {
@@ -3299,8 +5051,37 @@ export class RequestEvidenceAlignmentUtil {
       /\b(?:injury|injuries|recovery|rehabilitation|training loads?|pain reports?|mobility measurements?|performance data|return to play|return-to-play|reinjury|re-injury)\b/iu.test(value);
   }
 
+  private static isExactPictureFrameRestorationEvidenceIdentity(value: string): boolean {
+    const evidence = this.normalize(value);
+    const explicitFrameObject =
+      /\b(?:picture frame|picture-frame|antique picture frame|antique frame|gilded frame|ornate picture frame|art frame|painting frame|frame conservator|frame conservation|picture frame restoration|picture frame repair|frame restorer|picture frame restorer)\b/iu.test(evidence);
+    const restorationWorkflow =
+      /\b(?:restor\w*|conserv\w*|repair\w*|condition|treatment|gild\w*|finish\w*|overpaint\w*|decorative|molding|moulding|gesso|gold leaf|material|previous repair|repair history)\b/iu.test(evidence);
+    const architecturalCollision =
+      /\b(?:door|doors|doorway|entrance door|vestibule|transom|window frame|window|building entrance|architectural woodwork|door leaf|door leaves|door closer|electric bolt|espagnolette)\b/iu.test(evidence) &&
+      !/\b(?:picture frame|antique frame|gilded frame|art frame|painting frame)\b/iu.test(evidence);
+    const technicalCollision =
+      /\b(?:in-plane shear|shear test|composite materials?|finite element|mechanical test|test specimen|digital photo frame|frame rate|iframe|css frame|video frame)\b/iu.test(evidence);
+    return explicitFrameObject && restorationWorkflow && !architecturalCollision && !technicalCollision;
+  }
+
+  private static isPublicEducationResourceAllocationRequest(value: string): boolean {
+    return /\b(?:public education authorities?|education authorities?|school districts?|education departments?|ministr(?:y|ies) of education|public school systems?|public schools?)\b/iu.test(value) &&
+      /\b(?:teachers?|staffing|learning resources?|intervention programs?|enrollment|attendance|assessment results?|school reports?|resource distribution|resource allocation|overcrowded classrooms?|education spending)\b/iu.test(value);
+  }
+
+  private static isPublicEducationResourceAllocationSupportingEvidence(value: string): boolean {
+    const evidence = this.normalize(value);
+    if (this.isDeveloperOnlyEvidence(evidence)) return false;
+    const educationIdentity = /\b(?:public schools?|school districts?|education authorities?|education department|education activity|secondary schools?|students?|school system|education management information system|emis)\b/iu.test(evidence);
+    const allocationFacet = /\b(?:allocation of resources?|resource allocation|resource distribution|funding allocation|staffing levels?|staff shortage|teacher shortage|additional teachers?|learning resources?|students? needs?|overcrowded classrooms?)\b/iu.test(evidence);
+    const dataFacet = /\b(?:education management information system|emis|student records?|school records?|enrollment|attendance|assessment|tracking of students? records?|school performance data|early warning)\b/iu.test(evidence);
+    const problemSignal = /\b(?:need|needs|shortage|gap|uneven|inequit|overcrowd|delay|delayed|improved allocation|better meet|difficult|fragmented|separate systems?|tracking|understaff|insufficient|lack of resources?)\w*\b/iu.test(evidence);
+    return educationIdentity && problemSignal && (allocationFacet || dataFacet);
+  }
+
   private static isFrameRestorationWorkflowRequest(value: string): boolean {
-    return /\b(?:independent )?(?:frame restoration specialists?|picture frame restorers?|frame restorers?|antique frame restorers?|gilded frame restorers?|frame conservation specialists?|picture frame restoration workshops?|frame restoration workshops?)\b/iu.test(value) &&
+    return /\b(?:independent )?(?:frame restoration specialists?|picture frame restoration specialists?|picture frame restorers?|frame restorers?|antique frame restorers?|gilded frame restorers?|frame conservation specialists?|picture frame restoration workshops?|frame restoration workshops?)\b/iu.test(value) &&
       /\b(?:damaged frames?|material selections?|decorative details?|repair notes?|finish preferences?|customer approvals?|approved restoration|completion dates?|promised completion dates?|photographs?|handwritten notes?|physical samples?|incorrect finishes?|repeated repairs?|lost design details?|wasted materials?|delayed customer orders?)\b/iu.test(value);
   }
 
@@ -3451,6 +5232,72 @@ export class RequestEvidenceAlignmentUtil {
       /\b(?:wrong|incorrect|mismatch|forgotten|missing|lost|scattered|repeated|repeat|delayed|late|inconsistent|hard to track|difficult to track|incomplete|overlooked|miscommunication)\w*\b/iu.test(evidence);
 
     return repairFacet && workflowFacet && friction;
+  }
+
+  private static isAgriculturalDistributionProfitabilityRequest(value: string): boolean {
+    return /\b(?:agricultural distributors?|agriculture distributors?|produce distributors?|fresh produce distributors?|crop distributors?|farm produce distributors?|agricultural wholesalers?|produce wholesalers?)\b/iu.test(value) &&
+      /\b(?:storage losses?|storage costs?|warehouse costs?|transportation delays?|transport delays?|delivery delays?|delivery costs?|transportation costs?|market prices?|price fluctuations?|price volatility|spoilage|harvest records?|warehouse inventory|shipment activity|financial expenses?|crop profitability|product profitability|profit margins?|route profitability|pricing decisions?)\b/iu.test(value);
+  }
+
+  private static isAgriculturalDistributionProfitabilitySupportingEvidence(value: string): boolean {
+    const evidence = this.normalize(value);
+    if (!evidence || this.isDeveloperOnlyEvidence(evidence)) return false;
+
+    const foreignFinanceCollision =
+      /\b(?:stock market|equity market|asset pricing|business cycle|security prices?|financial market liquidity|vehicle pricing|rail market)\b/iu.test(evidence) &&
+      !/\b(?:agricultur|crop|produce|farm|postharvest|food distribution)\w*\b/iu.test(evidence);
+    const energyCollision =
+      /\b(?:hydrogen distribution|energy storage|battery storage|electricity storage)\b/iu.test(evidence) &&
+      !/\b(?:agricultur|crop|produce|farm|postharvest)\w*\b/iu.test(evidence);
+    if (foreignFinanceCollision || energyCollision) return false;
+
+    const agricultureContext =
+      /\b(?:agricultural|agriculture|crop|crops|produce|fresh produce|farm produce|postharvest|post-harvest|agricultural market|produce market|palm oil|tomato|fruit|vegetable|grain|cereal)\b/iu.test(evidence);
+    const distributionContext =
+      /\b(?:distributor|distribution|wholesale|wholesaler|supply chain|farm-to-market|market chain|warehouse|storage|shipment|transport|transportation|delivery|route|logistics|postharvest)\w*\b/iu.test(evidence);
+    const financialFacet =
+      /\b(?:profitability|profit margins?|margin|revenue|financial loss|economic loss|costs?|expenses?|pricing|price volatility|market price|price fluctuation|route profitability|gross margin|net margin)\w*\b/iu.test(evidence);
+    const lossOrDecisionFacet =
+      /\b(?:spoilage|spoil|postharvest loss|storage loss|transport delay|delivery delay|higher cost|rising cost|losses?|poor pricing|pricing decision|inefficient route|waste|wasted|inventory loss|quality loss)\w*\b/iu.test(evidence);
+    const adjacentLogisticsContext =
+      /\b(?:3pl|third[- ]party logistics|fulfillment|warehouse|freight|carrier|shipping|shipment|transport|delivery|distribution|route|inventory storage|storage fees?|landed cost)\w*\b/iu.test(evidence);
+    const explicitEconomicMechanism =
+      /\b(?:profitability|profit margins?|gross margin|net margin|margin erosion|cost per order|all[- ]in cost|landed cost|storage fees?|warehouse costs?|freight costs?|carrier costs?|shipping costs?|delivery costs?|higher cost|rising cost|financial loss|economic loss)\w*\b/iu.test(evidence);
+
+    const agricultureSupport =
+      agricultureContext && distributionContext && financialFacet &&
+      (lossOrDecisionFacet || /\b(?:profitability|margin|economic loss|financial loss)\b/iu.test(evidence));
+
+    /*
+     * Explicitly selected Logistics/Finance evidence may support one causal
+     * facet without pretending to prove the agricultural actor itself.  Keep
+     * this lane narrow: adjacent evidence must connect a real logistics
+     * operation to an economic mechanism, not merely mention a delayed parcel.
+     */
+    const adjacentEconomicFriction =
+      lossOrDecisionFacet ||
+      /\b(?:above target|over budget|budget benchmark|make the math work|cannot afford|can't afford|too expensive|cost pressure|margin pressure|forcing (?:a )?(?:route|carrier|warehouse|fulfillment|pricing) change|forced (?:a )?(?:route|carrier|warehouse|fulfillment|pricing) change)\b/iu.test(evidence);
+    const adjacentCrossDomainSupport =
+      !agricultureContext && adjacentLogisticsContext && financialFacet &&
+      explicitEconomicMechanism && adjacentEconomicFriction;
+
+    return agricultureSupport || adjacentCrossDomainSupport;
+  }
+
+  private static isAgriculturalDistributionProfitabilityEvidence(value: string): boolean {
+    const evidence = this.normalize(value);
+    if (!this.isAgriculturalDistributionProfitabilitySupportingEvidence(evidence)) {
+      return false;
+    }
+    const distributorIdentity =
+      /\b(?:agricultural distributor|produce distributor|fresh produce distributor|crop distributor|farm produce distributor|agricultural wholesaler|produce wholesaler)\w*\b/iu.test(evidence);
+    const operationalFacet =
+      /\b(?:storage|warehouse|inventory|spoilage|transport|transportation|delivery|shipment|route|market price|price volatility|price fluctuation)\w*\b/iu.test(evidence);
+    const profitabilityFacet =
+      /\b(?:profitability|profit margin|margin|financial loss|economic loss|pricing decision|route profitability|crop profitability|product profitability)\w*\b/iu.test(evidence);
+    const friction =
+      /\b(?:delay|delayed|loss|losses|spoilage|waste|wasted|higher cost|rising cost|fragmented|siloed|separate systems?|reviewed separately|difficult|hard to determine|inaccurate|poor pricing|inefficient)\w*\b/iu.test(evidence);
+    return distributorIdentity && operationalFacet && profitabilityFacet && friction;
   }
 
   private static isAgriculturalExportProfitabilityRequest(value: string): boolean {
@@ -3767,18 +5614,31 @@ export class RequestEvidenceAlignmentUtil {
     evidence: string,
   ): boolean {
     if (!this.isTransactionAccountAbuseRequest(request)) return false;
-    if (this.isClearlyForeignTransactionAbuseEvidence(evidence)) return false;
+    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
+      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(request, evidence);
+    }
+    if (this.isMunicipalPaymentAbuseRequest(request)) {
+      return this.isMunicipalPaymentAbuseSupportingEvidence(evidence);
+    }
+    if (this.isClearlyForeignTransactionAbuseEvidence(request, evidence)) return false;
 
-    const transportIdentity = this.hasTransportationIdentity(evidence);
+    const identityOverlap = this.transactionAbuseIdentityOverlap(request, evidence);
+    const actorAligned = this.dynamicActorAligned(request, evidence);
+    const mechanismOverlap = this.transactionAbuseMechanismOverlap(request, evidence);
     const fraudRisk = this.hasTransactionAbuseRisk(evidence);
     const axisCount = this.transactionAbuseAxisCount(evidence);
-    const accountDeviceSecondary =
-      /\b(?:account takeover|credential stuffing|compromised account|unauthorized account|fraudulent user session)\b/iu.test(evidence) &&
-      /\b(?:device fingerprint|device signal|network source|login|authentication|session|behavior|behaviour)\w*\b/iu.test(evidence);
 
+    /*
+     * Pre-AI triage should be recall-oriented: two distinctive requester
+     * identity anchors plus one abuse axis are enough to let Community AI
+     * inspect the item. This admits evidence such as "federal student aid
+     * fraud" for a university tuition/refund problem without admitting a
+     * generic Amazon refund merely because the author happens to be a student.
+     */
     return (
-      (transportIdentity && fraudRisk && axisCount >= 1) ||
-      (accountDeviceSecondary && fraudRisk)
+      fraudRisk &&
+      axisCount >= 1 &&
+      (identityOverlap >= 1 || mechanismOverlap >= 2 || (actorAligned && mechanismOverlap >= 1))
     );
   }
 
@@ -3787,22 +5647,30 @@ export class RequestEvidenceAlignmentUtil {
     evidence: string,
   ): boolean {
     if (!this.isTransactionAccountAbuseRequest(request)) return false;
-    if (this.isClearlyForeignTransactionAbuseEvidence(evidence)) return false;
+    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
+      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(request, evidence);
+    }
+    if (this.isMunicipalPaymentAbuseRequest(request)) {
+      return this.isMunicipalPaymentAbuseSupportingEvidence(evidence);
+    }
+    if (this.isClearlyForeignTransactionAbuseEvidence(request, evidence)) return false;
 
-    const transportIdentity = this.hasTransportationIdentity(evidence);
+    const identityOverlap = this.transactionAbuseIdentityOverlap(request, evidence);
+    const actorAligned = this.dynamicActorAligned(request, evidence);
+    const mechanismOverlap = this.transactionAbuseMechanismOverlap(request, evidence);
     const fraudRisk = this.hasTransactionAbuseRisk(evidence);
     const axisCount = this.transactionAbuseAxisCount(evidence);
-    const accountDeviceSecondary =
-      /\b(?:account takeover|credential stuffing|compromised account|unauthorized account|fraudulent user session)\b/iu.test(evidence) &&
-      /\b(?:device fingerprint|device signal|network source|login|authentication|session|behavior|behaviour)\w*\b/iu.test(evidence) &&
-      /\b(?:fraud|fraudulent|attack|abuse|unauthorized|compromis|suspicious)\w*\b/iu.test(evidence);
-
+    /*
+     * SUPPORTING_SIGNAL intentionally proves only one real atomic part of the
+     * requester problem. The combination of two distinctive requester identity
+     * anchors + a concrete abuse mechanism is already enough; requiring an
+     * additional complaint word here caused reports such as student-aid fraud
+     * alerts and identity-theft cases to be falsely discarded.
+     */
     return (
-      // Same transportation actor + one concrete abuse mechanism is enough
-      // for SUPPORTING context (for example a train-company refund scam).
-      // DIRECT still requires the stronger fragmented-detection causal chain.
-      (transportIdentity && fraudRisk && axisCount >= 1) ||
-      accountDeviceSecondary
+      fraudRisk &&
+      axisCount >= 1 &&
+      (identityOverlap >= 1 || mechanismOverlap >= 2 || (actorAligned && mechanismOverlap >= 1))
     );
   }
 
@@ -3813,15 +5681,85 @@ export class RequestEvidenceAlignmentUtil {
     if (!this.isTransactionAccountAbuseSupportingEvidence(request, evidence)) {
       return false;
     }
-    if (!this.hasTransportationIdentity(evidence)) return false;
 
+    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
+      return RequestOnlinePharmacyFraudUtil.isDirectEvidence(request, evidence);
+    }
+
+    if (this.isMunicipalPaymentAbuseRequest(request)) {
+      const municipalIdentity =
+        /\b(?:smart cit(?:y|ies)|city government|municipal|municipality|local authority|public service|public transit|transit agenc|parking authority|parking operator|public utility|utility provider)\w*\b/iu.test(evidence);
+      const fragmentedDetectionProblem =
+        /\b(?:reviewed separately|separate systems?|fragmented|siloed|disconnected|hard to detect|difficult to detect|hard to identify|difficult to identify|delayed detection|delayed investigation|cannot correlate|unable to correlate|lack of visibility|poor visibility|false positive)\b/iu.test(evidence);
+      const concreteImpact =
+        /\b(?:unauthorized payments?|account compromise|compromised (?:citizen|resident|customer|user|payer)?\s*accounts?|account takeover|fraud losses?|financial losses?|false positives?|unnecessary restrictions?|fraudulent refunds?)\b/iu.test(evidence);
+      return municipalIdentity && fragmentedDetectionProblem && concreteImpact;
+    }
+
+    const identityOverlap = this.transactionAbuseIdentityOverlap(request, evidence);
     const axisCount = this.transactionAbuseAxisCount(evidence);
     const fragmentedDetectionProblem =
       /\b(?:reviewed separately|separate systems?|fragmented|siloed|disconnected|hard to detect|difficult to detect|hard to identify|difficult to identify|delayed detection|delayed investigation|cannot correlate|unable to correlate|lack of visibility|poor visibility)\b/iu.test(evidence);
     const concreteImpact =
-      /\b(?:financial loss|fraudulent refund|compromised account|account takeover|false positive|legitimate passenger|unnecessary restriction|fraud loss|refund scam)\w*\b/iu.test(evidence);
+      /\b(?:financial loss|fraudulent refund|identity theft|compromised account|account takeover|false positive|legitimate (?:student|passenger|customer|user)|unnecessary restriction|fraud loss|refund scam|stolen financial aid)\w*\b/iu.test(evidence);
 
-    return axisCount >= 3 && fragmentedDetectionProblem && concreteImpact;
+    return identityOverlap >= 2 && axisCount >= 2 && fragmentedDetectionProblem && concreteImpact;
+  }
+
+  private static isMunicipalPaymentAbuseRequest(value: string): boolean {
+    return (
+      /\b(?:smart cit(?:y|ies)|cities|city governments?|municipalit(?:y|ies)|municipal governments?|local authorities?|public services?|public transit|parking services?|utility services?)\b/iu.test(value) &&
+      /\b(?:payments?|transactions?|payment records?|parking payments?|parking fees?|transit payments?|fare payments?|utility payments?|utility bills?|municipal fees?|public service fees?)\b/iu.test(value) &&
+      /\b(?:fraud|fraudulent|account compromise|compromised accounts?|unauthorized payments?|false positives?|suspicious activity|security alerts?|detect|detection|investigat)\w*\b/iu.test(value)
+    );
+  }
+
+  private static isMunicipalPaymentAbuseSupportingEvidence(value: string): boolean {
+    if (this.isDeveloperOnlyEvidence(value)) return false;
+    const paymentSystem =
+      /\b(?:payment systems?|electronic payments?|digital payments?|online payments?|payment transactions?|transaction monitoring|payment monitoring|payment fraud|transaction fraud|payment security|payments? platform)\b/iu.test(value);
+    const paymentAxis =
+      /\b(?:payments?|payment transactions?|transactions?|parking payments?|parking fees?|transit payments?|fare payments?|utility payments?|utility bills?|municipal fees?|public service fees?)\b/iu.test(value);
+    const municipalIdentity =
+      /\b(?:smart cit(?:y|ies)|city government|city of [\p{L}][\p{L}'-]*|city (?:officials?|email|account|systems?|network|funds?)|municipal|municipality|local authority|public service|public transit|transit agenc|parking authority|parking operator|public utility|utility provider)\w*\b/iu.test(value);
+    const concreteAbuseFacet =
+      /\b(?:fraud detection|detect(?:ing)? fraud|fraudulent payments?|payment fraud|transaction fraud|unauthorized payments?|account compromise|compromised accounts?|account takeover|identity theft|false positives?|fraud alerts?|security alerts?|suspicious payments?|suspicious transactions?|fraud investigation)\b/iu.test(value);
+    const unrelatedFinanceCollision =
+      /\b(?:tax deferred|retirement accounts?|pension accounts?|investment portfolio|stock market|securities trading|mortgage lending)\b/iu.test(value) &&
+      !municipalIdentity;
+    if (unrelatedFinanceCollision) return false;
+
+    // Vertical support: payment + municipal/public-service identity + fraud facet.
+    if (paymentAxis && municipalIdentity && concreteAbuseFacet) return true;
+
+    /*
+     * Atomic municipal cybersecurity/financial support: a documented city or
+     * public-service account compromise/cyber incident with concrete financial
+     * loss, missing public funds, unauthorized transaction/account impact, or
+     * investigation impact proves one real facet of the requester problem even
+     * when the source does not explicitly name a parking/transit/utility
+     * payment rail. This is SUPPORTING only; DIRECT still requires the fuller
+     * municipal-payment + fragmented-detection contract.
+     */
+    const municipalCyberIncident =
+      municipalIdentity &&
+      /\b(?:cyber ?attack|cyberattack|breach|phishing|account compromise|compromised account|account takeover|unauthori[sz]ed access|fraud|fraudulent|stolen credentials?|security incident)\w*\b/iu.test(value);
+    const municipalFinancialOrInvestigationImpact =
+      /\b(?:missing public funds?|lost funds?|financial loss|financial impact|money missing|stolen funds?|unauthori[sz]ed transactions?|fraud loss|reimbursement|investigation|delayed investigation|account restriction|service restriction)\w*\b/iu.test(value);
+    const explicitMaterialFinancialLoss =
+      /(?:[$£€]\s*\d+(?:[.,]\d+)?\s*(?:k|m|million|thousand)?\b|\b\d+(?:[.,]\d+)?\s*(?:k|m|million|thousand)\b)/iu.test(
+        value,
+      );
+    if (
+      municipalCyberIncident &&
+      (municipalFinancialOrInvestigationImpact || explicitMaterialFinancialLoss)
+    ) {
+      return true;
+    }
+
+    // Adjacent support: a real payment-system fraud/detection failure can prove
+    // one atomic mechanism without being misrepresented as direct smart-city proof.
+    return paymentSystem && concreteAbuseFacet;
   }
 
   private static isTransactionAccountAbuseRequest(request: string): boolean {
@@ -3829,26 +5767,79 @@ export class RequestEvidenceAlignmentUtil {
       'TRANSACTION_ACCOUNT_ABUSE';
   }
 
-  private static hasTransportationIdentity(value: string): boolean {
-    return /\b(?:transportation|transport|transit|mobility|ticketing|ticket|fare|passenger|rail|train|bus|metro|coach)\w*\b/iu.test(value);
+  private static transactionAbuseIdentityOverlap(
+    request: string,
+    evidence: string,
+  ): number {
+    const evidenceTokens = this.extractTokens(evidence);
+    const generic = new Set([
+      'fraud', 'fraudulent', 'payment', 'payments', 'transaction', 'transactions',
+      'account', 'accounts', 'refund', 'refunds', 'security', 'alert', 'alerts',
+      'financial', 'activity', 'record', 'records', 'system', 'systems', 'review',
+      'reviewed', 'separate', 'separately', 'suspicious', 'unauthorized',
+    ]);
+    const profile = RequestWorkflowIntentProfileUtil.resolve(request);
+    const identityTerms = [...new Set([
+      ...profile.actorIdentityTerms,
+      ...profile.objectIdentityTerms,
+      ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(request),
+    ])]
+      .map((term) => this.normalize(term))
+      .filter((term) => term.length >= 4 && !generic.has(term));
+
+    return identityTerms.filter((term) =>
+      this.semanticTokenAligned(term, evidenceTokens),
+    ).length;
+  }
+
+  private static transactionAbuseMechanismOverlap(
+    request: string,
+    evidence: string,
+  ): number {
+    const profile = RequestWorkflowIntentProfileUtil.resolve(request);
+    const evidenceTokens = this.extractTokens(evidence);
+    const mechanismTerms = [...new Set([
+      ...profile.workflowIdentityTerms,
+      ...profile.failureIdentityTerms,
+      ...profile.outcomeIdentityTerms,
+    ])]
+      .map((term) => this.normalize(term))
+      .filter((term) => term.length >= 4);
+    return mechanismTerms.filter((term) =>
+      this.semanticTokenAligned(term, evidenceTokens),
+    ).length;
   }
 
   private static hasTransactionAbuseRisk(value: string): boolean {
-    return /\b(?:fraud|fraudulent|scam|abuse|account takeover|compromised account|unauthorized account|suspicious booking|suspicious payment|coordinated abuse|false positive|illicit refund)\w*\b/iu.test(value);
+    return /\b(?:fraud|fraudulent|scam|abuse|identity theft|account takeover|compromised account|unauthorized account|unauthorized payment|suspicious booking|suspicious order|suspicious payment|coordinated abuse|false positive|illicit refund|stolen financial aid|student aid fraud|steal(?:ing)? financial aid|ghost students?)\w*\b/iu.test(value);
   }
 
   private static transactionAbuseAxisCount(value: string): number {
     return [
-      /\b(?:payment|transaction|fare payment|ticket payment|chargeback)\w*\b/iu,
-      /\b(?:refund|refund request|refund scam|refund fraud|fraudulent refund|dispute)\w*\b/iu,
-      /\b(?:passenger account|customer account|account takeover|account compromise|unauthorized account|login|credential)\w*\b/iu,
-      /\b(?:booking|reservation|ticket booking|suspicious booking)\w*\b/iu,
-      /\b(?:device|fingerprint|security alert|risk signal|behavior signal|behaviour signal)\w*\b/iu,
+      /\b(?:payment|payments|transaction|transactions|tuition payment|student billing|billing record|fare payment|ticket payment|chargeback|financial aid|student aid|federal student aid|student loan|scholarship)\w*\b/iu,
+      /\b(?:refund|refund request|refund scam|refund fraud|fraudulent refund|dispute|financial aid disbursement|scholarship disbursement)\w*\b/iu,
+      /\b(?:student account|scholarship account|passenger account|customer account|user account|account takeover|account compromise|identity theft|unauthorized account|login|credential|access log|authentication)\w*\b/iu,
+      /\b(?:booking|reservation|ticket booking|suspicious booking|order|purchase|suspicious order)\w*\b/iu,
+      /\b(?:device|fingerprint|security alert|risk signal|behavior signal|behaviour signal|login signal)\w*\b/iu,
     ].filter((pattern) => pattern.test(value)).length;
   }
 
-  private static isClearlyForeignTransactionAbuseEvidence(value: string): boolean {
-    return /\b(?:smart agriculture|smart farm|crop irrigation|insurance reimbursement|medical claim|patient billing|manufacturing plant|hotel booking|accommodation booking|shipment chain of custody)\b/iu.test(value);
+  private static isClearlyForeignTransactionAbuseEvidence(
+    request: string,
+    evidence: string,
+  ): boolean {
+    const identityOverlap = this.transactionAbuseIdentityOverlap(request, evidence);
+    const mechanismOverlap = this.transactionAbuseMechanismOverlap(request, evidence);
+    const axisCount = this.transactionAbuseAxisCount(evidence);
+    if (identityOverlap >= 1 || mechanismOverlap >= 2) return false;
+
+    /*
+     * Cross-domain evidence may legitimately support one atomic failure mode
+     * (for example account takeover research supporting a procurement portal
+     * request). Reject it only when it has neither request identity nor a
+     * meaningful combination of request-owned workflow/failure/outcome terms.
+     */
+    return axisCount === 0 || mechanismOverlap === 0;
   }
 
   private static maximumPlannedSemanticOverlap(

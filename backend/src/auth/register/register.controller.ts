@@ -13,7 +13,10 @@ const REGISTER_RATE_LIMIT_TTL_MS = 60_000;
 const GUEST_SESSION_CLEAR_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  sameSite:
+      process.env.NODE_ENV === 'production'
+        ? 'none'
+        : 'lax',
   path: '/',
 };
 

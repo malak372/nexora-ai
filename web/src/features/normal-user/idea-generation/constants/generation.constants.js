@@ -37,6 +37,7 @@ export const VISUAL_PIPELINE_GROUPS = [
     description: "Validating your request, access, domain, and selected evidence sources.",
     icon: Layers3,
     stageKeys: [
+      "preparing",
       "request-validation",
       "entitlement-check",
       "domain-resolution",

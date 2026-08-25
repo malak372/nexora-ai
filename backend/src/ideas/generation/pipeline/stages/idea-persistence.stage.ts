@@ -283,24 +283,23 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
       currentCoreIdea.title,
     );
     const variants = [
-      'Trace Review Edition',
-      'Case Review Edition',
-      'Decision Trace Edition',
-      'Integrity Review Edition',
-      'Exception Review Edition',
-      'Pilot Review Edition',
+      'Operations Workspace',
+      'Coordination Hub',
+      'Decision Support',
+      'Workflow Manager',
+      'Operations Console',
+      'Pilot Workspace',
     ] as const;
-    const attempts =
-      this.isNoInputPreferencePath(context) || this.isDomainsOnlyPath(context)
-        ? semanticTitles
-        : variants.map((suffix, offset) =>
-            this.buildRaceSafeTitle(
-              currentCoreIdea.title,
-              context.runId,
-              seedAttempt + offset,
-              suffix,
-            ),
-          );
+    const attempts = semanticTitles.length > 0
+      ? semanticTitles
+      : variants.map((suffix, offset) =>
+          this.buildRaceSafeTitle(
+            currentCoreIdea.title,
+            context.runId,
+            seedAttempt + offset,
+            suffix,
+          ),
+        );
 
     for (let offset = 0; offset < attempts.length; offset += 1) {
       const nextTitle = attempts[(seedAttempt - 1 + offset) % attempts.length];
@@ -404,23 +403,22 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
     /*
      * Exact-title uniqueness is a persistence concern, not a product-identity
      * concern. If every semantic and human-readable identity is already used,
-     * advance through readable edition numbers instead of exposing a run UUID
-     * or database-style token to the user. Each candidate is checked against
-     * the database before it is returned. Subsequent outer transaction retries
-     * move to a disjoint edition range if a concurrent insert wins the race.
+     * advance through readable operation variants instead of exposing a run
+     * UUID, database token, or internal "Trace Review Edition" label. Each
+     * candidate is checked against the database before it is returned.
      */
-    const editionsPerAttempt = 32;
-    const firstEdition = 2 + Math.max(0, seedAttempt - 1) * editionsPerAttempt;
+    const variantsPerAttempt = 32;
+    const firstVariant = 2 + Math.max(0, seedAttempt - 1) * variantsPerAttempt;
     let lastCandidate = buildBoundedWorkspaceTitle(
-      `Review Edition ${firstEdition}`,
+      `Operations ${firstVariant}`,
     );
 
     for (
-      let edition = firstEdition;
-      edition < firstEdition + editionsPerAttempt;
-      edition += 1
+      let variant = firstVariant;
+      variant < firstVariant + variantsPerAttempt;
+      variant += 1
     ) {
-      const candidate = buildBoundedWorkspaceTitle(`Review Edition ${edition}`);
+      const candidate = buildBoundedWorkspaceTitle(`Operations ${variant}`);
       lastCandidate = candidate;
       if (
         await this.isExactTitleAvailable({
@@ -484,7 +482,60 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
       return this.buildDomainsOnlyRaceSafeTitles(currentTitle);
     }
 
-    if (!this.isNoInputPreferencePath(context)) return [];
+    if (!this.isNoInputPreferencePath(context)) {
+      const semantic = [
+        currentTitle,
+        context.requestDescription ?? '',
+        context.opportunityRanking?.selected.title ?? '',
+        context.benchmarkWinnerOpportunity?.title ?? '',
+      ]
+        .join(' ')
+        .toLocaleLowerCase();
+      const brand = currentTitle
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .split(/\s+/u)
+        .find((token) => token.length >= 4) ?? 'Voxidence';
+
+      if (
+        /\b(?:healthcare|hospital|emergency department|ambulance|patient)\b/u.test(semantic) &&
+        /\b(?:capacity|patient demand|overcrowd|response time|resource allocation|care gap|delayed care)\b/u.test(semantic)
+      ) {
+        return [
+          `${brand} Regional Demand Coordinator`,
+          `${brand} Capacity Coordination Workspace`,
+          `${brand} Emergency Flow Intelligence`,
+          `${brand} Health Surge Coordinator`,
+          `${brand} Facility Demand Operations`,
+          `${brand} Care Capacity Workspace`,
+        ].map((title) => title.slice(0, 100));
+      }
+
+      if (
+        /\b(?:custom order|commission|specification|approved version|design revision|customer revision)\b/u.test(semantic)
+      ) {
+        return [
+          `${brand} Specification Workspace`,
+          `${brand} Commission Coordinator`,
+          `${brand} Approval & Revision Workspace`,
+          `${brand} Custom Order Control`,
+          `${brand} Specification & Delivery Hub`,
+          `${brand} Commission Operations`,
+        ].map((title) => title.slice(0, 100));
+      }
+
+      const stem = currentTitle
+        .replace(/\s+(?:workspace|hub|console|desk|platform|board|ledger|assistant|engine)$/iu, '')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      return [
+        `${stem} Operations Workspace`,
+        `${stem} Coordination Hub`,
+        `${stem} Decision Support`,
+        `${stem} Workflow Manager`,
+        `${stem} Operations Console`,
+        `${stem} Pilot Workspace`,
+      ].map((title) => title.slice(0, 100));
+    }
 
     const semantic = [
       currentTitle,
@@ -577,10 +628,10 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
     explicitSuffix?: string,
   ): string {
     const suffixes = [
-      'Evidence Trace Edition',
-      'Case Review Edition',
-      'Pilot Operations Edition',
-      'Decision Audit Edition',
+      'Operations Workspace',
+      'Coordination Hub',
+      'Decision Support',
+      'Workflow Manager',
     ] as const;
     const hash = [...runId].reduce(
       (value, char) => (value * 31 + char.charCodeAt(0)) >>> 0,
@@ -588,19 +639,18 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
     );
     const suffix =
       explicitSuffix ?? suffixes[(hash + attempt - 1) % suffixes.length];
-    const runTrack = `${hash.toString(36).toUpperCase().slice(0, 4)}-${attempt}`;
     const cleanBase = originalTitle
       .replace(
-        /\s+(Evidence Trace Edition|Case Review Edition|Pilot Operations Edition|Decision Audit Edition|Evidence Qualification Edition)(?:\s+[A-Z0-9]{1,6}-\d+)?$/iu,
+        /\s+(?:(?:Evidence Trace|Case Review|Pilot Operations|Decision Audit|Trace Review|Integrity Review|Exception Review) Edition)(?:\s+[A-Z0-9]{1,6}-\d+)?$/iu,
         '',
       )
+      .replace(/\s+(?:workspace|hub|console|platform|engine)$/iu, '')
       .replace(/\s+/gu, ' ')
       .trim();
-    const trailingIdentity = `${suffix} ${runTrack}`;
-    const maximumBaseLength = Math.max(12, 100 - trailingIdentity.length - 1);
+    const maximumBaseLength = Math.max(12, 100 - suffix.length - 1);
     const boundedBase = cleanBase.slice(0, maximumBaseLength).trim();
 
-    return `${boundedBase} ${trailingIdentity}`
+    return `${boundedBase} ${suffix}`
       .replace(/\s+/gu, ' ')
       .trim()
       .slice(0, 100);

@@ -310,9 +310,19 @@ export class OpenRouterProvider implements AiProvider {
         );
       }
 
-      const finishReason = this.mapFinishReason(firstChoice.finish_reason);
+      let finishReason = this.mapFinishReason(firstChoice.finish_reason);
 
       const text = firstChoice.message?.content?.trim();
+
+      /*
+       * OpenRouter/upstream models sometimes return a complete response with
+       * a null, provider-specific, or newly introduced finish_reason. Do not
+       * discard valid content merely because termination metadata is unknown.
+       * Structured responses are still parsed and schema-validated centrally.
+       */
+      if (finishReason === AiFinishReason.UNKNOWN && text) {
+        finishReason = AiFinishReason.STOP;
+      }
 
       if (!text) {
         if (finishReason === AiFinishReason.CONTENT_FILTER) {

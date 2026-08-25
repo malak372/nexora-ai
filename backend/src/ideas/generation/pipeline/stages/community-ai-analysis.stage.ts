@@ -34,6 +34,8 @@ import {
 } from '../../../../nlp/common/utils/community-evidence.util';
 import { resolvePrimaryProblemFamily } from '../../../../nlp/common/utils/problem-family-matching.util';
 import { RequestEvidenceAlignmentUtil } from '../../utils/request-evidence-alignment.util';
+import { CanonicalEvidenceVerificationUtil } from '../../utils/canonical-evidence-verification.util';
+import { CanonicalEvidenceStateUtil } from '../../utils/canonical-evidence-state.util';
 
 /**
  * Enriches cleaned NLP output with evidence-grounded opportunities extracted
@@ -177,6 +179,27 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
 
     const analysis = this.ensureSelectedDomainCoverage(context, baseAnalysis);
 
+    const canonicalEvidenceLedger = this.buildCanonicalEvidenceLedger(
+      context,
+      analysis,
+    );
+    const canonicalClassifications = canonicalEvidenceLedger.map((item) => ({
+      evidenceId: item.id,
+      classification: item.classification,
+      confidence: item.confidence,
+      reason:
+        item.origin === 'COMMUNITY_AI'
+          ? 'AI semantic triage accepted this evidence after deterministic verification.'
+          : 'Canonical evidence ledger admitted a concrete external problem signal after deterministic verification.',
+      problemFamily: item.problemFamily,
+      verifiedByDeterministicGuard: item.verified,
+    }));
+    const canonicalState = CanonicalEvidenceStateUtil.compute(canonicalEvidenceLedger);
+    const synchronizedAnalysis: CommunityAiAnalysis = {
+      ...analysis,
+      evidenceClassifications: canonicalClassifications,
+    };
+
     const enrichedNlp: IdeaGenerationNlpContext = {
       ...context.nlp,
       recurringProblems: plannedRequest
@@ -254,6 +277,8 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           apiModelId: analysis.apiModelId,
           attemptCount: analysis.attemptCount,
           aiAttempted: analysis.aiAttempted,
+          triageAiSucceeded: analysis.triageAiSucceeded ?? false,
+          synthesisAiSucceeded: analysis.synthesisAiSucceeded ?? analysis.aiSucceeded,
           aiSucceeded: analysis.aiSucceeded,
           fallbackUsed: analysis.fallbackUsed,
           onlineAttemptCount: analysis.onlineAttemptCount,
@@ -264,9 +289,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           unvalidatedDomainHypotheses: analysis.unvalidatedDomainHypotheses.map(
             (item) => ({ ...item, risks: [...item.risks] }),
           ),
-          evidenceClassifications: (analysis.evidenceClassifications ?? []).map(
-            (item) => ({ ...item }),
-          ),
+          evidenceClassifications: canonicalClassifications.map((item) => ({ ...item })),
           rawEvidenceCandidateCount,
           /*
            * Keep the two evidence funnels explicit in the run snapshot. Raw
@@ -278,23 +301,26 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           triageEligibleEvidenceCount: rawEvidenceCandidateCount,
           nlpProcessedEvidenceCount: context.nlp.totalTextsAnalyzed ?? 0,
           trustedNlpEvidenceCount:
-            (analysis.evidenceClassifications ?? []).filter(
-              (item) =>
-                item.classification === 'DIRECT_PROBLEM' ||
-                item.classification === 'SUPPORTING_SIGNAL',
+            canonicalClassifications.filter(
+              (item) => item.verifiedByDeterministicGuard &&
+                (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
             ).length,
           evidencePipelineSemantics:
             'Raw collector candidates are semantically triaged before final trusted evidence admission. nlpProcessedEvidenceCount measures preprocessing throughput; trustedNlpEvidenceCount counts only DIRECT_PROBLEM + SUPPORTING_SIGNAL classifications.',
           directEvidenceClassificationCount:
-            (analysis.evidenceClassifications ?? []).filter(
-              (item) => item.classification === 'DIRECT_PROBLEM',
+            canonicalClassifications.filter(
+              (item) => item.verifiedByDeterministicGuard && item.classification === 'DIRECT_PROBLEM',
             ).length,
           supportingEvidenceClassificationCount:
-            (analysis.evidenceClassifications ?? []).filter(
-              (item) => item.classification === 'SUPPORTING_SIGNAL',
+            canonicalClassifications.filter(
+              (item) => item.verifiedByDeterministicGuard && item.classification === 'SUPPORTING_SIGNAL',
+            ).length,
+          contextOnlyEvidenceClassificationCount:
+            canonicalClassifications.filter(
+              (item) => item.classification === 'CONTEXT_ONLY',
             ).length,
           unrelatedEvidenceClassificationCount:
-            (analysis.evidenceClassifications ?? []).filter(
+            canonicalClassifications.filter(
               (item) => item.classification === 'UNRELATED',
             ).length,
         },
@@ -310,7 +336,9 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       context: {
         ...context,
         nlp: enrichedNlp,
-        communityAiAnalysis: analysis,
+        canonicalEvidenceLedger,
+        evidenceState: canonicalState.state,
+        communityAiAnalysis: synchronizedAnalysis,
       },
       resultPreview: (() => {
         const groundedCount = analysis.opportunities.filter(
@@ -338,6 +366,8 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         apiModelId: analysis.apiModelId,
         attemptCount: analysis.attemptCount,
         aiAttempted: analysis.aiAttempted,
+        triageAiSucceeded: analysis.triageAiSucceeded ?? false,
+        synthesisAiSucceeded: analysis.synthesisAiSucceeded ?? analysis.aiSucceeded,
         aiSucceeded: analysis.aiSucceeded,
         fallbackUsed: analysis.fallbackUsed,
         onlineAttemptCount: analysis.onlineAttemptCount,
@@ -348,6 +378,10 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         qualityWarnings: analysis.qualityWarnings,
         representedDomains: [...new Set(analysis.opportunities.map((item) => item.domainName))],
         unvalidatedDomainHypothesisCount: analysis.unvalidatedDomainHypotheses.length,
+        canonicalTrustedEvidenceCount: canonicalEvidenceLedger.filter(
+          (item) => item.verified &&
+            (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
+        ).length,
       },
     };
   }
@@ -360,6 +394,69 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
    * intentionally not assignable to `JsonValue`. Building a `JsonArray` here
    * keeps the generation context type-safe without weakening its contract.
    */
+  private buildCanonicalEvidenceLedger(
+    context: IdeaGenerationContext,
+    analysis: CommunityAiAnalysis,
+  ): IdeaGenerationContext['canonicalEvidenceLedger'] {
+    const rawById = new Map(
+      (context.rawEvidenceCorpus ?? []).map((item) => [item.id, item] as const),
+    );
+    const ledger = new Map<string, IdeaGenerationContext['canonicalEvidenceLedger'][number]>();
+
+    for (const classification of analysis.evidenceClassifications ?? []) {
+      const raw = rawById.get(classification.evidenceId);
+      if (!raw) continue;
+      const verified = CanonicalEvidenceVerificationUtil.verify({
+        raw,
+        proposal: {
+          classification: classification.classification,
+          confidence: classification.confidence,
+          problemFamily: classification.problemFamily,
+          verifiedByDeterministicGuard: classification.verifiedByDeterministicGuard,
+          origin: 'COMMUNITY_AI',
+        },
+        requestMode: context.requestMode,
+        problemSpec: context.canonicalProblemSpec,
+        selectedDomains: context.selectedDomains,
+      });
+      ledger.set(raw.id, verified);
+    }
+
+    /*
+     * Discovery paths may continue when the online triage produced no usable
+     * classifications, but deterministic fallback goes through the exact same
+     * canonical verifier. Retrieval provenance is not evidence: a technical
+     * ticket found while probing IoT, for example, cannot become DIRECT unless
+     * the evidence text itself semantically matches the discovery domain and
+     * contains a concrete human problem signal.
+     */
+    if (!context.requestDescription?.trim()) {
+      for (const raw of context.rawEvidenceCorpus ?? []) {
+        if (ledger.has(raw.id)) continue;
+        const kind = classifyDirectCommunityEvidence(raw.text, raw.sourceType);
+        if (kind !== 'USER_COMPLAINT' && kind !== 'FEATURE_REQUEST' && kind !== 'OBSERVED_UNMET_NEED') {
+          continue;
+        }
+        const verified = CanonicalEvidenceVerificationUtil.verify({
+          raw,
+          proposal: {
+            classification: 'DIRECT_PROBLEM',
+            confidence: 70,
+            problemFamily: resolvePrimaryProblemFamily(raw.text)?.key || null,
+            verifiedByDeterministicGuard: true,
+            origin: 'DOMAIN_DIRECT_FALLBACK',
+          },
+          requestMode: context.requestMode,
+          problemSpec: context.canonicalProblemSpec,
+          selectedDomains: context.selectedDomains,
+        });
+        ledger.set(raw.id, verified);
+      }
+    }
+
+    return [...ledger.values()];
+  }
+
   private ensureSelectedDomainCoverage(
     context: IdeaGenerationContext,
     analysis: CommunityAiAnalysis,

@@ -403,6 +403,7 @@ export class PromptBuilderService {
       this.buildRequestIntentDirective(input),
       this.buildTierOutputDirective(input),
       this.buildOutputQualityDirective(analysis, input),
+      this.buildCanonicalEvidenceContractDirective(input),
       this.buildDomainEvidenceDirective(input),
       this.buildOpportunitySelectionDirective(input),
       this.buildProblemSolutionPortfolioDirective(input),
@@ -489,6 +490,57 @@ export class PromptBuilderService {
     }
 
     return '';
+  }
+
+  private buildCanonicalEvidenceContractDirective(
+    input: PromptBuilderInput,
+  ): string {
+    if (input.purpose !== 'IDEA_GENERATION') return '';
+
+    const ledger = input.canonicalEvidence ?? [];
+    const trusted = ledger.filter(
+      (item) =>
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    );
+    const directCount = trusted.filter(
+      (item) => item.classification === 'DIRECT_PROBLEM',
+    ).length;
+    const supportingCount = trusted.filter(
+      (item) => item.classification === 'SUPPORTING_SIGNAL',
+    ).length;
+    const state = input.evidenceState ??
+      (directCount > 0
+        ? 'DIRECT_VALIDATED'
+        : supportingCount > 0
+          ? 'SUPPORTING_VALIDATED'
+          : 'ZERO_VALIDATED_EVIDENCE');
+    const verifiedFacetIds = [
+      ...new Set(trusted.flatMap((item) => item.matchedFacetIds ?? [])),
+    ];
+    const allFacetIds = input.canonicalProblemSpec?.facets.map((facet) => facet.id) ?? [];
+    const unvalidatedFacetIds = allFacetIds.filter(
+      (facetId) => !verifiedFacetIds.includes(facetId),
+    );
+
+    return [
+      'APPLICATION-ENFORCED CANONICAL EVIDENCE CONTRACT:',
+      `- Authoritative evidenceState: ${state}.`,
+      `- Authoritative trustedCount=${trusted.length}, directCount=${directCount}, supportingCount=${supportingCount}.`,
+      '- These counts come only from canonicalEvidenceLedger. Never infer, add, upgrade, or downgrade evidence from ranking prose, domain selection, requester text, or generic NLP totals.',
+      ...(verifiedFacetIds.length
+        ? [`- Verified requester facets only: ${verifiedFacetIds.join(', ')}.`]
+        : []),
+      ...(unvalidatedFacetIds.length
+        ? [`- Unvalidated requester facets: ${unvalidatedFacetIds.join(', ')}. Do not present these as evidence-proven.`]
+        : []),
+      state === 'ZERO_VALIDATED_EVIDENCE'
+        ? '- ZERO evidence language lock: describe the problem only as requester-described/discovery hypothesis. Use may/could/if confirmed. Never write data shows, evidence indicates, reports show, users report, frequently, typically, recurring, validated demand, observed demand, or similar evidence-backed wording.'
+        : state === 'SUPPORTING_VALIDATED'
+          ? '- SUPPORTING-only lock: evidence validates only the matched facet(s). Preserve the full canonical requester problem as scope, but mark unmatched facets as unvalidated. Never claim the entire problem chain or every selected domain is proven.'
+          : '- DIRECT state: strong wording is allowed only for the exact verified problem/facet and verified domain(s); do not generalize prevalence or recurrence beyond the retained evidence.',
+    ].join('\n');
   }
 
   private buildOutputQualityDirective(
@@ -871,7 +923,8 @@ export class PromptBuilderService {
     }
 
     const selected = input.opportunityRanking?.selected;
-    const validationOnly = Boolean(
+    const canonicalZeroEvidence = input.evidenceState === 'ZERO_VALIDATED_EVIDENCE';
+    const validationOnly = canonicalZeroEvidence || Boolean(
       selected?.disqualificationReasons.includes(
         'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
       ),

@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { PrismaService } from '../../../prisma/prisma.service';
+
 import {
   GENERATION_DATABASE_RETRY_BASE_DELAY_MS,
   GENERATION_DATABASE_RETRY_MAX_ATTEMPTS,
@@ -19,6 +21,8 @@ export type DatabaseRetryOptions = {
 @Injectable()
 export class IdeaGenerationDatabaseRetryService {
   private readonly logger = new Logger(IdeaGenerationDatabaseRetryService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
 
   async execute<T>(
     operation: () => Promise<T>,
@@ -64,6 +68,25 @@ export class IdeaGenerationDatabaseRetryService {
             options.runId ? ` for run "${options.runId}"` : ''
           }. Retry ${attempt + 1}/${maxAttempts} in ${delayMs}ms.`,
         );
+
+        /*
+         * Prisma's Node-API engine can remain in a disconnected state after
+         * errors such as "Response from the Engine was empty". Sleeping and
+         * retrying the same operation is not enough in that state; reconnect
+         * the shared client first. The PrismaService serializes recovery so
+         * concurrent stage/checkpoint retries do not race each other.
+         */
+        try {
+          await this.prisma.recoverConnection(error);
+        } catch (recoveryError: unknown) {
+          const recoveryMessage =
+            recoveryError instanceof Error
+              ? recoveryError.message
+              : String(recoveryError);
+          this.logger.warn(
+            `Prisma reconnect attempt did not complete before retrying "${options.operationName}": ${recoveryMessage}`,
+          );
+        }
 
         await this.sleep(delayMs);
       }

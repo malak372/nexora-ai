@@ -4,6 +4,7 @@ import { CollectionJobStatus, Prisma } from '@prisma/client';
 
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { CollectorSourceHealthService } from '../../../data-collection/collector-source-health.service';
 import {
   classifyDirectCommunityEvidence,
   isLikelyPromotionalEvidence,
@@ -21,6 +22,10 @@ import { RequestWorkflowArchetypeUtil } from '../utils/request-workflow-archetyp
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
 import { RequestWorkflowIntentProfileUtil } from '../utils/request-workflow-intent-profile.util';
 import { RequestQueryProvenanceUtil } from '../utils/request-query-provenance.util';
+import { RequestNicheCustomCraftUtil } from '../utils/request-niche-custom-craft.util';
+import { CanonicalRequestUnderstandingUtil } from '../utils/canonical-request-understanding.util';
+import { SourceSpecificEvidenceQueryUtil } from '../utils/source-specific-evidence-query.util';
+import { RequestOnlinePharmacyFraudUtil } from '../utils/request-online-pharmacy-fraud.util';
 import { CollectionJobResolverService } from './collection-job-resolver.service';
 import { CommunityAiAnalysisService } from './community-ai-analysis.service';
 import { RequestCollectionPlanningService } from './request-collection-planning.service';
@@ -56,6 +61,13 @@ export type RecoveredExternalEvidence = {
   readonly postExternalId: string;
   readonly commentExternalId: string | null;
   readonly sourceType: 'POST' | 'COMMENT';
+  readonly discoveryDomainId?: string | null;
+  readonly discoveryDomainName?: string | null;
+  readonly queryIntentId?: string | null;
+  readonly queryText?: string | null;
+  readonly problemFacetIds?: readonly string[];
+  readonly collectionPhase?: 'INITIAL' | 'RECOVERY';
+  readonly sourceTier?: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE';
 };
 
 /** Result of one bounded targeted evidence-recovery attempt. */
@@ -129,17 +141,12 @@ export class IdeaEvidenceRecoveryService {
   ] as const;
 
   /**
-   * Recovery favors breadth over a short wall-clock window. Queries and sources
-   * are still de-duplicated and rotated between waves, but each wave can cover
-   * a materially broader part of the external evidence space.
+   * Recovery is a rare infrastructure-rescue path. The broad AI-owned first
+   * pass should do discovery; recovery stays intentionally tiny so a collector
+   * outage cannot turn into a second full pipeline.
    */
-  private readonly maximumRecoveryKeywords = 12;
-  // Recovery is progressive: start with the five highest-yield direct/community
-  // sources, then rotate to the remaining sources only when the first wave does
-  // not produce verified problem-matched evidence. This preserves total source
-  // breadth while avoiding waits for slower secondary sources after a strong
-  // direct signal has already been found.
-  private readonly maximumRecoverySourcesPerWave = 5;
+  private readonly maximumRecoveryKeywords = 8;
+  private readonly maximumRecoverySourcesPerWave = 2;
 
   constructor(
     private readonly configService: ConfigService,
@@ -148,6 +155,7 @@ export class IdeaEvidenceRecoveryService {
     private readonly prisma: PrismaService,
     private readonly communityAiAnalysisService: CommunityAiAnalysisService,
     private readonly requestCollectionPlanningService: RequestCollectionPlanningService,
+    private readonly collectorSourceHealth: CollectorSourceHealthService,
   ) {}
 
   /**
@@ -213,8 +221,19 @@ export class IdeaEvidenceRecoveryService {
      * problem-family expansion is both faster and more diverse than spending
      * another 7s asking the same planner to reformulate the request.
      */
+    const rawEvidenceCount = context.rawEvidenceCorpus?.length ?? 0;
+    const rawEvidenceSourceCount = new Set(
+      (context.rawEvidenceCorpus ?? []).map((item) => item.sourceKey),
+    ).size;
+    const nicheCraftRequest = Boolean(
+      RequestNicheCustomCraftUtil.resolve(context.requestDescription),
+    );
     const shouldUseAiRecoveryPlan =
-      requestSpecificRecovery && context.evidenceRecoveryAttempts === 0;
+      requestSpecificRecovery &&
+      !nicheCraftRequest &&
+      context.evidenceRecoveryAttempts === 0 &&
+      qualifiedCommunityEvidenceCount === 0 &&
+      (rawEvidenceCount < 4 || rawEvidenceSourceCount < 2);
     const aiRecoveryPlan = shouldUseAiRecoveryPlan
       ? await this.requestCollectionPlanningService.expandEvidenceSearch({
           description: context.requestDescription ?? '',
@@ -261,9 +280,14 @@ export class IdeaEvidenceRecoveryService {
       ? aiSelectedRecoverySources
       : selectedRecoverySources;
     const recoverySources = (compactDomainsOnlySecondaryRecovery
-      ? preferredRecoverySources.slice(0, 3)
+      ? preferredRecoverySources.slice(0, 2)
       : requestSpecificRecovery
-        ? preferredRecoverySources.slice(0, needsExpandedRequestRecovery ? 5 : 3)
+        /*
+         * One request-scoped recovery wave may use at most two unused healthy runnable lanes
+         * in parallel. This improves source diversity without adding serial
+         * latency; the per-source collectors remain independently bounded.
+         */
+        ? preferredRecoverySources.slice(0, this.maximumRecoverySourcesPerWave)
         : preferredRecoverySources
     ).filter((source) =>
       this.collectorsFactory.isCollectorRuntimeAvailable(source.key),
@@ -281,14 +305,18 @@ export class IdeaEvidenceRecoveryService {
       )
       .filter((query) => this.isSemanticallyUsefulRecoveryQuery(query, context))
       .slice(0, this.maximumRecoveryKeywords);
-    const recoveryKeywords =
+    const recoveryKeywords = (
       aiRecoveryKeywords.length >= 4
         ? aiRecoveryKeywords
         : this.buildRecoveryKeywords(
             context,
             selectedOpportunity,
             evidenceFamilies,
-          );
+          )
+    )
+      .map((query) => this.sanitizeRecoveryQuery(query))
+      .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+      .slice(0, this.maximumRecoveryKeywords);
     if (recoverySources.length === 0) {
       this.logger.debug(
         'Skipping targeted recovery because every eligible recovery source is unavailable, failed, rate-limited, or already exhausted by an earlier recovery wave.',
@@ -315,6 +343,59 @@ export class IdeaEvidenceRecoveryService {
       };
     }
 
+    const recoverySourceKeys = new Set(
+      recoverySources.map((source) => source.key.toLocaleLowerCase()),
+    );
+    const usingAiRecoveryPlan =
+      aiRecoveryPlan?.aiUsed === true &&
+      aiRecoveryPlan.fallbackUsed !== true &&
+      (aiRecoveryPlan.searchQueries?.length ?? 0) > 0;
+    const authoritativeRecoveryQueries = usingAiRecoveryPlan
+      ? [...(aiRecoveryPlan?.searchQueries ?? [])]
+      : recoveryKeywords;
+    const aiSourcePlans = usingAiRecoveryPlan
+      ? aiRecoveryPlan?.sourcePlans ?? []
+      : [];
+    const mergedRecoverySourcePlans = recoverySources.map((source, sourceIndex) => {
+      const planned = aiSourcePlans.find(
+        (plan) =>
+          plan.sourceKey.toLocaleLowerCase() === source.key.toLocaleLowerCase(),
+      );
+      const fallbackQueries = authoritativeRecoveryQueries.length > 0
+        ? [
+            authoritativeRecoveryQueries[sourceIndex % authoritativeRecoveryQueries.length],
+            authoritativeRecoveryQueries[(sourceIndex + 1) % authoritativeRecoveryQueries.length],
+          ].filter((query): query is string => Boolean(query?.trim()))
+        : [];
+      const rawQueries = [...new Set(
+        (planned?.queries?.length ? planned.queries : fallbackQueries)
+          .map((query) => this.sanitizeRecoveryQuery(query))
+          .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query)),
+      )];
+      const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
+        sourceKey: source.key,
+        baseQueries: rawQueries,
+        requestDescription: context.requestDescription,
+        problemProfile: context.collectionPlan?.problemProfile,
+        discoveryDomainName: context.domainName,
+        maxQueries: 2,
+      });
+      return {
+        sourceKey: source.key,
+        queries: compiledQueries.length ? compiledQueries : rawQueries.slice(0, 2),
+        routingHints: [...new Set(planned?.routingHints ?? [])],
+        discoveryDomainId: context.domainId,
+        discoveryDomainName: context.domainName,
+        queryIntentId: `recovery:${context.evidenceRecoveryAttempts + 1}:${source.key}:${sourceIndex + 1}`,
+        sourceTier: 'PRIMARY' as const,
+        problemFacetIds: context.canonicalProblemSpec?.facets.map((facet) => facet.id) ?? [],
+      };
+    }).filter(
+      (plan) =>
+        recoverySourceKeys.has(plan.sourceKey.toLocaleLowerCase()) &&
+        plan.queries.length > 0,
+    );
+
     const resolvedDomain =
       context.selectedDomains.find((domain) => domain.id === context.domainId) ??
       context.selectedDomains[0];
@@ -340,10 +421,11 @@ export class IdeaEvidenceRecoveryService {
       radiusKm: context.location.radiusKm ?? undefined,
       dataSourceKeys: recoverySources.map((source) => source.key),
       keywords: recoveryKeywords,
-      plannedQueries: recoveryKeywords,
+      plannedQueries: authoritativeRecoveryQueries,
+      queriesGeneratedByAi: usingAiRecoveryPlan,
       sourcePlans:
-        aiRecoveryPlan?.aiUsed && !aiRecoveryPlan.fallbackUsed
-          ? aiRecoveryPlan.sourcePlans
+        mergedRecoverySourcePlans.length > 0
+          ? mergedRecoverySourcePlans
           : undefined,
       userDescription: requestSpecificRecovery
         ? context.requestDescription ?? undefined
@@ -415,8 +497,13 @@ export class IdeaEvidenceRecoveryService {
      * evidence. This fixes false zero-evidence outcomes caused by deleting a
      * useful partial signal before Community AI had a chance to interpret it.
      */
+    const inMemoryRecoveryEvidence = this.mapRawRecoveryInputs(
+      result.rawEvidenceInputs ?? [],
+    );
     const persistedRecoveryEvidence = this.deduplicateRecoveredEvidence(
-      await this.loadPersistedRecoveryEvidence(result.job.id),
+      inMemoryRecoveryEvidence.length > 0
+        ? inMemoryRecoveryEvidence
+        : await this.loadPersistedRecoveryEvidence(result.job.id),
     );
     const primaryEvidenceSamples = this.collectPrimaryEvidenceSamples(
       context,
@@ -441,6 +528,13 @@ export class IdeaEvidenceRecoveryService {
             ? `${evidence.sourceKey}:post:${evidence.postExternalId}`
             : undefined,
         text: evidence.text,
+        discoveryDomainId: evidence.discoveryDomainId ?? context.domainId,
+        discoveryDomainName: evidence.discoveryDomainName ?? context.domainName,
+        queryIntentId: evidence.queryIntentId ?? null,
+        queryText: evidence.queryText ?? null,
+        problemFacetIds: evidence.problemFacetIds ?? context.canonicalProblemSpec?.facets.map((facet) => facet.id) ?? [],
+        collectionPhase: 'RECOVERY',
+        sourceTier: evidence.sourceTier ?? 'PRIMARY',
       }));
 
     /*
@@ -512,12 +606,16 @@ export class IdeaEvidenceRecoveryService {
 
     const aiDirectEvidence = aiClassifiedEvidence
       .filter(
-        (item) => item.classification.classification === 'DIRECT_PROBLEM',
+        (item) =>
+          item.classification.classification === 'DIRECT_PROBLEM' &&
+          item.classification.verifiedByDeterministicGuard,
       )
       .map((item) => item.evidence);
     const aiSupportingEvidence = aiClassifiedEvidence
       .filter(
-        (item) => item.classification.classification === 'SUPPORTING_SIGNAL',
+        (item) =>
+          item.classification.classification === 'SUPPORTING_SIGNAL' &&
+          item.classification.verifiedByDeterministicGuard,
       )
       .map((item) => item.evidence);
 
@@ -550,13 +648,14 @@ export class IdeaEvidenceRecoveryService {
             ...directEvidenceSamples,
             ...supportingEvidenceSamples,
           ],
-          plannedQueries: recoveryKeywords,
+          plannedQueries: authoritativeRecoveryQueries,
           maxSamples: 5,
         })
       : [];
 
     const requestAlignedRecoverySamples = this.deduplicateEvidenceSamples([
       ...directEvidenceSamples,
+      ...supportingEvidenceSamples,
       ...(compositeEvidenceSamples.length >= 2
         ? compositeEvidenceSamples
         : []),
@@ -575,7 +674,7 @@ export class IdeaEvidenceRecoveryService {
       );
     } else {
       this.logger.debug(
-        `Targeted recovery retained no complete ${requestSpecificRecovery ? 'request-aligned' : 'selected-domain-aligned'} evidence after semantic classification. Raw candidates=${novelRawRecoverySamples.length}, supporting=${supportingEvidenceSamples.length}.`,
+        `Targeted recovery retained no trusted ${requestSpecificRecovery ? 'request-aligned' : 'selected-domain-aligned'} DIRECT/SUPPORTING evidence after semantic classification. Raw candidates=${novelRawRecoverySamples.length}, supporting=${supportingEvidenceSamples.length}.`,
       );
     }
 
@@ -654,9 +753,61 @@ export class IdeaEvidenceRecoveryService {
       rawEvidenceCorpus,
       recoveryOutcome,
       communityAiRecoveryExecuted: shouldRunCommunityAiRecovery,
-      nlp: novelNlp,
+      nlp: {
+        ...novelNlp,
+        aiUsed:
+          novelNlp.aiUsed ||
+          Boolean(rawCommunityAiAnalysis?.aiAttempted) ||
+          Boolean(aiRecoveryPlan?.aiUsed),
+      },
       communityAiAnalysis,
     };
+  }
+
+  private mapRawRecoveryInputs(
+    inputs: readonly {
+      readonly id: string;
+      readonly sourceType: string;
+      readonly postId?: string;
+      readonly title?: string | null;
+      readonly content: string;
+      readonly sourceKey?: string;
+      readonly discoveryDomainId?: string | null;
+      readonly discoveryDomainName?: string | null;
+      readonly queryIntentId?: string | null;
+      readonly queryText?: string | null;
+      readonly problemFacetIds?: readonly string[];
+      readonly collectionPhase?: 'INITIAL' | 'RECOVERY';
+      readonly sourceTier?: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE';
+    }[],
+  ): RecoveredExternalEvidence[] {
+    return inputs.flatMap((input) => {
+      const sourceKey = (input.sourceKey ?? input.id.split(':')[0] ?? '').trim();
+      if (!sourceKey) return [];
+      const title = input.title?.replace(/\s+/gu, ' ').trim() ?? '';
+      const content = input.content.replace(/\s+/gu, ' ').trim();
+      const text = title && content && !content.toLocaleLowerCase().includes(title.toLocaleLowerCase())
+        ? `${title} ${content}`
+        : content || title;
+      if (text.length < 8) return [];
+      const sourceType: 'POST' | 'COMMENT' = input.sourceType === 'COMMENT' ? 'COMMENT' : 'POST';
+      const externalId = input.id.split(':').slice(2).join(':') || input.id;
+      const parentExternalId = input.postId?.split(':').slice(2).join(':') || externalId;
+      return [{
+        text,
+        sourceKey,
+        postExternalId: sourceType === 'COMMENT' ? parentExternalId : externalId,
+        commentExternalId: sourceType === 'COMMENT' ? externalId : null,
+        sourceType,
+        discoveryDomainId: input.discoveryDomainId ?? null,
+        discoveryDomainName: input.discoveryDomainName ?? null,
+        queryIntentId: input.queryIntentId ?? null,
+        queryText: input.queryText ?? null,
+        problemFacetIds: input.problemFacetIds ?? [],
+        collectionPhase: input.collectionPhase ?? 'RECOVERY',
+        sourceTier: input.sourceTier ?? 'PRIMARY',
+      }];
+    });
   }
 
   private async loadPersistedRecoveryEvidence(
@@ -812,7 +963,10 @@ export class IdeaEvidenceRecoveryService {
         const timedOut = /(?:timeout|timed out|exceeded \d+ms)/iu.test(
           entry.failureReason ?? '',
         );
-        if (failed || rateLimited || timedOut) {
+        const zeroYield =
+          entry.status === CollectionJobStatus.COMPLETED &&
+          entry.totalPosts + entry.totalComments === 0;
+        if (failed || rateLimited || timedOut || zeroYield) {
           excluded.add(entry.dataSource.key);
         }
       }
@@ -949,9 +1103,9 @@ export class IdeaEvidenceRecoveryService {
           'crossref',
         ] as const);
 
-    const craftRestorationNiche = this.isCraftRestorationNicheRequest(
-      context.requestDescription ?? '',
-    );
+    const craftRestorationNiche =
+      this.isCraftRestorationNicheRequest(context.requestDescription ?? '') ||
+      Boolean(RequestNicheCustomCraftUtil.resolve(context.requestDescription));
     const communityFirstNiche =
       archetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' ||
       archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS' ||
@@ -962,8 +1116,8 @@ export class IdeaEvidenceRecoveryService {
       ? [
           ...(communityFirstNiche
             ? craftRestorationNiche
-              ? ['reddit', 'youtube', 'crossref', 'news', 'gdelt']
-              : ['reddit', 'crossref', 'news', 'youtube', 'gdelt']
+              ? ['forum', 'reddit', 'blog', 'crossref', 'youtube', 'news', 'gdelt']
+              : ['reddit', 'forum', 'blog', 'crossref', 'news', 'youtube', 'gdelt']
             : archetype.preferredSourceKeys),
           ...[...focusedSourceKeys],
           ...this.reviewSourceOrder,
@@ -1010,8 +1164,6 @@ export class IdeaEvidenceRecoveryService {
       if (!technicalRequest && ['hacker-news', 'github', 'stackoverflow', 'dev-to'].includes(key)) {
         return true;
       }
-      /* Feed-backed blog collection skips arbitrary request-scoped domains. */
-      if (requestText && key === 'blog') return true;
       if (
         enterpriseIdentityWorkflow &&
         ['app-store', 'google-play', 'product-hunt'].includes(key)
@@ -1037,6 +1189,8 @@ export class IdeaEvidenceRecoveryService {
         !excludedSourceKeys.has(source.key) &&
         !excludedSourceKeys.has(key) &&
         !archetypeBlocked.has(key) &&
+        !this.collectorSourceHealth.isTemporarilyDegraded(key) &&
+        this.collectorSourceHealth.score(key) >= 0.35 &&
         !automaticallyUnsuitable(key) &&
         !(secondaryOnlyRecovery && originalEvidenceSources.has(source.key))
       );
@@ -1051,7 +1205,7 @@ export class IdeaEvidenceRecoveryService {
      * existing broad behavior through their own archetype/source focus.
      */
     const focusedEligible =
-      strictArchetype && focusedSourceKeys.size > 0
+      strictArchetype && focusedSourceKeys.size > 0 && !communityFirstNiche
         ? eligible.filter((source) =>
             focusedSourceKeys.has(source.key.toLocaleLowerCase()),
           )
@@ -1073,25 +1227,31 @@ export class IdeaEvidenceRecoveryService {
     );
     const preferUnusedReserveSources =
       Boolean(context.requestDescription?.trim()) &&
-      context.evidenceRecoveryAttempts === 0 &&
-      !craftRestorationNiche;
+      context.evidenceRecoveryAttempts === 0;
 
     return sourcePool
       .sort((left, right) => {
         const leftKey = left.key.toLocaleLowerCase();
         const rightKey = right.key.toLocaleLowerCase();
         const leftPrimaryPenalty =
-          preferUnusedReserveSources && primarySelectedSourceKeys.has(leftKey)
+          preferUnusedReserveSources &&
+          primarySelectedSourceKeys.has(leftKey) &&
+          !(communityFirstNiche && ['forum', 'reddit'].includes(leftKey))
             ? 100
             : 0;
         const rightPrimaryPenalty =
-          preferUnusedReserveSources && primarySelectedSourceKeys.has(rightKey)
+          preferUnusedReserveSources &&
+          primarySelectedSourceKeys.has(rightKey) &&
+          !(communityFirstNiche && ['forum', 'reddit'].includes(rightKey))
             ? 100
             : 0;
         const leftRank = priority.get(left.key) ?? Number.MAX_SAFE_INTEGER;
         const rightRank = priority.get(right.key) ?? Number.MAX_SAFE_INTEGER;
+        const leftHealth = this.collectorSourceHealth.score(leftKey);
+        const rightHealth = this.collectorSourceHealth.score(rightKey);
         return (
           leftPrimaryPenalty - rightPrimaryPenalty ||
+          rightHealth - leftHealth ||
           leftRank - rightRank ||
           left.key.localeCompare(right.key)
         );
@@ -1099,10 +1259,7 @@ export class IdeaEvidenceRecoveryService {
       .slice(
         0,
         communityFirstNiche
-          ? Math.min(
-              craftRestorationNiche ? 2 : 3,
-              this.maximumRecoverySourcesPerWave,
-            )
+          ? Math.min(4, this.maximumRecoverySourcesPerWave)
           : this.maximumRecoverySourcesPerWave,
       );
   }
@@ -1133,6 +1290,18 @@ export class IdeaEvidenceRecoveryService {
     selectedOpportunity: RankedIdeaOpportunity | null,
     evidenceFamilies: readonly EvidenceRecoveryFamily[],
   ): string[] {
+    const canonicalProfile = context.collectionPlan?.problemProfile;
+    if (context.requestDescription?.trim() && canonicalProfile) {
+      const canonicalQueries = CanonicalRequestUnderstandingUtil.buildRecoveryQueries(
+        canonicalProfile,
+        context.collectionPlan?.searchQueries ?? [],
+        Math.min(6, this.maximumRecoveryKeywords),
+      );
+      if (canonicalQueries.length > 0) {
+        return canonicalQueries;
+      }
+    }
+
     const domain = (context.domainName ?? '').trim();
     const domainTerm = domain || context.keywords[0]?.trim() || 'software';
     const aiPlannedRecoveryQueries = context.collectionPlan?.aiUsed
@@ -1141,6 +1310,16 @@ export class IdeaEvidenceRecoveryService {
           .filter(Boolean)
       : [];
     const requestIntentTerms = this.buildRequestIntentRecoveryQueries(context);
+    const contextVocabularyQueries = this.buildContextVocabularyRecoveryQueries(context);
+    const nicheCraftRecoveryQueries = RequestNicheCustomCraftUtil.buildSourceQueries(
+      context.requestDescription,
+      'forum',
+    );
+    const onlinePharmacyRecoveryQueries = RequestOnlinePharmacyFraudUtil.isRequest(
+      context.requestDescription,
+    )
+      ? RequestOnlinePharmacyFraudUtil.buildSourceQueries('forum')
+      : [];
     const professionalRecoveryQueries =
       RequestDynamicQueryUtil.buildProfessionalEvidenceQueries({
         requestDescription: context.requestDescription,
@@ -1198,9 +1377,12 @@ export class IdeaEvidenceRecoveryService {
     );
     const freshRequestRecoveryCandidates = [
       ...new Set([
+        ...(requestScopedRecovery ? onlinePharmacyRecoveryQueries : []),
+        ...(requestScopedRecovery ? nicheCraftRecoveryQueries : []),
         ...(requestScopedRecovery ? professionalRecoveryQueries : []),
         ...(requestScopedRecovery ? requestIntentTerms : []),
         ...(requestScopedRecovery ? domainAgnosticFacetQueries : []),
+        ...(requestScopedRecovery ? contextVocabularyQueries : []),
         ...selectedDomainQueries,
         ...opportunityTerms,
         ...familyTerms,
@@ -1264,11 +1446,69 @@ export class IdeaEvidenceRecoveryService {
    * example workforce turnover, security-alert triage, or expense anomalies),
    * so they are much more precise than searching for "the requester wants...".
    */
+  private buildContextVocabularyRecoveryQueries(
+    context: IdeaGenerationContext,
+  ): string[] {
+    const contextOnlyIds = new Set(
+      (context.communityAiAnalysis?.evidenceClassifications ?? [])
+        .filter((item) => item.classification === 'CONTEXT_ONLY')
+        .map((item) => item.evidenceId),
+    );
+    if (contextOnlyIds.size === 0) return [];
+
+    const contextTexts = (context.rawEvidenceCorpus ?? [])
+      .filter((item) => contextOnlyIds.has(item.id))
+      .map((item) => item.text)
+      .slice(0, 4);
+    if (contextTexts.length === 0) return [];
+
+    const request = context.requestDescription?.trim() ?? '';
+    const candidatePhrases = [
+      ...RequestDynamicQueryUtil.buildProfessionalEvidenceQueries({
+        requestDescription: request,
+        intentConcepts: contextTexts,
+        evidenceTargets: context.collectionPlan?.evidenceTargets ?? [],
+        plannedQueries: context.collectionPlan?.searchQueries ?? [],
+        maxQueries: 6,
+      }),
+      ...contextTexts.flatMap((text) => {
+        const normalized = text.toLocaleLowerCase();
+        const phrases: string[] = [];
+        if (/\bcondition reports?\b/u.test(normalized)) phrases.push('condition report conservation workflow problems');
+        if (/\btreatment reports?|treatment history\b/u.test(normalized)) phrases.push('conservation treatment history documentation problems');
+        if (/\bannotated (?:pictures|photos)|damage(?:s)? types?\b/u.test(normalized)) phrases.push('conservator damage documentation photo annotation workflow');
+        if (/\barchive|archiving|subsequent reports?\b/u.test(normalized)) phrases.push('conservation record archive repeated treatment history');
+        return phrases;
+      }),
+    ];
+
+    return [...new Set(candidatePhrases)]
+      .map((value) => this.sanitizeRecoveryQuery(value))
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+
   private buildSelectedDomainRecoveryQueries(
     context: IdeaGenerationContext,
   ): string[] {
     const queries: string[] = [];
     const request = context.requestDescription?.toLocaleLowerCase() ?? '';
+
+    if (
+      /\b(?:pottery|ceramic|ceramics|earthenware|stoneware|porcelain)\b/u.test(request) &&
+      /\b(?:restoration|conservation|repair|restorer|conservator)\b/u.test(request)
+    ) {
+      return [
+        'ceramic conservator condition report treatment documentation problems',
+        'ceramics conservation previous repairs treatment history records',
+        'pottery restoration color matching glaze repair material selection',
+        'ceramic conservation missing fragments damage documentation workflow',
+        'object conservation treatment record photographs handwritten notes',
+        'museum ceramics conservation condition reporting repair history',
+        'ceramic restorer glaze matching previous treatment documentation',
+        'conservation treatment record material choices client approval artifact',
+      ];
+    }
 
     if (
       /\b(?:public grant programs?|government grant programs?|public funding programs?|grant-making agencies?|grantmaking agencies?|public agencies?)\b/u.test(request) &&
@@ -2640,6 +2880,8 @@ export class IdeaEvidenceRecoveryService {
         this.extractPhysicalCraftAnchor(context.requestDescription ?? '') ||
         'restoration';
       contextualQueries.push(
+        `${subject} conservation condition assessment specifications`,
+        `${subject} conservation treatment documentation previous intervention`,
         `${subject} restoration condition previous repairs documentation problem`,
         `${subject} restoration original design details lost records`,
         `${subject} restoration replacement material matching rework`,
@@ -3125,6 +3367,9 @@ export class IdeaEvidenceRecoveryService {
 
     const request = context.requestDescription?.trim() ?? '';
     if (!request) return true;
+    if (RequestNicheCustomCraftUtil.isSafeExpandedRetrievalQuery(request, query)) {
+      return true;
+    }
     if (!RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(request, query)) {
       return false;
     }
@@ -3587,6 +3832,7 @@ export class IdeaEvidenceRecoveryService {
         sourceType,
         sourceKey,
         evidenceId,
+        provenance,
         sample: {
           id: evidenceId,
           text,
@@ -3627,6 +3873,13 @@ export class IdeaEvidenceRecoveryService {
         sourceKey: entry.sourceKey,
         sourceType: entry.sourceType,
         text: entry.text,
+        discoveryDomainId: entry.provenance?.discoveryDomainId ?? context.domainId,
+        discoveryDomainName: entry.provenance?.discoveryDomainName ?? context.domainName,
+        queryIntentId: entry.provenance?.queryIntentId ?? null,
+        queryText: entry.provenance?.queryText ?? null,
+        problemFacetIds: entry.provenance?.problemFacetIds ?? context.canonicalProblemSpec?.facets.map((facet) => facet.id) ?? [],
+        collectionPhase: 'RECOVERY',
+        sourceTier: entry.provenance?.sourceTier ?? 'PRIMARY',
       })),
       communityAiAnalysis: null,
     };
@@ -3635,8 +3888,8 @@ export class IdeaEvidenceRecoveryService {
       return await this.communityAiAnalysisService.analyze(recoveryContext, {
         classificationOnly: true,
         maxAttempts: 1,
-        requestTimeoutMs: 4_000,
-        totalTimeoutMs: 5_000,
+        requestTimeoutMs: 5_200,
+        totalTimeoutMs: 6_200,
       });
     } catch (error: unknown) {
       this.logger.warn(
@@ -3706,7 +3959,8 @@ export class IdeaEvidenceRecoveryService {
     const hasRelevantClassification =
       (analysis.evidenceClassifications ?? []).some(
         (item) =>
-          item.classification !== 'UNRELATED' &&
+          (item.classification === 'DIRECT_PROBLEM' ||
+            item.classification === 'SUPPORTING_SIGNAL') &&
           item.verifiedByDeterministicGuard,
       );
     if (opportunities.length === 0 && !hasRelevantClassification) {
@@ -4971,20 +5225,20 @@ export class IdeaEvidenceRecoveryService {
     if (compact) {
       return {
         maxFetchedPosts: Math.min(
-          this.readPositiveConfig('RECOVERY_COMPACT_MAX_FETCHED_POSTS', 8),
-          16,
+          this.readPositiveConfig('RECOVERY_COMPACT_MAX_FETCHED_POSTS', 6),
+          8,
         ),
         maxSavedPosts: Math.min(
-          this.readPositiveConfig('RECOVERY_COMPACT_MAX_SAVED_POSTS', 5),
-          10,
+          this.readPositiveConfig('RECOVERY_COMPACT_MAX_SAVED_POSTS', 4),
+          6,
         ),
         maxFetchedComments: Math.min(
-          this.readPositiveConfig('RECOVERY_COMPACT_MAX_FETCHED_COMMENTS', 16),
-          32,
+          this.readPositiveConfig('RECOVERY_COMPACT_MAX_FETCHED_COMMENTS', 8),
+          12,
         ),
         maxSavedComments: Math.min(
-          this.readPositiveConfig('RECOVERY_COMPACT_MAX_SAVED_COMMENTS', 10),
-          20,
+          this.readPositiveConfig('RECOVERY_COMPACT_MAX_SAVED_COMMENTS', 4),
+          6,
         ),
       };
     }
@@ -4992,40 +5246,40 @@ export class IdeaEvidenceRecoveryService {
     if (requestSpecific) {
       return {
         maxFetchedPosts: Math.min(
-          this.readPositiveConfig('RECOVERY_REQUEST_MAX_FETCHED_POSTS', 7),
-          10,
+          this.readPositiveConfig('RECOVERY_REQUEST_MAX_FETCHED_POSTS', 5),
+          7,
         ),
         maxSavedPosts: Math.min(
-          this.readPositiveConfig('RECOVERY_REQUEST_MAX_SAVED_POSTS', 4),
-          6,
+          this.readPositiveConfig('RECOVERY_REQUEST_MAX_SAVED_POSTS', 3),
+          4,
         ),
         maxFetchedComments: Math.min(
-          this.readPositiveConfig('RECOVERY_REQUEST_MAX_FETCHED_COMMENTS', 14),
-          20,
+          this.readPositiveConfig('RECOVERY_REQUEST_MAX_FETCHED_COMMENTS', 6),
+          8,
         ),
         maxSavedComments: Math.min(
-          this.readPositiveConfig('RECOVERY_REQUEST_MAX_SAVED_COMMENTS', 7),
-          10,
+          this.readPositiveConfig('RECOVERY_REQUEST_MAX_SAVED_COMMENTS', 3),
+          4,
         ),
       };
     }
 
     return {
       maxFetchedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 12),
-        40,
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 7),
+        10,
       ),
       maxSavedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 8),
-        24,
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 4),
+        6,
       ),
       maxFetchedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 24),
-        60,
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 8),
+        12,
       ),
       maxSavedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 16),
-        40,
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 4),
+        6,
       ),
     };
   }

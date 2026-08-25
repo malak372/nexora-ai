@@ -303,24 +303,133 @@ export class AiStructuredOutputService {
 
     const isValid = validator(parsedResult.data);
 
-    if (!isValid) {
+    if (isValid) {
+      /*
+       * AJV confirms that the runtime value matches the supplied schema.
+       *
+       * TypeScript cannot infer T directly from the provider-neutral schema
+       * object, so the validated runtime value is returned as T.
+       */
       return {
-        success: false,
-
-        issues: this.mapAjvErrors(validator.errors, normalizedSchemaName),
+        success: true,
+        data: parsedResult.data as T,
       };
     }
 
     /*
-     * AJV confirms that the runtime value matches the supplied schema.
+     * Some hosted models occasionally ignore an otherwise valid root-object
+     * response contract and return one harmless transport envelope instead:
      *
-     * TypeScript cannot infer T directly from the provider-neutral schema
-     * object, so the validated runtime value is returned as T.
+     *   [{ ... }]
+     *   { "plan": { ... } }
+     *   { "result": { ... } }
+     *   "{ ... }"
+     *
+     * Rejecting those responses before application normalization wastes an AI
+     * call and forces the complete operation into fallback. Only unwrap a
+     * candidate when the unwrapped value itself passes the exact caller-owned
+     * JSON Schema. This keeps the behavior safe for every structured-output
+     * operation: no field coercion, default insertion, or semantic mutation is
+     * performed here.
      */
+    const normalizedEnvelope = this.tryValidateHarmlessProviderEnvelope(
+      parsedResult.data,
+      validator,
+    );
+
+    if (normalizedEnvelope.matched) {
+      return {
+        success: true,
+        data: normalizedEnvelope.data as T,
+      };
+    }
+
     return {
-      success: true,
-      data: parsedResult.data as T,
+      success: false,
+
+      issues: this.mapAjvErrors(
+        normalizedEnvelope.bestErrors ?? validator.errors,
+        normalizedSchemaName,
+      ),
     };
+  }
+
+  /**
+   * Attempts to unwrap transport-only provider envelopes without changing
+   * business data.
+   *
+   * A candidate is accepted only when it passes the exact already-compiled
+   * caller schema. This method therefore cannot turn an invalid business
+   * response into a valid one; it only removes a harmless outer container
+   * that some providers add around otherwise valid structured output.
+   */
+  private tryValidateHarmlessProviderEnvelope(
+    value: unknown,
+    validator: ValidateFunction,
+  ):
+    | { readonly matched: true; readonly data: unknown; readonly bestErrors: null }
+    | {
+        readonly matched: false;
+        readonly data: null;
+        readonly bestErrors: ErrorObject[] | null | undefined;
+      } {
+    const candidates: unknown[] = [];
+
+    if (Array.isArray(value) && value.length === 1) {
+      candidates.push(value[0]);
+    }
+
+    if (this.isPlainRecord(value)) {
+      for (const key of ['plan', 'result', 'data', 'output', 'response', 'payload']) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          candidates.push(value[key]);
+        }
+      }
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      try {
+        candidates.push(this.parser.parseJson(value));
+      } catch {
+        // The original structured-output failure remains authoritative.
+      }
+    }
+
+    let bestErrors: ErrorObject[] | null | undefined = validator.errors;
+    let bestErrorCount = Array.isArray(bestErrors) ? bestErrors.length : Number.POSITIVE_INFINITY;
+
+    for (const candidate of candidates) {
+      if (validator(candidate)) {
+        return {
+          matched: true,
+          data: candidate,
+          bestErrors: null,
+        };
+      }
+
+      const candidateErrors = validator.errors;
+      const candidateErrorCount = Array.isArray(candidateErrors)
+        ? candidateErrors.length
+        : Number.POSITIVE_INFINITY;
+
+      if (candidateErrorCount < bestErrorCount) {
+        bestErrors = candidateErrors ? [...candidateErrors] : candidateErrors;
+        bestErrorCount = candidateErrorCount;
+      }
+    }
+
+    return {
+      matched: false,
+      data: null,
+      bestErrors,
+    };
+  }
+
+  /**
+   * Returns true only for ordinary JSON object records.
+   */
+  private isPlainRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   /**

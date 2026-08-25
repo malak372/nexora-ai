@@ -27,6 +27,7 @@ const INITIAL_SOCKET_GRACE_MS = 750;
 const RATE_LIMIT_RETRY_MS = 15_000;
 
 const STAGE_SEQUENCE = new Map([
+  ['preparing', 0],
   ['request-validation', 1],
   ['entitlement-check', 2],
   ['domain-resolution', 3],
@@ -114,6 +115,28 @@ function resolveFurthestStageKey(stages = []) {
   }, null);
 }
 
+function resolveFurthestStageProgress(stages = []) {
+  return stages.reduce((progress, stage) => {
+    const status = normalizeStatus(stage?.status);
+
+    if (
+      ![
+        'RUNNING',
+        'COMPLETED',
+        'SUCCEEDED',
+        'SKIPPED',
+      ].includes(status)
+    ) {
+      return progress;
+    }
+
+    return Math.max(
+      progress,
+      Number(stage?.progressPercent ?? 0),
+    );
+  }, 0);
+}
+
 function getRunIdeaId(run) {
   return (
     run?.ideaId ??
@@ -121,36 +144,6 @@ function getRunIdeaId(run) {
     run?.idea?.ideaId ??
     null
   );
-}
-
-function statusRank(status) {
-  switch (
-    String(status ?? '')
-      .trim()
-      .toUpperCase()
-  ) {
-    case 'QUEUED':
-      return 0;
-
-    case 'RUNNING':
-      return 1;
-
-    case 'RETRYING':
-      return 2;
-
-    case 'NO_RESULT':
-      return 3;
-
-    case 'FAILED':
-    case 'CANCELLED':
-      return 4;
-
-    case 'COMPLETED':
-      return 5;
-
-    default:
-      return -1;
-  }
 }
 
 function isFullyResolvedTerminalRun(run) {
@@ -168,6 +161,56 @@ function isFullyResolvedTerminalRun(run) {
   );
 }
 
+const STAGE_STATUS_RANK = new Map([
+  ['PENDING', 0],
+  ['RUNNING', 1],
+  ['SKIPPED', 2],
+  ['COMPLETED', 3],
+  ['SUCCEEDED', 3],
+  ['FAILED', 4],
+]);
+
+const RUN_STATUS_RANK = new Map([
+  ['QUEUED', 0],
+  ['RUNNING', 1],
+  ['PAUSED', 2],
+  ['RETRYING', 2],
+  ['NO_RESULT', 3],
+  ['FAILED', 4],
+  ['CANCELLED', 4],
+  ['COMPLETED', 5],
+]);
+
+function normalizeStatus(value) {
+  return String(value ?? '').trim().toUpperCase();
+}
+
+function resolveRunStatus(currentStatus, incomingStatus) {
+  const current = normalizeStatus(currentStatus);
+  const incoming = normalizeStatus(incomingStatus);
+
+  if (!incoming) return current || 'QUEUED';
+  if (!current) return incoming;
+
+  // A recovered PAUSED/RETRYING run legitimately transitions back to RUNNING.
+  if (
+    (current === 'PAUSED' || current === 'RETRYING') &&
+    incoming === 'RUNNING'
+  ) {
+    return incoming;
+  }
+
+  const currentRank =
+    RUN_STATUS_RANK.get(current) ?? -1;
+
+  const incomingRank =
+    RUN_STATUS_RANK.get(incoming) ?? -1;
+
+  return incomingRank >= currentRank
+    ? incoming
+    : current;
+}
+
 function toTimestamp(value) {
   const timestamp = value
     ? Date.parse(value)
@@ -180,8 +223,12 @@ function toTimestamp(value) {
 
 function mergeStage(stages, nextStage) {
   const incomingKey =
-    nextStage.stageKey ??
-    nextStage.key;
+    nextStage?.stageKey ??
+    nextStage?.key;
+
+  if (!incomingKey) {
+    return stages;
+  }
 
   const index = stages.findIndex(
     (stage) =>
@@ -199,7 +246,29 @@ function mergeStage(stages, nextStage) {
 
   const current = stages[index];
 
+  const currentStatus =
+    normalizeStatus(current?.status);
+
+  const incomingStatus =
+    normalizeStatus(nextStage?.status);
+
+  const currentRank =
+    STAGE_STATUS_RANK.get(currentStatus) ?? -1;
+
+  const incomingRank =
+    STAGE_STATUS_RANK.get(incomingStatus) ?? -1;
+
+  /*
+   * Stage lifecycle direction is more authoritative than wall-clock ordering.
+   * This prevents a delayed persisted RUNNING row from replacing an already
+   * received COMPLETED realtime transition when clocks differ slightly.
+   */
+  if (incomingRank < currentRank) {
+    return stages;
+  }
+
   if (
+    incomingRank === currentRank &&
     toTimestamp(nextStage.updatedAt) > 0 &&
     toTimestamp(current.updatedAt) >
       toTimestamp(nextStage.updatedAt)
@@ -214,7 +283,11 @@ function mergeStage(stages, nextStage) {
     ...nextStage,
   };
 
-  return copy;
+  return copy.sort(
+    (a, b) =>
+      Number(a.sequence ?? 0) -
+      Number(b.sequence ?? 0),
+  );
 }
 
 function mergeStages(
@@ -228,11 +301,19 @@ function mergeStages(
   );
 }
 
-function mergeRunSnapshot(
-  current,
-  incoming,
-) {
+function mergeRunSnapshot(current, incoming) {
+  const incomingStages = Array.isArray(
+    incoming?.stages,
+  )
+    ? incoming.stages
+    : [];
+
   if (!current) {
+    const stages = mergeStages(
+      [],
+      incomingStages,
+    );
+
     return {
       ...incoming,
 
@@ -245,14 +326,27 @@ function mergeRunSnapshot(
         incoming?.id,
 
       ideaId:
-        incoming?.ideaId ??
-        incoming?.idea?.id ??
-        incoming?.idea?.ideaId ??
-        null,
+        getRunIdeaId(incoming),
 
-      stages:
-        incoming?.stages ??
-        [],
+      status:
+        resolveRunStatus(
+          null,
+          incoming?.status,
+        ),
+
+      progressPercent: Math.max(
+        Number(
+          incoming?.progressPercent ?? 0,
+        ),
+        resolveFurthestStageProgress(stages),
+      ),
+
+      currentStageKey: resolveForwardStage(
+        incoming?.currentStageKey,
+        resolveFurthestStageKey(stages),
+      ),
+
+      stages,
     };
   }
 
@@ -267,6 +361,12 @@ function mergeRunSnapshot(
     currentTimestamp === 0 ||
     incomingTimestamp >= currentTimestamp;
 
+  /*
+   * Parent-run timestamps and stage-row timestamps are independent. Never drop
+   * an entire socket/HTTP snapshot just because an optimistic run event has a
+   * newer updatedAt; merge stage rows separately and preserve monotonic
+   * lifecycle/progress fields.
+   */
   const merged = incomingIsNewer
     ? {
         ...current,
@@ -277,7 +377,7 @@ function mergeRunSnapshot(
       };
 
   if (!incomingIsNewer) {
-    [
+    for (const key of [
       'ideaId',
       'ideaTitle',
       'idea',
@@ -287,55 +387,37 @@ function mergeRunSnapshot(
       'generationType',
       'type',
       'metadata',
-    ].forEach((key) => {
+    ]) {
       if (incoming?.[key] != null) {
         merged[key] = incoming[key];
       }
-    });
+    }
   }
 
-  const currentStatus = String(
-    current?.status ?? 'QUEUED',
-  ).toUpperCase();
-
-  const incomingStatus = String(
-    incoming?.status ?? '',
-  ).toUpperCase();
-
-  const resumedFromRetry =
-    currentStatus === 'RETRYING' &&
-    incomingStatus === 'RUNNING';
-
-  if (
-    incomingStatus &&
-    (
-      resumedFromRetry ||
-      statusRank(incomingStatus) >=
-        statusRank(currentStatus)
-    )
-  ) {
-    merged.status = incomingStatus;
-  } else {
-    merged.status = currentStatus;
-  }
+  const stages = mergeStages(
+    current?.stages ?? [],
+    incomingStages,
+  );
 
   merged.id =
     incoming?.id ??
     incoming?.runId ??
-    current?.id;
+    current?.id ??
+    current?.runId;
 
   merged.runId =
     incoming?.runId ??
     incoming?.id ??
-    current?.runId;
+    current?.runId ??
+    current?.id;
 
   merged.ideaId =
-    incoming?.ideaId ??
-    incoming?.idea?.id ??
-    incoming?.idea?.ideaId ??
-    current?.ideaId ??
-    current?.idea?.id ??
-    current?.idea?.ideaId ??
+    getRunIdeaId(incoming) ??
+    getRunIdeaId(current);
+
+  merged.generationType =
+    incoming?.generationType ??
+    current?.generationType ??
     null;
 
   merged.startedAt =
@@ -353,16 +435,10 @@ function mergeRunSnapshot(
     current?.cancelRequestedAt ??
     null;
 
-  merged.currentStageKey =
-    resolveForwardStage(
-      current?.currentStageKey,
-      resolveForwardStage(
-        incoming?.currentStageKey,
-        resolveFurthestStageKey(
-          incoming?.stages ?? [],
-        ),
-      ),
-    );
+  merged.status = resolveRunStatus(
+    current?.status,
+    incoming?.status,
+  );
 
   merged.progressPercent = Math.max(
     Number(
@@ -371,18 +447,32 @@ function mergeRunSnapshot(
     Number(
       incoming?.progressPercent ?? 0,
     ),
+    resolveFurthestStageProgress(stages),
   );
 
-  merged.stages = mergeStages(
-    current?.stages ?? [],
-    incoming?.stages ?? [],
-  );
+  merged.currentStageKey =
+    resolveForwardStage(
+      current?.currentStageKey,
+      resolveForwardStage(
+        incoming?.currentStageKey,
+        resolveFurthestStageKey(stages),
+      ),
+    );
 
-  merged.updatedAt =
+  merged.stages = stages;
+
+  if (
     incomingTimestamp >= currentTimestamp &&
     incoming?.updatedAt != null
-      ? incoming.updatedAt
-      : current?.updatedAt;
+  ) {
+    merged.updatedAt =
+      incoming.updatedAt;
+  } else {
+    merged.updatedAt =
+      current?.updatedAt ??
+      incoming?.updatedAt ??
+      null;
+  }
 
   return merged;
 }
@@ -391,7 +481,8 @@ export function useIdeaGenerationSocket(
   runId,
   initialRun = null,
 ) {
-  const socketRef = useRef(null);
+  const socketRef =
+    useRef(null);
 
   const mountedRef =
     useRef(true);
@@ -512,9 +603,10 @@ export function useIdeaGenerationSocket(
   const resolvedIdeaId =
     getRunIdeaId(run);
 
-  const runStatus = String(
-    run?.status ?? '',
-  ).toUpperCase();
+  const runStatus =
+    String(
+      run?.status ?? '',
+    ).toUpperCase();
 
   /*
    * A COMPLETED socket event may arrive a fraction
@@ -563,7 +655,10 @@ export function useIdeaGenerationSocket(
 
     setError('');
     setErrorStatus(null);
-    setConnectionState('connecting');
+
+    setConnectionState(
+      'connecting',
+    );
 
     const clearReconciliationTimer =
       () => {
@@ -607,8 +702,7 @@ export function useIdeaGenerationSocket(
               } catch (requestError) {
                 if (
                   requestError
-                    ?.response?.status ===
-                  429
+                    ?.response?.status === 429
                 ) {
                   nextDelay =
                     RATE_LIMIT_RETRY_MS;
@@ -647,12 +741,14 @@ export function useIdeaGenerationSocket(
         reconnectionAttempts:
           Infinity,
 
-        reconnectionDelay: 350,
+        reconnectionDelay:
+          350,
 
         reconnectionDelayMax:
           3_000,
 
-        timeout: 8_000,
+        timeout:
+          8_000,
       },
     );
 
@@ -819,87 +915,65 @@ export function useIdeaGenerationSocket(
             );
 
           const payloadStatus =
-            String(
-              payload?.status ?? '',
-            ).toUpperCase();
+            normalizeStatus(
+              payload?.status,
+            );
 
-          const currentStatus =
-            String(
-              current?.status ??
-                'QUEUED',
-            ).toUpperCase();
-
-          let nextStatus =
-            currentStatus;
-
-          if (
-            currentStatus ===
-              'QUEUED' &&
-            payloadStatus ===
-              'RUNNING'
-          ) {
-            nextStatus =
-              'RUNNING';
-          }
+          const nextStatus =
+            payloadStatus === 'RUNNING'
+              ? resolveRunStatus(
+                  current?.status,
+                  'RUNNING',
+                )
+              : current?.status ??
+                'RUNNING';
 
           return {
-            ...(
-              current ?? {
-                id: runId,
-                runId,
-                status: 'QUEUED',
-                progressPercent: 0,
-                currentStageKey:
-                  null,
-                startedAt: null,
-                stages: [],
-              }
-            ),
+            ...(current ?? {
+              id: runId,
+              runId,
+              status: 'QUEUED',
+              progressPercent: 0,
+              currentStageKey: null,
+              startedAt: null,
+              stages: [],
+            }),
 
-            status: nextStatus,
+            status:
+              nextStatus,
 
             startedAt:
               current?.startedAt ??
               (
-                payloadStatus ===
-                  'RUNNING'
-                  ? payload
-                      ?.startedAt ??
-                    null
+                payloadStatus === 'RUNNING'
+                  ? payload?.startedAt ?? null
                   : null
               ),
 
             progressPercent:
               Math.max(
                 Number(
-                  current
-                    ?.progressPercent ??
-                    0,
+                  current?.progressPercent ?? 0,
                 ),
                 Number(
-                  payload
-                    ?.progressPercent ??
-                    0,
+                  payload?.progressPercent ?? 0,
+                ),
+                resolveFurthestStageProgress(
+                  stages,
                 ),
               ),
 
-            currentStageKey:
-              [
-                'RUNNING',
-                'COMPLETED',
-                'SUCCEEDED',
-                'SKIPPED',
-              ].includes(
-                payloadStatus,
-              )
-                ? resolveForwardStage(
-                    current
-                      ?.currentStageKey,
-                    payload
-                      ?.stageKey,
-                  )
-                : current
-                    ?.currentStageKey,
+            currentStageKey: [
+              'RUNNING',
+              'COMPLETED',
+              'SUCCEEDED',
+              'SKIPPED',
+            ].includes(payloadStatus)
+              ? resolveForwardStage(
+                  current?.currentStageKey,
+                  payload?.stageKey,
+                )
+              : current?.currentStageKey,
 
             stages,
           };

@@ -20,6 +20,12 @@ import {
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
+import { RequestEvidenceAlignmentUtil } from '../../ideas/generation/utils/request-evidence-alignment.util';
+import { RequestDynamicQueryUtil } from '../../ideas/generation/utils/request-dynamic-query.util';
+import { RequestWorkflowIntentProfileUtil } from '../../ideas/generation/utils/request-workflow-intent-profile.util';
+import { RequestNicheCustomCraftUtil } from '../../ideas/generation/utils/request-niche-custom-craft.util';
+import { RequestOnlinePharmacyFraudUtil } from '../../ideas/generation/utils/request-online-pharmacy-fraud.util';
+import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
 
 /**
  * Represents a Reddit listing wrapper.
@@ -357,7 +363,8 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     }
 
     try {
-      const subreddits = this.getConfiguredSubreddits();
+      const configuredSubreddits = this.getConfiguredSubreddits();
+      const requestSubreddits = this.resolveRequestSubreddits(input);
       const queryWindow = searchQueries.slice(
         0,
         input.collectionMode === 'STANDARD'
@@ -365,63 +372,118 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
           : Math.min(3, this.maxSearchQueries),
       );
       const useConfiguredSubreddits =
-        input.collectionMode === 'STANDARD' && subreddits.length > 0;
+        input.collectionMode === 'STANDARD' &&
+        configuredSubreddits.length > 0;
 
       /*
-       * A static subreddit allow-list is useful for long-running standard
-       * collection but is harmful for arbitrary generation requests. A newly
-       * inferred domain such as personal styling or aquarium maintenance must
-       * be able to search all public Reddit communities instead of being
-       * trapped inside programming/startup subreddits configured months ago.
+       * AI routing hints are authoritative for bounded request-scoped Reddit
+       * collection. Searching r/vintagecameras/r/camerarepair first prevents a
+       * valid niche query from falling through to an unrelated global RSS feed.
+       * Global Reddit remains a bounded fallback when the hinted communities do
+       * not return enough material.
        */
       let collectedPosts: RedditPostData[] = [];
       if (accessToken) {
-        collectedPosts = (
-          await Promise.all(
-            queryWindow.map((query) =>
-              useConfiguredSubreddits
-                ? this.searchConfiguredSubreddits(
-                    query,
-                    subreddits,
-                    accessToken,
-                    userAgent,
-                  )
-                : this.searchReddit(query, undefined, accessToken, userAgent),
-            ),
-          )
-        ).flat();
-      } else {
-        for (const [index, query] of queryWindow.entries()) {
-          if (
-            this.isPublicRssCircuitOpen() ||
-            !this.hasCollectionBudget(collectionDeadlineMs, 3_100)
-          ) {
-            break;
-          }
-          const posts = useConfiguredSubreddits
-            ? await this.searchConfiguredSubreddits(
+        if (requestSubreddits.length > 0 && input.collectionMode !== 'STANDARD') {
+          for (const [index, subreddit] of requestSubreddits.slice(0, 2).entries()) {
+            const query = queryWindow[index % Math.max(1, queryWindow.length)];
+            if (!query) break;
+            collectedPosts.push(
+              ...(await this.searchReddit(
                 query,
-                subreddits,
-                undefined,
+                subreddit,
+                accessToken,
                 userAgent,
-              )
-            : await this.searchRedditRss(query, '', userAgent);
-          collectedPosts.push(...posts);
-          if (
-            index < queryWindow.length - 1 &&
-            !this.isPublicRssCircuitOpen() &&
-            this.hasCollectionBudget(
-              collectionDeadlineMs,
-              this.requestDelayMs + 3_100,
+              )),
+            );
+            if (collectedPosts.length >= this.maxSavedPosts) break;
+          }
+        } else {
+          collectedPosts = (
+            await Promise.all(
+              queryWindow.map((query) =>
+                useConfiguredSubreddits
+                  ? this.searchConfiguredSubreddits(
+                      query,
+                      configuredSubreddits,
+                      accessToken,
+                      userAgent,
+                    )
+                  : this.searchReddit(query, undefined, accessToken, userAgent),
+              ),
             )
-          ) {
-            await this.delay(this.requestDelayMs);
+          ).flat();
+        }
+      } else {
+        if (requestSubreddits.length > 0) {
+          for (const [index, subreddit] of requestSubreddits.slice(0, 2).entries()) {
+            if (
+              this.isPublicRssCircuitOpen() ||
+              !this.hasCollectionBudget(collectionDeadlineMs, 3_100)
+            ) {
+              break;
+            }
+            const query = queryWindow[index % Math.max(1, queryWindow.length)];
+            if (!query) break;
+            collectedPosts.push(
+              ...(await this.searchRedditRss(query, subreddit, userAgent)),
+            );
+            if (collectedPosts.length >= this.maxSavedPosts) break;
+            if (
+              index < Math.min(2, requestSubreddits.length) - 1 &&
+              !this.isPublicRssCircuitOpen() &&
+              this.hasCollectionBudget(
+                collectionDeadlineMs,
+                this.requestDelayMs + 3_100,
+              )
+            ) {
+              await this.delay(this.requestDelayMs);
+            }
+          }
+        }
+
+        /*
+         * When PREPARING gave us concrete subreddit/community routing, do not
+         * fall through to Reddit-wide RSS merely because a niche community was
+         * sparse or rate-limited. Global fallback was the source of unrelated
+         * BORU/politics/game posts entering restoration requests. Other first-
+         * pass collectors provide breadth more safely than abandoning identity.
+         */
+        const globalQueryLimit = requestSubreddits.length > 0 ? 0 : queryWindow.length;
+        if (
+          collectedPosts.length < 2 &&
+          !this.isPublicRssCircuitOpen()
+        ) {
+          for (const [index, query] of queryWindow
+            .slice(0, globalQueryLimit)
+            .entries()) {
+            if (
+              this.isPublicRssCircuitOpen() ||
+              !this.hasCollectionBudget(collectionDeadlineMs, 3_100)
+            ) {
+              break;
+            }
+            collectedPosts.push(
+              ...(await this.searchRedditRss(query, '', userAgent)),
+            );
+            if (
+              index < globalQueryLimit - 1 &&
+              !this.isPublicRssCircuitOpen() &&
+              this.hasCollectionBudget(
+                collectionDeadlineMs,
+                this.requestDelayMs + 3_100,
+              )
+            ) {
+              await this.delay(this.requestDelayMs);
+            }
           }
         }
       }
 
       if (
-        collectedPosts.length === 0 &&
+        !collectedPosts.some(
+          (post) => this.isValidPost(post) && this.isRequestCandidatePost(post, input),
+        ) &&
         input.requestDescription?.trim() &&
         input.collectionMode !== 'STANDARD' &&
         this.hasCollectionBudget(collectionDeadlineMs, 3_100)
@@ -433,28 +495,46 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
           requestDescription: input.requestDescription,
           plannedQueries: input.plannedQueries,
           keywords: input.keywords,
+          authoritativePlannedQueries: input.authoritativePlannedQueries,
         })
           .filter((query) => !attempted.has(this.cleanNormalizedText(query)))
           .slice(0, 3);
 
         if (fallbackQueries.length > 0) {
           if (accessToken) {
-            collectedPosts = (
-              await Promise.all(
-                fallbackQueries.map((query) =>
-                  this.searchReddit(
-                    query,
-                    undefined,
-                    accessToken,
-                    userAgent,
-                    'all',
-                  ),
-                ),
-              )
-            ).flat();
+            collectedPosts = requestSubreddits.length > 0
+              ? (
+                  await Promise.all(
+                    fallbackQueries.slice(0, 2).map((query, index) =>
+                      this.searchReddit(
+                        query,
+                        requestSubreddits[index % requestSubreddits.length],
+                        accessToken,
+                        userAgent,
+                        'all',
+                      ),
+                    ),
+                  )
+                ).flat()
+              : (
+                  await Promise.all(
+                    fallbackQueries.map((query) =>
+                      this.searchReddit(
+                        query,
+                        undefined,
+                        accessToken,
+                        userAgent,
+                        'all',
+                      ),
+                    ),
+                  )
+                ).flat();
           } else {
             const fallbackPosts: RedditPostData[] = [];
-            for (const [index, query] of fallbackQueries.entries()) {
+            const scopedFallbackQueries = requestSubreddits.length > 0
+              ? fallbackQueries.slice(0, Math.min(2, requestSubreddits.length))
+              : fallbackQueries;
+            for (const [index, query] of scopedFallbackQueries.entries()) {
               if (
                 this.isPublicRssCircuitOpen() ||
                 !this.hasCollectionBudget(collectionDeadlineMs, 3_100)
@@ -462,10 +542,17 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
                 break;
               }
               fallbackPosts.push(
-                ...(await this.searchRedditRss(query, '', userAgent, 'all')),
+                ...(await this.searchRedditRss(
+                  query,
+                  requestSubreddits.length > 0
+                    ? requestSubreddits[index % requestSubreddits.length]
+                    : '',
+                  userAgent,
+                  'all',
+                )),
               );
               if (
-                index < fallbackQueries.length - 1 &&
+                index < scopedFallbackQueries.length - 1 &&
                 !this.isPublicRssCircuitOpen() &&
                 this.hasCollectionBudget(
                   collectionDeadlineMs,
@@ -674,6 +761,7 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
       q: query,
       sort: 'relevance',
       t: timeRange,
+      ...(subreddit ? { restrict_sr: '1' } : {}),
     }).toString()}`;
 
     try {
@@ -717,13 +805,95 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
           };
         })
         .filter((post): post is RedditPostData => Boolean(post))
+        .filter((post) => {
+          if (!subreddit) return true;
+          return this.normalizeSubredditName(post.subreddit) ===
+            this.normalizeSubredditName(subreddit);
+        })
         .slice(0, this.maxFetchedPosts);
       CollectorCacheUtil.set(cacheKey, posts, this.cacheTtlMs);
       return posts;
     } catch (error: unknown) {
+      if (subreddit && this.isRateLimitError(error)) {
+        const localFeedPosts = await this.readSubredditFeedRss(
+          subreddit,
+          userAgent,
+        );
+        if (localFeedPosts.length > 0) {
+          this.logger.debug(
+            `Reddit scoped search was rate-limited; retained ${localFeedPosts.length} locally filtered post candidate(s) from r/${subreddit} RSS instead.`,
+          );
+          return localFeedPosts;
+        }
+      }
       this.openPublicRssCircuitOnRateLimit(error);
       this.logger.debug(
         `Reddit RSS fallback failed non-fatally. query=${query} error=${this.getErrorMessage(error)}`,
+      );
+      return [];
+    }
+  }
+
+  private async readSubredditFeedRss(
+    subreddit: string,
+    userAgent: string,
+  ): Promise<RedditPostData[]> {
+    const normalizedSubreddit = this.normalizeSubredditName(subreddit);
+    if (!normalizedSubreddit) return [];
+
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'rss-subreddit-feed', [
+      normalizedSubreddit,
+    ]);
+    const cached = CollectorCacheUtil.get<RedditPostData[]>(cacheKey);
+    if (cached) return cached;
+
+    const url = `${this.publicApiBaseUrl}/r/${normalizedSubreddit}/new.rss`;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<string>(url, {
+          headers: {
+            Accept: 'application/rss+xml, application/xml, text/xml',
+            'User-Agent': userAgent,
+          },
+          timeout: 2_600,
+          responseType: 'text',
+        }),
+      );
+      const feed = await this.rssParser.parseString(response.data);
+      const posts = (feed.items ?? [])
+        .map((item): RedditPostData | null => {
+          const rssItem = item as RedditRssItem;
+          const link = rssItem.link?.trim() ?? '';
+          const idMatch = link.match(/\/comments\/([a-z0-9]+)\//iu);
+          const id = idMatch?.[1] ?? this.cleanPlainText(rssItem.guid);
+          const title = this.cleanPlainText(rssItem.title);
+          const selftext = this.cleanPlainText(
+            rssItem.contentSnippet ?? rssItem.content,
+          );
+          if (!id || !title) return null;
+          return {
+            id,
+            title,
+            selftext,
+            author: this.cleanPlainText(rssItem.creator ?? rssItem.author),
+            subreddit: normalizedSubreddit,
+            permalink: link.startsWith(this.publicApiBaseUrl)
+              ? link.slice(this.publicApiBaseUrl.length)
+              : undefined,
+            url: link || undefined,
+            created_utc: this.parseRssDate(rssItem.isoDate ?? rssItem.pubDate),
+            score: 0,
+            ups: 0,
+            num_comments: 0,
+          };
+        })
+        .filter((post): post is RedditPostData => Boolean(post))
+        .slice(0, this.maxFetchedPosts);
+      CollectorCacheUtil.set(cacheKey, posts, this.cacheTtlMs);
+      return posts;
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Reddit subreddit-feed fallback failed non-fatally. subreddit=${normalizedSubreddit} error=${this.getErrorMessage(error)}`,
       );
       return [];
     }
@@ -771,9 +941,14 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
         requestDescription: input.requestDescription,
         plannedQueries: input.plannedQueries,
         keywords: input.keywords,
+        authoritativePlannedQueries: input.authoritativePlannedQueries,
       });
       return this.unique(sourceAwareQueries)
-        .map((query) => this.relaxSearchQuery(query))
+        .map((query) =>
+          input.authoritativePlannedQueries
+            ? query.trim()
+            : this.relaxSearchQuery(query),
+        )
         .filter(Boolean)
         .slice(0, this.maxSearchQueries);
     }
@@ -884,6 +1059,7 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
         score: this.calculatePostRelevanceScore(post, input),
       }))
       .filter((item) => item.score > 0)
+      .filter((item) => this.isRequestCandidatePost(item.post, input))
       .sort((first, second) => second.score - first.score)
       .slice(0, this.maxSavedPosts);
   }
@@ -932,6 +1108,122 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     return !blockedWords.some((word) =>
       content.includes(this.cleanNormalizedText(word)),
     );
+  }
+
+  /**
+   * Rejects global-RSS noise before it enters the canonical raw evidence
+   * corpus. Community AI still owns semantic classification, but the collector
+   * must preserve at least the requester object/actor plus one workflow or pain
+   * axis so an unrelated popular Reddit post cannot become an AI candidate.
+   */
+  private isRequestCandidatePost(
+    post: RedditPostData,
+    input: CollectorInput,
+  ): boolean {
+    const request = this.cleanNormalizedText(input.requestDescription);
+    if (!request) return true;
+
+    const evidence = this.cleanNormalizedText(
+      `${this.cleanPlainText(post.title)} ${this.cleanPlainText(post.selftext)}`,
+    );
+    if (!evidence) return false;
+
+    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
+      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(
+        request,
+        evidence,
+      );
+    }
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(
+        request,
+        evidence,
+      );
+    }
+
+    const verticalConstraint = RequestVerticalConstraintUtil.resolve({
+      requestDescription: request,
+      domainName: input.domainName,
+      plannedQueries: input.plannedQueries,
+    });
+    if ([
+      'PUBLIC_PROGRAM_COST_ATTRIBUTION',
+      'OPERATIONAL_COST_ATTRIBUTION',
+      'HEALTHCARE_SUPPLY_COST_EFFICIENCY',
+      'AGRICULTURE_DISTRIBUTION_PROFITABILITY',
+      'AGRICULTURE_EXPORT_PROFITABILITY',
+    ].includes(verticalConstraint.kind)) {
+      /*
+       * High-signal business/operations verticals should not let a globally
+       * popular Reddit result into the raw ledger merely because it shares a
+       * generic domain word such as finance, budget, inventory, or delivery.
+       * Direct and Supporting classifications are both retained; unrelated
+       * posts are rejected at the source boundary before Community AI cost.
+       */
+      return RequestEvidenceAlignmentUtil.classifyForRequest({
+        requestDescription: request,
+        evidenceText: evidence,
+        plannedQueries: input.plannedQueries ?? [],
+      }) !== 'UNRELATED';
+    }
+
+    if (
+      RequestEvidenceAlignmentUtil.isAligned({
+        requestDescription: request,
+        evidenceText: evidence,
+        plannedQueries: input.plannedQueries ?? [],
+      })
+    ) {
+      return true;
+    }
+
+    const profile = RequestWorkflowIntentProfileUtil.resolve(request);
+    const genericIdentityTerms = new Set([
+      'business', 'businesses', 'company', 'companies', 'customer', 'customers',
+      'client', 'clients', 'specialist', 'specialists', 'service', 'services',
+      'project', 'projects', 'management', 'workflow', 'workflows', 'history',
+      'information', 'records', 'record', 'notes', 'problem', 'problems',
+    ]);
+    const identityTerms = this.unique([
+      ...profile.objectIdentityTerms,
+      ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(request),
+      RequestDynamicQueryUtil.extractActor(request),
+    ])
+      .map((value) => this.cleanNormalizedText(value))
+      .filter((value) => value.length >= 4)
+      .filter((value) => !genericIdentityTerms.has(value));
+
+    const identityMatched = identityTerms.some((term) =>
+      evidence.includes(term),
+    );
+    const workflowTerms = RequestDynamicQueryUtil.extractWorkflowTerms(request)
+      .map((value) => this.cleanNormalizedText(value))
+      .filter((value) => value.length >= 4);
+    const painTerms = RequestDynamicQueryUtil.extractPainTerms(request)
+      .map((value) => this.cleanNormalizedText(value))
+      .filter((value) => value.length >= 4);
+    const workflowMatched = workflowTerms.some((term) =>
+      evidence.includes(term),
+    );
+    const painMatched = painTerms.some((term) => evidence.includes(term));
+
+    const stopWords = new Set([
+      'often', 'struggle', 'understand', 'which', 'some', 'despite', 'similar',
+      'frequently', 'analyzed', 'separately', 'making', 'difficult', 'identify',
+      'information', 'usually', 'scattered', 'across', 'maintain', 'complete',
+      'lead', 'leading', 'project', 'projects', 'customer', 'customers', 'company',
+      'companies', 'specialist', 'specialists', 'independent', 'service', 'services',
+    ]);
+    const requestTokens = request
+      .split(/\s+/u)
+      .filter((token) => token.length >= 5 && !stopWords.has(token));
+    const evidenceTokens = new Set(evidence.split(/\s+/u));
+    const tokenOverlap = [...new Set(requestTokens)].filter((token) =>
+      evidenceTokens.has(token),
+    ).length;
+
+    return (identityMatched && (workflowMatched || painMatched || tokenOverlap >= 2)) ||
+      (tokenOverlap >= 3 && (workflowMatched || painMatched));
   }
 
   /**
@@ -1329,7 +1621,7 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     return this.publicRssCircuitOpenUntil > Date.now();
   }
 
-  private openPublicRssCircuitOnRateLimit(error: unknown): void {
+  private isRateLimitError(error: unknown): boolean {
     const errorRecord =
       error && typeof error === 'object'
         ? (error as Record<string, unknown>)
@@ -1345,8 +1637,21 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     const status = typeof statusValue === 'number'
       ? statusValue
       : Number(statusValue);
-    const message = this.getErrorMessage(error);
-    if (status !== 429 && !/(?:\b429\b|too many requests)/iu.test(message)) {
+    return status === 429 || /(?:\b429\b|too many requests)/iu.test(
+      this.getErrorMessage(error),
+    );
+  }
+
+  private openPublicRssCircuitOnRateLimit(error: unknown): void {
+    const errorRecord =
+      error && typeof error === 'object'
+        ? (error as Record<string, unknown>)
+        : null;
+    const responseRecord =
+      errorRecord?.response && typeof errorRecord.response === 'object'
+        ? (errorRecord.response as Record<string, unknown>)
+        : null;
+    if (!this.isRateLimitError(error)) {
       return;
     }
 
@@ -1537,6 +1842,76 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     return !placeholders.some((placeholder) =>
       normalized.includes(placeholder.toLocaleLowerCase()),
     );
+  }
+
+  /**
+   * Resolves request-scoped subreddit targets from AI routing hints first, then
+   * from a very small deterministic professional fallback for common domains.
+   * These targets are used only to narrow public search; they never count as
+   * evidence by themselves.
+   */
+  private resolveRequestSubreddits(input: CollectorInput): string[] {
+    const hinted = (input.sourceHints ?? []).flatMap((hint) => {
+      const normalized = hint.trim();
+      const redditUrlMatch = normalized.match(/reddit\.com\/r\/([a-z0-9_]+)/iu);
+      const directMatch = normalized.match(/(?:^|\s)\/?r\/([a-z0-9_]+)/iu);
+      const value = redditUrlMatch?.[1] ?? directMatch?.[1];
+      return value ? [this.normalizeSubredditName(value)] : [];
+    });
+
+    const request = this.cleanNormalizedText([
+      input.requestDescription ?? '',
+      input.domainName ?? '',
+    ].join(' '));
+    const inferred: string[] = [
+      ...RequestNicheCustomCraftUtil.preferredSubreddits(input.requestDescription),
+      ...(RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)
+        ? RequestOnlinePharmacyFraudUtil.preferredSubreddits()
+        : []),
+    ];
+    const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
+      input.requestDescription,
+    );
+    if (inferred.length > 0) {
+      // Request-scoped niche communities were resolved from the workflow profile.
+    } else if (workflowProfile.restorationIntent && workflowProfile.restorationSubject) {
+      const subject = this.cleanNormalizedText(workflowProfile.restorationSubject);
+      if (/\b(?:stained glass|leaded glass|architectural glass)\b/u.test(subject)) {
+        inferred.push('stainedglass', 'woodworking');
+      } else if (/\b(?:book|manuscript|paper|binding)\b/u.test(subject)) {
+        inferred.push('bookbinding', 'bookrepair');
+      } else if (/\b(?:jewelry|jewellery|ring|brooch|bracelet|necklace)\b/u.test(subject)) {
+        inferred.push('jewelrymaking', 'benchjewelers');
+      } else if (/\b(?:textile|fabric|tapestry|rug|carpet)\b/u.test(subject)) {
+        inferred.push('textiles', 'visiblemending');
+      } else if (/\b(?:wood|door|frame|furniture|gilded|gilding)\b/u.test(subject)) {
+        inferred.push('woodworking', 'finishing');
+      } else {
+        inferred.push('restoration', 'crafts');
+      }
+    } else if (/\b(?:eyeglass frame repair|eyeglass repair|eyewear repair|optical frame repair|spectacle frame repair|glasses repair)\b/u.test(request)) {
+      inferred.push('optometry', 'glasses');
+    } else if (/\b(?:vintage camera|antique camera|film camera|camera restoration|camera repair)\b/u.test(request)) {
+      inferred.push('vintagecameras', 'camerarepair', 'analogcommunity');
+    } else if (/\b(?:fountain pen|fountain pens|nib repair|nib restoration|pen restoration|pen repair)\b/u.test(request)) {
+      inferred.push('fountainpens', 'pen_swap');
+    } else if (/\b(?:antique textile|historic textile|textile restoration|textile conservation|fabric conservation)\b/u.test(request)) {
+      inferred.push('textiles', 'antiques');
+    } else if (
+      /\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request) &&
+      /\b(?:storage|warehouse|transport|delivery|spoilage|market price|profitability|margin|route)\w*\b/u.test(request)
+    ) {
+      inferred.push('farming', 'agriculture', 'supplychain');
+    } else if (/\b(?:logistics|freight|3pl|warehouse|delivery routes?|supply chain)\b/u.test(request)) {
+      inferred.push('logistics', 'supplychain');
+    } else if (/\b(?:bookplate|printmaking|ex libris)\b/u.test(request)) {
+      inferred.push('printmaking', 'bookbinding');
+    }
+
+    return this.unique([...hinted, ...inferred])
+      .map((value) => this.normalizeSubredditName(value))
+      .filter(Boolean)
+      .slice(0, Math.min(3, this.maxSubreddits));
   }
 
   /**

@@ -23,8 +23,11 @@ import {
 import { ProblemFirstCollectorQueryUtil } from '../collectors/base/problem-first-collector-query.util';
 import { RequestVerticalConstraintUtil, type RequestVerticalConstraint } from '../ideas/generation/utils/request-vertical-constraint.util';
 import { RequestWorkflowArchetypeUtil } from '../ideas/generation/utils/request-workflow-archetype.util';
+import { RequestWorkflowIntentProfileUtil } from '../ideas/generation/utils/request-workflow-intent-profile.util';
 import { RequestEvidenceAlignmentUtil } from '../ideas/generation/utils/request-evidence-alignment.util';
 import { RequestQueryProvenanceUtil } from '../ideas/generation/utils/request-query-provenance.util';
+import { RequestNicheCustomCraftUtil } from '../ideas/generation/utils/request-niche-custom-craft.util';
+import { RequestOnlinePharmacyFraudUtil } from '../ideas/generation/utils/request-online-pharmacy-fraud.util';
 
 import { RelevanceScoreUtil } from '../collectors/base/relevance-score.util';
 
@@ -35,6 +38,7 @@ import { classifyDirectCommunityEvidence } from '../nlp/common/utils/community-e
 import type { IntelligentTextInput } from '../nlp/pipeline/types/intelligent-analysis.types';
 
 import { CollectionJobService } from './collection-jobs/collection-job.service';
+import { CollectorSourceHealthService } from './collector-source-health.service';
 
 import { GetCollectionJobsQueryDto } from './collection-jobs/dto/get-collection-jobs-query.dto';
 
@@ -82,10 +86,17 @@ export type IdeaGenerationCollectionInput = {
 
   readonly keywords?: string[];
   readonly plannedQueries?: string[];
+  /** True only when PREPARING/RECOVERY actually accepted an online AI query plan. */
+  readonly queriesGeneratedByAi?: boolean;
   readonly sourcePlans?: Array<{
     readonly sourceKey: string;
     readonly queries: readonly string[];
     readonly routingHints: readonly string[];
+    readonly discoveryDomainId?: string | null;
+    readonly discoveryDomainName?: string | null;
+    readonly queryIntentId?: string | null;
+    readonly sourceTier?: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE';
+    readonly problemFacetIds?: readonly string[];
   }>;
 
   readonly collectionMode?: CollectorInput['collectionMode'];
@@ -176,6 +187,8 @@ export class DataCollectionService {
     private readonly collectorsFactory: CollectorsFactory,
 
     private readonly collectorQueueService: CollectorQueueService,
+
+    private readonly collectorSourceHealth: CollectorSourceHealthService,
 
     private readonly auditService: AuditService,
   ) {}
@@ -302,19 +315,22 @@ export class DataCollectionService {
         'violin case restoration condition materials and repair history operations';
     const hasAiOwnedTextPlan =
       Boolean(requestDescription) &&
+      isTrustedInternalGeneration &&
+      'queriesGeneratedByAi' in dto &&
+      dto.queriesGeneratedByAi === true &&
       'plannedQueries' in dto &&
-      (dto.plannedQueries?.length ?? 0) >= 6;
-    // When a text-bearing request has a sufficiently rich AI-owned search plan,
-    // keep that single semantic plan authoritative through collection/admission.
-    // The deterministic vertical classifier remains a resilience fallback only;
-    // letting it re-classify the same request here can reject valid evidence based
-    // on incidental nouns (for example a resource type) that are not the workflow.
-    const effectiveRequestVerticalConstraint = hasAiOwnedTextPlan
-      ? RequestVerticalConstraintUtil.resolve({})
-      : requestVerticalConstraint;
+      (dto.plannedQueries?.length ?? 0) > 0;
+    // The AI-owned plan is authoritative for query/source planning, but it must
+    // never erase requester identity during evidence admission. A rich plan used
+    // to downgrade strict verticals to GENERAL here, allowing lexical collisions
+    // (food delivery, opioid-abuse papers, generic workflow pages) into the raw
+    // corpus. Keep the request-derived constraint active for every collector item.
+    const effectiveRequestVerticalConstraint = requestVerticalConstraint;
     const preferredRequestSourceKeys = new Set(
       (hasAiOwnedTextPlan
-        ? dataSources.map((source) => source.key)
+        ? ('sourcePlans' in dto && dto.sourcePlans?.length
+            ? dto.sourcePlans.slice(0, 4).map((plan) => plan.sourceKey)
+            : dataSources.slice(0, 4).map((source) => source.key))
         : violinCaseRestorationRequest
           ? ['forum', 'youtube', 'news', 'crossref', 'gdelt']
           : requestArchetype.preferredSourceKeys
@@ -428,7 +444,7 @@ export class DataCollectionService {
 
           try {
             const collector = this.collectorsFactory.getCollector(dataSource.key);
-            const effectiveCollectorLimits = this.resolveSourceCollectorLimits(
+            let effectiveCollectorLimits = this.resolveSourceCollectorLimits(
               dataSource.key,
               collectionMode,
               collectorLimits,
@@ -445,25 +461,48 @@ export class DataCollectionService {
                     (plan) => plan.sourceKey.toLocaleLowerCase() === dataSource.key.toLocaleLowerCase(),
                   )
                 : undefined;
-            const sourceSpecificAiQueries = this.unique([
-              ...(sourcePlan?.queries ?? []),
-              ...('plannedQueries' in dto ? dto.plannedQueries ?? [] : []),
-            ]);
-            const sourcePlannedQueries =
-              isTrustedInternalGeneration && hasAiOwnedTextPlan
-                ? sourceSpecificAiQueries
-                : isTrustedInternalGeneration && 'plannedQueries' in dto
-                  ? ProblemFirstCollectorQueryUtil.build({
-                      sourceKey: dataSource.key,
-                      domainName: isGeneralDomain ? 'All Domains' : domain.name,
-                      requestDescription:
-                        'userDescription' in dto ? dto.userDescription : undefined,
-                      plannedQueries: this.unique(dto.plannedQueries ?? []),
-                      keywords: userKeywords,
-                    })
-                  : 'plannedQueries' in dto
-                    ? this.unique(dto.plannedQueries ?? [])
-                    : undefined;
+            effectiveCollectorLimits = this.applySourceTierCollectorLimits(
+              effectiveCollectorLimits,
+              sourcePlan?.sourceTier,
+              collectionMode,
+            );
+            const sourceSpecificAiQueries = this.unique(
+              (sourcePlan?.queries?.length
+                ? sourcePlan.queries
+                : 'plannedQueries' in dto
+                  ? dto.plannedQueries ?? []
+                  : []
+              ).map((query) => query.trim()).filter(Boolean),
+            ).slice(0, sourcePlan?.queries?.length ? 2 : 1);
+            const authoritativeRuntimeQueries =
+              isTrustedInternalGeneration &&
+              sourceSpecificAiQueries.length > 0;
+            const queriesGeneratedByAi =
+              authoritativeRuntimeQueries && hasAiOwnedTextPlan;
+
+            const sourcePlannedQueries = authoritativeRuntimeQueries
+              ? sourceSpecificAiQueries
+              : isTrustedInternalGeneration && 'plannedQueries' in dto
+                ? ProblemFirstCollectorQueryUtil.build({
+                    sourceKey: dataSource.key,
+                    domainName: isGeneralDomain ? 'All Domains' : domain.name,
+                    requestDescription:
+                      'userDescription' in dto ? dto.userDescription : undefined,
+                    plannedQueries: this.unique(dto.plannedQueries ?? []),
+                    keywords: userKeywords,
+                  })
+                : 'plannedQueries' in dto
+                  ? this.unique(dto.plannedQueries ?? [])
+                  : undefined;
+
+            const guaranteedSourceQueries =
+              sourcePlannedQueries && sourcePlannedQueries.length > 0
+                ? sourcePlannedQueries
+                : this.buildEmergencyRuntimeQueries({
+                    requestDescription,
+                    domainName: isGeneralDomain ? '' : domain.name,
+                    userKeywords,
+                  });
 
             const collectorInput: CollectorInput = {
               domainName: isGeneralDomain ? 'All Domains' : domain.name,
@@ -476,7 +515,8 @@ export class DataCollectionService {
               keywords: userKeywords,
               requestDescription:
                 'userDescription' in dto ? dto.userDescription : undefined,
-              plannedQueries: sourcePlannedQueries,
+              plannedQueries: guaranteedSourceQueries,
+              authoritativePlannedQueries: authoritativeRuntimeQueries,
               sourceHints: sourcePlan?.routingHints ? [...sourcePlan.routingHints] : undefined,
               collectionMode,
               limits: effectiveCollectorLimits,
@@ -489,20 +529,21 @@ export class DataCollectionService {
                   `savedPosts=${effectiveCollectorLimits?.maxSavedPosts ?? 'default'} | ` +
                   `fetchedComments=${effectiveCollectorLimits?.maxFetchedComments ?? 'default'} | ` +
                   `savedComments=${effectiveCollectorLimits?.maxSavedComments ?? 'default'} | ` +
-                  `problemQueries=${sourcePlannedQueries?.join(' || ') || 'none'}`,
+                  `problemQueries=${guaranteedSourceQueries.join(' || ') || 'none'} | authoritativeRuntime=${authoritativeRuntimeQueries} | queryOrigin=${queriesGeneratedByAi ? 'AI' : 'RUNTIME_FALLBACK'}`,
               );
             }
 
             const collectorStartedMs = Date.now();
             const postsPromise = this.collectorQueueService.run(
-              () =>
-                CollectorAbortContextUtil.run(signal, () =>
+              (sourceSignal) =>
+                CollectorAbortContextUtil.run(sourceSignal ?? signal, () =>
                   collector.runWithLimits(collectorInput, () =>
                     collector.collect(collectorInput),
                   ),
                 ),
               {
                 platform: dataSource.key,
+                signal,
                 timeoutMs: this.resolveSourceCollectorTimeoutMs(
                   dataSource.key,
                   collectionMode,
@@ -511,6 +552,10 @@ export class DataCollectionService {
                   preferredRequestSourceKeys,
                   blockedRequestSourceKeys,
                 ),
+                // Generation collection uses a soft source budget. A source
+                // crossing the target may finish and return partial/complete
+                // data; only explicit run cancellation aborts it.
+                abortOnTimeout: !isFastPathCollection,
               },
             );
 
@@ -546,14 +591,46 @@ export class DataCollectionService {
             }
 
             const collectorElapsedMs = Date.now() - collectorStartedMs;
+            this.collectorSourceHealth.recordSuccess(
+              dataSource.key,
+              posts.length,
+              collectorElapsedMs,
+            );
+
+            /*
+             * Community-AI visibility invariant:
+             * every non-empty post/comment returned by the collector is copied
+             * into the in-memory raw evidence ledger BEFORE central relevance,
+             * persistence caps, source-local identity gates, or NLP pruning run.
+             *
+             * This raw ledger is classification input only. It does not make an
+             * item trusted evidence; DIRECT/SUPPORTING admission still requires
+             * Community AI classification plus the existing deterministic
+             * post-AI verifier. Keeping the ledger in memory also avoids extra
+             * database writes and therefore adds recall without adding a serial
+             * persistence step to the generation critical path.
+             */
+            const sourceCollectedRawEvidenceInputs = isFastPathCollection
+              ? this.buildRawEvidenceInputsForCollectedPosts(
+                  posts,
+                  dataSource.key,
+                  relevanceTerms,
+                  guaranteedSourceQueries,
+                  sourcePlan,
+                  collectionMode === 'TARGETED_RECOVERY' ? 'RECOVERY' : 'INITIAL',
+                )
+              : [];
+            if (sourceCollectedRawEvidenceInputs.length > 0) {
+              rawEvidenceInputs.push(...sourceCollectedRawEvidenceInputs);
+            }
+
             const relevanceStartedMs = Date.now();
             const strictRelevantPosts = this.filterRelevantPosts(
               posts,
               relevanceTerms,
               collectionMode,
               dataSource.key,
-              sourcePlannedQueries ??
-                ('plannedQueries' in dto ? dto.plannedQueries ?? [] : []),
+              guaranteedSourceQueries,
               effectiveRequestVerticalConstraint,
               requestDescription,
             );
@@ -587,16 +664,20 @@ export class DataCollectionService {
                * never evict already-qualified evidence. Remaining collector
                * results are retained only as AI-triage candidates.
                */
-              const sourceLocalTriageCandidates =
-                this.filterFastRawTriageCandidates(
-                  posts,
-                  relevantPosts,
-                  dataSource.key,
-                  sourcePlannedQueries ?? [],
+              /*
+               * RAW AI corpus policy: preserve broad semantic recall for general
+               * workflows, but strict request contracts must pass the lightweight
+               * requester-identity gate before persistence. This removes known
+               * lexical collisions early while still retaining DIRECT and adjacent
+               * SUPPORTING candidates for Community AI.
+               */
+              const sourceLocalTriageCandidates = posts.filter((post) =>
+                this.passesFastRawTriageIdentityGate(
+                  post,
                   effectiveRequestVerticalConstraint,
-                  relevanceTerms,
                   requestDescription,
-                );
+                ),
+              );
               const triagePersistencePosts = this.buildFastTriagePersistencePosts(
                 sourceLocalTriageCandidates,
                 relevantPosts,
@@ -628,18 +709,6 @@ export class DataCollectionService {
                   effectiveCollectorLimits?.maxSavedComments ?? 1,
                   sourcePlannedQueries ?? [],
                 );
-              const sourceRawEvidenceInputs =
-                this.buildFastEvidenceInputsForPersistedPosts(
-                  fastPersistence.persistedPosts,
-                  dataSource.key,
-                  relevanceTerms,
-                  effectiveCollectorLimits?.maxSavedComments ?? 30,
-                  sourcePlannedQueries ?? [],
-                ).map((input) => ({
-                  ...input,
-                  sourceKey: dataSource.key,
-                }));
-
               completedSourceKeys.push(dataSource.key);
               fastEvidenceInputs.push(
                 ...sourceFastEvidenceInputs.map((input) => ({
@@ -647,7 +716,6 @@ export class DataCollectionService {
                   sourceKey: dataSource.key,
                 })),
               );
-              rawEvidenceInputs.push(...sourceRawEvidenceInputs);
               fastPersistedPosts += fastPersistence.totalPosts;
               fastPersistedComments += fastPersistence.totalComments;
 
@@ -657,6 +725,7 @@ export class DataCollectionService {
                   `posts=${fastPersistence.totalPosts} | ` +
                   `comments=${fastPersistence.totalComments} | ` +
                   `nlpInputs=${sourceFastEvidenceInputs.length} | ` +
+                  `communityRawInputs=${sourceCollectedRawEvidenceInputs.length} | ` +
                   `collectorMs=${collectorElapsedMs} | ` +
                   `relevanceMs=${relevanceElapsedMs} | ` +
                   `persistenceMs=${persistenceElapsedMs} | ` +
@@ -702,6 +771,10 @@ export class DataCollectionService {
             }
 
             jobForSource = jobForSource ?? (await getJob());
+            this.collectorSourceHealth.recordFailure(
+              dataSource.key,
+              Date.now() - sourceStartedMs,
+            );
 
             if (isFastPathCollection) {
               const failedJobId = jobForSource.id;
@@ -829,6 +902,13 @@ export class DataCollectionService {
          * relevance lane retains zero items so Community AI can semantically
          * triage everything that was actually collected.
          */
+        this.logger.debug(
+          `${collectionMode} Community raw ledger prepared | ` +
+            `rawInputs=${deduplicatedRawEvidenceInputs.length} | ` +
+            `nlpInputs=${fastEvidenceInputs.length} | ` +
+            `allCollectedVisible=true`,
+        );
+
         if (
           fastEvidenceInputs.length > 0 ||
           deduplicatedRawEvidenceInputs.length > 0
@@ -968,6 +1048,119 @@ export class DataCollectionService {
   }
 
 
+  /**
+   * Builds the Community-AI raw ledger from the collector response itself.
+   *
+   * Unlike deterministic NLP inputs, this method intentionally performs no
+   * relevance, vertical, lexical, source-quota, or comment-ranking pruning.
+   * Collector runWithLimits already defines what was actually collected; every
+   * non-empty returned post and comment is preserved once for Community AI.
+   */
+  private applySourceTierCollectorLimits(
+    limits: CollectorInput['limits'],
+    tier: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE' | undefined,
+    collectionMode: CollectorInput['collectionMode'],
+  ): CollectorInput['limits'] {
+    if (!limits || !tier || tier === 'PRIMARY') return limits;
+    const cap = (value: number | undefined, maximum: number): number =>
+      Math.min(value ?? maximum, maximum);
+
+    if (tier === 'MICRO_PROBE') {
+      return {
+        ...limits,
+        maxFetchedPosts: cap(limits.maxFetchedPosts, 2),
+        maxSavedPosts: cap(limits.maxSavedPosts, 1),
+        maxFetchedComments: cap(limits.maxFetchedComments, 2),
+        maxSavedComments: cap(limits.maxSavedComments, 1),
+      };
+    }
+
+    if (collectionMode === 'FAST_GENERATION') {
+      return {
+        ...limits,
+        maxFetchedPosts: cap(limits.maxFetchedPosts, 6),
+        maxSavedPosts: cap(limits.maxSavedPosts, 3),
+        maxFetchedComments: cap(limits.maxFetchedComments, 6),
+        maxSavedComments: cap(limits.maxSavedComments, 3),
+      };
+    }
+    return limits;
+  }
+
+  private buildRawEvidenceInputsForCollectedPosts(
+    posts: readonly CollectorPost[],
+    sourceKey: string,
+    relevanceTerms: readonly string[],
+    plannedQueries: readonly string[],
+    sourcePlan?: NonNullable<IdeaGenerationCollectionInput['sourcePlans']>[number],
+    collectionPhase: 'INITIAL' | 'RECOVERY' = 'INITIAL',
+  ): IntelligentTextInput[] {
+    const inputs: IntelligentTextInput[] = [];
+    const provenance = {
+      discoveryDomainId: sourcePlan?.discoveryDomainId ?? null,
+      discoveryDomainName: sourcePlan?.discoveryDomainName ?? null,
+      queryIntentId: sourcePlan?.queryIntentId ?? null,
+      queryText: plannedQueries[0] ?? null,
+      problemFacetIds: sourcePlan?.problemFacetIds ?? [],
+      collectionPhase,
+      sourceTier: sourcePlan?.sourceTier ?? 'MICRO_PROBE' as const,
+    };
+
+    posts.forEach((post, postIndex) => {
+      const externalPostId =
+        post.externalId.trim() || `collected-${postIndex.toString(36)}`;
+      const postId = `${sourceKey}:post:${externalPostId}`;
+      const postContent = this.buildDeduplicatedEvidenceText(
+        post.title,
+        post.content,
+        3_600,
+      );
+
+      if (postContent) {
+        inputs.push({
+          id: postId,
+          sourceKey,
+          sourceType: 'POST',
+          title: post.title ?? null,
+          content: postContent,
+          language: this.parseFastLanguageCode(post.languageCode),
+          likesCount: post.likesCount,
+          repliesCount: post.repliesCount ?? post.comments.length,
+          requiresAiSemanticTriage: true,
+          ...provenance,
+        });
+      }
+
+      post.comments.forEach((comment, commentIndex) => {
+        const content = comment.content.trim();
+        if (!content) return;
+        const externalCommentId =
+          comment.externalId.trim() ||
+          `${externalPostId}-comment-${commentIndex.toString(36)}`;
+
+        inputs.push({
+          id: `${sourceKey}:comment:${externalCommentId}`,
+          sourceKey,
+          sourceType: 'COMMENT',
+          postId,
+          title: post.title ?? null,
+          content: content.slice(0, 2_400),
+          language: this.parseFastLanguageCode(comment.languageCode),
+          likesCount: comment.likesCount,
+          isComplaintEvidence: this.isProtectedComplaintEvidence(
+            content,
+            post.title ?? '',
+            relevanceTerms,
+          ),
+          requiresAiSemanticTriage: true,
+          ...provenance,
+        });
+      });
+    });
+
+    return inputs;
+  }
+
   private buildFastEvidenceInputsForPersistedPosts(
     posts: readonly CollectorPost[],
     sourceKey: string,
@@ -986,10 +1179,11 @@ export class DataCollectionService {
       const postId = `${sourceKey}:post:${externalPostId}`;
 
       if (!isMarketplaceSource) {
-        const postContent = [post.title?.trim(), post.content.trim()]
-          .filter(Boolean)
-          .join(' ')
-          .slice(0, 2_000);
+        const postContent = this.buildDeduplicatedEvidenceText(
+          post.title,
+          post.content,
+          2_000,
+        );
 
         if (postContent) {
           inputs.push({
@@ -1320,7 +1514,72 @@ export class DataCollectionService {
       });
     }
 
-    return [...byExternalId.values()];
+    let remainingComments = boundedCommentLimit;
+    return [...byExternalId.values()].map((post) => {
+      const comments = post.comments.slice(0, Math.max(0, remainingComments));
+      remainingComments -= comments.length;
+      return { ...post, comments };
+    });
+  }
+
+  private buildDeduplicatedEvidenceText(
+    title: string | null | undefined,
+    content: string | null | undefined,
+    maxLength: number,
+  ): string {
+    const normalize = (value: string): string =>
+      value
+        .normalize('NFKC')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+    const normalizedTitle = normalize(title ?? '');
+    let normalizedBody = normalize(content ?? '');
+
+    /*
+     * Several RSS/search adapters return a title inside both title and content,
+     * sometimes repeated three or four times. Keep the title once and remove
+     * exact copies from the body before Community AI sees the item. This is
+     * token hygiene only; it never merges separate posts or changes evidence
+     * identity/provenance.
+     */
+    if (normalizedTitle && normalizedBody) {
+      const escapedTitle = normalizedTitle.replace(
+        /[.*+?^${}()|[\]\\]/gu,
+        '\\$&',
+      );
+      normalizedBody = normalizedBody
+        .replace(new RegExp(escapedTitle, 'giu'), ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+    }
+
+    const collapseExactTokenRepetition = (value: string): string => {
+      const tokens = value.split(/\s+/u).filter(Boolean);
+      if (tokens.length < 6) return value;
+      for (let repetitions = 4; repetitions >= 2; repetitions -= 1) {
+        if (tokens.length % repetitions !== 0) continue;
+        const width = tokens.length / repetitions;
+        const first = tokens.slice(0, width).join(' ');
+        let allEqual = true;
+        for (let index = 1; index < repetitions; index += 1) {
+          if (tokens.slice(index * width, (index + 1) * width).join(' ') !== first) {
+            allEqual = false;
+            break;
+          }
+        }
+        if (allEqual) return first;
+      }
+      return value;
+    };
+
+    normalizedBody = collapseExactTokenRepetition(normalizedBody);
+    return [normalizedTitle, normalizedBody]
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, Math.max(1, maxLength));
   }
 
   private deduplicateFastEvidenceInputs(
@@ -1463,6 +1722,70 @@ export class DataCollectionService {
    * @param relevanceTerms Domain and user relevance terms.
    * @returns Posts that satisfy the configured minimum relevance score.
    */
+  private passesFastRawTriageIdentityGate(
+    post: CollectorPost,
+    verticalConstraint: RequestVerticalConstraint,
+    requestDescription: string,
+  ): boolean {
+    if (!requestDescription) return true;
+    const evidenceText = `${post.title ?? ''} ${post.content ?? ''}`.replace(/\s+/gu, ' ').trim();
+    if (!evidenceText) return false;
+
+    if (verticalConstraint.kind === 'ONLINE_PHARMACY_FRAUD') {
+      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(
+        requestDescription,
+        evidenceText,
+      );
+    }
+
+    if (
+      verticalConstraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' &&
+      RequestNicheCustomCraftUtil.resolve(requestDescription)
+    ) {
+      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(
+        requestDescription,
+        evidenceText,
+      );
+    }
+
+    /*
+     * Every strict request must enforce requester identity before raw
+     * persistence. Previously only Online Pharmacy and custom-craft requests
+     * used this gate, so a PHYSICAL_SERVICE_VERTICAL post could be rejected by
+     * central relevance and still leak into rawEvidenceCorpus for Community AI.
+     *
+     * The fallback classifier is intentionally SUPPORTING-aware: same-mechanism
+     * evidence from an adjacent selected domain may survive, while lexical
+     * collisions such as concrete/steel hinges for eyeglass repair do not.
+     */
+    if (verticalConstraint.strict) {
+      const requestClassification =
+        RequestEvidenceAlignmentUtil.classifyForRequestFallback({
+          requestDescription,
+          evidenceText,
+        });
+      if (requestClassification !== 'UNRELATED') return true;
+
+      const verticalAligned = RequestVerticalConstraintUtil.matchesVertical(
+        evidenceText,
+        verticalConstraint,
+      );
+      const workflowAligned = RequestVerticalConstraintUtil.matchesWorkflow(
+        evidenceText,
+        verticalConstraint,
+      );
+      const concreteProblem =
+        /\b(?:wrong|incorrect|inaccurate|missing|lost|forgotten|mismatch|mismatched|repeat(?:ed)?|rework|delay(?:ed)?|late|waste(?:d)?|shortage|interruption|downtime|cost|expense|loss|profit|margin|fragmented|scattered|siloed|difficult|hard to|failure|failed|problem|issue)\w*\b/iu.test(
+          evidenceText,
+        );
+      return verticalAligned && workflowAligned && concreteProblem;
+    }
+
+    // Non-strict/general workflows keep the broad bounded corpus for semantic
+    // discovery so the stricter policy above does not reduce generic recall.
+    return true;
+  }
+
   private filterRelevantPosts(
     posts: CollectorPost[],
     relevanceTerms: string[],
@@ -1627,14 +1950,46 @@ export class DataCollectionService {
       const requestEvidenceText = [post.title, post.content]
         .filter(Boolean)
         .join(' ');
-      const strictRequestSemanticAdmission =
+      const requestSemanticCandidateAdmission =
         !requestDescription?.trim() ||
-        !verticalConstraint.strict ||
-        RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
+        RequestEvidenceAlignmentUtil.passesPreAiTriageCandidateGuard({
           requestDescription,
           evidenceText: requestEvidenceText,
           plannedQueries,
         });
+      const compositeRequestCandidateAdmission =
+        Boolean(requestDescription?.trim()) &&
+        RequestEvidenceAlignmentUtil.passesCompositeEvidenceCandidateGuard({
+          requestDescription,
+          evidenceText: requestEvidenceText,
+          plannedQueries,
+        });
+      const atomicRequestPainAdmission =
+        Boolean(requestDescription?.trim()) &&
+        RequestEvidenceAlignmentUtil.passesAtomicSupportingProblemGuard({
+          requestDescription,
+          evidenceText: requestEvidenceText,
+          plannedQueries,
+        });
+      const strictRequestSemanticAdmission =
+        !requestDescription?.trim() ||
+        requestSemanticCandidateAdmission ||
+        compositeRequestCandidateAdmission ||
+        atomicRequestPainAdmission;
+      const requestIntentFamily = requestDescription?.trim()
+        ? RequestWorkflowIntentProfileUtil.resolve(requestDescription).family
+        : 'GENERAL';
+      /*
+       * Reddit is intentionally broad and lexical scoring can otherwise admit
+       * relationship/AITAH posts through generic words such as expenses,
+       * account, restrictions, delayed, or family. For transaction/account
+       * abuse requests, require the dedicated request-aware semantic candidate
+       * contract before the item may enter the broad first-pass lane.
+       */
+      const noisyCommunitySemanticGuard =
+        sourceKey !== 'reddit' ||
+        requestIntentFamily !== 'TRANSACTION_ACCOUNT_ABUSE' ||
+        requestSemanticCandidateAdmission;
 
 
       /*
@@ -1653,8 +2008,8 @@ export class DataCollectionService {
           collectionMode === 'TARGETED_RECOVERY') &&
         secondaryOperationalSource &&
         sourceKey !== 'youtube' &&
-        verticalConstraint.strict &&
         strictRequestSemanticAdmission &&
+        compositeRequestCandidateAdmission &&
         verticalAnchorGuard &&
         verticalWorkflowSignal &&
         broadDomainCollisionGuard &&
@@ -1753,6 +2108,57 @@ export class DataCollectionService {
           [post.title, post.content].filter(Boolean).join(' '),
         );
 
+      /*
+       * Rescue exact requester-pain evidence even when generic relevance
+       * scoring under-rates a proper noun/platform name. This is an additive
+       * lane only: it does not remove broad discovery candidates. A specific
+       * property-management platform breach, for example, can reach AI triage
+       * even when the title contains a brand name that the lexical scorer does
+       * not know.
+       */
+      const requestPainAlignedLowScoreOverride =
+        Boolean(requestDescription?.trim()) &&
+        (collectionMode === 'FAST_GENERATION' ||
+          collectionMode === 'TARGETED_RECOVERY') &&
+        secondaryOperationalSource &&
+        passesGenericTitleGuard &&
+        broadDomainCollisionGuard &&
+        atomicRequestPainAdmission;
+
+      /*
+       * Wide first-pass semantic lane. The collectors are intentionally broad,
+       * so do not require every useful candidate to already look like a full
+       * complaint/problem statement before Community AI sees it. A candidate
+       * may enter this lane only when the request-aware admission guard accepts
+       * it and either exact vertical/object identity or domain-agnostic
+       * supporting semantics are present. It is still RAW evidence only; AI
+       * classification plus deterministic verification remain authoritative.
+       */
+      const broadFirstPassWorkflowIdentityRequired =
+        verticalConstraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' ||
+        verticalConstraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION' ||
+        verticalConstraint.kind === 'OPERATIONAL_COST_ATTRIBUTION';
+      const broadFirstPassSemanticTriageOverride =
+        Boolean(requestDescription?.trim()) &&
+        collectionMode === 'FAST_GENERATION' &&
+        strictRequestSemanticAdmission &&
+        (!broadFirstPassWorkflowIdentityRequired || verticalWorkflowSignal) &&
+        (requestSemanticCandidateAdmission ||
+          compositeRequestCandidateAdmission ||
+          atomicRequestPainAdmission) &&
+        broadDomainCollisionGuard &&
+        passesGenericTitleGuard &&
+        hasMinimumIndependentRelevance &&
+        noisyCommunitySemanticGuard &&
+        (verticalAnchorGuard || domainAgnosticSupportingOverride) &&
+        (secondaryOperationalSource ||
+          sourceKey === 'reddit' ||
+          sourceKey === 'app-store' ||
+          sourceKey === 'google-play');
+
+      const targetedRecoveryRequiresExactWorkflow =
+        verticalConstraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION' ||
+        verticalConstraint.kind === 'OPERATIONAL_COST_ATTRIBUTION';
       const targetedRecoveryDomainProblemOverride =
         collectionMode === 'TARGETED_RECOVERY' &&
         secondaryOperationalSource &&
@@ -1766,7 +2172,9 @@ export class DataCollectionService {
         this.hasSecondaryOperationalProblemSignal(
           [post.title, post.content, commentsBody].filter(Boolean).join(' '),
         ) &&
-        (verticalWorkflowSignal || plannedEvidenceAlignmentGuard);
+        (targetedRecoveryRequiresExactWorkflow
+          ? verticalWorkflowSignal
+          : (verticalWorkflowSignal || plannedEvidenceAlignmentGuard));
 
       const commentContainerOverride =
         isCommentContainerSource &&
@@ -1795,6 +2203,8 @@ export class DataCollectionService {
           Math.max(18, this.resolveContainerDomainMinimum(sourceKey, collectionMode) - 8);
 
       const accepted =
+        requestPainAlignedLowScoreOverride ||
+        broadFirstPassSemanticTriageOverride ||
         secondarySemanticTriageAdmission ||
         (verticalAnchorGuard &&
         strictWorkflowGuard &&
@@ -1834,7 +2244,11 @@ export class DataCollectionService {
           `domainAgnosticSupportingOverride=${domainAgnosticSupportingOverride}`,
           `domainAgnosticCommentSupportingOverride=${domainAgnosticCommentSupportingOverride}`,
           `requestDerivedAdmissionGuard=${requestDerivedAdmissionGuard}`,
+          `atomicRequestPainAdmission=${atomicRequestPainAdmission}`,
+          `requestPainAlignedLowScoreOverride=${requestPainAlignedLowScoreOverride}`,
           `secondarySemanticTriageAdmission=${secondarySemanticTriageAdmission}`,
+          `broadFirstPassSemanticTriageOverride=${broadFirstPassSemanticTriageOverride}`,
+          `noisyCommunitySemanticGuard=${noisyCommunitySemanticGuard}`,
           `targetedRecoveryDomainProblemOverride=${targetedRecoveryDomainProblemOverride}`,
           `verticalKind=${verticalConstraint.kind}`,
           `verticalAnchorGuard=${verticalAnchorGuard}`,
@@ -2947,6 +3361,59 @@ export class DataCollectionService {
     const bounded = (value: number): number =>
       Math.max(1_500, value + recoveryAdjustment);
 
+    /*
+     * Review stores need time for two phases: app discovery and review fetch.
+     * This value is a SOFT budget in generation mode (CollectorQueueService no
+     * longer aborts the source), so crossing it only emits telemetry. Collector
+     * local soft sub-deadlines still let the source return whatever completed.
+     */
+    if (key === 'app-store' || key === 'google-play') {
+      return bounded(9_000);
+    }
+
+    const professionalEvidenceHeavy = Boolean(
+      verticalConstraint?.strict &&
+      [
+        'PUBLIC_PROGRAM_COST_ATTRIBUTION',
+        'OPERATIONAL_COST_ATTRIBUTION',
+        'HEALTHCARE_SUPPLY_COST_EFFICIENCY',
+        'HEALTHCARE_COST_RESOURCE_EFFICIENCY',
+        'AGRICULTURE_DISTRIBUTION_PROFITABILITY',
+        'AGRICULTURE_EXPORT_PROFITABILITY',
+        'RESTORATION_CONSERVATION',
+      ].includes(verticalConstraint.kind),
+    );
+    if (professionalEvidenceHeavy) {
+      if (key === 'crossref') return bounded(6_000);
+      if (key === 'news') return bounded(5_600);
+      if (key === 'gdelt') return bounded(3_800);
+    }
+
+    /*
+     * Strict requester workflows get source-aware deadlines before the generic
+     * preferred-source timeout. The values are deliberately long enough for a
+     * healthy source to finish, but short enough that one slow professional
+     * lane cannot dominate the parallel collection wall clock.
+     */
+    if (verticalConstraint?.strict) {
+      if (
+        verticalConstraint.kind === 'RESTORATION_CONSERVATION' ||
+        verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL'
+      ) {
+        if (key === 'forum') return bounded(5_200);
+        if (['news', 'crossref'].includes(key)) return bounded(4_800);
+        if (key === 'youtube') return bounded(3_800);
+        if (key === 'gdelt') return bounded(2_800);
+        if (key === 'blog') return bounded(3_000);
+      }
+      if (verticalConstraint.kind === 'ECOMMERCE_MARGIN_PROFITABILITY') {
+        if (['forum', 'news', 'crossref'].includes(key)) return bounded(4_800);
+        if (key === 'youtube') return bounded(3_800);
+        if (key === 'gdelt') return bounded(2_800);
+        if (key === 'blog') return bounded(3_000);
+      }
+    }
+
     if (key === 'reddit') {
       /*
        * Reddit public RSS deliberately spaces requests to avoid 429 responses.
@@ -2955,14 +3422,22 @@ export class DataCollectionService {
        * The collector itself uses a smaller internal deadline and returns posts
        * before optional comments when the remaining budget is tight.
        */
-      return bounded(8_000);
+      return bounded(7_200);
+    }
+
+    if (verticalConstraint?.strict && verticalConstraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY') {
+      if (key === 'crossref') return bounded(6_200);
+      if (key === 'news') return bounded(5_800);
+      if (key === 'forum') return bounded(4_200);
+      if (key === 'gdelt') return bounded(3_200);
+      if (key === 'youtube') return bounded(3_000);
     }
 
     if (
       verticalConstraint?.strict &&
       verticalConstraint.kind === 'ACCOUNT_ACCESS_SECURITY'
     ) {
-      if (['app-store', 'google-play'].includes(key)) return bounded(6_200);
+      if (['app-store', 'google-play'].includes(key)) return bounded(7_500);
       if (['news', 'crossref'].includes(key)) return bounded(4_400);
       if (key === 'youtube') return bounded(4_000);
       if (key === 'gdelt') return bounded(2_500);
@@ -2994,7 +3469,8 @@ export class DataCollectionService {
 
     if (
       verticalConstraint?.strict &&
-      verticalConstraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY'
+      (verticalConstraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY' ||
+        verticalConstraint.kind === 'AGRICULTURE_DISTRIBUTION_PROFITABILITY')
     ) {
       if (['news', 'crossref', 'forum'].includes(key)) return bounded(4_200);
       if (['gdelt', 'youtube', 'blog'].includes(key)) return bounded(3_600);
@@ -3016,7 +3492,7 @@ export class DataCollectionService {
       verticalConstraint?.strict &&
       verticalConstraint.kind === 'RESTAURANT_DELIVERY_FRAUD'
     ) {
-      if (['app-store', 'google-play'].includes(key)) return bounded(3_200);
+      if (['app-store', 'google-play'].includes(key)) return bounded(6_500);
       if (['news', 'forum', 'youtube'].includes(key)) return bounded(3_600);
       if (key === 'gdelt') return bounded(3_200);
       if (['crossref', 'blog'].includes(key)) return bounded(2_800);
@@ -3068,39 +3544,218 @@ export class DataCollectionService {
       Math.max(1, Math.min(value ?? maximum, maximum));
     const normalizedSourceKey = sourceKey.toLocaleLowerCase();
 
+    // DOMAINS_ONLY / NO_INPUT are evidence-discovery probes. Every enabled
+    // collector still runs, but each receives a tiny budget so broad coverage
+    // does not recreate the old 80-170 item first-pass corpus.
+    if (!requestDescription.trim()) {
+      return {
+        maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
+        maxSavedPosts: cap(limits?.maxSavedPosts, 1),
+        maxFetchedComments: cap(limits?.maxFetchedComments, 2),
+        maxSavedComments: cap(limits?.maxSavedComments, 1),
+      };
+    }
+
+    // All collectors participate for text requests too. Sources outside the
+    // planner's preferred family are exploratory recall lanes, not equal-budget
+    // fan-out. This keeps evidence breadth while protecting precision/tokens.
+    if (
+      preferredSourceKeys.size > 0 &&
+      !preferredSourceKeys.has(normalizedSourceKey) &&
+      !aiOwnedTextPlan
+    ) {
+      return {
+        maxFetchedPosts: cap(limits?.maxFetchedPosts, 4),
+        maxSavedPosts: cap(limits?.maxSavedPosts, 2),
+        maxFetchedComments: cap(limits?.maxFetchedComments, 4),
+        maxSavedComments: cap(limits?.maxSavedComments, 2),
+      };
+    }
+
+    /*
+     * A rich AI plan owns query wording, not evidence volume. Strict
+     * restoration/physical/e-commerce workflows must apply their balanced
+     * source budgets BEFORE the generic AI-owned-plan branch; otherwise one
+     * broad Crossref/News source can consume most of the Community corpus with
+     * lexical neighbours while specialist sources contribute little.
+     * Community AI still receives every item actually fetched by these bounded
+     * collectors through the all-collected raw ledger.
+     */
+    if (requestDescription && verticalConstraint?.strict) {
+      if (blockedSourceKeys.has(normalizedSourceKey)) {
+        return {
+          maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
+          maxSavedPosts: cap(limits?.maxSavedPosts, 1),
+          maxFetchedComments: cap(limits?.maxFetchedComments, 4),
+          maxSavedComments: cap(limits?.maxSavedComments, 2),
+        };
+      }
+      const balancedProblemFirstVertical =
+        verticalConstraint.kind === 'RESTORATION_CONSERVATION' ||
+        verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' ||
+        verticalConstraint.kind === 'FOOD_STORAGE_CONDITION' ||
+        verticalConstraint.kind === 'RENTAL_INVENTORY_OPERATIONS' ||
+        verticalConstraint.kind === 'ECOMMERCE_MARGIN_PROFITABILITY' ||
+        verticalConstraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION' ||
+        verticalConstraint.kind === 'OPERATIONAL_COST_ATTRIBUTION' ||
+        verticalConstraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY';
+
+      if (balancedProblemFirstVertical) {
+        if (['forum', 'reddit'].includes(normalizedSourceKey)) {
+          return {
+            maxFetchedPosts: cap(limits?.maxFetchedPosts, 12),
+            maxSavedPosts: cap(limits?.maxSavedPosts, 7),
+            maxFetchedComments: cap(limits?.maxFetchedComments, 20),
+            maxSavedComments: cap(limits?.maxSavedComments, 6),
+          };
+        }
+        if (normalizedSourceKey === 'crossref') {
+          return {
+            maxFetchedPosts: cap(limits?.maxFetchedPosts, 12),
+            maxSavedPosts: cap(limits?.maxSavedPosts, 8),
+            maxFetchedComments: cap(limits?.maxFetchedComments, 2),
+            maxSavedComments: cap(limits?.maxSavedComments, 1),
+          };
+        }
+        if (normalizedSourceKey === 'news') {
+          return {
+            maxFetchedPosts: cap(limits?.maxFetchedPosts, 10),
+            maxSavedPosts: cap(limits?.maxSavedPosts, 6),
+            maxFetchedComments: cap(limits?.maxFetchedComments, 2),
+            maxSavedComments: cap(limits?.maxSavedComments, 1),
+          };
+        }
+        if (normalizedSourceKey === 'youtube') {
+          return {
+            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
+            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
+            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
+            maxSavedComments: cap(limits?.maxSavedComments, 4),
+          };
+        }
+        if (normalizedSourceKey === 'gdelt') {
+          return {
+            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
+            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
+            maxFetchedComments: cap(limits?.maxFetchedComments, 1),
+            maxSavedComments: cap(limits?.maxSavedComments, 1),
+          };
+        }
+        if (normalizedSourceKey === 'blog') {
+          return {
+            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
+            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
+            maxFetchedComments: cap(limits?.maxFetchedComments, 1),
+            maxSavedComments: cap(limits?.maxSavedComments, 1),
+          };
+        }
+      }
+    }
+
+    if (
+      requestDescription &&
+      aiOwnedTextPlan &&
+      preferredSourceKeys.size > 0 &&
+      !preferredSourceKeys.has(normalizedSourceKey)
+    ) {
+      return {
+        maxFetchedPosts: cap(limits?.maxFetchedPosts, 4),
+        maxSavedPosts: cap(limits?.maxSavedPosts, 2),
+        maxFetchedComments: cap(limits?.maxFetchedComments, 4),
+        maxSavedComments: cap(limits?.maxSavedComments, 2),
+      };
+    }
+
     if (requestDescription && aiOwnedTextPlan) {
+      /*
+       * Request-aware generation should collect a broad high-signal first-pass
+       * corpus so targeted recovery is rarely necessary. These are source-level
+       * budgets across parallel collectors; individual collectors still impose
+       * tighter per-thread/per-item caps and Community AI applies lexical/source
+       * hygiene before its single full-corpus race.
+       */
       if (['news', 'crossref', 'gdelt', 'blog'].includes(normalizedSourceKey)) {
         return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 24),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 14),
+          maxFetchedPosts: cap(limits?.maxFetchedPosts, 10),
+          maxSavedPosts: cap(limits?.maxSavedPosts, 6),
           maxFetchedComments: cap(limits?.maxFetchedComments, 4),
           maxSavedComments: cap(limits?.maxSavedComments, 2),
         };
       }
 
-      if (['forum', 'reddit', 'youtube'].includes(normalizedSourceKey)) {
+      if (['forum', 'reddit'].includes(normalizedSourceKey)) {
         return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 18),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 10),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 32),
-          maxSavedComments: cap(limits?.maxSavedComments, 16),
+          maxFetchedPosts: cap(limits?.maxFetchedPosts, 9),
+          maxSavedPosts: cap(limits?.maxSavedPosts, 6),
+          maxFetchedComments: cap(limits?.maxFetchedComments, 16),
+          maxSavedComments: cap(limits?.maxSavedComments, 8),
+        };
+      }
+
+      if (normalizedSourceKey === 'youtube') {
+        return {
+          maxFetchedPosts: cap(limits?.maxFetchedPosts, 10),
+          maxSavedPosts: cap(limits?.maxSavedPosts, 6),
+          maxFetchedComments: cap(limits?.maxFetchedComments, 8),
+          maxSavedComments: cap(limits?.maxSavedComments, 4),
         };
       }
 
       if (['app-store', 'google-play'].includes(normalizedSourceKey)) {
         return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 12),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 8),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 32),
-          maxSavedComments: cap(limits?.maxSavedComments, 16),
+          maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
+          maxSavedPosts: cap(limits?.maxSavedPosts, 4),
+          // Reviews are the evidence payload; keep every bounded fetched review
+          // visible to Community instead of dropping three before semantic
+          // classification. Listing posts remain discovery-only downstream.
+          maxFetchedComments: cap(limits?.maxFetchedComments, 8),
+          maxSavedComments: cap(limits?.maxSavedComments, 8),
         };
       }
 
       return {
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 14),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 8),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 20),
-        maxSavedComments: cap(limits?.maxSavedComments, 10),
+        maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
+        maxSavedPosts: cap(limits?.maxSavedPosts, 6),
+        maxFetchedComments: cap(limits?.maxFetchedComments, 6),
+        maxSavedComments: cap(limits?.maxSavedComments, 4),
+      };
+    }
+
+    if (requestDescription && !aiOwnedTextPlan && !blockedSourceKeys.has(normalizedSourceKey)) {
+      /*
+       * PREPARING fallback must not mean narrow collection. The fallback is
+       * still request-derived, so keep a large but bounded first-pass corpus
+       * and let semantic triage decide relevance afterwards.
+       */
+      if (['news', 'crossref', 'gdelt', 'blog'].includes(normalizedSourceKey)) {
+        return {
+          maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
+          maxSavedPosts: cap(limits?.maxSavedPosts, 5),
+          maxFetchedComments: cap(limits?.maxFetchedComments, 2),
+          maxSavedComments: cap(limits?.maxSavedComments, 2),
+        };
+      }
+      if (['forum', 'reddit'].includes(normalizedSourceKey)) {
+        return {
+          maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
+          maxSavedPosts: cap(limits?.maxSavedPosts, 5),
+          maxFetchedComments: cap(limits?.maxFetchedComments, 12),
+          maxSavedComments: cap(limits?.maxSavedComments, 6),
+        };
+      }
+      if (normalizedSourceKey === 'youtube') {
+        return {
+          maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
+          maxSavedPosts: cap(limits?.maxSavedPosts, 4),
+          maxFetchedComments: cap(limits?.maxFetchedComments, 4),
+          maxSavedComments: cap(limits?.maxSavedComments, 2),
+        };
+      }
+      return {
+        maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
+        maxSavedPosts: cap(limits?.maxSavedPosts, 6),
+        maxFetchedComments: cap(limits?.maxFetchedComments, 6),
+        maxSavedComments: cap(limits?.maxSavedComments, 4),
       };
     }
 
@@ -3135,7 +3790,8 @@ export class DataCollectionService {
 
     if (
       verticalConstraint?.strict &&
-      verticalConstraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY'
+      (verticalConstraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY' ||
+        verticalConstraint.kind === 'AGRICULTURE_DISTRIBUTION_PROFITABILITY')
     ) {
       switch (normalizedSourceKey) {
         case 'news':
@@ -3643,6 +4299,19 @@ export class DataCollectionService {
       }
     }
 
+    if (verticalConstraint?.strict && verticalConstraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY') {
+      const cap = (value: number | undefined, maximum: number): number => Math.max(1, Math.min(value ?? maximum, maximum));
+      switch (sourceKey) {
+        case 'crossref':
+        case 'news': return { maxFetchedPosts: cap(limits?.maxFetchedPosts, 8), maxSavedPosts: cap(limits?.maxSavedPosts, 5), maxFetchedComments: 1, maxSavedComments: 1 };
+        case 'reddit':
+        case 'forum': return { maxFetchedPosts: cap(limits?.maxFetchedPosts, 7), maxSavedPosts: cap(limits?.maxSavedPosts, 4), maxFetchedComments: cap(limits?.maxFetchedComments, 10), maxSavedComments: cap(limits?.maxSavedComments, 4) };
+        case 'gdelt': return { maxFetchedPosts: cap(limits?.maxFetchedPosts, 5), maxSavedPosts: cap(limits?.maxSavedPosts, 3), maxFetchedComments: 1, maxSavedComments: 1 };
+        case 'youtube': return { maxFetchedPosts: cap(limits?.maxFetchedPosts, 4), maxSavedPosts: cap(limits?.maxSavedPosts, 2), maxFetchedComments: cap(limits?.maxFetchedComments, 4), maxSavedComments: cap(limits?.maxSavedComments, 2) };
+        default: return limits;
+      }
+    }
+
     if (
       verticalConstraint?.strict &&
       verticalConstraint.kind === 'HEALTHCARE_COST_RESOURCE_EFFICIENCY'
@@ -3891,6 +4560,46 @@ export class DataCollectionService {
   /**
    * Extracts a safe error message.
    */
+  private buildEmergencyRuntimeQueries(input: {
+    readonly requestDescription: string;
+    readonly domainName: string;
+    readonly userKeywords: readonly string[];
+  }): string[] {
+    const clean = (value: string): string =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+    const description = clean(input.requestDescription);
+    const sentences = input.requestDescription
+      .split(/[.!?]+/u)
+      .map(clean)
+      .filter(Boolean);
+    const actorObject = sentences[0]?.split(/\s+/u).slice(0, 8).join(' ') ?? '';
+    const lastSentence = sentences.length > 0 ? sentences[sentences.length - 1] : '';
+    const consequence = lastSentence.split(/\s+/u).slice(0, 7).join(' ');
+    const keywordLane = input.userKeywords
+      .map(clean)
+      .filter(Boolean)
+      .slice(0, 4)
+      .join(' ')
+      .split(/\s+/u)
+      .slice(0, 8)
+      .join(' ');
+
+    return this.unique([
+      actorObject,
+      [clean(input.domainName), keywordLane].filter(Boolean).join(' '),
+      [actorObject.split(/\s+/u).slice(0, 4).join(' '), consequence]
+        .filter(Boolean)
+        .join(' '),
+      description.split(/\s+/u).slice(0, 9).join(' '),
+    ]).filter(Boolean).slice(0, 4);
+  }
+
   private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;

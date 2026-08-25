@@ -164,10 +164,25 @@ const REQUEST_DOMAIN_TOPIC_DEFINITIONS: readonly RequestDomainTopicDefinition[] 
     minimumScore: 7,
   },
   {
+    name: 'Custom Violin Bow Commission & Specification Management',
+    primaryPatterns: [
+      /\b(?:independent )?(?:violin bow makers?|bow makers?|archetiers?)\b/iu,
+      /\bviolin bows?\b[^.!?]{0,220}\b(?:playing preferences?|bow measurements?|wood selections?|hair types?|balance requirements?|grip materials?|design adjustments?|approved specifications?|completion deadlines?|commissions?)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:playing preferences?|bow measurements?|wood selections?|hair types?|balance requirements?|grip materials?|design adjustments?|approved specifications?|incorrect balance|unsuitable materials?|repeated adjustments?|wasted supplies?|delayed commissions?)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:bow hunting|archery|crossbow|violin lesson|music streaming|concert ticket)\b/iu,
+      /\b(?:repair history|service history|previous rehair|rehair dates?)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
     name: 'Violin Bow Repair & Rehair Service History',
     primaryPatterns: [
-      /\b(?:violin bow technician|violin bow technicians|bow technician|bow technicians|bow maker|bow makers|archetier|archetiers|bow rehair|bow rehairing specialist|bow repairer|bow repairers)\b/iu,
-      /\bviolin bows?\b[^.!?]{0,180}\b(?:condition|rehair(?:ing)? dates?|hair type|grip|winding|repair notes?|customer preferences?|service history)\b/iu,
+      /\b(?:violin bow technicians?|bow technicians?|bow rehair(?:ing)? specialists?|bow repairers?)\b/iu,
+      /\bviolin bows?\b[^.!?]{0,180}\b(?:repair|repairs|condition assessment|rehair(?:ing)? dates?|repair notes?|service history|previous rehair)\b/iu,
     ],
     supportingPatterns: [
       /\b(?:bow condition|rehair(?:ing)? dates?|hair type preferences?|grip details?|winding details?|repair notes?|customer preferences?|service history)\b/iu,

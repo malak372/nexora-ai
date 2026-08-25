@@ -5944,3 +5944,24 @@
     transition: none !important;
   }
 }
+
+/* Keep the Signal-step question compact without changing headings in the other steps. */
+.nx-panel--signal .nx-panel__head h2 {
+  font-size: clamp(26px, 2.2vw, 34px) !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.035em !important;
+}
+
+@media (max-width: 760px) {
+  .nx-panel--signal .nx-panel__head h2 {
+    font-size: clamp(24px, 7vw, 30px) !important;
+  }
+}
+
+/* Keep the Signal step closer to the wizard actions on desktop. */
+@media (min-width: 761px) {
+  .nx-panel--signal {
+    min-height: 0 !important;
+    padding-bottom: 20px !important;
+  }
+}

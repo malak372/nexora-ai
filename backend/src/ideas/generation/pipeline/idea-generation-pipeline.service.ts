@@ -233,35 +233,66 @@ export class IdeaGenerationPipelineService {
       : null;
 
     const persistedStageStates = input.resumeFromCheckpoint
-      ? await this.prisma.ideaGenerationStage.findMany({
-          where: { runId: input.context.runId },
-          select: {
-            stageKey: true,
-            status: true,
-            attemptCount: true,
-            resultPreview: true,
+      ? await this.databaseRetry.execute(
+          () =>
+            this.prisma.ideaGenerationStage.findMany({
+              where: { runId: input.context.runId },
+              select: {
+                stageKey: true,
+                status: true,
+                attemptCount: true,
+                resultPreview: true,
+              },
+            }),
+          {
+            operationName: 'load generation stage resume state',
+            runId: input.context.runId,
           },
-        })
+        )
       : [];
 
     const persistedStageStateByKey = new Map(
       persistedStageStates.map((stage) => [stage.stageKey, stage]),
     );
 
-    const [startedRun] = await Promise.all([
-      this.databaseRetry.execute(
-        () => this.runService.startRun(input.context.runId),
+    /*
+     * Start the run and initialize stage rows concurrently, but publish the
+     * RUNNING transition as soon as startRun() succeeds instead of waiting for
+     * all stage-row inserts. Fresh runs atomically expose PREPARING at 0% so the
+     * progress UI becomes active from the first real pipeline boundary.
+     *
+     * Recovery runs intentionally preserve their durable currentStageKey until
+     * the resumed stage emits its own transition.
+     */
+    const startRunPromise = this.databaseRetry
+      .execute(
+        () =>
+          this.runService.startRun(
+            input.context.runId,
+            input.resumeFromCheckpoint
+              ? undefined
+              : {
+                  currentStageKey: IDEA_GENERATION_STAGE_KEYS.PREPARING,
+                  progressPercent: 0,
+                },
+          ),
         {
           operationName: 'start generation run',
           runId: input.context.runId,
         },
-      ),
+      )
+      .then((run) => {
+        this.realtime.publishRunUpdated(run);
+        return run;
+      });
+
+    await Promise.all([
+      startRunPromise,
       this.initializeStageRecords(
         input.context.runId,
         resolvedStages.map(({ definition }) => definition),
       ),
     ]);
-    this.realtime.publishRunUpdated(startedRun);
 
     /*
      * createRun() already persisted the initial context snapshot. Avoid writing
@@ -702,23 +733,30 @@ export class IdeaGenerationPipelineService {
      * removed several seconds before request-validation on remote PostgreSQL.
      * skipDuplicates keeps the operation safe for an accidental repeated call.
      */
-    await this.prisma.ideaGenerationStage.createMany({
-      data: definitions.map((definition) => ({
+    await this.databaseRetry.execute(
+      () =>
+        this.prisma.ideaGenerationStage.createMany({
+          data: definitions.map((definition) => ({
+            runId,
+            stageKey: definition.key,
+            displayName: definition.displayName,
+            sequence: definition.sequence,
+            status: IdeaGenerationStageStatus.PENDING,
+            progressPercent: definition.progressStart,
+            resultPreview: Prisma.JsonNull,
+            errorMessage: null,
+            startedAt: null,
+            completedAt: null,
+            attemptCount: 0,
+            maxAttempts: definition.maxAttempts,
+          })),
+          skipDuplicates: true,
+        }),
+      {
+        operationName: 'initialize generation stage records',
         runId,
-        stageKey: definition.key,
-        displayName: definition.displayName,
-        sequence: definition.sequence,
-        status: IdeaGenerationStageStatus.PENDING,
-        progressPercent: definition.progressStart,
-        resultPreview: Prisma.JsonNull,
-        errorMessage: null,
-        startedAt: null,
-        completedAt: null,
-        attemptCount: 0,
-        maxAttempts: definition.maxAttempts,
-      })),
-      skipDuplicates: true,
-    });
+      },
+    );
   }
 
   /**
@@ -1189,22 +1227,29 @@ export class IdeaGenerationPipelineService {
     definition: IdeaGenerationStageDefinition,
     attempt: number,
   ): Promise<void> {
-    const stage = await this.prisma.ideaGenerationStage.update({
-      where: {
-        runId_stageKey: {
-          runId,
-          stageKey: definition.key,
-        },
+    const stage = await this.databaseRetry.execute(
+      () =>
+        this.prisma.ideaGenerationStage.update({
+          where: {
+            runId_stageKey: {
+              runId,
+              stageKey: definition.key,
+            },
+          },
+          data: {
+            status: IdeaGenerationStageStatus.SKIPPED,
+            progressPercent: definition.progressEnd,
+            attemptCount: attempt,
+            resultPreview: Prisma.JsonNull,
+            errorMessage: null,
+            completedAt: new Date(),
+          },
+        }),
+      {
+        operationName: 'mark generation stage skipped',
+        runId,
       },
-      data: {
-        status: IdeaGenerationStageStatus.SKIPPED,
-        progressPercent: definition.progressEnd,
-        attemptCount: attempt,
-        resultPreview: Prisma.JsonNull,
-        errorMessage: null,
-        completedAt: new Date(),
-      },
-    });
+    );
 
     this.realtime.publishStageUpdated(stage);
   }
@@ -1672,7 +1717,7 @@ export class IdeaGenerationPipelineService {
     this.logger.debug(
       `Cancellation for run "${runId}" occurred before the first stage completed.`,
     );
-    return IDEA_GENERATION_STAGE_KEYS.REQUEST_VALIDATION;
+    return IDEA_GENERATION_STAGE_KEYS.PREPARING;
   }
 
   private normalizeError(error: unknown): Error {

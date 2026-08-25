@@ -120,8 +120,10 @@ export type ResolveCollectionJobInput = {
    */
   readonly keywords?: readonly string[];
 
-  /** AI-planned searches preserved separately for source-aware collectors. */
+  /** Runtime searches preserved separately for source-aware collectors. */
   readonly plannedQueries?: readonly string[];
+  /** True only when the current runtime queries came from an accepted online AI plan. */
+  readonly queriesGeneratedByAi?: boolean;
   readonly sourcePlans?: readonly {
     readonly sourceKey: string;
     readonly queries: readonly string[];
@@ -333,6 +335,8 @@ export class CollectionJobResolverService {
         ? [...normalizedInput.plannedQueries]
         : undefined,
 
+      queriesGeneratedByAi: normalizedInput.queriesGeneratedByAi === true,
+
       sourcePlans: normalizedInput.sourcePlans
         ? normalizedInput.sourcePlans.map((plan) => ({
             sourceKey: plan.sourceKey,
@@ -381,8 +385,9 @@ export class CollectionJobResolverService {
      */
     const completedJob = startedJob as ResolvedCollectionJob;
     const nlpOutput =
+      normalizedInput.collectionMode === 'FAST_GENERATION' ||
       normalizedInput.collectionMode === 'TARGETED_RECOVERY'
-        ? this.createTargetedRecoveryNlpOutput(
+        ? this.createFastPathNlpOutput(
             completedJob,
             fastEvidenceInputs,
           )
@@ -400,7 +405,7 @@ export class CollectionJobResolverService {
     return result;
   }
 
-  private createTargetedRecoveryNlpOutput(
+  private createFastPathNlpOutput(
     job: ResolvedCollectionJob,
     fastEvidenceInputs: readonly IntelligentTextInput[],
   ): IntelligentAnalysisOutput {
@@ -482,7 +487,7 @@ export class CollectionJobResolverService {
         safetyConcerns: [],
         reliabilityConcerns: [],
         additionalInsights: [
-          'Targeted recovery preserved collector-filtered evidence directly for deterministic request alignment and provenance verification.',
+          'Fast generation preserved collector-filtered evidence directly in memory; full-corpus Community AI owns semantic triage while deterministic provenance and request-alignment guards remain authoritative.',
         ],
       },
       samplePosts,
@@ -964,6 +969,8 @@ export class CollectionJobResolverService {
       keywords: this.normalizeKeywords(input.keywords),
 
       plannedQueries: this.normalizeKeywords(input.plannedQueries),
+
+      queriesGeneratedByAi: input.queriesGeneratedByAi === true,
 
       sourcePlans: input.sourcePlans
         ?.map((plan) => ({

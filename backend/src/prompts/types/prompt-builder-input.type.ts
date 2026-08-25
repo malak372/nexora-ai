@@ -5,7 +5,12 @@ import type {
   IdeaGenerationDomainEvidence,
   IdeaGenerationNlpContext,
   SelectedGenerationDomain,
+  IdeaGenerationCanonicalEvidenceItem,
 } from '../../ideas/generation/types/idea-generation-context.type';
+import type {
+  IdeaGenerationCanonicalProblemSpec,
+  IdeaGenerationEvidenceState,
+} from '../../ideas/generation/types/canonical-problem-spec.type';
 
 
 /**
@@ -92,6 +97,15 @@ export type IdeaGenerationPromptInput = {
    * the domain that produced them.
    */
   readonly domainEvidence?: readonly IdeaGenerationDomainEvidence[];
+
+  /** Canonical requester/discovery problem. Downstream prompt logic must not reinterpret it. */
+  readonly canonicalProblemSpec?: IdeaGenerationCanonicalProblemSpec | null;
+
+  /** Authoritative evidence state computed from canonicalEvidence only. */
+  readonly evidenceState?: IdeaGenerationEvidenceState;
+
+  /** Single verified evidence source-of-truth for prompt claims and counts. */
+  readonly canonicalEvidence?: readonly IdeaGenerationCanonicalEvidenceItem[];
 };
 
 /**

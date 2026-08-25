@@ -1,6 +1,7 @@
 export type CommunityAiEvidenceClassification =
   | 'DIRECT_PROBLEM'
   | 'SUPPORTING_SIGNAL'
+  | 'CONTEXT_ONLY'
   | 'UNRELATED';
 
 export type CommunityAiEvidenceTriage = {
@@ -96,6 +97,10 @@ export type CommunityAiAnalysis = {
   readonly attemptCount: number;
 
   readonly aiAttempted: boolean;
+  /** True when at least one online evidence-triage batch returned usable classifications. */
+  readonly triageAiSucceeded?: boolean;
+  /** True only when online opportunity synthesis returned an accepted grounded opportunity. */
+  readonly synthesisAiSucceeded?: boolean;
   readonly aiSucceeded: boolean;
   readonly fallbackUsed: boolean;
   readonly onlineAttemptCount: number;

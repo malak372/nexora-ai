@@ -2,6 +2,10 @@ import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/requ
 import { RequestDynamicQueryUtil } from '../../ideas/generation/utils/request-dynamic-query.util';
 import { RequestWorkflowIntentProfileUtil } from '../../ideas/generation/utils/request-workflow-intent-profile.util';
 import { RequestQueryProvenanceUtil } from '../../ideas/generation/utils/request-query-provenance.util';
+import { RequestNicheCustomCraftUtil } from '../../ideas/generation/utils/request-niche-custom-craft.util';
+import { RequestOnlinePharmacyFraudUtil } from '../../ideas/generation/utils/request-online-pharmacy-fraud.util';
+import { RequestOperationalCostAttributionUtil } from '../../ideas/generation/utils/request-operational-cost-attribution.util';
+import { RequestReviewStoreQueryUtil } from '../../ideas/generation/utils/request-review-store-query.util';
 
 export class ProblemFirstCollectorQueryUtil {
   static build(input: {
@@ -10,6 +14,7 @@ export class ProblemFirstCollectorQueryUtil {
     readonly requestDescription?: string | null;
     readonly plannedQueries?: readonly string[];
     readonly keywords?: readonly string[];
+    readonly authoritativePlannedQueries?: boolean;
   }): string[] {
     const sourceKey = this.normalize(input.sourceKey);
     const description = this.normalize(input.requestDescription ?? '');
@@ -19,6 +24,10 @@ export class ProblemFirstCollectorQueryUtil {
         .map((value) => this.cleanQuery(value))
         .filter(Boolean),
     );
+
+    if (input.authoritativePlannedQueries && planned.length > 0) {
+      return planned;
+    }
     const constraint = RequestVerticalConstraintUtil.resolve({
       requestDescription: input.requestDescription,
       domainName: input.domainName,
@@ -33,13 +42,38 @@ export class ProblemFirstCollectorQueryUtil {
         return false;
       }
       if (hasAiOwnedPlannedQueries) {
-        return true;
+        /*
+         * PREPARING may own query wording, but a rich plan must not bypass a
+         * strict request identity. This keeps every strict restoration,
+         * physical-service, and margin query anchored to the requester object
+         * before the network call instead of relying on Community AI to clean
+         * up an avoidable lexical corpus afterwards.
+         */
+        return (
+          !constraint.strict ||
+          this.isPlannedQueryCompatibleWithConstraint(query, constraint, description)
+        );
       }
       return (
         RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(description, query) &&
-        this.isPlannedQueryCompatibleWithConstraint(query, constraint)
+        this.isPlannedQueryCompatibleWithConstraint(query, constraint, description)
       );
     });
+    /*
+     * Mobile stores are product-discovery engines, not web search engines. Do
+     * not send pain sentences through the generic query compiler. Find the
+     * nearest workflow apps first; their user reviews are what Community AI
+     * classifies as evidence.
+     */
+    if ((sourceKey === 'app-store' || sourceKey === 'google-play') && description) {
+      return RequestReviewStoreQueryUtil.build({
+        requestDescription: description,
+        domainName,
+        plannedQueries: safePlanned,
+        maxQueries: 4,
+      });
+    }
+
     const sourceVerticalQueries = this.buildVerticalSourceQueries(
       constraint,
       sourceKey,
@@ -53,7 +87,7 @@ export class ProblemFirstCollectorQueryUtil {
       RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(description, query) &&
       RequestQueryProvenanceUtil.isQueryGrounded({ requestDescription: description, query }) &&
       (!constraint.strict ||
-        this.isPlannedQueryCompatibleWithConstraint(query, constraint)),
+        this.isPlannedQueryCompatibleWithConstraint(query, constraint, description)),
     );
     const evidenceFacetQueries = RequestDynamicQueryUtil.buildEvidenceFacetQueries({
       requestDescription: input.requestDescription,
@@ -62,7 +96,7 @@ export class ProblemFirstCollectorQueryUtil {
       RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(description, query) &&
       RequestQueryProvenanceUtil.isQueryGrounded({ requestDescription: description, query }) &&
       (!constraint.strict ||
-        this.isPlannedQueryCompatibleWithConstraint(query, constraint)),
+        this.isPlannedQueryCompatibleWithConstraint(query, constraint, description)),
     );
     const isDomainsOnlyMultiDomainDiscovery =
       !description &&
@@ -93,16 +127,61 @@ export class ProblemFirstCollectorQueryUtil {
      * searches. The generic provenance gate remains the final drift guard.
      */
     if (hasAiOwnedPlannedQueries && sourceAwarePlanned.length >= 4) {
+      const strictSourceBlocked =
+        sourceVerticalQueries.length === 0 &&
+        (constraint.kind === 'MEDIA_CONTENT_PROFITABILITY' ||
+          (constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' &&
+            /\b(?:instrument case makers?|musical instrument case makers?|custom instrument cases?|bespoke instrument cases?)\b/iu.test(
+              description,
+            )));
+      if (strictSourceBlocked) return [];
+
       const maxQueries = this.resolveMaxQueries(sourceKey, false);
+      const authoritativeQueries =
+        constraint.strict
+          ? [
+              /*
+               * The AI plan remains authoritative, but strict request
+               * verticals reserve the first slots for deterministic
+               * problem-faithful source phrases. Sparse custom-craft requests
+               * intentionally spend one of those first slots on a coherent
+               * adjacent-workflow query so Supporting evidence is discoverable
+               * in the first pass rather than only during recovery.
+               */
+              ...this.selectStrictFirstPassQueries(
+                sourceVerticalQueries,
+                constraint,
+                description,
+              ),
+              ...sourceAwarePlanned,
+            ]
+          : sourceAwarePlanned;
       return this.unique(
-        sourceAwarePlanned
+        authoritativeQueries
+          /*
+           * IMPORTANT: AI-owned plans must pass the exact same identity/workflow
+           * compiler as deterministic plans. Previously this authoritative path
+           * bypassed strengthenQueryForRequest(), allowing fragments such as
+           * "artwork revision..." or "delayed corrective..." to reach the
+           * network even though the lower path was correctly anchored.
+           */
+          .map((query) => this.strengthenQueryForRequest(query, description, constraint))
           .map((query) => this.shapeForSource(query, sourceKey))
           .filter(Boolean)
           .filter((query) =>
             RequestQueryProvenanceUtil.isQueryGrounded({
               requestDescription: description,
               query,
-            }),
+            }) ||
+            RequestNicheCustomCraftUtil.isSafeExpandedRetrievalQuery(
+              description,
+              query,
+            ) ||
+            this.isSafeStrictCompiledRetrievalQuery(query, constraint, description),
+          )
+          .filter((query) =>
+            !this.requiresStrictSourceIdentityAnchoring(constraint) ||
+            this.isPlannedQueryCompatibleWithConstraint(query, constraint, description),
           ),
       ).slice(0, maxQueries);
     }
@@ -182,7 +261,11 @@ export class ProblemFirstCollectorQueryUtil {
           ? constraint.kind === 'PHYSICAL_SERVICE_VERTICAL' ||
             constraint.kind === 'RENTAL_INVENTORY_OPERATIONS' ||
             constraint.kind === 'RESTORATION_CONSERVATION' ||
-            constraint.kind === 'FOOD_STORAGE_CONDITION'
+            constraint.kind === 'FOOD_STORAGE_CONDITION' ||
+            constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' ||
+            constraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY' ||
+            constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION' ||
+            constraint.kind === 'OPERATIONAL_COST_ATTRIBUTION'
             ? [
                 /*
                  * Niche physical-service searches have sparse exact matches.
@@ -192,9 +275,17 @@ export class ProblemFirstCollectorQueryUtil {
                  * candidate set immediately afterwards.
                  */
                 ...(constraint.kind === 'RESTORATION_CONSERVATION' ||
-                constraint.kind === 'FOOD_STORAGE_CONDITION'
+                constraint.kind === 'FOOD_STORAGE_CONDITION' ||
+                constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' ||
+                constraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY' ||
+                constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION' ||
+                constraint.kind === 'OPERATIONAL_COST_ATTRIBUTION'
                   ? [
-                      ...requestCompatibleSourceVerticalQueries.slice(0, 3),
+                      ...this.selectStrictFirstPassQueries(
+                        requestCompatibleSourceVerticalQueries,
+                        constraint,
+                        description,
+                      ),
                       ...evidenceFacetQueries.slice(0, 2),
                     ]
                   : evidenceFacetQueries.slice(0, 4)),
@@ -238,20 +329,154 @@ export class ProblemFirstCollectorQueryUtil {
 
     return this.unique(
       candidates
+        .map((query) => this.strengthenQueryForRequest(query, description, constraint))
         .map((query) => this.shapeForSource(query, sourceKey))
         .filter(Boolean)
-        .filter((query) =>
-          RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(description, query) &&
-          RequestQueryProvenanceUtil.isQueryGrounded({ requestDescription: description, query }) &&
-          (!constraint.strict ||
-            this.isPlannedQueryCompatibleWithConstraint(query, constraint)),
-        ),
+        .filter((query) => {
+          const safeNicheExpansion =
+            RequestNicheCustomCraftUtil.isSafeExpandedRetrievalQuery(
+              description,
+              query,
+            );
+          return (
+            safeNicheExpansion ||
+            this.isSafeStrictCompiledRetrievalQuery(query, constraint, description) ||
+            (RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(description, query) &&
+              RequestQueryProvenanceUtil.isQueryGrounded({
+                requestDescription: description,
+                query,
+              }))
+          ) &&
+            (!constraint.strict ||
+              this.isPlannedQueryCompatibleWithConstraint(
+                query,
+                constraint,
+                description,
+              ));
+        }),
     ).slice(0, maxQueries);
+  }
+
+  private static isSafeStrictCompiledRetrievalQuery(
+    query: string,
+    constraint: ReturnType<typeof RequestVerticalConstraintUtil.resolve>,
+    requestDescription: string,
+  ): boolean {
+    if (!constraint.strict || !requestDescription) return false;
+    if (![
+      'PUBLIC_PROGRAM_COST_ATTRIBUTION',
+      'OPERATIONAL_COST_ATTRIBUTION',
+      'HEALTHCARE_SUPPLY_COST_EFFICIENCY',
+      'AGRICULTURE_DISTRIBUTION_PROFITABILITY',
+      'AGRICULTURE_EXPORT_PROFITABILITY',
+      'CUSTOM_SPECIFICATION_SERVICE',
+      'RESTORATION_CONSERVATION',
+    ].includes(constraint.kind)) {
+      return false;
+    }
+    /*
+     * These verticals deliberately use source-specific synonyms that may not
+     * occur verbatim in the requester sentence. Once the query has passed the
+     * strict actor/workflow/mechanism contract, literal provenance should not
+     * delete it. This keeps strong phrases such as "program expenditure cost
+     * attribution" or "custom fabricator revision rework" in the first
+     * network wave while still rejecting foreign workflows.
+     */
+    return this.isPlannedQueryCompatibleWithConstraint(
+      query,
+      constraint,
+      requestDescription,
+    );
+  }
+
+  private static selectStrictFirstPassQueries(
+    sourceVerticalQueries: readonly string[],
+    constraint: ReturnType<typeof RequestVerticalConstraintUtil.resolve>,
+    requestDescription: string,
+  ): string[] {
+    if (
+      constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' &&
+      RequestNicheCustomCraftUtil.resolve(requestDescription)?.kind === 'GENERIC_CUSTOM_CRAFT' &&
+      sourceVerticalQueries.length >= 5
+    ) {
+      /*
+       * 2 exact-niche + 1 adjacent-workflow query. The adjacent query is still
+       * Supporting-only downstream, but running it immediately avoids the
+       * recurrent sparse-niche pattern where exact search returns zero and the
+       * same useful adjacent lane is deferred to recovery.
+       */
+      return this.unique([
+        sourceVerticalQueries[0],
+        sourceVerticalQueries[1],
+        sourceVerticalQueries[4],
+      ]);
+    }
+    return sourceVerticalQueries.slice(0, 3);
+  }
+
+  private static strengthenQueryForRequest(
+    query: string,
+    requestDescription: string,
+    constraint: ReturnType<typeof RequestVerticalConstraintUtil.resolve>,
+  ): string {
+    const clean = this.cleanQuery(query);
+    if (!clean || !requestDescription || !constraint.strict) return clean;
+    const normalized = this.normalize(clean);
+
+    if (constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE') {
+      const profile = RequestNicheCustomCraftUtil.resolve(requestDescription);
+      const actor = profile?.directIdentityTerms[0];
+      if (!profile || !actor) return clean;
+
+      const genericAdjacent = new Set([
+        'custom maker', 'artisan', 'craft workshop', 'bespoke maker',
+        'custom order', 'commissioned work', 'made to order', 'small workshop',
+        'commission artist',
+      ]);
+      const concreteAdjacent = profile.adjacentIdentityTerms
+        .filter((term) => !genericAdjacent.has(this.normalize(term)))
+        .some((term) => normalized.includes(this.normalize(term)));
+      const actorCoreTokens = this.normalize(actor)
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((token) => token.length >= 3)
+        .filter((token) => !/^(?:independent|maker|makers|artisan|artist|studio|workshop|specialist|custom|bespoke)$/u.test(token));
+      const hasActorIdentity =
+        actorCoreTokens.length > 0 &&
+        actorCoreTokens.every((token) => normalized.includes(token));
+
+      // Generic workflow vocabulary never earns an unanchored network query.
+      // Only the exact craft identity or a concrete adjacent trade may stand
+      // on its own; everything else is prefixed with the requester actor.
+      if (hasActorIdentity || concreteAdjacent) return clean;
+      return this.cleanQuery(`${actor} ${clean}`);
+    }
+
+    if (constraint.kind === 'OPERATIONAL_COST_ATTRIBUTION') {
+      return RequestOperationalCostAttributionUtil.strengthenQuery(
+        requestDescription,
+        clean,
+      );
+    }
+
+    if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
+      const hasPublicProgram = /\b(?:government|public sector|public agency|public program|government program|program budget|departmental budget)\b/u.test(normalized);
+      const hasCostDriver = /\b(?:staffing|payroll|procurement|contractor|vendor payment|service usage|departmental spending|program expenditure|operating expense|operating cost)\w*\b/u.test(normalized);
+      const hasPressure = /\b(?:budget overrun|overspend|cost overrun|cost pressure|financial pressure|cost attribution|cost driver|budget variance|budget planning|financial oversight)\w*\b/u.test(normalized);
+      return this.cleanQuery([
+        hasPublicProgram ? '' : 'government public program',
+        clean,
+        hasCostDriver ? '' : 'staffing procurement contractor costs',
+        hasPressure ? '' : 'budget overrun cost attribution',
+      ].filter(Boolean).join(' '));
+    }
+
+    return clean;
   }
 
   private static isPlannedQueryCompatibleWithConstraint(
     query: string,
     constraint: ReturnType<typeof RequestVerticalConstraintUtil.resolve>,
+    requestDescription?: string,
   ): boolean {
     if (!constraint.strict) return true;
     const normalized = this.normalize(query);
@@ -264,14 +489,77 @@ export class ProblemFirstCollectorQueryUtil {
       return false;
     }
 
+    if (constraint.kind === 'ONLINE_PHARMACY_FRAUD') {
+      const pharmacyIdentity = /\b(?:online pharmac(?:y|ies)|digital pharmac(?:y|ies)|e[- ]?pharmac(?:y|ies)|internet pharmac(?:y|ies)|pharmacy marketplaces?|digital healthcare marketplaces?|healthcare marketplaces?|e[- ]?prescriptions?|electronic prescriptions?)\b/u.test(normalized);
+      const abuseWorkflow = /\b(?:prescription fraud|fraudulent prescriptions?|fake prescriptions?|forged prescriptions?|suspicious purchases?|suspicious orders?|account takeover|compromised accounts?|unauthorized payments?|delivery address changes?|payment information changes?|identity verification|security alerts?|fraud detection|false positives?)\b/u.test(normalized);
+      const adjacentSupport = /\b(?:e[- ]?commerce|digital marketplace|online marketplace|payment platform|payment system)\b/u.test(normalized) && /\b(?:account takeover|payment fraud|transaction fraud|unauthorized payment|false positive|fraud detection)\b/u.test(normalized);
+      return (pharmacyIdentity && abuseWorkflow) || adjacentSupport;
+    }
+
     if (constraint.kind === 'TRANSACTION_ACCOUNT_ABUSE') {
       if (/\b(?:smart agriculture|smart farm|crop|irrigation|insurance claim|insurance reimbursement|manufacturing|factory|hotel booking|accommodation|shipment chain of custody)\b/u.test(normalized)) {
         return false;
       }
-      const actor = /\b(?:transportation|transport|transit|mobility|ticketing|ticket|fare|passenger|rail|train|bus|metro)\b/u.test(normalized);
-      const concreteMechanism = /\b(?:payment|transaction|refund|chargeback|account|login|booking|reservation|device|security alert|false positive|restriction|investigation)\w*\b/u.test(normalized);
-      const abuseSignal = /\b(?:fraud|fraudulent|scam|abuse|suspicious|unauthorized|compromis|takeover|anomal)\w*\b/u.test(normalized);
-      return actor && concreteMechanism && abuseSignal;
+      const concreteMechanism = /\b(?:payment|transaction|refund|chargeback|account|login|booking|reservation|device|security alert|false positive|restriction|investigation|identity verification)\w*\b/u.test(normalized);
+      const abuseSignal = /\b(?:fraud|fraudulent|scam|abuse|suspicious|unauthorized|compromis|takeover|anomal|false positive)\w*\b/u.test(normalized);
+      const genericIdentity = new Set([
+        'payment', 'payments', 'payment record', 'transaction', 'transactions',
+        'account', 'accounts', 'security alert', 'access log', 'refund',
+      ]);
+      const distinctiveAnchors = constraint.requiredAnchors
+        .map((anchor) => this.normalize(anchor))
+        .filter((anchor) => anchor && !genericIdentity.has(anchor));
+      const identityAligned = distinctiveAnchors.length === 0 ||
+        distinctiveAnchors.some((anchor) => normalized.includes(anchor));
+      return concreteMechanism && abuseSignal && identityAligned;
+    }
+
+    if (
+      constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' &&
+      constraint.label === 'custom commission specification and approval operations'
+    ) {
+      const identity = constraint.requiredAnchors
+        .map((anchor) => this.normalize(anchor))
+        .filter((anchor) => anchor.length >= 4)
+        .some((anchor) => normalized.includes(anchor));
+      const workflow = constraint.workflowAnchors
+        .map((anchor) => this.normalize(anchor))
+        .filter((anchor) => anchor.length >= 4)
+        .some((anchor) => normalized.includes(anchor));
+      const adjacentCraft = RequestNicheCustomCraftUtil.isSafeExpandedRetrievalQuery(
+        requestDescription,
+        normalized,
+      ) || (
+        /\b(?:leatherworker|leather worker|leathercraft|artisan|bespoke maker|custom maker|craft workshop|custom order|commissioned work|ooak artist|custom doll artist|art doll maker|bjd customizer|custom toy maker|custom figure maker|commission artist)\b/u.test(normalized) &&
+        /\b(?:measurement|dimensions?|fit|fitting|material|leather|hardware|design reference|revision|approval|remake|rework|wasted|missed detail|delay|deadline)\w*\b/u.test(normalized)
+      );
+      return (identity && workflow) || adjacentCraft;
+    }
+
+    if (
+      constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' &&
+      constraint.label === 'custom violin bow commission specification and approval operations'
+    ) {
+      if (/\b(?:bow hunting|archery bow|crossbow|software|source code|github issue|violin lesson|music streaming)\b/u.test(normalized)) {
+        return false;
+      }
+      const bowIdentity = /\b(?:violin bows?|violin bow makers?|bow makers?|archetiers?|bespoke bows?|custom bows?|bow making)\b/u.test(normalized);
+      const workflow = /\b(?:player preferences?|playing preferences?|measurements?|wood|hair|balance|grip|winding|materials?|revision|adjustment|approval|approved specification|commission|deadline|rework|remake|wasted|delayed)\w*\b/u.test(normalized);
+      return bowIdentity && workflow;
+    }
+
+    if (
+      constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' &&
+      constraint.label === 'custom watch strap specification sizing and approval operations'
+    ) {
+      if (/\b(?:custom workflow forms?|workflow engine|android widgets?|visual studio workflow|rf connectors?|radio frequency connectors?|wearable skin|source code|github issue)\b/u.test(normalized)) {
+        return false;
+      }
+      const watchIdentity =
+        /\b(?:watch straps?|watch bands?|leather watch straps?|leather watch bands?|bespoke watch straps?|custom watch straps?|watch strap makers?|watch band makers?)\b/u.test(normalized);
+      const workflow =
+        /\b(?:wrist measurement|wrist size|strap length|strap width|lug width|leather|material|stitching|buckle|color|colour|revision|approval|approved specification|sizing|wrong size|remake|rework|wasted leather|delayed order)\w*\b/u.test(normalized);
+      return watchIdentity && workflow;
     }
 
     if (constraint.kind === 'RESTAURANT_DELIVERY_FRAUD') {
@@ -300,11 +588,12 @@ export class ProblemFirstCollectorQueryUtil {
       if (/\b(?:custom commission|custom order|new design|wrong dimensions?|approved design revision|personalization|production mistake)\b/u.test(normalized)) {
         return false;
       }
-      const requestIdentity = constraint.requiredAnchors.some((anchor) =>
-        normalized.includes(this.normalize(anchor)),
+      const requestIdentity = this.matchesConstraintIdentityTokens(
+        normalized,
+        constraint.requiredAnchors,
       );
       const restorationWorkflow =
-        /\b(?:restoration|conservation|condition|damage|cracked|missing|original design|original color|original colour|previous repair|repair history|restoration history|treatment history|replacement material|material match|color match|colour match|physical sample|documentation|records?|rework|waste|delay)\w*\b/u.test(normalized);
+        /\b(?:restoration|conservation|condition|assessment|specification|treatment|damage|cracked|broken|missing|deterioration|original design|original color|original colour|previous repair|previous intervention|repair history|restoration history|treatment history|replacement material|material match|color match|colour match|physical sample|documentation|records?|rework|waste|delay)\w*\b/u.test(normalized);
       return requestIdentity && restorationWorkflow;
     }
 
@@ -361,6 +650,34 @@ export class ProblemFirstCollectorQueryUtil {
       }
       return /\btypewriter\b/u.test(normalized) &&
         /\b(?:repair|restoration|mechanical|ribbon|keys?|parts?|component|condition|service history|repair history|diagnostic|workshop|restorer)\w*\b/u.test(normalized);
+    }
+
+    if (constraint.kind === 'OPERATIONAL_COST_ATTRIBUTION') {
+      return RequestOperationalCostAttributionUtil.isQueryCompatible(
+        requestDescription ?? '',
+        normalized,
+      );
+    }
+
+    if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
+      if (/\b(?:personal finance|house down payment|stock market|investment portfolio|cheese wheel|auction format|political budget cycle)\b/u.test(normalized)) {
+        return false;
+      }
+      const publicProgram = /\b(?:government|public sector|public agency|government agency|government department|public program|government program|program budget|departmental budget)\b/u.test(normalized);
+      const costDriver = /\b(?:staffing|payroll|procurement|contractor|vendor payment|service usage|departmental spending|program expenditure|operating expense|operating cost)\w*\b/u.test(normalized);
+      const budgetPressure = /\b(?:budget overrun|overspend|cost overrun|cost pressure|financial pressure|cost attribution|cost driver|budget variance|budget planning|financial oversight|inefficien|waste)\w*\b/u.test(normalized);
+      return publicProgram && costDriver && budgetPressure;
+    }
+
+    if (constraint.kind === 'AGRICULTURE_DISTRIBUTION_PROFITABILITY') {
+      if (/\b(?:stock market|equity market|asset pricing|business cycle|hydrogen|energy storage|battery storage|rail market|vehicle pricing)\b/u.test(normalized)) {
+        return false;
+      }
+      const agricultureContext =
+        /\b(?:agricultural|agriculture|crop|crops|produce|fresh produce|farm produce|harvest|postharvest|spoilage|agricultural distributor|produce distributor|agricultural wholesaler)\b/u.test(normalized);
+      const operatingAxis =
+        /\b(?:storage|warehouse|inventory|transport|transportation|delivery|shipment|route|spoilage|market price|price volatility|price fluctuation|profit|profitability|margin|cost|expense|loss|pricing)\w*\b/u.test(normalized);
+      return agricultureContext && operatingAxis;
     }
 
     if (constraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY') {
@@ -434,10 +751,12 @@ export class ProblemFirstCollectorQueryUtil {
     readonly requestDescription?: string | null;
     readonly plannedQueries?: readonly string[];
     readonly keywords?: readonly string[];
+    readonly authoritativePlannedQueries?: boolean;
   }): string[] {
     const sourceKey = this.normalize(input.sourceKey);
     const description = this.normalize(input.requestDescription ?? '');
     if (!description) return [];
+    if (input.authoritativePlannedQueries) return [];
 
     const constraint = RequestVerticalConstraintUtil.resolve({
       requestDescription: input.requestDescription,
@@ -454,7 +773,7 @@ export class ProblemFirstCollectorQueryUtil {
       .filter(Boolean)
       .filter((query) =>
         !constraint.strict ||
-        this.isPlannedQueryCompatibleWithConstraint(query, constraint),
+        this.isPlannedQueryCompatibleWithConstraint(query, constraint, description),
       );
 
     const domainAgnosticFallbackQueries = RequestDynamicQueryUtil.buildEvidenceFacetQueries({
@@ -465,7 +784,7 @@ export class ProblemFirstCollectorQueryUtil {
       .filter(Boolean)
       .filter((query) =>
         !constraint.strict ||
-        this.isPlannedQueryCompatibleWithConstraint(query, constraint),
+        this.isPlannedQueryCompatibleWithConstraint(query, constraint, description),
       );
 
     const genericFallbackQueries = this.unique([
@@ -477,6 +796,28 @@ export class ProblemFirstCollectorQueryUtil {
         0,
         sourceKey === 'forum' ? 4 : 5,
       );
+    }
+
+    if (constraint.kind === 'OPERATIONAL_COST_ATTRIBUTION') {
+      return RequestOperationalCostAttributionUtil.buildFirstPassQueries(
+        description,
+        sourceKey,
+      ).slice(0, sourceKey === 'forum' ? 3 : 4);
+    }
+
+    if (constraint.kind === 'AGRICULTURE_DISTRIBUTION_PROFITABILITY') {
+      if (sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'crossref') {
+        return [
+          'agricultural distributor crop profitability storage transport cost',
+          'produce distribution spoilage market price route profitability',
+          'postharvest storage transportation cost crop margin',
+        ];
+      }
+      return [
+        'produce distributor storage loss delivery cost profit margin',
+        'agricultural distribution route cost pricing profitability problem',
+        'crop distributor spoilage warehouse transport cost margin',
+      ];
     }
 
     if (constraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY') {
@@ -556,6 +897,31 @@ export class ProblemFirstCollectorQueryUtil {
         'ornamental fountain conservation pump circulation stone deterioration',
       ];
       if (sourceKey === 'app-store' || sourceKey === 'google-play' || sourceKey === 'hacker-news') return [];
+    }
+
+    if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
+      if (sourceKey === 'crossref') return [
+        'government public program budget overrun staffing procurement contractor cost attribution',
+        'public program operating cost drivers staffing procurement service usage budget variance',
+        'government program expenditure cost attribution contractor payments departmental budget',
+        'public sector program operating expenses cost pressure financial oversight',
+      ];
+      if (sourceKey === 'news' || sourceKey === 'gdelt') return [
+        'government public program budget overrun staffing procurement contractor costs',
+        'public program overspending departmental spending cost drivers government agency',
+        'government service program operating expenses procurement contractor payments budget',
+        'public sector program budget pressure spending analysis financial oversight',
+      ];
+      if (sourceKey === 'reddit' || sourceKey === 'forum') return [
+        'government program budget overrun staffing procurement contractor spending problem',
+        'public sector budget analyst program cost drivers departmental spending',
+        'government agency program overspending procurement contractor payments',
+      ];
+      if (sourceKey === 'youtube') return [
+        'government public program budget overrun cost attribution',
+        'public sector program spending analysis staffing procurement contractor costs',
+      ];
+      return [];
     }
 
     if (
@@ -1135,7 +1501,7 @@ export class ProblemFirstCollectorQueryUtil {
       .filter(Boolean)
       .filter((query) =>
         !constraint.strict ||
-        this.isPlannedQueryCompatibleWithConstraint(query, constraint),
+        this.isPlannedQueryCompatibleWithConstraint(query, constraint, description),
       );
     if (facetQueries.length > 0) {
       return this.unique(facetQueries).slice(0, sourceKey === 'forum' ? 4 : 5);
@@ -1169,34 +1535,83 @@ export class ProblemFirstCollectorQueryUtil {
     const actor = constraint.label;
 
     if (constraint.kind === 'TRANSACTION_ACCOUNT_ABUSE') {
-      if (sourceKey === 'app-store' || sourceKey === 'google-play') return [
-        'transit refund fraud',
-        'ticket payment fraud',
-        'passenger account takeover',
-        'mobility booking fraud',
-      ];
-      if (sourceKey === 'forum' || sourceKey === 'reddit') return [
-        'transit operator fraudulent refund account abuse',
-        'transport ticket payment fraud passenger account takeover',
-        'mobility booking suspicious payment false positive passenger',
-        'train ticket refund scam fraud investigation',
-      ];
-      if (sourceKey === 'news' || sourceKey === 'gdelt') return [
-        'train company ticket refund fraud financial loss',
-        'transit ticketing fraudulent refund coordinated abuse',
-        'transportation payment fraud passenger account compromise',
-        'mobility service suspicious booking payment fraud',
-      ];
-      if (sourceKey === 'crossref') return [
-        'transportation payment fraud account takeover detection',
-        'transit ticketing refund fraud anomaly detection',
-        'mobility payment account abuse device fingerprinting',
-      ];
-      if (sourceKey === 'youtube' || sourceKey === 'blog') return [
-        'transit ticket refund fraud investigation',
-        'transportation payment fraud account takeover device signals',
-        'mobility booking fraud false positive passenger restriction',
-      ];
+      const municipalPaymentWorkflow =
+        /\b(?:smart cit(?:y|ies)|cities|city governments?|municipalit(?:y|ies)|municipal governments?|local authorities?|public services?|parking services?|utility services?)\b/iu.test(requestDescription) &&
+        /\b(?:payments?|transactions?|parking fees?|parking payments?|transit payments?|fare payments?|utility payments?|utility bills?|municipal fees?|public service fees?)\b/iu.test(requestDescription);
+      if (municipalPaymentWorkflow) {
+        if (sourceKey === 'crossref') {
+          return [
+            'municipal payment fraud detection transaction monitoring',
+            'smart city payment fraud parking transit utility',
+            'city payment account compromise unauthorized transactions',
+            'electronic payment fraud detection false positives',
+          ];
+        }
+        if (sourceKey === 'forum' || sourceKey === 'reddit') {
+          return [
+            'municipal payment fraud detection false positive problem',
+            'smart city payment account compromised unauthorized payment',
+            'parking transit utility payment fraud investigation',
+            'city payment records security alerts reviewed separately',
+            'electronic payment fraud detection account compromise complaint',
+          ];
+        }
+        if (sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'blog') {
+          return [
+            'municipal digital payment fraud unauthorized transaction incident',
+            'smart city payment security account compromise investigation',
+            'parking transit utility payment fraud detection',
+            'city payment false fraud alerts transaction monitoring',
+          ];
+        }
+      }
+
+      /*
+       * Do not attach a domain template to a semantic problem family. Build
+       * source queries from the request-owned identity/workflow terms so the
+       * same collector logic works for procurement, education, healthcare,
+       * marketplaces, transport, insurance, or any future vertical.
+       */
+      const profile = RequestWorkflowIntentProfileUtil.resolve(requestDescription);
+      const requestActor = RequestDynamicQueryUtil.extractActor(requestDescription) || actor;
+      const object = profile.objectIdentityTerms.slice(0, 3).join(' ');
+      const workflow = profile.workflowIdentityTerms.slice(0, 3).join(' ');
+      const failure = profile.failureIdentityTerms
+        .filter(
+          (value) =>
+            !/^(?:separate|separately|fragmented|reviewed separately|managed separately)$/iu.test(
+              value.trim(),
+            ),
+        )
+        .slice(0, 3);
+      const outcome = profile.outcomeIdentityTerms.slice(0, 2);
+      const primaryFailure = failure[0] || 'account takeover fraud';
+      const secondaryFailure = failure[1] || 'suspicious activity';
+      const primaryOutcome = outcome[0] || 'financial loss';
+
+      const sourceIntent =
+        sourceKey === 'crossref'
+          ? 'fraud detection analysis'
+          : sourceKey === 'news' || sourceKey === 'gdelt'
+            ? 'fraud incident investigation'
+            : sourceKey === 'forum' || sourceKey === 'reddit'
+              ? 'fraud problem complaint'
+              : 'account security fraud';
+
+      /*
+       * Every transaction/account-abuse query keeps the requester actor. The
+       * previous third/fourth queries dropped that identity and turned a
+       * restaurant request into generic bank/tax/account searches. Short actor-
+       * anchored variants improve recall without opening a foreign vertical.
+       */
+      return this.unique([
+        `${requestActor} ${primaryFailure} ${sourceIntent}`,
+        `${requestActor} ${workflow} ${primaryFailure}`,
+        `${requestActor} ${object} ${secondaryFailure}`,
+        `${requestActor} ${primaryOutcome} ${primaryFailure}`,
+        `${requestActor} account security suspicious activity`,
+        `${requestActor} unauthorized refund account takeover`,
+      ].map((query) => this.cleanQuery(query)).filter(Boolean)).slice(0, 6);
     }
 
     if (constraint.kind === 'FOOD_STORAGE_CONDITION') {
@@ -1225,31 +1640,66 @@ export class ProblemFirstCollectorQueryUtil {
     }
 
     if (constraint.kind === 'RESTORATION_CONSERVATION') {
+      const jewelryRestoration =
+        /\b(?:antique|vintage|historic|heirloom)\s+(?:jewelry|jewellery|ring|rings|pendant|bracelet|necklace|brooch)|\b(?:jewelry|jewellery)\s+(?:restoration|repair)|\b(?:gemstone|stone)\s+(?:condition|replacement)|\bbench jeweler\b/iu.test(
+          requestDescription,
+        );
+      if (jewelryRestoration) {
+        if (sourceKey === 'forum' || sourceKey === 'reddit') return [
+          'antique jewelry restoration previous repairs history',
+          'antique jewelry restoration historical design replacement gemstone',
+          'antique jewelry restoration customer approval incorrect work',
+          'antique jewelry restoration missing components previous repairs',
+          'antique jewelry restoration customer preferences original details',
+        ];
+        if (sourceKey === 'youtube' || sourceKey === 'blog') return [
+          'antique jewelry restoration gemstone condition metal damage',
+          'antique jewelry restoration previous repairs condition',
+          'antique jewelry restoration historical design replacement materials',
+          'antique jewelry restoration customer approved work',
+        ];
+        if (sourceKey === 'news' || sourceKey === 'gdelt') return [
+          'antique jewelry restoration incorrect replacement materials',
+          'antique jewelry restoration loss original details',
+          'antique jewelry restoration gemstone damage previous repairs',
+          'antique jewelry restoration historical design replacement materials',
+        ];
+        if (sourceKey === 'crossref') return [
+          'antique jewelry restoration gemstone condition previous repairs',
+          'antique jewelry restoration historical design replacement materials',
+          'antique jewelry restoration documentation previous repairs',
+          'antique jewelry restoration gemstone condition replacement materials',
+        ];
+      }
+
+      const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
+        requestDescription,
+      );
       const identity =
-        constraint.requiredAnchors.find((value) => value.split(/\s+/u).length >= 2) ??
-        constraint.requiredAnchors[0] ??
+        workflowProfile.restorationSubject ||
+        constraint.requiredAnchors.find((value) => value.split(/\s+/u).length >= 2) ||
+        constraint.requiredAnchors[0] ||
         'restoration';
-      if (sourceKey === 'forum' || sourceKey === 'reddit') return [
-        `${identity} condition previous repairs documentation`,
-        `${identity} original design details restoration history`,
-        `${identity} replacement material matching rework`,
-        `${identity} damage condition handwritten notes photos`,
-      ];
-      if (sourceKey === 'youtube' || sourceKey === 'blog') return [
-        `${identity} condition assessment previous restoration materials`,
-        `${identity} restoration history original details material matching`,
-        `${identity} conservation treatment records physical samples`,
-      ];
-      if (sourceKey === 'news' || sourceKey === 'gdelt') return [
-        `${identity} restoration incorrect material matching`,
-        `${identity} conservation lost original design details`,
-        `${identity} restoration repeated work material waste`,
-      ];
-      if (sourceKey === 'crossref') return [
-        `${identity} conservation condition assessment treatment history`,
-        `${identity} restoration material matching previous repairs`,
-        `${identity} conservation documentation original design`,
-      ];
+      const request = requestDescription.normalize('NFKC').toLocaleLowerCase();
+      const hasHistory = /\b(?:history|records?|documentation|notes?|formulas?|photos?|photographs?|samples?|previous coatings?|previous treatments?|previous repairs?)\b/u.test(request);
+      const hasSurface = /\b(?:surface condition|condition|damaged areas?|damage|color variations?|colour variations?|color matching|colour matching)\b/u.test(request);
+      const hasMaterials = /\b(?:material mixtures?|materials?|coatings?|varnish|finish|resin|pigment)\b/u.test(request);
+      const hasTechnique = /\b(?:application techniques?|treatment techniques?|methods?|process)\b/u.test(request);
+      const hasPreferences = /\b(?:preservation preferences?|customer preferences?|client preferences?|owner preferences?)\b/u.test(request);
+      const requestOwnedQueries = [
+        hasHistory ? `${identity} restoration treatment history documentation records` : '',
+        hasHistory && hasSurface ? `${identity} condition history photographs workshop notes` : '',
+        hasMaterials ? `${identity} coating material formula treatment records` : '',
+        hasMaterials && hasSurface ? `${identity} color matching material treatment history` : '',
+        hasTechnique ? `${identity} application technique treatment documentation` : '',
+        hasPreferences ? `${identity} preservation preferences treatment history records` : '',
+        `${identity} restoration documentation history problem`,
+        `${identity} conservation condition treatment records`,
+      ].filter(Boolean);
+      if (sourceKey === 'forum' || sourceKey === 'reddit') return requestOwnedQueries.slice(0, 6);
+      if (sourceKey === 'youtube' || sourceKey === 'blog') return requestOwnedQueries.slice(0, 5);
+      if (sourceKey === 'news' || sourceKey === 'gdelt') return requestOwnedQueries.slice(0, 5);
+      if (sourceKey === 'crossref') return requestOwnedQueries.slice(0, 6);
     }
 
     if (constraint.kind === 'RENTAL_INVENTORY_OPERATIONS') {
@@ -1339,6 +1789,38 @@ export class ProblemFirstCollectorQueryUtil {
         'fountain stonework metal conservation repair documentation',
       ];
       if (sourceKey === 'app-store' || sourceKey === 'google-play' || sourceKey === 'hacker-news') return [];
+    }
+
+    if (constraint.kind === 'OPERATIONAL_COST_ATTRIBUTION') {
+      return RequestOperationalCostAttributionUtil.buildFirstPassQueries(
+        requestDescription,
+        sourceKey,
+      );
+    }
+
+    if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
+      if (sourceKey === 'crossref') return [
+        'government public program budget overrun staffing procurement contractor cost attribution',
+        'public program operating cost drivers staffing procurement service usage budget variance',
+        'government program expenditure cost attribution contractor payments departmental budget',
+        'public sector program operating expenses cost pressure financial oversight',
+      ];
+      if (sourceKey === 'news' || sourceKey === 'gdelt') return [
+        'government public program budget overrun staffing procurement contractor costs',
+        'public program overspending departmental spending cost drivers government agency',
+        'government service program operating expenses procurement contractor payments budget',
+        'public sector program budget pressure spending analysis financial oversight',
+      ];
+      if (sourceKey === 'reddit' || sourceKey === 'forum') return [
+        'government program budget overrun staffing procurement contractor spending problem',
+        'public sector budget analyst program cost drivers departmental spending',
+        'government agency program overspending procurement contractor payments',
+      ];
+      if (sourceKey === 'youtube') return [
+        'government public program budget overrun cost attribution',
+        'public sector program spending analysis staffing procurement contractor costs',
+      ];
+      return [];
     }
 
     if (
@@ -1740,31 +2222,36 @@ export class ProblemFirstCollectorQueryUtil {
     if (constraint.kind === 'ECOMMERCE_MARGIN_PROFITABILITY') {
       if (sourceKey === 'reddit' || sourceKey === 'forum') {
         return [
-          'ecommerce merchant profit margin hidden advertising shipping fees',
-          'online retailer contribution margin discount returns payment fees',
-          'shopify merchant strong sales low profit ad spend shipping costs',
-          'ecommerce promotion overspending campaign profitability margin decline',
-          'seller net profit gross revenue hidden fulfillment costs',
+          'online retailer shipping delays return rates product profitability margin',
+          'ecommerce warehouse storage carrier charges returns margin problem',
+          'online seller damaged orders refunds delivery failures real profit',
+          'ecommerce product landed cost fulfillment shipping returns profitability',
+          'merchant carrier selection failed delivery logistics spending margin',
+          'shopify merchant strong sales low profit warehouse shipping return costs',
         ];
       }
-      if (
-        sourceKey === 'news' ||
-        sourceKey === 'gdelt' ||
-        sourceKey === 'crossref' ||
-        sourceKey === 'blog'
-      ) {
+      if (sourceKey === 'crossref') {
         return [
-          'ecommerce contribution margin advertising returns shipping fees profitability',
-          'online retail unit economics discounts fulfillment payment fees',
-          'retail campaign profitability ad spend returns margin analysis',
-          'merchant margin erosion strong sales hidden ecommerce costs',
-          'ecommerce product profitability gross revenue net profit attribution',
+          'ecommerce product profitability fulfillment logistics costs returns',
+          'online retail reverse logistics return rates profitability',
+          'ecommerce warehouse transportation cost product margin',
+          'last mile delivery failure ecommerce profitability cost',
+          'online retail landed cost inventory fulfillment profitability',
+        ];
+      }
+      if (sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'blog') {
+        return [
+          'online retail shipping delays warehouse costs product margins',
+          'ecommerce return rates refunds damaged orders profitability',
+          'retailer carrier charges delivery failures margin erosion',
+          'ecommerce fulfillment logistics spending product profitability',
+          'online retailer inventory storage cost pricing profit',
         ];
       }
       if (sourceKey === 'youtube') {
         return [
-          'ecommerce contribution margin product profitability',
-          'shopify profit margin shipping fees returns ads',
+          'ecommerce product profitability shipping returns warehouse costs',
+          'shopify profit margin fulfillment shipping return costs',
           'online retail campaign profitability ad spend',
         ];
       }
@@ -1781,13 +2268,48 @@ export class ProblemFirstCollectorQueryUtil {
     }
 
     if (constraint.kind === 'MEDIA_CONTENT_PROFITABILITY') {
+      const conversionRequest =
+        /\b(?:abandon|purchase|checkout|paid experience|conversion|missed sales|transaction history|browsing behavior|content discovery|discover content|customer feedback|recommendation|marketing spend)\w*\b/iu.test(
+          requestDescription,
+        );
+
+      if (conversionRequest) {
+        if (sourceKey === 'reddit' || sourceKey === 'forum') {
+          return [
+            'streaming platform users abandon subscription purchase after content discovery',
+            'digital entertainment checkout abandonment paid content conversion problem',
+            'streaming promotion offer subscription conversion churn user feedback',
+            'gaming platform purchase abandonment content engagement revenue',
+          ];
+        }
+        if (
+          sourceKey === 'news' ||
+          sourceKey === 'gdelt' ||
+          sourceKey === 'crossref' ||
+          sourceKey === 'blog'
+        ) {
+          return [
+            'digital entertainment purchase conversion content engagement subscription abandonment',
+            'streaming platform conversion funnel content discovery paid subscription',
+            'media entertainment promotional campaign conversion transaction revenue',
+            'digital content purchase intention subscription conversion engagement',
+          ];
+        }
+        if (sourceKey === 'youtube') {
+          return [
+            'streaming subscription abandonment content discovery conversion',
+            'digital entertainment purchase funnel paid content conversion',
+          ];
+        }
+        return [];
+      }
+
       if (sourceKey === 'reddit' || sourceKey === 'forum') {
         return [
           'streaming service content profitability production cost subscriber revenue',
           'streaming show production budget subscriber retention financial return',
           'digital entertainment content roi viewing engagement churn profitability',
           'streaming platform ad revenue content cost title performance',
-          'media company content investment low performing shows revenue forecast',
         ];
       }
       if (
@@ -1801,27 +2323,15 @@ export class ProblemFirstCollectorQueryUtil {
           'streaming title economics viewing engagement subscriber retention content investment',
           'digital entertainment show performance advertising revenue production budget',
           'media content roi churn campaign performance revenue forecast',
-          'streaming platform content investment financial return creator performance',
         ];
       }
       if (sourceKey === 'youtube') {
         return [
           'streaming content profitability production cost subscriber revenue',
           'streaming show roi viewing engagement churn',
-          'media content investment revenue forecasting',
         ];
       }
-      if (
-        sourceKey === 'app-store' ||
-        sourceKey === 'google-play' ||
-        sourceKey === 'github' ||
-        sourceKey === 'stackoverflow' ||
-        sourceKey === 'dev-to' ||
-        sourceKey === 'product-hunt' ||
-        sourceKey === 'hacker-news'
-      ) {
-        return [];
-      }
+      return [];
     }
 
     if (constraint.kind === 'TRANSPORTATION_COST_PROFITABILITY') {
@@ -2626,6 +3136,10 @@ export class ProblemFirstCollectorQueryUtil {
       }
     }
 
+    if (constraint.kind === 'ONLINE_PHARMACY_FRAUD') {
+      return RequestOnlinePharmacyFraudUtil.buildSourceQueries(sourceKey);
+    }
+
     if (constraint.kind === 'GOVERNMENT_RECORD_ACCESS_INTEGRITY') {
       if (sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'crossref' || sourceKey === 'blog') {
         return [
@@ -2655,6 +3169,55 @@ export class ProblemFirstCollectorQueryUtil {
     }
 
     if (constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE') {
+      const nicheCraftQueries = RequestNicheCustomCraftUtil.buildSourceQueries(
+        requestDescription,
+        sourceKey,
+      );
+      if (nicheCraftQueries.length > 0) {
+        return nicheCraftQueries;
+      }
+
+      const isWatchStrapWorkflow =
+        constraint.label === 'custom watch strap specification sizing and approval operations' ||
+        /\b(?:watch straps?|watch bands?|leather watch straps?|leather watch bands?|watch strap makers?|watch band makers?|bespoke straps?)\b/iu.test(
+          requestDescription,
+        );
+      if (isWatchStrapWorkflow) {
+        if (sourceKey === 'reddit' || sourceKey === 'forum') {
+          return [
+            'custom watch strap wrong size wrist measurement remake',
+            'watch band lug width strap length sizing mistake',
+            'leather watch strap customer changed design revision',
+            'watch strap wrong leather order customer approval',
+            'bespoke strap measurement mistake repeated adjustment',
+            'leathercraft custom order measurement material revision remake',
+          ];
+        }
+        if (sourceKey === 'crossref') {
+          return [
+            'watch strap wrist measurement sizing custom leather',
+            'watch band anthropometry fit sizing wrist measurement',
+            'leather watch strap custom fit material selection',
+            'watch strap design customization fit dimensions',
+          ];
+        }
+        if (sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'blog') {
+          return [
+            'custom watch strap sizing measurement leather remake',
+            'bespoke watch strap material selection customer revision',
+            'watch band custom order wrong size rework',
+          ];
+        }
+        if (sourceKey === 'youtube') {
+          return [
+            'custom watch strap wrist measurement sizing leather',
+            'watch strap maker customer measurement custom fit',
+            'leather watch strap design revision sizing mistake',
+          ];
+        }
+        if (sourceKey === 'app-store' || sourceKey === 'google-play') return [];
+      }
+
       const isBridalAlterationWorkflow =
         /\b(?:bridal alteration|wedding dress alteration|alteration specialists?|alteration shops?|seamstresses?|dressmakers?|tailors?|tailoring)\b/iu.test(
           `${actor} ${requestDescription}`,
@@ -2674,6 +3237,43 @@ export class ProblemFirstCollectorQueryUtil {
         /\b(?:wig makers?|wig maker|custom wigs?|hairpiece makers?|hairpiece maker)\b/iu.test(
           `${actor} ${requestDescription}`,
         );
+      const isInstrumentCaseWorkflow =
+        /\b(?:instrument case makers?|musical instrument case makers?|custom instrument cases?|bespoke instrument cases?|violin case makers?|guitar case makers?|cello case makers?)\b/iu.test(
+          `${actor} ${requestDescription}`,
+        ) &&
+        /\b(?:measurements?|dimensions?|instrument shapes?|padding|foam|lining|materials?|hardware|revisions?|approved specifications?|customer messages?|deadlines?)\b/iu.test(
+          requestDescription,
+        );
+
+      if (isInstrumentCaseWorkflow) {
+        if (sourceKey === 'reddit' || sourceKey === 'forum') {
+          return [
+            'instrument case maker customer measurements padding design revisions',
+            'instrument case maker incorrect dimensions material choices repeated adjustments',
+            'custom instrument case approved specifications customer messages delayed orders',
+            'musical instrument case maker lost measurements approved specification rework',
+          ];
+        }
+        if (
+          sourceKey === 'news' ||
+          sourceKey === 'gdelt' ||
+          sourceKey === 'crossref' ||
+          sourceKey === 'blog'
+        ) {
+          return [
+            'instrument case maker measurements dimensions padding material revisions',
+            'custom instrument case approved specifications incorrect dimensions',
+            'musical instrument case custom fit padding dimensions',
+          ];
+        }
+        if (sourceKey === 'youtube') {
+          return [
+            'instrument case maker padding fit measurements revisions',
+            'custom instrument case foam dimensions customer approval',
+          ];
+        }
+        return [];
+      }
 
       if (isBridalAlterationWorkflow) {
         if (sourceKey === 'reddit' || sourceKey === 'forum') {
@@ -3193,6 +3793,35 @@ export class ProblemFirstCollectorQueryUtil {
       }
     }
 
+    if (constraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY') {
+      if (sourceKey === 'crossref') return [
+        'hospital medical inventory expiration emergency procurement cost',
+        'healthcare supply chain inventory waste operating cost',
+        'hospital emergency purchasing stockout cost',
+        'medical inventory redistribution transport cost hospital network',
+        'hospital inventory imbalance expired supplies cost',
+      ];
+      if (sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'blog') return [
+        'hospital expired medical supplies emergency purchases inventory cost',
+        'healthcare network emergency procurement stock distribution cost',
+        'hospital supply shortage emergency purchase cost',
+        'medical inventory waste expiration hospital budget',
+        'hospital inter facility transfer medical supply cost',
+      ];
+      if (sourceKey === 'reddit' || sourceKey === 'forum') return [
+        'hospital procurement expired inventory emergency order problem',
+        'healthcare supply chain stock imbalance transfer cost',
+        'pharmacy inventory expired stock emergency purchase hospital',
+        'medical supplies overstock stockout transfer problem',
+        'hospital inventory transfer emergency procurement budget problem',
+      ];
+      if (sourceKey === 'youtube') return [
+        'hospital medical inventory expiration emergency purchasing cost',
+        'healthcare supply chain stock distribution operating cost',
+        'hospital medical supply overstock stockout emergency orders',
+      ];
+    }
+
     if (
       constraint.kind === 'HEALTHCARE_OPERATIONS' &&
       constraint.label === 'hospital supply inventory operations'
@@ -3619,9 +4248,10 @@ export class ProblemFirstCollectorQueryUtil {
       }
       if (sourceKey === 'crossref') {
         return [
-          'spectacle frame repair hinge replacement adjustment',
-          'eyeglass frame repair material color matching',
-          'optical frame maintenance repair history',
+          'eyeglass spectacle frame repair technician hinge replacement adjustment',
+          'eyeglass frame repair shop replacement parts color matching customer fit',
+          'optical eyewear frame repair service history repeated adjustment',
+          'spectacle eyeglass frame repair work order previous repair replacement component',
         ];
       }
       if (sourceKey === 'app-store' || sourceKey === 'google-play') {
@@ -3751,6 +4381,46 @@ export class ProblemFirstCollectorQueryUtil {
         'suspicious transaction investigation fragmented systems',
         'false positive account restriction fraud detection',
       ];
+    }
+
+    if (constraint.kind === 'AGRICULTURE_DISTRIBUTION_PROFITABILITY') {
+      if (sourceKey === 'reddit' || sourceKey === 'forum') {
+        return [
+          'agricultural distributor storage loss delivery cost crop profitability',
+          'produce distributor spoilage warehouse transport cost pricing margin',
+          'fresh produce distributor route cost market price profitability problem',
+          'crop wholesaler storage cost transportation delay profit margin',
+          'produce distribution damaged spoilage delivery delay pricing decision',
+          'agricultural distribution inventory shipment expense route loss',
+        ];
+      }
+      if (sourceKey === 'crossref') {
+        return [
+          'agricultural distribution crop profitability storage transportation cost',
+          'postharvest loss produce distribution market price profitability',
+          'fresh produce supply chain storage transport cost margin',
+          'crop marketing transportation cost price volatility profitability',
+          'produce distribution spoilage route cost economic loss',
+          'agricultural wholesale market price storage cost profitability',
+        ];
+      }
+      if (sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'blog') {
+        return [
+          'produce distributor storage transport costs crop margins',
+          'agricultural distribution spoilage delivery delay financial loss',
+          'crop market price volatility logistics cost profitability',
+          'fresh produce warehouse delivery cost pricing pressure',
+          'agricultural distributor route cost profit margin',
+        ];
+      }
+      if (sourceKey === 'youtube') {
+        return [
+          'agricultural distribution crop profitability storage transport cost',
+          'produce supply chain spoilage delivery cost market price',
+          'farm produce distribution route profitability warehouse cost',
+        ];
+      }
+      if (sourceKey === 'app-store' || sourceKey === 'google-play') return [];
     }
 
     if (constraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY') {
@@ -4614,6 +5284,16 @@ export class ProblemFirstCollectorQueryUtil {
       .map((entry) => entry.query);
   }
 
+  private static requiresStrictSourceIdentityAnchoring(
+    constraint: ReturnType<typeof RequestVerticalConstraintUtil.resolve>,
+  ): boolean {
+    return (
+      constraint.kind === 'ONLINE_PHARMACY_FRAUD' ||
+      constraint.kind === 'TRANSACTION_ACCOUNT_ABUSE' ||
+      constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE'
+    );
+  }
+
   private static shapeForSource(query: string, sourceKey: string): string {
     const compact = this.cleanQuery(query)
       .split(/\s+/u)
@@ -4686,21 +5366,20 @@ export class ProblemFirstCollectorQueryUtil {
      * evidence ceiling after the upstream planner produced a much richer
      * domain/problem vocabulary.
      */
+    // Six AI-owned seeds are the global first-pass contract. Source shaping may
+    // reorder or specialize them, but it must not fan one request back out into
+    // 10-14 network searches. More queries increased lexical noise and rate
+    // limits without increasing trusted evidence.
     if (sourceKey === 'blog') return focusedTextRequest ? 5 : 4;
-    if (
-      sourceKey === 'news' ||
-      sourceKey === 'gdelt' ||
-      sourceKey === 'crossref'
-    ) {
-      return focusedTextRequest ? 10 : 8;
+    if (sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'crossref') {
+      return focusedTextRequest ? 6 : 5;
     }
-    if (sourceKey === 'reddit') return 10;
-    if (sourceKey === 'forum') return focusedTextRequest ? 10 : 8;
-    if (sourceKey === 'youtube') return focusedTextRequest ? 8 : 6;
-    if (sourceKey === 'app-store' || sourceKey === 'google-play') {
-      return focusedTextRequest ? 8 : 6;
+    if (sourceKey === 'reddit' || sourceKey === 'forum') {
+      return focusedTextRequest ? 6 : 5;
     }
-    return focusedTextRequest ? 10 : 8;
+    if (sourceKey === 'youtube') return focusedTextRequest ? 5 : 4;
+    if (sourceKey === 'app-store' || sourceKey === 'google-play') return 4;
+    return focusedTextRequest ? 6 : 5;
   }
 
   /**
@@ -4751,8 +5430,43 @@ export class ProblemFirstCollectorQueryUtil {
     return true;
   }
 
+  private static matchesConstraintIdentityTokens(
+    normalizedQuery: string,
+    anchors: readonly string[],
+  ): boolean {
+    const generic = new Set([
+      'independent', 'specialist', 'specialists', 'service', 'services',
+      'restoration', 'repair', 'repairs', 'conservation', 'workflow', 'workflows',
+      'documentation', 'history', 'operations', 'operator', 'operators',
+      'management', 'customer', 'customers', 'professional', 'professionals',
+    ]);
+    const queryTokens = new Set(
+      this.normalize(normalizedQuery).split(/\s+/u).filter(Boolean),
+    );
+    const identityTokens = this.unique(
+      anchors.flatMap((anchor) =>
+        this.normalize(anchor)
+          .split(/\s+/u)
+          .filter((token) => token.length >= 3 && !generic.has(token)),
+      ),
+    );
+    if (identityTokens.length === 0) {
+      return anchors.some((anchor) => {
+        const normalizedAnchor = this.normalize(anchor);
+        return normalizedAnchor.length > 0 && normalizedQuery.includes(normalizedAnchor);
+      });
+    }
+    const matched = identityTokens.filter((token) => queryTokens.has(token));
+    const required = identityTokens.length >= 2 ? 2 : 1;
+    return matched.length >= required;
+  }
+
   private static cleanQuery(value: string): string {
     const tokens = this.normalize(value)
+      .replace(
+        /\b(?:requester[- ]defined|workflow opportunity|validation[- ]first|validation hypothesis|primary domain|selected[- ]domain evidence discovery|most[- ]evidenced problem family|unvalidated domain hypotheses?|app negative reviews?|app user complaints?|problem discovery and configurable pilot workflow)\b/gu,
+        ' ',
+      )
       .replace(/\b(?:reports? of|discussion(?:s)? of|complaints? from|evidence of|users? report(?:ed)?|operators? report(?:ed)?)\b/gu, ' ')
       .replace(/\bwhile\b[\s\S]*$/u, ' ')
       .replace(/^(?:protect|protecting|maintain|maintaining|allow|allowing)\s+/u, '')

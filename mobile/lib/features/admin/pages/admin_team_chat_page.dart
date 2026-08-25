@@ -31,8 +31,6 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage>
   final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
 
-  // ignore: unused_field
-  List<Map<String, dynamic>> _administrators = const [];
   List<Map<String, dynamic>> _conversations = const [];
   List<Map<String, dynamic>> _messages = const [];
   String _currentUserId = '';
@@ -534,9 +532,7 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage>
       _conversations = conversations;
 
       try {
-        _administrators = await _api.getTeamChatAdministrators();
       } catch (_) {
-        _administrators = const [];
       }
 
       if (!_directHandled) {
@@ -844,7 +840,6 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage>
       if (!mounted) return;
 
       setState(() {
-        _administrators = administrators;
         _error = '';
       });
     } on ApiException catch (error) {

@@ -9,6 +9,7 @@ import { CollectorsModule } from '../collectors/collectors.module';
 import { DataCollectionController } from './data-collection.controller';
 
 import { DataCollectionService } from './data-collection.service';
+import { CollectorSourceHealthService } from './collector-source-health.service';
 
 import { CollectionJobService } from './collection-jobs/collection-job.service';
 
@@ -29,11 +30,12 @@ import { SocialCommentService } from './social-comments/social-comment.service';
 
   providers: [
     DataCollectionService,
+    CollectorSourceHealthService,
     CollectionJobService,
     SocialPostService,
     SocialCommentService,
   ],
 
-  exports: [DataCollectionService],
+  exports: [DataCollectionService, CollectorSourceHealthService],
 })
 export class DataCollectionModule {}

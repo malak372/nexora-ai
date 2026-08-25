@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
  *
  * @template T Task return type.
  */
-type QueueTask<T> = () => Promise<T>;
+type QueueTask<T> = (signal?: AbortSignal) => Promise<T>;
 
 /**
  * Metadata used for logging and monitoring queued collector tasks.
@@ -26,6 +26,19 @@ type QueueTaskMetadata = {
 
   /** Optional hard task budget used by fast idea generation. */
   timeoutMs?: number;
+
+  /** Optional parent cancellation signal propagated from the generation run. */
+  signal?: AbortSignal;
+
+  /**
+   * When false, timeoutMs is a soft observability budget only. The queue logs
+   * the overrun but never aborts/rejects a healthy collector task. This is used
+   * by idea-generation collection so an app/news source that already found
+   * useful data is not discarded just because a review/detail fetch crossed a
+   * short wall-clock target. Collector-local HTTP/request guards remain the
+   * bounded failure protection.
+   */
+  abortOnTimeout?: boolean;
 };
 
 /**
@@ -122,6 +135,9 @@ export class CollectorQueueService {
   ): Promise<T> {
     const platform = this.resolvePlatform(metadata);
     const timeoutMs = typeof metadata === 'object' ? metadata.timeoutMs : undefined;
+    const parentSignal = typeof metadata === 'object' ? metadata.signal : undefined;
+    const abortOnTimeout =
+      typeof metadata === 'object' ? metadata.abortOnTimeout !== false : true;
 
     if (this.running >= this.concurrency) {
       if (this.queue.length >= this.maxQueueSize) {
@@ -150,17 +166,56 @@ export class CollectorQueueService {
         }. Running: ${this.running}`,
       );
 
+      const controller = new AbortController();
+      const abortFromParent = () => controller.abort(parentSignal?.reason);
+      if (parentSignal?.aborted) {
+        abortFromParent();
+      } else {
+        parentSignal?.addEventListener('abort', abortFromParent, { once: true });
+      }
+
       if (!timeoutMs || timeoutMs <= 0) {
-        return await task();
+        try {
+          return await task(controller.signal);
+        } finally {
+          parentSignal?.removeEventListener('abort', abortFromParent);
+        }
       }
 
       let timeoutHandle: NodeJS.Timeout | null = null;
 
+      /*
+       * Fast evidence collection uses a SOFT source budget. Previously the
+       * outer queue aborted the collector at 4.8s, which cancelled every
+       * in-flight App Store / Google Play review request and discarded the
+       * useful app discovery that had already completed. A soft budget keeps
+       * the latency signal without destroying partial/healthy source work.
+       */
+      if (!abortOnTimeout) {
+        try {
+          timeoutHandle = setTimeout(() => {
+            this.logger.warn(
+              `Collector task${platform ? ` for ${platform}` : ''} crossed soft ${timeoutMs}ms budget; allowing it to finish and return partial/complete data.`,
+            );
+          }, timeoutMs);
+          timeoutHandle.unref?.();
+          return await task(controller.signal);
+        } finally {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          parentSignal?.removeEventListener('abort', abortFromParent);
+        }
+      }
+
       try {
         return await Promise.race([
-          task(),
+          task(controller.signal),
           new Promise<never>((_, reject) => {
             timeoutHandle = setTimeout(() => {
+              controller.abort(
+                new Error(
+                  `Collector task${platform ? ` for ${platform}` : ''} exceeded ${timeoutMs}ms.`,
+                ),
+              );
               reject(
                 new ServiceUnavailableException(
                   `Collector task${platform ? ` for ${platform}` : ''} exceeded ${timeoutMs}ms.`,
@@ -174,6 +229,7 @@ export class CollectorQueueService {
         if (timeoutHandle) {
           clearTimeout(timeoutHandle);
         }
+        parentSignal?.removeEventListener('abort', abortFromParent);
       }
     } finally {
       this.running -= 1;

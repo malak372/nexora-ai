@@ -1,4 +1,7 @@
 import { RequestWorkflowIntentProfileUtil } from './request-workflow-intent-profile.util';
+import { RequestNicheCustomCraftUtil } from './request-niche-custom-craft.util';
+import { RequestOnlinePharmacyFraudUtil } from './request-online-pharmacy-fraud.util';
+import { RequestOperationalCostAttributionUtil } from './request-operational-cost-attribution.util';
 
 export type RequestVerticalConstraint = {
   readonly kind:
@@ -27,6 +30,7 @@ export type RequestVerticalConstraint = {
     | 'MANUFACTURING_WASTE_SUSTAINABILITY'
     | 'RESTAURANT_DELIVERY_FRAUD'
     | 'TRANSACTION_ACCOUNT_ABUSE'
+    | 'ONLINE_PHARMACY_FRAUD'
     | 'FACILITY_RESOURCE_MONITORING'
     | 'SHIPMENT_CHAIN_OF_CUSTODY'
     | 'GOVERNMENT_RECORD_ACCESS_INTEGRITY'
@@ -34,6 +38,7 @@ export type RequestVerticalConstraint = {
     | 'CUSTOM_MOSAIC_SERVICE'
     | 'INDUSTRIAL_OPERATIONS'
     | 'AGRICULTURE_LOGISTICS'
+    | 'AGRICULTURE_DISTRIBUTION_PROFITABILITY'
     | 'AGRICULTURE_EXPORT_PROFITABILITY'
     | 'FARM_ENERGY_OPERATIONS'
     | 'COMMERCIAL_BUILDING_ENERGY'
@@ -53,8 +58,11 @@ export type RequestVerticalConstraint = {
     | 'DELIVERY_SUSTAINABILITY'
     | 'CUSTOM_SPECIFICATION_SERVICE'
     | 'PUBLIC_HEALTH_DEMAND_CAPACITY'
+    | 'HEALTHCARE_SUPPLY_COST_EFFICIENCY'
     | 'HEALTHCARE_COST_RESOURCE_EFFICIENCY'
     | 'HEALTHCARE_OPERATIONS'
+    | 'PUBLIC_PROGRAM_COST_ATTRIBUTION'
+    | 'OPERATIONAL_COST_ATTRIBUTION'
     | 'PUBLIC_SECTOR'
     | 'GENERAL';
   readonly label: string;
@@ -91,6 +99,58 @@ export class RequestVerticalConstraintUtil {
      * cost/margin request from being reclassified as shipment custody merely
      * because a later recovery query happened to contain "shipment".
      */
+    if (RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)) {
+      return {
+        kind: 'ONLINE_PHARMACY_FRAUD',
+        label: 'online pharmacy prescription transaction and account fraud operations',
+        strict: true,
+        requiredAnchors: [
+          'online pharmacy',
+          'digital pharmacy',
+          'e pharmacy',
+          'internet pharmacy',
+          'pharmacy marketplace',
+          'digital healthcare marketplace',
+          'healthcare marketplace',
+          'e prescription',
+          'electronic prescription',
+        ],
+        workflowAnchors: [
+          'fraudulent prescription',
+          'prescription fraud',
+          'fake prescription',
+          'forged prescription',
+          'suspicious purchase',
+          'suspicious order',
+          'account takeover',
+          'compromised account',
+          'unauthorized payment',
+          'delivery address change',
+          'payment information change',
+          'identity verification',
+          'security alert',
+          'fraud detection',
+          'fraud monitoring',
+          'false positive',
+          'delayed legitimate order',
+          'unnecessary restriction',
+        ],
+        excludedAnchors: [
+          'food delivery',
+          'meal delivery',
+          'restaurant delivery',
+          'delivery rider',
+          'rider performance',
+          'chronic pain',
+          'pain management',
+          'opioid use disorder',
+          'prescription opioid abuse',
+          'analgesic abuse',
+          'abuse deterrent formulation',
+        ],
+      };
+    }
+
     const logisticsCostProfitability =
       /\b(?:logistics companies?|logistics providers?|logistics operators?|third[- ]party logistics|3pl providers?|freight companies?|freight operators?|delivery operators?|parcel carriers?|distribution operators?|warehouse and delivery operators?|supply chain operators?)\b/u.test(requestText) &&
       /\b(?:delivery operations?|operating costs?|operating expenses?|fuel expenses?|fuel costs?|warehouse costs?|warehousing costs?|failed deliveries?|delivery failures?|vehicle maintenance|maintenance costs?|route performance|route profitability|customer penalties?|delivery penalties?|penalty costs?|profit margins?|margin erosion|profitability|route planning|pricing decisions?|financial forecasts?|shipment volumes?|delivery volumes?|cost per shipment|cost per delivery)\b/u.test(requestText) &&
@@ -490,51 +550,107 @@ export class RequestVerticalConstraintUtil {
       };
     }
 
+    /*
+     * Security/transaction abuse is causally more specific than generic media
+     * profitability. Resolve it before the media revenue family so terms such
+     * as subscription/revenue cannot reclassify an account-theft/refund-abuse
+     * request as content-performance economics.
+     */
+    const requestTransactionAccountAbuse =
+      /\b(?:platforms?|services?|systems?|accounts?|subscriptions?|ordering|marketplaces?|payments?)\b/u.test(requestText) &&
+      /\b(?:account theft|account takeover|compromised accounts?|fraudulent subscriptions?|unauthorized refunds?|unauthorised refunds?|payment abuse|fraudulent orders?|refund abuse|suspicious activity|security alerts?|chargebacks?|fraudulent payments?)\b/u.test(requestText) &&
+      /\b(?:financial impact|financial losses?|revenue leakage|chargebacks?|refunds?|payments?|fraud|abuse|account restrictions?|coordinated patterns?|coordinated abuse)\b/u.test(requestText);
+    if (requestTransactionAccountAbuse) {
+      const identityAnchors = this.resolveRequestIdentityAnchors(requestText);
+      const requestOwnedIdentity = [
+        ...intentProfile.actorIdentityTerms,
+        ...intentProfile.objectIdentityTerms,
+      ];
+      const requestOwnedWorkflow = [
+        ...intentProfile.workflowIdentityTerms,
+        ...intentProfile.failureIdentityTerms,
+        ...intentProfile.outcomeIdentityTerms,
+      ];
+      return {
+        kind: 'TRANSACTION_ACCOUNT_ABUSE',
+        label: 'request-defined transaction account abuse and financial-impact investigation',
+        strict: true,
+        requiredAnchors: [...new Set([
+          ...identityAnchors,
+          ...requestOwnedIdentity,
+        ])].filter(Boolean).slice(0, 12),
+        workflowAnchors: [...new Set([
+          ...requestOwnedWorkflow,
+          'unauthorized account access',
+          'account takeover',
+          'fraudulent subscription',
+          'unauthorized refund',
+          'payment abuse',
+          'security alert',
+          'suspicious activity',
+          'coordinated fraud',
+          'fraud investigation',
+          'financial loss',
+          'revenue leakage',
+          'chargeback',
+          'false positive restriction',
+        ])].filter(Boolean).slice(0, 22),
+        excludedAnchors: [
+          'smart agriculture',
+          'smart farm',
+          'crop',
+          'irrigation',
+          'manufacturing',
+          'shipment chain of custody',
+        ],
+      };
+    }
+
     const mediaContentProfitability =
-      /\b(?:streaming and digital entertainment companies?|streaming companies?|streaming services?|streaming platforms?|digital entertainment companies?|media and entertainment companies?|media companies?|content platforms?)\b/u.test(text) &&
-      /\b(?:content profitability|sustainable revenue|subscription activity|subscription revenue|advertising income|ad revenue|production costs?|viewing behavior|viewer behavior|cancellations?|churn|promotional campaigns?|content categories?|shows?|creators?|financial return|revenue forecasts?|content investment|investment decisions?)\b/u.test(text);
+      /\b(?:streaming and digital entertainment companies?|streaming companies?|streaming services?|streaming platforms?|digital entertainment companies?|digital entertainment platforms?|entertainment platforms?|media and entertainment companies?|media companies?|digital content platforms?|content platforms?|video platforms?|gaming platforms?|game platforms?)\b/u.test(text) &&
+      /\b(?:content profitability|sustainable revenue|subscription activity|subscription revenue|advertising income|ad revenue|production costs?|viewing behavior|viewer behavior|content engagement|browsing behavior|content discovery|discover content|purchases?|purchase abandonment|checkout abandonment|paid experiences?|conversion|transaction history|cancellations?|churn|promotional campaigns?|offers?|customer feedback|content recommendations?|missed sales|marketing spend|financial return|revenue forecasts?|content investment|investment decisions?)\b/u.test(text);
     if (mediaContentProfitability) {
       return {
         kind: 'MEDIA_CONTENT_PROFITABILITY',
-        label: 'streaming content profitability and financial attribution',
+        label: 'digital entertainment conversion, subscription and revenue attribution',
         strict: true,
         requiredAnchors: [
           'streaming service',
           'streaming platform',
-          'streaming content',
+          'digital entertainment platform',
           'digital entertainment',
-          'media company',
           'media and entertainment',
-          'content platform',
-          'content profitability',
-          'content investment',
-          'subscriber retention',
+          'digital content platform',
+          'video platform',
+          'gaming platform',
+          'game platform',
+          'paid content',
           'netflix',
           'hulu',
           'disney+',
           'prime video',
         ],
         workflowAnchors: [
-          'content profitability',
-          'subscription revenue',
-          'subscriber revenue',
-          'advertising revenue',
-          'ad revenue',
-          'production cost',
-          'content cost',
-          'viewing behavior',
-          'viewer engagement',
-          'subscriber retention',
+          'purchase abandonment',
+          'checkout abandonment',
+          'paid experience',
+          'conversion',
+          'conversion funnel',
+          'transaction history',
+          'browsing behavior',
+          'content discovery',
+          'content engagement',
+          'subscription',
           'subscriber churn',
           'cancellation',
           'promotional campaign',
-          'campaign roi',
-          'content roi',
-          'financial return',
-          'revenue forecast',
-          'content investment',
-          'show performance',
-          'creator performance',
+          'offer',
+          'customer feedback',
+          'content recommendation',
+          'missed sales',
+          'marketing spend',
+          'revenue',
+          'profitability',
         ],
         excludedAnchors: [
           'llm streaming',
@@ -544,11 +660,19 @@ export class RequestVerticalConstraintUtil {
           'token streaming',
           'next.js',
           'openai api',
+          'digital teaching platform',
+          'education platform',
+          'mental health',
+          'body image',
+          'b2b marketing',
+          'sales call',
+          'microsoft fabric',
+          'standard operating procedure',
+          'brompton',
           'carmax',
           'automotive retail',
           'car shopping',
           'vehicle buying',
-          'data compression software',
         ],
       };
     }
@@ -1277,6 +1401,95 @@ export class RequestVerticalConstraintUtil {
       };
     }
 
+    const nicheCraftProfile = RequestNicheCustomCraftUtil.resolve(input.requestDescription);
+    if (nicheCraftProfile?.kind === 'VIOLIN_BOW_COMMISSION') {
+      return {
+        kind: 'CUSTOM_SPECIFICATION_SERVICE',
+        label: nicheCraftProfile.label,
+        strict: true,
+        requiredAnchors: nicheCraftProfile.directIdentityTerms,
+        workflowAnchors: nicheCraftProfile.workflowTerms,
+        excludedAnchors: [
+          'bow hunting',
+          'archery bow',
+          'crossbow',
+          'software bow',
+          'source code',
+          'github issue',
+          'violin lesson',
+          'music streaming',
+          'concert ticket',
+        ],
+      };
+    }
+
+    const watchStrapSpecificationService =
+      /\b(?:independent\s+)?(?:watch strap makers?|watch band makers?|custom watch strap makers?|custom watch band makers?|bespoke watch strap makers?|bespoke strap makers?|leather watch strap makers?|watch strap workshops?|watch band workshops?|watch straps?|watch bands?|leather watch straps?|leather watch bands?)\b/u.test(
+        requestText,
+      ) &&
+      /\b(?:wrist measurements?|wrist sizes?|strap measurements?|strap lengths?|strap widths?|lug widths?|leather types?|leather selections?|material choices?|stitching styles?|stitching preferences?|buckle selections?|buckle choices?|color preferences?|colour preferences?|design revisions?|revision requests?|customer approvals?|approved specifications?|final approved specifications?|completion deadlines?|sizing errors?|wrong sizes?|incorrect materials?|repeated adjustments?|remakes?|wasted leather|wasted supplies?)\b/u.test(
+        requestText,
+      );
+    if (watchStrapSpecificationService) {
+      return {
+        kind: 'CUSTOM_SPECIFICATION_SERVICE',
+        label: 'custom watch strap specification sizing and approval operations',
+        strict: true,
+        requiredAnchors: [
+          'watch strap',
+          'watch band',
+          'leather watch strap',
+          'leather watch band',
+          'bespoke watch strap',
+          'custom watch strap',
+          'watch strap maker',
+          'watch band maker',
+        ],
+        workflowAnchors: [
+          'wrist measurement',
+          'wrist size',
+          'strap measurement',
+          'strap length',
+          'strap width',
+          'lug width',
+          'leather type',
+          'leather selection',
+          'material choice',
+          'stitching style',
+          'buckle selection',
+          'color preference',
+          'colour preference',
+          'design revision',
+          'revision request',
+          'customer approval',
+          'approved specification',
+          'final approved specification',
+          'sizing error',
+          'wrong size',
+          'incorrect material',
+          'remake',
+          'rework',
+          'wasted leather',
+          'wasted supplies',
+          'delayed order',
+        ],
+        excludedAnchors: [
+          'custom workflow forms',
+          'software workflow',
+          'workflow engine',
+          'android widget',
+          'custom widget',
+          'visual studio workflow',
+          'rf connector',
+          'radio frequency connector',
+          'wearable skin',
+          'source code',
+          'github issue',
+          'mobile app',
+        ],
+      };
+    }
+
     const customFootwearSpecificationService =
       /\b(?:shoemakers?|shoe makers?|shoemaking|shoe making|bespoke shoemakers?|custom shoe makers?|custom footwear|bespoke footwear|handmade shoes?|made[- ]to[- ]measure shoes?|cordwainers?)\b/u.test(
         text,
@@ -1421,28 +1634,90 @@ export class RequestVerticalConstraintUtil {
       };
     }
 
+    const customInstrumentCaseSpecification =
+      /\b(?:independent\s+)?(?:musical\s+)?instrument case makers?|custom instrument case makers?|bespoke instrument case makers?|instrument case workshops?|violin case makers?|guitar case makers?|cello case makers?\b/u.test(requestText) &&
+      /\b(?:measurements?|instrument shapes?|padding|foam|lining|materials?|hardware|design revisions?|approved specifications?|dimensions?|completion deadlines?|customer messages?)\b/u.test(requestText);
+    if (customInstrumentCaseSpecification) {
+      return {
+        kind: 'CUSTOM_SPECIFICATION_SERVICE',
+        label: 'custom musical instrument case specification and approval operations',
+        strict: true,
+        requiredAnchors: [
+          'instrument case',
+          'musical instrument case',
+          'violin case',
+          'viola case',
+          'cello case',
+          'guitar case',
+          'double bass case',
+          'custom fitted case',
+          'instrument flight case',
+        ],
+        workflowAnchors: [
+          'measurement',
+          'dimension',
+          'instrument shape',
+          'padding',
+          'foam',
+          'lining',
+          'material',
+          'hardware',
+          'hinge',
+          'latch',
+          'handle',
+          'design revision',
+          'approved specification',
+          'customer approval',
+          'sign-off',
+          'deadline',
+          'customer message',
+          'sketch',
+          'photograph',
+        ],
+        excludedAnchors: [
+          'texas instruments',
+          'scientific instrument',
+          'laboratory instrument',
+          'medical instrument',
+          'precision instrument',
+          'optical instrument',
+          'financial instrument',
+          'instrument jewel',
+          'experimental psychology',
+          'camera case',
+          'computer case',
+          'phone case',
+          'raspberry pi',
+          'electronic enclosure',
+        ],
+      };
+    }
+
     const genericCustomCommissionService =
       (intentProfile.family === 'CUSTOM_COMMISSION' || intentProfile.family === 'SPECIFICATION_APPROVAL') &&
-      /\b(?:independent|small|custom|local)?\s*[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,4}\s+(?:studios?|workshops?|shops?|makers?|artisans?|artists?|businesses?|specialists?|cutters?|framers?)\b/u.test(requestText) &&
-      /\b(?:custom commissions?|custom orders?|made[- ]to[- ]order|design references?|reference images?|dimensions?|measurements?|personalization details?|placement instructions?|revision requests?|design revisions?|approved design|approved version|final approved|customer approval)\b/u.test(requestText) &&
-      /\b(?:incorrect colors?|wrong colors?|incorrect dimensions?|wrong dimensions?|misspelled names?|spelling mistakes?|wrong placement|incorrect placement|wasted materials?|repeated work|rework|missed design changes?|delayed customer orders?|delayed orders?|wrong version|outdated version)\b/u.test(requestText);
+      /\b(?:independent|small|custom|local)?\s*[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,4}\s+(?:studios?|workshops?|shops?|makers?|artisans?|artists?|businesses?|specialists?|cutters?|framers?|luthiers?|archetiers?)\b/u.test(requestText) &&
+      /\b(?:custom commissions?|commissions?|custom orders?|made[- ]to[- ]order|bespoke work|design references?|reference images?|dimensions?|measurements?|playing preferences?|material selections?|wood selections?|hair types?|balance requirements?|grip materials?|personalization details?|placement instructions?|revision requests?|design revisions?|design adjustments?|approved design|approved version|final approved|customer approval|completion deadlines?)\b/u.test(requestText) &&
+      /\b(?:incorrect colors?|wrong colors?|incorrect dimensions?|wrong dimensions?|incorrect balance|wrong balance|unsuitable materials?|misspelled names?|spelling mistakes?|wrong placement|incorrect placement|wasted materials?|wasted supplies?|repeated work|repeated adjustments?|remakes?|rework|missed design changes?|missed revisions?|delayed customer orders?|delayed orders?|delayed commissions?|delayed completion|wrong version|outdated version)\b/u.test(requestText);
     if (genericCustomCommissionService) {
       return {
         kind: 'CUSTOM_SPECIFICATION_SERVICE',
         label: 'custom commission specification and approval operations',
         strict: true,
-        requiredAnchors: [
-          'studio',
-          'workshop',
-          'maker',
-          'artisan',
-          'artist',
-          'specialist',
-          'framer',
-          'mat cutting',
-          'custom order',
-          'commission',
-        ],
+        requiredAnchors:
+          nicheCraftProfile?.directIdentityTerms.length
+            ? nicheCraftProfile.directIdentityTerms
+            : [
+                'studio',
+                'workshop',
+                'maker',
+                'artisan',
+                'artist',
+                'specialist',
+                'framer',
+                'mat cutting',
+                'custom order',
+                'commission',
+              ],
         workflowAnchors: [
           'design reference',
           'reference image',
@@ -1543,46 +1818,41 @@ export class RequestVerticalConstraintUtil {
 
     if (intentProfile.family === 'TRANSACTION_ACCOUNT_ABUSE') {
       const identityAnchors = this.resolveRequestIdentityAnchors(requestText);
+      const requestOwnedIdentity = [
+        ...intentProfile.actorIdentityTerms,
+        ...intentProfile.objectIdentityTerms,
+      ];
+      const requestOwnedWorkflow = [
+        ...intentProfile.workflowIdentityTerms,
+        ...intentProfile.failureIdentityTerms,
+        ...intentProfile.outcomeIdentityTerms,
+      ];
       return {
         kind: 'TRANSACTION_ACCOUNT_ABUSE',
-        label: 'transportation payment refund booking and account abuse investigation operations',
+        label: 'request-defined transaction account abuse and investigation operations',
         strict: true,
-        requiredAnchors:
-          identityAnchors.length > 0
-            ? identityAnchors
-            : ['transportation', 'transit', 'mobility', 'ticketing', 'passenger'],
-        workflowAnchors: [
-          'payment fraud',
-          'fraudulent payment',
-          'payment record',
-          'refund request',
-          'fraudulent refund',
-          'refund fraud',
-          'passenger account',
+        requiredAnchors: [...new Set([
+          ...identityAnchors,
+          ...requestOwnedIdentity,
+        ])].filter(Boolean).slice(0, 12),
+        workflowAnchors: [...new Set([
+          ...requestOwnedWorkflow,
+          'unauthorized account access',
           'account takeover',
-          'unauthorized account activity',
-          'suspicious booking',
-          'ticket booking',
-          'device information',
-          'device signal',
+          'identity verification',
           'security alert',
-          'coordinated abuse',
-          'transaction anomaly',
-          'false positive',
-          'legitimate passenger restriction',
-          'financial loss',
+          'suspicious activity',
+          'coordinated fraud',
           'fraud investigation',
-        ],
+          'fragmented records',
+          'financial loss',
+        ])].filter(Boolean).slice(0, 20),
         excludedAnchors: [
           'smart agriculture',
           'smart farm',
           'crop',
           'irrigation',
-          'insurance claim',
-          'insurance reimbursement',
           'manufacturing',
-          'hotel booking',
-          'accommodation',
           'shipment chain of custody',
         ],
       };
@@ -2885,6 +3155,61 @@ export class RequestVerticalConstraintUtil {
       };
     }
 
+    const agriculturalDistributionProfitability =
+      /\b(?:agricultural distributors?|agriculture distributors?|produce distributors?|fresh produce distributors?|crop distributors?|farm produce distributors?|agricultural wholesalers?|produce wholesalers?|food distributors?|produce supply businesses?)\b/u.test(requestText) &&
+      /\b(?:storage losses?|storage costs?|warehouse costs?|warehouse expenses?|transportation delays?|transport delays?|delivery delays?|delivery costs?|transportation costs?|market prices?|price fluctuations?|price volatility|crop profitability|product profitability|profit margins?|profit estimates?|spoilage|spoilage reports?|harvest records?|warehouse inventory|shipment activity|financial expenses?|route profitability|routes? responsible|pricing decisions?)\b/u.test(requestText) &&
+      /\b(?:profitability|profit margins?|profit estimates?|financial losses?|reduced profit|reduced margins?|pricing decisions?|greatest losses?|route profitability|crop profitability|product profitability)\b/u.test(requestText);
+    if (agriculturalDistributionProfitability) {
+      return {
+        kind: 'AGRICULTURE_DISTRIBUTION_PROFITABILITY',
+        label: 'agricultural distribution crop and route profitability operations',
+        strict: true,
+        requiredAnchors: [
+          'agricultural distributor',
+          'produce distributor',
+          'fresh produce distributor',
+          'crop distributor',
+          'farm produce distributor',
+          'agricultural wholesaler',
+          'produce wholesaler',
+          'produce supply',
+        ],
+        workflowAnchors: [
+          'storage loss',
+          'storage cost',
+          'warehouse cost',
+          'transport delay',
+          'delivery delay',
+          'delivery cost',
+          'transportation cost',
+          'market price',
+          'price fluctuation',
+          'price volatility',
+          'spoilage',
+          'harvest record',
+          'warehouse inventory',
+          'shipment activity',
+          'financial expense',
+          'crop profitability',
+          'product profitability',
+          'route profitability',
+          'profit margin',
+          'pricing decision',
+        ],
+        excludedAnchors: [
+          'stock market',
+          'equity market',
+          'asset pricing',
+          'business cycle',
+          'hydrogen distribution',
+          'energy storage',
+          'battery storage',
+          'rail market',
+          'vehicle pricing',
+        ],
+      };
+    }
+
     const agriculturalExportProfitability =
       /\b(?:agricultural exporters?|fresh produce exporters?|produce exporters?|fruit exporters?|vegetable exporters?|agricultural export(?:ers?| companies?| businesses?))\b/u.test(requestText) &&
       /\b(?:transportation delays?|delivery delays?|storage costs?|warehouse expenses?|changing market prices?|market prices?|product spoilage|produce spoilage|shipment profitability|profit margins?|profit estimates?|harvest records?|delivery schedules?|supplier payments?|sales revenues?|financial losses?|route profitability|distribution stages?)\b/u.test(requestText);
@@ -3037,6 +3362,29 @@ export class RequestVerticalConstraintUtil {
           'expired supplies',
           'supplier delivery',
         ],
+      };
+    }
+
+    const healthcareSupplyCostEfficiency =
+      /\b(?:healthcare networks?|hospital networks?|hospital systems?|hospitals?|clinics?|medical centers?|health systems?)\b/u.test(requestText) &&
+      /\b(?:emergency supply purchases?|emergency purchases?|urgent purchases?|expired medical inventory|expired supplies?|inventory expiration|medical inventory|supply inventory|uneven stock distribution|stock distribution|inventory imbalance|inter[- ]facility transfers?|transfer activity|supplier invoices?|procurement records?|inventory levels?|usage data|transportation costs?|transfer costs?|delivery costs?)\b/u.test(requestText) &&
+      /\b(?:operating expenses?|operating costs?|unnecessary costs?|excess inventory|avoidable emergency orders?|emergency orders?|inefficient transfers?|inaccurate budgeting|budgeting|cost attribution|cost variance|financial expenses?)\b/u.test(requestText);
+    if (healthcareSupplyCostEfficiency) {
+      return {
+        kind: 'HEALTHCARE_SUPPLY_COST_EFFICIENCY',
+        label: 'healthcare supply inventory distribution and operating cost efficiency',
+        strict: true,
+        requiredAnchors: [
+          'healthcare network', 'hospital network', 'hospital', 'clinic',
+          'medical supply', 'medical inventory', 'pharmacy inventory',
+        ],
+        workflowAnchors: [
+          'procurement', 'emergency purchase', 'expired inventory',
+          'stock distribution', 'inventory imbalance', 'inter facility transfer',
+          'transfer activity', 'supplier invoice', 'usage data',
+          'transportation cost', 'operating expense', 'excess inventory', 'budget',
+        ],
+        excludedAnchors: ['diagnosis', 'disease detection', 'treatment efficacy', 'career', 'salary'],
       };
     }
 
@@ -3257,6 +3605,68 @@ export class RequestVerticalConstraintUtil {
       };
     }
 
+    const publicProgramCostAttribution =
+      /\b(?:government agencies?|government departments?|public agencies?|public sector agencies?|ministr(?:y|ies)|municipalit(?:y|ies)|public authorities?)\b/u.test(requestText) &&
+      /\b(?:public programs?|government programs?|service programs?|departmental budgets?|program budgets?|operating budgets?|public services?)\b/u.test(requestText) &&
+      /\b(?:staffing expenses?|staffing costs?|procurement costs?|procurement spending|contractor payments?|contractor costs?|service usage|service costs?|departmental spending|program expenditures?|operating expenses?|operating costs?)\b/u.test(requestText) &&
+      /\b(?:exceed(?:s|ed|ing)? (?:their )?budgets?|budget overruns?|overspending|cost pressure|financial pressure|cost attribution|cost drivers?|budget variance|inaccurate budget planning|financial oversight|identify where overspending|greatest financial pressure)\b/u.test(requestText);
+    if (publicProgramCostAttribution) {
+      return {
+        kind: 'PUBLIC_PROGRAM_COST_ATTRIBUTION',
+        label: 'public program operating cost attribution and budget overrun analysis',
+        strict: true,
+        requiredAnchors: [
+          'government agency', 'government department', 'public agency',
+          'public sector', 'public program', 'government program', 'departmental budget',
+        ],
+        workflowAnchors: [
+          'program budget', 'operating budget', 'budget overrun', 'overspending',
+          'staffing expense', 'staffing cost', 'procurement cost', 'procurement spending',
+          'contractor payment', 'contractor cost', 'service usage', 'service cost',
+          'departmental spending', 'program expenditure', 'operating expense',
+          'cost attribution', 'cost driver', 'budget variance', 'financial pressure',
+        ],
+        excludedAnchors: [
+          'personal finance', 'house down payment', 'stock market', 'investment portfolio',
+          'public works auction format', 'political budget cycle', 'construction project auction',
+        ],
+      };
+    }
+
+    const operationalCostAttribution =
+      RequestOperationalCostAttributionUtil.resolve(input.requestDescription);
+    if (operationalCostAttribution) {
+      return {
+        kind: 'OPERATIONAL_COST_ATTRIBUTION',
+        label: operationalCostAttribution.publicService
+          ? 'public service operating cost attribution and financial pressure analysis'
+          : 'operational cost attribution and financial pressure analysis',
+        strict: true,
+        requiredAnchors: operationalCostAttribution.identityTerms,
+        workflowAnchors: [
+          ...operationalCostAttribution.costDrivers,
+          ...operationalCostAttribution.performanceTerms,
+          ...operationalCostAttribution.financialTerms,
+          'cost attribution',
+          'cost driver',
+          'operating cost',
+          'budget variance',
+          'financial pressure',
+        ],
+        excludedAnchors: [
+          'personal finance',
+          'credit card debt',
+          'credit utilization',
+          'house down payment',
+          'mortgage',
+          'stock market',
+          'investment portfolio',
+          'video game',
+          'gaming guide',
+        ],
+      };
+    }
+
     const publicFiscalOversight =
       /\b(?:public institutions?|government|government agencies?|government departments?|public sector|public administration|ministr(?:y|ies)|municipal|municipality)\b/u.test(text) &&
       /\b(?:public budgets?|public funds?|government spending|public spending|procurement|procurement records?|invoices?|project expenses?|approval histor(?:y|ies)|duplicate payments?|duplicate invoices?|overspending|overpayments?|expenditure|financial management|budget planning|spending patterns?)\b/u.test(text);
@@ -3361,6 +3771,11 @@ export class RequestVerticalConstraintUtil {
     ) {
       return false;
     }
+    if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
+      const publicIdentity = /\b(?:government|public sector|public agency|public agencies|government agency|government agencies|government department|government departments|public authority|public authorities|municipal|municipality|ministr(?:y|ies))\b/u.test(normalized);
+      const programOrBudgetIdentity = /\b(?:public program|government program|program budget|departmental budget|operating budget|public service|departmental spending)\b/u.test(normalized);
+      return publicIdentity && programOrBudgetIdentity;
+    }
     return constraint.requiredAnchors.some((anchor) =>
       normalized.includes(this.normalize(anchor)),
     );
@@ -3372,6 +3787,11 @@ export class RequestVerticalConstraintUtil {
   ): boolean {
     if (constraint.workflowAnchors.length === 0) return true;
     const normalized = this.normalize(value);
+    if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
+      const costDriver = /\b(?:staffing|payroll|personnel cost|procurement|purchasing|contractor|vendor payment|service usage|service cost|departmental spending|program expenditure|operating expense|operating cost)\w*\b/u.test(normalized);
+      const budgetPressure = /\b(?:budget overrun|overspend|overspending|cost overrun|cost pressure|financial pressure|cost driver|cost attribution|budget variance|budget planning|expenditure analysis|spending analysis|financial oversight|inefficien|waste)\w*\b/u.test(normalized);
+      return costDriver && budgetPressure;
+    }
     return constraint.workflowAnchors.some((anchor) =>
       normalized.includes(this.normalize(anchor)),
     );
@@ -3785,9 +4205,20 @@ export class RequestVerticalConstraintUtil {
     };
 
     const organizationMatch = normalized.match(
-      /\b([\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,3})\s+(?:companies?|agencies?|organizations?|organisations?|institutions?|universities|hospitals?|clinics?|authorities?|providers?|operators?)\b/u,
+      /\b([\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,3})\s+(?:companies?|agencies?|organizations?|organisations?|institutions?|universities|hospitals?|clinics?|authorities?|providers?|operators?|departments?|utilities?)\b/u,
     );
     add(organizationMatch?.[1]);
+
+    const municipalIdentityTerms = [
+      'smart city', 'city government', 'municipal government', 'municipality',
+      'local authority', 'public service', 'parking authority', 'parking operator',
+      'public utility', 'utility provider', 'municipal payment', 'city payment',
+      'parking payment', 'transit payment', 'utility payment', 'municipal fee',
+    ];
+    for (const term of municipalIdentityTerms) {
+      if (normalized.includes(term)) add(term);
+      if (anchors.length >= 4) break;
+    }
 
     for (const match of normalized.matchAll(
       /\b([\p{L}\p{N}'’-]+)\s+(?:accounts?|portals?|records?|payments?|documents?|services?)\b/gu,

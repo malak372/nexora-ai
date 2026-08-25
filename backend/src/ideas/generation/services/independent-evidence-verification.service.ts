@@ -69,6 +69,11 @@ const COMPLAINT_PATTERNS: readonly RegExp[] = [
 const REVIEW_SOURCE_KEYS = new Set(['google-play', 'app-store']);
 const EDITORIAL_SOURCE_KEYS = new Set(['dev-to', 'blog']);
 const NEWS_SOURCE_KEYS = new Set(['news', 'gdelt']);
+const COMMUNITY_DISCUSSION_SOURCE_KEYS = new Set([
+  'reddit',
+  'forum',
+  'hacker-news',
+]);
 const SECONDARY_REPORT_SOURCE_KEYS = new Set(['product-hunt', 'crossref']);
 const PUBLISHER_POST_SOURCE_KEYS = new Set([
   'google-play',
@@ -725,15 +730,26 @@ export class IndependentEvidenceVerificationService {
         const direct = this.isDirectUserEvidence(evidence.evidenceKind);
         const technical =
           evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET;
+        const communityObservation =
+          evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.GENERAL_COMMENTARY &&
+          (COMMUNITY_DISCUSSION_SOURCE_KEYS.has(
+            evidence.sourceKey.trim().toLocaleLowerCase(),
+          ) || evidence.commentExternalId !== null);
+        const qualifyingCommunitySupport = direct || communityObservation;
 
         return {
           text: evidence.text,
-          sourceType: direct
+          sourceType: qualifyingCommunitySupport
             ? 'COMMUNITY_EVIDENCE'
             : technical
               ? 'TECHNICAL_EVIDENCE'
               : 'SECONDARY_EVIDENCE',
-          qualifiesAsCommunityEvidence: direct,
+          /*
+           * Partial first-person/community observations may support one atomic
+           * requester facet without proving recurrence. They therefore remain
+           * community evidence, while qualifiesForRecurrence stays false.
+           */
+          qualifiesAsCommunityEvidence: qualifyingCommunitySupport,
         };
       },
     );
@@ -831,16 +847,51 @@ export class IndependentEvidenceVerificationService {
         'requester-defined workflow opportunity';
 
     const requestScopedEvidence = requesterDescription
-      ? evidence.filter((item) => {
-          const exact = RequestEvidenceAlignmentUtil.isAligned({
+      ? evidence.flatMap((item) => {
+          if (
+            !RequestEvidenceAlignmentUtil.passesPostAiPainAwareEvidenceGuard({
+              requestDescription: requesterDescription,
+              evidenceText: item.text,
+            })
+          ) {
+            return [];
+          }
+
+          const strictRole = RequestEvidenceAlignmentUtil.classifyForRequest({
             requestDescription: requesterDescription,
             evidenceText: item.text,
           });
-          if (exact) return true;
-          return RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
-            requestDescription: requesterDescription,
-            evidenceText: item.text,
-          });
+          const semanticRole =
+            strictRole === 'UNRELATED'
+              ? RequestEvidenceAlignmentUtil.classifyForRequestFallback({
+                  requestDescription: requesterDescription,
+                  evidenceText: item.text,
+                })
+              : strictRole;
+
+          if (semanticRole === 'UNRELATED') return [];
+          if (semanticRole !== 'SUPPORTING_SIGNAL') return [item];
+
+          /*
+           * A first-person report about only a partial/adjacent facet is still
+           * useful supporting evidence, but it is not DIRECT evidence that the
+           * requester-owned workflow recurs. Cap the independent-evidence role
+           * so examples such as DIY bridesmaid hemming cannot become a direct
+           * specialist complaint merely because the prose is first person.
+           */
+          if (this.isDirectUserEvidence(item.evidenceKind)) {
+            return [
+              {
+                ...item,
+                evidenceKind: INDEPENDENT_EVIDENCE_KINDS.GENERAL_COMMENTARY,
+                qualifiesForRecurrence: false,
+              },
+            ];
+          }
+
+          return item.qualifiesForRecurrence
+            ? [{ ...item, qualifiesForRecurrence: false }]
+            : [item];
         })
       : [...evidence];
 

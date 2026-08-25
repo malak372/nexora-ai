@@ -32,6 +32,7 @@ import { FinalizationStage } from './pipeline/stages/finalization.stage';
 import { IdeaPersistenceStage } from './pipeline/stages/idea-persistence.stage';
 import { OpportunityRankingStage } from './pipeline/stages/opportunity-ranking.stage';
 import { PromptBuildingStage } from './pipeline/stages/prompt-building.stage';
+import { PreparingStage } from './pipeline/stages/preparing.stage';
 import { RequestValidationStage } from './pipeline/stages/request-validation.stage';
 import { CommunityAiAnalysisPromptService } from './services/community-ai-analysis-prompt.service';
 import { CommunityAiAnalysisService } from './services/community-ai-analysis.service';
@@ -135,6 +136,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     CommunityAiAnalysisPromptService,
     CommunityAiAnalysisService,
 
+    PreparingStage,
     RequestValidationStage,
     EntitlementCheckStage,
     DataSourceSelectionStage,
@@ -151,6 +153,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     {
       provide: IDEA_GENERATION_STAGES,
       inject: [
+        PreparingStage,
         RequestValidationStage,
         EntitlementCheckStage,
         DataSourceSelectionStage,
@@ -165,6 +168,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         FinalizationStage,
       ],
       useFactory: (
+        preparingStage: PreparingStage,
         requestValidationStage: RequestValidationStage,
         entitlementCheckStage: EntitlementCheckStage,
         dataSourceSelectionStage: DataSourceSelectionStage,
@@ -178,6 +182,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         ideaPersistenceStage: IdeaPersistenceStage,
         finalizationStage: FinalizationStage,
       ): readonly IdeaGenerationStage[] => [
+        preparingStage,
         requestValidationStage,
         entitlementCheckStage,
         dataSourceSelectionStage,

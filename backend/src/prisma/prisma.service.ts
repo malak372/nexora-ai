@@ -18,6 +18,14 @@ export class PrismaService
 {
   private readonly logger = new Logger(PrismaService.name);
 
+  /**
+   * Serializes Prisma engine recovery so concurrent generation/checkpoint
+   * retries do not disconnect/reconnect the shared client at the same time.
+   */
+  private connectionRecoveryPromise: Promise<void> | null = null;
+
+  private shuttingDown = false;
+
   constructor() {
     const configuredUrl = process.env.DATABASE_URL?.trim();
     const datasourceUrl = configuredUrl
@@ -86,9 +94,128 @@ export class PrismaService
   }
 
   async onModuleDestroy() {
+    this.shuttingDown = true;
+
+    if (this.connectionRecoveryPromise) {
+      try {
+        await this.connectionRecoveryPromise;
+      } catch {
+        // Shutdown should still continue even if an in-flight reconnect failed.
+      }
+    }
+
     await this.$disconnect();
   }
 
+  /**
+   * Restores the shared Prisma client after a transient connectivity/engine
+   * failure. This method is intentionally public because generation database
+   * retries need to recover the client before retrying the original query.
+   *
+   * Ordinary pool/network failures first use a lightweight $connect + probe.
+   * Node-API engine failures (for example "Response from the Engine was
+   * empty" or "Engine is not yet connected") additionally perform one
+   * serialized hard restart when the lightweight reconnect cannot recover it.
+   */
+  async recoverConnection(triggerError?: unknown): Promise<void> {
+    if (this.shuttingDown) {
+      throw new Error('Prisma connection recovery skipped during shutdown.');
+    }
+
+    if (this.connectionRecoveryPromise) {
+      return this.connectionRecoveryPromise;
+    }
+
+    const recovery = this.performConnectionRecovery(triggerError).finally(() => {
+      if (this.connectionRecoveryPromise === recovery) {
+        this.connectionRecoveryPromise = null;
+      }
+    });
+
+    this.connectionRecoveryPromise = recovery;
+    return recovery;
+  }
+
+  private async performConnectionRecovery(triggerError?: unknown): Promise<void> {
+    const triggerMessage = PrismaService.getErrorMessage(triggerError);
+    const engineFailure = PrismaService.isBrokenEngineError(triggerMessage);
+
+    this.logger.warn(
+      `Attempting Prisma connection recovery${
+        triggerMessage
+          ? ` after: ${PrismaService.summarizeConnectionError(triggerMessage)}`
+          : ''
+      }.`,
+    );
+
+    try {
+      await this.$connect();
+      await this.probeConnection();
+      this.logger.log('Prisma connection recovery completed without engine restart.');
+      return;
+    } catch (firstError: unknown) {
+      const firstMessage = PrismaService.getErrorMessage(firstError);
+      const restartRequired =
+        engineFailure || PrismaService.isBrokenEngineError(firstMessage);
+
+      if (!restartRequired) {
+        throw firstError;
+      }
+
+      this.logger.warn(
+        `Prisma engine probe remained unavailable; performing one serialized engine restart. ${PrismaService.summarizeConnectionError(firstMessage)}`,
+      );
+    }
+
+    try {
+      await this.$disconnect();
+    } catch (disconnectError: unknown) {
+      this.logger.debug(
+        `Prisma disconnect during recovery was non-fatal: ${PrismaService.summarizeConnectionError(
+          PrismaService.getErrorMessage(disconnectError),
+        )}`,
+      );
+    }
+
+    await PrismaService.delay(120);
+
+    const reconnectAttempts = 3;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= reconnectAttempts; attempt += 1) {
+      try {
+        await this.$connect();
+        await this.probeConnection();
+        this.logger.log(
+          `Prisma engine recovery succeeded on reconnect attempt ${attempt}/${reconnectAttempts}.`,
+        );
+        return;
+      } catch (error: unknown) {
+        lastError = error;
+        if (attempt >= reconnectAttempts) break;
+        await PrismaService.delay(180 * attempt);
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Prisma connection recovery failed.');
+  }
+
+  private async probeConnection(): Promise<void> {
+    await this.$queryRawUnsafe('SELECT 1');
+  }
+
+  private static getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return typeof error === 'string' ? error : '';
+  }
+
+  private static isBrokenEngineError(message: string): boolean {
+    return /(?:response from the engine was empty|query engine response was empty|engine was empty|engine is not yet connected|engine is not connected|query engine is not connected|query engine has disconnected|engine has disconnected|prisma client is not connected)/iu.test(
+      message,
+    );
+  }
 
   private static isTransientConnectionError(message: string): boolean {
     return /(?:EMAXCONNSESSION|max clients reached|too many clients|P1001|can't reach database server|server has closed the connection|connection (?:closed|terminated|refused|reset)|timed? out|pool timeout)/iu.test(

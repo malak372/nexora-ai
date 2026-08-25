@@ -190,6 +190,7 @@ export class IdeaGenerationRealtimeService {
   private mapRun(run: IdeaGenerationRun): IdeaGenerationRealtimeRunPayload {
     return {
       runId: run.id,
+      generationType: run.generationType,
       status: run.status,
       progressPercent: run.progressPercent,
       currentStageKey: run.currentStageKey,

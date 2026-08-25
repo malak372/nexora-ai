@@ -15,6 +15,8 @@ import { DEFAULT_STAGE_MAX_ATTEMPTS } from './idea-generation.constants';
  * have been created.
  */
 export const IDEA_GENERATION_STAGE_KEYS = {
+  PREPARING: 'preparing',
+
   REQUEST_VALIDATION: 'request-validation',
 
   ENTITLEMENT_CHECK: 'entitlement-check',
@@ -100,7 +102,7 @@ export type IdeaGenerationStageDefinition = {
   readonly displayName: string;
 
   /**
-   * One-based order of the stage inside the pipeline.
+   * Stable zero-based order of the stage inside the pipeline.
    */
   readonly sequence: number;
 
@@ -137,15 +139,31 @@ export type IdeaGenerationStageDefinition = {
 export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition[] =
   [
     {
+      key: IDEA_GENERATION_STAGE_KEYS.PREPARING,
+
+      displayName: 'Preparing request and evidence plan',
+
+      sequence: 0,
+
+      progressStart: 0,
+
+      progressEnd: 5,
+
+      maxAttempts: 1,
+
+      requiredForPremium: false,
+    },
+
+    {
       key: IDEA_GENERATION_STAGE_KEYS.REQUEST_VALIDATION,
 
       displayName: 'Validate request',
 
       sequence: 1,
 
-      progressStart: 0,
+      progressStart: 5,
 
-      progressEnd: 3,
+      progressEnd: 7,
 
       maxAttempts: 1,
 
@@ -159,9 +177,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       sequence: 2,
 
-      progressStart: 3,
+      progressStart: 7,
 
-      progressEnd: 6,
+      progressEnd: 10,
 
       maxAttempts: 1,
 
@@ -175,9 +193,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       sequence: 3,
 
-      progressStart: 6,
+      progressStart: 10,
 
-      progressEnd: 10,
+      progressEnd: 14,
 
       maxAttempts: 1,
 
@@ -191,9 +209,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       sequence: 4,
 
-      progressStart: 10,
+      progressStart: 14,
 
-      progressEnd: 30,
+      progressEnd: 34,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -209,9 +227,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       sequence: 5,
 
-      progressStart: 30,
+      progressStart: 34,
 
-      progressEnd: 39,
+      progressEnd: 43,
 
       maxAttempts: 1,
 
@@ -225,9 +243,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       sequence: 6,
 
-      progressStart: 39,
+      progressStart: 43,
 
-      progressEnd: 44,
+      progressEnd: 48,
 
       maxAttempts: 1,
 
@@ -241,9 +259,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       sequence: 7,
 
-      progressStart: 44,
+      progressStart: 48,
 
-      progressEnd: 50,
+      progressEnd: 54,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -257,9 +275,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       sequence: 8,
 
-      progressStart: 50,
+      progressStart: 54,
 
-      progressEnd: 78,
+      progressEnd: 79,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -273,7 +291,7 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       sequence: 9,
 
-      progressStart: 78,
+      progressStart: 79,
 
       progressEnd: 86,
 

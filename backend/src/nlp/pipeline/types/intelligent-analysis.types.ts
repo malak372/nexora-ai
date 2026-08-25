@@ -153,6 +153,15 @@ export type IntelligentTextInput = {
    * type it as a complaint, request, or unmet need.
    */
   requiresAiSemanticTriage?: boolean;
+
+  /** Search provenance preserved for evidence verification and auditability. */
+  discoveryDomainId?: string | null;
+  discoveryDomainName?: string | null;
+  queryIntentId?: string | null;
+  queryText?: string | null;
+  problemFacetIds?: readonly string[];
+  collectionPhase?: 'INITIAL' | 'RECOVERY';
+  sourceTier?: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE';
 };
 
 /**
