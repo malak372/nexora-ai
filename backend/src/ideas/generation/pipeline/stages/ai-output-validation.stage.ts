@@ -7277,22 +7277,117 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     }
 
     const request = context.requestDescription?.replace(/\s+/gu, ' ').trim() ?? '';
+    const domainNames = context.selectedDomains
+      .map((domain) => domain.name.trim())
+      .filter(Boolean);
+    const uniqueDomains = [...new Set(domainNames)];
+    const domainScope =
+      uniqueDomains.length > 0
+        ? uniqueDomains.join(', ')
+        : context.domainName?.trim() || 'the selected search space';
     const qualifier = request
       ? `The requester describes an unvalidated workflow hypothesis: "${request}"`
-      : 'No verified external problem evidence survived the bounded discovery and recovery budget; the selected problem remains an unvalidated discovery hypothesis.';
+      : 'No verified external problem evidence survived the bounded discovery and recovery budget; no concrete people problem has been validated yet.';
 
     const sanitize = (value: string | undefined): string | undefined => {
       if (value === undefined) return undefined;
       let text = value.replace(/\s+/gu, ' ').trim();
       text = text
-        .replace(/\b(?:data|evidence|collected feedback|retained reports?|community reports?)\s+(?:shows?|indicates?|demonstrates?|proves?|confirms?|suggests?)\b/giu, 'the requester hypothesis suggests')
-        .replace(/\busers?\s+(?:frequently|often|commonly|typically)\s+(?:report|experience|face|struggle)\b/giu, 'target users may report')
-        .replace(/\b(?:frequently|typically|commonly|recurring|widespread|validated demand|observed demand)\b/giu, 'potentially');
+        .replace(
+          /\b(?:data|evidence|collected feedback|retained reports?|community reports?|community signal|community feedback)\s+(?:shows?|indicates?|demonstrates?|proves?|confirms?|suggests?|reports?|identifies?)\b/giu,
+          'the current unvalidated hypothesis suggests',
+        )
+        .replace(
+          /\bA preliminary community signal(?:\s+from\s+[^.:]{1,120})?\s+reports an operational challenge:\s*/giu,
+          '',
+        )
+        .replace(
+          /\bThe retained evidence identifies friction in the affected task;?/giu,
+          'No verified external evidence currently establishes friction in a concrete task;',
+        )
+        .replace(
+          /\bZero retained community observations(?:\s+across\s+[^.]{1,120})?\s+suggest that\b/giu,
+          'No verified observation currently establishes that',
+        )
+        .replace(
+          /\busers?\s+(?:frequently|often|commonly|typically)\s+(?:report|experience|face|struggle)\b/giu,
+          'target users may report',
+        )
+        .replace(
+          /\b(?:frequently|typically|commonly|recurring|widespread|validated demand|observed demand)\b/giu,
+          'potentially',
+        )
+        .replace(
+          /\bThis fragmentation creates significant operational friction\b/giu,
+          'If confirmed during pilot validation, this fragmentation could create operational friction',
+        )
+        .replace(
+          /\bThis fragmentation can lead to\b/giu,
+          'If confirmed during pilot validation, this fragmentation could contribute to',
+        );
+
       if (!/^The requester describes an unvalidated workflow hypothesis|^No verified external problem evidence/iu.test(text)) {
         text = `${qualifier}. ${text}`;
       }
-      return text;
+      return text.replace(/\.\s*\./gu, '.').trim();
     };
+
+    /*
+     * In discovery-only modes, CONTEXT_ONLY/UNRELATED material must never pick
+     * a concrete problem or a new domain. Replace any model-invented concept
+     * with a neutral evidence-discovery product that stays inside the
+     * administrator/user-selected search space.
+     */
+    if (!request) {
+      const neutralTitle =
+        uniqueDomains.length <= 1
+          ? `${uniqueDomains[0] ?? context.domainName ?? 'Software'} Problem Signal Discovery Workspace`
+          : 'Problem Signal Discovery Workspace';
+      const neutralProblem =
+        `${qualifier} The active search space is ${domainScope}. ` +
+        'The next product decision must be based on newly collected DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence, not on CONTEXT_ONLY or unrelated material.';
+      const neutralObjectives = [
+        `Collect bounded, provenance-preserving problem reports across ${domainScope}.`,
+        'Classify each retained item as DIRECT_PROBLEM, SUPPORTING_SIGNAL, CONTEXT_ONLY, or UNRELATED and keep the canonical evidence ledger as the single source of truth.',
+        'Compare problem-bearing evidence by domain, source diversity, and verified problem facets before selecting a software opportunity.',
+        'Keep human review in the loop and generate a concrete software concept only after at least one verified direct or supporting signal is retained.',
+      ];
+      const neutralTargetUsers = [
+        'Product discovery and validation teams',
+        'Domain experts from the selected search space',
+        'Software project teams evaluating evidence-backed opportunities',
+      ];
+      const neutralAbstract =
+        `${neutralProblem} The proposed workspace is therefore a validation-stage software product, not a claim that a specific market problem already exists. ` +
+        'It records the search query, source, domain lane, collection phase, and evidence classification for every candidate signal; compares verified problem families; and prevents unverified context from becoming a product requirement. ' +
+        'A pilot should continue bounded evidence collection until at least one concrete people problem is supported by verified direct or supporting evidence. Only then should the system promote that problem into a normal software-project generation workflow.';
+
+      return {
+        ...output,
+        coreIdea: {
+          ...output.coreIdea,
+          title: neutralTitle,
+          problemStatement: neutralProblem,
+          objectives: neutralObjectives,
+          targetUsers: neutralTargetUsers,
+          ...(output.coreIdea.limitedAbstract !== undefined
+            ? { limitedAbstract: neutralAbstract }
+            : {}),
+          ...(output.coreIdea.partialAbstract !== undefined
+            ? { partialAbstract: neutralAbstract }
+            : {}),
+          ...(output.coreIdea.fullAbstract !== undefined
+            ? { fullAbstract: neutralAbstract }
+            : {}),
+        },
+        advancedOutputs: output.advancedOutputs.map((item) => ({
+          ...item,
+          content:
+            `Evidence-state constraint: no verified people problem is currently established in ${domainScope}. ` +
+            `Treat all concrete problem mechanisms in this section as validation hypotheses only. ${sanitize(item.content) ?? item.content}`,
+        })),
+      };
+    }
 
     return {
       ...output,
@@ -7309,6 +7404,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           ? { fullAbstract: sanitize(output.coreIdea.fullAbstract) }
           : {}),
       },
+      advancedOutputs: output.advancedOutputs.map((item) => ({
+        ...item,
+        content: sanitize(item.content) ?? item.content,
+      })),
     };
   }
 

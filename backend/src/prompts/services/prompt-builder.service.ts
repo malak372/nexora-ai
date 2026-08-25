@@ -968,7 +968,13 @@ export class PromptBuilderService {
             '- Preserve that exact problem scope. Do not replace it with a different problem merely because another collected signal looked stronger.',
             '- Cover every material dimension named by the requester in the pilot design. A validation-first product may prioritize one core workflow, but it must not silently omit another named pain, data source, or desired outcome; represent secondary dimensions as a concrete capability, measurable pilot check, or explicit assumption.',
           ]
-        : []),
+        : [
+            '- No requester problem exists in this mode. CONTEXT_ONLY and UNRELATED corpus items are forbidden as problem selectors.',
+            '- Do not invent a concrete operational failure, user segment, workflow pain, or remediation mechanism from generic/raw context.',
+            `- Keep the output inside the selected search space only: ${selectedDomainNames.join(', ') || fallbackPrimaryDomain}.`,
+            '- Produce a neutral problem-signal discovery workspace whose job is to collect, classify, compare, and validate real people problems before a normal software idea is generated.',
+            '- A concrete product problem may be selected only after canonicalEvidenceLedger contains at least one verified DIRECT_PROBLEM or SUPPORTING_SIGNAL.',
+          ]),
       ...(isCrossDomain
         ? [
             '- This is a cross-domain validation hypothesis. Build one coherent workflow connecting the allowed domains, but do not claim that community evidence already proves the connection or the demand.',

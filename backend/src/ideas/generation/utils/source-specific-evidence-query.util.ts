@@ -17,6 +17,12 @@ export class SourceSpecificEvidenceQueryUtil {
     readonly problemProfile?: RequestCanonicalProblemProfile | null;
     readonly discoveryDomainName?: string | null;
     readonly maxQueries?: number;
+    /**
+     * Preserve planner-authored semantic queries ahead of mechanical
+     * source adaptation. Use this for PRIMARY/SECONDARY lanes where PREPARING
+     * already produced grounded search language.
+     */
+    readonly preserveBaseQueries?: boolean;
   }): string[] {
     const sourceKey = input.sourceKey.toLocaleLowerCase();
     const maxQueries = Math.max(1, Math.min(2, input.maxQueries ?? 2));
@@ -84,7 +90,11 @@ export class SourceSpecificEvidenceQueryUtil {
       ];
     })();
 
-    const candidates = this.unique([...transformed, ...baseQueries])
+    const orderedCandidates =
+      input.preserveBaseQueries && !['app-store', 'google-play', 'product-hunt'].includes(sourceKey)
+        ? [...baseQueries, ...transformed]
+        : [...transformed, ...baseQueries];
+    const candidates = this.unique(orderedCandidates)
       .map((query) => this.sanitize(query))
       .filter((query) => this.isSafe(query))
       .filter((query) => query.length >= 8 && query.length <= 140);

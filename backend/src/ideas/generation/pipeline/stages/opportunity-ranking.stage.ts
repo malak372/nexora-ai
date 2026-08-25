@@ -4670,6 +4670,13 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           return {
             ...record,
             evidenceClassifications: classifications,
+            /*
+             * Every public/debug counter is recomputed from the merged
+             * canonical stores after recovery. Never keep the first-pass raw
+             * count beside post-recovery classifications.
+             */
+            rawEvidenceCandidateCount: context.rawEvidenceCorpus?.length ?? 0,
+            triageEligibleEvidenceCount: context.rawEvidenceCorpus?.length ?? 0,
             trustedNlpEvidenceCount: state.trustedCount,
             directEvidenceClassificationCount: state.directCount,
             supportingEvidenceClassificationCount: state.supportingCount,

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import appStore from 'app-store-scraper';
+import axios from 'axios';
 
 import { BaseCollector } from '../base/base.collector';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
@@ -19,8 +19,8 @@ import { RelevanceScoreUtil } from '../base/relevance-score.util';
 import { RequestReviewStoreQueryUtil } from '../../ideas/generation/utils/request-review-store-query.util';
 
 /**
- * Represents an App Store application returned by
- * app-store-scraper.
+ * Represents an App Store application normalized from the public
+ * Apple iTunes Search API.
  */
 type AppStoreApp = {
   id?: string | number;
@@ -36,8 +36,8 @@ type AppStoreApp = {
 };
 
 /**
- * Represents an App Store review returned by
- * app-store-scraper.
+ * Represents an App Store review normalized from Apple's public
+ * customer-review RSS JSON feed.
  */
 type AppStoreReview = {
   id?: string | number;
@@ -48,42 +48,42 @@ type AppStoreReview = {
   date?: string | Date;
 };
 
-/**
- * App Store search options used by the collector.
- */
-type AppStoreSearchOptions = {
-  term: string;
-  country: string;
-  num: number;
+type ItunesSearchResult = {
+  trackId?: number;
+  bundleId?: string;
+  trackName?: string;
+  description?: string;
+  sellerName?: string;
+  artistName?: string;
+  trackViewUrl?: string;
+  userRatingCount?: number;
+  averageUserRating?: number;
+  releaseDate?: string;
+  currentVersionReleaseDate?: string;
 };
 
-/**
- * App Store reviews options used by the collector.
- */
-type AppStoreReviewsOptions = {
-  id: string | number;
-  country: string;
+type ItunesSearchResponse = {
+  resultCount?: number;
+  results?: ItunesSearchResult[];
 };
 
-/**
- * Minimal typed contract required from app-store-scraper.
- */
-type AppStoreClient = {
-  search(options: AppStoreSearchOptions): Promise<AppStoreApp[]>;
-
-  reviews(options: AppStoreReviewsOptions): Promise<AppStoreReview[]>;
+type ItunesReviewEntry = {
+  id?: { label?: string };
+  content?: { label?: string };
+  author?: { name?: { label?: string } };
+  updated?: { label?: string };
+  'im:rating'?: { label?: string };
 };
 
-/**
- * Strictly typed App Store scraper client.
- */
-const appStoreClient = appStore as unknown as AppStoreClient;
+type ItunesReviewFeedResponse = {
+  feed?: { entry?: ItunesReviewEntry[] };
+};
 
 /**
  * Apple App Store collector.
  *
  * Collects public applications and public reviews using
- * app-store-scraper.
+ * Apple public App Store endpoints.
  *
  * The sourceKey must match DataSource.key in the database.
  *
@@ -233,11 +233,11 @@ export class AppStoreCollector
       fallbackCacheKey,
       this.cacheTtlMs,
       () =>
-        appStoreClient.search({
-          term: searchQuery,
-          country: 'us',
-          num: Math.min(this.resolveMaxFetchedPosts(input), 25),
-        }),
+        this.fetchAppsFromApple(
+          searchQuery,
+          'us',
+          Math.min(this.resolveMaxFetchedPosts(input), 25),
+        ),
     );
   }
 
@@ -257,11 +257,7 @@ export class AppStoreCollector
   ): Promise<AppStoreApp[]> {
     const num = Math.min(this.resolveMaxFetchedPosts(input), 25);
     const search = (country: string) =>
-      appStoreClient.search({
-        term: searchQuery,
-        country,
-        num,
-      });
+      this.fetchAppsFromApple(searchQuery, country, num);
 
     try {
       return await CollectorExternalCacheUtil.remember<AppStoreApp[]>(
@@ -312,6 +308,86 @@ export class AppStoreCollector
       );
       return [];
     }
+  }
+
+  /**
+   * Searches Apple's public iTunes Search API and normalizes software results
+   * to the collector's internal application shape. This removes the legacy
+   * legacy scraper dependency and its vulnerable request stack.
+   */
+  private async fetchAppsFromApple(
+    term: string,
+    country: string,
+    limit: number,
+  ): Promise<AppStoreApp[]> {
+    const response = await axios.get<ItunesSearchResponse>(
+      'https://itunes.apple.com/search',
+      {
+        params: {
+          term,
+          country,
+          entity: 'software',
+          media: 'software',
+          limit: Math.max(1, Math.min(limit, 25)),
+        },
+        timeout: 6_000,
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Voxidence/1.0',
+        },
+      },
+    );
+
+    return (response.data.results ?? []).map((app) => ({
+      id: app.trackId,
+      appId: app.bundleId,
+      title: app.trackName,
+      description: app.description,
+      summary: app.description,
+      developer: app.sellerName ?? app.artistName,
+      url: app.trackViewUrl,
+      reviews: app.userRatingCount,
+      ratings: app.averageUserRating,
+      released: app.currentVersionReleaseDate ?? app.releaseDate,
+    }));
+  }
+
+  /**
+   * Reads Apple's public customer-review RSS feed and normalizes review
+   * entries. The first feed entry may describe the application itself, so
+   * only entries with review content are retained.
+   */
+  private async fetchReviewsFromApple(
+    appId: string | number,
+    country: string,
+  ): Promise<AppStoreReview[]> {
+    const normalizedCountry = country.toLowerCase();
+    const encodedAppId = encodeURIComponent(String(appId));
+    const url =
+      `https://itunes.apple.com/${normalizedCountry}/rss/customerreviews/` +
+      `page=1/id=${encodedAppId}/sortby=mostrecent/json`;
+
+    const response = await axios.get<ItunesReviewFeedResponse>(url, {
+      timeout: 7_000,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'Voxidence/1.0',
+      },
+    });
+
+    return (response.data.feed?.entry ?? [])
+      .filter((entry) => Boolean(entry.content?.label))
+      .map((entry) => {
+        const rawScore = Number(entry['im:rating']?.label);
+
+        return {
+          id: entry.id?.label,
+          text: entry.content?.label,
+          userName: entry.author?.name?.label,
+          score: Number.isFinite(rawScore) ? rawScore : undefined,
+          updated: entry.updated?.label,
+        };
+      });
   }
 
   /** Builds focused queries instead of relying on one broad domain term. */
@@ -624,10 +700,7 @@ export class AppStoreCollector
             cacheKey,
             this.cacheTtlMs,
             () =>
-              appStoreClient.reviews({
-                id: appId,
-                country: requestedCountry,
-              }),
+              this.fetchReviewsFromApple(appId, requestedCountry),
           ),
           7_500,
           [],
@@ -654,7 +727,7 @@ export class AppStoreCollector
           CollectorExternalCacheUtil.remember<AppStoreReview[]>(
             fallbackCacheKey,
             this.cacheTtlMs,
-            () => appStoreClient.reviews({ id: appId, country: 'us' }),
+            () => this.fetchReviewsFromApple(appId, 'us'),
           ),
           7_500,
           [],

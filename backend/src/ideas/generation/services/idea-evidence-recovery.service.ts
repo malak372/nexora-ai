@@ -33,6 +33,7 @@ import type {
   IdeaGenerationContext,
   IdeaGenerationNlpContext,
   IdeaGenerationRawEvidenceItem,
+  SelectedGenerationDomain,
   SelectedIdeaDataSource,
 } from '../types/idea-generation-context.type';
 import type { RankedIdeaOpportunity } from '../types/idea-opportunity-ranking.type';
@@ -356,19 +357,39 @@ export class IdeaEvidenceRecoveryService {
     const aiSourcePlans = usingAiRecoveryPlan
       ? aiRecoveryPlan?.sourcePlans ?? []
       : [];
+    const recoveryDomainLanes = this.resolveRecoveryDomainLanes(
+      context,
+      Math.max(1, recoverySources.length),
+    );
     const mergedRecoverySourcePlans = recoverySources.map((source, sourceIndex) => {
       const planned = aiSourcePlans.find(
         (plan) =>
           plan.sourceKey.toLocaleLowerCase() === source.key.toLocaleLowerCase(),
       );
-      const fallbackQueries = authoritativeRecoveryQueries.length > 0
-        ? [
-            authoritativeRecoveryQueries[sourceIndex % authoritativeRecoveryQueries.length],
-            authoritativeRecoveryQueries[(sourceIndex + 1) % authoritativeRecoveryQueries.length],
-          ].filter((query): query is string => Boolean(query?.trim()))
-        : [];
+      const recoveryDomain =
+        recoveryDomainLanes[sourceIndex % Math.max(1, recoveryDomainLanes.length)] ??
+        context.selectedDomains.find((domain) => domain.id === context.domainId) ??
+        context.selectedDomains[0] ??
+        null;
+      const domainRecoveryQueries =
+        !context.requestDescription?.trim() && recoveryDomain
+          ? CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+              [recoveryDomain.name],
+              2,
+            )
+          : [];
+      const fallbackQueries = domainRecoveryQueries.length > 0
+        ? domainRecoveryQueries
+        : authoritativeRecoveryQueries.length > 0
+          ? [
+              authoritativeRecoveryQueries[sourceIndex % authoritativeRecoveryQueries.length],
+              authoritativeRecoveryQueries[(sourceIndex + 1) % authoritativeRecoveryQueries.length],
+            ].filter((query): query is string => Boolean(query?.trim()))
+          : [];
       const rawQueries = [...new Set(
-        (planned?.queries?.length ? planned.queries : fallbackQueries)
+        (planned?.queries?.length && context.requestDescription?.trim()
+          ? planned.queries
+          : fallbackQueries)
           .map((query) => this.sanitizeRecoveryQuery(query))
           .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query)),
       )];
@@ -377,17 +398,23 @@ export class IdeaEvidenceRecoveryService {
         baseQueries: rawQueries,
         requestDescription: context.requestDescription,
         problemProfile: context.collectionPlan?.problemProfile,
-        discoveryDomainName: context.domainName,
+        discoveryDomainName: recoveryDomain?.name ?? context.domainName,
         maxQueries: 2,
+        preserveBaseQueries: Boolean(context.requestDescription?.trim()),
       });
       return {
         sourceKey: source.key,
         queries: compiledQueries.length ? compiledQueries : rawQueries.slice(0, 2),
         routingHints: [...new Set(planned?.routingHints ?? [])],
-        discoveryDomainId: context.domainId,
-        discoveryDomainName: context.domainName,
+        discoveryDomainId: recoveryDomain?.id ?? context.domainId,
+        discoveryDomainName: recoveryDomain?.name ?? context.domainName,
         queryIntentId: `recovery:${context.evidenceRecoveryAttempts + 1}:${source.key}:${sourceIndex + 1}`,
-        sourceTier: 'PRIMARY' as const,
+        /*
+         * Recovery is semantically deeper, not volume-broader. SECONDARY keeps
+         * the source bounded while still allowing a little more depth than a
+         * MICRO_PROBE.
+         */
+        sourceTier: 'SECONDARY' as const,
         problemFacetIds: context.canonicalProblemSpec?.facets.map((facet) => facet.id) ?? [],
       };
     }).filter(
@@ -971,6 +998,27 @@ export class IdeaEvidenceRecoveryService {
         }
       }
 
+      /*
+       * DB source diagnostics are not the only truth available during the same
+       * in-memory run. If a planned source produced no raw evidence at all, it
+       * is a real zero-yield lane for this query family even when a collector
+       * adapter did not persist a zero count exactly as expected. Recovery must
+       * rotate away from that lane when alternatives exist.
+       */
+      const rawSourceKeys = new Set(
+        (context.rawEvidenceCorpus ?? [])
+          .map((item) => item.sourceKey.trim().toLocaleLowerCase())
+          .filter(Boolean),
+      );
+      const plannedSourceKeys = new Set(
+        (context.collectionPlan?.sourcePlans ?? [])
+          .map((plan) => plan.sourceKey.trim().toLocaleLowerCase())
+          .filter(Boolean),
+      );
+      for (const key of plannedSourceKeys) {
+        if (!rawSourceKeys.has(key)) excluded.add(key);
+      }
+
       if (context.evidenceRecoveryAttempts > 0) {
         for (const entry of priorRecoveryDiagnostics) {
           excluded.add(entry.dataSource.key);
@@ -1262,6 +1310,50 @@ export class IdeaEvidenceRecoveryService {
           ? Math.min(4, this.maximumRecoverySourcesPerWave)
           : this.maximumRecoverySourcesPerWave,
       );
+  }
+
+  private resolveRecoveryDomainLanes(
+    context: IdeaGenerationContext,
+    limit: number,
+  ): SelectedGenerationDomain[] {
+    if (context.requestDescription?.trim() || context.selectedDomains.length <= 1) {
+      const primary =
+        context.selectedDomains.find((domain) => domain.id === context.domainId) ??
+        context.selectedDomains[0];
+      return primary ? [primary] : [];
+    }
+
+    const stats = new Map<
+      string,
+      { score: number; sources: Set<string> }
+    >();
+    for (const domain of context.selectedDomains) {
+      stats.set(domain.id, { score: 0, sources: new Set<string>() });
+    }
+
+    for (const item of context.rawEvidenceCorpus ?? []) {
+      const domainId = item.discoveryDomainId ?? '';
+      const entry = stats.get(domainId);
+      if (!entry) continue;
+      const problemBearing =
+        /\b(?:problem|issue|error|fail(?:ed|ure|ing|s)?|cannot|unable|missing|wrong|delay|slow|blocked|unavailable|risk|friction|difficult|struggle|need|complaint|bug)\b/iu.test(
+          item.text,
+        );
+      entry.score += problemBearing ? 3 : 1;
+      entry.sources.add(item.sourceKey.toLocaleLowerCase());
+    }
+
+    return [...context.selectedDomains]
+      .sort((left, right) => {
+        const a = stats.get(left.id) ?? { score: 0, sources: new Set<string>() };
+        const b = stats.get(right.id) ?? { score: 0, sources: new Set<string>() };
+        return (
+          b.score - a.score ||
+          b.sources.size - a.sources.size ||
+          left.name.localeCompare(right.name)
+        );
+      })
+      .slice(0, Math.max(1, Math.min(limit, context.selectedDomains.length)));
   }
 
   private resolveSourceFocusKeys(

@@ -30,7 +30,11 @@ export class CanonicalEvidenceVerificationUtil {
     const { raw, proposal } = input;
     let classification = proposal.classification;
     let verified = proposal.verifiedByDeterministicGuard;
-    const matchedDomainIds = this.resolveMatchedDomainIds(raw, input.selectedDomains);
+    const matchedDomainIds = this.resolveMatchedDomainIds(
+      raw,
+      input.selectedDomains,
+      input.requestMode,
+    );
     const matchedFacetIds = this.resolveMatchedFacetIds(raw.text, input.problemSpec);
 
     if (classification === 'DIRECT_PROBLEM' || classification === 'SUPPORTING_SIGNAL') {
@@ -60,8 +64,15 @@ export class CanonicalEvidenceVerificationUtil {
         }
       } else {
         // Text paths already have an immutable requester problem. The Community
-        // AI post-verifier is authoritative; do not invent trust downstream.
-        verified = proposal.verifiedByDeterministicGuard;
+        // AI post-verifier remains authoritative, but explicit-domain requests
+        // must also match at least one selected domain. Retrieval provenance is
+        // not enough: the evidence text itself must establish that alignment.
+        const explicitDomainAligned =
+          input.requestMode !== 'TEXT_AND_DOMAINS' || matchedDomainIds.length > 0;
+        verified = proposal.verifiedByDeterministicGuard && explicitDomainAligned;
+        if (!verified && input.requestMode === 'TEXT_AND_DOMAINS') {
+          classification = matchedDomainIds.length > 0 ? 'CONTEXT_ONLY' : 'UNRELATED';
+        }
       }
     } else {
       verified = false;
@@ -92,6 +103,7 @@ export class CanonicalEvidenceVerificationUtil {
   private static resolveMatchedDomainIds(
     raw: IdeaGenerationRawEvidenceItem,
     domains: readonly SelectedGenerationDomain[],
+    requestMode: IdeaGenerationRequestMode,
   ): string[] {
     const text = this.normalize(raw.text);
     const bound = raw.discoveryDomainId
@@ -103,7 +115,19 @@ export class CanonicalEvidenceVerificationUtil {
               raw.discoveryDomainName?.trim().toLocaleLowerCase(),
           )
         : undefined;
-    const candidates = bound ? [bound] : domains;
+    /*
+     * Retrieval provenance explains where the item was found; it is not a
+     * claim-domain lock. Text-bearing requests may legitimately be supported
+     * by any explicitly selected domain as long as the evidence also matches
+     * the immutable requester workflow. Discovery-only paths remain bound to
+     * their independent probe lane to prevent cross-domain false positives.
+     */
+    const candidates =
+      requestMode === 'TEXT_AND_DOMAINS' || requestMode === 'TEXT_ONLY'
+        ? domains
+        : bound
+          ? [bound]
+          : domains;
 
     return candidates
       .filter((domain) => this.domainMatchesText(domain, text))

@@ -1006,6 +1006,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       allRuntimeSourceKeys,
       searchQueries,
       description,
+      problemProfile,
+      boundedEffectiveSourceKeys,
     );
     const sourceFocus = this.deriveSourceFocusFromKeys(boundedEffectiveSourceKeys);
     const confidence = this.normalizeScore(parsed.confidence, fallback.confidence);
@@ -1679,6 +1681,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         allActive,
         plan.searchQueries,
         description,
+        plan.problemProfile,
+        priority,
       ),
       sourceFocus: this.deriveSourceFocusFromKeys(priority),
     };
@@ -4660,9 +4664,37 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     selectedSourceKeys: readonly string[],
     searchQueries: readonly string[],
     description: string,
+    problemProfile?: RequestCanonicalProblemProfile,
+    plannerPrioritySourceKeys: readonly string[] = [],
   ): RequestCollectionSourcePlan[] {
     const normalizedQueries = this.deduplicateQueries(searchQueries).slice(0, 20);
     if (normalizedQueries.length === 0) return [];
+
+    const archetype = RequestWorkflowArchetypeUtil.classify({
+      requestDescription: description,
+      plannedQueries: normalizedQueries,
+      selectedDomainNames: [],
+    });
+    const preferredKeys = new Set(
+      archetype.preferredSourceKeys.map((key) => key.toLocaleLowerCase()),
+    );
+    const blockedKeys = new Set(
+      archetype.blockedSourceKeys.map((key) => key.toLocaleLowerCase()),
+    );
+    const plannerPriorityKeys = new Set(
+      plannerPrioritySourceKeys.map((key) => key.toLocaleLowerCase()),
+    );
+    const resolveTier = (
+      sourceKey: string,
+    ): 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE' => {
+      const key = sourceKey.toLocaleLowerCase();
+      if (archetype.confidence >= 0.85) {
+        if (preferredKeys.has(key)) return 'PRIMARY';
+        if (blockedKeys.has(key)) return 'MICRO_PROBE';
+        return plannerPriorityKeys.has(key) ? 'SECONDARY' : 'MICRO_PROBE';
+      }
+      return plannerPriorityKeys.has(key) ? 'PRIMARY' : 'MICRO_PROBE';
+    };
 
     const scoreForSource = (sourceKey: string, query: string): number => {
       const value = query.toLocaleLowerCase();
@@ -4692,16 +4724,20 @@ export class RequestCollectionPlanningService implements OnModuleInit {
 
     return selectedSourceKeys.map((sourceKey, sourceIndex) => {
       if (sourceKey === 'app-store' || sourceKey === 'google-play') {
+        const sourceTier = resolveTier(sourceKey);
         const queries = SourceSpecificEvidenceQueryUtil.compile({
           sourceKey,
           baseQueries: normalizedQueries.slice(0, 2),
           requestDescription: description,
+          problemProfile,
           maxQueries: 2,
+          preserveBaseQueries: false,
         });
         return {
           sourceKey,
           queries: queries.length ? queries : normalizedQueries.slice(0, 2),
           routingHints: [],
+          sourceTier,
         };
       }
 
@@ -4724,17 +4760,21 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ])
         .filter(Boolean)
         .slice(0, 2);
+      const sourceTier = resolveTier(sourceKey);
       const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
         sourceKey,
         baseQueries: rankedQueries,
         requestDescription: description,
+        problemProfile,
         maxQueries: 2,
+        preserveBaseQueries: sourceTier !== 'MICRO_PROBE',
       });
       const queries = compiledQueries.length ? compiledQueries : rankedQueries;
 
       return {
         sourceKey,
         queries,
+        sourceTier,
         routingHints:
           sourceKey === 'forum'
             ? this.resolveDeterministicForumRoutingHints(description).slice(0, 4)
