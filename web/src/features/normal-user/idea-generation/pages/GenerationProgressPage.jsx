@@ -31,7 +31,6 @@ export default function GenerationProgressPage() {
   const initialRun = location.state?.initialRun ?? null;
   const { run, connectionState, error, errorStatus, refresh } = useIdeaGenerationSocket(runId, initialRun);
   const syncedPremiumRunRef = useRef(null);
-  const cancellationPollTokenRef = useRef(0);
   const cancelInitiatedHereRef = useRef(false);
   const displayedProgress = Math.max(
     0,
@@ -62,7 +61,6 @@ export default function GenerationProgressPage() {
   useEffect(() => {
     if (run?.cancelRequestedAt) setCancelRequested(true);
     if (TERMINAL_RUN_STATUSES.has(run?.status)) {
-      cancellationPollTokenRef.current += 1;
       clearActiveGenerationRunId();
     }
     if (run?.status === 'CANCELLED' && cancelInitiatedHereRef.current) {
@@ -92,31 +90,21 @@ export default function GenerationProgressPage() {
     );
     if (!confirmed) return;
 
-    const pollToken = cancellationPollTokenRef.current + 1;
-    cancellationPollTokenRef.current = pollToken;
     cancelInitiatedHereRef.current = true;
     setIsCancelling(true);
     setCancelRequested(true);
     setCancelError('');
 
     try {
+      /*
+       * The cancellation request itself is persisted and broadcast by the
+       * backend. Do not hammer the status endpoint here; run.updated/snapshot
+       * events drive the UI and the socket hook keeps REST as a safety fallback.
+       */
       await cancelGenerationRun(
         runId,
         'Cancelled from the generation progress screen.',
       );
-
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        if (cancellationPollTokenRef.current !== pollToken) break;
-
-        try {
-          const latest = await refresh();
-          if (TERMINAL_RUN_STATUSES.has(latest?.status)) break;
-        } catch (pollError) {
-          if (pollError?.response?.status === 429) break;
-        }
-
-        await new Promise((resolve) => window.setTimeout(resolve, 500));
-      }
     } catch (requestError) {
       const backendAlreadyAccepted = Boolean(run?.cancelRequestedAt);
       setCancelRequested(backendAlreadyAccepted);
@@ -127,9 +115,7 @@ export default function GenerationProgressPage() {
           'Could not request cancellation.',
       );
     } finally {
-      if (cancellationPollTokenRef.current === pollToken) {
-        setIsCancelling(false);
-      }
+      setIsCancelling(false);
     }
   };
 

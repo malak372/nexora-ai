@@ -1,6 +1,7 @@
 import {
   IdeaGenerationRunStatus,
   IdeaGenerationStageStatus,
+  IdeaGenerationType,
 } from '@prisma/client';
 import type { Socket } from 'socket.io';
 
@@ -23,12 +24,15 @@ export type IdeaGenerationSocketData = {
  */
 export type IdeaGenerationRealtimeSnapshot = {
   readonly runId: string;
+  readonly generationType: IdeaGenerationType;
   readonly status: IdeaGenerationRunStatus;
   readonly progressPercent: number;
   readonly currentStageKey: string | null;
   readonly ideaId: string | null;
   readonly errorCode: string | null;
   readonly errorMessage: string | null;
+  readonly cancelRequestedAt: Date | null;
+  readonly startedAt: Date | null;
   readonly completedAt: Date | null;
   readonly updatedAt: Date;
   readonly stages: readonly IdeaGenerationRealtimeStagePayload[];
@@ -62,6 +66,7 @@ export type IdeaGenerationRealtimeStagePayload = {
  */
 export type IdeaGenerationRealtimeRunPayload = {
   readonly runId: string;
+  readonly generationType?: IdeaGenerationType;
   readonly status: IdeaGenerationRunStatus;
   readonly progressPercent: number;
   readonly currentStageKey: string | null;

@@ -78,7 +78,10 @@ const MILLISECONDS_PER_DAY =
 const GUEST_SESSION_COOKIE_OPTIONS: CookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite:
+      process.env.NODE_ENV === 'production'
+        ? 'none'
+        : 'lax',
     path: '/',
     maxAge:
         GUEST_SESSION_LIFETIME_DAYS *

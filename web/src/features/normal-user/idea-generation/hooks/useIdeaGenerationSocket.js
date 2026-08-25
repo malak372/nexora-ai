@@ -27,6 +27,7 @@ const INITIAL_SOCKET_GRACE_MS = 750;
 const RATE_LIMIT_RETRY_MS = 15_000;
 
 const STAGE_SEQUENCE = new Map([
+  ['preparing', 0],
   ['request-validation', 1],
   ['entitlement-check', 2],
   ['domain-resolution', 3],
@@ -79,6 +80,18 @@ function resolveFurthestStageKey(stages = []) {
     return resolveForwardStage(resolvedKey, stageKey);
   }, null);
 }
+
+function resolveFurthestStageProgress(stages = []) {
+  return stages.reduce((progress, stage) => {
+    const status = normalizeStatus(stage?.status);
+
+    if (!['RUNNING', 'COMPLETED', 'SUCCEEDED', 'SKIPPED'].includes(status)) {
+      return progress;
+    }
+
+    return Math.max(progress, Number(stage?.progressPercent ?? 0));
+  }, 0);
+}
 const TERMINAL_STATUSES = new Set([
   'COMPLETED',
   'FAILED',
@@ -86,13 +99,60 @@ const TERMINAL_STATUSES = new Set([
   'NO_RESULT',
 ]);
 
+const STAGE_STATUS_RANK = new Map([
+  ['PENDING', 0],
+  ['RUNNING', 1],
+  ['SKIPPED', 2],
+  ['COMPLETED', 3],
+  ['SUCCEEDED', 3],
+  ['FAILED', 4],
+]);
+
+const RUN_STATUS_RANK = new Map([
+  ['QUEUED', 0],
+  ['RUNNING', 1],
+  ['PAUSED', 2],
+  ['RETRYING', 2],
+  ['NO_RESULT', 3],
+  ['FAILED', 4],
+  ['CANCELLED', 4],
+  ['COMPLETED', 5],
+]);
+
+function normalizeStatus(value) {
+  return String(value ?? '').trim().toUpperCase();
+}
+
+function resolveRunStatus(currentStatus, incomingStatus) {
+  const current = normalizeStatus(currentStatus);
+  const incoming = normalizeStatus(incomingStatus);
+
+  if (!incoming) return current || 'QUEUED';
+  if (!current) return incoming;
+
+  // A recovered PAUSED/RETRYING run legitimately transitions back to RUNNING.
+  if (
+    (current === 'PAUSED' || current === 'RETRYING') &&
+    incoming === 'RUNNING'
+  ) {
+    return incoming;
+  }
+
+  const currentRank = RUN_STATUS_RANK.get(current) ?? -1;
+  const incomingRank = RUN_STATUS_RANK.get(incoming) ?? -1;
+
+  return incomingRank >= currentRank ? incoming : current;
+}
+
 function toTimestamp(value) {
   const timestamp = value ? Date.parse(value) : 0;
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function mergeStage(stages, nextStage) {
-  const incomingKey = nextStage.stageKey ?? nextStage.key;
+  const incomingKey = nextStage?.stageKey ?? nextStage?.key;
+  if (!incomingKey) return stages;
+
   const index = stages.findIndex(
     (stage) => (stage.stageKey ?? stage.key) === incomingKey,
   );
@@ -104,8 +164,22 @@ function mergeStage(stages, nextStage) {
   }
 
   const current = stages[index];
+  const currentStatus = normalizeStatus(current?.status);
+  const incomingStatus = normalizeStatus(nextStage?.status);
+  const currentRank = STAGE_STATUS_RANK.get(currentStatus) ?? -1;
+  const incomingRank = STAGE_STATUS_RANK.get(incomingStatus) ?? -1;
+
+  /*
+   * Stage lifecycle direction is more authoritative than wall-clock ordering.
+   * This prevents a delayed persisted RUNNING row from replacing an already
+   * received COMPLETED realtime transition when clocks differ slightly.
+   */
+  if (incomingRank < currentRank) {
+    return stages;
+  }
 
   if (
+    incomingRank === currentRank &&
     toTimestamp(nextStage.updatedAt) > 0 &&
     toTimestamp(current.updatedAt) > toTimestamp(nextStage.updatedAt)
   ) {
@@ -114,7 +188,10 @@ function mergeStage(stages, nextStage) {
 
   const copy = [...stages];
   copy[index] = { ...current, ...nextStage };
-  return copy;
+
+  return copy.sort(
+    (a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0),
+  );
 }
 
 function mergeStages(currentStages = [], incomingStages = []) {
@@ -125,45 +202,103 @@ function mergeStages(currentStages = [], incomingStages = []) {
 }
 
 function mergeRunSnapshot(current, incoming) {
+  const incomingStages = Array.isArray(incoming?.stages)
+    ? incoming.stages
+    : [];
+
   if (!current) {
+    const stages = mergeStages([], incomingStages);
+
     return {
       ...incoming,
       id: incoming?.id ?? incoming?.runId,
       runId: incoming?.runId ?? incoming?.id,
-      stages: incoming?.stages ?? [],
+      status: resolveRunStatus(null, incoming?.status),
+      progressPercent: Math.max(
+        Number(incoming?.progressPercent ?? 0),
+        resolveFurthestStageProgress(stages),
+      ),
+      currentStageKey: resolveForwardStage(
+        incoming?.currentStageKey,
+        resolveFurthestStageKey(stages),
+      ),
+      stages,
     };
   }
 
-  if (
-    toTimestamp(incoming?.updatedAt) > 0 &&
-    toTimestamp(current?.updatedAt) > toTimestamp(incoming?.updatedAt)
-  ) {
-    return current;
+  const incomingTimestamp = toTimestamp(incoming?.updatedAt);
+  const currentTimestamp = toTimestamp(current?.updatedAt);
+  const incomingIsNewer =
+    incomingTimestamp === 0 ||
+    currentTimestamp === 0 ||
+    incomingTimestamp >= currentTimestamp;
+
+  /*
+   * Parent-run timestamps and stage-row timestamps are independent. Never drop
+   * an entire socket/HTTP snapshot just because an optimistic run event has a
+   * newer updatedAt; merge stage rows separately and preserve monotonic
+   * lifecycle/progress fields.
+   */
+  const merged = incomingIsNewer
+    ? { ...current, ...incoming }
+    : { ...current };
+
+  if (!incomingIsNewer) {
+    for (const key of [
+      'ideaId',
+      'ideaTitle',
+      'idea',
+      'completedAt',
+      'errorCode',
+      'errorMessage',
+      'generationType',
+      'type',
+      'metadata',
+    ]) {
+      if (incoming?.[key] != null) {
+        merged[key] = incoming[key];
+      }
+    }
   }
 
-  return {
-    ...current,
-    ...incoming,
-    id: incoming?.id ?? incoming?.runId ?? current?.id,
-    runId: incoming?.runId ?? incoming?.id ?? current?.runId,
-    ideaId: incoming?.ideaId ?? current?.ideaId ?? null,
-    startedAt: incoming?.startedAt ?? current?.startedAt ?? null,
-    completedAt: incoming?.completedAt ?? current?.completedAt ?? null,
-    cancelRequestedAt:
-      incoming?.cancelRequestedAt ?? current?.cancelRequestedAt ?? null,
-    currentStageKey: resolveForwardStage(
-      current?.currentStageKey,
-      resolveForwardStage(
-        incoming?.currentStageKey,
-        resolveFurthestStageKey(incoming?.stages ?? []),
-      ),
+  const stages = mergeStages(current?.stages ?? [], incomingStages);
+
+  merged.id =
+    incoming?.id ?? incoming?.runId ?? current?.id ?? current?.runId;
+  merged.runId =
+    incoming?.runId ?? incoming?.id ?? current?.runId ?? current?.id;
+  merged.ideaId = incoming?.ideaId ?? current?.ideaId ?? null;
+  merged.generationType =
+    incoming?.generationType ?? current?.generationType ?? null;
+  merged.startedAt = incoming?.startedAt ?? current?.startedAt ?? null;
+  merged.completedAt = incoming?.completedAt ?? current?.completedAt ?? null;
+  merged.cancelRequestedAt =
+    incoming?.cancelRequestedAt ?? current?.cancelRequestedAt ?? null;
+  merged.status = resolveRunStatus(current?.status, incoming?.status);
+  merged.progressPercent = Math.max(
+    Number(current?.progressPercent ?? 0),
+    Number(incoming?.progressPercent ?? 0),
+    resolveFurthestStageProgress(stages),
+  );
+  merged.currentStageKey = resolveForwardStage(
+    current?.currentStageKey,
+    resolveForwardStage(
+      incoming?.currentStageKey,
+      resolveFurthestStageKey(stages),
     ),
-    progressPercent: Math.max(
-      Number(current?.progressPercent ?? 0),
-      Number(incoming?.progressPercent ?? 0),
-    ),
-    stages: mergeStages(current?.stages ?? [], incoming?.stages ?? []),
-  };
+  );
+  merged.stages = stages;
+
+  if (
+    incomingTimestamp >= currentTimestamp &&
+    incoming?.updatedAt != null
+  ) {
+    merged.updatedAt = incoming.updatedAt;
+  } else {
+    merged.updatedAt = current?.updatedAt ?? incoming?.updatedAt ?? null;
+  }
+
+  return merged;
 }
 
 export function useIdeaGenerationSocket(runId, initialRun = null) {
@@ -386,9 +521,8 @@ export function useIdeaGenerationSocket(runId, initialRun = null) {
             stages: [],
           }),
           status:
-            current?.status === 'QUEUED' &&
-            String(payload.status ?? '').toUpperCase() === 'RUNNING'
-              ? 'RUNNING'
+            normalizeStatus(payload.status) === 'RUNNING'
+              ? resolveRunStatus(current?.status, 'RUNNING')
               : current?.status ?? 'RUNNING',
           startedAt:
             current?.startedAt ??

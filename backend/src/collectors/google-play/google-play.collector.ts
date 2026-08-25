@@ -16,6 +16,7 @@ import {
 } from '../base/collector.types';
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+import { RequestReviewStoreQueryUtil } from '../../ideas/generation/utils/request-review-store-query.util';
 
 type GooglePlayApp = {
   appId?: string;
@@ -105,7 +106,14 @@ export class GooglePlayCollector
       }
 
       const searchResults = await Promise.allSettled(
-        searchQueries.map((query) => this.searchApps(query, input)),
+        searchQueries.map((query) =>
+          this.settleWithinSoftBudget(
+            this.searchApps(query, input),
+            6_500,
+            [],
+            `Google Play app discovery for "${query}"`,
+          ),
+        ),
       );
 
       const apps = this.deduplicateApps(
@@ -126,7 +134,7 @@ export class GooglePlayCollector
           0,
           input.collectionMode === 'FAST_GENERATION' ||
           input.collectionMode === 'TARGETED_RECOVERY'
-            ? Math.min(2, this.resolveMaxSavedPosts(input))
+            ? Math.min(3, this.resolveMaxSavedPosts(input))
             : this.resolveMaxSavedPosts(input),
         );
 
@@ -214,6 +222,24 @@ export class GooglePlayCollector
    * recall while relevance scoring still protects the saved dataset.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
+    if (input.authoritativePlannedQueries && (input.plannedQueries?.length ?? 0) > 0) {
+      const boundedBudget = input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 3;
+      return this.unique(
+        (input.plannedQueries ?? []).map((query) => query.trim()).filter(Boolean),
+      ).slice(0, boundedBudget);
+    }
+
+    const reviewStoreQueries = RequestReviewStoreQueryUtil.build({
+      requestDescription: input.requestDescription,
+      domainName: input.domainName,
+      plannedQueries: input.plannedQueries ?? [],
+      maxQueries:
+        input.collectionMode === 'TARGETED_RECOVERY' ? 3 : 4,
+    });
+    if (reviewStoreQueries.length > 0) {
+      return reviewStoreQueries;
+    }
+
     const plannedQueries = (input.plannedQueries ?? [])
       .map((query) => this.toStoreDiscoveryQuery(query))
       .filter(Boolean);
@@ -227,7 +253,7 @@ export class GooglePlayCollector
         input.requestDescription?.split(/\b(?:often|frequently|usually|commonly)\b/iu)[0] ?? '',
       );
       const boundedBudget =
-        input.collectionMode === 'TARGETED_RECOVERY' ? 1 : 2;
+        input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 3;
       return this.unique([
         ...(requesterActor ? [requesterActor] : []),
         ...(domainDiscovery ? [domainDiscovery] : []),
@@ -417,8 +443,8 @@ export class GooglePlayCollector
         input.language,
       ]);
 
-      const response =
-        await CollectorExternalCacheUtil.remember<GooglePlayReviewsResponse>(
+      const response = await this.settleWithinSoftBudget(
+        CollectorExternalCacheUtil.remember<GooglePlayReviewsResponse>(
           cacheKey,
           this.cacheTtlMs,
           () =>
@@ -427,13 +453,21 @@ export class GooglePlayCollector
               num:
                 input.collectionMode === 'FAST_GENERATION' ||
                 input.collectionMode === 'TARGETED_RECOVERY'
-                  ? Math.min(this.resolveMaxFetchedComments(input), 4)
+                  ? Math.min(this.resolveMaxFetchedComments(input), 8)
                   : this.resolveMaxFetchedComments(input),
               sort: this.getNewestSort(),
               lang: this.resolveLanguage(input.language),
-              country: this.resolveCountry(input.country),
+              country:
+                input.collectionMode === 'FAST_GENERATION' ||
+                input.collectionMode === 'TARGETED_RECOVERY'
+                  ? 'us'
+                  : this.resolveCountry(input.country),
             }),
-        );
+        ),
+        7_500,
+        { data: [] },
+        `Google Play reviews for ${appId}`,
+      );
 
       return (response.data ?? [])
         .filter((review) => this.isUsefulReview(review, input))

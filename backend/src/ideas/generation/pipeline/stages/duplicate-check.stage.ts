@@ -30,6 +30,7 @@ import {
   RequestProductBlueprintUtil,
   type RequestProductBlueprint,
 } from '../../utils/request-product-blueprint.util';
+import { CanonicalRequestProductBlueprintUtil } from '../../utils/canonical-request-product-blueprint.util';
 import type {
   AdvancedIdeaAiOutput,
   CoreIdeaAiOutput,
@@ -197,13 +198,7 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
         };
       }
 
-      const blueprint = RequestProductBlueprintUtil.build({
-        requestDescription: context.requestDescription,
-        domainName: context.domainName,
-        opportunityTitle: context.opportunityRanking?.selected.title,
-        enableEvidenceDerivedFeatureCapability: this.isDomainsOnlyPath(context),
-        enableEvidenceDerivedProblemWorkflow: this.isDomainsOnlyPath(context),
-      });
+      const blueprint = this.buildRequesterLockedBlueprint(context);
       const identityFallback = await this.buildQualityFloorPreservingIdentityFallback(
         context,
         collectionJobId,
@@ -510,13 +505,7 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
     const anchor = this.resolveOpportunityAnchor(context);
     const coreIdea = context.coreIdea!;
     const problem = this.resolveGroundedProblem(context);
-    const blueprint = RequestProductBlueprintUtil.build({
-      requestDescription: context.requestDescription,
-      domainName: context.domainName,
-      opportunityTitle: context.opportunityRanking?.selected.title,
-      enableEvidenceDerivedFeatureCapability: this.isDomainsOnlyPath(context),
-        enableEvidenceDerivedProblemWorkflow: this.isDomainsOnlyPath(context),
-    });
+    const blueprint = this.buildRequesterLockedBlueprint(context);
     const title = this.limitTitle(
       blueprint
         ? `${blueprint.baseLabel} Evidence Decision Workspace`
@@ -1029,13 +1018,7 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
   ): IdeaGenerationContext {
     const coreIdea = context.coreIdea!;
     const anchor = this.resolveOpportunityAnchor(context);
-    const blueprint = RequestProductBlueprintUtil.build({
-      requestDescription: context.requestDescription,
-      domainName: context.domainName,
-      opportunityTitle: context.opportunityRanking?.selected.title,
-      enableEvidenceDerivedFeatureCapability: this.isDomainsOnlyPath(context),
-        enableEvidenceDerivedProblemWorkflow: this.isDomainsOnlyPath(context),
-    });
+    const blueprint = this.buildRequesterLockedBlueprint(context);
     const title = this.limitTitle(
       blueprint
         ? this.resolveBlueprintRescueTitle(blueprint, variant.strategy, variant.suffix)
@@ -1116,18 +1099,62 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
     }
 
     if (!this.isNoInputPreferencePath(context)) {
-      const base = originalCore.title
-        .replace(/\s+(?:edition|workspace|hub|platform)$/iu, '')
+      const sourceTitle = blueprint?.title?.trim() || originalCore.title;
+      const base = sourceTitle
+        .replace(
+          /\s+(?:(?:Trace|Case|Integrity|Exception|Pilot) Review|Decision Trace|Decision Audit|Evidence Trace|Human Review|Exception Resolution)(?: Edition| Workspace)?$/iu,
+          '',
+        )
+        .replace(/\s+(?:edition|workspace|hub|platform|console|engine)$/iu, '')
         .replace(/\s+/gu, ' ')
         .trim();
+      const brand = originalCore.title
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .split(/\s+/u)
+        .find((token) => token.length >= 4) ?? base.split(/\s+/u)[0] ?? 'Voxidence';
+      const semantic = [
+        context.requestDescription ?? '',
+        blueprint?.workflowFocus ?? '',
+        context.opportunityRanking?.selected.title ?? '',
+      ]
+        .join(' ')
+        .toLocaleLowerCase();
+
+      if (
+        /\b(?:healthcare|hospital|emergency department|ambulance|patient)\b/u.test(semantic) &&
+        /\b(?:capacity|patient demand|overcrowd|response time|resource allocation|care gap|delayed care)\b/u.test(semantic)
+      ) {
+        return [
+          `${brand} Regional Demand Coordinator`,
+          `${brand} Capacity Coordination Workspace`,
+          `${brand} Emergency Flow Intelligence`,
+          `${brand} Health Surge Coordinator`,
+          `${brand} Facility Demand Operations`,
+          `${brand} Care Capacity Workspace`,
+        ];
+      }
+
+      if (
+        /\b(?:custom order|commission|specification|approved version|design revision|customer revision)\b/u.test(semantic)
+      ) {
+        return [
+          `${brand} Specification Workspace`,
+          `${brand} Commission Coordinator`,
+          `${brand} Approval & Revision Workspace`,
+          `${brand} Custom Order Control`,
+          `${brand} Specification & Delivery Hub`,
+          `${brand} Commission Operations`,
+        ];
+      }
+
       return [
-        'Trace Review Edition',
-        'Case Review Edition',
-        'Decision Trace Edition',
-        'Integrity Review Edition',
-        'Exception Review Edition',
-        'Pilot Review Edition',
-      ].map((suffix) => `${base} ${suffix}`);
+        `${base} Operations Workspace`,
+        `${base} Coordination Hub`,
+        `${base} Decision Support`,
+        `${base} Workflow Manager`,
+        `${base} Operations Console`,
+        `${base} Pilot Workspace`,
+      ];
     }
 
     const semantic = [
@@ -1201,6 +1228,26 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
       `${stem} Operations & Decision Workspace`,
       `${stem} Evidence-Grounded Review Workspace`,
     ];
+  }
+
+  private buildRequesterLockedBlueprint(
+    context: IdeaGenerationContext,
+  ): RequestProductBlueprint | null {
+    const canonical = CanonicalRequestProductBlueprintUtil.build({
+      profile: context.collectionPlan?.problemProfile,
+      requestDescription: context.requestDescription,
+      domainName: context.domainName,
+      opportunityTitle: context.opportunityRanking?.selected.title,
+    });
+    if (canonical) return canonical;
+
+    return RequestProductBlueprintUtil.build({
+      requestDescription: context.requestDescription,
+      domainName: context.domainName,
+      opportunityTitle: context.opportunityRanking?.selected.title,
+      enableEvidenceDerivedFeatureCapability: this.isDomainsOnlyPath(context),
+      enableEvidenceDerivedProblemWorkflow: this.isDomainsOnlyPath(context),
+    });
   }
 
   private isDomainsOnlyPath(context: IdeaGenerationContext): boolean {

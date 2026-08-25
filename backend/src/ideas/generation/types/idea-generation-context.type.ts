@@ -18,6 +18,13 @@ import type {
   RankedIdeaOpportunity,
 } from './idea-opportunity-ranking.type';
 import type { RequestCollectionPlan } from './request-collection-plan.type';
+import type {
+  IdeaGenerationCanonicalProblemSpec,
+  IdeaGenerationCollectionPhase,
+  IdeaGenerationCollectorTier,
+  IdeaGenerationEvidenceState,
+  IdeaGenerationRequestMode,
+} from './canonical-problem-spec.type';
 
 /**
  * Data source selected for one generation run.
@@ -393,6 +400,36 @@ export type IdeaGenerationRawEvidenceItem = {
   readonly text: string;
   readonly isComplaintEvidence?: boolean;
   readonly requiresAiSemanticTriage?: boolean;
+  /** Retrieval provenance. These fields explain why this evidence was collected; they are never proof by themselves. */
+  readonly discoveryDomainId?: string | null;
+  readonly discoveryDomainName?: string | null;
+  readonly queryIntentId?: string | null;
+  readonly queryText?: string | null;
+  readonly problemFacetIds?: readonly string[];
+  readonly collectionPhase?: IdeaGenerationCollectionPhase;
+  readonly sourceTier?: IdeaGenerationCollectorTier;
+};
+
+
+export type IdeaGenerationCanonicalEvidenceItem = {
+  readonly id: string;
+  readonly sourceKey: string;
+  readonly sourceType: 'POST' | 'COMMENT';
+  readonly text: string;
+  readonly title?: string | null;
+  readonly classification: 'DIRECT_PROBLEM' | 'SUPPORTING_SIGNAL' | 'CONTEXT_ONLY' | 'UNRELATED';
+  readonly confidence: number;
+  readonly problemFamily: string | null;
+  readonly verified: boolean;
+  readonly origin: 'COMMUNITY_AI' | 'DOMAIN_DIRECT_FALLBACK' | 'RECOVERY';
+  readonly matchedDomainIds: readonly string[];
+  readonly matchedFacetIds: readonly string[];
+  readonly discoveryDomainId: string | null;
+  readonly discoveryDomainName: string | null;
+  readonly queryIntentId: string | null;
+  readonly queryText: string | null;
+  readonly collectionPhase: IdeaGenerationCollectionPhase;
+  readonly sourceTier: IdeaGenerationCollectorTier;
 };
 
 export type IdeaGenerationBenchmarkCandidateSnapshot = {
@@ -452,8 +489,20 @@ export type IdeaGenerationContext = {
 
   requestFingerprint: string | null;
 
-  /** Bounded AI/deterministic plan created before collection when request text exists. */
+  /** Explicit domain ids requested by the caller before PREPARING resolves the semantic primary domain. */
+  requestedDomainIds: string[];
+
+  /** Bounded AI/deterministic plan created inside the PREPARING pipeline stage when request text exists. */
   collectionPlan: RequestCollectionPlan | null;
+  /** Canonical mode resolved once during PREPARING and never reinterpreted downstream. */
+  requestMode: IdeaGenerationRequestMode;
+
+  /** Immutable requester/discovery problem contract shared by search, verification, ranking, and Core. */
+  canonicalProblemSpec: IdeaGenerationCanonicalProblemSpec | null;
+
+  /** Single authoritative evidence state derived only from canonicalEvidenceLedger. */
+  evidenceState: IdeaGenerationEvidenceState;
+
 
   /**
    * User-supplied keywords.
@@ -514,11 +563,16 @@ export type IdeaGenerationContext = {
   domainEvidence: IdeaGenerationDomainEvidence[];
 
   /**
-   * Bounded raw collector corpus preserved before deterministic semantic
-   * pruning. Community AI classifies these items, but none of them become
-   * verified evidence until deterministic request/workflow guards accept them.
+   * Complete collector-returned corpus (within each collector's network limits)
+   * preserved before deterministic semantic/persistence pruning. Community AI
+   * classifies every item; none becomes verified evidence until deterministic
+   * request/workflow guards accept it after AI triage.
    */
   rawEvidenceCorpus: IdeaGenerationRawEvidenceItem[];
+
+
+  /** Single deduplicated evidence source-of-truth used by ranking and recovery. */
+  canonicalEvidenceLedger: IdeaGenerationCanonicalEvidenceItem[];
 
   /** Evidence-grounded LLM analysis over the cleaned NLP context. */
   communityAiAnalysis: CommunityAiAnalysis | null;
@@ -637,7 +691,10 @@ export type CreateIdeaGenerationContextInput = {
 
   requestFingerprint?: string | null;
 
-  /** Optional pre-collection intent plan derived from request text. */
+  /** Explicit domain ids preserved until the PREPARING stage resolves the final domain profile. */
+  requestedDomainIds?: string[];
+
+  /** Optional in-pipeline pre-collection intent plan derived from request text. */
   collectionPlan?: RequestCollectionPlan | null;
 
   /**
@@ -688,7 +745,18 @@ export function createIdeaGenerationContext(
 
     requestDescription: input.requestDescription ?? null,
     requestFingerprint: input.requestFingerprint ?? null,
+    requestedDomainIds: input.requestedDomainIds ?? [],
     collectionPlan: input.collectionPlan ?? null,
+    requestMode:
+      input.requestDescription?.trim()
+        ? (input.requestedDomainIds?.length ?? 0) > 0
+          ? 'TEXT_AND_DOMAINS'
+          : 'TEXT_ONLY'
+        : (input.requestedDomainIds?.length ?? 0) > 0
+          ? 'DOMAINS_ONLY'
+          : 'NO_INPUT',
+    canonicalProblemSpec: null,
+    evidenceState: 'ZERO_VALIDATED_EVIDENCE',
     keywords: input.keywords ?? [],
 
     requestedDataSourceKeys: input.requestedDataSourceKeys ?? [],
@@ -704,6 +772,7 @@ export function createIdeaGenerationContext(
     nlp: null,
     domainEvidence: [],
     rawEvidenceCorpus: [],
+    canonicalEvidenceLedger: [],
     communityAiAnalysis: null,
     opportunityRanking: null,
     benchmarkWinnerOpportunity: null,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   AiRoutingStrategy,
   ApiRequestType,
@@ -8,6 +8,8 @@ import {
 } from '@prisma/client';
 
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
+import { AiResponseParserService } from '../../../ai/services/ai-response-parser.service';
+import { AiStructuredOutputService } from '../../../ai/services/ai-structured-output.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 import { buildRequestCollectionPlanSchema } from '../schemas/request-collection-plan.schema';
@@ -16,20 +18,28 @@ import type {
   RequestCollectionSourceFocus,
   RequestCollectionSourcePlan,
   RequestCollectionDomainIdentity,
+  RequestCanonicalProblemProfile,
 } from '../types/request-collection-plan.type';
 import { inferDominantRequestDomainName } from '../utils/request-domain-inference.util';
 import { RequestWorkflowArchetypeUtil } from '../utils/request-workflow-archetype.util';
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
 import { RequestWorkflowIntentProfileUtil } from '../utils/request-workflow-intent-profile.util';
 import { RequestQueryProvenanceUtil } from '../utils/request-query-provenance.util';
+import { RequestNicheCustomCraftUtil } from '../utils/request-niche-custom-craft.util';
+import { RequestReviewStoreQueryUtil } from '../utils/request-review-store-query.util';
+import { CanonicalRequestUnderstandingUtil } from '../utils/canonical-request-understanding.util';
+import { SourceSpecificEvidenceQueryUtil } from '../utils/source-specific-evidence-query.util';
 import { CollectorsFactory } from '../../../collectors/collectors.factory';
 
-const REQUEST_COLLECTION_PLAN_SCHEMA_NAME = 'nexora_request_collection_plan';
-const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 7_200;
+const REQUEST_COLLECTION_PLAN_SCHEMA_NAME = 'nexora_request_collection_plan_v10_static_local';
+const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 20_000;
 const REQUEST_COLLECTION_PLAN_PROVIDER_LANES = [
+  ['anthropic/claude-haiku-4.5'],
   ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
-  ['google/gemini-3.5-flash-lite', 'mistralai/mistral-small-2603'],
+  ['mistralai/mistral-small-2603'],
+  ['qwen/qwen3.5-flash-02-23'],
 ] as const;
+const REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS = 2 * 60 * 1000;
 
 type RequestDomainCatalogEntry = {
   readonly id: string;
@@ -51,17 +61,48 @@ type RequestSourceCatalogEntry = {
   readonly supportsLanguage: boolean;
 };
 @Injectable()
-export class RequestCollectionPlanningService {
+export class RequestCollectionPlanningService implements OnModuleInit {
   private readonly logger = new Logger(RequestCollectionPlanningService.name);
   private readonly inFlightPlans = new Map<string, Promise<RequestCollectionPlan | null>>();
   private readonly recentPlans = new Map<string, { readonly expiresAt: number; readonly plan: RequestCollectionPlan | null }>();
   private readonly planReuseTtlMs = 20_000;
+  private readonly domainCatalogCache = new Map<string, {
+    readonly expiresAt: number;
+    readonly value: readonly RequestDomainCatalogEntry[];
+  }>();
+  private readonly domainCatalogInFlight = new Map<string, Promise<RequestDomainCatalogEntry[]>>();
+  private sourceCatalogCache: { readonly expiresAt: number; readonly value: readonly RequestSourceCatalogEntry[] } | null = null;
+  private sourceCatalogInFlight: Promise<RequestSourceCatalogEntry[]> | null = null;
 
   constructor(
     private readonly aiExecutionService: AiExecutionService,
+    private readonly aiResponseParser: AiResponseParserService,
+    private readonly aiStructuredOutput: AiStructuredOutputService,
     private readonly prisma: PrismaService,
     private readonly collectorsFactory: CollectorsFactory,
   ) {}
+
+  onModuleInit(): void {
+    /*
+     * Warm the two small planning catalogs after Nest startup without blocking
+     * application readiness. The first user generation then normally starts its
+     * provider race immediately instead of spending the beginning of PREPARING
+     * on two remote database catalog reads. Any startup-race/database error is
+     * intentionally non-fatal because the normal request path can load again.
+     */
+    setImmediate(() => {
+      void Promise.all([
+        this.loadActiveDomainCatalog(LanguageCode.ANY),
+        this.loadActiveSourceCatalog(),
+      ]).catch((error: unknown) => {
+        this.logger.debug(
+          `Planning catalog warm-up skipped non-fatally: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+    });
+  }
 
   async plan(input: {
     readonly description?: string | null;
@@ -81,12 +122,16 @@ export class RequestCollectionPlanningService {
       this.loadActiveDomainCatalog(input.language),
       this.loadActiveSourceCatalog(),
     ]);
-    const deterministic = this.decorateFallbackDomainSelection(
-      this.buildDeterministicFallback(
-        description,
-        input.keywords ?? [],
+    const deterministic = this.decorateFallbackSourceSelection(
+      this.decorateFallbackDomainSelection(
+        this.buildDeterministicFallback(
+          description,
+          input.keywords ?? [],
+        ),
+        domainCatalog,
       ),
-      domainCatalog,
+      sourceCatalog,
+      description,
     );
 
     const cacheKey = this.buildPlanCacheKey({
@@ -138,7 +183,7 @@ export class RequestCollectionPlanningService {
     }
 
     this.logger.warn(
-      'Pre-collection provider-diverse AI planning produced no grounded plan; deterministic request planning was used only as the final fallback.',
+      '[PREPARING] Provider-diverse AI planning produced no grounded plan; request-derived deterministic planning was used only as the final fallback.',
     );
     return deterministic;
   }
@@ -161,9 +206,13 @@ export class RequestCollectionPlanningService {
       this.loadActiveDomainCatalog(input.language),
       this.loadActiveSourceCatalog(),
     ]);
-    const deterministic = this.decorateFallbackDomainSelection(
-      this.buildDeterministicFallback(description, input.keywords ?? []),
-      domainCatalog,
+    const deterministic = this.decorateFallbackSourceSelection(
+      this.decorateFallbackDomainSelection(
+        this.buildDeterministicFallback(description, input.keywords ?? []),
+        domainCatalog,
+      ),
+      sourceCatalog,
+      description,
     );
 
     return this.runProviderDiversePlanningRace({
@@ -180,6 +229,74 @@ export class RequestCollectionPlanningService {
       recoveryPreviousQueries: input.previousQueries ?? [],
       recoveryEvidenceTargets: input.evidenceTargets ?? [],
     });
+  }
+
+  /**
+   * Builds a bounded evidence-first discovery plan for DOMAINS_ONLY and
+   * NO_INPUT runs. These paths intentionally do not pretend that a requester
+   * problem exists; they probe a small number of high-yield sources and let
+   * Community AI discover the strongest problem family from external evidence.
+   */
+  async buildDomainDiscoveryPlan(input: {
+    readonly domainNames: readonly string[];
+    readonly language?: LanguageCode;
+  }): Promise<RequestCollectionPlan> {
+    const sourceCatalog = await this.loadActiveSourceCatalog();
+    const activeSourceKeys = sourceCatalog.map((source) => source.key);
+    const domainNames = this.deduplicatePhrases(input.domainNames).slice(0, 3);
+    const searchQueries = CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+      domainNames,
+      6,
+    );
+    const prioritySourceKeys = CanonicalRequestUnderstandingUtil.recommendSourceKeys(
+      domainNames.join(' '),
+      activeSourceKeys,
+      6,
+    );
+    const selectedSourceKeys = this.deduplicatePhrases([
+      ...prioritySourceKeys,
+      ...activeSourceKeys,
+    ]);
+    const sourcePlans: RequestCollectionSourcePlan[] = selectedSourceKeys.map(
+      (sourceKey, index) => {
+        const domain = domainNames[index % Math.max(1, domainNames.length)] ?? domainNames[0] ?? 'software operations';
+        const domainQueries = CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries([domain], 2);
+        const baseQuery = domainQueries[index % Math.max(1, domainQueries.length)] ?? `${domain} operational problems`;
+        const queries = SourceSpecificEvidenceQueryUtil.compile({
+          sourceKey,
+          baseQueries: [baseQuery],
+          discoveryDomainName: domain,
+          maxQueries: 1,
+        });
+        return {
+          sourceKey,
+          // One domain per discovery lane. This prevents selected domains from
+          // being mixed into the same collector query while still exercising
+          // every administrator-enabled collector in parallel.
+          queries: queries.length ? queries : [baseQuery],
+          routingHints: [],
+          discoveryDomainName: domain,
+          queryIntentId: `domain-probe:${index + 1}`,
+          sourceTier: prioritySourceKeys.includes(sourceKey) ? 'PRIMARY' : 'MICRO_PROBE',
+          problemFacetIds: [],
+        };
+      },
+    );
+
+    return {
+      selectedExistingDomainId: null,
+      domainSelectionMode: 'EXISTING',
+      suggestedDomainName: domainNames[0] ?? null,
+      searchQueries,
+      evidenceTargets: domainNames.map((name) => `${name} operational pain`).slice(0, 6),
+      intentConcepts: domainNames,
+      sourceFocus: this.deriveSourceFocusFromKeys(prioritySourceKeys),
+      selectedSourceKeys: prioritySourceKeys,
+      sourcePlans,
+      confidence: 55,
+      aiUsed: false,
+      fallbackUsed: true,
+    };
   }
 
   private buildPlanCacheKey(input: {
@@ -266,34 +383,55 @@ export class RequestCollectionPlanningService {
           generationType: input.generationType,
           userId: input.userId,
           guestSessionId: input.guestSessionId,
-          responseFormat: AiResponseFormat.JSON,
-          responseSchema: buildRequestCollectionPlanSchema(
-            input.sourceCatalog.map((source) => source.key),
-          ),
-          responseSchemaName: REQUEST_COLLECTION_PLAN_SCHEMA_NAME,
+          // PREPARING intentionally requests JSON as plain text and validates it
+          // locally. Provider-native structured schemas are cached differently by
+          // different vendors and used to reject otherwise usable envelopes before
+          // Voxidence can normalize them. The local schema below is static across
+          // requests, while active domain/source membership is checked at runtime.
+          responseFormat: AiResponseFormat.TEXT,
           strategy: AiRoutingStrategy.BALANCED,
           preferredApiModelIds,
-          estimatedOutputTokens: 900,
-          maxOutputTokens: 1_300,
+          estimatedOutputTokens: 600,
+          maxOutputTokens: 1_250,
           temperature: 0.1,
           timeoutMs: REQUEST_COLLECTION_PLAN_TIMEOUT_MS,
           maxRetriesPerModel: 0,
           maxModelsPerOperation: 1,
           excludeLocalFallback: true,
           allowProviderFallbackOnInvalidPrompt: true,
+          // PREPARING uses plain text transport and validates JSON locally. If a
+          // provider reaches MAX_TOKENS after already emitting one complete JSON
+          // object, keep the text so the local parser can still accept it.
+          allowPartialTextOnMaxTokens: true,
           signal: controllers[index]?.signal,
         })
           .then((result) => {
             if (resolved) return;
 
             try {
-              const parsed = JSON.parse(result.text) as Record<string, unknown>;
+              const rawParsed = this.aiResponseParser.parseJson(result.text);
+              const parsed = this.canonicalizeProviderPlan(
+                this.unwrapProviderPlan(rawParsed),
+              );
+              const localValidation = this.aiStructuredOutput.safeValidateSchema<Record<string, unknown>>(
+                JSON.stringify(parsed),
+                buildRequestCollectionPlanSchema(),
+                REQUEST_COLLECTION_PLAN_SCHEMA_NAME,
+              );
+              if (!localValidation.success) {
+                const details = localValidation.issues
+                  .slice(0, 4)
+                  .map((issue) => `${issue.path}: ${issue.message}`)
+                  .join('; ');
+                throw new Error(`PREPARING AI plan failed local schema validation: ${details}`);
+              }
               const planned = this.normalizeAiPlan(
-                parsed,
+                localValidation.data,
                 input.deterministic,
                 input.description,
                 input.domainCatalog,
                 input.sourceCatalog,
+                input.requestedDomainIds ?? [],
               );
               if (planned.fallbackUsed) {
                 finishFailure();
@@ -305,7 +443,7 @@ export class RequestCollectionPlanningService {
                 if (controllerIndex !== index) controller.abort();
               });
               this.logger.log(
-                `Pre-collection AI plan accepted from provider-diverse race. provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${planned.searchQueries.length}.`,
+                `[PREPARING] AI request-understanding/evidence plan accepted from provider-diverse race. provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${planned.searchQueries.length}, sources=${planned.selectedSourceKeys?.length ?? planned.sourcePlans?.length ?? 0}.`,
               );
               resolve(planned);
             } catch (error: unknown) {
@@ -332,23 +470,17 @@ export class RequestCollectionPlanningService {
 
   private buildSystemInstruction(): string {
     return [
-      'You are the semantic domain classifier and external-evidence retrieval planner for software opportunity research.',
-      'The requester description is authoritative. Never copy historical domain vocabulary into the current request unless the same actor, object, workflow, and failure are actually present in the requester text.',
-      'You receive every active visible and hidden domain plus every active, runtime-available data source in this installation.',
-      'DOMAIN REUSE RULE: choose EXISTING only when the same professional actor, the same primary object/record/resource, and the same operational workflow are represented by that domain. A shared broad sector such as education, healthcare, finance, security, manufacturing, restoration, or government is not enough.',
-      'If the object or workflow differs materially, choose NEW even when the actor or broad sector is the same. selectedExistingDomainId must then be null and suggestedDomainName must be a narrow reusable professional domain for the current request.',
-      'Return domainIdentity with concise current-request actor, object, workflow, and failure phrases. existingDomainMatchScore is 0-100 and must reflect exact workflow reuse, not broad topical similarity.',
-      'You own all search-query generation for text-bearing requests. Generate 12-16 current-request queries. Do not reuse stored domain keywords as search queries. They are shown only to judge whether an existing domain is semantically identical.',
-      'Search for external evidence of the problem, not for a software solution. Diversify wording across practitioner terminology, institutional terminology, complaint/report phrasing, incident/case-study language, and one-level-broader same-workflow terminology.',
-      'Every search query must combine at least one actor/object anchor with at least one workflow, failure, or consequence anchor. Never emit keyword-salad fragments such as "media entertainment digital wasted", and never let one rare noun such as "bookplate" stand alone without the commission/revision/approval failure being searched.',
-      'For Reddit and forum queries, prefer natural practitioner phrasing such as "client approved wrong artwork revision" or "custom commission lost revision notes" over broad sector labels. For finance/media requests, search the actual decision failure such as content profitability, production-cost attribution, subscription churn, advertising yield, margin, budgeting, or forecast accuracy when those concepts are present in the request.',
-      'You also own source selection. sourcePlans must use only exact sourceKey values from ACTIVE SOURCE CATALOG. Choose the sources most likely to contain this specific evidence; do not choose a source merely because it is generally popular.',
-      'Prefer community sources with comments for niche practitioner, hobby, repair, restoration, or local-service problems. Prefer research/news sources for institutional, regulatory, public-sector, infrastructure, or documented incident problems. Use technical developer sources only when the requester problem is genuinely about software/API/infrastructure engineering.',
-      'For each selected source, return a sourcePlans entry with 1-5 source-specific queries and optional routingHints. routingHints describe the community, publication, practitioner group, or topical lane that would fit the request. They are hints, never invented evidence.',
-      'Reddit may be available as a public read-only RSS source even without OAuth; when it appears in the active catalog, it is a strong option for niche practitioner/community discussions.',
-      'Forum means the deployed StackExchange/Discourse forum collector, not the whole web. Choose it only when a relevant StackExchange/Discourse-style community is plausible. Do not force Forum for a niche if Reddit is a better fit.',
-      'Evidence targets describe what a real external item would need to mention to support the requester problem. Keep them current-request-specific.',
-      'Intent concepts must compactly cover actor, object/records/resources, workflow/decision, failure mechanism, and consequence.',
+      'You are the PREPARING-stage semantic retrieval planner for software opportunity research.',
+      'The requester description is the source of truth. Understand that concrete problem first; domains are constraints/context only and must never replace the requester problem.',
+      'Return ONLY one compact JSON object. The first non-whitespace character must be { and the last must be }. Never return an array, string, Markdown fence, or wrapper object. Use these exact canonical keys: domainSelectionMode, selectedExistingDomainId, suggestedDomainName, domainIdentity, searchQueries, selectedSourceKeys, confidence. domainIdentity should prefer exactly actor, object, workflow, failure. Do not add prose and do not return problemProfile, evidenceTargets, intentConcepts, sourcePlans, routingHints, or explanations; the runtime derives those locally.',
+      'Canonical example shape: {"domainSelectionMode":"EXISTING","selectedExistingDomainId":"catalog-id","suggestedDomainName":"","domainIdentity":{"actor":"...","object":"...","workflow":"...","failure":"..."},"searchQueries":["query 1","query 2","query 3","query 4","query 5","query 6"],"selectedSourceKeys":["reddit","news","crossref"],"confidence":90}. For NEW use selectedExistingDomainId:"" and a non-empty suggestedDomainName. For EXISTING use the exact catalog id and suggestedDomainName:"". Never return null for these two fields. Keep values short.',
+      'DOMAIN: choose EXISTING only when the active catalog contains the same professional actor, primary object/resource, and operational workflow. Broad-sector similarity is not enough. Otherwise choose NEW. For EXISTING, return the exact catalog id when available. For NEW, return a narrow reusable professional domain name.',
+      'DOMAIN IDENTITY: return concise actor, object, workflow, and failure phrases grounded only in the current requester description.',
+      'QUERIES: return exactly 6 high-signal evidence-search seed queries. Write them like a human would type into Google: short, concrete, natural phrases of 4-9 words. Every query must keep the real actor/object identity plus one workflow or pain mechanism. Never output a consequence by itself, never copy a full sentence, never use meta phrases such as evidence of/reports about/complaints about, and never stuff every request noun into one query. Prefer simple variants that maximize recall while staying on the same causal problem. The runtime will enforce the six-query budget even if you return more.',
+      'SOURCES: select 3-4 exact sourceKey values from ACTIVE SOURCE CATALOG. Prefer community/practitioner sources for niche/local-service workflows and research/news/institutional sources for public-sector or documented operational workflows. IMPORTANT: when a comparable mobile app or workflow tool plausibly exists, include app-store and google-play because USER REVIEWS are valuable problem evidence. Store listing descriptions are discovery metadata only; reviews/comments are the evidence. Use technical developer sources only for genuine software/API/infrastructure problems.',
+      'When requester-selected domains are present, choose the best-matching one of those exact existing domains as the primary domain. Do not create an additional NEW domain from the actor phrase. The description defines actor/object/workflow identity inside the selected domains; evidence still must match that problem identity.',
+      'If this is recovery, materially change wording/source mix while preserving the exact requester problem.',
+      'Be compact: short identity phrases, exactly 6 short queries, source keys only, and confidence. The runtime expands seeds and builds the full plan locally.',
     ].join(' ');
   }
 
@@ -366,14 +498,14 @@ export class RequestCollectionPlanningService {
     const catalogLines = domainCatalog.map((domain) => {
       const visibility = domain.isVisible ? 'VISIBLE' : 'HIDDEN';
       const origin = domain.isAutoGenerated ? 'AUTO' : 'CONFIGURED';
-      const vocabulary = domain.keywords.slice(0, 12).join(', ');
+      const vocabulary = domain.keywords.slice(0, 2).join(', ');
       return `${domain.id} | ${visibility} | ${origin} | ${domain.name}${vocabulary ? ` | HISTORICAL IDENTITY: ${vocabulary}` : ''}`;
     });
     const sourceLines = sourceCatalog.map((source) =>
       [
         source.key,
         source.displayName,
-        source.description,
+        source.description.slice(0, 80),
         `posts=${source.supportsPosts}`,
         `comments=${source.supportsComments}`,
         `region=${source.supportsRegion}`,
@@ -389,13 +521,16 @@ export class RequestCollectionPlanningService {
       'REQUEST DESCRIPTION:',
       description,
       '',
+      'PREPARING CONTRACT:',
+      'Treat the request description as the canonical problem. Return only the compact schema fields. The runtime will derive the full problem profile, evidence targets, intent concepts, source plans, and expanded queries locally.',
+      '',
       'OPTIONAL REQUEST KEYWORDS:',
       keywords.filter(Boolean).slice(0, 12).join(', ') || 'none',
       '',
       'ACTIVE DOMAIN CATALOG (visible + hidden). Historical identity terms are ONLY for exact-domain reuse checking; never copy them into search queries unless they also occur semantically in the current request:',
       catalogLines.join('\n') || 'none',
       '',
-      'REQUESTER-SELECTED DOMAIN CONSTRAINTS (preserve these as explicit cross-domain scope; your semantic home may still be a narrower existing or new hidden domain):',
+      'REQUESTER-SELECTED DOMAIN CONSTRAINTS (authoritative scope: when non-empty, primary domain MUST be one of these exact existing ids; do not create a fourth/new domain):',
       requesterSelectedDomains.map((domain) => `${domain.id} | ${domain.name}`).join('\n') || 'none',
       '',
       'ACTIVE SOURCE CATALOG (these are the only source keys you may select):',
@@ -414,8 +549,8 @@ export class RequestCollectionPlanningService {
         : []),
       '',
       isRecovery
-        ? 'Return a fresh evidence-recovery plan. Prefer unused or higher-fit active sources and source-specific queries. Preserve the exact current-request actor/object/workflow.'
-        : 'Return the first-pass plan. First classify domain identity, then select the exact active source keys, then generate global and source-specific evidence queries. Do not mix historical domain vocabulary into this request.',
+        ? 'Return a compact recovery seed plan: domain identity, exactly 6 materially different evidence-search seeds, 3-4 exact active source keys, and confidence. Preserve the exact requester actor/object/workflow.'
+        : 'Return a compact first-pass seed plan: domain choice + domain identity + exactly 6 strong evidence-search seeds + 3-4 exact active source keys + confidence. Do not return derived fields or source-specific subplans.',
     ].join('\n');
   }
 
@@ -453,12 +588,169 @@ export class RequestCollectionPlanningService {
     return selectedExistingDomainId ? 'EXISTING' : 'NEW';
   }
 
+  /**
+   * Normalizes harmless provider field-name variation before the semantic
+   * planner contract is evaluated. Provider-side JSON validation is purposely
+   * tolerant; this method converts every accepted alias into the canonical
+   * shape used by the rest of the pipeline.
+   */
+  private unwrapProviderPlan(value: unknown): Record<string, unknown> {
+    if (Array.isArray(value)) {
+      if (value.length !== 1 || !this.isRecord(value[0])) {
+        throw new Error('PREPARING AI returned an unsupported JSON array envelope.');
+      }
+      return value[0];
+    }
+
+    if (!this.isRecord(value)) {
+      throw new Error('PREPARING AI response root is not an object.');
+    }
+
+    for (const key of ['plan', 'result'] as const) {
+      const nested = value[key];
+      if (this.isRecord(nested)) return nested;
+    }
+
+    return value;
+  }
+
+  private canonicalizeProviderPlan(
+    parsed: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const readString = (...values: unknown[]): string | null => {
+      for (const value of values) {
+        if (typeof value !== 'string') continue;
+        const normalized = value.replace(/\s+/gu, ' ').trim();
+        if (normalized) return normalized;
+      }
+      return null;
+    };
+    const readArray = (...values: unknown[]): unknown[] | null => {
+      for (const value of values) {
+        if (Array.isArray(value) && value.length > 0) return value;
+      }
+      return null;
+    };
+    const readNumber = (...values: unknown[]): number | null => {
+      for (const value of values) {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (typeof value === 'string' && value.trim()) {
+          const parsedValue = Number(value);
+          if (Number.isFinite(parsedValue)) return parsedValue;
+        }
+      }
+      return null;
+    };
+    const joinPhrases = (value: unknown): string | null => {
+      if (typeof value === 'string') return readString(value);
+      if (!Array.isArray(value)) return null;
+      const phrases = value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.replace(/\s+/gu, ' ').trim())
+        .filter(Boolean)
+        .slice(0, 5);
+      return phrases.length > 0 ? phrases.join('; ') : null;
+    };
+
+    const rawIdentity = this.isRecord(parsed.domainIdentity)
+      ? parsed.domainIdentity
+      : this.isRecord(parsed.domain_identity)
+        ? parsed.domain_identity
+        : {};
+    const identity: Record<string, unknown> = {
+      actor: readString(
+        rawIdentity.actor,
+        rawIdentity.primary_actor,
+        rawIdentity.primaryActor,
+        rawIdentity.user,
+        rawIdentity.users,
+      ),
+      object: readString(
+        rawIdentity.object,
+        rawIdentity.primary_object,
+        rawIdentity.primaryObject,
+        rawIdentity.resource,
+        rawIdentity.record,
+      ),
+      workflow: readString(
+        rawIdentity.workflow,
+        rawIdentity.workflow_phrase,
+        rawIdentity.workflowPhrase,
+        rawIdentity.process,
+      ),
+      failure: readString(
+        rawIdentity.failure,
+        rawIdentity.failure_phrase,
+        rawIdentity.failurePhrase,
+      ) ?? joinPhrases(
+        rawIdentity.failure_phrases ?? rawIdentity.failurePhrases ?? rawIdentity.failures,
+      ),
+    };
+
+    const selectedExistingDomainId = readString(
+      parsed.selectedExistingDomainId,
+      parsed.domainId,
+      parsed.selectedDomainId,
+      parsed.selected_domain_id,
+    );
+    const suggestedDomainName = readString(
+      parsed.suggestedDomainName,
+      parsed.domainName,
+      parsed.selectedDomainName,
+      parsed.selected_domain_name,
+    );
+    const searchQueries = readArray(
+      parsed.searchQueries,
+      parsed.search_queries,
+      parsed.queries,
+    );
+    const selectedSourceKeys = readArray(
+      parsed.selectedSourceKeys,
+      parsed.selected_source_keys,
+      parsed.sourceKeys,
+      parsed.sources,
+    );
+    const confidence = readNumber(
+      parsed.confidence,
+      parsed.confidenceScore,
+      parsed.confidence_score,
+    );
+    const existingDomainMatchScore = readNumber(
+      parsed.existingDomainMatchScore,
+      parsed.domainMatchScore,
+      parsed.domain_match_score,
+    );
+
+    const explicitMode = readString(
+      parsed.domainSelectionMode,
+      parsed.domain_selection_mode,
+      parsed.selectionMode,
+    );
+    const inferredMode = selectedExistingDomainId ? 'EXISTING' : suggestedDomainName ? 'NEW' : null;
+
+    return {
+      domainSelectionMode: explicitMode ?? inferredMode ?? 'NEW',
+      selectedExistingDomainId: selectedExistingDomainId ?? '',
+      suggestedDomainName: suggestedDomainName ?? '',
+      domainIdentity: {
+        actor: readString(identity.actor) ?? '',
+        object: readString(identity.object) ?? '',
+        workflow: readString(identity.workflow) ?? '',
+        failure: readString(identity.failure) ?? '',
+      },
+      searchQueries: searchQueries ?? [],
+      selectedSourceKeys: selectedSourceKeys ?? [],
+      confidence: confidence ?? 0,
+    };
+  }
+
   private normalizeAiPlan(
     parsed: Record<string, unknown>,
     fallback: RequestCollectionPlan,
     description: string,
     domainCatalog: readonly RequestDomainCatalogEntry[],
     sourceCatalog: readonly RequestSourceCatalogEntry[],
+    requestedDomainIds: readonly string[] = [],
   ): RequestCollectionPlan {
     const rawSelectedDomainId =
       typeof parsed.selectedExistingDomainId === 'string'
@@ -469,9 +761,14 @@ export class RequestCollectionPlanningService {
       rawSelectedDomainId,
     );
     const domainIdentity = this.normalizeDomainIdentity(parsed.domainIdentity, description);
+    const problemProfile = this.normalizeProblemProfile(
+      parsed.problemProfile,
+      description,
+      domainIdentity,
+    );
     const existingDomainMatchScore = this.normalizeScore(
       parsed.existingDomainMatchScore,
-      rawSelectionMode === 'EXISTING' ? 0 : 100,
+      rawSelectionMode === 'EXISTING' ? 100 : 0,
     );
 
     const catalogById = new Map(domainCatalog.map((domain) => [domain.id, domain] as const));
@@ -502,13 +799,21 @@ export class RequestCollectionPlanningService {
       ),
     );
 
-    const normalizedAiDomainName = this.normalizeDomainName(
-      typeof parsed.suggestedDomainName === 'string'
-        ? parsed.suggestedDomainName
-        : null,
-      null,
-      description,
-    );
+    const normalizedAiDomainName = rawSelectionMode === 'NEW'
+      ? this.normalizeNewAiDomainName(
+          typeof parsed.suggestedDomainName === 'string'
+            ? parsed.suggestedDomainName
+            : null,
+          domainIdentity,
+          description,
+        )
+      : this.normalizeDomainName(
+          typeof parsed.suggestedDomainName === 'string'
+            ? parsed.suggestedDomainName
+            : null,
+          null,
+          description,
+        );
     const semanticNewDomainName =
       normalizedAiDomainName &&
       (!requestedExistingDomain ||
@@ -518,72 +823,191 @@ export class RequestCollectionPlanningService {
         : this.composeDomainNameFromIdentity(domainIdentity) ??
           normalizedAiDomainName ??
           fallback.suggestedDomainName;
-    const domainSelectionMode = reuseExistingDomain ? 'EXISTING' as const : 'NEW' as const;
-    const selectedExistingDomainId = reuseExistingDomain
-      ? requestedExistingDomain!.id
+    const explicitDomains = requestedDomainIds
+      .map((id) => catalogById.get(id))
+      .filter((domain): domain is RequestDomainCatalogEntry => Boolean(domain));
+    const semanticIdentityText = [
+      normalizedAiDomainName ?? '',
+      domainIdentity.actor,
+      domainIdentity.object,
+      domainIdentity.workflow,
+    ]
+      .join(' ')
+      .toLocaleLowerCase();
+    const explicitDomainScore = (domain: RequestDomainCatalogEntry): number =>
+      this.normalizeComparableDomainName(domain.name)
+        .split(/\s+/u)
+        .filter((token) => token.length >= 4)
+        .filter((token) => semanticIdentityText.includes(token)).length;
+    const explicitPrimary = explicitDomains.length > 0
+      ? [...explicitDomains].sort(
+          (left, right) => explicitDomainScore(right) - explicitDomainScore(left),
+        )[0]
       : null;
-    const suggestedDomainName = reuseExistingDomain
-      ? requestedExistingDomain!.name
-      : semanticNewDomainName;
+
+    const domainSelectionMode = explicitPrimary || reuseExistingDomain
+      ? 'EXISTING' as const
+      : 'NEW' as const;
+    const selectedExistingDomainId = explicitPrimary?.id ??
+      (reuseExistingDomain ? requestedExistingDomain!.id : null);
+    const suggestedDomainName = explicitPrimary?.name ??
+      (reuseExistingDomain ? requestedExistingDomain!.name : semanticNewDomainName);
 
     const rawAiQueries = this.filterAiQueriesForRequest(
-      this.normalizeQueries(parsed.searchQueries, 16),
+      this.normalizeQueries(parsed.searchQueries, 12),
       description,
     );
-    const searchQueries = this.deduplicatePhrases(
-      this.rankAiQueriesForRequest(rawAiQueries, description),
-    ).slice(0, 16);
-    if (searchQueries.length < 6) {
-      return fallback;
-    }
-
-    const evidenceTargets = this.normalizeStrings(
-      parsed.evidenceTargets,
-      8,
-      6,
-      120,
-    ).filter((target) =>
-      RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, target),
+    /*
+     * The model owns retrieval wording, but the runtime enforces the budget.
+     * Providers occasionally return 9-12 queries despite the prompt. Sending
+     * all of them downstream made every collector fan out into long, noisy
+     * query ledgers. Rank AI seeds first, then fill only missing slots with
+     * request-derived atomic phrases. The final first-pass contract is EXACTLY
+     * six short queries.
+     */
+    const rankedAiQueries = this.rankAiQueriesForRequest(
+      rawAiQueries,
+      description,
     );
-    if (evidenceTargets.length < 3) {
-      return fallback;
-    }
+    // An accepted AI plan is authoritative for query wording. If the model
+    // did not return the six grounded queries required by the contract, reject
+    // this response and use the normal fallback path instead of silently mixing
+    // deterministic phrases into an AI-owned plan.
+    const searchQueries = this.deduplicatePhrases(rankedAiQueries).slice(0, 6);
+    if (searchQueries.length < 6) return fallback;
 
-    const intentConcepts = this.normalizeStrings(
-      parsed.intentConcepts,
-      10,
-      3,
-      100,
-    ).filter((concept) =>
-      RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, concept),
-    );
-    if (intentConcepts.length < 3) {
-      return fallback;
-    }
+    const evidenceTargets = this.deduplicatePhrases([
+      ...problemProfile.failureModes,
+      ...problemProfile.consequences,
+      ...fallback.evidenceTargets,
+    ])
+      .filter((target) =>
+        RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, target),
+      )
+      .slice(0, 8);
+    if (evidenceTargets.length < 3) return fallback;
+
+    const intentConcepts = this.deduplicatePhrases([
+      problemProfile.actor,
+      problemProfile.object,
+      problemProfile.coreProblem,
+      problemProfile.workflow,
+      ...problemProfile.failureModes,
+      ...problemProfile.consequences,
+      ...fallback.intentConcepts,
+    ])
+      .filter((concept) =>
+        RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, concept),
+      )
+      .slice(0, 10);
+    if (intentConcepts.length < 3) return fallback;
 
     const activeSourceKeys = new Set(sourceCatalog.map((source) => source.key));
     const selectedSourceKeys = this.normalizeSourceKeys(
       parsed.selectedSourceKeys,
       activeSourceKeys,
     );
-    const sourcePlans = this.normalizeSourcePlans(
-      parsed.sourcePlans,
-      selectedSourceKeys,
-      activeSourceKeys,
-      description,
-    );
-    const sourcePlanKeys = sourcePlans.map((plan) => plan.sourceKey);
+    const technicalRequest =
+      /\b(?:api|sdk|source code|repository|github|webhook|endpoint|database schema|firmware integration|docker|kubernetes|programming|developer|software engineering)\b/iu.test(description) ||
+      /\b(?:software|application|app|server|container|node|javascript|typescript|python|java)\s+runtime\b|\bruntime\s+(?:error|exception|environment|version|dependency|crash)\b/iu.test(description);
+    const technicalOnlyKeys = new Set([
+      'github',
+      'stackoverflow',
+      'dev-to',
+      'hacker-news',
+      'product-hunt',
+    ]);
+    const restorationOrCraftRequest =
+      /\b(?:restoration|restore|repair specialist|repair specialists|cobbler|conservator|conservation|refinishing|artisan|craft|workshop)\w*\b/iu.test(description) &&
+      /\b(?:condition|damage|previous repairs?|materials?|color matching|colour matching|customer preferences?|customer requests?|notes?|photographs?|samples?|history|stitching|sole|finish|rework)\w*\b/iu.test(description);
+    const specialistConservationRequest =
+      /\b(?:conservators?|conservation specialists?|restoration specialists?|restorers?|pottery|ceramic(?:s)?|porcelain|artifacts?|artworks?|museum|heritage|manuscripts?|books?)\b/iu.test(description) &&
+      /\b(?:restoration|conservation|condition reports?|condition|damage|cracks?|missing fragments?|previous repairs?|treatment history|restoration history|materials?|glaze|color matching|colour matching|preservation|documentation|records?|photographs?|samples?)\b/iu.test(description);
+    const clinicalPractitionerRequest =
+      /\b(?:sports rehabilitation|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|clinics?|clinical)\b/iu.test(description) &&
+      /\b(?:athletes?|patients?|recovery|rehabilitation|wearable|pain reports?|mobility|therapy|therapist|remote monitoring|reinjury|return to play)\b/iu.test(description);
+    const reviewStoresUseful = this.shouldUseReviewStores(description);
+    const institutionalPublicWorkflow =
+      /\b(?:smart cit(?:y|ies)|municipal|municipality|city government|local authority|public transit|public transportation|public utility|government agency|government agencies|public sector)\b/iu.test(description);
+    const emergencyPublicLogisticsWorkflow =
+      /\b(?:government agenc(?:y|ies)|public sector|public authorit(?:y|ies)|emergency management|disaster response|humanitarian)\b/iu.test(description) &&
+      /\b(?:emergency supplies?|relief supplies?|humanitarian logistics|disaster logistics|inventory|warehouse|transportation availability|regional demand|resource allocation|distribution|shipments?|shortages?)\b/iu.test(description);
+    const reviewStorePriority = reviewStoresUseful && !emergencyPublicLogisticsWorkflow
+      ? institutionalPublicWorkflow
+        ? ['google-play']
+        : ['google-play', 'app-store']
+      : [];
+    const workflowArchetype = RequestWorkflowArchetypeUtil.classify({
+      requestDescription: description,
+      plannedQueries: searchQueries,
+    }).archetype;
+    const transactionAccountAbuse =
+      workflowArchetype === 'TRANSACTION_ACCOUNT_ABUSE_OPERATIONS';
+    const portfolioPriority = emergencyPublicLogisticsWorkflow
+      ? ['news', 'crossref', 'gdelt', 'forum', 'reddit', 'youtube', 'blog']
+      : transactionAccountAbuse
+      ? institutionalPublicWorkflow
+        ? ['news', 'crossref', 'gdelt', 'forum', 'reddit', ...reviewStorePriority, 'youtube', 'blog']
+        : ['reddit', 'news', 'crossref', 'forum', ...reviewStorePriority, 'gdelt', 'youtube', 'blog']
+      : specialistConservationRequest
+        ? ['crossref', 'forum', 'blog', 'youtube', 'reddit', 'news', 'gdelt']
+        : restorationOrCraftRequest
+          ? ['reddit', 'forum', ...reviewStorePriority, 'news', 'youtube', 'blog', 'crossref', 'gdelt']
+        : clinicalPractitionerRequest
+          ? ['crossref', 'reddit', 'news', 'forum', 'gdelt', 'youtube', 'blog']
+          : ['reddit', 'news', 'crossref', ...reviewStorePriority, 'forum', 'gdelt', 'youtube', 'blog'];
+    const desiredPortfolioSize = 4;
     const effectiveSourceKeys = this.deduplicatePhrases([
       ...selectedSourceKeys,
-      ...sourcePlanKeys,
+      // The AI chooses sources first. When the request describes a workflow
+      // that commonly has mobile tools, make both review stores available as
+      // bounded evidence lanes even if one provider omitted them.
+      ...reviewStorePriority,
     ])
       .filter((key) => activeSourceKeys.has(key))
-      .slice(0, 7);
-    if (effectiveSourceKeys.length === 0) {
+      .filter((key) => technicalRequest || !technicalOnlyKeys.has(key))
+      // An AI planner may still request mobile stores for a niche workflow.
+      // Runtime suitability is authoritative so specialist conservation and
+      // other no-analogue workflows do not spend collection slots on stores.
+      .filter((key) =>
+        !emergencyPublicLogisticsWorkflow && reviewStoresUseful
+          ? true
+          : !['app-store', 'google-play'].includes(key),
+      )
+      .filter(
+        (key) =>
+          !clinicalPractitionerRequest ||
+          !['app-store', 'google-play', 'product-hunt'].includes(key),
+      );
+    for (const key of portfolioPriority) {
+      if (effectiveSourceKeys.length >= desiredPortfolioSize) break;
+      if (!activeSourceKeys.has(key) || effectiveSourceKeys.includes(key)) continue;
+      effectiveSourceKeys.push(key);
+    }
+    const boundedEffectiveSourceKeys = reviewStoresUseful
+      ? [
+          ...effectiveSourceKeys
+            .filter((key) => key !== 'app-store' && key !== 'google-play')
+            .slice(0, institutionalPublicWorkflow ? 5 : 4),
+          ...['google-play', 'app-store']
+            .filter((key) => effectiveSourceKeys.includes(key))
+            .slice(0, institutionalPublicWorkflow ? 1 : 2),
+        ].slice(0, 4)
+      : effectiveSourceKeys.slice(0, 4);
+    if (boundedEffectiveSourceKeys.length === 0) {
       return fallback;
     }
 
-    const sourceFocus = this.deriveSourceFocusFromKeys(effectiveSourceKeys);
+    const allRuntimeSourceKeys = this.deduplicatePhrases([
+      ...boundedEffectiveSourceKeys,
+      ...sourceCatalog.map((source) => source.key),
+    ]);
+    const sourcePlans = this.buildRuntimeSourcePlans(
+      allRuntimeSourceKeys,
+      searchQueries,
+      description,
+    );
+    const sourceFocus = this.deriveSourceFocusFromKeys(boundedEffectiveSourceKeys);
     const confidence = this.normalizeScore(parsed.confidence, fallback.confidence);
 
     const plan: RequestCollectionPlan = {
@@ -591,12 +1015,13 @@ export class RequestCollectionPlanningService {
       domainSelectionMode,
       suggestedDomainName,
       domainIdentity,
+      problemProfile,
       existingDomainMatchScore,
       searchQueries,
       evidenceTargets,
       intentConcepts,
       sourceFocus,
-      selectedSourceKeys: effectiveSourceKeys,
+      selectedSourceKeys: boundedEffectiveSourceKeys,
       sourcePlans,
       confidence,
       aiUsed: true,
@@ -877,6 +1302,12 @@ export class RequestCollectionPlanningService {
 
     const plannedText = [
       plan.suggestedDomainName ?? '',
+      plan.problemProfile?.actor ?? '',
+      plan.problemProfile?.object ?? '',
+      plan.problemProfile?.coreProblem ?? '',
+      plan.problemProfile?.workflow ?? '',
+      ...(plan.problemProfile?.failureModes ?? []),
+      ...(plan.problemProfile?.consequences ?? []),
       ...plan.searchQueries,
       ...plan.evidenceTargets,
       ...plan.intentConcepts,
@@ -897,28 +1328,47 @@ export class RequestCollectionPlanningService {
     keywords: readonly string[],
   ): RequestCollectionPlan {
     const combined = `${description} ${keywords.join(' ')}`.trim();
+    const problemProfile = this.buildDeterministicProblemProfile(description);
     const domainName =
       this.inferSpecializedProfessionalDomainName(combined) ??
       inferDominantRequestDomainName(combined) ??
+      this.composeDomainNameFromProblemProfile(problemProfile) ??
       this.inferGenericProfessionalDomainName(combined);
-    const concepts = this.extractConcepts(combined);
-    const searchQueries = this.deduplicatePhrases([
-      ...this.buildRequestQueries(description, concepts),
-      ...RequestDynamicQueryUtil.buildEvidenceFacetQueries({
-        requestDescription: description,
-        intentConcepts: concepts,
-        evidenceTargets: this.buildEvidenceTargets(description, concepts),
-        maxQueries: 10,
-      }),
-    ]).slice(0, 14);
+
+    const searchQueries = CanonicalRequestUnderstandingUtil.buildSearchQueries(
+      problemProfile,
+      6,
+    );
+    const evidenceTargets = this.deduplicatePhrases([
+      ...(problemProfile.evidenceFacets ?? []),
+      ...problemProfile.failureModes,
+      ...problemProfile.consequences,
+    ]).slice(0, 8);
+    const intentConcepts = this.deduplicatePhrases([
+      problemProfile.actor,
+      ...(problemProfile.actorAliases ?? []),
+      problemProfile.object,
+      ...(problemProfile.objectAliases ?? []),
+      problemProfile.workflow,
+    ]).slice(0, 10);
 
     return {
       selectedExistingDomainId: null,
       domainSelectionMode: 'NEW',
       suggestedDomainName: domainName,
+      domainIdentity: {
+        actor: problemProfile.actor,
+        object: problemProfile.object,
+        workflow: problemProfile.workflow,
+        failure:
+          problemProfile.friction ??
+          problemProfile.failureModes[0] ??
+          problemProfile.coreProblem,
+      },
+      problemProfile,
       searchQueries,
-      evidenceTargets: this.buildEvidenceTargets(description, concepts),
-      intentConcepts: concepts.slice(0, 8),
+      evidenceTargets,
+      intentConcepts,
       sourceFocus: this.inferSourceFocus(description),
       confidence: domainName ? 78 : 62,
       aiUsed: false,
@@ -927,13 +1377,133 @@ export class RequestCollectionPlanningService {
   }
 
 
+  private buildFallbackHighSignalQueries(
+    description: string,
+    profile: RequestCanonicalProblemProfile,
+  ): string[] {
+    const normalizedDescription = description.toLocaleLowerCase();
+    const publicHealthDemandCapacityRequest =
+      /\b(?:urban healthcare networks?|healthcare networks?|hospital networks?|emergency departments?|ambulance services?|clinics?)\b/u.test(normalizedDescription) &&
+      /\b(?:patient demand|hospital capacity|ambulance availability|overcrowded emergency rooms?|resource allocation|response times?|delayed patient care)\b/u.test(normalizedDescription);
+    if (publicHealthDemandCapacityRequest) {
+      return [
+        'emergency department patient demand hospital capacity',
+        'ambulance availability hospital capacity patient demand',
+        'emergency departments overcrowded ambulance response times',
+        'hospital capacity regional health reports patient demand',
+        'ambulance services traffic conditions patient demand',
+        'hospital capacity resource allocation delayed patient care',
+        'healthcare networks patient demand resource allocation',
+        'emergency rooms patient demand delayed patient care',
+      ];
+    }
+
+    const niche = RequestNicheCustomCraftUtil.resolve(description);
+    if (niche) {
+      return this.deduplicateQueries([
+        ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'reddit'),
+        ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'crossref'),
+        ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'news'),
+      ]).slice(0, 10);
+    }
+
+    const compact = (value: string, maxWords: number): string =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
+        .replace(/\b(?:however|often|frequently|usually|increasingly|rely|relies|reviewed|managed|separately|making|difficult|determine|whether|caused|information|records|data|such|as|and|or|the|a|an|of|to|for|with|across)\b/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean)
+        .slice(0, maxWords)
+        .join(' ');
+
+    const actor = compact(profile.actor, 3);
+    const normalized = description.replace(/\s+/gu, ' ').trim();
+    const fragmentedSubject = normalized.match(
+      /([^.!?]{8,220}?)\s+(?:are|is)\s+(?:often\s+|frequently\s+|usually\s+)?(?:reviewed|managed|analy[sz]ed|stored|tracked)\s+separately/iu,
+    )?.[1]?.trim() ?? '';
+    const enumeratedObjects = fragmentedSubject
+      ? fragmentedSubject
+          .replace(/^.*?\b(?:however|but)\b[:,]?\s*/iu, '')
+          .split(/,|\band\b/iu)
+          .map((value) => compact(value, 3))
+          .filter((value) => value.split(/\s+/u).length >= 1)
+          .slice(0, 5)
+      : [];
+
+    const objects = this.deduplicatePhrases([
+      ...enumeratedObjects,
+      ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(description)
+        .map((value) => compact(value, 3)),
+    ]).filter(Boolean).slice(0, 6);
+    const pains = this.deduplicatePhrases([
+      ...profile.failureModes.map((value) => compact(value, 3)),
+      ...profile.consequences.map((value) => compact(value, 3)),
+    ]).filter(Boolean).slice(0, 6);
+
+    const candidates: string[] = [];
+    const add = (...parts: string[]) => {
+      const query = parts
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(/\s+/u)
+        .slice(0, 9)
+        .join(' ');
+      if (query.split(/\s+/u).length >= 3) candidates.push(query);
+    };
+
+    add(actor, objects[0] ?? '', objects[1] ?? '', pains[0] ?? '');
+    add(actor, objects[0] ?? '', objects[2] ?? '', pains[1] ?? pains[0] ?? '');
+    add(actor, objects[1] ?? objects[0] ?? '', pains[2] ?? pains[0] ?? '');
+    add(actor, objects[2] ?? objects[0] ?? '', pains[3] ?? pains[1] ?? '');
+    add(actor, objects[0] ?? '', pains[4] ?? profile.consequences[0] ?? '');
+    add(actor, objects.slice(0, 2).join(' '), profile.consequences[1] ?? '');
+
+    return this.deduplicateQueries(candidates)
+      .filter((query) => RequestQueryProvenanceUtil.isQueryGrounded({
+        requestDescription: description,
+        query,
+      }))
+      .slice(0, 8);
+  }
+
+
   private async loadActiveDomainCatalog(
     language?: LanguageCode,
   ): Promise<RequestDomainCatalogEntry[]> {
+    const cacheKey = language ?? LanguageCode.ANY;
+    const cached = this.domainCatalogCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value.map((entry) => ({ ...entry, keywords: [...entry.keywords] }));
+    }
+    if (cached) this.domainCatalogCache.delete(cacheKey);
+
+    const active = this.domainCatalogInFlight.get(cacheKey);
+    if (active) return active;
+
+    const request = this.loadActiveDomainCatalogUncached(language)
+      .then((value) => {
+        this.domainCatalogCache.set(cacheKey, {
+          expiresAt: Date.now() + REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS,
+          value,
+        });
+        return value;
+      })
+      .finally(() => this.domainCatalogInFlight.delete(cacheKey));
+    this.domainCatalogInFlight.set(cacheKey, request);
+    return request;
+  }
+
+  private async loadActiveDomainCatalogUncached(
+    language?: LanguageCode,
+  ): Promise<RequestDomainCatalogEntry[]> {
     const domains = await this.prisma.domain.findMany({
-      where: {
-        isActive: true,
-      },
+      where: { isActive: true },
       select: {
         id: true,
         name: true,
@@ -943,24 +1513,16 @@ export class RequestCollectionPlanningService {
           ...(language
             ? {
                 where: {
-                  language: {
-                    in: [language, LanguageCode.ANY],
-                  },
+                  language: { in: [language, LanguageCode.ANY] },
                 },
               }
             : {}),
-          select: {
-            keyword: true,
-          },
-          orderBy: {
-            createdAt: 'asc',
-          },
-          take: 12,
+          select: { keyword: true },
+          orderBy: { createdAt: 'asc' },
+          take: 6,
         },
       },
-      orderBy: {
-        name: 'asc',
-      },
+      orderBy: { name: 'asc' },
     });
 
     return domains
@@ -975,18 +1537,32 @@ export class RequestCollectionPlanningService {
   }
 
   private async loadActiveSourceCatalog(): Promise<RequestSourceCatalogEntry[]> {
+    if (this.sourceCatalogCache && this.sourceCatalogCache.expiresAt > Date.now()) {
+      return this.sourceCatalogCache.value.map((entry) => ({ ...entry }));
+    }
+    if (this.sourceCatalogInFlight) return this.sourceCatalogInFlight;
+
+    this.sourceCatalogInFlight = this.loadActiveSourceCatalogUncached()
+      .then((value) => {
+        this.sourceCatalogCache = {
+          expiresAt: Date.now() + REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS,
+          value,
+        };
+        return value;
+      })
+      .finally(() => {
+        this.sourceCatalogInFlight = null;
+      });
+    return this.sourceCatalogInFlight;
+  }
+
+  private async loadActiveSourceCatalogUncached(): Promise<RequestSourceCatalogEntry[]> {
     const runtimeAvailableKeys = new Set(
       this.collectorsFactory.getRuntimeAvailableSourceKeys(),
     );
     const sources = await this.prisma.dataSource.findMany({
       where: {
         isActive: true,
-        // Runtime implementation is authoritative here. Older deployments may
-        // still carry a stale isImplemented=false flag for a collector that is
-        // actually registered and executable (notably Reddit before the public
-        // RSS path was enabled). The selection service repairs that metadata,
-        // but planning must not hide a real active collector while waiting for
-        // that repair to run.
         key: { in: [...runtimeAvailableKeys] },
       },
       select: {
@@ -1021,7 +1597,7 @@ export class RequestCollectionPlanningService {
       reddit:
         'Public Reddit community discussions. OAuth is used when configured; otherwise the collector uses public read-only RSS feeds. Strong for niche practitioner, repair, hobby, service, complaint, and lived-experience evidence.',
       forum:
-        'Deployed StackExchange and configured Discourse forums only, not arbitrary web forums. Use when a relevant StackExchange/Discourse-style community is plausible; avoid forcing it for a niche that fits Reddit better.',
+        'StackExchange/configured Discourse plus bounded site-restricted search for concrete specialist forum domains supplied as routing hints. Strong for niche professional communities when the planner can name a real forum/domain.',
       news:
         'Current public news and publisher reports. Strong for incidents, institutions, government, public operations, fraud, disruptions, and documented cases.',
       gdelt:
@@ -1072,6 +1648,43 @@ export class RequestCollectionPlanningService {
     };
   }
 
+  /**
+   * Ensures deterministic PREPARING fallback is still a complete collection
+   * plan. Previously generic requests (for example Finance) could return
+   * plannedSources=0 whenever every AI lane failed, which made the fallback
+   * materially weaker than the AI path.
+   */
+  private decorateFallbackSourceSelection(
+    plan: RequestCollectionPlan,
+    sourceCatalog: readonly RequestSourceCatalogEntry[],
+    description: string,
+  ): RequestCollectionPlan {
+    const activeKeys = sourceCatalog.map((source) => source.key);
+    const active = new Set(activeKeys);
+    const existing = this.normalizeSourceKeys(plan.selectedSourceKeys, active);
+    const selected = existing.length > 0
+      ? existing.slice(0, 4)
+      : CanonicalRequestUnderstandingUtil.recommendSourceKeys(
+          description,
+          activeKeys,
+          4,
+        );
+
+    const priority = selected.length > 0 ? selected : activeKeys.slice(0, 4);
+    const allActive = this.deduplicatePhrases([...priority, ...activeKeys]);
+    return {
+      ...plan,
+      selectedSourceKeys: priority,
+      sourcePlans: this.buildRuntimeSourcePlans(
+        allActive,
+        plan.searchQueries,
+        description,
+      ),
+      sourceFocus: this.deriveSourceFocusFromKeys(priority),
+    };
+  }
+
+
   private normalizeComparableDomainName(value: string): string {
     return value
       .normalize('NFKC')
@@ -1091,6 +1704,14 @@ export class RequestCollectionPlanningService {
       /\b(?:unauthorized access|unauthorised access|manipulation|tamper(?:ing|ed)?|access logs?|document histor(?:y|ies)|employee activity|security alerts?|suspicious changes?|who accessed|incident investigation|audit trail)\b/u.test(normalized)
     ) {
       return 'Government Record Security & Integrity Operations';
+    }
+
+    if (
+      /\b(?:public transportation authorities?|public transport authorities?|transit agencies?|transportation authorities?|municipal transit|city transit|bus operators?|public transport operators?)\b/u.test(normalized) &&
+      /\b(?:road closures?|accidents?|large events?|special events?|passenger demand|demand surges?|service disruptions?|overcrowded vehicles?|overcrowding|rerout(?:e|ing)|long delays?|incident response)\b/u.test(normalized) &&
+      /\b(?:traffic conditions?|vehicle locations?|passenger volumes?|route schedules?|incident reports?|separate systems?|fragmented systems?|adjusted routes?|route adjustments?)\b/u.test(normalized)
+    ) {
+      return 'Public Transit Disruption & Route Response Operations';
     }
 
     if (
@@ -1258,9 +1879,13 @@ export class RequestCollectionPlanningService {
       return 'Calligraphy Commission & Design Management';
     }
 
+    const nicheCraftDomainName = RequestNicheCustomCraftUtil.suggestedDomainName(normalized);
+    if (nicheCraftDomainName) {
+      return nicheCraftDomainName;
+    }
+
     if (
-      /\b(?:violin bow technicians?|bow technicians?|bow makers?|archetiers?|bow repairers?|bow rehair(?:ing)? specialists?)\b/u.test(normalized) &&
-      /\b(?:bow condition|rehair(?:ing)? dates?|hair type|grip|winding|repair notes?|customer preferences?|service history|rehairing)\b/u.test(normalized)
+      RequestNicheCustomCraftUtil.isViolinBowServiceRequest(normalized)
     ) {
       return 'Violin Bow Service History & Rehair Management';
     }
@@ -1331,7 +1956,10 @@ export class RequestCollectionPlanningService {
     }
 
     if (
-      /\b(?:shipment|shipments|chain of custody|handover records?|customs checkpoints?|carriers?|high-value goods|high value goods)\b/u.test(
+      /\b(?:shipment|shipments|cargo|parcel|parcels|carrier|carriers|warehouse|warehouses|high-value goods|high value goods)\b/u.test(
+        normalized,
+      ) &&
+      /\b(?:traceability|chain of custody|custody trail|handover records?|handoff records?|customs checkpoints?|proof of delivery|tracking provenance|tamper(?:ing)?|transfer verification)\b/u.test(
         normalized,
       )
     ) {
@@ -1463,7 +2091,10 @@ export class RequestCollectionPlanningService {
     }
 
     if (
-      /\b(?:shipment|shipments|chain of custody|handover records?|customs checkpoints?|carriers?|high-value goods|high value goods)\b/u.test(
+      /\b(?:shipment|shipments|cargo|parcel|parcels|carrier|carriers|warehouse|warehouses|high-value goods|high value goods)\b/u.test(
+        normalized,
+      ) &&
+      /\b(?:traceability|chain of custody|custody trail|handover records?|handoff records?|customs checkpoints?|proof of delivery|tracking provenance|tamper(?:ing)?|transfer verification)\b/u.test(
         normalized,
       )
     ) {
@@ -1667,6 +2298,25 @@ export class RequestCollectionPlanningService {
         'municipal energy consumption service demand weather correlation',
         'urban energy inefficient consumption overloaded infrastructure',
         'smart city electricity demand service interruptions energy costs',
+      ];
+    }
+
+    if (
+      /\b(?:public transportation authorities?|public transport authorities?|transit agencies?|transportation authorities?|municipal transit|city transit|bus operators?|public transport operators?)\b/u.test(normalized) &&
+      /\b(?:road closures?|accidents?|large events?|special events?|passenger demand|demand surges?|service disruptions?|overcrowded vehicles?|overcrowding|rerout(?:e|ing)|long delays?|incident response)\b/u.test(normalized) &&
+      /\b(?:traffic conditions?|vehicle locations?|passenger volumes?|route schedules?|incident reports?|separate systems?|fragmented systems?|adjusted routes?|route adjustments?)\b/u.test(normalized)
+    ) {
+      return [
+        'public transit road closure accident route adjustment delay',
+        'transit agency passenger demand surge overcrowding rerouting',
+        'bus route disruption road incident passenger volume response',
+        'public transportation incident response vehicle location route schedule',
+        'transit operations fragmented traffic vehicle passenger incident data',
+        'transport authority large event passenger surge service disruption',
+        'bus overcrowding delayed rerouting road closure passenger demand',
+        'transit dispatcher route prioritization accident closure passenger volume',
+        'public transport service disruption incident report route adjustment',
+        'transit agency sudden passenger demand route capacity delay',
       ];
     }
 
@@ -2036,9 +2686,16 @@ export class RequestCollectionPlanningService {
       ];
     }
 
+    const nicheCraftQueries = RequestNicheCustomCraftUtil.buildSourceQueries(
+      normalized,
+      'generic',
+    );
+    if (nicheCraftQueries.length > 0) {
+      return nicheCraftQueries;
+    }
+
     if (
-      /\b(?:violin bow technicians?|bow technicians?|bow makers?|archetiers?|bow repairers?|bow rehair(?:ing)? specialists?)\b/u.test(normalized) &&
-      /\b(?:bow condition|rehair(?:ing)? dates?|hair type|grip|winding|repair notes?|customer preferences?|service history|rehairing)\b/u.test(normalized)
+      RequestNicheCustomCraftUtil.isViolinBowServiceRequest(normalized)
     ) {
       return [
         'violin bow rehair tracking paper records',
@@ -2574,6 +3231,19 @@ export class RequestCollectionPlanningService {
     }
 
     if (
+      /\b(?:public transportation authorities?|public transport authorities?|transit agencies?|transportation authorities?|municipal transit|city transit|bus operators?|public transport operators?)\b/u.test(normalized) &&
+      /\b(?:road closures?|accidents?|large events?|special events?|passenger demand|demand surges?|service disruptions?|overcrowded vehicles?|overcrowding|rerout(?:e|ing)|long delays?|incident response)\b/u.test(normalized) &&
+      /\b(?:traffic conditions?|vehicle locations?|passenger volumes?|route schedules?|incident reports?|separate systems?|fragmented systems?|adjusted routes?|route adjustments?)\b/u.test(normalized)
+    ) {
+      targets.push(
+        'public-transit operator or authority reports where road closures, crashes, major events, or sudden passenger-demand changes disrupted normal route service',
+        'transit operations evidence showing traffic conditions, vehicle locations, passenger loads, route schedules, and incident reports were difficult to reconcile during disruption response',
+        'bus or rail service reports describing overcrowding, long delays, slow or inefficient rerouting, or difficulty prioritizing which routes to adjust after an incident',
+        'transit-dispatch or mobility-operations evidence linking passenger surges or corridor incidents to route-capacity decisions and poor passenger experience',
+      );
+    }
+
+    if (
       /\b(?:urban transportation agencies?|transportation agencies?|transit agencies?|city transport(?:ation)? departments?|municipal transport(?:ation)?|public transport(?:ation)? authorities?|urban mobility agencies?)\b/u.test(normalized) &&
       /\b(?:traffic flow|traffic congestion|public transit demand|transit demand|road incidents?|travel times?|route performance|peak hours?|time periods?|bottlenecks?)\b/u.test(normalized) &&
       /\b(?:vehicle emissions?|fuel consumption|air quality|environmental measurements?|longer journeys?|travel time reliability|transportation improvements?)\b/u.test(normalized)
@@ -2896,7 +3566,11 @@ export class RequestCollectionPlanningService {
     if (/\b(?:price|prices|cost|expenses?|budget)\b/u.test(normalized)) {
       targets.push('price, cost, or budget comparison friction');
     }
-    if (/\b(?:availability|schedule|schedules|appointment|appointments|booking|bookings)\b/u.test(normalized)) {
+    if (
+      /\b(?:appointment|appointments|booking|bookings|reservation|reservations|double booking|double bookings|availability conflict|availability conflicts)\b/u.test(
+        normalized,
+      )
+    ) {
       targets.push('availability, scheduling, or booking conflicts');
     }
     if (/\b(?:handover|chain of custody|responsibility|dispute|liability)\b/u.test(normalized)) {
@@ -3431,6 +4105,13 @@ export class RequestCollectionPlanningService {
      * it rejects only ungrounded concept drift and malformed/meta queries.
      * Domain-specific templates are not allowed to rewrite the AI plan.
      */
+    const actorTokens = this.semanticTokens(
+      RequestDynamicQueryUtil.extractActor(description),
+    );
+    const identityTerms = RequestDynamicQueryUtil.extractEvidenceIdentityTerms(
+      description,
+    );
+
     return queries.filter((query) => {
       const normalized = query.replace(/\s+/gu, ' ').trim();
       if (!normalized) return false;
@@ -3444,12 +4125,36 @@ export class RequestCollectionPlanningService {
       }
 
       const words = normalized.split(/\s+/u).filter(Boolean);
-      if (words.length < 2 || words.length > 14) return false;
+      if (words.length < 3 || words.length > 9) return false;
       if (
         /^(?:find|search for|look for|evidence of|examples? of|reports? about|complaints? about)\b/iu.test(
           normalized,
         )
       ) {
+        return false;
+      }
+      if (
+        /^(?:delayed?|higher|lower|inaccurate|inefficient|unnecessary|poor|wrong|missed?|separate(?:ly)?|scattered|fragmented|repeated)\b/iu.test(normalized) &&
+        words.length <= 5
+      ) {
+        return false;
+      }
+
+      const queryTokens = this.semanticTokens(normalized);
+      const actorOverlap = [...actorTokens].filter((token) =>
+        queryTokens.has(token),
+      ).length;
+      const identityOverlap = identityTerms.filter((term) =>
+        queryTokens.has(term),
+      ).length;
+      /*
+       * A first-pass query must retain a distinctive requester identity. This
+       * prevents generic fragments such as "payment customer account refund"
+       * from drifting into banking/tax evidence when the actor is a restaurant
+       * chain, while still allowing short synonym-rich queries that keep two
+       * distinctive object/workflow terms.
+       */
+      if (actorOverlap < 1 && identityOverlap < 2) {
         return false;
       }
 
@@ -3634,6 +4339,181 @@ export class RequestCollectionPlanningService {
     ).slice(0, maxItems);
   }
 
+  /**
+   * Accepts both the documented string form and harmless provider variants
+   * such as {target:"..."}. The provider schema deliberately permits these
+   * shapes so PREPARING does not throw away a semantically good plan because
+   * one model wrapped a phrase in an object.
+   */
+  private normalizeFlexibleStrings(
+    value: unknown,
+    maxItems: number,
+    minLength: number,
+    maxLength = 180,
+  ): string[] {
+    if (!Array.isArray(value)) return [];
+    const extracted = value.flatMap((item): string[] => {
+      if (typeof item === 'string') return [item];
+      if (!this.isRecord(item)) return [];
+      for (const key of ['target', 'text', 'description', 'evidence', 'signal', 'claim', 'concept', 'value']) {
+        const candidate = item[key];
+        if (typeof candidate === 'string' && candidate.trim()) return [candidate];
+      }
+      return [];
+    });
+    return this.deduplicatePhrases(
+      extracted
+        .map((item) => item.replace(/\s+/gu, ' ').trim().slice(0, maxLength))
+        .filter((item) => item.length >= minLength),
+    ).slice(0, maxItems);
+  }
+
+  private normalizeProblemProfile(
+    value: unknown,
+    description: string,
+    identity: RequestCollectionDomainIdentity,
+  ): RequestCanonicalProblemProfile {
+    const fallback = this.buildDeterministicProblemProfile(description);
+    const record = this.isRecord(value) ? value : {};
+    const scalar = (key: string, fallbackValue: string): string => {
+      const candidate = typeof record[key] === 'string'
+        ? String(record[key]).replace(/\s+/gu, ' ').trim().slice(0, 240)
+        : '';
+      if (
+        candidate &&
+        RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, candidate)
+      ) {
+        return candidate;
+      }
+      return fallbackValue;
+    };
+    const groundedList = (key: string, fallbackValues: readonly string[]): string[] => {
+      const normalized = this.normalizeFlexibleStrings(record[key], 8, 3, 180)
+        .filter((item) =>
+          RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, item),
+        );
+      return normalized.length > 0 ? normalized : [...fallbackValues];
+    };
+
+    return {
+      actor: scalar('actor', identity.actor || fallback.actor),
+      object: scalar('object', identity.object || fallback.object),
+      coreProblem: scalar('coreProblem', fallback.coreProblem),
+      workflow: scalar('workflow', identity.workflow || fallback.workflow),
+      failureModes: groundedList('failureModes', fallback.failureModes),
+      consequences: groundedList('consequences', fallback.consequences),
+    };
+  }
+
+  private buildDeterministicProblemProfile(
+    description: string,
+  ): RequestCanonicalProblemProfile {
+    return CanonicalRequestUnderstandingUtil.resolve(description);
+  }
+
+
+  private extractProblemConsequences(description: string): string[] {
+    const normalized = description.replace(/\s+/gu, ' ').trim();
+    const match = normalized.match(
+      /\b(?:can\s+lead\s+to|lead\s+to|leads\s+to|can\s+result\s+in|results?\s+in|caus(?:e|es|ing))\s+([^.!?]{5,320})/iu,
+    );
+    if (!match?.[1]) return [];
+    return this.deduplicatePhrases(
+      match[1]
+        .split(/,|;|\band\b/iu)
+        .map((value) => value.replace(/\s+/gu, ' ').trim())
+        .filter((value) => value.length >= 4),
+    ).slice(0, 6);
+  }
+
+  private buildProblemProfileQueries(
+    profile: RequestCanonicalProblemProfile,
+    description: string,
+  ): string[] {
+    const compact = (value: string, maxWords: number): string =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
+        .replace(/\b(?:often|frequently|usually|commonly|struggle|struggles|struggling|difficult|difficulty|analyzing|analysing|managing|manage|because|which|that|these|those|their|with|without|across|separately|frequently)\b/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean)
+        .slice(0, maxWords)
+        .join(' ');
+
+    const actor = compact(profile.actor, 3);
+    const object = compact(profile.object, 4);
+    const workflow = compact(profile.workflow, 4);
+    const failures = profile.failureModes.slice(0, 3).map((item) => compact(item, 3));
+    const consequences = profile.consequences.slice(0, 2).map((item) => compact(item, 2));
+    const candidates = [
+      [actor, object, failures[0]],
+      [actor, workflow, failures[0]],
+      [object, workflow, failures[1]],
+      [actor, object, consequences[0]],
+      [object, failures[1], consequences[1]],
+      [actor, workflow, failures[2]],
+    ]
+      .map((parts) => parts.filter(Boolean).join(' ').split(/\s+/u).slice(0, 9).join(' '))
+      .filter(Boolean);
+
+    return this.deduplicateQueries(candidates)
+      .filter((query) => {
+        const words = query.split(/\s+/u).filter(Boolean);
+        return words.length >= 3 && words.length <= 9 &&
+          RequestQueryProvenanceUtil.isQueryGrounded({
+            requestDescription: description,
+            query,
+          });
+      })
+      .slice(0, 6);
+  }
+
+  private normalizeNewAiDomainName(
+    value: string | null,
+    identity: RequestCollectionDomainIdentity,
+    description: string,
+  ): string | null {
+    const nicheCraftDomainName =
+      RequestNicheCustomCraftUtil.suggestedDomainName(description);
+    if (nicheCraftDomainName) return nicheCraftDomainName;
+
+    const cleaned = value
+      ?.replace(/\s+/gu, ' ')
+      .replace(/[.!?]+$/gu, '')
+      .trim();
+    const identityName = this.composeDomainNameFromIdentity(identity);
+    if (!cleaned) return identityName;
+
+    const restorationRequest =
+      /\b(?:restoration|restore|restorer|restorers|conservation|conservator|repair specialist)\b/iu.test(
+        description,
+      );
+    const restorationLabel =
+      /\b(?:restoration|conservation|repair)\b/iu.test(cleaned);
+    if (restorationRequest && !restorationLabel) {
+      return identityName ?? cleaned;
+    }
+
+    if (!this.domainLabelMatchesRequest(cleaned, description)) {
+      return identityName ?? cleaned;
+    }
+    return cleaned;
+  }
+
+  private composeDomainNameFromProblemProfile(
+    profile: RequestCanonicalProblemProfile,
+  ): string | null {
+    return this.composeDomainNameFromIdentity({
+      actor: profile.actor,
+      object: profile.object,
+      workflow: profile.workflow,
+      failure: profile.failureModes[0] ?? profile.coreProblem,
+    });
+  }
+
   private normalizeDomainIdentity(
     value: unknown,
     description: string,
@@ -3714,6 +4594,19 @@ export class RequestCollectionPlanningService {
   private composeDomainNameFromIdentity(
     identity: RequestCollectionDomainIdentity,
   ): string | null {
+    const actor = identity.actor
+      .replace(/\b(?:independent|professional|professionals|specialist|specialists|practitioner|practitioners|staff|teams?|departments?)\b/giu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const actorWords = actor.split(/\s+/u).filter(Boolean);
+    if (
+      actorWords.length >= 2 &&
+      actorWords.length <= 7 &&
+      !/^(?:users?|people|companies?|businesses?|organizations?)$/iu.test(actor)
+    ) {
+      return this.toTitleCase(actorWords.join(' '));
+    }
+
     const object = identity.object
       .replace(/\b(?:and|or|the|their|records?|information|data)\b/giu, ' ')
       .replace(/\s+/gu, ' ')
@@ -3742,6 +4635,114 @@ export class RequestCollectionPlanningService {
     return output;
   }
 
+  private shouldUseReviewStores(description: string): boolean {
+    const normalized = description.toLocaleLowerCase();
+    if (!normalized.trim()) return false;
+
+    // Reviews are especially useful when end users/operators interact with a
+    // repeatable management, monitoring, approval, booking, finance, asset, or
+    // service workflow for which mobile tools commonly exist. This is a recall
+    // lane only; listings never become trusted evidence by themselves.
+    const workflow = /\b(?:manage|management|monitor|monitoring|track|tracking|schedule|scheduling|booking|appointment|approval|revision|records?|inventory|billing|payment|budget|maintenance|energy|property|tenant|customer|client|delivery|logistics|security|fraud|health|fitness|tattoo|engraving|restaurant|marketplace|workflow)\w*\b/u.test(normalized);
+    const clearlyResearchOnly = /\b(?:laboratory assay|molecular|genome|protein sequence|theorem|pure mathematics|particle physics)\b/u.test(normalized);
+    const specialistConservationWorkflow =
+      /\b(?:restoration specialists?|conservation specialists?|conservators?|restorers?|pottery restoration|ceramic restoration|object conservation|art conservation|luthiers?|violin varnish|museum conservation|heritage conservation)\b/u.test(normalized) &&
+      /\b(?:condition|surface condition|cracks?|missing fragments?|glaze|previous repairs?|previous coatings?|treatment history|restoration history|condition reports?|color matching|colour matching|material choices?|material mixtures?|application techniques?|preservation preferences?|workshop records?|workshop notes?|handwritten notes?|handwritten formulas?|photographs?|physical samples?)\b/u.test(normalized);
+    const mainstreamDigitalAnalogue =
+      /\b(?:booking|appointment|customer orders?|client orders?|inventory|billing|payment|delivery|tenant|property management|restaurant ordering|loyalty accounts?|subscription accounts?|account security|fraud)\b/u.test(normalized);
+    if (specialistConservationWorkflow && !mainstreamDigitalAnalogue) {
+      return false;
+    }
+    return workflow && !clearlyResearchOnly;
+  }
+
+  private buildRuntimeSourcePlans(
+    selectedSourceKeys: readonly string[],
+    searchQueries: readonly string[],
+    description: string,
+  ): RequestCollectionSourcePlan[] {
+    const normalizedQueries = this.deduplicateQueries(searchQueries).slice(0, 20);
+    if (normalizedQueries.length === 0) return [];
+
+    const scoreForSource = (sourceKey: string, query: string): number => {
+      const value = query.toLocaleLowerCase();
+      let score = 0;
+      if (sourceKey === 'reddit' || sourceKey === 'forum') {
+        if (/\b(?:struggle|missing|lost|wrong|failed|problem|issue|delay|rework|customer|client|handoff|scattered|unauthorized|fraud)\w*\b/u.test(value)) score += 4;
+        if (/\b(?:specialist|practitioner|operator|manager|warehouse|restorer|conservator|therapist|driver)\w*\b/u.test(value)) score += 2;
+      } else if (sourceKey === 'crossref') {
+        if (/\b(?:assessment|management|monitoring|records?|documentation|analysis|detection|conservation|rehabilitation|procurement|logistics)\w*\b/u.test(value)) score += 4;
+      } else if (sourceKey === 'news' || sourceKey === 'gdelt') {
+        if (/\b(?:fraud|theft|stolen|missing|unauthorized|incident|delay|investigation|risk|failure|loss|oversight)\w*\b/u.test(value)) score += 4;
+      } else if (sourceKey === 'youtube' || sourceKey === 'blog') {
+        if (/\b(?:repair|restoration|workflow|how|condition|diagnos|treatment|material|tracking|monitoring)\w*\b/u.test(value)) score += 3;
+      } else if (sourceKey === 'app-store' || sourceKey === 'google-play') {
+        // Store search needs product-discovery phrases, not long complaint
+        // sentences. Actor/object and workflow nouns therefore outrank generic
+        // consequences; the collector itself converts them to 2-3 word terms.
+        if (/\b(?:management|manager|monitor|tracking|scheduler|booking|inventory|billing|maintenance|energy|property|tenant|customer|client|delivery|security|tattoo|engraving|workflow)\w*\b/u.test(value)) score += 5;
+        if (/\b(?:wrong|missing|delay|rework|error|problem|issue|approval|revision)\w*\b/u.test(value)) score += 1;
+      }
+      if (RequestQueryProvenanceUtil.isQueryGrounded({
+        requestDescription: description,
+        query,
+      })) score += 3;
+      return score;
+    };
+
+    return selectedSourceKeys.map((sourceKey, sourceIndex) => {
+      if (sourceKey === 'app-store' || sourceKey === 'google-play') {
+        const queries = SourceSpecificEvidenceQueryUtil.compile({
+          sourceKey,
+          baseQueries: normalizedQueries.slice(0, 2),
+          requestDescription: description,
+          maxQueries: 2,
+        });
+        return {
+          sourceKey,
+          queries: queries.length ? queries : normalizedQueries.slice(0, 2),
+          routingHints: [],
+        };
+      }
+
+      const ranked = normalizedQueries
+        .map((query, queryIndex) => ({
+          query,
+          queryIndex,
+          score: scoreForSource(sourceKey, query),
+        }))
+        .sort((left, right) =>
+          right.score - left.score ||
+          ((left.queryIndex + sourceIndex) % normalizedQueries.length) -
+            ((right.queryIndex + sourceIndex) % normalizedQueries.length),
+        )
+        .map((entry) => entry.query);
+
+      const rankedQueries = this.deduplicateQueries([
+        ...ranked.slice(0, 2),
+        normalizedQueries[(sourceIndex * 2) % normalizedQueries.length] ?? '',
+      ])
+        .filter(Boolean)
+        .slice(0, 2);
+      const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
+        sourceKey,
+        baseQueries: rankedQueries,
+        requestDescription: description,
+        maxQueries: 2,
+      });
+      const queries = compiledQueries.length ? compiledQueries : rankedQueries;
+
+      return {
+        sourceKey,
+        queries,
+        routingHints:
+          sourceKey === 'forum'
+            ? this.resolveDeterministicForumRoutingHints(description).slice(0, 4)
+            : [],
+      };
+    }).filter((plan) => plan.queries.length > 0);
+  }
+
   private normalizeSourcePlans(
     value: unknown,
     selectedSourceKeys: readonly string[],
@@ -3765,7 +4766,7 @@ export class RequestCollectionPlanningService {
         this.normalizeQueries(item.queries, 5),
         description,
       ).slice(0, 5);
-      const routingHints = this.normalizeStrings(
+      const aiRoutingHints = this.normalizeStrings(
         item.routingHints,
         4,
         3,
@@ -3773,11 +4774,69 @@ export class RequestCollectionPlanningService {
       ).filter((hint) =>
         RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, hint),
       );
+      const routingHints = sourceKey === 'forum'
+        ? this.uniqueStrings([
+            ...this.resolveDeterministicForumRoutingHints(description),
+            ...aiRoutingHints,
+          ]).slice(0, 4)
+        : aiRoutingHints;
       if (queries.length === 0) continue;
       output.push({ sourceKey, queries, routingHints });
       if (output.length >= 7) break;
     }
 
+    return output;
+  }
+
+  private resolveDeterministicForumRoutingHints(description: string): string[] {
+    const normalized = description
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!normalized) return [];
+
+    const hints: string[] = [];
+    const add = (value: string) => {
+      if (!hints.includes(value)) hints.push(value);
+    };
+
+    if (/\b(?:fountain pen|fountain pens|nib repair|pen restoration|pen repair)\b/u.test(normalized)) {
+      add('https://www.fountainpennetwork.com/forum/');
+    }
+    if (/\b(?:vintage camera|antique camera|film camera|camera restoration|camera repair)\b/u.test(normalized)) {
+      add('https://www.photo.net/forums/');
+    }
+    if (
+      /\b(?:antique|vintage|historic|heirloom)\s+(?:jewelry|jewellery|ring|rings|pendant|bracelet|necklace|brooch)|\b(?:jewelry|jewellery)\s+(?:restoration|repair)|\bbench jeweler\b/u.test(
+        normalized,
+      )
+    ) {
+      add('https://orchid.ganoksin.com/');
+    }
+    if (
+      /\b(?:shoe restoration|shoe repair|shoe repairer|cobbler|cobblers|footwear repair|boot repair|sneaker restoration|leather shoe repair|resoling|re-?soling)\b/u.test(
+        normalized,
+      )
+    ) {
+      add('https://leatherworker.net/forum/');
+    }
+
+    return hints;
+  }
+
+  private uniqueStrings(values: readonly string[]): string[] {
+    const output: string[] = [];
+    const seen = new Set<string>();
+    for (const value of values) {
+      const normalized = value.trim();
+      if (!normalized) continue;
+      const key = normalized.toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(normalized);
+    }
     return output;
   }
 

@@ -113,6 +113,42 @@ export abstract class BaseCollector {
     return BaseCollector.limitContext.run(input.limits ?? {}, operation);
   }
 
+
+  /**
+   * Observes a slow external sub-operation without aborting or discarding it.
+   *
+   * `timeoutMs` is telemetry only. Crossing the soft budget emits a warning,
+   * but the current run still awaits the real result so late App Store / Google
+   * Play reviews are not silently replaced with an empty fallback. External
+   * client failures are still handled by the collector itself, and explicit run
+   * cancellation remains the only generation-level abort path.
+   */
+  protected async settleWithinSoftBudget<T>(
+    operation: Promise<T>,
+    timeoutMs: number,
+    fallback: T,
+    label: string,
+  ): Promise<T> {
+    // Keep the argument for call-site compatibility; soft budgets no longer
+    // substitute fallback data merely because the operation is slow.
+    void fallback;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return operation;
+    }
+
+    const timeoutHandle = setTimeout(() => {
+      this.logger.warn(
+        `${label} crossed soft ${timeoutMs}ms budget; continuing to await the real result without aborting or discarding it.`,
+      );
+    }, timeoutMs);
+
+    try {
+      return await operation;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
   /**
    * Reads a positive numeric configuration value.
    *

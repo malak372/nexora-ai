@@ -255,6 +255,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
           requestDescription: input.requestDescription,
           plannedQueries: input.plannedQueries,
           keywords: input.keywords,
+          authoritativePlannedQueries: input.authoritativePlannedQueries,
         })
           .filter((query) => !attempted.has(this.cleanNormalizedText(query)))
           .slice(0, 2);
@@ -309,11 +310,39 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
         result.status === 'fulfilled' ? [result.value] : [],
       );
 
+      /*
+       * maxSavedComments is historically a per-video cap. For request-driven
+       * generation that allowed a small number of videos to fan out into
+       * hundreds of comments. Apply a second source-wide budget before
+       * persistence so FAST_GENERATION/TARGETED_RECOVERY never inflate the raw
+       * corpus merely because several videos each have useful comments.
+       */
+      const sourceCommentBudget =
+        input.collectionMode === 'FAST_GENERATION'
+          ? Math.min(8, Math.max(2, this.resolveMaxSavedComments(input) * 4))
+          : input.collectionMode === 'TARGETED_RECOVERY'
+            ? Math.min(6, Math.max(2, this.resolveMaxSavedComments(input) * 3))
+            : Number.POSITIVE_INFINITY;
+      let remainingCommentBudget = sourceCommentBudget;
+      const boundedPosts = collectedPosts.map((post) => {
+        if (!Number.isFinite(sourceCommentBudget)) return post;
+        const comments = post.comments.slice(
+          0,
+          Math.max(0, remainingCommentBudget),
+        );
+        remainingCommentBudget -= comments.length;
+        return { ...post, comments };
+      });
+
+      const retainedComments = boundedPosts.reduce(
+        (sum, post) => sum + post.comments.length,
+        0,
+      );
       this.logger.log(
-        `YouTube collection completed. Posts: ${collectedPosts.length}`,
+        `YouTube collection completed. Posts: ${boundedPosts.length} | retainedComments=${retainedComments}`,
       );
 
-      return collectedPosts;
+      return boundedPosts;
     } catch (error: unknown) {
       this.logger.error(
         'YouTube collection failed',
@@ -365,20 +394,38 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
 
   private resolveRateLimitCooldownMs(error: unknown): number {
     const message = this.getErrorMessage(error).toLocaleLowerCase();
+    const responseData =
+      typeof error === 'object' &&
+      error !== null &&
+      'response' in error
+        ? JSON.stringify(
+            (error as { readonly response?: { readonly data?: unknown } }).response
+              ?.data ?? '',
+          ).toLocaleLowerCase()
+        : '';
+    const diagnostic = `${message} ${responseData}`;
     const isRateLimited =
-      message.includes('status code 429') ||
-      message.includes('\"code\":429') ||
-      message.includes('rate_limit_exceeded') ||
-      message.includes('ratelimitexceeded') ||
-      message.includes('resource_exhausted') ||
-      message.includes('quota exceeded');
+      diagnostic.includes('status code 429') ||
+      diagnostic.includes('\"code\":429') ||
+      diagnostic.includes('rate_limit_exceeded') ||
+      diagnostic.includes('ratelimitexceeded') ||
+      diagnostic.includes('resource_exhausted') ||
+      diagnostic.includes('quota exceeded');
 
     if (!isRateLimited) return 0;
 
+    /*
+     * Axios' top-level message is often only "Request failed with status code
+     * 429". Inspect the provider response body as well so the documented
+     * per-day Search Queries quota opens the shared daily circuit rather than
+     * the old 60-second transient circuit.
+     */
     const isDailyQuota =
-      message.includes('per day') ||
-      message.includes('search queries per day') ||
-      message.includes('quota exceeded');
+      diagnostic.includes('per day') ||
+      diagnostic.includes('search queries per day') ||
+      diagnostic.includes('defaultsearchlistperdayperproject') ||
+      diagnostic.includes('quota_unit\":\"1/d') ||
+      diagnostic.includes('quota exceeded for quota metric');
 
     return isDailyQuota
       ? YouTubeCollector.DAILY_QUOTA_COOLDOWN_MS
@@ -437,6 +484,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
         requestDescription: input.requestDescription,
         plannedQueries: input.plannedQueries,
         keywords: input.keywords,
+        authoritativePlannedQueries: input.authoritativePlannedQueries,
       }).slice(0, maximumQueries);
     }
 

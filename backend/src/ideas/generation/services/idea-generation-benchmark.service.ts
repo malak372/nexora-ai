@@ -87,6 +87,7 @@ import {
 } from './idea-quality-evaluator.service';
 import { evaluateRequestIntentAlignment } from '../utils/request-intent-alignment.util';
 import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
+import { SelectedDomainEvidenceAlignmentUtil } from '../utils/selected-domain-evidence-alignment.util';
 
 /**
  * One successfully generated benchmark candidate.
@@ -179,14 +180,17 @@ type AcceptedModelAttempt = {
  * Number of online core models allowed in the first latency-hedged wave.
  *
  * This does not lower the quality gate or increase the number of candidates
- * required for selection. Four provider-diverse requests are allowed to start
- * together so one OpenRouter outage or one slow direct-Google response cannot
- * force deterministic fallback while another healthy online model is idle.
+ * required for selection. Four provider-diverse requests are allowed to start for evidence-backed runs.
+ * Sparse/no-evidence hypotheses start up to three provider-diverse requests in
+ * parallel so one timeout plus one malformed response cannot force an emergency
+ * deterministic fallback while a healthy model is still idle.
  */
-const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 2;
+const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 4;
+const IDEA_BENCHMARK_PRELIMINARY_HEDGE_WIDTH = 3;
 const IDEA_BENCHMARK_CORPUS_WARMUP_BUDGET_MS = 1_200;
 const IDEA_BENCHMARK_DUPLICATE_DB_BUDGET_MS = 1_500;
 const IDEA_BENCHMARK_STRUCTURAL_FALLBACK_SCORE = 40;
+const IDEA_BENCHMARK_PRELIMINARY_FAST_STOP_SCORE = 18;
 const IDEA_BENCHMARK_STRONG_FIRST_WAVE_FALLBACK_SCORE = 58;
 const IDEA_BENCHMARK_STRUCTURAL_FALLBACK_GRACE_MS = 300;
 const IDEA_BENCHMARK_EVIDENCE_BACKED_FAST_STOP_SCORE = 52;
@@ -434,7 +438,7 @@ export class IdeaGenerationBenchmarkService {
         : IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
       const directionAttemptLimit = isNoEvidenceHypothesis
         ? Math.min(
-            attemptedCandidateCount + IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH,
+            attemptedCandidateCount + IDEA_BENCHMARK_PRELIMINARY_HEDGE_WIDTH,
             IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
           )
         : IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS;
@@ -474,7 +478,9 @@ export class IdeaGenerationBenchmarkService {
          */
         const parallelWidth = isInitialWave
           ? Math.min(
-              IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH,
+              isNoEvidenceHypothesis
+                ? IDEA_BENCHMARK_PRELIMINARY_HEDGE_WIDTH
+                : IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH,
               remainingAttemptCount,
               selectedModels.length,
             )
@@ -543,26 +549,16 @@ export class IdeaGenerationBenchmarkService {
           break;
         }
 
-        if (
-          isInitialWave &&
-          acceptedCandidatesForDirection.length === 0
-        ) {
-          const remainingOnlineModelCount = orderedModels.filter(
-            (model) =>
-              !blockedModelIds.has(model.id) &&
-              !attemptedModelIdsForDirection.has(model.id),
-          ).length;
-
-          if (remainingOnlineModelCount > 0) {
-            this.logger.warn(
-              [
-                'The first provider-diverse core-generation wave returned no structurally valid candidate.',
-                `Continuing with up to ${Math.min(remainingOnlineModelCount, IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS - attemptedCandidateCount)} additional online fallback model(s) before deterministic emergency generation.`,
-                `opportunity="${direction.opportunity.title}"`,
-              ].join(' '),
-            );
-            continue;
-          }
+        if (isInitialWave && acceptedCandidatesForDirection.length === 0) {
+          this.logger.warn(
+            [
+              'The single provider-diverse core-generation wave returned no structurally valid candidate.',
+              'Serial provider fallback waves and later opportunity-provider waves are intentionally skipped; the pipeline will move directly to the request-locked local/deterministic emergency path so provider outages cannot multiply latency.',
+              `opportunity="${direction.opportunity.title}"`,
+            ].join(' '),
+          );
+          attemptedCandidateCount = IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS;
+          break;
         }
       }
 
@@ -1043,35 +1039,34 @@ export class IdeaGenerationBenchmarkService {
     const requesterGroundedZeroEvidence = Boolean(
       validationOnly && context.requestDescription?.trim(),
     );
-    const blueprint = validationOnly && !requesterGroundedZeroEvidence
-      ? null
-      : problemFamilyKey === 'application-access-support'
-        ? this.buildApplicationAccessSupportEmergencyBlueprint(
-            domainLabel,
-            problem,
-            evidence,
-          )
-        : aiReferenceLinkReliability
-          ? this.buildAiReferenceLinkReliabilityEmergencyBlueprint(domainLabel)
-        : RequestProductBlueprintUtil.build({
-            requestDescription: context.requestDescription,
-            evidenceDescription: requesterGroundedZeroEvidence
-              ? context.requestDescription
-              : blueprintEvidenceDescription,
-            domainName: context.domainName,
-            opportunityTitle: requesterGroundedZeroEvidence
-              ? null
-              : opportunity?.title,
-            problemFamilyKey: requesterGroundedZeroEvidence
-              ? null
-              : problemFamilyKey,
-            enableEvidenceDerivedFeatureCapability:
-              !context.requestDescription?.trim() &&
-              context.domainResolution?.source === 'USER_SELECTED',
-            enableEvidenceDerivedProblemWorkflow:
-              !context.requestDescription?.trim() &&
-              context.domainResolution?.source === 'USER_SELECTED',
-          });
+    const blueprint = context.requestDescription?.trim()
+      ? this.buildRequestLockedEmergencyBlueprint(
+          context,
+          opportunity,
+          domainLabel,
+          problem,
+        )
+      : validationOnly && !requesterGroundedZeroEvidence
+        ? null
+        : problemFamilyKey === 'application-access-support'
+          ? this.buildApplicationAccessSupportEmergencyBlueprint(
+              domainLabel,
+              problem,
+              evidence,
+            )
+          : aiReferenceLinkReliability
+            ? this.buildAiReferenceLinkReliabilityEmergencyBlueprint(domainLabel)
+            : RequestProductBlueprintUtil.build({
+                requestDescription: context.requestDescription,
+                evidenceDescription: blueprintEvidenceDescription,
+                domainName: context.domainName,
+                opportunityTitle: opportunity?.title,
+                problemFamilyKey,
+                enableEvidenceDerivedFeatureCapability:
+                  context.domainResolution?.source === 'USER_SELECTED',
+                enableEvidenceDerivedProblemWorkflow:
+                  context.domainResolution?.source === 'USER_SELECTED',
+              });
     const title = validationOnly && !blueprint
       ? `${domainLabel} Problem Discovery & Evidence Validation Workspace`
       : blueprint?.title ??
@@ -1092,8 +1087,10 @@ export class IdeaGenerationBenchmarkService {
           opportunity,
           domainLabel,
         );
-    const evidenceQualification = evidence
-      ? 'The direction uses one retained external evidence item as preliminary support and remains unverified until broader direct and independent validation is available.'
+    const verifiedEvidenceCount = this.resolveVerifiedProblemEvidenceCount(opportunity);
+    const verifiedEvidenceSourceCount = this.resolveVerifiedProblemEvidenceSourceCount(opportunity);
+    const evidenceQualification = verifiedEvidenceCount > 0
+      ? `The direction uses ${verifiedEvidenceCount} retained problem-matched external evidence item(s) across ${Math.max(1, verifiedEvidenceSourceCount)} retained source(s) as preliminary support; no direct-user recurrence claim is made unless direct evidence is separately verified.`
       : context.requestDescription?.trim()
         ? 'No independent community evidence survived the bounded collection window, so the requester-provided workflow is preserved explicitly as a validation hypothesis rather than presented as observed market demand.'
         : 'No independent community evidence survived the bounded collection window, so this direction is treated as a preliminary validation hypothesis based on the ranked domain signals rather than proven market demand.';
@@ -1178,6 +1175,90 @@ export class IdeaGenerationBenchmarkService {
             )
           : [],
     };
+  }
+
+
+  /**
+   * Builds the emergency product only from the canonical requester profile.
+   * No evidence-derived category classifier is allowed to replace the user's
+   * actor, object, workflow, failure modes, or consequences on this path.
+   */
+  private buildRequestLockedEmergencyBlueprint(
+    context: IdeaGenerationContext,
+    opportunity: RankedIdeaOpportunity | null,
+    domainLabel: string,
+    problem: string,
+  ): NonNullable<ReturnType<typeof RequestProductBlueprintUtil.build>> {
+    const profile = context.collectionPlan?.problemProfile;
+    const actor = profile?.actor?.trim() || this.resolveEmergencyTargetUsers(context, opportunity, domainLabel)[0] || `${domainLabel} practitioners`;
+    const object = profile?.object?.trim() || domainLabel;
+    const workflow = profile?.workflow?.trim() || problem;
+    const failureModes = (profile?.failureModes ?? []).map((value) => value.trim()).filter(Boolean).slice(0, 5);
+    const consequences = (profile?.consequences ?? []).map((value) => value.trim()).filter(Boolean).slice(0, 4);
+    const familyTitle = opportunity?.title?.trim();
+    const genericFamilyTitle = /^(?:requester-defined workflow opportunity|most-evidenced request problem family)$/iu.test(familyTitle ?? '');
+    const baseTitle = !genericFamilyTitle && familyTitle
+      ? familyTitle
+      : `${domainLabel} ${this.compactEmergencyObjectLabel(object)}`;
+    const title = `${baseTitle.replace(/\b(?:problem|pressure|failures?)\b/giu, '').replace(/\s+/gu, ' ').trim()} Intelligence Workspace`.replace(/\s+/gu, ' ').slice(0, 100);
+    const primaryFailures = failureModes.length > 0 ? failureModes : [problem];
+    const primaryConsequences = consequences.length > 0 ? consequences : ['delayed or lower-quality operational decisions'];
+
+    return {
+      baseLabel: domainLabel,
+      title,
+      workflowFocus: `${workflow}; preserving the requester-defined relationship between ${object} and the observed operational or financial consequences without substituting a different workflow`,
+      targetUsers: [actor, `${domainLabel} operational reviewers and decision owners`],
+      features: [
+        `Unified requester-scope record model for ${object}, with source timestamps, ownership, and traceable changes`,
+        `Cross-signal analysis that connects ${primaryFailures.slice(0, 3).join('; ')} to the exact requester-defined workflow instead of a generic same-domain template`,
+        `Evidence-backed prioritization view that ranks the retained problem facets by impact, source support, and review status while keeping unsupported facets explicitly provisional`,
+        'Human-reviewed action and decision log with provenance, rationale, status history, and auditability for every consequential recommendation',
+      ],
+      objectives: [
+        `Centralize the records required to understand ${workflow}.`,
+        `Measure and compare the requester-defined loss or failure drivers: ${primaryFailures.join('; ')}.`,
+        `Prioritize human-reviewed interventions according to their relationship with ${primaryConsequences.join('; ')} rather than switching to an unrelated product archetype.`,
+        'Establish a pilot baseline and measure directional change in analysis speed, coordination quality, repeated work, and decision traceability without inventing unsupported percentage improvements.',
+      ],
+      databaseEntities: ['Workspace', 'OperationalSignal', 'CostOrImpactRecord', 'EvidenceItem', 'ProblemFacet', 'ReviewDecision', 'AuditEvent'],
+      metrics: [
+        'problem-facet evidence coverage',
+        'time to identify the highest-impact loss or failure driver',
+        'decision traceability and review completion',
+        'repeated-work or unresolved-case trend',
+      ],
+      workflowTerms: [workflow, object, ...primaryFailures].slice(0, 8),
+      painTerms: [...primaryFailures, ...primaryConsequences].slice(0, 8),
+    };
+  }
+
+  private compactEmergencyObjectLabel(value: string): string {
+    const cleaned = value.replace(/\s+/gu, ' ').trim();
+    if (!cleaned) return 'Operations';
+    return cleaned.split(/[;,]/u)[0]?.trim().slice(0, 54) || 'Operations';
+  }
+
+  private resolveVerifiedProblemEvidenceCount(
+    opportunity: RankedIdeaOpportunity | null,
+  ): number {
+    if (!opportunity) return 0;
+    return Math.max(
+      opportunity.verifiedProblemMatchedEvidenceCount ?? 0,
+      opportunity.qualifiedExternalSupportingEvidenceCount ?? 0,
+      (opportunity.supportingEvidence ?? []).filter((item) => item.sourceType !== 'REQUESTER_STATEMENT' && item.sourceType !== 'REQUESTER_DOMAIN_SELECTION' && item.sourceType !== 'PERSONALIZATION_SIGNAL').length,
+    );
+  }
+
+  private resolveVerifiedProblemEvidenceSourceCount(
+    opportunity: RankedIdeaOpportunity | null,
+  ): number {
+    if (!opportunity) return 0;
+    return Math.max(
+      opportunity.verifiedProblemMatchedEvidenceSourceCount ?? 0,
+      opportunity.qualifiedExternalSupportingSourceCount ?? 0,
+      opportunity.verifiedEvidenceSourceCount ?? 0,
+    );
   }
 
 
@@ -1390,8 +1471,11 @@ export class IdeaGenerationBenchmarkService {
           context.opportunityRanking.selected.verifiedEvidenceCount ??
           0) === 0,
     );
-    const evidenceSummary = evidence
-      ? `One retained external evidence item provides preliminary support for the selected direction: ${evidence.slice(0, 700)}`
+    const selectedOpportunity = context.opportunityRanking?.selected ?? null;
+    const verifiedEvidenceCount = this.resolveVerifiedProblemEvidenceCount(selectedOpportunity);
+    const verifiedEvidenceSourceCount = this.resolveVerifiedProblemEvidenceSourceCount(selectedOpportunity);
+    const evidenceSummary = verifiedEvidenceCount > 0
+      ? `${verifiedEvidenceCount} retained problem-matched external evidence item(s) across ${Math.max(1, verifiedEvidenceSourceCount)} retained source(s) provide preliminary support for the selected direction.${evidence ? ` Representative retained evidence: ${evidence.slice(0, 700)}` : ''}`
       : context.requestDescription?.trim()
         ? `No independent community evidence was retained inside the bounded collection window. The requester statement is preserved as the validation hypothesis: ${context.requestDescription.trim().slice(0, 700)}`
         : `No independent community evidence was retained inside the bounded collection window. The selected ${domainLabel} direction remains an unvalidated hypothesis.`;
@@ -2280,7 +2364,7 @@ export class IdeaGenerationBenchmarkService {
   private isValidationHypothesisFastStopCandidate(
     candidate: IdeaBenchmarkCandidate,
   ): boolean {
-    if (candidate.quality.score < IDEA_BENCHMARK_STRUCTURAL_FALLBACK_SCORE) {
+    if (candidate.quality.score < IDEA_BENCHMARK_PRELIMINARY_FAST_STOP_SCORE) {
       return false;
     }
 
@@ -3141,9 +3225,23 @@ export class IdeaGenerationBenchmarkService {
       secondaryEvidenceCount,
       technicalEvidenceCount,
     );
+    const verifiedCommunitySupportingCount = Math.max(
+      generationContext.communityAiAnalysis?.evidenceClassifications?.filter(
+        (item) =>
+          item.classification === 'SUPPORTING_SIGNAL' &&
+          item.verifiedByDeterministicGuard === true,
+      ).length ?? 0,
+      selectedOpportunity?.supportingEvidence?.filter(
+        (item) =>
+          item.qualifiesAsCommunityEvidence === true &&
+          item.sourceType === 'COMMUNITY_EVIDENCE' &&
+          item.text.trim().length > 0,
+      ).length ?? 0,
+    );
     const hasAnyVerifiedExternalEvidence =
       selectedVerifiedEvidenceCount > 0 ||
       qualifiedExternalSupportingCount > 0 ||
+      verifiedCommunitySupportingCount > 0 ||
       (selectedOpportunity?.independentEvidence?.some(
         (item) =>
           item.evidenceKind !== 'UNKNOWN' &&
@@ -4849,14 +4947,31 @@ export class IdeaGenerationBenchmarkService {
       typeof opportunity.raw.domainName === 'string'
         ? opportunity.raw.domainName.trim()
         : '');
+    const strictlyEvidenceMatchedDomains = [
+      ...new Set(
+        effectiveEvidenceSamples.flatMap((sample) =>
+          SelectedDomainEvidenceAlignmentUtil.matchStrictDomainNames(
+            sample,
+            context.selectedDomains,
+          ),
+        ),
+      ),
+    ];
+    const supportingOnlyClaim =
+      (opportunity.qualifiedExternalSupportingEvidenceCount ?? 0) > 0 &&
+      (opportunity.verifiedProblemMatchedDirectUserEvidenceCount ??
+        opportunity.verifiedDirectUserEvidenceCount ??
+        0) === 0;
     const finalClaimDomains = (
-      opportunity.matchedDomainNames?.length
-        ? opportunity.matchedDomainNames
-        : opportunityDomainName
-          ? [opportunityDomainName]
-          : context.domainName
-            ? [context.domainName]
-            : []
+      supportingOnlyClaim && strictlyEvidenceMatchedDomains.length > 0
+        ? strictlyEvidenceMatchedDomains
+        : opportunity.matchedDomainNames?.length
+          ? opportunity.matchedDomainNames
+          : opportunityDomainName
+            ? [opportunityDomainName]
+            : context.domainName
+              ? [context.domainName]
+              : []
     ).filter((domainName, index, items) =>
       items.findIndex(
         (candidate) =>

@@ -532,15 +532,13 @@ export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
 
 /**
- * Maximum source/query recovery waves per generation run.
+ * Maximum targeted evidence-recovery waves per generation run.
  *
- * Recovery is no longer governed by a short wall-clock deadline. The stage
- * rotates through problem-focused query pages and source groups until usable
- * evidence is found or the available source/query space has been exhausted.
- * This cap is a safety bound against accidental infinite loops rather than a
- * latency target.
+ * The normal first pass is already broad and Community AI sees the complete
+ * collected corpus. Recovery is therefore a single rescue wave only, never a
+ * repeating search loop.
  */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 6;
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
 export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0;

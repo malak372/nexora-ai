@@ -88,17 +88,18 @@ export class RequestWorkflowIntentProfileUtil {
       restorationActor && restorationObjects >= 2 && restorationWorkflow >= 1;
 
     const explicitCommissionIntent =
-      /\b(?:custom commissions?|commissioned work|custom orders?|made[- ]to[- ]order|bespoke order|new design|design brief|client brief|customer brief)\b/u.test(text);
+      /\b(?:custom commissions?|commissioned work|commissions?|custom orders?|made[- ]to[- ]order|bespoke order|bespoke work|new design|design brief|client brief|customer brief)\b/u.test(text);
     const customActor =
-      /\b(?:makers?|artisans?|artists?|studios?|workshops?|custom shops?|craft businesses?|craftsmen?|craftswomen?)\b/u.test(text);
+      /\b(?:makers?|artisans?|artists?|studios?|workshops?|custom shops?|craft businesses?|craftsmen?|craftswomen?|luthiers?|archetiers?|shoemakers?|milliners?|dressmakers?|tailors?)\b/u.test(text);
     const customSpecificationAxes = this.count([
-      /\b(?:dimensions?|measurements?|sizes?|placement instructions?|personalization|wording|engraving|design references?|reference images?)\b/u,
-      /\b(?:design revisions?|revision requests?|approved design|approved version|final approved|customer approval|client approval|specification version)\b/u,
-      /\b(?:material choices?|color choices?|colour choices?|finish choices?|decorative details?)\b/u,
+      /\b(?:dimensions?|measurements?|sizes?|fit|fitting|placement instructions?|personalization|wording|engraving|design references?|reference images?|playing preferences?|player preferences?)\b/u,
+      /\b(?:design revisions?|design adjustments?|revision requests?|approved design|approved version|final approved|final approved specifications?|customer approval|client approval|specification version)\b/u,
+      /\b(?:material choices?|material selections?|wood selections?|wood choices?|leather selections?|hair types?|hair selection|grip materials?|balance requirements?|balance points?|color choices?|colour choices?|finish choices?|decorative details?)\b/u,
+      /\b(?:completion deadlines?|delivery deadlines?|pickup deadlines?|due dates?)\b/u,
     ], text);
     const customFailures = this.count([
-      /\b(?:wrong|incorrect)\b[^.!?]{0,30}\b(?:dimension|size|placement|spelling|design|version|color|colour|material|cut|opening)\w*\b/u,
-      /\b(?:missed design change|forgotten design change|wrong version|outdated version|rework|repeated work|wasted materials?|wasted supplies?|delayed orders?|delayed commissions?|incorrect cuts?|mismatched materials?)\b/u,
+      /\b(?:wrong|incorrect)\b[^.!?]{0,35}\b(?:dimension|size|placement|spelling|design|version|color|colour|material|cut|opening|balance|measurement|fit)\w*\b/u,
+      /\b(?:missed design change|forgotten design change|missed revision|wrong version|outdated version|unsuitable materials?|rework|remakes?|repeated work|repeated adjustments?|wasted materials?|wasted supplies?|delayed orders?|delayed commissions?|delayed completion|incorrect cuts?|mismatched materials?)\b/u,
     ], text);
     const specificationApprovalIntent =
       /\b(?:revision requests?|design revisions?|final approved specifications?|approved specifications?|final approved|customer approval|client approval|confirm the final approved|specification version)\b/u.test(text) &&
@@ -119,23 +120,39 @@ export class RequestWorkflowIntentProfileUtil {
     ], text);
 
 
+    /*
+     * Transaction/account-abuse is a workflow family, not a Transportation
+     * domain. Earlier versions hard-coded passenger/ticket terminology here,
+     * which caused university billing fraud, marketplace fraud, and other
+     * legitimate account-abuse requests to fall back to GENERAL and then lose
+     * good partial evidence at the deterministic admission gate.
+     *
+     * Detect the family from the request's own actor + transaction/account
+     * objects instead. Domain-specific nouns remain identity constraints later;
+     * they are not required to be transportation nouns.
+     */
     const transactionAbuseActor =
-      /\b(?:transportation companies?|transport companies?|transport operators?|transportation operators?|transit operators?|mobility services?|mobility platforms?|ticketing services?|ticketing platforms?|rail companies?|train companies?|bus companies?|metro operators?|passenger transport services?)\b/u.test(text);
+      /\b(?:universit(?:y|ies)|colleges?|higher education institutions?|financial aid offices?|student billing teams?|finance departments?|security teams?|smart city|smart cities|cities|city governments?|municipalit(?:y|ies)|municipal governments?|local authorities?|public service departments?|public service operators?|parking authorities?|parking operators?|public utilities?|utility providers?|transportation companies?|transport operators?|transit operators?|mobility services?|ticketing platforms?|online pharmacies?|digital pharmacies?|e-?pharmacies?|internet pharmacies?|pharmacy marketplaces?|digital healthcare marketplaces?|healthcare marketplaces?|marketplaces?|e-?commerce platforms?|digital entertainment platforms?|digital entertainment services?|streaming platforms?|streaming services?|gaming platforms?|game platforms?|subscription platforms?|subscription services?|digital media platforms?|content platforms?|retailers?|banks?|financial institutions?|payment providers?|restaurants?|delivery platforms?|government agencies?|public agencies?|healthcare organizations?|hospitals?|insurance providers?|businesses?|companies?|organizations?)\b/u.test(text);
     const transactionAbuseAxes = this.count([
-      /\b(?:payments?|payment records?|transactions?|fare payments?|ticket payments?|payment activity)\b/u,
-      /\b(?:refund requests?|refunds?|fraudulent refunds?|chargebacks?|disputes?)\b/u,
-      /\b(?:passenger accounts?|customer accounts?|account activity|login activity|account takeover|compromised accounts?|unauthorized account activity)\b/u,
-      /\b(?:booking behavior|booking activity|bookings?|ticket bookings?|reservation activity|suspicious bookings?)\b/u,
-      /\b(?:device information|device signals?|device fingerprints?|security alerts?|risk signals?)\b/u,
+      /\b(?:payments?|payment records?|transactions?|prescription records?|e-?prescriptions?|electronic prescriptions?|prescription activity|municipal payments?|city payments?|public service payments?|parking payments?|parking fees?|transit payments?|fare payments?|ticket payments?|utility payments?|utility bills?|municipal fees?|public service fees?|tuition payments?|student billing|billing records?|payment activity|financial aid|scholarship accounts?)\b/u,
+      /\b(?:refund requests?|refunds?|fraudulent refunds?|chargebacks?|disputes?|financial aid claims?|scholarship disbursements?)\b/u,
+      /\b(?:student accounts?|scholarship accounts?|passenger accounts?|citizen accounts?|resident accounts?|customer accounts?|user accounts?|account activity|login activity|account access logs?|account takeover|compromised accounts?|unauthorized account activity)\b/u,
+      /\b(?:booking behavior|booking activity|bookings?|ticket bookings?|reservation activity|order activity|purchase activity|suspicious purchases?|suspicious bookings?|suspicious orders?|delivery address changes?|payment information changes?)\b/u,
+      /\b(?:device information|device signals?|device fingerprints?|security alerts?|risk signals?|access logs?|authentication logs?)\b/u,
     ], text);
     const transactionAbuseFailures = this.count([
-      /\b(?:fraudulent payments?|payment fraud|fraudulent refunds?|refund fraud|account takeover|compromised accounts?|unauthorized account activity|suspicious booking behavior|coordinated abuse)\b/u,
-      /\b(?:financial losses?|fraud losses?|fraudulent refunds?|compromised customer accounts?)\b/u,
-      /\b(?:false positives?|unnecessary restrictions?|legitimate passengers? restricted|blocked legitimate passengers?)\b/u,
-      /\b(?:detect|identify|trace|investigat)\w*[^.!?]{0,70}\b(?:abuse|fraud|suspicious|unauthorized|account|refund|booking)\w*\b/u,
+      /\b(?:fraudulent prescriptions?|prescription fraud|fake prescriptions?|forged prescriptions?|e-?prescription fraud|fraudulent payments?|payment fraud|payment abuse|financial aid fraud|student aid fraud|tuition fraud|fraudulent subscriptions?|subscription fraud|fraudulent refunds?|unauthorized refunds?|unauthorised refunds?|refund fraud|refund abuse|account takeover|account theft|stolen accounts?|identity theft|compromised accounts?|unauthorized account activity|unauthorized delivery changes?|unauthorized payment changes?|suspicious purchases?|suspicious booking behavior|suspicious payment|coordinated abuse|coordinated fraud|chargeback abuse)\b/u,
+      /\b(?:financial impact|financial losses?|fraud losses?|revenue leakage|chargebacks?|costly chargebacks?|fraudulent refunds?|unauthorized refunds?|unauthorised refunds?|unauthorized payments?|compromised (?:student|passenger|citizen|resident|customer|user|scholarship) accounts?)\b/u,
+      /\b(?:false positives?|unnecessary restrictions?|legitimate (?:students?|passengers?|customers?|users?) restricted|blocked legitimate (?:students?|passengers?|customers?|users?))\b/u,
+      /\b(?:detect|identify|trace|investigat|correlat)\w*[^.!?]{0,90}\b(?:abuse|fraud|suspicious|unauthorized|account|refund|billing|payment|financial aid|booking)\w*\b/u,
+      /\b(?:reviewed separately|separate systems?|fragmented|siloed|disconnected)\b[^.!?]{0,100}\b(?:payment|billing|refund|account|financial aid|security alert|access log)\w*\b/u,
     ], text);
     const transactionAbuseScore =
       (transactionAbuseActor ? 2 : 0) + transactionAbuseAxes + transactionAbuseFailures;
+    const transactionCommercialAxis =
+      /\b(?:payments?|transactions?|prescriptions?|e-?prescriptions?|billing|tuition|financial aid|scholarship|refunds?|chargebacks?|disputes?|bookings?|reservations?|orders?|purchases?|delivery address|payment information|ticketing|fare)\b/u.test(text);
+    const explicitTransactionAbuseIntent =
+      /\b(?:prescription fraud|fraudulent prescriptions?|e-?prescription fraud|payment fraud|payment abuse|fraudulent payments?|fraudulent subscriptions?|subscription fraud|account takeover|account theft|identity theft|compromised accounts?|refund abuse|refund fraud|fraudulent refunds?|unauthorized refunds?|unauthorised refunds?|billing fraud|tuition fraud|financial aid fraud|scholarship fraud|booking fraud|reservation fraud|order fraud|purchase fraud|chargeback abuse|coordinated abuse|coordinated fraud|promotional abuse)\b/u.test(text);
 
     const facilityActor =
       /\b(?:hospitals?|healthcare facilities?|medical facilities?|universit(?:y|ies)|campuses?|hotels?|commercial buildings?|office buildings?|factories?|industrial plants?|warehouses?|distribution centers?|large facilities?|facility operators?)\b/u.test(text);
@@ -173,8 +190,9 @@ export class RequestWorkflowIntentProfileUtil {
 
     if (
       transactionAbuseActor &&
-      transactionAbuseAxes >= 3 &&
-      transactionAbuseFailures >= 1
+      transactionAbuseAxes >= 2 &&
+      transactionAbuseFailures >= 1 &&
+      (transactionCommercialAxis || explicitTransactionAbuseIntent)
     ) {
       family = 'TRANSACTION_ACCOUNT_ABUSE';
       confidence = Math.min(0.995, 0.91 + transactionAbuseScore * 0.012);
@@ -287,10 +305,15 @@ export class RequestWorkflowIntentProfileUtil {
       ) {
         return false;
       }
-      const identity =
-        /\b(?:transportation|transport|transit|mobility|ticketing|ticket|fare|passenger|rail|train|bus|metro)\b/u.test(normalized);
+      const identityTerms = [
+        ...profile.actorIdentityTerms,
+        ...profile.objectIdentityTerms,
+      ].filter((term) => term.length >= 4);
+      const identity = identityTerms.some((term) =>
+        normalized.includes(this.normalize(term)),
+      );
       const abuseWorkflow =
-        /\b(?:payment|transaction|refund|chargeback|account|login|booking|reservation|device|security alert|fraud|scam|abuse|suspicious|unauthorized|false positive|restriction|investigation)\w*\b/u.test(normalized);
+        /\b(?:payment|transaction|tuition|billing|financial aid|scholarship|refund|chargeback|account|login|access log|booking|reservation|order|device|security alert|fraud|scam|abuse|suspicious|unauthorized|compromis|identity theft|false positive|restriction|investigation)\w*\b/u.test(normalized);
       if (!identity && !abuseWorkflow) return false;
     }
 
@@ -350,9 +373,9 @@ export class RequestWorkflowIntentProfileUtil {
   ): string[] {
     const terms: string[] = [];
     const add = (...values: string[]) => values.forEach((value) => {
-      if (text.includes(value) && !terms.includes(value)) terms.push(value);
+      if (this.containsTerm(text, value) && !terms.includes(value)) terms.push(value);
     });
-    add('hospital', 'healthcare facility', 'medical facility', 'university', 'campus', 'hotel', 'commercial building', 'factory', 'warehouse', 'transportation', 'transit', 'mobility', 'restaurant', 'commercial kitchen', 'restoration specialist', 'rental shop', 'picture mat', 'framing');
+    add('online pharmacy', 'online pharmacies', 'digital pharmacy', 'digital pharmacies', 'e pharmacy', 'e pharmacies', 'internet pharmacy', 'internet pharmacies', 'pharmacy marketplace', 'pharmacy marketplaces', 'digital healthcare marketplace', 'digital healthcare marketplaces', 'healthcare marketplace', 'healthcare marketplaces', 'hospital', 'healthcare facility', 'medical facility', 'university', 'universities', 'college', 'colleges', 'higher education', 'student billing', 'financial aid', 'campus', 'city', 'cities', 'city government', 'smart city', 'smart cities', 'municipality', 'municipal government', 'municipal government', 'local authority', 'public service', 'parking authority', 'parking operator', 'public utility', 'utility provider', 'hotel', 'commercial building', 'factory', 'warehouse', 'transportation', 'transit', 'mobility', 'restaurant', 'commercial kitchen', 'restoration specialist', 'rental shop', 'picture mat', 'framing');
     if (family === 'FACILITY_RESOURCE_MONITORING' && terms.length === 0) terms.push('facility');
     return terms.slice(0, 8);
   }
@@ -365,14 +388,14 @@ export class RequestWorkflowIntentProfileUtil {
     const candidates = [
       'water', 'water consumption', 'water meter', 'meter reading', 'utility consumption',
       'electricity', 'energy consumption', 'gas consumption', 'cooling system',
-      'payment', 'refund', 'passenger account', 'booking', 'ticket',
+      'payment', 'payment record', 'prescription record', 'prescription records', 'e prescription', 'e prescriptions', 'electronic prescription', 'electronic prescriptions', 'delivery address', 'payment information', 'customer account', 'customer accounts', 'online order', 'suspicious purchase', 'municipal payment', 'city payment', 'public service payment', 'parking payment', 'parking fee', 'transit payment', 'fare payment', 'utility payment', 'utility bill', 'municipal fee', 'public service fee', 'tuition payment', 'student billing', 'financial aid', 'scholarship', 'scholarship account', 'student account', 'citizen account', 'resident account', 'access log', 'security alert', 'refund', 'passenger account', 'booking', 'ticket',
       'refrigerator', 'freezer', 'cold storage', 'ingredient',
       'picture mat', 'mat cutting', 'mat board', 'artwork', 'border width', 'opening shape',
       'glass art', 'stained glass', 'rug', 'furniture', 'violin case', 'typewriter',
       'rental inventory', 'accessory', 'deposit',
     ];
     for (const candidate of candidates) {
-      if (text.includes(candidate) && !terms.includes(candidate)) terms.push(candidate);
+      if (this.containsTerm(text, candidate) && !terms.includes(candidate)) terms.push(candidate);
     }
     if (family === 'FACILITY_RESOURCE_MONITORING' && terms.length === 0) terms.push('resource consumption');
     return terms.slice(0, 12);
@@ -385,13 +408,13 @@ export class RequestWorkflowIntentProfileUtil {
     const terms: string[] = [];
     const candidates = [
       'monitoring', 'meter readings', 'maintenance records', 'facility activity', 'anomaly detection',
-      'fraud detection', 'refund investigation', 'account activity', 'booking behavior',
+      'fraud detection', 'prescription verification', 'identity verification', 'identity checks', 'order review', 'fraud review', 'coordinated abuse detection', 'payment monitoring', 'transaction monitoring', 'refund investigation', 'account activity', 'account access', 'account compromise', 'security alert review', 'financial aid review', 'student billing', 'booking behavior',
       'storage conditions', 'expiration dates', 'restoration history', 'previous repairs',
       'final approved specifications', 'revision requests', 'customer preferences', 'material selections',
       'rental periods', 'return dates', 'availability',
     ];
     for (const candidate of candidates) {
-      if (text.includes(candidate) && !terms.includes(candidate)) terms.push(candidate);
+      if (this.containsTerm(text, candidate) && !terms.includes(candidate)) terms.push(candidate);
     }
     if (family === 'FACILITY_RESOURCE_MONITORING') {
       for (const value of ['resource monitoring', 'consumption monitoring', 'maintenance correlation']) {
@@ -408,12 +431,12 @@ export class RequestWorkflowIntentProfileUtil {
     const terms: string[] = [];
     const candidates = [
       'leak', 'abnormal consumption', 'inefficient processes', 'fragmented', 'separately',
-      'fraudulent payment', 'fraudulent refund', 'account takeover', 'suspicious booking',
+      'fraudulent prescription', 'fraudulent prescriptions', 'prescription fraud', 'fake prescription', 'fake prescriptions', 'forged prescription', 'forged prescriptions', 'suspicious purchase', 'suspicious purchases', 'unauthorized delivery change', 'unauthorized payment change', 'fraudulent payment', 'payment fraud', 'unauthorized payment', 'false positive', 'financial aid fraud', 'student aid fraud', 'fraudulent refund', 'identity theft', 'compromised account', 'account takeover', 'suspicious booking',
       'spoilage', 'equipment failure', 'incorrect cuts', 'mismatched materials', 'repeated work',
       'double booking', 'missing accessories', 'overlooked damage',
     ];
     for (const candidate of candidates) {
-      if (text.includes(candidate) && !terms.includes(candidate)) terms.push(candidate);
+      if (this.containsTerm(text, candidate) && !terms.includes(candidate)) terms.push(candidate);
     }
     if (family === 'FACILITY_RESOURCE_MONITORING' && terms.length === 0) terms.push('abnormal resource use');
     return terms.slice(0, 10);
@@ -426,11 +449,11 @@ export class RequestWorkflowIntentProfileUtil {
     const terms: string[] = [];
     const candidates = [
       'utility costs', 'wasted water', 'equipment damage', 'environmental impact',
-      'financial losses', 'unnecessary restrictions', 'food waste', 'wasted supplies',
+      'financial losses', 'compromised accounts', 'delayed payments', 'unnecessary restrictions', 'food waste', 'wasted supplies',
       'delayed orders', 'delayed projects', 'loss of original details',
     ];
     for (const candidate of candidates) {
-      if (text.includes(candidate) && !terms.includes(candidate)) terms.push(candidate);
+      if (this.containsTerm(text, candidate) && !terms.includes(candidate)) terms.push(candidate);
     }
     if (family === 'FACILITY_RESOURCE_MONITORING' && terms.length === 0) terms.push('resource waste');
     return terms.slice(0, 8);
@@ -480,6 +503,13 @@ export class RequestWorkflowIntentProfileUtil {
       failureIdentityTerms: [],
       outcomeIdentityTerms: [],
     };
+  }
+
+  private static containsTerm(text: string, term: string): boolean {
+    const normalizedText = ` ${this.normalize(text)} `;
+    const normalizedTerm = this.normalize(term);
+    if (!normalizedTerm) return false;
+    return normalizedText.includes(` ${normalizedTerm} `);
   }
 
   private static normalize(value: string): string {

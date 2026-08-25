@@ -150,6 +150,64 @@ export class RequestProductBlueprintUtil {
       requesterDescription,
     );
 
+    /*
+     * The requester description is the immutable product scope. Healthcare
+     * access/privacy requests frequently contain words such as identity,
+     * security alerts, unauthorized access, and investigations. Those words
+     * must not be allowed to trigger the generic government-payment/fraud
+     * blueprint later when the actual object is patient records and access
+     * governance. Keep this request-specific blueprint ahead of every
+     * evidence/opportunity-derived category.
+     */
+    const publicHealthcareAccessGovernance =
+      /\b(?:public healthcare|healthcare systems?|hospitals?|clinics?|medical records?|patient records?)\b/iu.test(text) &&
+      /\b(?:patient information|patient records?|medical records?|access logs?|identity verification|patient permissions?|access permissions?|security alerts?|unauthorized access|privacy violations?|data incidents?|record exchange|cross[- ]agency|government agencies?)\b/iu.test(text) &&
+      /\b(?:protect|privacy|unauthorized access|access restrictions?|incident investigation|data incident|audit|security|record exchange|permissions?)\w*\b/iu.test(text);
+    if (publicHealthcareAccessGovernance) {
+      return {
+        baseLabel: 'Public Healthcare',
+        title: 'Public Healthcare Access Governance & Incident Traceability Workspace',
+        workflowFocus:
+          'patient-record access history, identity verification, patient and provider permissions, cross-organization record exchange, security-alert correlation, incident reconstruction, and human-reviewed access decisions',
+        targetUsers: [
+          'Healthcare privacy and security teams',
+          'Hospital and clinic health-information administrators',
+          'Authorized public-health and government data-governance reviewers',
+        ],
+        features: [
+          'Unified patient-record access timeline combining access logs, identity-verification events, permission changes, record-exchange events, and security alerts',
+          'Permission and entitlement history showing who could access which patient records, why access was allowed, and when permissions changed',
+          'Human-reviewed incident reconstruction linking suspicious access, identity checks, exchanged records, alerts, and investigation milestones without autonomous access blocking',
+          'False-positive and legitimate-access review workflow for resolving unnecessary restrictions while preserving privacy and auditability',
+          'Evidence provenance and audit trail for every access decision, investigation finding, and cross-organization record exchange',
+        ],
+        objectives: [
+          'Unify fragmented patient-access, identity-verification, permission, record-exchange, and security-alert records without changing the requester problem into a payment or fraud workflow.',
+          'Help authorized teams reconstruct unauthorized-access incidents and understand how a privacy event occurred across hospitals, clinics, and government agencies.',
+          'Keep consequential access restrictions and privacy decisions human reviewed while preserving evidence provenance and permission history.',
+          'Establish a pilot baseline for investigation lead time, unresolved access incidents, false-positive restrictions, and incident-reconstruction completeness.',
+        ],
+        databaseEntities: [
+          'PatientRecordReference', 'AccessEvent', 'IdentityVerificationEvent',
+          'PermissionGrant', 'RecordExchangeEvent', 'SecurityAlert',
+          'PrivacyIncident', 'InvestigationFinding', 'AccessReviewDecision', 'AuditEvent',
+        ],
+        metrics: [
+          'incident investigation lead time', 'unresolved unauthorized-access cases',
+          'false-positive restriction resolution', 'permission-review age',
+          'incident-reconstruction completeness', 'record-exchange audit completeness',
+        ],
+        workflowTerms: [
+          'patient-record access logs', 'identity verification', 'patient permissions',
+          'cross-agency record exchange', 'security alerts', 'incident reconstruction',
+        ],
+        painTerms: [
+          'privacy violations', 'delayed investigations', 'unnecessary access restrictions',
+          'fragmented security records', 'reduced trust',
+        ],
+      };
+    }
+
     if (intentProfile.family === 'SPECIFICATION_APPROVAL') {
       const actor = RequestDynamicQueryUtil.extractActor(requesterDescription) || 'custom production specialist';
       const baseLabel = this.cleanActorLabel(actor) || 'Specification';
@@ -1794,8 +1852,8 @@ export class RequestProductBlueprintUtil {
     // ahead of the generic authentication fallback so the solution is an
     // investigation/correlation product rather than account recovery.
     if (
-      /\b(?:fraud|fraudulent|suspicious transactions?|unusual payments?|unusual payment activity|coordinated fraud|unauthorized payment|identity checks?|security alerts?)\b/iu.test(description) &&
-      /\b(?:government payment systems?|payments?|transactions?|taxes?|permits?|benefits?|public service fees?|financial losses?|investigations?)\b/iu.test(description)
+      /\b(?:fraud|fraudulent|suspicious transactions?|unusual payments?|unusual payment activity|coordinated fraud|unauthorized payment|refund abuse|payment abuse)\b/iu.test(requestText) &&
+      /\b(?:government payment systems?|payments?|transactions?|taxes?|permits?|benefits?|public service fees?|financial losses?|refunds?|billing)\b/iu.test(requestText)
     ) {
       return 'FRAUD_INTEGRITY';
     }
@@ -1874,8 +1932,8 @@ export class RequestProductBlueprintUtil {
     }
 
     if (
-      /\b(?:fraud|fraudulent|suspicious transaction|unusual payment|unauthorized account|account takeover|security alerts?|identity checks?|identity verification)\b/iu.test(text) &&
-      /\b(?:payment|payments|transaction|transactions|taxes?|permits?|benefits?|fees?|financial)\b/iu.test(text)
+      /\b(?:fraud|fraudulent|suspicious transaction|unusual payment|payment abuse|refund abuse|unauthorized payment)\b/iu.test(requestText) &&
+      /\b(?:payment|payments|transaction|transactions|taxes?|permits?|benefits?|fees?|financial|billing|refunds?)\b/iu.test(requestText)
     ) {
       return 'FRAUD_INTEGRITY';
     }

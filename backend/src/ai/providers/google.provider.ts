@@ -203,11 +203,34 @@ export class GoogleProvider implements AiProvider {
         };
       }
 
-      const response = await this.client.models.generateContent({
-        model: apiModelId,
-        contents: userPrompt,
-        config,
-      });
+      let response;
+      try {
+        response = await this.client.models.generateContent({
+          model: apiModelId,
+          contents: userPrompt,
+          config,
+        });
+      } catch (error: unknown) {
+        if (!this.shouldRetryStructuredJsonWithoutNativeSchema(input, error)) {
+          throw error;
+        }
+
+        /*
+         * Some Gemini model/API combinations accept JSON mode but reject a
+         * perfectly valid responseJsonSchema with a generic INVALID_ARGUMENT.
+         * Native schema enforcement is only an optimization in Voxidence: the
+         * same provider-neutral schema is always parsed and validated centrally
+         * by AJV after the response. Retry once without responseJsonSchema so a
+         * healthy Google model is not lost from the provider-diverse race.
+         */
+        response = await this.client.models.generateContent({
+          model: apiModelId,
+          contents: userPrompt,
+          config: this.buildGenerateConfig(input, {
+            omitNativeJsonSchema: true,
+          }),
+        });
+      }
 
       /*
        * Google may reject the prompt before producing any candidate.
@@ -228,9 +251,21 @@ export class GoogleProvider implements AiProvider {
 
       const candidate = response.candidates?.[0];
 
-      const finishReason = this.mapFinishReason(candidate?.finishReason);
+      let finishReason = this.mapFinishReason(candidate?.finishReason);
 
       const text = response.text?.trim();
+
+      /*
+       * Gemini occasionally returns a complete textual/JSON payload while
+       * omitting finishReason or introducing a newer finish-reason value that
+       * this adapter does not know yet. The streaming path already treats
+       * non-empty content as a successful STOP in that situation. Keep the
+       * non-streaming path consistent: central JSON/schema validation remains
+       * the authority for deciding whether the payload itself is usable.
+       */
+      if (finishReason === AiFinishReason.UNKNOWN && text) {
+        finishReason = AiFinishReason.STOP;
+      }
 
       if (!text) {
         if (finishReason === AiFinishReason.CONTENT_FILTER) {
@@ -304,6 +339,7 @@ export class GoogleProvider implements AiProvider {
    */
   private buildGenerateConfig(
     input: AiProviderGenerateInput,
+    options: { readonly omitNativeJsonSchema?: boolean } = {},
   ): GenerateContentConfig {
     const systemInstruction = input.systemInstruction?.trim();
 
@@ -326,7 +362,7 @@ export class GoogleProvider implements AiProvider {
         ? {
             responseMimeType: 'application/json',
 
-            ...(input.responseSchema
+            ...(input.responseSchema && !options.omitNativeJsonSchema
               ? {
                   /**
                    * AiJsonSchema is intentionally provider-neutral.
@@ -349,6 +385,31 @@ export class GoogleProvider implements AiProvider {
           }
         : {}),
     };
+  }
+
+  private shouldRetryStructuredJsonWithoutNativeSchema(
+    input: AiProviderGenerateInput,
+    error: unknown,
+  ): boolean {
+    if (
+      input.responseFormat !== AiResponseFormat.JSON ||
+      !input.responseSchema ||
+      input.signal?.aborted
+    ) {
+      return false;
+    }
+
+    const statusCode = this.readStatusCode(error);
+    if (statusCode !== 400 && statusCode !== 422) return false;
+
+    const message = this.readMessage(error, '').toLocaleLowerCase();
+    return (
+      message.includes('invalid argument') ||
+      message.includes('invalid_argument') ||
+      message.includes('responsejsonschema') ||
+      message.includes('response schema') ||
+      message.includes('json schema')
+    );
   }
 
   /**

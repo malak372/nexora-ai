@@ -50,9 +50,9 @@ export type TextInputContext = {
   inputs: IntelligentTextInput[];
 
   /**
-   * Broader bounded corpus persisted by FAST_GENERATION before semantic
-   * pruning. Community AI may classify these items, but deterministic
-   * evidence guards remain authoritative before ranking.
+   * Complete in-memory collector ledger returned by FAST_GENERATION before
+   * relevance/persistence pruning. Community AI classifies these items, but
+   * deterministic evidence guards remain authoritative before ranking.
    */
   rawInputs?: IntelligentTextInput[];
 };

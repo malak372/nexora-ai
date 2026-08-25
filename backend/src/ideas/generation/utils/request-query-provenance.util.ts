@@ -1,5 +1,6 @@
 import { RequestDynamicQueryUtil } from './request-dynamic-query.util';
 import { RequestWorkflowIntentProfileUtil } from './request-workflow-intent-profile.util';
+import { RequestNicheCustomCraftUtil } from './request-niche-custom-craft.util';
 
 export class RequestQueryProvenanceUtil {
   static isQueryGrounded(input: {
@@ -9,6 +10,10 @@ export class RequestQueryProvenanceUtil {
     const request = this.normalize(input.requestDescription ?? '');
     const query = this.normalize(input.query);
     if (!request || !query) return Boolean(query);
+
+    if (RequestNicheCustomCraftUtil.isSafeExpandedRetrievalQuery(request, query)) {
+      return true;
+    }
 
     if (this.hasForeignTopicDrift(request, query)) return false;
     if (!this.passesRoleLevelGrounding(request, query)) return false;
@@ -106,6 +111,14 @@ export class RequestQueryProvenanceUtil {
     if (/\b(?:payment|payments|refund|refunds|financial loss|chargeback|transaction)\b/u.test(request)) {
       add('payment', 'transaction', 'refund', 'chargeback', 'dispute', 'financial', 'loss');
     }
+    if (/\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request)) {
+      add(
+        'agriculture', 'agricultural', 'crop', 'crops', 'produce', 'harvest',
+        'spoilage', 'storage', 'warehouse', 'inventory', 'shipment', 'transport',
+        'transportation', 'delivery', 'route', 'market', 'price', 'pricing',
+        'profit', 'profitability', 'margin', 'cost', 'expense', 'loss', 'distribution',
+      );
+    }
     if (/\b(?:profit|profitability|production costs?|advertising revenue|subscription activity|audience engagement|cancellation|budget|forecast|content investments?|production spending)\b/u.test(request)) {
       add(
         'media',
@@ -148,7 +161,20 @@ export class RequestQueryProvenanceUtil {
       add('rental', 'inventory', 'availability', 'booking', 'return', 'deposit', 'accessory', 'condition', 'maintenance', 'damage');
     }
     if (profile.family === 'TRANSACTION_ACCOUNT_ABUSE') {
-      add('payment', 'transaction', 'refund', 'booking', 'ticket', 'fare', 'account', 'takeover', 'device', 'security', 'fraud', 'abuse', 'false', 'positive', 'restriction', 'investigation');
+      /* Keep the generic vocabulary mechanism-only. Object/workflow nouns such
+       * as payment, refund, ticket, booking, patient, vendor, shipment, etc.
+       * must be owned by THIS request and are added from the semantic profile
+       * below. This prevents one old vertical from contaminating another. */
+      add('account', 'takeover', 'device', 'security', 'fraud', 'abuse', 'false', 'positive', 'restriction', 'investigation', 'unauthorized', 'suspicious', 'identity', 'verification', 'alert', 'coordinated', 'anomaly', 'risk', 'detect', 'detection');
+      for (const term of [
+        ...profile.actorIdentityTerms,
+        ...profile.objectIdentityTerms,
+        ...profile.workflowIdentityTerms,
+        ...profile.failureIdentityTerms,
+        ...profile.outcomeIdentityTerms,
+      ]) {
+        for (const token of this.semanticTokens(term)) allowed.add(token);
+      }
     }
     if (profile.family === 'FACILITY_RESOURCE_MONITORING') {
       add('facility', 'building', 'water', 'utility', 'meter', 'submeter', 'consumption', 'usage', 'telemetry', 'leak', 'leakage', 'plumbing', 'maintenance', 'equipment', 'cooling', 'anomaly', 'abnormal', 'inefficient', 'waste', 'sustainability', 'resource', 'zone', 'network', 'failure', 'forecast', 'predict', 'condition');
@@ -230,9 +256,30 @@ export class RequestQueryProvenanceUtil {
     }
 
     if (profile.family === 'TRANSACTION_ACCOUNT_ABUSE') {
-      const transport = /\b(?:transport|transit|mobility|ticket|fare|passenger|rail|train|bus|metro)\w*\b/u.test(query);
-      const abuse = /\b(?:payment|transaction|refund|account|booking|device|security|fraud|scam|abuse|unauthorized|suspicious|restriction)\w*\b/u.test(query);
-      return abuse && (transport || derivedConcept || /\b(?:account takeover|payment fraud|refund fraud)\b/u.test(query));
+      const abuse = /\b(?:account|device|security|fraud|scam|abuse|unauthorized|suspicious|restriction|identity|verification|alert|investigation|anomaly|risk|detect)\w*\b/u.test(query);
+      if (!abuse) return false;
+
+      const requestOwnedTerms = [
+        ...profile.actorIdentityTerms,
+        ...profile.objectIdentityTerms,
+        ...profile.workflowIdentityTerms,
+        ...profile.failureIdentityTerms,
+        ...profile.outcomeIdentityTerms,
+        ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(request),
+      ]
+        .map((value) => this.normalize(value))
+        .filter((value) => value.length >= 4);
+      const querySemanticTokens = this.semanticTokens(query);
+      const identityOrWorkflowMatch = requestOwnedTerms.some((term) =>
+        query.includes(term) || this.semanticTokens(term).some((token) => querySemanticTokens.includes(token)),
+      );
+      if (derivedConcept) return identityOrWorkflowMatch;
+
+      /* Generic mechanisms may bridge wording differences, but never by
+       * themselves authorize a foreign object/workflow. */
+      const strongGenericMechanism = /\b(?:account takeover|unauthorized account|identity verification|security alert|coordinated fraud)\b/u.test(query);
+      const requestHasSameMechanism = /\b(?:account takeover|unauthorized account|identity verification|security alert|coordinated fraud|unauthorized access)\b/u.test(request);
+      return identityOrWorkflowMatch || (strongGenericMechanism && requestHasSameMechanism);
     }
 
     return true;

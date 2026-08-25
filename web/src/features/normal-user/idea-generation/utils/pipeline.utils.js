@@ -65,15 +65,25 @@ export function getVisualPipeline(
     stageMap,
     currentStageKey,
   );
+  const normalizedRunStatus = String(runStatus ?? "").toUpperCase();
   const hasConfirmedBackendActivity =
     resolvedActiveGroupIndex >= 0 ||
     normalizedStages.some((stage) => {
       const status = getStageStatus(stage);
       return ACTIVE_STATUSES.has(status) || COMPLETE_STATUSES.has(status);
     });
+
+  /*
+   * The RUNNING transition itself is enough to activate Preparing. The backend
+   * now persists currentStageKey="preparing" atomically with startRun(), but
+   * this small fallback protects the first render if a legacy run or delayed
+   * stage snapshot briefly has RUNNING with no stage row yet.
+   */
   const activeGroupIndex = hasConfirmedBackendActivity
     ? resolvedActiveGroupIndex
-    : -1;
+    : normalizedRunStatus === "RUNNING"
+      ? 0
+      : -1;
 
   return VISUAL_PIPELINE_GROUPS.map((group, groupIndex) => {
     const matchingStages = group.stageKeys

@@ -419,10 +419,15 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
     snapshot: IdeaGenerationRealtimeSnapshot,
   ): string {
     return JSON.stringify([
+      snapshot.generationType,
       snapshot.status,
       snapshot.progressPercent,
       snapshot.currentStageKey,
       snapshot.ideaId,
+      snapshot.errorCode,
+      snapshot.errorMessage,
+      snapshot.cancelRequestedAt?.toISOString() ?? null,
+      snapshot.startedAt?.toISOString() ?? null,
       snapshot.completedAt?.toISOString() ?? null,
       snapshot.updatedAt.toISOString(),
       ...snapshot.stages.map((stage) => [
@@ -536,12 +541,15 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
       where: { id: runId, userId },
       select: {
         id: true,
+        generationType: true,
         status: true,
         progressPercent: true,
         currentStageKey: true,
         ideaId: true,
         errorCode: true,
         errorMessage: true,
+        cancelRequestedAt: true,
+        startedAt: true,
         completedAt: true,
         updatedAt: true,
         stages: {
@@ -571,12 +579,15 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
 
     return {
       runId: run.id,
+      generationType: run.generationType,
       status: run.status,
       progressPercent: run.progressPercent,
       currentStageKey: run.currentStageKey,
       ideaId: run.ideaId,
       errorCode: run.errorCode,
       errorMessage: run.errorMessage,
+      cancelRequestedAt: run.cancelRequestedAt,
+      startedAt: run.startedAt,
       completedAt: run.completedAt,
       updatedAt: run.updatedAt,
       stages: run.stages.map((stage) => ({

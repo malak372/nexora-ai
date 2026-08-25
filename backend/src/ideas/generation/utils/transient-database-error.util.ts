@@ -33,6 +33,12 @@ export function isTransientDatabaseError(error: unknown): boolean {
     'response from the engine was empty',
     'query engine response was empty',
     'engine was empty',
+    'engine is not yet connected',
+    'engine is not connected',
+    'query engine is not connected',
+    'query engine has disconnected',
+    'engine has disconnected',
+    'prisma client is not connected',
     'unexpected eof',
     'connection closed unexpectedly',
   ].some((fragment) => message.includes(fragment));

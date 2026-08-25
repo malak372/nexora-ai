@@ -37,6 +37,7 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
               'Validating your request, access, domain, and selected evidence sources.',
           icon: Icons.layers_outlined,
           keys: [
+            'preparing',
             'request-validation',
             'entitlement-check',
             'domain-resolution',
@@ -113,6 +114,7 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
       ];
 
   static const Map<String, int> _stageOrder = <String, int>{
+    'preparing': 0,
     'request-validation': 1,
     'entitlement-check': 2,
     'domain-resolution': 3,
@@ -185,12 +187,18 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
     _elapsedTimer?.cancel();
 
     final socket = _socket;
-    if (socket != null) {
-      if (socket.connected) {
-        socket.emit('idea-generation.leave', {'runId': widget.runId});
-      }
-      socket.dispose();
+    if (socket != null && socket.connected) {
+      socket.emit('idea-generation.leave', {'runId': widget.runId});
     }
+
+    /*
+     * RealtimeSocket caches namespace instances. Disposing only the local
+     * socket would leave a dead instance inside that cache and the next
+     * GenerationProgressPage could reuse it. Remove the namespace from the pool
+     * as part of page teardown instead.
+     */
+    RealtimeSocket.disposeNamespace('/idea-generation');
+    _socket = null;
 
     super.dispose();
   }
@@ -235,7 +243,7 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
       final socket = await RealtimeSocket.connect('/idea-generation');
 
       if (!mounted) {
-        socket.dispose();
+        RealtimeSocket.disposeNamespace('/idea-generation');
         return;
       }
 
@@ -413,9 +421,12 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
 
     setState(() {
       _stageDisplayName = incoming['displayName']?.toString();
+      final currentStatus =
+          '${current['status'] ?? 'QUEUED'}'.trim().toUpperCase();
+
       current['status'] =
-          '${current['status'] ?? 'QUEUED'}'.toUpperCase() == 'QUEUED' &&
-              incomingStatus == 'RUNNING'
+          incomingStatus == 'RUNNING' &&
+              const {'QUEUED', 'PAUSED', 'RETRYING'}.contains(currentStatus)
           ? 'RUNNING'
           : current['status'] ?? 'RUNNING';
       current['progressPercent'] = nextProgress;
@@ -442,6 +453,10 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
       initial['id'] = incoming['id'] ?? incoming['runId'] ?? widget.runId;
       initial['runId'] = incoming['runId'] ?? incoming['id'] ?? widget.runId;
       initial['stages'] = _asStageList(incoming['stages']);
+      initial['progressPercent'] = _maxNumber(
+        incoming['progressPercent'],
+        _furthestStageProgress(initial['stages']),
+      );
       initial['currentStageKey'] = _resolveForwardStage(
         incoming['currentStageKey']?.toString(),
         _furthestStageKey(initial['stages']),
@@ -515,8 +530,11 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
     // Stage snapshots are merged independently from the parent run timestamp.
     merged['stages'] = mergedStages;
     merged['progressPercent'] = _maxNumber(
-      current['progressPercent'],
-      incoming['progressPercent'],
+      _maxNumber(
+        current['progressPercent'],
+        incoming['progressPercent'],
+      ),
+      _furthestStageProgress(mergedStages),
     );
 
     merged['currentStageKey'] = _resolveForwardStage(
@@ -529,10 +547,11 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
 
     final currentStatus = '${current['status'] ?? 'QUEUED'}'.toUpperCase();
     final incomingStatus = '${incoming['status'] ?? ''}'.toUpperCase();
-    final resumedFromRetry =
-        currentStatus == 'RETRYING' && incomingStatus == 'RUNNING';
+    final resumedFromRecovery =
+        const {'PAUSED', 'RETRYING'}.contains(currentStatus) &&
+        incomingStatus == 'RUNNING';
 
-    if (resumedFromRetry ||
+    if (resumedFromRecovery ||
         _statusRank(incomingStatus) >= _statusRank(currentStatus)) {
       merged['status'] =
           incomingStatus.isEmpty ? currentStatus : incomingStatus;
@@ -553,6 +572,7 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
     return switch (status.trim().toUpperCase()) {
       'QUEUED' => 0,
       'RUNNING' => 1,
+      'PAUSED' => 2,
       'RETRYING' => 2,
       'NO_RESULT' => 3,
       'FAILED' => 4,
@@ -681,6 +701,33 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
     }
 
     return resolved;
+  }
+
+  double _furthestStageProgress(dynamic stagesRaw) {
+    var progress = 0.0;
+
+    for (final stage in _asStageList(stagesRaw)) {
+      final status = '${stage['status'] ?? ''}'.toUpperCase();
+
+      if (!const {
+        'RUNNING',
+        'COMPLETED',
+        'SUCCEEDED',
+        'SKIPPED',
+      }.contains(status)) {
+        continue;
+      }
+
+      final value = stage['progressPercent'];
+      final stageProgress =
+          value is num ? value.toDouble() : double.tryParse('$value') ?? 0.0;
+
+      if (stageProgress > progress) {
+        progress = stageProgress;
+      }
+    }
+
+    return progress;
   }
 
   String? _resolveForwardStage(String? currentKey, String? incomingKey) {
@@ -909,16 +956,6 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
   bool _isTerminal(String status) =>
       const {'COMPLETED', 'FAILED', 'CANCELLED', 'NO_RESULT'}.contains(status);
 
-  Future<void> _pollCancellationUntilTerminal() async {
-    for (var attempt = 0; attempt < 60; attempt += 1) {
-      if (!mounted || _isTerminal(_status)) return;
-
-      await _refresh(silent: true);
-      if (!mounted || _isTerminal(_status)) return;
-
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-    }
-  }
 
   Future<void> _cancel() async {
     if (_cancelling || _cancelRequested || _isTerminal(_status)) return;
@@ -1017,9 +1054,13 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
       _cancelRequested = true;
     });
     try {
+      /*
+       * The backend broadcasts cancelRequestedAt and the final CANCELLED state
+       * through the generation socket. Keep REST reconciliation only as the
+       * normal safety fallback instead of polling every 500 ms.
+       */
       await UserApi.instance.cancelGeneration(widget.runId);
-      await _pollCancellationUntilTerminal();
-      _scheduleReconciliation(after: const Duration(milliseconds: 400));
+      _scheduleReconciliation(after: const Duration(milliseconds: 900));
     } catch (error) {
       if (mounted) {
         final backendAlreadyAccepted = _run?['cancelRequestedAt'] != null;
@@ -1181,6 +1222,7 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
                           ...List.generate(_milestones.length, (index) {
                             final isDone = completed || index < currentIndex;
                             final isCurrent =
+                                status != 'QUEUED' &&
                                 !completed &&
                                 !failed &&
                                 !cancelled &&
@@ -1322,8 +1364,16 @@ class _GenerationProgressPageState extends State<GenerationProgressPage> {
 
   String _stageLabel(String? stage) {
     if (stage == null || stage.trim().isEmpty) {
-      return 'Preparing the next pipeline step...';
+      return _status == 'RUNNING'
+          ? 'Preparing request and evidence plan'
+          : 'Waiting for backend start...';
     }
+
+    final normalized = stage.trim().toLowerCase().replaceAll('_', '-');
+    if (normalized == 'preparing') {
+      return 'Preparing request and evidence plan';
+    }
+
     final clean = stage.replaceAll('_', ' ').replaceAll('-', ' ').toLowerCase();
     if (clean.isEmpty) return 'Working on your idea...';
     return '${clean[0].toUpperCase()}${clean.substring(1)}';

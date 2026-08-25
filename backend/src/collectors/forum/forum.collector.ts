@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import Parser from 'rss-parser';
 
 import { BaseCollector } from '../base/base.collector';
 import {
@@ -12,6 +13,12 @@ import { CollectorInput, CollectorPost } from '../base/collector.types';
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
+import { CollectorAbortContextUtil } from '../base/collector-abort-context.util';
+import { RequestWorkflowIntentProfileUtil } from '../../ideas/generation/utils/request-workflow-intent-profile.util';
+import { RequestNicheCustomCraftUtil } from '../../ideas/generation/utils/request-niche-custom-craft.util';
+import { RequestOnlinePharmacyFraudUtil } from '../../ideas/generation/utils/request-online-pharmacy-fraud.util';
+import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
+import { RequestEvidenceAlignmentUtil } from '../../ideas/generation/utils/request-evidence-alignment.util';
 
 import { ForumAdapter } from './adapters/forum-adapter.interface';
 import { DiscourseForumAdapter } from './adapters/discourse-forum.adapter';
@@ -43,6 +50,18 @@ type StackExchangeSearchResponse = {
   readonly quota_remaining?: number;
 };
 
+
+type ForumSearchRssItem = {
+  readonly title?: string;
+  readonly link?: string;
+  readonly content?: string;
+  readonly contentSnippet?: string;
+  readonly pubDate?: string;
+  readonly isoDate?: string;
+  readonly creator?: string;
+  readonly author?: string;
+};
+
 /**
  * Generic forum collector.
  *
@@ -58,6 +77,8 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
   readonly sourceKey = 'forum';
 
   private static stackExchangeCircuitOpenUntil = 0;
+
+  private readonly rssParser = new Parser();
 
   private readonly forumSources: ForumSource[];
 
@@ -115,6 +136,8 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     if (!bounded) return true;
 
     if (this.isTechnicalRequest(input)) return true;
+    if (this.resolveDirectForumDomains(input).length > 0) return true;
+    if (this.shouldDiscoverSpecialistForums(input)) return true;
     if (ForumCollector.stackExchangeCircuitOpenUntil > Date.now()) return false;
 
     return this.resolveStackExchangeSites(input).length > 0;
@@ -161,12 +184,19 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       const stackExchangeSites = isBoundedGeneration
         ? this.resolveStackExchangeSites(input)
         : [];
+      const directForumDomains = isBoundedGeneration
+        ? this.resolveDirectForumDomains(input).slice(0, isTargetedRecovery ? 2 : 3)
+        : [];
 
+      const specialistDiscoveryEnabled =
+        isBoundedGeneration &&
+        !technicalRequest &&
+        this.shouldDiscoverSpecialistForums(input);
       this.logger.debug(
-        `Forum source plan | collectionMode=${input.collectionMode ?? 'STANDARD'} | bounded=${isBoundedGeneration} | discourse=${sources.map((source) => source.url).join(',') || 'none'} | stackExchange=${stackExchangeSites.join(',') || 'none'}`,
+        `Forum source plan | collectionMode=${input.collectionMode ?? 'STANDARD'} | bounded=${isBoundedGeneration} | discourse=${sources.map((source) => source.url).join(',') || 'none'} | stackExchange=${stackExchangeSites.join(',') || 'none'} | webForums=${directForumDomains.join(',') || 'none'} | specialistDiscovery=${specialistDiscoveryEnabled}`,
       );
 
-      const [results, stackExchangePosts] = await Promise.all([
+      const [results, stackExchangePosts, directForumPosts, specialistDiscoveryPosts] = await Promise.all([
         isBoundedGeneration
           ? Promise.allSettled(
               sources.map((source) =>
@@ -176,6 +206,12 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
           : this.collectSequentially(sources, searchQuery, input),
         isBoundedGeneration
           ? this.collectFromStackExchange(input, stackExchangeSites)
+          : Promise.resolve<CollectorPost[]>([]),
+        isBoundedGeneration
+          ? this.collectFromDirectForumDomains(input, directForumDomains)
+          : Promise.resolve<CollectorPost[]>([]),
+        specialistDiscoveryEnabled
+          ? this.collectFromSpecialistForumDiscovery(input)
           : Promise.resolve<CollectorPost[]>([]),
       ]);
 
@@ -191,7 +227,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       });
 
       const rankedPosts = this.rankAndDeduplicatePosts(
-        [...stackExchangePosts, ...discoursePosts],
+        [...specialistDiscoveryPosts, ...directForumPosts, ...stackExchangePosts, ...discoursePosts],
         input,
       );
 
@@ -224,15 +260,20 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       requestDescription: input.requestDescription,
       plannedQueries: input.plannedQueries,
       keywords: input.keywords,
+      authoritativePlannedQueries: input.authoritativePlannedQueries,
     })
-      .map((query) => query.split(/\s+/u).slice(0, 7).join(' '))
+      .map((query) =>
+        input.authoritativePlannedQueries
+          ? query.trim()
+          : query.split(/\s+/u).slice(0, 7).join(' '),
+      )
       .filter(Boolean)
       .slice(0, input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 3);
 
     if (queries.length === 0) return [];
 
     const requests = sites.flatMap((site) =>
-      queries.slice(0, sites.length > 1 ? 2 : 3).map((query) =>
+      queries.slice(0, sites.length > 1 ? 1 : 2).map((query) =>
         this.searchStackExchange(site, query, input),
       ),
     );
@@ -255,6 +296,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       requestDescription: input.requestDescription,
       plannedQueries: input.plannedQueries,
       keywords: input.keywords,
+      authoritativePlannedQueries: input.authoritativePlannedQueries,
     })
       .map((query) => query.split(/\s+/u).slice(0, 5).join(' '))
       .filter(Boolean)
@@ -263,7 +305,9 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
 
     if (fallbackQueries.length === 0) return firstPass;
     const fallbackRequests = sites.flatMap((site) =>
-      fallbackQueries.map((query) => this.searchStackExchange(site, query, input)),
+      fallbackQueries.slice(0, 1).map((query) =>
+        this.searchStackExchange(site, query, input),
+      ),
     );
     const fallbackSettled = await Promise.allSettled(fallbackRequests);
     return [
@@ -272,6 +316,460 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         result.status === 'fulfilled' ? result.value : [],
       ),
     ];
+  }
+
+  /**
+   * Converts executable forum routing hints into concrete public domains.
+   * Label-only hints are supported for a small set of well-known specialist
+   * communities; URL/domain hints work generically without a code change.
+   */
+  private resolveDirectForumDomains(input: CollectorRequestSupportInput): string[] {
+    const domains: string[] = [];
+    const add = (value: string) => {
+      const normalized = value
+        .trim()
+        .toLocaleLowerCase()
+        .replace(/^https?:\/\//u, '')
+        .replace(/^www\./u, '')
+        .split('/')[0]
+        ?.replace(/[^a-z0-9.-]/gu, '');
+      if (!normalized || !normalized.includes('.')) return;
+      if (!domains.includes(normalized)) domains.push(normalized);
+    };
+
+    const knownLabels: ReadonlyArray<readonly [RegExp, string]> = [
+      [/\bfountain pen network\b/iu, 'fountainpennetwork.com'],
+      [/\bfpgeeks?\b/iu, 'fpgeeks.com'],
+      [/\bphoto\.net\b/iu, 'photo.net'],
+      [/\bwatchuseek\b/iu, 'watchuseek.com'],
+      [/\bthe fedora lounge\b/iu, 'thefedoralounge.com'],
+      [/\b(?:ganoksin orchid|orchid jewelry forum|orchid forum|ganoksin)\b/iu, 'orchid.ganoksin.com'],
+      [/\b(?:leatherworker\.net|leatherworker forum|leather worker forum)\b/iu, 'leatherworker.net'],
+      [/\b(?:new ag talk|newagtalk|ag talk)\b/iu, 'talk.newagtalk.com'],
+      [/\b(?:den of angels|denofangels)\b/iu, 'denofangels.com'],
+    ];
+
+    for (const hint of input.sourceHints ?? []) {
+      const urlMatch = hint.match(/https?:\/\/([^/\s]+)/iu);
+      const domainMatch = hint.match(/\b(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)\b/iu);
+      if (urlMatch?.[1]) add(urlMatch[1]);
+      else if (domainMatch?.[1]) add(domainMatch[1]);
+      for (const [pattern, domain] of knownLabels) {
+        if (pattern.test(hint)) add(domain);
+      }
+    }
+
+    const request = this.cleanNormalizedText(input.requestDescription ?? '');
+    if (/\b(?:fountain pen|fountain pens|nib repair|pen restoration|pen repair)\b/u.test(request)) {
+      add('fountainpennetwork.com');
+    }
+    if (
+      /\b(?:antique|vintage|historic|heirloom)\s+(?:jewelry|jewellery|ring|rings|pendant|bracelet|necklace|brooch)|\b(?:jewelry|jewellery)\s+(?:restoration|repair)|\bbench jeweler\b/u.test(
+        request,
+      )
+    ) {
+      add('orchid.ganoksin.com');
+    }
+    if (
+      /\b(?:shoe restoration|shoe repair|shoe repairer|shoe repairers|cobbler|cobblers|footwear repair|boot repair|sneaker restoration|leather shoe repair|resoling|re-?soling)\b/u.test(
+        request,
+      )
+    ) {
+      add('leatherworker.net');
+    }
+    if (
+      /\b(?:eyeglass frame repair|eyeglass repair|eyewear repair|optical frame repair|spectacle frame repair|glasses repair)\b/u.test(request)
+    ) {
+      add('optiboard.com');
+    }
+    if (
+      /\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request) &&
+      /\b(?:storage|warehouse|transport|delivery|spoilage|market price|profitability|margin|route)\w*\b/u.test(request)
+    ) {
+      add('talk.newagtalk.com');
+    }
+    for (const domain of RequestNicheCustomCraftUtil.preferredForumDomains(
+      input.requestDescription,
+    )) {
+      add(domain);
+    }
+
+    return domains.slice(0, 4);
+  }
+
+  private shouldDiscoverSpecialistForums(
+    input: CollectorRequestSupportInput,
+  ): boolean {
+    const request = this.cleanNormalizedText(input.requestDescription ?? '');
+    if (!request || this.isTechnicalRequest(input)) return false;
+
+    const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
+      input.requestDescription,
+    );
+    if (workflowProfile.restorationIntent) return true;
+    if (RequestNicheCustomCraftUtil.resolve(input.requestDescription)) return true;
+    if (RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)) return true;
+    if (
+      /\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request) &&
+      /\b(?:storage|warehouse|transport|delivery|spoilage|market price|profitability|margin|route|crop|produce)\w*\b/u.test(request)
+    ) {
+      return true;
+    }
+    if (
+      /\b(?:travel compan(?:y|ies)|travel agenc(?:y|ies)|tour operators?|tour compan(?:y|ies)|tour packages?)\b/u.test(request) &&
+      /\b(?:profitability|margin|pricing|supplier fees?|partner invoices?|cancellations?|refunds?|booking changes?|seasonal demand|transportation costs?)\w*\b/u.test(request)
+    ) {
+      return true;
+    }
+    if (
+      /\b(?:sports rehabilitation centers?|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|athletic trainers?)\b/u.test(
+        request,
+      ) &&
+      /\b(?:athletes?|recovery|rehabilitation|wearable|pain reports?|mobility|remote monitoring|return to play|reinjury)\b/u.test(
+        request,
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      /\b(?:urban healthcare networks?|healthcare networks?|hospital networks?|emergency departments?|ambulance services?|clinics?)\b/u.test(request) &&
+      /\b(?:patient demand|hospital capacity|ambulance availability|overcrowd(?:ed|ing)?|response times?|resource allocation|delayed patient care|care gaps?)\b/u.test(request)
+    ) {
+      return true;
+    }
+
+    const text = this.cleanNormalizedText([
+      input.domainName ?? '',
+      ...(input.sourceHints ?? []),
+    ].join(' '));
+    return /\b(?:specialist|specialists|restoration|conservation|repair|collector community|professional forum|industry forum|practitioner forum)\b/u.test(text);
+  }
+
+  private buildSpecialistForumDiscoveryQueries(
+    input: CollectorInput,
+  ): string[] {
+    const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
+      input.requestDescription,
+    );
+    const queries: string[] = [];
+    const add = (value: string) => {
+      const cleaned = value.replace(/\s+/gu, ' ').trim();
+      if (!cleaned) return;
+      const key = cleaned.toLocaleLowerCase();
+      if (!queries.some((item) => item.toLocaleLowerCase() === key)) {
+        queries.push(cleaned);
+      }
+    };
+
+    if (workflowProfile.restorationIntent && workflowProfile.restorationSubject) {
+      const subject = workflowProfile.restorationSubject;
+      add(`${subject} restoration forum discussion repair`);
+      add(`${subject} conservation community restoration`);
+      add(`${subject} restoration condition treatment documentation repair history`);
+      add(`${subject} restoration condition assessment specifications forum`);
+      add(`${subject} conservation previous intervention replacement material discussion`);
+      if (/\b(?:porcelain|ceramic|china)\b/iu.test(subject)) {
+        add('porcelain restoration ceramic conservation forum glaze crack repair history');
+        add('china repair ceramics conservation community treatment documentation');
+        add('museum ceramics conservation porcelain condition restoration records');
+      }
+      if (/\b(?:shoe|footwear|boot|sneaker|leather shoe)\b/iu.test(subject)) {
+        add('cobbler shoe repair forum material matching color restoration records');
+        add('shoe repair workshop restoration history customer notes leather sole stitching');
+        add('footwear restoration rework wrong materials color matching customer request');
+      }
+    }
+
+    const request = this.cleanNormalizedText(input.requestDescription ?? '');
+    if (
+      /\b(?:eyeglass frame repair|eyeglass repair|eyewear repair|optical frame repair|spectacle frame repair|glasses repair)\b/u.test(request)
+    ) {
+      add('eyeglass frame repair forum hinge replacement repeated adjustment repair history');
+      add('optician optical frame repair workshop replacement parts customer fit notes');
+      add('spectacle frame repair technician repair history wrong parts color matching');
+      add('eyewear repair shop customer adjustment records delayed repair');
+    }
+    if (
+      /\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request) &&
+      /\b(?:storage|warehouse|transport|delivery|spoilage|market price|profitability|margin|route|crop|produce)\w*\b/u.test(request)
+    ) {
+      add('agricultural distributor crop profitability storage transport cost forum discussion');
+      add('produce distributor spoilage warehouse delivery cost margin forum discussion');
+      add('fresh produce distribution market price route profitability forum discussion');
+      add('agriculture supply chain storage loss transport pricing distributor forum');
+    }
+    if (
+      /\b(?:travel compan(?:y|ies)|travel agenc(?:y|ies)|tour operators?|tour compan(?:y|ies)|tour packages?)\b/u.test(request) &&
+      /\b(?:profitability|margin|pricing|supplier fees?|partner invoices?|cancellations?|refunds?|booking changes?|seasonal demand|transportation costs?)\w*\b/u.test(request)
+    ) {
+      add('tour operator forum package profitability supplier fees cancellations');
+      add('travel agency forum tour pricing booking changes margins');
+      add('tour operator community transportation supplier cost package profit');
+      add('travel business forum refunds seasonal demand package profitability');
+    }
+    for (const query of RequestOnlinePharmacyFraudUtil.buildSourceQueries('forum')) {
+      if (RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)) {
+        add(`${query} forum discussion`);
+      }
+    }
+    for (const query of RequestNicheCustomCraftUtil.buildSourceQueries(
+      input.requestDescription,
+      'forum',
+    )) {
+      add(`${query} forum discussion`);
+    }
+    if (
+      /\b(?:sports rehabilitation centers?|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|athletic trainers?)\b/u.test(
+        request,
+      )
+    ) {
+      add('sports medicine rehabilitation forum athlete recovery monitoring');
+      add('physical therapy forum remote rehabilitation athlete pain mobility');
+      add('athletic trainer forum return to play rehabilitation monitoring');
+      add('sports injury rehabilitation practitioner forum wearable sensor recovery');
+      add('physiotherapy community outpatient athlete recovery tracking');
+    }
+
+    for (const hint of input.sourceHints ?? []) {
+      if (/https?:\/\//iu.test(hint) || /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/iu.test(hint)) continue;
+      add(`${hint.split(/\s+/u).slice(0, 7).join(' ')} forum discussion`);
+      if (queries.length >= 5) break;
+    }
+
+    for (const query of input.plannedQueries ?? []) {
+      add(`${query.split(/\s+/u).slice(0, 7).join(' ')} forum discussion`);
+      if (queries.length >= 5) break;
+    }
+
+    return queries.slice(0, 5);
+  }
+
+  private async collectFromSpecialistForumDiscovery(
+    input: CollectorInput,
+  ): Promise<CollectorPost[]> {
+    const queries = this.buildSpecialistForumDiscoveryQueries(input);
+    if (queries.length === 0) return [];
+
+    const blockedHosts = new Set([
+      'reddit.com', 'facebook.com', 'instagram.com', 'linkedin.com',
+      'youtube.com', 'pinterest.com', 'quora.com', 'stackoverflow.com',
+      'stackexchange.com', 'medium.com',
+    ]);
+    const settled = await Promise.allSettled(
+      queries.map(async (query, queryIndex) => {
+        const response = await axios.get<string>('https://www.bing.com/search', {
+          params: { q: query, format: 'rss', count: 10 },
+          headers: {
+            Accept: 'application/rss+xml, application/xml, text/xml',
+            'User-Agent': 'Voxidence-Evidence-Collector/1.0',
+          },
+          responseType: 'text',
+          timeout: input.collectionMode === 'TARGETED_RECOVERY' ? 2_600 : 3_000,
+          signal: CollectorAbortContextUtil.getSignal(),
+        });
+        const feed = await this.rssParser.parseString(response.data);
+        return (feed.items ?? [])
+          .map((raw, itemIndex): CollectorPost | null => {
+            const item = raw as ForumSearchRssItem;
+            const link = item.link?.trim() ?? '';
+            if (!link) return null;
+            let url: URL;
+            try {
+              url = new URL(link);
+            } catch {
+              return null;
+            }
+            const host = url.hostname.replace(/^www\./u, '').toLocaleLowerCase();
+            if ([...blockedHosts].some((blocked) => host === blocked || host.endsWith(`.${blocked}`))) {
+              return null;
+            }
+            const title = this.cleanPlainText(item.title);
+            const content = this.cleanPlainText(item.contentSnippet ?? item.content) || title;
+            const candidateText = `${title} ${content}`;
+            if (!this.passesSpecialistDiscoveryIdentityGate(input, candidateText, host)) {
+              return null;
+            }
+            const discussionSignal = this.cleanNormalizedText(
+              `${host} ${url.pathname} ${title} ${content.slice(0, 240)}`,
+            );
+            if (!/\b(?:forum|forums|community|discussion|discussions|thread|threads|topic|topics|message board|bulletin board|members?)\b/u.test(discussionSignal)) {
+              return null;
+            }
+            if (!title || content.length < 24) return null;
+            const externalKey = Buffer.from(link).toString('base64url').slice(0, 120);
+            return {
+              externalId: `specialist-discovery:${queryIndex}:${itemIndex}:${externalKey}`,
+              title,
+              content,
+              author: this.cleanPlainText(item.creator ?? item.author) || host,
+              url: link,
+              country: input.country, city: input.city, region: input.region,
+              languageCode: this.resolveStoredLanguageCode(input.language),
+              likesCount: 0, repliesCount: 0,
+              publishedAt: this.parseDate(item.isoDate ?? item.pubDate),
+              tags: [host, 'specialist-forum-discovery'],
+              comments: [],
+            };
+          })
+          .filter((post): post is CollectorPost => Boolean(post));
+      }),
+    );
+
+    return settled
+      .flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
+      .slice(0, this.maxFetchedPosts);
+  }
+
+  private async collectFromDirectForumDomains(
+    input: CollectorInput,
+    domains: readonly string[],
+  ): Promise<CollectorPost[]> {
+    if (domains.length === 0) return [];
+
+    const queries = ProblemFirstCollectorQueryUtil.build({
+      sourceKey: this.sourceKey,
+      domainName: input.domainName,
+      requestDescription: input.requestDescription,
+      plannedQueries: input.plannedQueries,
+      keywords: input.keywords,
+      authoritativePlannedQueries: input.authoritativePlannedQueries,
+    })
+      .map((query) =>
+        input.authoritativePlannedQueries
+          ? query.trim()
+          : query.split(/\s+/u).slice(0, 8).join(' '),
+      )
+      .filter(Boolean)
+      .slice(0, 2);
+    if (queries.length === 0) return [];
+
+    const requests = domains.flatMap((domain, domainIndex) =>
+      queries
+        .slice(0, domains.length > 1 ? 1 : 2)
+        .map((query) => this.searchDirectForumDomain(domain, query, input, domainIndex)),
+    );
+    const settled = await Promise.allSettled(requests);
+    return settled.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value : [],
+    );
+  }
+
+  private async searchDirectForumDomain(
+    domain: string,
+    query: string,
+    input: CollectorInput,
+    domainIndex: number,
+  ): Promise<CollectorPost[]> {
+    const search = `site:${domain} ${query}`;
+    try {
+      const response = await axios.get<string>('https://www.bing.com/search', {
+        params: { q: search, format: 'rss', count: Math.min(this.maxFetchedPosts, 8) },
+        headers: {
+          Accept: 'application/rss+xml, application/xml, text/xml',
+          'User-Agent': 'Voxidence-Evidence-Collector/1.0',
+        },
+        responseType: 'text',
+        timeout: input.collectionMode === 'TARGETED_RECOVERY' ? 2_200 : 2_600,
+        signal: CollectorAbortContextUtil.getSignal(),
+      });
+      const feed = await this.rssParser.parseString(response.data);
+      return (feed.items ?? [])
+        .map((raw, index): CollectorPost | null => {
+          const item = raw as ForumSearchRssItem;
+          const link = item.link?.trim() ?? '';
+          if (!link) return null;
+          let host = '';
+          try {
+            host = new URL(link).hostname.replace(/^www\./u, '').toLocaleLowerCase();
+          } catch {
+            return null;
+          }
+          if (host !== domain && !host.endsWith(`.${domain}`)) return null;
+          const title = this.cleanPlainText(item.title);
+          const content = this.cleanPlainText(item.contentSnippet ?? item.content) || title;
+          if (!title || content.length < 20) return null;
+          if (!this.passesSpecialistDiscoveryIdentityGate(input, `${title} ${content}`, host)) {
+            return null;
+          }
+          const externalKey = Buffer.from(link).toString('base64url').slice(0, 120);
+          return {
+            externalId: `webforum:${domainIndex}:${index}:${externalKey}`,
+            title,
+            content,
+            author: this.cleanPlainText(item.creator ?? item.author) || domain,
+            url: link,
+            country: input.country,
+            city: input.city,
+            region: input.region,
+            languageCode: this.resolveStoredLanguageCode(input.language),
+            likesCount: 0,
+            repliesCount: 0,
+            publishedAt: this.parseDate(item.isoDate ?? item.pubDate),
+            tags: [domain, 'specialist-forum'],
+            comments: [],
+          };
+        })
+        .filter((post): post is CollectorPost => Boolean(post))
+        .slice(0, this.maxFetchedPosts);
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Direct forum web search skipped | domain=${domain} | query=${query} | error=${this.getErrorMessage(error)}`,
+      );
+      return [];
+    }
+  }
+
+  private passesSpecialistDiscoveryIdentityGate(
+    input: CollectorRequestSupportInput,
+    candidateText: string,
+    host: string,
+  ): boolean {
+    const request = input.requestDescription ?? '';
+    const evidence = this.cleanNormalizedText(candidateText);
+    if (!evidence) return false;
+
+    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
+      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(
+        request,
+        evidence,
+      );
+    }
+
+    if (RequestNicheCustomCraftUtil.resolve(request)) {
+      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(
+        request,
+        evidence,
+      );
+    }
+
+    const constraint = RequestVerticalConstraintUtil.resolve({
+      requestDescription: request,
+      domainName: input.domainName,
+      plannedQueries: input.plannedQueries ?? [],
+    });
+    if (constraint.strict) {
+      const classification = RequestEvidenceAlignmentUtil.classifyForRequestFallback({
+        requestDescription: request,
+        evidenceText: evidence,
+        plannedQueries: input.plannedQueries ?? [],
+      });
+      if (classification !== 'UNRELATED') return true;
+      return (
+        RequestVerticalConstraintUtil.matchesVertical(evidence, constraint) &&
+        RequestVerticalConstraintUtil.matchesWorkflow(evidence, constraint)
+      );
+    }
+
+    return true;
+  }
+
+  private isWatchStrapCraftRequest(value: string): boolean {
+    const request = this.cleanNormalizedText(value);
+    return (
+      /\b(?:watch straps?|watch bands?|leather watch straps?|leather watch bands?|watch strap makers?|watch band makers?|bespoke straps?)\b/u.test(request) &&
+      /\b(?:wrist measurements?|wrist sizes?|strap lengths?|strap widths?|lug widths?|leather|materials?|stitching|buckles?|design revisions?|customer approvals?|approved specifications?|wrong sizes?|sizing errors?|remakes?|rework|wasted leather|delayed orders?)\b/u.test(request)
+    );
   }
 
   private resolveStackExchangeSites(input: CollectorRequestSupportInput): string[] {
@@ -285,10 +783,22 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       ...(input.sourceHints ?? []),
     ].join(' '));
 
+    const nicheCustomCraft = RequestNicheCustomCraftUtil.resolve(input.requestDescription);
+
     const sites: string[] = [];
     const add = (site: string) => {
       if (!sites.includes(site)) sites.push(site);
     };
+
+    if (nicheCustomCraft && !this.isTechnicalRequest(input)) {
+      add('crafts.stackexchange.com');
+    }
+
+    if (RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)) {
+      for (const site of RequestOnlinePharmacyFraudUtil.preferredStackExchangeSites()) {
+        add(site);
+      }
+    }
 
     if (
       /\b(?:universities|university|higher education|online learning systems?|learning platforms?|learning management systems?|lms|online exams?|online assessments?)\b/u.test(requestText) &&
@@ -301,9 +811,26 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       /\b(?:restaurant delivery platforms?|food delivery platforms?|food delivery apps?|restaurant delivery apps?|online food ordering services?|meal delivery platforms?|restaurant courier platforms?)\b/u.test(requestText) &&
       /\b(?:suspicious orders?|account takeovers?|account takeover|refund abuse|fraudulent refunds?|promotional abuse|promo(?:tional)? fraud|promo code abuse|payment behavior|device information|device signals?|customer complaints?|security alerts?|false positives?|blocked legitimate (?:users?|customers?)|coordinated abuse)\b/u.test(requestText)
     ) {
+      // Platform fraud is a security/operations workflow. Money.SE is aimed at
+      // personal finance and creates bank/consumer noise for professional
+      // restaurant/delivery fraud investigations.
       add('security.stackexchange.com');
-      add('money.stackexchange.com');
     }
+    if (
+      /\b(?:sports rehabilitation centers?|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|athletic trainers?)\b/u.test(requestText) &&
+      /\b(?:athletes?|recovery|rehabilitation|wearable|pain reports?|mobility|remote monitoring|return to play|reinjury|training load)\b/u.test(requestText)
+    ) {
+      add('fitness.stackexchange.com');
+      add('medicalsciences.stackexchange.com');
+    }
+
+    if (
+      /\b(?:urban healthcare networks?|healthcare networks?|hospital networks?|emergency departments?|ambulance services?|clinics?)\b/u.test(requestText) &&
+      /\b(?:patient demand|hospital capacity|ambulance availability|overcrowd(?:ed|ing)?|response times?|resource allocation|delayed patient care|care gaps?)\b/u.test(requestText)
+    ) {
+      add('medicalsciences.stackexchange.com');
+    }
+
     if (
       /\b(?:frame gilding specialists?|frame gilders?|gilders?|gilding workshops?|frame restoration specialists?|frame restorers?)\b/u.test(requestText) &&
       /\b(?:gold[- ]leaf|gold leaf|damaged decorative|surface preparation|finish preferences?|approved treatment|previous restoration|restoration work|color matching|colour matching|repeated work|wasted materials?)\b/u.test(requestText)
@@ -335,11 +862,27 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       add('engineering.stackexchange.com');
     }
     if (
+      /\b(?:violin varnish|violin restoration|luthier|string instrument restoration)\b/u.test(requestText) &&
+      /\b(?:varnish|coating|surface condition|treatment history|restoration history|formula|color matching|colour matching|preservation|documentation|records?|notes?)\b/u.test(requestText)
+    ) {
+      add('music.stackexchange.com');
+      add('crafts.stackexchange.com');
+    }
+
+    if (
       /\b(?:violin case restoration specialists?|violin case restorers?|instrument case restoration specialists?|instrument case restorers?|violin case restoration)\b/u.test(requestText) &&
       /\b(?:damaged hinges?|interior padding|fabric condition|handle repairs?|replacement hardware|previous restoration|restoration history|repeated repairs?|incorrect materials?|overlooked damage)\b/u.test(requestText)
     ) {
       add('music.stackexchange.com');
       add('crafts.stackexchange.com');
+    }
+
+    if (
+      /\b(?:vintage camera restoration specialists?|antique camera restoration specialists?|camera restoration specialists?|vintage camera repair specialists?|camera repair technicians?|film camera repair technicians?)\b/u.test(requestText) &&
+      /\b(?:mechanical faults?|lens condition|previous repairs?|missing components?|replacement parts?|cosmetic damage|restoration history|repair history|repeated diagnostics?|customer restoration preferences?)\b/u.test(requestText)
+    ) {
+      add('photo.stackexchange.com');
+      add('diy.stackexchange.com');
     }
 
     if (
@@ -365,7 +908,9 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       add('crafts.stackexchange.com');
     }
 
-    if (/\b(?:real estate|property investment|property investor|landlord|rental property|finance|cash flow|mortgage|vacancy|noi|profitability)\b/u.test(text)) {
+    const explicitPersonalOrInvestmentFinance =
+      /\b(?:personal finance|credit cards?|mortgages?|loans?|bank accounts?|consumer banking|salary|income tax|tax return|retirement|debt|investment portfolio|stock investing|property investment|real estate investment|rental property cash flow|landlord mortgage)\b/u.test(requestText);
+    if (explicitPersonalOrInvestmentFinance) {
       add('money.stackexchange.com');
     }
     if (/\b(?:cake decorator|custom cake|home baker|cake artist|bakery|food|restaurant|cooking|allergy|ingredient)\b/u.test(text)) {
@@ -456,10 +1001,39 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       if (/\b(?:security|fraud|scam|unauthorized|account|authentication|breach|threat|attack|compromise|suspicious)\w*\b/u.test(requestText)) {
         add('security.stackexchange.com');
       }
-      if (/\b(?:cost|revenue|profit|margin|pricing|payment|budget|financial|finance|investment)\w*\b/u.test(requestText)) {
+      const businessOperationalFinance =
+        /\b(?:companies?|businesses?|operators?|agencies|tour packages?|routes?|services?|facilities|departments|suppliers?|bookings?|reservations?)\b/u.test(requestText) &&
+        /\b(?:profitability|margin|pricing|budget|operating costs?|supplier fees?|cost drivers?|cost attribution|forecast)\w*\b/u.test(requestText);
+      const personalOrTransactionFinance =
+        /\b(?:personal finance|credit card|mortgage|loan|bank account|investment|salary|tax|consumer payment|refund dispute|chargeback|payment fraud)\w*\b/u.test(requestText);
+      const professionalPlatformAbuse =
+        /\b(?:platforms?|streaming|gaming|digital entertainment|restaurant|food delivery|university|healthcare|government|businesses?|companies?)\b/u.test(requestText) &&
+        /\b(?:account takeover|account theft|fraudulent subscriptions?|refund abuse|unauthorized refunds?|payment abuse|security alerts?|coordinated fraud|fraud detection)\b/u.test(requestText);
+      if (
+        /\b(?:cost|revenue|profit|margin|pricing|payment|budget|financial|finance|investment)\w*\b/u.test(requestText) &&
+        (!businessOperationalFinance || personalOrTransactionFinance) &&
+        !professionalPlatformAbuse
+      ) {
         add('money.stackexchange.com');
       }
-      if (/\b(?:restoration|restore|conservation|conservator|repair|material|surface|finish|treatment|craft|artisan|workshop|damage|mounting|paper|ink)\w*\b/u.test(requestText)) {
+      const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
+        input.requestDescription,
+      );
+      const explicitCraftWorkflow =
+        /\b(?:restoration|restore|conservation|conservator|repair specialist|repair shop|craft|artisan|workshop|gilding|woodworking|upholstery|custom framing|frame restoration|shoe repair|cobbler)\w*\b/u.test(
+          requestText,
+        );
+      if (workflowProfile.restorationIntent && explicitCraftWorkflow) {
+        /*
+         * Restoration requests previously skipped the generic craft fallback,
+         * which left valid specialist discovery with no StackExchange lane.
+         * Crafts carries treatment/material discussions; DIY is a secondary
+         * physical-repair lane. Final evidence still passes request identity
+         * and Community semantic verification.
+         */
+        add('crafts.stackexchange.com');
+        add('diy.stackexchange.com');
+      } else if (explicitCraftWorkflow) {
         add('crafts.stackexchange.com');
         add('diy.stackexchange.com');
       }
@@ -480,7 +1054,49 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       }
     }
 
-    return sites.slice(0, 2);
+    return sites
+      .filter((site) => this.isStackExchangeSiteCompatible(site, requestText))
+      .slice(0, 2);
+  }
+
+  private isStackExchangeSiteCompatible(site: string, requestText: string): boolean {
+    const normalizedSite = site.toLocaleLowerCase();
+
+    if (/^money\./u.test(normalizedSite)) {
+      const professionalPlatformAbuse =
+        /\b(?:platforms?|streaming|gaming|digital entertainment|subscription services?|restaurant|food delivery|marketplace|universit(?:y|ies)|healthcare|government|businesses?|companies?|organizations?)\b/u.test(requestText) &&
+        /\b(?:account takeover|account theft|fraudulent subscriptions?|refund abuse|unauthorized refunds?|unauthorised refunds?|payment abuse|security alerts?|coordinated fraud|fraud detection|suspicious activity)\b/u.test(requestText);
+      const businessOperationalFinance =
+        /\b(?:companies?|businesses?|operators?|agencies|platforms?|services?|packages?|routes?|suppliers?|bookings?|reservations?)\b/u.test(requestText) &&
+        /\b(?:profitability|margin|pricing|budget|operating costs?|supplier fees?|cost drivers?|cost attribution|financial forecasts?|revenue leakage)\b/u.test(requestText);
+      const explicitPersonalFinance =
+        /\b(?:personal finance|credit cards?|mortgages?|loans?|bank accounts?|consumer banking|salary|income tax|tax return|retirement|debt|investment portfolio|stock investing|property investment|real estate investment|rental property cash flow|landlord mortgage)\b/u.test(requestText);
+      if ((professionalPlatformAbuse || businessOperationalFinance) && !explicitPersonalFinance) {
+        return false;
+      }
+    }
+    if (/^music\./u.test(normalizedSite)) {
+      const restorationArtifactRequest = /\b(?:restor\w*|conserv\w*|repair history|previous repairs?|replacement materials?|missing components?|damaged mechanisms?)\b/u.test(requestText);
+      const mechanicalMusicBoxRequest = /\b(?:music box|musical box|cylinder music box|disc music box|tune[- ]?cylinder|comb mechanism|governor mechanism|spring mechanism)\b/u.test(requestText);
+      const explicitInstrumentRepairRequest = /\b(?:guitar|violin|piano|flute|woodwind|brass instrument|musical instrument repair|instrument repair|luthier)\b/u.test(requestText);
+      if (restorationArtifactRequest && mechanicalMusicBoxRequest && !explicitInstrumentRepairRequest) {
+        return false;
+      }
+    }
+    const requirements: ReadonlyArray<readonly [RegExp, RegExp]> = [
+      [/^music\./u, /\b(?:music|musical|instrument|guitar|violin|piano|orchestra|band|luthier|score|sheet music)\w*\b/u],
+      [/^photo\./u, /\b(?:photo|photograph|camera|lens|shutter|image capture)\w*\b/u],
+      [/^academia\./u, /\b(?:academic|university|college|research|student|faculty|course|exam)\w*\b/u],
+      [/^money\./u, /\b(?:money|finance|financial|payment|transaction|refund|budget|profit|revenue|investment|fraud)\w*\b/u],
+      [/^security\./u, /\b(?:security|cyber|fraud|unauthorized|authentication|account takeover|breach|attack|threat|compromise)\w*\b/u],
+      [/^cooking\./u, /\b(?:food|cooking|kitchen|restaurant|ingredient|recipe|allergy|refrigeration)\w*\b/u],
+      [/^workplace\./u, /\b(?:workplace|employee|staff|workload|assignment|human resources|hr|scheduling)\w*\b/u],
+      [/^sustainability\./u, /\b(?:sustainability|environment|energy|water|waste|emission|resource|agriculture|farm)\w*\b/u],
+    ];
+    for (const [sitePattern, requestPattern] of requirements) {
+      if (sitePattern.test(normalizedSite)) return requestPattern.test(requestText);
+    }
+    return true;
   }
 
   private isProfessionalProblemRequest(input: CollectorInput): boolean {
@@ -511,6 +1127,24 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     );
   }
 
+  private normalizeStackExchangeApiSite(site: string): string {
+    const normalized = site
+      .trim()
+      .toLocaleLowerCase()
+      .replace(/^https?:\/\//u, '')
+      .replace(/^www\./u, '')
+      .replace(/\/$/u, '');
+
+    const stackExchange = normalized.match(/^([a-z0-9-]+)\.stackexchange\.com$/u);
+    if (stackExchange?.[1]) return stackExchange[1];
+    if (normalized === 'stackoverflow.com') return 'stackoverflow';
+    if (normalized === 'serverfault.com') return 'serverfault';
+    if (normalized === 'superuser.com') return 'superuser';
+    if (normalized === 'askubuntu.com') return 'askubuntu';
+    if (normalized === 'mathoverflow.net') return 'mathoverflow';
+    return normalized;
+  }
+
   private async searchStackExchange(
     site: string,
     query: string,
@@ -521,11 +1155,12 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     }
 
     try {
+      const apiSite = this.normalizeStackExchangeApiSite(site);
       const response = await axios.get<StackExchangeSearchResponse>(
         'https://api.stackexchange.com/2.3/search/advanced',
         {
           params: {
-            site,
+            site: apiSite,
             q: query,
             sort: 'relevance',
             order: 'desc',
@@ -534,12 +1169,20 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
           },
           headers: {
             Accept: 'application/json',
-            'User-Agent': 'NexoraAI-Graduation-Project',
+            'User-Agent': 'Voxidence-Evidence-Collector/1.0',
           },
           timeout: input.collectionMode === 'TARGETED_RECOVERY' ? 2_600 : 3_300,
+          signal: CollectorAbortContextUtil.getSignal(),
         },
       );
 
+      const backoffSeconds = Number(response.data?.backoff ?? 0);
+      if (Number.isFinite(backoffSeconds) && backoffSeconds > 0) {
+        ForumCollector.stackExchangeCircuitOpenUntil = Math.max(
+          ForumCollector.stackExchangeCircuitOpenUntil,
+          Date.now() + backoffSeconds * 1_000,
+        );
+      }
       const questions = Array.isArray(response.data?.items)
         ? [...response.data.items]
         : [];
@@ -679,6 +1322,14 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       replies: post.repliesCount ?? 0,
       publishedAt: post.publishedAt,
     });
+  }
+
+  /** Parses an optional external publication date without throwing. */
+  private parseDate(value?: string): Date | undefined {
+    if (!value?.trim()) return undefined;
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
   }
 
   /**

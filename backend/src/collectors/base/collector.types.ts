@@ -62,6 +62,13 @@ export type CollectorInput = {
    */
   plannedQueries?: string[];
 
+  /**
+   * True only when plannedQueries came from the current AI collection plan.
+   * Collectors must execute these queries as-is instead of re-compiling them
+   * from persisted domain keywords or deterministic templates.
+   */
+  authoritativePlannedQueries?: boolean;
+
   /** AI source-specific routing hints for this collector. */
   sourceHints?: string[];
 

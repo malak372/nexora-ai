@@ -1,3 +1,4 @@
+// ignore: dangling_library_doc_comments
 /// Administrator dashboard page for the mobile application.
 ///
 /// The existing overview selector supports day, week, month, year, and all-time

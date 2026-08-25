@@ -1,4 +1,5 @@
 import { RequestWorkflowIntentProfileUtil } from './request-workflow-intent-profile.util';
+import { RequestOperationalCostAttributionUtil } from './request-operational-cost-attribution.util';
 
 export type RequestWorkflowArchetype =
   | 'CONSUMER_SOFTWARE'
@@ -29,6 +30,7 @@ export type RequestWorkflowArchetype =
   | 'RENEWABLE_ASSET_PERFORMANCE_OPERATIONS'
   | 'INDUSTRIAL_SUPPLY_CHAIN_OPERATIONS'
   | 'AGRICULTURAL_SUPPLY_CHAIN_OPERATIONS'
+  | 'AGRICULTURAL_DISTRIBUTION_PROFITABILITY_OPERATIONS'
   | 'AGRICULTURAL_EXPORT_PROFITABILITY_OPERATIONS'
   | 'FARM_ENERGY_OPERATIONS'
   | 'COMMERCIAL_BUILDING_ENERGY_OPERATIONS'
@@ -45,6 +47,7 @@ export type RequestWorkflowArchetype =
   | 'ENTERPRISE_POLICY_COMPLIANCE_OPERATIONS'
   | 'TOURISM_DESTINATION_OPERATIONS'
   | 'PUBLIC_SECTOR_OPERATIONS'
+  | 'OPERATIONAL_COST_ATTRIBUTION_OPERATIONS'
   | 'MUNICIPAL_WASTE_COLLECTION_OPERATIONS'
   | 'MUSICAL_MANUSCRIPT_RESTORATION_OPERATIONS'
   | 'GENERAL_OPERATIONAL';
@@ -342,7 +345,7 @@ export class RequestWorkflowArchetypeUtil {
     }
 
     const mediaContentProfitabilityActor =
-      /\b(?:streaming and digital entertainment companies?|streaming companies?|streaming services?|streaming platforms?|digital entertainment companies?|media and entertainment companies?|media companies?|content platforms?)\b/iu.test(text);
+      /\b(?:streaming and digital entertainment companies?|streaming companies?|streaming services?|streaming platforms?|digital entertainment companies?|digital entertainment platforms?|digital entertainment services?|media and entertainment companies?|media and entertainment platforms?|media companies?|digital media platforms?|content platforms?|gaming platforms?|game platforms?)\b/iu.test(text);
     const mediaContentProfitabilityWorkflow =
       /\b(?:content profitability|sustainable revenue|subscription activity|subscription revenue|advertising income|advertising revenue|ad revenue|production costs?|viewing behavior|viewer behavior|cancellations?|subscriber churn|promotional campaigns?|content categories?|shows?|creators?|financial return|revenue forecasts?|content investment|investment decisions?)\b/iu.test(text);
     if (
@@ -390,6 +393,17 @@ export class RequestWorkflowArchetypeUtil {
         0.99,
         ['reddit', 'forum', 'news', 'gdelt', 'crossref', 'blog', 'youtube'],
         ['app-store', 'google-play', 'github', 'stackoverflow', 'dev-to', 'product-hunt', 'hacker-news'],
+      );
+    }
+
+    const operationalCostAttribution =
+      RequestOperationalCostAttributionUtil.resolve(input.requestDescription);
+    if (operationalCostAttribution && !developerSubject) {
+      return this.result(
+        'OPERATIONAL_COST_ATTRIBUTION_OPERATIONS',
+        0.995,
+        ['crossref', 'news', 'gdelt', 'reddit'],
+        ['app-store', 'google-play', 'product-hunt', 'github', 'stackoverflow', 'dev-to', 'hacker-news', 'forum', 'youtube', 'blog'],
       );
     }
 
@@ -536,6 +550,23 @@ export class RequestWorkflowArchetypeUtil {
         'CONNECTED_ASSET_SECURITY_OPERATIONS',
         0.98,
         ['reddit', 'gdelt', 'crossref', 'news', 'youtube', 'forum', 'blog'],
+        ['app-store', 'google-play', 'product-hunt', 'github', 'stackoverflow', 'dev-to', 'hacker-news'],
+      );
+    }
+
+    const agriculturalDistributionProfitabilityActor =
+      /\b(?:agricultural distributors?|agriculture distributors?|produce distributors?|fresh produce distributors?|crop distributors?|farm produce distributors?|agricultural wholesalers?|produce wholesalers?)\b/iu.test(requestText);
+    const agriculturalDistributionProfitabilityWorkflow =
+      /\b(?:storage losses?|storage costs?|warehouse costs?|transportation delays?|transport delays?|delivery delays?|delivery costs?|transportation costs?|market price fluctuations?|market prices?|price volatility|spoilage|harvest records?|warehouse inventory|shipment activity|financial expenses?|crop profitability|product profitability|profit margins?|route profitability|pricing decisions?)\b/iu.test(requestText);
+    if (
+      agriculturalDistributionProfitabilityActor &&
+      agriculturalDistributionProfitabilityWorkflow &&
+      !developerSubject
+    ) {
+      return this.result(
+        'AGRICULTURAL_DISTRIBUTION_PROFITABILITY_OPERATIONS',
+        0.995,
+        ['crossref', 'news', 'reddit', 'forum', 'blog', 'gdelt'],
         ['app-store', 'google-play', 'product-hunt', 'github', 'stackoverflow', 'dev-to', 'hacker-news'],
       );
     }
@@ -994,6 +1025,7 @@ export class RequestWorkflowArchetypeUtil {
       case 'INDUSTRIAL_ENERGY_EQUIPMENT_HEALTH_OPERATIONS':
       case 'INDUSTRIAL_SUPPLY_CHAIN_OPERATIONS':
       case 'AGRICULTURAL_SUPPLY_CHAIN_OPERATIONS':
+      case 'AGRICULTURAL_DISTRIBUTION_PROFITABILITY_OPERATIONS':
       case 'AGRICULTURAL_EXPORT_PROFITABILITY_OPERATIONS':
       case 'FARM_ENERGY_OPERATIONS':
       case 'COMMERCIAL_BUILDING_ENERGY_OPERATIONS':
@@ -1004,6 +1036,7 @@ export class RequestWorkflowArchetypeUtil {
       case 'ENTERPRISE_POLICY_COMPLIANCE_OPERATIONS':
       case 'TOURISM_DESTINATION_OPERATIONS':
       case 'PUBLIC_SECTOR_OPERATIONS':
+      case 'OPERATIONAL_COST_ATTRIBUTION_OPERATIONS':
         return ['NEWS', 'FORUMS'];
       case 'MUNICIPAL_WASTE_COLLECTION_OPERATIONS':
       case 'MUSICAL_MANUSCRIPT_RESTORATION_OPERATIONS':
@@ -1013,6 +1046,11 @@ export class RequestWorkflowArchetypeUtil {
       case 'CONNECTED_ASSET_SECURITY_OPERATIONS':
         return ['NEWS', 'FORUMS', 'TECHNICAL'];
     }
+
+    // Defensive runtime fallback for values arriving from stale persisted data
+    // or an older/newer service version. Every current union member is handled
+    // explicitly above, so normal typed execution does not rely on this branch.
+    return ['NEWS', 'FORUMS'];
   }
 
   private static result(

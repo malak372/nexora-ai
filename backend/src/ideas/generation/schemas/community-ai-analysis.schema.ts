@@ -1,5 +1,8 @@
 import type { AiJsonSchema } from '../../../ai/types/ai-json-schema.type';
-import { COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES } from '../constants/community-ai-analysis.constants';
+import {
+  COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES,
+  COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST,
+} from '../constants/community-ai-analysis.constants';
 
 /**
  * Compact provider-facing schema for community analysis.
@@ -107,6 +110,7 @@ export function buildCommunityAiAnalysisSchema(options?: {
                     enum: [
                       'DIRECT_PROBLEM',
                       'SUPPORTING_SIGNAL',
+                      'CONTEXT_ONLY',
                       'UNRELATED',
                     ],
                   },
@@ -142,19 +146,19 @@ export function buildCommunityAiEvidenceTriageSchema(): AiJsonSchema {
       items: {
         type: 'array',
         minItems: 1,
-        maxItems: 8,
+        maxItems: COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST,
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['evidenceId', 'classification', 'confidence'],
+          required: ['evidenceId'],
           properties: {
             evidenceId: { type: 'string', maxLength: 220 },
             classification: {
               type: 'string',
-              enum: ['DIRECT_PROBLEM', 'SUPPORTING_SIGNAL', 'UNRELATED'],
+              enum: ['DIRECT_PROBLEM', 'SUPPORTING_SIGNAL', 'CONTEXT_ONLY', 'UNRELATED'],
             },
             confidence: { type: 'number', minimum: 0, maximum: 100 },
-            problemFamily: { type: 'string', maxLength: 80 },
+            problemFamily: { type: 'string', maxLength: 240 },
           },
         },
       },

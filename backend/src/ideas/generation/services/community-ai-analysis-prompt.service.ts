@@ -35,7 +35,8 @@ export class CommunityAiAnalysisPromptService {
       .filter(
         (item) =>
           item.verifiedByDeterministicGuard &&
-          item.classification !== 'UNRELATED' &&
+          (item.classification === 'DIRECT_PROBLEM' ||
+            item.classification === 'SUPPORTING_SIGNAL') &&
           rawById.has(item.evidenceId),
       )
       .sort((left, right) => {
@@ -65,6 +66,7 @@ export class CommunityAiAnalysisPromptService {
         primaryDomain: { id: context.domainId, name: context.domainName },
         requestDescription: context.requestDescription,
         selectedDomains: context.selectedDomains.map((domain) => domain.name),
+        canonicalProblemProfile: context.collectionPlan?.problemProfile ?? null,
         requestIntent: context.collectionPlan
           ? {
               intentConcepts: context.collectionPlan.intentConcepts.slice(0, 5),
@@ -92,7 +94,7 @@ export class CommunityAiAnalysisPromptService {
     };
   }
 
-  buildEvidenceTriageBatch(
+  buildEvidenceTriageCorpus(
     context: IdeaGenerationContext,
     batch: readonly {
       readonly id: string;
@@ -101,23 +103,33 @@ export class CommunityAiAnalysisPromptService {
       readonly text: string;
     }[],
   ): CommunityAiAnalysisPrompt {
+    const maxEvidenceChars =
+      batch.length >= 72
+        ? 720
+        : batch.length >= 48
+          ? 820
+          : batch.length >= 24
+            ? 960
+            : 1_200;
+
     return {
       systemInstruction: this.buildEvidenceTriageSystemInstruction(),
       userPrompt: JSON.stringify({
-        task: 'Classify every supplied evidence item. Return only the compact items array; do not generate opportunities, summaries, explanations, or prose.',
+        task: 'Classify EVERY supplied evidence item in this transport partition. The collection layer sends all partitions, so no collected item is intentionally omitted. Reuse concise evidence-native requester-owned problem-family labels when the evidence supports them. ROOT SHAPE IS EXACTLY {items:[...]}; never use a classifications field. Return only that JSON object; do not generate opportunities, summaries, explanations, or prose.',
         requestDescription: context.requestDescription,
         selectedDomains: context.selectedDomains.map((domain) => domain.name),
+        canonicalProblemProfile: context.collectionPlan?.problemProfile ?? null,
         requestIntent: context.collectionPlan
           ? {
-              intentConcepts: context.collectionPlan.intentConcepts.slice(0, 6),
-              evidenceTargets: context.collectionPlan.evidenceTargets.slice(0, 4),
+              intentConcepts: context.collectionPlan.intentConcepts.slice(0, 4),
+              evidenceTargets: context.collectionPlan.evidenceTargets.slice(0, 3),
             }
           : null,
         items: batch.map((item) => ({
           evidenceId: item.id,
           sourceKey: item.sourceKey,
           sourceType: item.sourceType,
-          text: item.text.slice(0, 700),
+          text: item.text.slice(0, maxEvidenceChars),
         })),
       }),
     };
@@ -143,7 +155,8 @@ export class CommunityAiAnalysisPromptService {
       'Generic finance-adjacent words such as spending, receipts, budget, cost, or grocery do not support payment-method linking, bank linking, wallet linking, failed-charge, or charge-mismatch claims. Those mechanisms require explicit payment/card/bank/wallet/charge evidence in the same quote.',
       'Never use the opening sentence of a narrative review as an opportunity title. Titles must name the canonical problem family or unmet workflow need supported by the quote.',
       'Keep each opportunity tied to one atomic problem family. Complementary observations may be combined only when they form one coherent actor/workflow problem; do not combine unrelated failures or introduce mechanisms absent from the evidence.',
-      'When requestDescription is present, it is a scope constraint, not evidence. Reject same-domain evidence that does not materially match the requested workflow.',
+      'When requestDescription is present, it is a scope constraint, not evidence. canonicalProblemProfile is the PREPARING-stage interpretation of that text and is the primary matching contract. Reject same-domain evidence that does not materially match the requested problem or workflow.',
+      'When requestDescription is present, evidence may corroborate or challenge facets of canonicalProblemProfile, but an evidence title or narrower problemFamily must never rename, replace, or shrink the requester-defined problem. Keep the canonical requester workflow primary through synthesis.',
       'When requestDescription is absent, prefer concrete direct-user problems over secondary reports when both are available inside the selected domains.',
       'domainName must match a selectedDomains.name. If uncertain, omit domainName and let the deterministic service map the evidence to a selected domain.',
       'Keep title, problem, unmetNeed, solutionArea, affectedUsers, risks, summary, and warnings concise.',
@@ -159,16 +172,41 @@ export class CommunityAiAnalysisPromptService {
     return [
       'You are Voxidence raw-evidence semantic triage.',
       'Return one compact JSON object only and no Markdown.',
-      'Return exactly one classification item for every supplied evidenceId whenever possible. Never invent an evidenceId.',
-      'Allowed labels are DIRECT_PROBLEM, SUPPORTING_SIGNAL, and UNRELATED.',
+      'Return exactly one classification item for every supplied compact evidenceId whenever possible. Never invent an evidenceId.',
+      'You are seeing one transport partition of the complete collected Community ledger. Other partitions are classified concurrently when the ledger exceeds one provider request. Evidence ids are compact aliases used only for this response. Classify every supplied item from what that item actually states; downstream canonical normalization keeps equivalent problemFamily labels consistent across partitions.',
+      'When several independent items support the same requester-owned problem family, reuse the same concise problemFamily label so downstream ranking can count evidence volume and source diversity correctly.',
+      'Allowed labels are DIRECT_PROBLEM, SUPPORTING_SIGNAL, CONTEXT_ONLY, and UNRELATED.',
+      'Survey invitations, participant recruitment posts, thesis/dissertation recruitment, and research descriptions that explain what a study will explore but contain no reported findings are CONTEXT_ONLY when request-aligned, otherwise UNRELATED. They can never be DIRECT_PROBLEM or SUPPORTING_SIGNAL until the item itself states observed results, reported failures, shortages, delays, errors, barriers, or another concrete problem finding.',
+      'When canonicalProblemProfile is supplied, classify problem-first in this priority order: coreProblem, workflow, actor/object, failureModes, consequences, then domain. Domain overlap alone never makes evidence relevant.',
       'DIRECT_PROBLEM means the evidence itself materially states the requester actor/workflow problem or a very close operational failure.',
-      'SUPPORTING_SIGNAL means the evidence is genuinely about the same actor, asset, or workflow and supports an important subset of the requester problem, but does not establish the complete problem alone.',
-      'UNRELATED means lexical overlap only, broad-domain overlap only, marketing/publisher text without a usable problem signal, a different actor/workflow, or developer-only software material for a non-developer request.',
+      'SUPPORTING_SIGNAL means the evidence supports one real atomic part of the requester problem. Exact actor + exact pain is strongest. Adjacent actor/object + the same concrete workflow pain may still be weak SUPPORTING_SIGNAL when the evidence proves the same operational failure; adjacent actor plus merely adjacent pain is UNRELATED. It does NOT need to restate the complete causal chain or every requester field.',
+      'Several independent SUPPORTING_SIGNAL items may complement one another across sources. Classify each item on its own evidence; do not require one sentence or one source to prove the whole requester problem. Read the full supplied excerpt because one useful signal may span multiple sentences.',
+      'For digital-entertainment conversion requests, generic social-media marketing, education platforms, sales advice, AI tutorials, game reviews, or broad media trends are UNRELATED unless the same item explicitly connects a digital-entertainment/streaming/gaming platform to purchase, paid-content, subscription, transaction, conversion, abandonment/drop-off, promotion effectiveness, recommendations, or monetization friction.',
+      'For digital-entertainment account-abuse/financial-loss requests, do not treat generic banking, telecom, e-commerce, authentication, wallet, or payment-platform evidence as DIRECT_PROBLEM. It may be SUPPORTING_SIGNAL only when it proves the same concrete account-takeover/refund/subscription/payment-abuse mechanism; the problemFamily must name only that mechanism actually stated by the evidence. Financial-loss/revenue-attribution wording requires explicit loss, revenue, chargeback, refund-cost, forecast, or financial-impact evidence in the same item.',
+      'For custom musical-instrument-case requests, scientific/medical/optical/financial instruments, Texas Instruments, camera/computer/phone cases, and generic instrument history are UNRELATED. Require musical-instrument-case identity (for example violin/cello/guitar/instrument flight case) plus a specification, fit, measurement, padding, material, hardware, revision, approval, waste, rework, or delay facet.',
+      'Atomic-support rule: if an item matches the requester actor/object context and proves any one concrete failure, incident, condition, consequence, missing-history fact, replacement/material decision, access/security event, disruption, false-positive restriction, delay, or rework facet from canonicalProblemProfile, classify it SUPPORTING_SIGNAL even when it does not mention the requester’s fragmented-record mechanism.',
+      'Same-object evidence is especially important for niche physical/restoration work: condition damage, missing parts, unknown previous repairs, period/original-detail preservation, or replacement-material uncertainty can be SUPPORTING_SIGNAL for a restoration-history problem without mentioning notebooks or a software system.',
+      'For physical/restoration requests, same-workflow but unrelated-object evidence is NOT problem evidence. However, a practitioner in the same craft/material family may be weak SUPPORTING_SIGNAL when it explicitly proves the exact requester pain (for example scattered photos/notes, no record of materials/finishes, lost prior-work history, or inability to reproduce previous work). Never upgrade that adjacent-practitioner evidence to DIRECT_PROBLEM. A generic restoration tutorial or different artifact with no matching pain remains UNRELATED.',
+      'For restoration-history/documentation requests, production skill, chemistry, material science, generic conservation technique, or restoration of another object is UNRELATED unless the item explicitly proves the requester documentation/history/recordkeeping pain or the same exact object plus a missing/unknown treatment-history, coating/material record, preservation-preference, or reproducibility problem. Do not convert a technique/material article into evidence of fragmented records.',
+      'Institutional security incidents can be SUPPORTING_SIGNAL when they prove a matching platform/account/access/assessment consequence such as a learning-platform breach, exposed student data, disrupted exams, delayed investigation, or false restriction, even if the item does not describe every siloed log source.',
+      'For requester-defined digital security workflows in any vertical, same-domain security news is insufficient. Require requester actor/object identity plus a concrete digital incident and at least one matching facet such as account compromise, payment fraud, permission/access abuse, exposed records, suspicious activity, or security-alert handling. Generic cybersecurity breaches in unrelated companies are UNRELATED.',
+      'For municipal/smart-city payment fraud requests, a documented municipality/city/public-service cyber or phishing incident with missing/stolen public funds, unauthorized transactions, account compromise, or investigation impact may be SUPPORTING_SIGNAL even when the item does not repeat parking/transit/utility payment rails or the full fragmented-record mechanism. Keep it SUPPORTING, not DIRECT, unless the fuller municipal-payment workflow is actually stated.',
+      'For logistics shipment-integrity/security requests, SUPPORTING_SIGNAL may prove one atomic facet: missing packages at a 3PL/warehouse handoff, conflicting carrier/warehouse scans, proof-of-handoff gaps, cargo diversion/theft, suspicious rerouting, unauthorized delivery-account/address changes, or shipment tracking/audit inconsistencies. It does NOT need to restate every tracking/account/warehouse/driver/security silo in the requester description. Generic route optimization, shipment consolidation, packaging, unrelated shipping finance, or generic cybersecurity without a shipment/package/cargo/warehouse/carrier identity is UNRELATED.',
+      'For professional book restoration/conservation requests, object identity is mandatory before pain matching. Evidence must actually concern physical books/manuscripts/bindings/pages/paper AND conservation/restoration/repair/condition/treatment. Fiction, book reviews, stories, movie/TV discussion, generic prose containing the word book, or unrelated uses of repair/restoration are UNRELATED even if they contain words such as missing, section, history, fragment, paper, or record. A real binding/page/paper condition, previous-treatment, material-selection, or conservation-documentation observation may be SUPPORTING_SIGNAL even when it proves only one facet of the broader restoration-history problem.',
+
+      'For public-transit operating-cost requests, aviation, airlines, cargo, shipping, and private fleet articles are not requester evidence merely because they mention routes, schedules, fuel, passengers, or costs. Require explicit public transit, bus, metro, rail-transit, transit-agency/operator, or equivalent municipal passenger-service identity. Aviation may be kept only as non-qualifying context outside the trusted ledger.',
+      'Example: for a university tuition/refund/account-security problem, evidence about federal student-aid fraud, fraudulent student refunds, university-account identity theft, or false-positive student payment restrictions can be SUPPORTING_SIGNAL even if it does not mention every siloed system in the requester description.',
+      'You are classifying EVERY collected raw item. Do not skip noisy items: explicitly label each supplied id as DIRECT_PROBLEM, SUPPORTING_SIGNAL, CONTEXT_ONLY, or UNRELATED. DIRECT_PROBLEM and SUPPORTING_SIGNAL are the only trusted problem-evidence labels. CONTEXT_ONLY means the item is genuinely useful for understanding the requester workflow, terminology, existing solution landscape, professional practice, or recovery-query expansion, but it does not itself prove user pain, demand, recurrence, or the requester problem. For every DIRECT_PROBLEM or SUPPORTING_SIGNAL item, assign a concise requester-owned problemFamily so downstream clustering can count evidence across sources and select the strongest problem family. CONTEXT_ONLY and UNRELATED use an empty problemFamily.',
+      'Problem families must describe the root operational friction or causal mechanism, not a downstream consequence. For example, fragmented building-performance data / energy anomaly diagnosis is a family; delayed efficiency improvements by itself is only a consequence.',
+      'For app-store and google-play, application listing/marketing text can never be DIRECT_PROBLEM or SUPPORTING_SIGNAL. If the listing materially matches the requester actor/object/workflow and is useful for terminology or solution-landscape discovery, classify it CONTEXT_ONLY; otherwise classify it UNRELATED. User reviews/comments may be DIRECT_PROBLEM or SUPPORTING_SIGNAL only when they describe real experienced workflow pain.',
+      'CONTEXT_ONLY is not evidence of a problem: use it for aligned professional methods, condition/reporting tools, existing workflow products, standards, or neutral descriptions that can improve vocabulary and recovery but do not state a requester-owned pain. UNRELATED means lexical overlap only, broad-domain overlap only, a genuinely different actor/workflow/problem family, or developer-only software material for a non-developer request.',
+      'For GENERAL and local-service workflows, same-domain or same-object vocabulary is not enough for SUPPORTING_SIGNAL. The item must establish at least one concrete requester-owned pain/workflow facet such as a fitting/measurement error, forgotten approved change, delay, rework, missing record, or other failure actually represented in canonicalProblemProfile.',
+      'Wedding participation costs, bachelorette travel, Airbnb/flights, Venmo splitting, maid-of-honor budgeting, or wedding-party spreadsheets are UNRELATED to a bridal-alterations fitting/measurement/approval-record problem unless the same item also states a concrete alterations/fitting failure. Self-hemming or DIY alteration mishaps may be SUPPORTING_SIGNAL for the narrow alteration outcome they prove, but they are not DIRECT_PROBLEM evidence of a professional alteration specialist workflow.',
       'Generic words such as material, customer, maintenance, service, system, data, cost, equipment, traffic, order, and design are never enough by themselves.',
       'For physical craft or local-service requests, software files, XML, SDKs, APIs, repositories, packages, UI layers, and programming errors are unrelated unless the requester itself is explicitly about software development.',
       'The phrase tourist traffic or visitor traffic normally means tourism volume/flow, not road traffic. Do not label it as road congestion or routing unless the same evidence explicitly mentions roads, vehicles, traffic jams, route delays, intersections, or road-network congestion.',
       'Positive-only praise is not a problem. Praise may still be SUPPORTING_SIGNAL only when it explicitly contains a real unmet need, limitation, wish, or workflow gap.',
-      'problemFamily must be a short semantic family of at most eight words and must reflect the evidence meaning, not a single ambiguous keyword.',
+      'problemFamily is required for every DIRECT_PROBLEM or SUPPORTING_SIGNAL item. The family must be EVIDENCE-NATIVE first and requester-owned second: name only the concrete problem/workflow facet that is explicitly present in the evidence text AND belongs to canonicalProblemProfile. Never copy a requester facet merely because it exists in the profile. If the evidence discusses leather templates/material waste but not customer measurements, do not label it Customer Measurements. If no concrete requester-owned problem family is stated but the item is still useful workflow/market context, use CONTEXT_ONLY with an empty problemFamily; otherwise classify it UNRELATED. Do not introduce any object, actor, workflow, or failure noun absent from the evidence itself. Use at most six words and keep the label under 80 characters. Generic labels such as Request-Aligned Operational Friction, Requester Problem, Most-Evidenced Problem, Supporting Evidence, or a single ambiguous keyword are invalid. Use an empty problemFamily for CONTEXT_ONLY and UNRELATED.',
       'confidence is 0-100 and should reflect confidence in the classification, not importance.',
       'Do not return reasons, summaries, opportunities, risks, recommendations, or extra fields.',
     ].join(' ');

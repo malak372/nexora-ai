@@ -1053,10 +1053,11 @@ export class AiExecutionService {
    * Ensures that one provider request completed with an acceptable
    * provider-neutral finish reason before its response is accepted.
    *
-   * STOP is the only finish reason accepted as a complete response.
-   * Truncated output, safety filtering, tool calls, explicit errors, and
-   * unknown termination reasons are converted into normalized provider
-   * errors so retry and fallback policies remain centralized.
+   * STOP is the canonical normal completion reason. UNKNOWN metadata may
+   * also proceed when the provider returned non-empty content; the payload is
+   * then accepted or rejected by the normal text/JSON/schema validation path.
+   * Truncated output, safety filtering, tool calls, and explicit provider
+   * errors remain normalized failures so retry/fallback stays centralized.
    *
    * @param result Normalized provider result.
    * @throws AiProviderError When generation did not complete normally.
@@ -1114,8 +1115,20 @@ export class AiExecutionService {
         );
 
       case AiFinishReason.UNKNOWN:
+        /*
+         * Completion metadata is advisory when the provider returned actual
+         * content. Providers add finish-reason variants over time and some
+         * gateways omit the field even for complete responses. Let the next
+         * validation stage decide whether non-empty text / JSON satisfies the
+         * requested contract instead of failing before parsing it. Empty
+         * responses are already rejected by provider adapters.
+         */
+        if (result.text.trim()) {
+          return;
+        }
+
         throw new AiProviderError(
-          'The AI provider returned an unknown completion reason.',
+          'The AI provider returned an unknown completion reason without usable content.',
           AiProviderErrorCode.UNKNOWN,
           true,
           undefined,

@@ -34,7 +34,6 @@ import {
 } from '../types/idea-generation-context.type';
 
 import type { IdeaOwner } from '../../shared/types/idea-owner.type';
-import type { IdeaGenerationPolicy } from '../types/idea-generation-policy.type';
 import type { RequestCollectionPlan } from '../types/request-collection-plan.type';
 
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
@@ -51,9 +50,7 @@ import { IdeaGenerationLockService } from './idea-generation-lock.service';
 
 import { IdeaGenerationRunService } from './idea-generation-run.service';
 import { DomainResolutionService } from './domain-resolution.service';
-import { IdeaGenerationPolicyService } from './idea-generation-policy.service';
 import { RequestCollectionPlanningService } from './request-collection-planning.service';
-import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { createHash, randomUUID } from 'node:crypto';
@@ -68,6 +65,9 @@ import { createHash, randomUUID } from 'node:crypto';
  * @author Malak
  */
 export const IDEA_GENERATION_STAGES = Symbol('IDEA_GENERATION_STAGES');
+
+/** Valid UUID placeholder used only until the PREPARING pipeline stage resolves a concrete primary domain. */
+const PREPARING_DOMAIN_PLACEHOLDER_ID = '00000000-0000-4000-8000-000000000000';
 
 /**
  * Input used to generate an idea for an authenticated user.
@@ -144,6 +144,9 @@ type ExecuteOwnedIdeaGenerationInput = {
   requestDescription: string | null;
 
   requestFingerprint: string;
+
+  /** Explicit caller-selected domains preserved until the in-pipeline PREPARING stage resolves semantic scope. */
+  requestedDomainIds: string[];
 
   collectionPlan: RequestCollectionPlan | null;
 
@@ -236,8 +239,6 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
     private readonly prisma: PrismaService,
 
-    private readonly policyService: IdeaGenerationPolicyService,
-
     @Inject(IDEA_GENERATION_STAGES)
     private readonly stages: readonly IdeaGenerationStage[],
   ) { }
@@ -327,8 +328,13 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     }
 
     const checkpoint = run.contextSnapshot as unknown as IdeaGenerationContext;
-    let context = this.normalizeRecoveredContext(run.id, checkpoint);
-    context = await this.refreshRecoveredRequestSemantics(context);
+    const context = this.normalizeRecoveredContext(run.id, checkpoint);
+    /*
+     * Recovery also obeys the same lifecycle contract as a fresh run: semantic
+     * request planning never executes before IdeaGenerationPipelineService. If
+     * PREPARING was not durably checkpointed, the pipeline simply reruns the
+     * PREPARING stage from the raw request snapshot.
+     */
 
     const input: ExecuteOwnedIdeaGenerationInput = {
       owner: context.owner,
@@ -339,6 +345,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestDescription: context.requestDescription ?? null,
       requestFingerprint:
         context.requestFingerprint ?? this.buildRecoveredRequestFingerprint(context),
+      requestedDomainIds: context.requestedDomainIds ?? [],
       collectionPlan: context.collectionPlan ?? null,
       keywords: context.keywords,
       requestedDataSourceKeys: context.requestedDataSourceKeys,
@@ -388,6 +395,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
           : undefined,
       plannedKeywords: collectionPlan
         ? [
+            ...(collectionPlan.problemProfile
+              ? [
+                  collectionPlan.problemProfile.actor,
+                  collectionPlan.problemProfile.object,
+                  collectionPlan.problemProfile.coreProblem,
+                  collectionPlan.problemProfile.workflow,
+                  ...collectionPlan.problemProfile.failureModes,
+                  ...collectionPlan.problemProfile.consequences,
+                ]
+              : []),
             ...collectionPlan.searchQueries,
             ...collectionPlan.evidenceTargets,
             ...collectionPlan.intentConcepts,
@@ -1164,7 +1181,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       return null;
     }
 
-    return this.requestCollectionPlanningService.plan({
+    const plan = await this.requestCollectionPlanningService.plan({
       description,
       keywords: input.keywords ?? [],
       generationType: input.generationType,
@@ -1173,6 +1190,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       userId: input.userId,
       guestSessionId: input.guestSessionId,
     });
+    this.logger.debug(
+      `[PREPARING] Request/evidence plan resolved | aiUsed=${plan?.aiUsed ?? false} | fallbackUsed=${plan?.fallbackUsed ?? false} | queries=${plan?.searchQueries.length ?? 0} | sources=${plan?.selectedSourceKeys?.length ?? plan?.sourcePlans?.length ?? 0}.`,
+    );
+    return plan;
   }
 
   private filterPersistentKeywordsForCurrentRequest(
@@ -1239,7 +1260,18 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     keywords: readonly string[] | undefined,
     collectionPlan: RequestCollectionPlan | null,
   ): string[] {
+    const profile = collectionPlan?.problemProfile;
     return this.uniqueNormalizedStrings([
+      ...(profile
+        ? [
+            profile.actor,
+            profile.object,
+            profile.coreProblem,
+            profile.workflow,
+            ...profile.failureModes,
+            ...profile.consequences,
+          ]
+        : []),
       ...(collectionPlan?.intentConcepts ?? []),
       ...(collectionPlan?.evidenceTargets ?? []),
       ...(keywords ?? []),
@@ -1251,7 +1283,18 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     keywords: readonly string[] | undefined,
     collectionPlan: RequestCollectionPlan | null,
   ): string[] {
+    const profile = collectionPlan?.problemProfile;
     const planned = this.uniqueNormalizedStrings([
+      ...(profile
+        ? [
+            profile.actor,
+            profile.object,
+            profile.coreProblem,
+            profile.workflow,
+            ...profile.failureModes,
+            ...profile.consequences,
+          ]
+        : []),
       ...(collectionPlan?.searchQueries ?? []),
       ...(collectionPlan?.evidenceTargets ?? []),
       ...(collectionPlan?.intentConcepts ?? []),
@@ -1307,78 +1350,34 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     input: GenerateRegisteredIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
     const userId = this.normalizeRequiredValue(input.userId, 'User ID');
-    /*
-     * Entitlement lookup and domain resolution are independent database reads.
-     * Run them together so personalization/domain inference does not add a
-     * sequential database round-trip to the hot generation path.
-     */
-    const collectionPlanPromise = this.planRequestCollection({
-      description: input.dto.description,
-      keywords: input.dto.keywords,
-      generationType: input.dto.generationType,
-      language: input.dto.language,
-      requestedDomainIds: this.normalizeExplicitDomainIds(
-        input.dto.domainIds,
-        input.dto.domainId,
-      ),
-      userId,
-    });
-    const [policy, collectionPlan] = await Promise.all([
-      this.resolveUserQueuePolicy(userId, input.dto.generationType),
-      collectionPlanPromise,
-    ]);
-    const resolvedDomain = await this.resolveDomainForUser(
-      userId,
-      input.dto,
-      collectionPlan,
+    const requestedDomainIds = this.normalizeExplicitDomainIds(
+      input.dto.domainIds,
+      input.dto.domainId,
     );
-
-    const owner: IdeaOwner = {
-      type: IDEA_OWNER_TYPES.USER,
-      userId,
-    };
-    const domainProfile = await this.buildCrossDomainProfile(
-      input.dto,
-      resolvedDomain,
-      collectionPlan,
-    );
+    const owner: IdeaOwner = { type: IDEA_OWNER_TYPES.USER, userId };
     const requestFingerprint = this.buildRegisteredRequestFingerprint(
       input.dto,
-      policy.generationType,
+      input.dto.generationType,
     );
 
     return this.executeOwnedGeneration({
       owner,
-
-      generationType: policy.generationType,
-
-      domainId: resolvedDomain.domainId,
-
-      selectedDomains: domainProfile.selectedDomains,
-
-      domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
-
+      generationType: input.dto.generationType,
+      domainId: requestedDomainIds[0] ?? PREPARING_DOMAIN_PLACEHOLDER_ID,
+      selectedDomains: [],
+      domainResolution: null,
       requestDescription: this.normalizeOptionalValue(input.dto.description),
-
       requestFingerprint,
-
-      collectionPlan,
-
-      keywords: domainProfile.keywords,
-
+      requestedDomainIds,
+      collectionPlan: null,
+      keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
-
       forceRefresh: input.dto.forceRefresh ?? false,
-
       location: {
         country: this.normalizeRequiredValue(input.dto.country, 'Country'),
-
         city: this.normalizeOptionalValue(input.dto.city),
-
         region: this.normalizeOptionalValue(input.dto.region),
-
         radiusKm: input.dto.radiusKm ?? null,
-
         language: input.dto.language,
       },
     });
@@ -1410,64 +1409,33 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     const guestSession = await this.guestSessionService.resolveAvailableSession(
       input.guestSessionToken,
     );
-
+    const requestedDomainIds = this.normalizeExplicitDomainIds(
+      undefined,
+      input.dto.domainId,
+    );
     const owner: IdeaOwner = {
       type: IDEA_OWNER_TYPES.GUEST,
       guestSessionId: guestSession.id,
     };
-    const collectionPlan = await this.planRequestCollection({
-      description: input.dto.description,
-      keywords: input.dto.keywords,
-      generationType: IdeaGenerationType.GUEST_FREE,
-      language: input.dto.language,
-      requestedDomainIds: this.normalizeExplicitDomainIds(
-        undefined,
-        input.dto.domainId,
-      ),
-      guestSessionId: guestSession.id,
-    });
-    const resolvedDomain = await this.resolveDomainForGuest(
-      input.dto,
-      collectionPlan,
-    );
-    const requestFingerprint = this.buildGuestRequestFingerprint(input.dto);
 
     return this.executeOwnedGeneration({
       owner,
-
       generationType: IdeaGenerationType.GUEST_FREE,
-
-      domainId: resolvedDomain.domainId,
-
+      domainId: requestedDomainIds[0] ?? PREPARING_DOMAIN_PLACEHOLDER_ID,
       selectedDomains: [],
-
-      domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
-
+      domainResolution: null,
       requestDescription: this.normalizeOptionalValue(input.dto.description),
-
-      requestFingerprint,
-
-      collectionPlan,
-
-      keywords: this.buildPlannedRequestKeywords(
-        input.dto.description,
-        input.dto.keywords,
-        collectionPlan,
-      ),
-
+      requestFingerprint: this.buildGuestRequestFingerprint(input.dto),
+      requestedDomainIds,
+      collectionPlan: null,
+      keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
-
       forceRefresh: input.dto.forceRefresh ?? false,
-
       location: {
         country: this.normalizeRequiredValue(input.dto.country, 'Country'),
-
         city: this.normalizeOptionalValue(input.dto.city),
-
         region: this.normalizeOptionalValue(input.dto.region),
-
         radiusKm: input.dto.radiusKm ?? null,
-
         language: input.dto.language,
       },
     });
@@ -1488,52 +1456,31 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     );
 
     /*
-     * These preflight reads do not depend on one another. Run the active-run
-     * lookup, entitlement preflight, and collection planning in the same
-     * latency window so a remote database/cache round-trip does not delay the
-     * planner or vice versa. The post-create race check in queueOwnedGeneration
-     * remains authoritative for concurrent clicks.
+     * Only duplicate-run arbitration stays at the HTTP boundary. All semantic
+     * preparation, AI planning, domain resolution, and entitlement evaluation
+     * now happen after IdeaGenerationPipelineService starts the run.
      */
-    const [activeRun, policy, collectionPlan] = await Promise.all([
-      this.runService.findActiveRunForOwner({ userId }),
-      this.resolveUserQueuePolicy(userId, input.dto.generationType),
-      this.planRequestCollection({
-        description: input.dto.description,
-        keywords: input.dto.keywords,
-        generationType: input.dto.generationType,
-        language: input.dto.language,
-        requestedDomainIds: this.normalizeExplicitDomainIds(
-          input.dto.domainIds,
-          input.dto.domainId,
-        ),
-        userId,
-      }),
-    ]);
-
+    const activeRun = await this.runService.findActiveRunForOwner({ userId });
     if (activeRun) {
       return this.handleActiveQueuedRun(activeRun, requestFingerprint);
     }
-    const resolvedDomain = await this.resolveDomainForUser(
-      userId,
-      input.dto,
-      collectionPlan,
-    );
-    const domainProfile = await this.buildCrossDomainProfile(
-      input.dto,
-      resolvedDomain,
-      collectionPlan,
+
+    const requestedDomainIds = this.normalizeExplicitDomainIds(
+      input.dto.domainIds,
+      input.dto.domainId,
     );
 
     return this.queueOwnedGeneration({
       owner: { type: IDEA_OWNER_TYPES.USER, userId },
-      generationType: policy.generationType,
-      domainId: resolvedDomain.domainId,
-      selectedDomains: domainProfile.selectedDomains,
-      domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
+      generationType: input.dto.generationType,
+      domainId: requestedDomainIds[0] ?? PREPARING_DOMAIN_PLACEHOLDER_ID,
+      selectedDomains: [],
+      domainResolution: null,
       requestDescription: this.normalizeOptionalValue(input.dto.description),
       requestFingerprint,
-      collectionPlan,
-      keywords: domainProfile.keywords,
+      requestedDomainIds,
+      collectionPlan: null,
+      keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -1546,52 +1493,6 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     });
   }
 
-  /**
-   * Performs a lightweight entitlement preflight before creating a queued run.
-   *
-   * This avoids returning HTTP 202 for a request that is already known to be
-   * impossible, such as premium generation with a zero credit balance. The
-   * entitlement stage remains authoritative and validates the state again when
-   * the pipeline starts.
-   */
-  private async resolveUserQueuePolicy(
-    userId: string,
-    requestedGenerationType: Exclude<
-      IdeaGenerationType,
-      typeof IdeaGenerationType.GUEST_FREE
-    >,
-  ): Promise<IdeaGenerationPolicy> {
-    const user = await this.prisma.user.findFirst({
-      where: {
-        id: userId,
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        role: true,
-        userType: true,
-        accountStatus: true,
-        isActive: true,
-        isVerified: true,
-        creditBalance: true,
-        freeGenerationLimit: true,
-        freeGenerationsUsed: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException({
-        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
-        message: 'The registered generation owner was not found.',
-      });
-    }
-
-    return this.policyService.evaluate({
-      ownerType: IDEA_OWNER_TYPES.USER,
-      requestedGenerationType,
-      user,
-    });
-  }
 
   /** Accepts a guest generation request and returns its run ID immediately. */
   async queueForGuest(
@@ -1601,28 +1502,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       input.guestSessionToken,
     );
     const requestFingerprint = this.buildGuestRequestFingerprint(input.dto);
-    const [activeRun, collectionPlan] = await Promise.all([
-      this.runService.findActiveRunForOwner({
-        guestSessionId: guestSession.id,
-      }),
-      this.planRequestCollection({
-        description: input.dto.description,
-        keywords: input.dto.keywords,
-        generationType: IdeaGenerationType.GUEST_FREE,
-        language: input.dto.language,
-        requestedDomainIds: this.normalizeExplicitDomainIds(
-          undefined,
-          input.dto.domainId,
-        ),
-        guestSessionId: guestSession.id,
-      }),
-    ]);
+    const activeRun = await this.runService.findActiveRunForOwner({
+      guestSessionId: guestSession.id,
+    });
     if (activeRun) {
       return this.handleActiveQueuedRun(activeRun, requestFingerprint);
     }
-    const resolvedDomain = await this.resolveDomainForGuest(
-      input.dto,
-      collectionPlan,
+
+    const requestedDomainIds = this.normalizeExplicitDomainIds(
+      undefined,
+      input.dto.domainId,
     );
 
     return this.queueOwnedGeneration({
@@ -1631,17 +1520,14 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         guestSessionId: guestSession.id,
       },
       generationType: IdeaGenerationType.GUEST_FREE,
-      domainId: resolvedDomain.domainId,
+      domainId: requestedDomainIds[0] ?? PREPARING_DOMAIN_PLACEHOLDER_ID,
       selectedDomains: [],
-      domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
+      domainResolution: null,
       requestDescription: this.normalizeOptionalValue(input.dto.description),
       requestFingerprint,
-      collectionPlan,
-      keywords: this.buildPlannedRequestKeywords(
-        input.dto.description,
-        input.dto.keywords,
-        collectionPlan,
-      ),
+      requestedDomainIds,
+      collectionPlan: null,
+      keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -1915,6 +1801,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
       requestFingerprint: input.requestFingerprint,
 
+      requestedDomainIds: input.requestedDomainIds,
+
       collectionPlan: input.collectionPlan,
 
       keywords: input.keywords,
@@ -1931,9 +1819,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
    * Rebuilds request-scoped semantic planning for an interrupted run before
    * community analysis/ranking resumes. Persisted collector output is never
    * trusted as a semantic authority: a fresh request plan replaces stale query
-   * families, request-derived hidden-domain keywords are re-scoped to the
-   * current description, and obviously mismatched raw evidence is removed from
-   * the Community AI batch budget. This prevents an interrupted Noise request,
+   * families and request-derived hidden-domain keywords are re-scoped to the
+   * current description. Already collected raw evidence is preserved intact for
+   * Community AI triage; semantic rejection happens only after classification.
+   * This prevents an interrupted Noise request,
    * for example, from resuming with an older waste-collection archetype.
    */
   private async refreshRecoveredRequestSemantics(
@@ -1944,6 +1833,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
     const checkpointStage = context.recoveryCheckpointStageKey ?? '';
     const semanticRefreshStages = new Set<string>([
+      IDEA_GENERATION_STAGE_KEYS.PREPARING,
       IDEA_GENERATION_STAGE_KEYS.DATA_SOURCE_SELECTION,
       IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION,
       IDEA_GENERATION_STAGE_KEYS.DATA_COLLECTION,
@@ -1965,9 +1855,12 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         keywords: planningKeywords.slice(0, 8),
         generationType: context.generationType,
         language: context.location.language,
-        requestedDomainIds: (context.selectedDomains ?? [])
-          .filter((domain) => domain.isExplicitlySelected)
-          .map((domain) => domain.id),
+        requestedDomainIds:
+          context.requestedDomainIds?.length
+            ? context.requestedDomainIds
+            : (context.selectedDomains ?? [])
+                .filter((domain) => domain.isExplicitlySelected)
+                .map((domain) => domain.id),
         userId:
           context.owner.type === IDEA_OWNER_TYPES.USER
             ? context.owner.userId
@@ -2008,13 +1901,13 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         };
       });
 
-      const rawEvidenceCorpus = (context.rawEvidenceCorpus ?? []).filter((item) =>
-        RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
-          requestDescription: description,
-          evidenceText: item.text,
-          plannedQueries: refreshedPlan.searchQueries,
-        }),
-      );
+      /*
+       * Recovery must preserve the complete raw collector corpus. Semantic
+       * classification belongs to Community AI; request guards are applied only
+       * after AI labels each item. Replanning may change query language, but it
+       * must never delete already collected provenance before triage.
+       */
+      const rawEvidenceCorpus = [...(context.rawEvidenceCorpus ?? [])];
 
       const keywords = this.normalizeStringArray([
         ...refreshedPlan.searchQueries,
@@ -2075,6 +1968,9 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         checkpoint.requestFingerprint.trim().length > 0
           ? checkpoint.requestFingerprint.trim()
           : null,
+      requestedDomainIds: this.normalizeRecoveredStringArray(
+        checkpoint.requestedDomainIds ?? [],
+      ),
       collectionPlan: checkpoint.collectionPlan ?? null,
       keywords: this.normalizeRecoveredStringArray(checkpoint.keywords),
       requestedDataSourceKeys: this.normalizeRecoveredStringArray(

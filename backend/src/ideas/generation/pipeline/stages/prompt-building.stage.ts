@@ -139,6 +139,12 @@ export class PromptBuildingStage implements IdeaGenerationStage {
 
       // Preserve domain attribution for evidence-aware prompt instructions.
       domainEvidence: context.domainEvidence,
+
+      // Canonical problem/evidence contracts are authoritative. PromptBuilder
+      // must not reconstruct evidence truth from ranking prose or NLP snapshots.
+      canonicalProblemSpec: context.canonicalProblemSpec,
+      evidenceState: context.evidenceState,
+      canonicalEvidence: context.canonicalEvidenceLedger,
     });
 
     const promptHistory = await this.promptHistoryService.savePrompt({

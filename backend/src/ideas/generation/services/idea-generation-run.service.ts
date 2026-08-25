@@ -92,6 +92,27 @@ export type CreateIdeaGenerationRunInput = IdeaGenerationRunOwner & {
 };
 
 /**
+ * Optional first-stage state applied atomically when a generation run starts.
+ *
+ * Fresh runs use this to expose PREPARING immediately with the RUNNING
+ * transition. Recovery runs may omit it so their durable checkpoint remains
+ * authoritative until the resumed stage takes over.
+ *
+ * @author Malak
+ */
+export type StartIdeaGenerationRunOptions = {
+  /**
+   * First active stage visible to realtime clients.
+   */
+  currentStageKey: string;
+
+  /**
+   * Initial active-run progress between 0 and 99.
+   */
+  progressPercent: number;
+};
+
+/**
  * Input used to update the current pipeline stage and overall
  * run progress.
  *
@@ -321,13 +342,29 @@ export class IdeaGenerationRunService {
    * @param runId Generation-run identifier.
    * @returns Updated running generation run.
    */
-  async startRun(runId: string): Promise<IdeaGenerationRun> {
+  async startRun(
+    runId: string,
+    initialStage?: StartIdeaGenerationRunOptions,
+  ): Promise<IdeaGenerationRun> {
     const normalizedRunId = this.normalizeRequiredValue(
       runId,
       'Generation-run ID',
     );
 
     const now = new Date();
+
+    const initialStageUpdate = initialStage
+      ? {
+          currentStageKey: this.normalizeRequiredValue(
+            initialStage.currentStageKey,
+            'Current stage key',
+          ),
+          progressPercent: (() => {
+            this.validateRunningProgress(initialStage.progressPercent);
+            return initialStage.progressPercent;
+          })(),
+        }
+      : {};
 
     try {
       return await this.prisma.ideaGenerationRun.update({
@@ -350,6 +387,7 @@ export class IdeaGenerationRunService {
           pausedAt: null,
           errorCode: null,
           errorMessage: null,
+          ...initialStageUpdate,
         },
       });
     } catch (error: unknown) {
@@ -530,27 +568,30 @@ export class IdeaGenerationRunService {
     }
 
     const cancelRequestedAt = new Date();
-    const updateResult = await this.prisma.ideaGenerationRun.updateMany({
-      where: {
-        id: normalizedRunId,
-        status: {
-          in: [IdeaGenerationRunStatus.QUEUED, IdeaGenerationRunStatus.RUNNING],
+
+    try {
+      return await this.prisma.ideaGenerationRun.update({
+        where: {
+          id: normalizedRunId,
+          status: {
+            in: [IdeaGenerationRunStatus.QUEUED, IdeaGenerationRunStatus.RUNNING],
+          },
+          cancelRequestedAt: null,
         },
-        cancelRequestedAt: null,
-      },
-      data: {
-        cancelRequestedAt,
-      },
-    });
+        data: {
+          cancelRequestedAt,
+        },
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        return this.findRunOrThrow(normalizedRunId);
+      }
 
-    if (updateResult.count === 1) {
-      return {
-        ...run,
-        cancelRequestedAt,
-      };
+      throw error;
     }
-
-    return this.findRunOrThrow(normalizedRunId);
   }
 
   /**
@@ -1011,12 +1052,229 @@ export class IdeaGenerationRunService {
         pausedAt: null,
         errorCode: 'GENERATION_PROCESS_INTERRUPTED',
         errorMessage:
-          'The generation process was interrupted. Automatic checkpoint recovery is resuming it.',
-        retryCount: { increment: 1 },
+          'The generation process was interrupted. Automatic checkpoint recovery is ready to resume it.',
+        /*
+         * Merely discovering an orphaned process is not a recovery attempt.
+         * retryCount is incremented only when a recovery worker atomically
+         * claims the run immediately before executing it.
+         */
+        lastHeartbeatAt: new Date(),
       },
     });
 
     return result.count;
+  }
+
+  /**
+   * Converts stale QUEUED rows that already contain an initial durable context
+   * into RETRYING. This covers a crash after createRun() committed but before
+   * the orchestrator could acquire the owner lock/start the pipeline.
+   */
+  async requeueStaleQueuedRuns(
+    queuedBefore: Date,
+    limit = 20,
+  ): Promise<number> {
+    const candidates = await this.prisma.ideaGenerationRun.findMany({
+      where: {
+        status: IdeaGenerationRunStatus.QUEUED,
+        completedAt: null,
+        cancelRequestedAt: null,
+        createdAt: { lte: queuedBefore },
+      },
+      select: {
+        id: true,
+        createdAt: true,
+        contextSnapshot: true,
+      },
+      orderBy: { createdAt: 'asc' },
+      take: Math.max(1, Math.min(limit * 4, 100)),
+    });
+
+    const recoverable = candidates
+      .filter(({ contextSnapshot }) => this.hasContextSnapshot(contextSnapshot))
+      .slice(0, Math.max(1, Math.min(limit, 50)));
+
+    if (recoverable.length === 0) {
+      return 0;
+    }
+
+    const ids = recoverable.map(({ id }) => id);
+    const startedAtById = new Map(
+      recoverable.map(({ id, createdAt }) => [id, createdAt] as const),
+    );
+
+    let updatedCount = 0;
+
+    /*
+     * startedAt differs per row and RETRYING requires it to be non-null, so use
+     * one guarded update per stale queued run. The batch is small and executes
+     * only during recovery maintenance, never on the foreground fast path.
+     */
+    for (const id of ids) {
+      const result = await this.prisma.ideaGenerationRun.updateMany({
+        where: {
+          id,
+          status: IdeaGenerationRunStatus.QUEUED,
+          completedAt: null,
+          cancelRequestedAt: null,
+        },
+        data: {
+          status: IdeaGenerationRunStatus.RETRYING,
+          startedAt: startedAtById.get(id) ?? new Date(),
+          nextRetryAt: new Date(),
+          pausedAt: null,
+          lastHeartbeatAt: new Date(),
+          errorCode: 'GENERATION_PROCESS_INTERRUPTED',
+          errorMessage:
+            'The server stopped before the queued generation started. Automatic checkpoint recovery is ready to resume it.',
+        },
+      });
+
+      updatedCount += result.count;
+    }
+
+    return updatedCount;
+  }
+
+  /**
+   * Returns true only when the database contains genuinely live foreground
+   * work. Stale orphaned RUNNING/QUEUED rows must not block recovery forever.
+   */
+  async hasHealthyForegroundRuns(
+    runningHeartbeatAfter: Date,
+    queuedAfter: Date,
+  ): Promise<boolean> {
+    const activeRun = await this.prisma.ideaGenerationRun.findFirst({
+      where: {
+        completedAt: null,
+        cancelRequestedAt: null,
+        OR: [
+          {
+            status: IdeaGenerationRunStatus.RUNNING,
+            OR: [
+              { lastHeartbeatAt: { gt: runningHeartbeatAfter } },
+              {
+                lastHeartbeatAt: null,
+                updatedAt: { gt: runningHeartbeatAfter },
+              },
+            ],
+          },
+          {
+            status: IdeaGenerationRunStatus.QUEUED,
+            createdAt: { gt: queuedAfter },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return activeRun !== null;
+  }
+
+  /**
+   * Atomically leases one recoverable run to a recovery worker.
+   *
+   * The lease prevents two application instances from both attempting to
+   * resume the same RETRYING/PAUSED row. retryCount represents real execution
+   * attempts, not startup scans.
+   */
+  async claimRecoverableRun(
+    runId: string,
+    maxAttempts: number,
+    leaseUntil: Date,
+  ): Promise<IdeaGenerationRun | null> {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+    const now = new Date();
+
+    const result = await this.prisma.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
+        completedAt: null,
+        cancelRequestedAt: null,
+        retryCount: { lt: Math.max(1, maxAttempts) },
+        OR: [
+          { nextRetryAt: null },
+          { nextRetryAt: { lte: now } },
+        ],
+      },
+      data: {
+        status: IdeaGenerationRunStatus.RETRYING,
+        nextRetryAt: leaseUntil,
+        pausedAt: null,
+        lastHeartbeatAt: now,
+        retryCount: { increment: 1 },
+        errorCode: 'GENERATION_RECOVERY_CLAIMED',
+        errorMessage:
+          'Automatic recovery claimed the interrupted generation and is resuming it from the latest durable checkpoint.',
+      },
+    });
+
+    if (result.count !== 1) {
+      return null;
+    }
+
+    return this.findRunOrThrow(normalizedRunId);
+  }
+
+  /**
+   * Completes a non-terminal run whose idea/premium outputs were already
+   * committed atomically before the process died. This prevents recovery from
+   * re-running IdeaPersistence and consuming an entitlement twice.
+   */
+  async completeRecoveredPersistedRun(
+    runId: string,
+    contextSnapshot: Prisma.InputJsonValue,
+    db: IdeaGenerationRunDatabaseClient = this.prisma,
+  ): Promise<IdeaGenerationRun> {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+    const now = new Date();
+
+    const result = await db.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.QUEUED,
+            IdeaGenerationRunStatus.RUNNING,
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
+        ideaId: { not: null },
+        completedAt: null,
+        cancelRequestedAt: null,
+      },
+      data: {
+        status: IdeaGenerationRunStatus.COMPLETED,
+        progressPercent: 100,
+        currentStageKey: null,
+        completedAt: now,
+        lastHeartbeatAt: now,
+        nextRetryAt: null,
+        pausedAt: null,
+        errorCode: null,
+        errorMessage: null,
+        contextSnapshot,
+      },
+    });
+
+    if (result.count !== 1) {
+      return this.findRunOrThrow(normalizedRunId, db);
+    }
+
+    return this.findRunOrThrow(normalizedRunId, db);
   }
 
   /**
@@ -1128,7 +1386,7 @@ export class IdeaGenerationRunService {
           },
           {
             status: IdeaGenerationRunStatus.PAUSED,
-            nextRetryAt: { lte: now },
+            OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
           },
         ],
       },

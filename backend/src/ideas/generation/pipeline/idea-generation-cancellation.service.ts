@@ -13,6 +13,7 @@ import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 
 import type { IdeaOwner } from '../../shared/types/idea-owner.type';
 
+import { IdeaGenerationRealtimeService } from '../services/idea-generation-realtime.service';
 import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
 
 /**
@@ -120,6 +121,7 @@ export class IdeaGenerationCancellationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly runService: IdeaGenerationRunService,
+    private readonly realtime: IdeaGenerationRealtimeService,
   ) {}
 
   /**
@@ -170,6 +172,13 @@ export class IdeaGenerationCancellationService {
     this.abortActiveExecutions(run.id);
 
     const updatedRun = await this.runService.requestCancellation(run.id, run);
+
+    /*
+     * Cancellation is a user-visible run transition. Publish it immediately so
+     * every connected progress screen switches to "Cancelling" without waiting
+     * for the durable room watcher or a REST reconciliation tick.
+     */
+    this.realtime.publishRunUpdated(updatedRun);
 
     return {
       run: updatedRun,
