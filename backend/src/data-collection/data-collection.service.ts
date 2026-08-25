@@ -1084,6 +1084,16 @@ export class DataCollectionService {
         maxSavedComments: cap(limits.maxSavedComments, 3),
       };
     }
+
+    if (collectionMode === 'TARGETED_RECOVERY') {
+      return {
+        ...limits,
+        maxFetchedPosts: cap(limits.maxFetchedPosts, 4),
+        maxSavedPosts: cap(limits.maxSavedPosts, 2),
+        maxFetchedComments: cap(limits.maxFetchedComments, 4),
+        maxSavedComments: cap(limits.maxSavedComments, 2),
+      };
+    }
     return limits;
   }
 

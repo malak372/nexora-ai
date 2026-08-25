@@ -1,7 +1,6 @@
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpDown,
   BookOpenCheck,
   CalendarClock,
   CheckCircle2,
@@ -35,12 +34,6 @@ const EVIDENCE_SORT_OPTIONS = [
   { key: 'publishedAt', label: 'Published date' },
   { key: 'likesCount', label: 'Engagement' },
 ];
-
-const EVIDENCE_COLUMN_SORT_FIELD = {
-  engagement: 'likesCount',
-  published: 'publishedAt',
-  collected: 'collectedAt',
-};
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -411,28 +404,6 @@ function EvidenceSourceFilter({ value, options, loading, onChange }) {
   );
 }
 
-function SortHeader({ label, column, sortBy, sortOrder, onSort }) {
-  const field = EVIDENCE_COLUMN_SORT_FIELD[column];
-  const active = field && sortBy === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
-
-  if (!field) return <th>{label}</th>;
-
-  return (
-    <th aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button
-        type="button"
-        className={`admin-evidence-sort-head ${active ? 'is-active' : ''}`}
-        onClick={() => onSort(field)}
-        title={`Sort by ${label}`}
-      >
-        <span>{label}</span>
-        <Icon size={12} />
-      </button>
-    </th>
-  );
-}
-
 function EvidenceDrawer({ item, onClose }) {
   useEffect(() => {
     if (!item) return undefined;
@@ -655,15 +626,6 @@ export default function AdminEvidenceLibraryPage() {
     };
   }, [meta.total, rows, summary]);
 
-  const applySort = (field) => {
-    setPage(1);
-    if (field === sortBy) {
-      setSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'));
-      return;
-    }
-    setSortBy(field);
-    setSortOrder('desc');
-  };
 
   const changeSortField = (field) => {
     setPage(1);

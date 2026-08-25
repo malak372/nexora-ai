@@ -1462,15 +1462,17 @@ export class IdeaGenerationBenchmarkService {
   ): ParsedIdeaAiOutput['advancedOutputs'] {
     const country = context.location.country?.trim() || 'the selected pilot region';
     const nlp = context.nlp;
-    const validationOnly = Boolean(
-      context.opportunityRanking?.selected.disqualificationReasons.includes(
-        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
-      ) &&
-        (context.opportunityRanking.selected.verifiedProblemMatchedEvidenceCount ??
-          context.opportunityRanking.selected.verifiedIndependentEvidenceCount ??
-          context.opportunityRanking.selected.verifiedEvidenceCount ??
-          0) === 0,
-    );
+    const validationOnly =
+      context.evidenceState === 'ZERO_VALIDATED_EVIDENCE' ||
+      Boolean(
+        context.opportunityRanking?.selected.disqualificationReasons.includes(
+          'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+        ) &&
+          (context.opportunityRanking.selected.verifiedProblemMatchedEvidenceCount ??
+            context.opportunityRanking.selected.verifiedIndependentEvidenceCount ??
+            context.opportunityRanking.selected.verifiedEvidenceCount ??
+            0) === 0,
+      );
     const selectedOpportunity = context.opportunityRanking?.selected ?? null;
     const verifiedEvidenceCount = this.resolveVerifiedProblemEvidenceCount(selectedOpportunity);
     const verifiedEvidenceSourceCount = this.resolveVerifiedProblemEvidenceSourceCount(selectedOpportunity);
@@ -4103,15 +4105,17 @@ export class IdeaGenerationBenchmarkService {
     this.assertRequesterIntentLock(context, parsedOutput);
     this.assertWinnerProblemLock(context, parsedOutput);
 
-    const validationOnly = Boolean(
-      context.opportunityRanking?.selected.disqualificationReasons.includes(
-        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
-      ) &&
-        (context.opportunityRanking.selected.verifiedProblemMatchedEvidenceCount ??
-          context.opportunityRanking.selected.verifiedIndependentEvidenceCount ??
-          context.opportunityRanking.selected.verifiedEvidenceCount ??
-          0) === 0,
-    );
+    const validationOnly =
+      context.evidenceState === 'ZERO_VALIDATED_EVIDENCE' ||
+      Boolean(
+        context.opportunityRanking?.selected.disqualificationReasons.includes(
+          'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+        ) &&
+          (context.opportunityRanking.selected.verifiedProblemMatchedEvidenceCount ??
+            context.opportunityRanking.selected.verifiedIndependentEvidenceCount ??
+            context.opportunityRanking.selected.verifiedEvidenceCount ??
+            0) === 0,
+      );
     if (validationOnly && !context.requestDescription?.trim()) {
       const title = parsedOutput.coreIdea.title.trim();
       const validationActivityCount = parsedOutput.coreIdea.objectives.filter(
