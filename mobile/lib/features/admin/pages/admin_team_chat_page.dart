@@ -31,6 +31,7 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage>
   final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
 
+  // ignore: unused_field
   List<Map<String, dynamic>> _administrators = const [];
   List<Map<String, dynamic>> _conversations = const [];
   List<Map<String, dynamic>> _messages = const [];

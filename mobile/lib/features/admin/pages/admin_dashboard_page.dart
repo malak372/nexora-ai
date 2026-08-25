@@ -1,9 +1,9 @@
-/// Administrator dashboard page for the mobile application.
-///
-/// The existing overview selector supports day, week, month, year, and all-time
-/// periods without changing the dashboard's established presentation or flow.
-///
-/// @author Eman
+// Administrator dashboard page for the mobile application.
+//
+// The existing overview selector supports day, week, month, year, and all-time
+// periods without changing the dashboard's established presentation or flow.
+//
+// @author Eman
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
