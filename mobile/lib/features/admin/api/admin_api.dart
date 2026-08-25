@@ -113,6 +113,21 @@ class AdminApi {
     return value;
   }
 
+  Future<Map<String, dynamic>> deleteAdminChatMessage(
+    String conversationId,
+    String messageId, {
+    String scope = 'me',
+  }) async {
+    final normalizedScope = scope == 'everyone' ? 'everyone' : 'me';
+    final value = _map(
+      await _api.delete(
+        '/admin/team-chat/conversations/$conversationId/messages/$messageId?scope=$normalizedScope',
+      ),
+    );
+    _api.invalidate('/admin/team-chat/conversations');
+    return value;
+  }
+
   Future<void> markAdminConversationRead(String conversationId) async {
     await _api.patch(
       '/admin/team-chat/conversations/$conversationId/read',

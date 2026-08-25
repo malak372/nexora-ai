@@ -100,6 +100,54 @@ export async function sendAdminChatMessage(
         throw new Error('Message content is required.');
     }
 
+    const socket = getAdminTeamChatSocket();
+
+    if (socket?.connected) {
+        return new Promise((resolve, reject) => {
+            let settled = false;
+
+            const timeoutId = window.setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+
+                settled = true;
+                reject(new Error('Realtime message send timed out.'));
+            }, 5000);
+
+            socket.emit(
+                'admin-chat:send',
+                {
+                    conversationId,
+                    content: message,
+                },
+                (acknowledgement) => {
+                    if (settled) {
+                        return;
+                    }
+
+                    settled = true;
+                    window.clearTimeout(timeoutId);
+
+                    if (
+                        acknowledgement?.success === true &&
+                        acknowledgement?.message
+                    ) {
+                        resolve(acknowledgement.message);
+                        return;
+                    }
+
+                    reject(
+                        new Error(
+                            acknowledgement?.error ||
+                            'Could not send the message.',
+                        ),
+                    );
+                },
+            );
+        });
+    }
+
     const response = await normalUserApi.post(
         `${TEAM_CHAT_BASE}/conversations/${encodeURIComponent(
             conversationId,
@@ -148,24 +196,42 @@ export async function markAdminConversationRead(conversationId) {
     return unwrap(response);
 }
 
-export function createAdminTeamChatSocket() {
+export function createAdminTeamChatSocket(token = getAccessToken()) {
     return io(`${SOCKET_URL}/admin-chat`, {
         transports: ['websocket', 'polling'],
         auth: {
-            token: getAccessToken(),
+            token,
         },
         reconnection: true,
         reconnectionAttempts: Infinity,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
+        reconnectionDelay: 150,
+        reconnectionDelayMax: 1000,
     });
 }
 
 let adminTeamChatSocket = null;
+let adminTeamChatSocketToken = '';
+
+export function disconnectAdminTeamChatSocket() {
+    if (adminTeamChatSocket) {
+        adminTeamChatSocket.removeAllListeners();
+        adminTeamChatSocket.disconnect();
+    }
+
+    adminTeamChatSocket = null;
+    adminTeamChatSocketToken = '';
+}
 
 export function getAdminTeamChatSocket() {
+    const token = getAccessToken() || '';
+
+    if (adminTeamChatSocket && adminTeamChatSocketToken !== token) {
+        disconnectAdminTeamChatSocket();
+    }
+
     if (!adminTeamChatSocket) {
-        adminTeamChatSocket = createAdminTeamChatSocket();
+        adminTeamChatSocket = createAdminTeamChatSocket(token);
+        adminTeamChatSocketToken = token;
     }
 
     return adminTeamChatSocket;

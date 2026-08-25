@@ -24,9 +24,11 @@ class AdminTeamChatPage extends StatefulWidget {
   State<AdminTeamChatPage> createState() => _AdminTeamChatPageState();
 }
 
-class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
+class _AdminTeamChatPageState extends State<AdminTeamChatPage>
+    with WidgetsBindingObserver {
   final _api = AdminApi.instance;
   final _messageController = TextEditingController();
+  final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
 
   List<Map<String, dynamic>> _conversations = const [];
@@ -35,10 +37,14 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
   String _activeConversationId = '';
   bool _loading = true;
   bool _messagesLoading = false;
-  bool _sending = false;
+  String _deletingMessageId = '';
   bool _directHandled = false;
   String _error = '';
   io.Socket? _socket;
+  Timer? _activeConversationSyncTimer;
+  Timer? _socketReconnectTimer;
+  bool _activeMessagesSyncing = false;
+  bool _socketReady = false;
 
   Map<String, dynamic>? get _activeConversation {
     for (final conversation in _conversations) {
@@ -52,15 +58,25 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_initialize());
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_resumeRealtime());
+    }
+  }
+
+  @override
   void dispose() {
-    _socket?.off('admin-chat:message', _onSocketMessage);
-    _socket?.off('admin-chat:conversation', _onSocketConversation);
-    _socket?.off('admin-chat:read', _onSocketRead);
+    WidgetsBinding.instance.removeObserver(this);
+    _activeConversationSyncTimer?.cancel();
+    _socketReconnectTimer?.cancel();
+    _detachSocketListeners();
     _messageController.dispose();
+    _messageFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -68,50 +84,439 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
   Future<void> _initialize() async {
     final user = await SessionStore.instance.readUser();
     _currentUserId = user?['id']?.toString() ?? '';
-    await _loadConversations();
     await _connectSocket();
+    await _loadConversations();
   }
 
   Future<void> _connectSocket() async {
     try {
       final socket = await RealtimeSocket.connect('/admin-chat');
-      socket.off('admin-chat:message', _onSocketMessage);
-      socket.off('admin-chat:conversation', _onSocketConversation);
-      socket.off('admin-chat:read', _onSocketRead);
-      socket.on('admin-chat:message', _onSocketMessage);
-      socket.on('admin-chat:conversation', _onSocketConversation);
-      socket.on('admin-chat:read', _onSocketRead);
-      if (!socket.connected) socket.connect();
+      _detachSocketListeners();
       _socket = socket;
-    } catch (_) {}
+      _attachSocketListeners(socket);
+
+      if (socket.connected) {
+        _socketReady = true;
+        _restartActiveConversationSync();
+        unawaited(_syncRealtimeState());
+      } else {
+        _socketReady = false;
+        _restartActiveConversationSync();
+        socket.connect();
+      }
+    } catch (_) {
+      _socketReady = false;
+      _restartActiveConversationSync();
+      _scheduleSocketReconnect();
+    }
+  }
+
+  void _attachSocketListeners(io.Socket socket) {
+    socket.onConnect(_onSocketConnect);
+    socket.onReconnect(_onSocketReconnect);
+    socket.onDisconnect(_onSocketDisconnect);
+    socket.onConnectError(_onSocketConnectError);
+    socket.onError(_onSocketError);
+    socket.on('admin-chat:ready', _onSocketReady);
+    socket.on('admin-chat:message', _onSocketMessage);
+    socket.on('admin-chat:conversation', _onSocketConversation);
+    socket.on('admin-chat:read', _onSocketRead);
+    socket.on('admin-chat:message-deleted', _onSocketMessageDeleted);
+  }
+
+  void _detachSocketListeners() {
+    final socket = _socket;
+    if (socket == null) return;
+    socket.off('connect', _onSocketConnect);
+    socket.off('reconnect', _onSocketReconnect);
+    socket.off('disconnect', _onSocketDisconnect);
+    socket.off('connect_error', _onSocketConnectError);
+    socket.off('error', _onSocketError);
+    socket.off('admin-chat:ready', _onSocketReady);
+    socket.off('admin-chat:message', _onSocketMessage);
+    socket.off('admin-chat:conversation', _onSocketConversation);
+    socket.off('admin-chat:read', _onSocketRead);
+    socket.off('admin-chat:message-deleted', _onSocketMessageDeleted);
+  }
+
+  void _onSocketConnect(dynamic _) {
+    _socketReconnectTimer?.cancel();
+    _socketReady = false;
+    _restartActiveConversationSync();
+    unawaited(_syncRealtimeState());
+  }
+
+  void _onSocketReconnect(dynamic _) {
+    _socketReconnectTimer?.cancel();
+    _socketReady = false;
+    _restartActiveConversationSync();
+    unawaited(_syncRealtimeState());
+  }
+
+  void _onSocketReady(dynamic _) {
+    _socketReconnectTimer?.cancel();
+    _socketReady = true;
+    _restartActiveConversationSync();
+    unawaited(_syncRealtimeState());
+  }
+
+  void _onSocketDisconnect(dynamic _) {
+    _socketReady = false;
+    _restartActiveConversationSync();
+    unawaited(_syncActiveConversationNow());
+    _scheduleSocketReconnect();
+  }
+
+  void _onSocketConnectError(dynamic _) {
+    _socketReady = false;
+    _restartActiveConversationSync();
+    unawaited(_syncActiveConversationNow());
+    _scheduleSocketReconnect();
+  }
+
+  void _onSocketError(dynamic _) {
+    if (_socket?.connected == true) return;
+    _socketReady = false;
+    _restartActiveConversationSync();
+    _scheduleSocketReconnect();
+  }
+
+  void _scheduleSocketReconnect() {
+    if (!mounted) return;
+    _socketReconnectTimer?.cancel();
+    _socketReconnectTimer = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      final socket = _socket;
+      if (socket == null) {
+        unawaited(_connectSocket());
+        return;
+      }
+      if (!socket.connected) {
+        socket.connect();
+      }
+    });
+  }
+
+  Future<void> _resumeRealtime() async {
+    final socket = _socket;
+    if (socket == null) {
+      await _connectSocket();
+      return;
+    }
+
+    if (!socket.connected) {
+      _socketReady = false;
+      _restartActiveConversationSync();
+      socket.connect();
+      await _syncActiveConversationNow();
+      return;
+    }
+
+    _socketReady = true;
+    _restartActiveConversationSync();
+    await _syncRealtimeState();
+  }
+
+  Future<void> _syncRealtimeState() async {
+    if (!mounted) return;
+
+    final conversationId = _activeConversationId;
+    if (conversationId.isNotEmpty) {
+      await _refreshActiveMessagesQuietly(conversationId);
+    }
+
+    await _refreshConversations();
+  }
+
+  void _startActiveConversationSync() {
+    _restartActiveConversationSync();
+  }
+
+  void _restartActiveConversationSync() {
+    _activeConversationSyncTimer?.cancel();
+
+    if (!mounted || _activeConversationId.isEmpty) return;
+
+    final connected = _socketReady && _socket?.connected == true;
+    final interval = connected
+        ? const Duration(milliseconds: 1200)
+        : const Duration(milliseconds: 350);
+
+    _activeConversationSyncTimer = Timer(interval, () async {
+      if (!mounted || _activeConversationId.isEmpty) return;
+      await _syncActiveConversationNow();
+      _restartActiveConversationSync();
+    });
+  }
+
+  Future<void> _syncActiveConversationNow() async {
+    final conversationId = _activeConversationId;
+    if (!mounted || conversationId.isEmpty || _activeMessagesSyncing) return;
+
+    await _refreshActiveMessagesQuietly(conversationId);
+  }
+
+  bool _sameMessages(
+    List<Map<String, dynamic>> current,
+    List<Map<String, dynamic>> incoming,
+  ) {
+    if (current.length != incoming.length) return false;
+
+    for (var index = 0; index < current.length; index++) {
+      final currentMessage = current[index];
+      final incomingMessage = incoming[index];
+
+      if (currentMessage['id']?.toString() !=
+              incomingMessage['id']?.toString() ||
+          currentMessage['content']?.toString() !=
+              incomingMessage['content']?.toString() ||
+          currentMessage['deletedAt']?.toString() !=
+              incomingMessage['deletedAt']?.toString()) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool _matchesPendingMessage(
+    Map<String, dynamic> optimistic,
+    Map<String, dynamic> confirmed,
+  ) {
+    if (optimistic['conversationId']?.toString() !=
+            confirmed['conversationId']?.toString() ||
+        optimistic['senderId']?.toString() !=
+            confirmed['senderId']?.toString() ||
+        optimistic['content']?.toString() != confirmed['content']?.toString()) {
+      return false;
+    }
+
+    final optimisticCreated = DateTime.tryParse(
+      optimistic['createdAt']?.toString() ?? '',
+    );
+    final confirmedCreated = DateTime.tryParse(
+      confirmed['createdAt']?.toString() ?? '',
+    );
+
+    if (optimisticCreated == null || confirmedCreated == null) return true;
+
+    return optimisticCreated.difference(confirmedCreated).inSeconds.abs() <= 30;
+  }
+
+  List<Map<String, dynamic>> _mergeConfirmedMessage(
+    List<Map<String, dynamic>> current,
+    Map<String, dynamic> message,
+  ) {
+    final messageId = message['id']?.toString() ?? '';
+    final optimisticIndex = current.indexWhere(
+      (item) =>
+          item['__optimistic'] == true && _matchesPendingMessage(item, message),
+    );
+    final confirmedIndex = current.indexWhere(
+      (item) => item['id']?.toString() == messageId,
+    );
+
+    if (confirmedIndex >= 0) {
+      if (optimisticIndex >= 0 && optimisticIndex != confirmedIndex) {
+        final next = [...current];
+        next.removeAt(optimisticIndex);
+        return next;
+      }
+      return current;
+    }
+
+    if (optimisticIndex >= 0) {
+      final next = [...current];
+      next[optimisticIndex] = message;
+      return next;
+    }
+
+    return [...current, message];
+  }
+
+  List<Map<String, dynamic>> _preservePendingMessages(
+    List<Map<String, dynamic>> current,
+    List<Map<String, dynamic>> incoming,
+  ) {
+    final pending = current
+        .where((item) => item['__optimistic'] == true)
+        .toList();
+
+    if (pending.isEmpty) return incoming;
+
+    final next = [...incoming];
+    final matchedConfirmed = <int>{};
+
+    for (final optimistic in pending) {
+      var matchIndex = -1;
+      for (var index = 0; index < incoming.length; index++) {
+        if (matchedConfirmed.contains(index)) continue;
+        final confirmed = incoming[index];
+        if (_matchesPendingMessage(optimistic, confirmed)) {
+          matchIndex = index;
+          break;
+        }
+      }
+
+      if (matchIndex >= 0) {
+        matchedConfirmed.add(matchIndex);
+      } else {
+        next.add(optimistic);
+      }
+    }
+
+    return next;
+  }
+
+  Future<void> _refreshActiveMessagesQuietly(String conversationId) async {
+    if (_activeMessagesSyncing) return;
+    _activeMessagesSyncing = true;
+
+    try {
+      final payload = await _api.getAdminConversationMessages(conversationId);
+      final raw = payload['messages'];
+      final incoming = raw is List
+          ? raw
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+          : <Map<String, dynamic>>[];
+
+      if (!mounted || _activeConversationId != conversationId) return;
+      final nextMessages = _preservePendingMessages(_messages, incoming);
+      if (_sameMessages(_messages, nextMessages)) return;
+
+      setState(() => _messages = nextMessages);
+      unawaited(_api.markAdminConversationRead(conversationId));
+      unawaited(_refreshConversations());
+      _scrollToBottom();
+    } catch (_) {
+    } finally {
+      _activeMessagesSyncing = false;
+    }
   }
 
   void _onSocketMessage(dynamic raw) {
     if (raw is! Map || !mounted) return;
+
+    _socketReady = true;
+    _restartActiveConversationSync();
+
     final message = Map<String, dynamic>.from(raw);
     final conversationId = message['conversationId']?.toString() ?? '';
+    final messageId = message['id']?.toString() ?? '';
 
-    if (conversationId == _activeConversationId) {
-      final exists = _messages.any(
-        (item) => item['id']?.toString() == message['id']?.toString(),
-      );
-      if (!exists) {
-        setState(() => _messages = [..._messages, message]);
-        _scrollToBottom();
-      }
-      if (message['senderId']?.toString() != _currentUserId) {
+    if (conversationId.isEmpty || messageId.isEmpty) return;
+
+    final isActive = conversationId == _activeConversationId;
+    final mine = message['senderId']?.toString() == _currentUserId;
+
+    if (isActive) {
+      setState(() {
+        _messages = _mergeConfirmedMessage(_messages, message);
+        _applyMessageToConversation(message, read: true);
+      });
+      _scrollToBottom();
+
+      if (!mine) {
         unawaited(_api.markAdminConversationRead(conversationId));
       }
+      return;
+    }
+
+    final knownConversation = _conversations.any(
+      (conversation) => conversation['id']?.toString() == conversationId,
+    );
+
+    if (knownConversation) {
+      setState(() => _applyMessageToConversation(message, read: mine));
+    } else {
+      unawaited(_refreshConversations());
+    }
+  }
+
+  void _applyMessageToConversation(
+    Map<String, dynamic> message, {
+    required bool read,
+  }) {
+    final conversationId = message['conversationId']?.toString() ?? '';
+    if (conversationId.isEmpty) return;
+
+    final index = _conversations.indexWhere(
+      (conversation) => conversation['id']?.toString() == conversationId,
+    );
+    if (index < 0) return;
+
+    final existing = _conversations[index];
+    final previousUnread =
+        int.tryParse(existing['unreadCount']?.toString() ?? '') ?? 0;
+    final previousLastId = (existing['lastMessage'] is Map)
+        ? (existing['lastMessage'] as Map)['id']?.toString() ?? ''
+        : '';
+    final incomingId = message['id']?.toString() ?? '';
+    final mine = message['senderId']?.toString() == _currentUserId;
+    final nextUnread = read || mine
+        ? 0
+        : previousLastId == incomingId
+        ? previousUnread
+        : previousUnread + 1;
+
+    final updated = <String, dynamic>{
+      ...existing,
+      'lastMessage': message,
+      'lastMessageAt': message['createdAt'],
+      'updatedAt': message['createdAt'],
+      'unreadCount': nextUnread,
+    };
+
+    _conversations = [
+      updated,
+      ..._conversations.where(
+        (conversation) => conversation['id']?.toString() != conversationId,
+      ),
+    ];
+  }
+
+  void _onSocketConversation(dynamic raw) {
+    final payload = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : const <String, dynamic>{};
+    final conversationId = payload['conversationId']?.toString() ?? '';
+
+    if (conversationId.isNotEmpty && conversationId == _activeConversationId) {
+      unawaited(_refreshActiveMessagesQuietly(conversationId));
     }
 
     unawaited(_refreshConversations());
   }
 
-  void _onSocketConversation(dynamic _) {
+  void _onSocketRead(dynamic _) {}
+
+  void _onSocketMessageDeleted(dynamic raw) {
+    if (raw is! Map || !mounted) return;
+
+    final payload = Map<String, dynamic>.from(raw);
+    final conversationId = payload['conversationId']?.toString() ?? '';
+    final messageId = payload['messageId']?.toString() ?? '';
+    final scope = payload['scope']?.toString() ?? '';
+    final userId = payload['userId']?.toString() ?? '';
+
+    if (messageId.isEmpty) return;
+    if (scope != 'everyone' && userId != _currentUserId) return;
+
+    if (conversationId == _activeConversationId) {
+      setState(() {
+        _messages = _messages
+            .where((message) => message['id']?.toString() != messageId)
+            .toList();
+        if (_deletingMessageId == messageId) {
+          _deletingMessageId = '';
+        }
+      });
+    }
+
     unawaited(_refreshConversations());
   }
-
-  void _onSocketRead(dynamic _) {}
 
   Future<void> _loadConversations() async {
     if (mounted) {
@@ -178,6 +583,7 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
 
   Future<void> _loadMessages(String conversationId) async {
     if (conversationId.isEmpty) return;
+    _startActiveConversationSync();
     setState(() {
       _messagesLoading = true;
       _error = '';
@@ -207,35 +613,176 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
     }
   }
 
+  Future<Map<String, dynamic>> _sendMessageTransport(
+    String conversationId,
+    String content,
+  ) async {
+    final socket = _socket;
+
+    if (_socketReady && socket != null && socket.connected) {
+      final completer = Completer<Map<String, dynamic>>();
+
+      socket.emitWithAck(
+        'admin-chat:send',
+        {'conversationId': conversationId, 'content': content},
+        ack: (dynamic raw) {
+          if (completer.isCompleted) return;
+
+          if (raw is! Map) {
+            completer.completeError(
+              const ApiException('Could not send the message.'),
+            );
+            return;
+          }
+
+          final acknowledgement = Map<String, dynamic>.from(raw);
+          final rawMessage = acknowledgement['message'];
+
+          if (acknowledgement['success'] == true && rawMessage is Map) {
+            completer.complete(Map<String, dynamic>.from(rawMessage));
+            return;
+          }
+
+          final message =
+              acknowledgement['error']?.toString().trim().isNotEmpty == true
+              ? acknowledgement['error'].toString().trim()
+              : 'Could not send the message.';
+
+          completer.completeError(ApiException(message));
+        },
+      );
+
+      return completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw const ApiException('Realtime message send timed out.');
+        },
+      );
+    }
+
+    return _api.sendAdminChatMessage(conversationId, content);
+  }
+
   Future<void> _sendMessage() async {
     final content = _messageController.text.trim();
-    if (content.isEmpty || _activeConversationId.isEmpty || _sending) return;
+    final conversationId = _activeConversationId;
 
-    setState(() => _sending = true);
+    if (content.isEmpty || conversationId.isEmpty) return;
+
+    final optimisticId =
+        'local-${DateTime.now().microsecondsSinceEpoch}-${_messages.length}';
+    final optimisticMessage = <String, dynamic>{
+      'id': optimisticId,
+      'conversationId': conversationId,
+      'senderId': _currentUserId,
+      'content': content,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'sender': <String, dynamic>{'id': _currentUserId},
+      '__optimistic': true,
+    };
+
     _messageController.clear();
+    setState(() {
+      _error = '';
+      _messages = [..._messages, optimisticMessage];
+      _applyMessageToConversation(optimisticMessage, read: true);
+    });
+    _scrollToBottom();
+    _messageFocusNode.requestFocus();
 
     try {
-      final message = await _api.sendAdminChatMessage(
-        _activeConversationId,
-        content,
-      );
+      final message = await _sendMessageTransport(conversationId, content);
       if (!mounted) return;
-      final exists = _messages.any(
-        (item) => item['id']?.toString() == message['id']?.toString(),
-      );
-      if (!exists) setState(() => _messages = [..._messages, message]);
-      await _refreshConversations();
-      _scrollToBottom();
+
+      if (_activeConversationId == conversationId) {
+        setState(() {
+          _messages = _mergeConfirmedMessage(_messages, message);
+          _applyMessageToConversation(message, read: true);
+        });
+        _scrollToBottom();
+      }
     } on ApiException catch (error) {
       if (!mounted) return;
-      _messageController.text = content;
+      _restoreFailedMessage(optimisticId, content);
       setState(() => _error = error.message);
+      unawaited(_refreshConversations());
     } catch (_) {
       if (!mounted) return;
-      _messageController.text = content;
+      _restoreFailedMessage(optimisticId, content);
       setState(() => _error = 'Could not send the message.');
+      unawaited(_refreshConversations());
+    }
+  }
+
+  void _restoreFailedMessage(String optimisticId, String content) {
+    setState(() {
+      _messages = _messages
+          .where((item) => item['id']?.toString() != optimisticId)
+          .toList();
+    });
+
+    final currentDraft = _messageController.text;
+    final restored = currentDraft.trim().isEmpty
+        ? content
+        : '$content\n$currentDraft';
+
+    _messageController.value = TextEditingValue(
+      text: restored,
+      selection: TextSelection.collapsed(offset: restored.length),
+    );
+
+    _messageFocusNode.requestFocus();
+  }
+
+  Future<void> _deleteMessage(
+    Map<String, dynamic> message,
+    String scope,
+  ) async {
+    final conversationId = _activeConversationId;
+    final messageId = message['id']?.toString() ?? '';
+
+    if (conversationId.isEmpty ||
+        messageId.isEmpty ||
+        _deletingMessageId.isNotEmpty) {
+      return;
+    }
+
+    final normalizedScope = scope == 'everyone' ? 'everyone' : 'me';
+    final mine = message['senderId']?.toString() == _currentUserId;
+
+    if (normalizedScope == 'everyone' && !mine) return;
+
+    setState(() {
+      _deletingMessageId = messageId;
+      _error = '';
+    });
+
+    try {
+      await _api.deleteAdminChatMessage(
+        conversationId,
+        messageId,
+        scope: normalizedScope,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _messages = _messages
+            .where((item) => item['id']?.toString() != messageId)
+            .toList();
+      });
+
+      await _refreshConversations();
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Could not delete the message.');
+      }
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted && _deletingMessageId == messageId) {
+        setState(() => _deletingMessageId = '');
+      }
     }
   }
 
@@ -259,10 +806,13 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
   }) {
     final id = conversation['id']?.toString() ?? '';
     if (id.isEmpty) return;
+
     final next = _conversations
         .where((item) => item['id']?.toString() != id)
         .toList();
+
     next.insert(0, conversation);
+
     setState(() {
       _conversations = next;
       if (makeActive) _activeConversationId = id;
@@ -272,6 +822,7 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
+
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 220),
@@ -285,7 +836,9 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
 
     try {
       administrators = await _api.getTeamChatAdministrators();
+
       if (!mounted) return;
+
       setState(() {
         _error = '';
       });
@@ -316,9 +869,11 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
 
     if (selected['type'] == 'direct') {
       final admin = selected['admin'];
+
       if (admin is Map) {
         await _startDirect(Map<String, dynamic>.from(admin));
       }
+
       return;
     }
 
@@ -334,7 +889,9 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
         title: title,
         memberIds: memberIds,
       );
+
       if (!mounted) return;
+
       _upsertConversation(conversation, makeActive: true);
       await _loadMessages(conversation['id']?.toString() ?? '');
     } on ApiException catch (error) {
@@ -349,7 +906,7 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(active == null ? 'Team chat' : _conversationName(active)),
+        title: active == null ? const Text('Team chat') : null,
         actions: [
           IconButton(
             onPressed: _showNewConversationSheet,
@@ -441,9 +998,11 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
   Widget _conversationTile(Map<String, dynamic> conversation) {
     final name = _conversationName(conversation);
     final lastMessage = conversation['lastMessage'];
+
     final lastContent = lastMessage is Map
         ? lastMessage['content']?.toString() ?? ''
         : '';
+
     final unread =
         int.tryParse(conversation['unreadCount']?.toString() ?? '') ?? 0;
 
@@ -526,7 +1085,7 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
                                 horizontal: 5,
                               ),
                               decoration: const BoxDecoration(
-                                color: AppColors.primaryDark,
+                                color: AppColors.primary,
                                 borderRadius: BorderRadius.all(
                                   Radius.circular(999),
                                 ),
@@ -564,10 +1123,6 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
           ),
           child: Row(
             children: [
-              IconButton(
-                onPressed: () => setState(() => _activeConversationId = ''),
-                icon: const Icon(Icons.arrow_back_rounded),
-              ),
               AdminAvatar(
                 name: _conversationName(conversation),
                 avatarUrl: conversation['displayAvatarUrl']?.toString(),
@@ -630,18 +1185,22 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
   }
 
   Widget _messageBubble(Map<String, dynamic> message) {
+    final messageId = message['id']?.toString() ?? '';
     final mine = message['senderId']?.toString() == _currentUserId;
+    final deleting = messageId.isNotEmpty && _deletingMessageId == messageId;
+
     final senderRaw = message['sender'];
     final sender = senderRaw is Map
         ? Map<String, dynamic>.from(senderRaw)
         : <String, dynamic>{};
+
     final senderName = sender['fullName']?.toString() ?? 'Administrator';
 
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * .76,
+          maxWidth: MediaQuery.sizeOf(context).width * .86,
         ),
         margin: const EdgeInsets.only(bottom: 9),
         child: Row(
@@ -710,6 +1269,80 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
                 ),
               ),
             ),
+            if (messageId.isNotEmpty) ...[
+              const SizedBox(width: 3),
+              SizedBox(
+                width: 30,
+                height: 30,
+                child: deleting
+                    ? const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.8,
+                          color: AppColors.primaryDark,
+                        ),
+                      )
+                    : PopupMenuButton<String>(
+                        tooltip: 'Message options',
+                        padding: EdgeInsets.zero,
+                        iconSize: 18,
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          color: AppColors.textMuted,
+                          size: 18,
+                        ),
+                        onSelected: (scope) =>
+                            unawaited(_deleteMessage(message, scope)),
+                        itemBuilder: (context) => [
+                          const PopupMenuItem<String>(
+                            value: 'me',
+                            height: 42,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 18,
+                                  color: AppColors.textPrimary,
+                                ),
+                                SizedBox(width: 9),
+                                Text(
+                                  'Delete for me',
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (mine)
+                            const PopupMenuItem<String>(
+                              value: 'everyone',
+                              height: 42,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.delete_forever_outlined,
+                                    size: 18,
+                                    color: Colors.redAccent,
+                                  ),
+                                  SizedBox(width: 9),
+                                  Text(
+                                    'Delete for everyone',
+                                    style: TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+            ],
           ],
         ),
       ),
@@ -731,10 +1364,12 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
             Expanded(
               child: TextField(
                 controller: _messageController,
+                focusNode: _messageFocusNode,
                 minLines: 1,
                 maxLines: 5,
                 maxLength: 3000,
-                textInputAction: TextInputAction.newline,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => unawaited(_sendMessage()),
                 decoration: InputDecoration(
                   hintText: 'Write a message…',
                   counterText: '',
@@ -764,24 +1399,16 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
               width: 44,
               height: 44,
               child: FilledButton(
-                onPressed: _sending ? null : _sendMessage,
+                onPressed: _sendMessage,
                 style: FilledButton.styleFrom(
                   padding: EdgeInsets.zero,
-                  backgroundColor: AppColors.primaryDark,
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: _sending
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.send_rounded, size: 18),
+                child: const Icon(Icons.send_rounded, size: 18),
               ),
             ),
           ],
@@ -804,37 +1431,46 @@ class _AdminTeamChatPageState extends State<AdminTeamChatPage> {
     }
 
     final members = conversation['members'];
+
     if (members is List) {
       for (final raw in members.whereType<Map>()) {
         final member = Map<String, dynamic>.from(raw);
+
         if (member['id']?.toString() != _currentUserId) {
           return member['email']?.toString() ?? 'Direct message';
         }
       }
     }
+
     return 'Direct message';
   }
 
   String _formatShortTime(dynamic value) {
     final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+
     if (date == null) return '';
+
     final now = DateTime.now();
+
     if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day) {
       return _clock(date);
     }
+
     return '${date.day}/${date.month}';
   }
 
   String _formatMessageTime(dynamic value) {
     final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+
     return date == null ? '' : _clock(date);
   }
 
   String _clock(DateTime date) {
     final hour = date.hour.toString().padLeft(2, '0');
     final minute = date.minute.toString().padLeft(2, '0');
+
     return '$hour:$minute';
   }
 }
@@ -872,6 +1508,7 @@ class _AdminChatNewConversationSheetState
 
     return widget.administrators.where((admin) {
       final id = admin['id']?.toString() ?? '';
+
       if (id.isEmpty ||
           id == widget.currentUserId ||
           admin['isCurrent'] == true) {
@@ -881,7 +1518,9 @@ class _AdminChatNewConversationSheetState
       if (query.isEmpty) return true;
 
       final name = admin['fullName']?.toString().toLowerCase() ?? '';
+
       final email = admin['email']?.toString().toLowerCase() ?? '';
+
       return name.contains(query) || email.contains(query);
     }).toList();
   }
@@ -891,6 +1530,7 @@ class _AdminChatNewConversationSheetState
         .map((admin) => admin['id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
         .toSet();
+
     final allSelected = ids.isNotEmpty && ids.every(_selected.contains);
 
     setState(() {
@@ -905,10 +1545,12 @@ class _AdminChatNewConversationSheetState
   @override
   Widget build(BuildContext context) {
     final admins = _availableAdmins;
+
     final visibleIds = admins
         .map((admin) => admin['id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
         .toSet();
+
     final allVisibleSelected =
         visibleIds.isNotEmpty && visibleIds.every(_selected.contains);
 
@@ -1104,7 +1746,9 @@ class _AdminChatNewConversationSheetState
                       itemCount: admins.length,
                       itemBuilder: (_, index) {
                         final admin = admins[index];
+
                         final id = admin['id']?.toString() ?? '';
+
                         final selected = _selected.contains(id);
 
                         return ListTile(

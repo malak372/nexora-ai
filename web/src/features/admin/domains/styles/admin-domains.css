@@ -2719,3 +2719,105 @@
     border-bottom: 0 !important;
   }
 }
+
+/* Domain visibility controls */
+.admin-domain-auto-note {
+  margin: 14px 0 0;
+  padding: 12px 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid rgba(92, 189, 185, .16);
+  border-radius: 15px;
+  color: #4c6961;
+  background: #f2faf8;
+}
+
+.admin-domain-auto-note.is-hidden {
+  border-color: rgba(209, 154, 170, .2);
+  color: #8c6873;
+  background: #fff6f8;
+}
+
+.admin-domain-auto-note>svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.admin-domain-auto-note strong,
+.admin-domain-auto-note span {
+  display: block;
+}
+
+.admin-domain-auto-note strong {
+  color: inherit;
+  font-size: 9.6px;
+  font-weight: 880;
+}
+
+.admin-domain-auto-note span {
+  margin-top: 3px;
+  color: #899892;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.admin-domain-visibility-switch {
+  position: relative;
+}
+
+.admin-domain-switch__visibility-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #79908a;
+  background: #eef4f2;
+}
+
+.admin-domain-visibility-switch.is-on .admin-domain-switch__visibility-icon {
+  color: #2f7774;
+  background: #dff3ee;
+}
+
+.admin-domain-card.is-hidden {
+  border-color: rgba(209, 154, 170, .18) !important;
+}
+
+.admin-domain-card__badges {
+  margin-top: 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+}
+
+.admin-domain-card__badges .admin-domain-status {
+  margin-top: 0 !important;
+}
+
+.admin-domain-visibility-status.is-visible {
+  color: #35786f !important;
+  border-color: rgba(76, 158, 146, .18) !important;
+  background: #edf8f5 !important;
+}
+
+.admin-domain-visibility-status.is-hidden {
+  color: #9a6977 !important;
+  border-color: rgba(209, 154, 170, .22) !important;
+  background: #fff2f5 !important;
+}
+
+.admin-domain-auto-status {
+  color: #6d6d8d !important;
+  border-color: rgba(128, 126, 166, .17) !important;
+  background: #f4f3fb !important;
+}
+
+@media (max-width: 720px) {
+  .admin-domain-card__badges {
+    align-items: flex-start !important;
+  }
+}

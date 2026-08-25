@@ -27,6 +27,8 @@ class RealtimeSocket {
         ? namespace
         : '/$namespace';
 
+    final isolatedAdminChat = normalizedNamespace == '/admin-chat';
+
     final existing = _pool[normalizedNamespace];
     final existingToken = _poolTokens[normalizedNamespace];
 
@@ -47,14 +49,16 @@ class RealtimeSocket {
             ? <String>['polling', 'websocket']
             : <String>['websocket'],
         'autoConnect': false,
-        'forceNew': false,
-        'multiplex': true,
+        'forceNew': isolatedAdminChat,
+        'multiplex': !isolatedAdminChat,
         'reconnection': true,
         'reconnectionAttempts': 999999,
-        'reconnectionDelay': 180,
-        'reconnectionDelayMax': 1200,
-        'timeout': 5000,
+        'reconnectionDelay': isolatedAdminChat ? 100 : 180,
+        'reconnectionDelayMax': isolatedAdminChat ? 800 : 1200,
+        'timeout': isolatedAdminChat ? 3500 : 5000,
         'auth': <String, dynamic>{'token': token},
+        if (!kIsWeb)
+          'extraHeaders': <String, String>{'Authorization': 'Bearer $token'},
       },
     );
 
@@ -62,6 +66,38 @@ class RealtimeSocket {
     _poolTokens[normalizedNamespace] = token;
 
     return socket;
+  }
+
+  static Future<io.Socket> createIsolated(String namespace) async {
+    final token = await SessionStore.instance.getAccessToken();
+    if (token == null || token.trim().isEmpty) {
+      throw const ApiException('Your session has expired.', statusCode: 401);
+    }
+
+    final normalizedNamespace = namespace.startsWith('/')
+        ? namespace
+        : '/$namespace';
+    final isolatedAdminChat = normalizedNamespace == '/admin-chat';
+
+    return io.io(
+      '${ApiConfig.socketBaseUrl}$normalizedNamespace',
+      <String, dynamic>{
+        'transports': kIsWeb
+            ? <String>['polling', 'websocket']
+            : <String>['websocket'],
+        'autoConnect': false,
+        'forceNew': true,
+        'multiplex': false,
+        'reconnection': true,
+        'reconnectionAttempts': 999999,
+        'reconnectionDelay': isolatedAdminChat ? 100 : 180,
+        'reconnectionDelayMax': isolatedAdminChat ? 800 : 1200,
+        'timeout': isolatedAdminChat ? 3500 : 5000,
+        'auth': <String, dynamic>{'token': token},
+        if (!kIsWeb)
+          'extraHeaders': <String, String>{'Authorization': 'Bearer $token'},
+      },
+    );
   }
 
   static Future<void> warm(String namespace) async {

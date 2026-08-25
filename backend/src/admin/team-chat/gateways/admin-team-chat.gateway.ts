@@ -3,7 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { OnEvent } from '@nestjs/event-emitter';
 import {
+    Ack,
+    ConnectedSocket,
+    MessageBody,
     OnGatewayConnection,
+    SubscribeMessage,
     WebSocketGateway,
     WebSocketServer,
 } from '@nestjs/websockets';
@@ -11,6 +15,7 @@ import { UserRole } from '@prisma/client';
 import type { Namespace, Socket } from 'socket.io';
 
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AdminTeamChatService } from '../services/admin-team-chat.service';
 
 /**
  * Handles authentication for administrator team-chat WebSocket connections.
@@ -88,6 +93,18 @@ class AdminTeamChatSocketAuthService {
     }
 }
 
+type AdminTeamChatSocket = Socket & {
+    data: {
+        adminId?: string;
+    };
+};
+
+type AdminTeamChatSendAck = (payload: {
+    success: boolean;
+    message?: unknown;
+    error?: string;
+}) => void;
+
 /**
  * WebSocket gateway responsible for real-time administrator
  * team-chat communication.
@@ -106,12 +123,23 @@ class AdminTeamChatSocketAuthService {
 @WebSocketGateway({
     namespace: '/admin-chat',
     transports: ['websocket', 'polling'],
+    cors: {
+        origin: [
+            /^http:\/\/localhost:\d+$/,
+            /^http:\/\/127\.0\.0\.1:\d+$/,
+        ],
+        credentials: true,
+        methods: ['GET', 'POST'],
+    },
 })
 export class AdminTeamChatGateway implements OnGatewayConnection<Socket> {
     @WebSocketServer()
     private readonly server!: Namespace;
 
-    constructor(private readonly socketAuth: AdminTeamChatSocketAuthService) { }
+    constructor(
+        private readonly socketAuth: AdminTeamChatSocketAuthService,
+        private readonly teamChatService: AdminTeamChatService,
+    ) { }
 
     /**
      * Handles a new WebSocket connection.
@@ -125,15 +153,74 @@ export class AdminTeamChatGateway implements OnGatewayConnection<Socket> {
      *
      * @param client The newly connected Socket.IO client.
      */
-    async handleConnection(client: Socket) {
+    async handleConnection(client: AdminTeamChatSocket) {
         try {
             const adminId = await this.socketAuth.authenticate(client);
+            client.data.adminId = adminId;
 
             await client.join(`admin-user:${adminId}`);
 
             client.emit('admin-chat:ready', { adminId });
         } catch {
             client.disconnect(true);
+        }
+    }
+
+    @SubscribeMessage('admin-chat:send')
+    async onSendMessage(
+        @ConnectedSocket() client: AdminTeamChatSocket,
+        @MessageBody()
+        payload: {
+            conversationId?: unknown;
+            content?: unknown;
+        },
+        @Ack() acknowledgement?: AdminTeamChatSendAck,
+    ) {
+        const adminId = client.data.adminId;
+        const conversationId =
+            typeof payload?.conversationId === 'string'
+                ? payload.conversationId.trim()
+                : '';
+        const content =
+            typeof payload?.content === 'string'
+                ? payload.content
+                : '';
+
+        if (!adminId) {
+            acknowledgement?.({
+                success: false,
+                error: 'Authentication required.',
+            });
+            return;
+        }
+
+        if (!conversationId) {
+            acknowledgement?.({
+                success: false,
+                error: 'Conversation id is required.',
+            });
+            return;
+        }
+
+        try {
+            const message = await this.teamChatService.sendMessage(
+                adminId,
+                conversationId,
+                content,
+            );
+
+            acknowledgement?.({
+                success: true,
+                message,
+            });
+        } catch (error) {
+            acknowledgement?.({
+                success: false,
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : 'Could not send the message.',
+            });
         }
     }
 
@@ -154,6 +241,24 @@ export class AdminTeamChatGateway implements OnGatewayConnection<Socket> {
         this.server
             .to(payload.memberIds.map((id) => `admin-user:${id}`))
             .emit('admin-chat:message', payload.message);
+    }
+
+    @OnEvent('admin-chat.message.deleted')
+    onMessageDeleted(payload: {
+        conversationId: string;
+        messageId: string;
+        scope: 'me' | 'everyone';
+        userId: string;
+        memberIds: string[];
+    }) {
+        this.server
+            .to(payload.memberIds.map((id) => `admin-user:${id}`))
+            .emit('admin-chat:message-deleted', {
+                conversationId: payload.conversationId,
+                messageId: payload.messageId,
+                scope: payload.scope,
+                userId: payload.userId,
+            });
     }
 
     /**
