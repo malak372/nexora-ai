@@ -358,22 +358,43 @@ export class DomainResolutionService {
      * exists. The three reads still execute in parallel so this stricter policy
      * does not add database latency.
      */
-    const [
-      preferredDomainResult,
-      favoriteDomainResult,
-      historicalDomainResult,
-    ] = await Promise.all([
-      this.resolvePreferredDomain(input.userId, domains),
-      this.resolveFromFavorites(input.userId, domains),
-      this.resolveFromGeneratedHistory(input.userId, domains),
-    ]);
+    /*
+     * Start every personalization read in parallel, but do not wait for
+     * lower-priority history when the saved-preference query has already
+     * produced the authoritative answer. The old Promise.all paid for the
+     * slowest favorites/history query even though hierarchy rules guaranteed
+     * those results could not override a preference. Attach observers so an
+     * early preference return never leaves a rejected background promise
+     * unhandled; if preference is absent we still await and surface the same
+     * lower-priority errors as before.
+     */
+    const preferredDomainPromise = this.resolvePreferredDomain(
+      input.userId,
+      domains,
+    );
+    const favoriteDomainPromise = this.resolveFromFavorites(
+      input.userId,
+      domains,
+    );
+    const historicalDomainPromise = this.resolveFromGeneratedHistory(
+      input.userId,
+      domains,
+    );
+    void favoriteDomainPromise.catch(() => undefined);
+    void historicalDomainPromise.catch(() => undefined);
 
+    const preferredDomainResult = await preferredDomainPromise;
     if (preferredDomainResult) {
       return this.withPersonalizationFallbackTrace(
         preferredDomainResult,
         'saved preference',
       );
     }
+
+    const [favoriteDomainResult, historicalDomainResult] = await Promise.all([
+      favoriteDomainPromise,
+      historicalDomainPromise,
+    ]);
 
     if (favoriteDomainResult) {
       return this.withPersonalizationFallbackTrace(

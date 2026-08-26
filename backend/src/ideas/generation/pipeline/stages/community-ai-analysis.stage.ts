@@ -86,7 +86,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       : hasSelectedDomainEvidence;
     const retainedEvidenceCount = this.countRetainedEvidenceTexts(context);
     const rawEvidenceCandidateCount = context.rawEvidenceCorpus?.length ?? 0;
-    const hasRawAiTriageCorpus = plannedRequest && rawEvidenceCandidateCount > 0;
+    const hasRawAiTriageCorpus = rawEvidenceCandidateCount > 0;
     const hasCompositeSynthesisCorpus =
       plannedRequest &&
       !hasGroundedEvidenceForOnlineAi &&
@@ -195,16 +195,45 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       verifiedByDeterministicGuard: item.verified,
     }));
     const canonicalState = CanonicalEvidenceStateUtil.compute(canonicalEvidenceLedger);
+    const evidenceAlignedAnalysis =
+      canonicalState.trustedCount > 0
+        ? this.alignDiscoveryAnalysisToCanonicalEvidence(
+            context,
+            analysis,
+            canonicalEvidenceLedger,
+          )
+        : analysis;
+    const authoritativeAnalysis: CommunityAiAnalysis =
+      canonicalState.trustedCount > 0
+        ? evidenceAlignedAnalysis
+        : {
+            ...evidenceAlignedAnalysis,
+            dominantProblems: [],
+            unmetNeeds: [],
+            opportunities: [],
+            overallConfidence: Math.min(analysis.overallConfidence, 15),
+            aiSucceeded: false,
+            fallbackUsed: true,
+            fallbackReason:
+              analysis.fallbackReason ??
+              'No canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence survived deterministic verification.',
+            qualityWarnings: [
+              ...analysis.qualityWarnings,
+              'Canonical evidence state is ZERO_VALIDATED_EVIDENCE; unverified/context-only material was not promoted into NLP opportunities, recurring problems, or extracted needs.',
+            ],
+          };
     const synchronizedAnalysis: CommunityAiAnalysis = {
-      ...analysis,
+      ...authoritativeAnalysis,
       evidenceClassifications: canonicalClassifications,
     };
 
     const enrichedNlp: IdeaGenerationNlpContext = {
       ...context.nlp,
-      recurringProblems: plannedRequest
-        ? this.toJsonArray(
-            analysis.opportunities.map((opportunity) => ({
+      recurringProblems: canonicalState.trustedCount === 0
+        ? this.toJsonArray([])
+        : plannedRequest
+          ? this.toJsonArray(
+            authoritativeAnalysis.opportunities.map((opportunity) => ({
               domainName: opportunity.domainName,
               title: opportunity.title,
               problem: opportunity.problem,
@@ -217,7 +246,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           )
         : this.mergeJsonArrays(
             context.nlp.recurringProblems,
-            analysis.opportunities.map((opportunity) => ({
+            authoritativeAnalysis.opportunities.map((opportunity) => ({
               domainName: opportunity.domainName,
               title: opportunity.title,
               problem: opportunity.problem,
@@ -228,9 +257,11 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
               aiConfidence: opportunity.confidence,
             })),
           ),
-      extractedNeeds: plannedRequest
-        ? this.toJsonArray(
-            analysis.opportunities.map((opportunity) => ({
+      extractedNeeds: canonicalState.trustedCount === 0
+        ? this.toJsonArray([])
+        : plannedRequest
+          ? this.toJsonArray(
+            authoritativeAnalysis.opportunities.map((opportunity) => ({
               domainName: opportunity.domainName,
               title: opportunity.unmetNeed,
               need: opportunity.unmetNeed,
@@ -244,7 +275,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           )
         : this.mergeJsonArrays(
             context.nlp.extractedNeeds,
-            analysis.opportunities.map((opportunity) => ({
+            authoritativeAnalysis.opportunities.map((opportunity) => ({
               domainName: opportunity.domainName,
               title: opportunity.unmetNeed,
               need: opportunity.unmetNeed,
@@ -264,29 +295,29 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
        * opportunities, so replacing the array avoids duplicate ranking work
        * and guarantees that every ranked opportunity came from the AI layer.
        */
-      opportunities: this.toNlpOpportunities(analysis.opportunities),
+      opportunities: this.toNlpOpportunities(authoritativeAnalysis.opportunities),
       insights: this.mergeJsonArrays(context.nlp.insights, [
         {
           type: 'COMMUNITY_AI_ANALYSIS',
-          summary: analysis.summary,
-          dominantProblems: [...analysis.dominantProblems],
-          unmetNeeds: [...analysis.unmetNeeds],
-          overallConfidence: analysis.overallConfidence,
-          qualityWarnings: [...analysis.qualityWarnings],
-          modelId: analysis.modelId,
-          apiModelId: analysis.apiModelId,
-          attemptCount: analysis.attemptCount,
-          aiAttempted: analysis.aiAttempted,
-          triageAiSucceeded: analysis.triageAiSucceeded ?? false,
-          synthesisAiSucceeded: analysis.synthesisAiSucceeded ?? analysis.aiSucceeded,
-          aiSucceeded: analysis.aiSucceeded,
-          fallbackUsed: analysis.fallbackUsed,
-          onlineAttemptCount: analysis.onlineAttemptCount,
-          executionFailureCount: analysis.executionFailureCount,
-          validationRejectedCount: analysis.validationRejectedCount,
-          fallbackReason: analysis.fallbackReason,
-          attemptDiagnostics: analysis.attemptDiagnostics.map((item) => ({ ...item })),
-          unvalidatedDomainHypotheses: analysis.unvalidatedDomainHypotheses.map(
+          summary: authoritativeAnalysis.summary,
+          dominantProblems: [...authoritativeAnalysis.dominantProblems],
+          unmetNeeds: [...authoritativeAnalysis.unmetNeeds],
+          overallConfidence: authoritativeAnalysis.overallConfidence,
+          qualityWarnings: [...authoritativeAnalysis.qualityWarnings],
+          modelId: authoritativeAnalysis.modelId,
+          apiModelId: authoritativeAnalysis.apiModelId,
+          attemptCount: authoritativeAnalysis.attemptCount,
+          aiAttempted: authoritativeAnalysis.aiAttempted,
+          triageAiSucceeded: authoritativeAnalysis.triageAiSucceeded ?? false,
+          synthesisAiSucceeded: authoritativeAnalysis.synthesisAiSucceeded ?? authoritativeAnalysis.aiSucceeded,
+          aiSucceeded: authoritativeAnalysis.aiSucceeded,
+          fallbackUsed: authoritativeAnalysis.fallbackUsed,
+          onlineAttemptCount: authoritativeAnalysis.onlineAttemptCount,
+          executionFailureCount: authoritativeAnalysis.executionFailureCount,
+          validationRejectedCount: authoritativeAnalysis.validationRejectedCount,
+          fallbackReason: authoritativeAnalysis.fallbackReason,
+          attemptDiagnostics: authoritativeAnalysis.attemptDiagnostics.map((item) => ({ ...item })),
+          unvalidatedDomainHypotheses: authoritativeAnalysis.unvalidatedDomainHypotheses.map(
             (item) => ({ ...item, risks: [...item.risks] }),
           ),
           evidenceClassifications: canonicalClassifications.map((item) => ({ ...item })),
@@ -306,7 +337,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
                 (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
             ).length,
           evidencePipelineSemantics:
-            'Raw collector candidates are semantically triaged before final trusted evidence admission. nlpProcessedEvidenceCount measures preprocessing throughput; trustedNlpEvidenceCount counts only DIRECT_PROBLEM + SUPPORTING_SIGNAL classifications.',
+            'Raw collector candidates are semantically triaged before final trusted evidence admission. DIRECT_PROBLEM + SUPPORTING_SIGNAL are trusted. ANALOGOUS_WORKFLOW_SIGNAL is useful adjacent-workflow context but never validates requester demand.',
           directEvidenceClassificationCount:
             canonicalClassifications.filter(
               (item) => item.verifiedByDeterministicGuard && item.classification === 'DIRECT_PROBLEM',
@@ -314,6 +345,10 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           supportingEvidenceClassificationCount:
             canonicalClassifications.filter(
               (item) => item.verifiedByDeterministicGuard && item.classification === 'SUPPORTING_SIGNAL',
+            ).length,
+          analogousWorkflowSignalClassificationCount:
+            canonicalClassifications.filter(
+              (item) => item.classification === 'ANALOGOUS_WORKFLOW_SIGNAL',
             ).length,
           contextOnlyEvidenceClassificationCount:
             canonicalClassifications.filter(
@@ -325,10 +360,10 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             ).length,
         },
       ]),
-      aiUsed: context.nlp.aiUsed || analysis.aiAttempted || analysis.aiSucceeded,
+      aiUsed: context.nlp.aiUsed || authoritativeAnalysis.aiAttempted || authoritativeAnalysis.aiSucceeded,
       confidence: this.mergeConfidence(
         context.nlp.confidence,
-        analysis.overallConfidence / 100,
+        authoritativeAnalysis.overallConfidence / 100,
       ),
     };
 
@@ -341,10 +376,10 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         communityAiAnalysis: synchronizedAnalysis,
       },
       resultPreview: (() => {
-        const groundedCount = analysis.opportunities.filter(
+        const groundedCount = authoritativeAnalysis.opportunities.filter(
           (opportunity) => opportunity.evidenceSamples.length > 0,
         ).length;
-        const hypothesisCount = analysis.unvalidatedDomainHypotheses.length;
+        const hypothesisCount = authoritativeAnalysis.unvalidatedDomainHypotheses.length;
 
         if (groundedCount > 0 && hypothesisCount === 0) {
           return `Community AI analysis extracted ${groundedCount} evidence-grounded opportunity candidate(s).`;
@@ -359,25 +394,25 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       metadata: {
         analysisLayer: 'IDEA_OPPORTUNITY_ENRICHMENT',
         duplicatesNlpAiEnhancement: false,
-        aiAnalysisApplied: analysis.aiAttempted || analysis.aiSucceeded,
-        opportunityCount: analysis.opportunities.length,
-        overallConfidence: analysis.overallConfidence,
-        modelId: analysis.modelId,
-        apiModelId: analysis.apiModelId,
-        attemptCount: analysis.attemptCount,
-        aiAttempted: analysis.aiAttempted,
-        triageAiSucceeded: analysis.triageAiSucceeded ?? false,
-        synthesisAiSucceeded: analysis.synthesisAiSucceeded ?? analysis.aiSucceeded,
-        aiSucceeded: analysis.aiSucceeded,
-        fallbackUsed: analysis.fallbackUsed,
-        onlineAttemptCount: analysis.onlineAttemptCount,
-        executionFailureCount: analysis.executionFailureCount,
-        validationRejectedCount: analysis.validationRejectedCount,
-        fallbackReason: analysis.fallbackReason,
-        attemptDiagnostics: analysis.attemptDiagnostics,
-        qualityWarnings: analysis.qualityWarnings,
-        representedDomains: [...new Set(analysis.opportunities.map((item) => item.domainName))],
-        unvalidatedDomainHypothesisCount: analysis.unvalidatedDomainHypotheses.length,
+        aiAnalysisApplied: authoritativeAnalysis.aiAttempted || authoritativeAnalysis.aiSucceeded,
+        opportunityCount: authoritativeAnalysis.opportunities.length,
+        overallConfidence: authoritativeAnalysis.overallConfidence,
+        modelId: authoritativeAnalysis.modelId,
+        apiModelId: authoritativeAnalysis.apiModelId,
+        attemptCount: authoritativeAnalysis.attemptCount,
+        aiAttempted: authoritativeAnalysis.aiAttempted,
+        triageAiSucceeded: authoritativeAnalysis.triageAiSucceeded ?? false,
+        synthesisAiSucceeded: authoritativeAnalysis.synthesisAiSucceeded ?? authoritativeAnalysis.aiSucceeded,
+        aiSucceeded: authoritativeAnalysis.aiSucceeded,
+        fallbackUsed: authoritativeAnalysis.fallbackUsed,
+        onlineAttemptCount: authoritativeAnalysis.onlineAttemptCount,
+        executionFailureCount: authoritativeAnalysis.executionFailureCount,
+        validationRejectedCount: authoritativeAnalysis.validationRejectedCount,
+        fallbackReason: authoritativeAnalysis.fallbackReason,
+        attemptDiagnostics: authoritativeAnalysis.attemptDiagnostics,
+        qualityWarnings: authoritativeAnalysis.qualityWarnings,
+        representedDomains: [...new Set(authoritativeAnalysis.opportunities.map((item) => item.domainName))],
+        unvalidatedDomainHypothesisCount: authoritativeAnalysis.unvalidatedDomainHypotheses.length,
         canonicalTrustedEvidenceCount: canonicalEvidenceLedger.filter(
           (item) => item.verified &&
             (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
@@ -394,6 +429,93 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
    * intentionally not assignable to `JsonValue`. Building a `JsonArray` here
    * keeps the generation context type-safe without weakening its contract.
    */
+  private alignDiscoveryAnalysisToCanonicalEvidence(
+    context: IdeaGenerationContext,
+    analysis: CommunityAiAnalysis,
+    ledger: IdeaGenerationContext['canonicalEvidenceLedger'],
+  ): CommunityAiAnalysis {
+    if (context.requestDescription?.trim()) return analysis;
+
+    const trusted = [...ledger]
+      .filter(
+        (item) =>
+          item.verified &&
+          (item.classification === 'DIRECT_PROBLEM' ||
+            item.classification === 'SUPPORTING_SIGNAL'),
+      )
+      .sort((left, right) => {
+        const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+        const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+        return rightDirect - leftDirect || right.confidence - left.confidence;
+      });
+
+    const lead = trusted[0];
+    if (!lead) return analysis;
+
+    const domain =
+      context.selectedDomains.find((candidate) =>
+        lead.matchedDomainIds.includes(candidate.id),
+      ) ??
+      context.selectedDomains.find((candidate) => candidate.id === lead.discoveryDomainId) ??
+      context.selectedDomains[0];
+    const domainName = domain?.name ?? context.domainName ?? 'Selected domain';
+    const family = lead.problemFamily?.trim() || `${domainName} Verified Workflow Problem`;
+    const compactEvidence = lead.text.replace(/\s+/gu, ' ').trim().slice(0, 520);
+    const problem = compactEvidence
+      ? `A retained external ${lead.sourceType.toLocaleLowerCase()} documents this verified problem signal: ${compactEvidence}`
+      : `A retained external evidence item documents a verified ${family} problem signal.`;
+    const unmetNeed =
+      `A focused software workflow that addresses ${family} while preserving human review and validating how broadly the problem occurs.`;
+    const opportunity: CommunityAiOpportunity = {
+      domainName,
+      title: family,
+      problem,
+      unmetNeed,
+      solutionArea: `Evidence-grounded workflow for ${family}`,
+      affectedUsers: ['Users or operators represented by the retained external evidence'],
+      evidenceSamples: [lead.text],
+      frequency: 1,
+      severity: 'MEDIUM',
+      confidence: Math.max(35, Math.min(90, lead.confidence)),
+      problemImportance: Math.max(40, Math.min(85, lead.confidence)),
+      localEvidenceAvailable: false,
+      localEvidenceSamples: [],
+      localRelevance: 20,
+      groundingScore: Math.max(40, Math.min(100, lead.confidence)),
+      technicalFeasibility: 65,
+      marketPotential: 40,
+      innovationPotential: 50,
+      risks: [
+        `The direction is grounded by ${trusted.length} retained verified evidence item(s) and still requires broader independent validation before prevalence claims are made.`,
+      ],
+    };
+
+    return {
+      ...analysis,
+      summary:
+        `Canonical evidence verification retained ${trusted.length} trusted problem signal(s). ` +
+        `The discovery opportunity was locked to the strongest evidence-entailing family: ${family}.`,
+      dominantProblems: [problem],
+      unmetNeeds: [unmetNeed],
+      opportunities: [opportunity],
+      overallConfidence: Math.max(
+        analysis.overallConfidence,
+        Math.min(80, Math.round(lead.confidence * 0.75)),
+      ),
+      fallbackUsed: analysis.fallbackUsed || analysis.opportunities.length === 0,
+      fallbackReason:
+        analysis.opportunities.length === 0
+          ? 'Online opportunity synthesis did not return a usable object; the canonical verified evidence ledger produced the discovery opportunity without changing the evidence family.'
+          : analysis.fallbackReason,
+      qualityWarnings: [
+        ...analysis.qualityWarnings.filter(
+          (warning) => !/no persisted nlp evidence samples are available for grounding/iu.test(warning),
+        ),
+        'Discovery opportunity identity is locked to the canonical verified evidence family; downstream stages must not rename it to an unrelated taxonomy family.',
+      ],
+    };
+  }
+
   private buildCanonicalEvidenceLedger(
     context: IdeaGenerationContext,
     analysis: CommunityAiAnalysis,

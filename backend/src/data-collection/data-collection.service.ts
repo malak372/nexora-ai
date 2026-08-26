@@ -466,6 +466,13 @@ export class DataCollectionService {
               sourcePlan?.sourceTier,
               collectionMode,
             );
+            const sourceQueryBudget = sourcePlan?.queries?.length
+              ? sourcePlan.sourceTier === 'PRIMARY'
+                ? 3
+                : sourcePlan.sourceTier === 'SECONDARY'
+                  ? 2
+                  : 1
+              : 1;
             const sourceSpecificAiQueries = this.unique(
               (sourcePlan?.queries?.length
                 ? sourcePlan.queries
@@ -473,7 +480,7 @@ export class DataCollectionService {
                   ? dto.plannedQueries ?? []
                   : []
               ).map((query) => query.trim()).filter(Boolean),
-            ).slice(0, sourcePlan?.queries?.length ? 2 : 1);
+            ).slice(0, sourceQueryBudget);
             const authoritativeRuntimeQueries =
               isTrustedInternalGeneration &&
               sourceSpecificAiQueries.length > 0;
@@ -551,11 +558,14 @@ export class DataCollectionService {
                   requestDescription,
                   preferredRequestSourceKeys,
                   blockedRequestSourceKeys,
+                  sourcePlan?.sourceTier,
                 ),
-                // Generation collection uses a soft source budget. A source
-                // crossing the target may finish and return partial/complete
-                // data; only explicit run cancellation aborts it.
-                abortOnTimeout: !isFastPathCollection,
+                // FAST_GENERATION/TARGETED_RECOVERY are latency-bounded. A slow
+                // collector must never hold the whole generation run hostage.
+                // Collectors receive the AbortSignal and may return partial data;
+                // if they do not cooperate, Promise.race still releases the
+                // generation critical path at the tier-specific hard deadline.
+                abortOnTimeout: true,
               },
             );
 
@@ -678,11 +688,27 @@ export class DataCollectionService {
                   requestDescription,
                 ),
               );
+              const persistencePostCap = Math.min(
+                effectiveCollectorLimits?.maxSavedPosts ?? 18,
+                sourcePlan?.sourceTier === 'PRIMARY'
+                  ? 3
+                  : sourcePlan?.sourceTier === 'SECONDARY'
+                    ? 2
+                    : 1,
+              );
+              const persistenceCommentCap = Math.min(
+                effectiveCollectorLimits?.maxSavedComments ?? 30,
+                sourcePlan?.sourceTier === 'PRIMARY'
+                  ? 3
+                  : sourcePlan?.sourceTier === 'SECONDARY'
+                    ? 2
+                    : 1,
+              );
               const triagePersistencePosts = this.buildFastTriagePersistencePosts(
                 sourceLocalTriageCandidates,
                 relevantPosts,
-                effectiveCollectorLimits?.maxSavedPosts ?? 18,
-                effectiveCollectorLimits?.maxSavedComments ?? 30,
+                persistencePostCap,
+                persistenceCommentCap,
               );
               const fastPersistence =
                 await this.socialPostService.createManyWithCommentsFast(
@@ -860,11 +886,15 @@ export class DataCollectionService {
         );
       }
 
-      const completedJob =
-        await this.collectionJobService.completeJobWithTotals(
-          job.id,
-          authoritativeTotals,
-        );
+      const completedJob = isFastPathCollection
+        ? await this.collectionJobService.completeJobWithTotalsForGeneration(
+            job.id,
+            authoritativeTotals,
+          )
+        : await this.collectionJobService.completeJobWithTotals(
+            job.id,
+            authoritativeTotals,
+          );
 
       const completionAudit = this.auditService.createLog({
         actorId,
@@ -1110,7 +1140,7 @@ export class DataCollectionService {
       discoveryDomainId: sourcePlan?.discoveryDomainId ?? null,
       discoveryDomainName: sourcePlan?.discoveryDomainName ?? null,
       queryIntentId: sourcePlan?.queryIntentId ?? null,
-      queryText: plannedQueries[0] ?? null,
+      queryText: plannedQueries.length > 0 ? plannedQueries.join(' || ') : null,
       problemFacetIds: sourcePlan?.problemFacetIds ?? [],
       collectionPhase,
       sourceTier: sourcePlan?.sourceTier ?? 'MICRO_PROBE' as const,
@@ -3354,6 +3384,7 @@ export class DataCollectionService {
     requestDescription: string,
     preferredSourceKeys: ReadonlySet<string>,
     blockedSourceKeys: ReadonlySet<string>,
+    sourceTier?: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE',
   ): number | undefined {
     if (
       collectionMode !== 'FAST_GENERATION' &&
@@ -3361,15 +3392,26 @@ export class DataCollectionService {
     ) {
       return undefined;
     }
-    if (!requestDescription) {
-      return undefined;
-    }
-
     const key = sourceKey.toLocaleLowerCase();
+    const tierCap =
+      sourceTier === 'MICRO_PROBE'
+        ? 2_100
+        : sourceTier === 'SECONDARY'
+          ? 3_800
+          : 5_500;
     const recoveryAdjustment =
-      collectionMode === 'TARGETED_RECOVERY' ? -500 : 0;
+      collectionMode === 'TARGETED_RECOVERY' ? -700 : 0;
     const bounded = (value: number): number =>
-      Math.max(1_500, value + recoveryAdjustment);
+      Math.min(tierCap, Math.max(1_500, value + recoveryAdjustment));
+
+    // Discovery-only runs still execute every enabled collector, but no source
+    // is allowed an unbounded wait just because there is no requester text.
+    if (!requestDescription) {
+      if (key === 'reddit') return bounded(5_200);
+      if (key === 'app-store' || key === 'google-play') return bounded(4_500);
+      if (key === 'crossref' || key === 'news' || key === 'forum') return bounded(4_200);
+      return bounded(3_200);
+    }
 
     /*
      * Review stores need time for two phases: app discovery and review fetch.
@@ -3554,15 +3596,18 @@ export class DataCollectionService {
       Math.max(1, Math.min(value ?? maximum, maximum));
     const normalizedSourceKey = sourceKey.toLocaleLowerCase();
 
-    // DOMAINS_ONLY / NO_INPUT are evidence-discovery probes. Every enabled
-    // collector still runs, but each receives a tiny budget so broad coverage
-    // does not recreate the old 80-170 item first-pass corpus.
+    // DOMAINS_ONLY / NO_INPUT now do the breadth up front so recovery is rarely
+    // needed. PRIMARY lanes get two useful result slots and enough comments to
+    // expose real complaints; MICRO_PROBE lanes are capped later by tier.
     if (!requestDescription.trim()) {
       return {
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 2),
-        maxSavedComments: cap(limits?.maxSavedComments, 1),
+        // The tier limiter runs immediately after this method. Start with a
+        // useful breadth budget so PRIMARY lanes can actually retain several
+        // independent signals while SECONDARY/MICRO lanes are still capped.
+        maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
+        maxSavedPosts: cap(limits?.maxSavedPosts, 4),
+        maxFetchedComments: cap(limits?.maxFetchedComments, 6),
+        maxSavedComments: cap(limits?.maxSavedComments, 4),
       };
     }
 

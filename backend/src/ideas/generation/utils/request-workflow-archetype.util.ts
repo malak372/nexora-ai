@@ -38,6 +38,7 @@ export type RequestWorkflowArchetype =
   | 'PROFESSIONAL_EVIDENCE_RECORDS_OPERATIONS'
   | 'PROFESSIONAL_SERVICE_AGENCY_OPERATIONS'
   | 'RESTAURANT_ENERGY_OPERATIONS'
+  | 'CONNECTED_EQUIPMENT_MAINTENANCE_OPERATIONS'
   | 'FOOD_STORAGE_CONDITION_OPERATIONS'
   | 'RESTORATION_CONSERVATION_OPERATIONS'
   | 'RESIDENTIAL_CLEANING_OPERATIONS'
@@ -543,6 +544,26 @@ export class RequestWorkflowArchetypeUtil {
       );
     }
 
+    const connectedEquipmentMaintenanceActor =
+      /\b(?:restaurants?|restaurant kitchens?|commercial kitchens?|kitchens?|hotels?|hospitality operators?|facilities?|facility operators?|commercial buildings?|retail sites?|food service operators?|cafeterias?|canteens?|laboratories?|labs?|workshops?|warehouses?|manufacturing sites?)\b/iu.test(text);
+    const connectedEquipmentMaintenanceWorkflow =
+      /\b(?:equipment|machines?|refrigerators?|freezers?|ovens?|ventilation|hvac|coolers?|storage sensors?|temperature sensors?|connected devices?|iot|internet of things|telemetry|maintenance records?|maintenance alerts?|equipment alerts?|energy usage|energy consumption|temperature changes?|equipment status|device status|condition monitoring|predictive maintenance)\b/iu.test(text);
+    const connectedEquipmentMaintenancePain =
+      /\b(?:failure|failures|fault|faults|breakdown|breakdowns|downtime|spoilage|emergency repairs?|delayed maintenance|maintenance delay|early signs?|attention first|prioriti[sz](?:e|ation|ing)|abnormal|overheat|temperature excursion|unexpected|disrupted operations?)\w*\b/iu.test(text);
+    if (
+      connectedEquipmentMaintenanceActor &&
+      connectedEquipmentMaintenanceWorkflow &&
+      connectedEquipmentMaintenancePain &&
+      !developerSubject
+    ) {
+      return this.result(
+        'CONNECTED_EQUIPMENT_MAINTENANCE_OPERATIONS',
+        0.995,
+        ['reddit', 'forum', 'news', 'crossref', 'youtube', 'blog', 'gdelt'],
+        ['app-store', 'google-play', 'product-hunt', 'github', 'stackoverflow', 'dev-to', 'hacker-news'],
+      );
+    }
+
     const connectedAssetActor = /\b(?:farms?|farm operators?|agriculture|manufacturing|manufacturers?|factories|industrial plants?|warehouses?|utilities|electric utilities?|power utilities?|utility companies?|energy providers?|grid operators?|electricity distributors?|power distribution|electricity distribution|power grid|greenhouses?|livestock facilities?|irrigation systems?|remote sites?)\b/iu.test(text);
     const connectedAssetWorkflow = /\b(?:connected (?:devices?|equipment|systems?|meters?)|smart meters?|connected meters?|iot|internet of things|sensors?|telemetry|remote monitoring(?: devices?)?|automated control systems?|distribution automation|irrigation controllers?|automated feeding|device behavior|device failures?|meter failures?|connectivity failures?|network disruption|unauthorized access|access attempts?|security alerts?|equipment failures?|device health|network health|unusual consumption|consumption anomalies?|consumption data integrity|malicious activity|malicious interference|cyberattacks?|cyber attacks?|ransomware|production anomalies?|machine behavior|incident attribution|root cause|incident response)\b/iu.test(text);
     if (connectedAssetActor && connectedAssetWorkflow && !developerSubject) {
@@ -1003,6 +1024,7 @@ export class RequestWorkflowArchetypeUtil {
       case 'CUSTOM_COMMISSION_APPROVAL_OPERATIONS':
       case 'PHYSICAL_LOCAL_SERVICE_OPERATIONS':
       case 'RESTORATION_CONSERVATION_OPERATIONS':
+      case 'CONNECTED_EQUIPMENT_MAINTENANCE_OPERATIONS':
       case 'FOOD_STORAGE_CONDITION_OPERATIONS':
       case 'RENTAL_INVENTORY_OPERATIONS':
       case 'MANUFACTURING_COST_PROFITABILITY_OPERATIONS':

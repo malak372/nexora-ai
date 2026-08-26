@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -39,11 +40,16 @@ type IdeaGenerationSelectionResult = {
  * @author Malak
  */
 @Injectable()
-export class IdeaGenerationSelectionService {
+export class IdeaGenerationSelectionService implements OnModuleInit {
   private readonly logger = new Logger(IdeaGenerationSelectionService.name);
   private collectorRegistrySyncedAt = 0;
   private collectorRegistrySyncPromise: Promise<void> | null = null;
   private static readonly COLLECTOR_REGISTRY_SYNC_TTL_MS = 10 * 60 * 1000;
+  private static readonly SELECTION_CACHE_TTL_MS = 2 * 60 * 1000;
+  private readonly selectionCache = new Map<
+    string,
+    { readonly expiresAt: number; readonly value: IdeaGenerationSelectionResult }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -51,14 +57,38 @@ export class IdeaGenerationSelectionService {
     private readonly databaseRetry: IdeaGenerationDatabaseRetryService,
   ) {}
 
+  onModuleInit(): void {
+    setImmediate(() => {
+      void this.ensureRuntimeCollectorRegistrySynced().catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.debug(`Collector registry warm-up skipped non-fatally: ${message}`);
+      });
+    });
+  }
+
   async resolveSelection(
     input: ResolveIdeaGenerationSelectionInput,
   ): Promise<IdeaGenerationSelectionResult> {
-    await this.ensureRuntimeCollectorRegistrySynced();
+    const cached = this.selectionCache.get(input.domainId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return {
+        domain: { ...cached.value.domain, keywords: [...cached.value.domain.keywords] },
+        dataSources: cached.value.dataSources.map((source) => ({ ...source })),
+      };
+    }
+    if (cached) this.selectionCache.delete(input.domainId);
+
+    // Runtime-registry repair is a deployment self-heal, not a user-request
+    // prerequisite. Warm it in parallel and only await it when the normal read
+    // proves that no usable collector rows exist.
+    void this.ensureRuntimeCollectorRegistrySynced().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.debug(`Background collector-registry self-heal deferred: ${message}`);
+    });
     const runtimeAvailableKeys =
       this.collectorsFactory.getRuntimeAvailableSourceKeys();
 
-    const [domain, dataSources] = await this.databaseRetry.execute(
+    let [domain, dataSources] = await this.databaseRetry.execute(
       () =>
         Promise.all([
           this.prisma.domain.findFirst({
@@ -109,12 +139,36 @@ export class IdeaGenerationSelectionService {
     }
 
     if (dataSources.length === 0) {
-      throw new BadRequestException(
-        'No active, implemented, and runtime-configured data sources are available for idea generation.',
+      await this.ensureRuntimeCollectorRegistrySynced();
+      dataSources = await this.databaseRetry.execute(
+        () =>
+          this.prisma.dataSource.findMany({
+            where: {
+              isActive: true,
+              isImplemented: true,
+              key: { in: runtimeAvailableKeys },
+            },
+            select: {
+              id: true,
+              key: true,
+              displayName: true,
+              supportsPosts: true,
+              supportsComments: true,
+              supportsRegion: true,
+              supportsLanguage: true,
+            },
+            orderBy: [{ displayName: 'asc' }, { key: 'asc' }],
+          }),
+        { operationName: 'resolve repaired idea-generation data sources' },
       );
+      if (dataSources.length === 0) {
+        throw new BadRequestException(
+          'No active, implemented, and runtime-configured data sources are available for idea generation.',
+        );
+      }
     }
 
-    return {
+    const value: IdeaGenerationSelectionResult = {
       domain: {
         id: domain.id,
         name: domain.name,
@@ -124,6 +178,14 @@ export class IdeaGenerationSelectionService {
         ),
       },
       dataSources: this.selectAllEvidenceSources(dataSources),
+    };
+    this.selectionCache.set(input.domainId, {
+      expiresAt: Date.now() + IdeaGenerationSelectionService.SELECTION_CACHE_TTL_MS,
+      value,
+    });
+    return {
+      domain: { ...value.domain, keywords: [...value.domain.keywords] },
+      dataSources: value.dataSources.map((source) => ({ ...source })),
     };
   }
 

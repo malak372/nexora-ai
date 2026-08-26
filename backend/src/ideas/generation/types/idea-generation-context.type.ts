@@ -417,7 +417,7 @@ export type IdeaGenerationCanonicalEvidenceItem = {
   readonly sourceType: 'POST' | 'COMMENT';
   readonly text: string;
   readonly title?: string | null;
-  readonly classification: 'DIRECT_PROBLEM' | 'SUPPORTING_SIGNAL' | 'CONTEXT_ONLY' | 'UNRELATED';
+  readonly classification: 'DIRECT_PROBLEM' | 'SUPPORTING_SIGNAL' | 'ANALOGOUS_WORKFLOW_SIGNAL' | 'CONTEXT_ONLY' | 'UNRELATED';
   readonly confidence: number;
   readonly problemFamily: string | null;
   readonly verified: boolean;

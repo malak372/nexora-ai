@@ -1,6 +1,7 @@
 export type CommunityAiEvidenceClassification =
   | 'DIRECT_PROBLEM'
   | 'SUPPORTING_SIGNAL'
+  | 'ANALOGOUS_WORKFLOW_SIGNAL'
   | 'CONTEXT_ONLY'
   | 'UNRELATED';
 

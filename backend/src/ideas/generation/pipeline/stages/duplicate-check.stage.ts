@@ -94,8 +94,30 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
+    if (context.evidenceState === 'ZERO_VALIDATED_EVIDENCE') {
+      return {
+        context,
+        resultPreview:
+          'Skipped semantic duplicate rescue for a zero-evidence validation workspace; exact-title uniqueness is enforced atomically during persistence with domain-scoped title variants.',
+        metadata: {
+          isDuplicate: false,
+          softDuplicateSignalDetected: false,
+          decisiveDuplicate: false,
+          duplicateWinnerReplaced: false,
+          zeroEvidenceDuplicateBypass: true,
+        },
+      };
+    }
+
     const collectionJobId = context.collection!.collectionJobId;
-    const semanticCorpusCacheKey = `final:${context.runId}`;
+    /*
+     * Core benchmarking already warms a bounded same-domain semantic corpus
+     * under runId while providers are working. Reuse that exact run-scoped
+     * corpus here instead of paying a second 4-7s PostgreSQL corpus read. The
+     * global exact-title query remains fresh in IdeaDuplicateDetectionService,
+     * and persistence repeats the atomic exact-title guard before commit.
+     */
+    const semanticCorpusCacheKey = context.runId;
     const initialResult = await this.duplicateDetectionService.check(
       context.domainId,
       collectionJobId,

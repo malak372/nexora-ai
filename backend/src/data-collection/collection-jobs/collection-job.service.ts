@@ -73,6 +73,35 @@ const collectionJobInclude = {
   },
 } satisfies Prisma.CollectionJobInclude;
 
+/*
+ * Lean relation shape used only by the idea-generation fast path. The normal
+ * admin/manual collection read keeps collectionJobInclude above. Generation
+ * needs the domain, selected source identities, and optional NLP relation only;
+ * createdBy and aggregate _count add remote join work but are not consumed by
+ * CollectionJobResolverService.
+ */
+const generationCollectionJobInclude = {
+  domain: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
+  sources: {
+    include: {
+      dataSource: {
+        select: {
+          id: true,
+          key: true,
+          displayName: true,
+        },
+      },
+    },
+  },
+  nlpAnalysis: true,
+} satisfies Prisma.CollectionJobInclude;
+
+
 /**
  * Persistent data-source identity resolved for
  * one collection run.
@@ -523,6 +552,29 @@ export class CollectionJobService {
         failedReason: null,
       },
       include: collectionJobInclude,
+    });
+  }
+
+  /**
+   * Completes an internal generation collection with only the relation shape
+   * required by CollectionJobResolverService. This removes createdBy/_count
+   * joins from the latency-sensitive generation path without changing the
+   * durable job state or stored evidence.
+   */
+  completeJobWithTotalsForGeneration(
+    id: string,
+    totals: { totalPosts: number; totalComments: number },
+  ) {
+    return this.prisma.collectionJob.update({
+      where: { id },
+      data: {
+        status: CollectionJobStatus.COMPLETED,
+        totalPosts: this.toNonNegativeInteger(totals.totalPosts),
+        totalComments: this.toNonNegativeInteger(totals.totalComments),
+        completedAt: new Date(),
+        failedReason: null,
+      },
+      include: generationCollectionJobInclude,
     });
   }
 

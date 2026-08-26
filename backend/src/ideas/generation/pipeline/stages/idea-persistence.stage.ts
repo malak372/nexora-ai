@@ -478,6 +478,26 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     currentTitle: string,
   ): string[] {
+    if (context.evidenceState === 'ZERO_VALIDATED_EVIDENCE') {
+      const domainLabel = [
+        ...new Set(
+          context.selectedDomains
+            .map((domain) => domain.name.trim())
+            .filter(Boolean),
+        ),
+      ]
+        .slice(0, 3)
+        .join(' & ') || context.domainName?.trim() || 'Software';
+      return [
+        `${domainLabel} Problem Signal Discovery Workspace`,
+        `${domainLabel} Evidence Validation Workspace`,
+        `${domainLabel} Problem Evidence Review Workspace`,
+        `${domainLabel} Validation Intake Workspace`,
+        `${domainLabel} Evidence Qualification Workspace`,
+        `${domainLabel} Problem Discovery & Validation Workspace`,
+      ].map((title) => title.slice(0, 100));
+    }
+
     if (this.isDomainsOnlyPath(context)) {
       return this.buildDomainsOnlyRaceSafeTitles(currentTitle);
     }

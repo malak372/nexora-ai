@@ -236,6 +236,34 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
+    /*
+     * Discovery-only + ZERO evidence has no legitimate concrete problem for a
+     * generative model to elaborate. Running several providers here previously
+     * cost 30-45 seconds only for validation to replace the result with the
+     * deterministic neutral workspace. Build that evidence-safe candidate
+     * immediately instead. Text paths still use AI because the requester has
+     * supplied a concrete hypothesis that can be turned into a software pilot.
+     */
+    if (
+      context.evidenceState === 'ZERO_VALIDATED_EVIDENCE' &&
+      !context.requestDescription?.trim()
+    ) {
+      const opportunity = context.opportunityRanking?.selected ?? null;
+      const candidate = this.buildDeterministicEmergencyCandidate(
+        context,
+        opportunity,
+      );
+      const winner: IdeaBenchmarkCandidate = { ...candidate, selected: true };
+      this.logger.log(
+        `Skipped online core benchmark for zero-evidence discovery run ${context.runId}; deterministic neutral validation workspace completed in ${winner.aiResult.responseTimeMs}ms.`,
+      );
+      return {
+        winner,
+        candidates: [winner],
+        judgeEvaluation: null,
+      };
+    }
+
     const duplicateCorpusLoad =
       this.duplicateDetectionService.prepareBenchmarkSemanticCorpus(
         context.runId,
@@ -378,6 +406,14 @@ export class IdeaGenerationBenchmarkService {
       duplicateCorpus,
     );
     let attemptedCandidateCount = 0;
+    const preliminaryZeroEvidenceBudget =
+      context.evidenceState === 'ZERO_VALIDATED_EVIDENCE' ? 10_000 : null;
+    const totalWallClockBudgetMs =
+      preliminaryZeroEvidenceBudget ?? IDEA_BENCHMARK_TOTAL_WALL_CLOCK_BUDGET_MS;
+    const nextDirectionCutoffMs =
+      preliminaryZeroEvidenceBudget
+        ? Math.min(11_500, preliminaryZeroEvidenceBudget - 1_500)
+        : IDEA_BENCHMARK_NEXT_DIRECTION_CUTOFF_MS;
     const blockedModelIds = new Set<string>();
     const warnedOpportunityTitles = new Set<string>();
 
@@ -392,7 +428,7 @@ export class IdeaGenerationBenchmarkService {
       if (
         directionIndex > 0 &&
         successfulCandidates.length > 0 &&
-        Date.now() - benchmarkStartedAt >= IDEA_BENCHMARK_NEXT_DIRECTION_CUTOFF_MS
+        Date.now() - benchmarkStartedAt >= nextDirectionCutoffMs
       ) {
         this.logger.log(
           `Benchmark fast-stop: ${Date.now() - benchmarkStartedAt}ms elapsed with ${successfulCandidates.length} structurally valid candidate(s); no additional opportunity/provider wave will start.`,
@@ -621,7 +657,7 @@ export class IdeaGenerationBenchmarkService {
        */
       if (
         successfulCandidates.length > 0 &&
-        Date.now() - benchmarkStartedAt >= IDEA_BENCHMARK_TOTAL_WALL_CLOCK_BUDGET_MS
+        Date.now() - benchmarkStartedAt >= totalWallClockBudgetMs
       ) {
         this.logger.log(
           `Benchmark wall-clock budget reached after ${Date.now() - benchmarkStartedAt}ms; retaining the strongest completed candidate without another provider wave.`,
