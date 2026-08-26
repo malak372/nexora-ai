@@ -5306,72 +5306,33 @@ export class IdeaEvidenceRecoveryService {
   }
 
   private resolveRecoveryCollectorLimits(
-    compact = false,
-    requestSpecific = false,
+    _compact = false,
+    _requestSpecific = false,
   ): {
     readonly maxFetchedPosts: number;
     readonly maxSavedPosts: number;
     readonly maxFetchedComments: number;
     readonly maxSavedComments: number;
   } {
-    if (compact) {
-      return {
-        maxFetchedPosts: Math.min(
-          this.readPositiveConfig('RECOVERY_COMPACT_MAX_FETCHED_POSTS', 6),
-          8,
-        ),
-        maxSavedPosts: Math.min(
-          this.readPositiveConfig('RECOVERY_COMPACT_MAX_SAVED_POSTS', 4),
-          6,
-        ),
-        maxFetchedComments: Math.min(
-          this.readPositiveConfig('RECOVERY_COMPACT_MAX_FETCHED_COMMENTS', 8),
-          12,
-        ),
-        maxSavedComments: Math.min(
-          this.readPositiveConfig('RECOVERY_COMPACT_MAX_SAVED_COMMENTS', 4),
-          6,
-        ),
-      };
-    }
-
-    if (requestSpecific) {
-      return {
-        maxFetchedPosts: Math.min(
-          this.readPositiveConfig('RECOVERY_REQUEST_MAX_FETCHED_POSTS', 5),
-          7,
-        ),
-        maxSavedPosts: Math.min(
-          this.readPositiveConfig('RECOVERY_REQUEST_MAX_SAVED_POSTS', 3),
-          4,
-        ),
-        maxFetchedComments: Math.min(
-          this.readPositiveConfig('RECOVERY_REQUEST_MAX_FETCHED_COMMENTS', 6),
-          8,
-        ),
-        maxSavedComments: Math.min(
-          this.readPositiveConfig('RECOVERY_REQUEST_MAX_SAVED_COMMENTS', 3),
-          4,
-        ),
-      };
-    }
-
+    // Recovery is an exceptional sparse-first-pass rescue only. The main
+    // collection wave already performs broad source-diverse retrieval, so a
+    // recovery wave must stay tiny and cannot become a second broad crawl.
     return {
       maxFetchedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 7),
-        10,
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 3),
+        3,
       ),
       maxSavedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 4),
-        6,
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 2),
+        2,
       ),
       maxFetchedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 8),
-        12,
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 4),
+        4,
       ),
       maxSavedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 4),
-        6,
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 2),
+        2,
       ),
     };
   }

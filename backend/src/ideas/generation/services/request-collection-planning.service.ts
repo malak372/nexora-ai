@@ -32,13 +32,16 @@ import { SourceSpecificEvidenceQueryUtil } from '../utils/source-specific-eviden
 import { CollectorsFactory } from '../../../collectors/collectors.factory';
 
 const REQUEST_COLLECTION_PLAN_SCHEMA_NAME = 'nexora_request_collection_plan_v10_static_local';
-const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 20_000;
+const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 5_800;
+const REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS = 6_500;
 const REQUEST_COLLECTION_PLAN_PROVIDER_LANES = [
   ['anthropic/claude-haiku-4.5'],
   ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
   ['mistralai/mistral-small-2603'],
   ['qwen/qwen3.5-flash-02-23'],
 ] as const;
+const REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS = 5_000;
+const REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS = 5_400;
 const REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS = 2 * 60 * 1000;
 
 type RequestDomainCatalogEntry = {
@@ -59,6 +62,12 @@ type RequestSourceCatalogEntry = {
   readonly supportsComments: boolean;
   readonly supportsRegion: boolean;
   readonly supportsLanguage: boolean;
+};
+
+type RequestDomainDiscoveryAiPlan = {
+  readonly searchQueries: readonly string[];
+  readonly selectedSourceKeys: readonly string[];
+  readonly confidence: number;
 };
 @Injectable()
 export class RequestCollectionPlanningService implements OnModuleInit {
@@ -240,63 +249,442 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   async buildDomainDiscoveryPlan(input: {
     readonly domainNames: readonly string[];
     readonly language?: LanguageCode;
+    readonly generationType?: IdeaGenerationType;
+    readonly userId?: string;
+    readonly guestSessionId?: string;
   }): Promise<RequestCollectionPlan> {
     const sourceCatalog = await this.loadActiveSourceCatalog();
     const activeSourceKeys = sourceCatalog.map((source) => source.key);
     const domainNames = this.deduplicatePhrases(input.domainNames).slice(0, 3);
-    const searchQueries = CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
-      domainNames,
-      6,
-    );
-    const prioritySourceKeys = CanonicalRequestUnderstandingUtil.recommendSourceKeys(
-      domainNames.join(' '),
-      activeSourceKeys,
-      6,
-    );
-    const selectedSourceKeys = this.deduplicatePhrases([
+
+    const deterministicQueries =
+      CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+        domainNames,
+        8,
+      );
+    const deterministicPrioritySourceKeys =
+      CanonicalRequestUnderstandingUtil.recommendSourceKeys(
+        domainNames.join(' '),
+        activeSourceKeys,
+        7,
+      );
+
+    /*
+     * DOMAINS_ONLY / NO_INPUT still deserve a real AI collection plan. The
+     * earlier implementation skipped AI completely on these paths, which made
+     * collectionPlan.aiUsed=false even though PREPARING spent several seconds
+     * resolving the request. Race several providers and accept the first
+     * locally validated discovery plan; deterministic planning remains only a
+     * provider-outage safety net.
+     */
+    const aiDiscoveryPlan =
+      await this.runProviderDiverseDomainDiscoveryPlanningRace({
+        domainNames,
+        sourceCatalog,
+        language: input.language,
+        generationType: input.generationType,
+        userId: input.userId,
+        guestSessionId: input.guestSessionId,
+      });
+
+    const searchQueries = this.deduplicateQueries([
+      ...(aiDiscoveryPlan?.searchQueries ?? []),
+      ...deterministicQueries,
+    ]).slice(0, 12);
+    const prioritySourceKeys = this.deduplicatePhrases([
+      ...(aiDiscoveryPlan?.selectedSourceKeys ?? []),
+      ...deterministicPrioritySourceKeys,
+    ])
+      .filter((key) => activeSourceKeys.includes(key))
+      .slice(0, 8);
+    const allRuntimeSourceKeys = this.deduplicatePhrases([
       ...prioritySourceKeys,
       ...activeSourceKeys,
     ]);
-    const sourcePlans: RequestCollectionSourcePlan[] = selectedSourceKeys.map(
-      (sourceKey, index) => {
-        const domain = domainNames[index % Math.max(1, domainNames.length)] ?? domainNames[0] ?? 'software operations';
-        const domainQueries = CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries([domain], 2);
-        const baseQuery = domainQueries[index % Math.max(1, domainQueries.length)] ?? `${domain} operational problems`;
+    const secondarySourceKeys = new Set(
+      allRuntimeSourceKeys
+        .filter((key) => !prioritySourceKeys.includes(key))
+        .slice(0, 4),
+    );
+
+    const sourcePlans: RequestCollectionSourcePlan[] =
+      allRuntimeSourceKeys.map((sourceKey, index) => {
+        const domain =
+          domainNames[index % Math.max(1, domainNames.length)] ??
+          domainNames[0] ??
+          'software operations';
+        const primaryLane = prioritySourceKeys.includes(sourceKey);
+        const secondaryLane = secondarySourceKeys.has(sourceKey);
+        const maxQueries = primaryLane ? 3 : secondaryLane ? 2 : 1;
+
+        const aiDomainQueries = searchQueries.filter((query) =>
+          this.discoveryQueryMatchesDomain(query, domain),
+        );
+        const domainQueries = this.buildDomainProbeQueriesForSource(
+          domain,
+          sourceKey,
+          primaryLane ? 4 : secondaryLane ? 3 : 2,
+        );
+        const baseQueries = this.deduplicateQueries([
+          ...aiDomainQueries,
+          ...domainQueries,
+        ]).slice(0, maxQueries);
         const queries = SourceSpecificEvidenceQueryUtil.compile({
           sourceKey,
-          baseQueries: [baseQuery],
+          baseQueries:
+            baseQueries.length > 0
+              ? baseQueries
+              : [`${domain} operational problems user complaints`],
           discoveryDomainName: domain,
-          maxQueries: 1,
+          maxQueries,
+          preserveBaseQueries: primaryLane || secondaryLane,
         });
+
         return {
           sourceKey,
-          // One domain per discovery lane. This prevents selected domains from
-          // being mixed into the same collector query while still exercising
-          // every administrator-enabled collector in parallel.
-          queries: queries.length ? queries : [baseQuery],
+          queries:
+            queries.length > 0
+              ? queries.slice(0, maxQueries)
+              : baseQueries.slice(0, maxQueries),
           routingHints: [],
           discoveryDomainName: domain,
           queryIntentId: `domain-probe:${index + 1}`,
-          sourceTier: prioritySourceKeys.includes(sourceKey) ? 'PRIMARY' : 'MICRO_PROBE',
+          sourceTier: primaryLane
+            ? 'PRIMARY'
+            : secondaryLane
+              ? 'SECONDARY'
+              : 'MICRO_PROBE',
           problemFacetIds: [],
         };
-      },
-    );
+      });
 
     return {
       selectedExistingDomainId: null,
       domainSelectionMode: 'EXISTING',
       suggestedDomainName: domainNames[0] ?? null,
       searchQueries,
-      evidenceTargets: domainNames.map((name) => `${name} operational pain`).slice(0, 6),
+      evidenceTargets: domainNames
+        .flatMap((name) => [
+          `${name} user-reported operational pain`,
+          `${name} recurring workflow failures and unmet needs`,
+        ])
+        .slice(0, 8),
       intentConcepts: domainNames,
       sourceFocus: this.deriveSourceFocusFromKeys(prioritySourceKeys),
       selectedSourceKeys: prioritySourceKeys,
       sourcePlans,
-      confidence: 55,
-      aiUsed: false,
-      fallbackUsed: true,
+      confidence: aiDiscoveryPlan?.confidence ?? 58,
+      aiUsed: Boolean(aiDiscoveryPlan),
+      fallbackUsed: !aiDiscoveryPlan,
     };
+  }
+
+  private discoveryQueryMatchesDomain(
+    query: string,
+    domainName: string,
+  ): boolean {
+    const normalize = (value: string): string =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+    const normalizedQuery = normalize(query);
+    const normalizedDomain = normalize(domainName);
+    if (!normalizedQuery || !normalizedDomain) return false;
+    if (normalizedQuery.includes(normalizedDomain)) return true;
+
+    // Accept common compact spellings/acronyms without weakening domain grounding.
+    // Examples: "AI" -> Artificial Intelligence, "IoT" -> Internet of Things,
+    // and "cyber security" -> Cybersecurity.
+    const compactQuery = normalizedQuery.replace(/\s+/gu, '');
+    const compactDomain = normalizedDomain.replace(/\s+/gu, '');
+    if (
+      compactDomain.length >= 6 &&
+      compactQuery.includes(compactDomain)
+    ) {
+      return true;
+    }
+
+    const acronymTokens = normalizedDomain
+      .split(' ')
+      .filter((token) => token.length > 1 && !['and', 'of', 'the', 'for'].includes(token));
+    const acronym = acronymTokens.map((token) => token[0]).join('');
+    if (acronym.length >= 2 && acronym.length <= 6) {
+      const escapedAcronym = acronym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`(?:^|\\s)${escapedAcronym}(?:$|\\s)`, 'u').test(normalizedQuery)) {
+        return true;
+      }
+    }
+
+    const generic = new Set([
+      'software',
+      'system',
+      'systems',
+      'service',
+      'services',
+      'platform',
+      'technology',
+      'digital',
+    ]);
+    const tokens = normalizedDomain
+      .split(' ')
+      .filter((token) => token.length >= 3 && !generic.has(token));
+    return tokens.length > 0 && tokens.every((token) => normalizedQuery.includes(token));
+  }
+
+  private async runProviderDiverseDomainDiscoveryPlanningRace(input: {
+    readonly domainNames: readonly string[];
+    readonly sourceCatalog: readonly RequestSourceCatalogEntry[];
+    readonly language?: LanguageCode;
+    readonly generationType?: IdeaGenerationType;
+    readonly userId?: string;
+    readonly guestSessionId?: string;
+  }): Promise<RequestDomainDiscoveryAiPlan | null> {
+    if (input.domainNames.length === 0 || input.sourceCatalog.length === 0) {
+      return null;
+    }
+
+    const activeSourceKeys = new Set(
+      input.sourceCatalog.map((source) => source.key),
+    );
+    const sourceCatalogText = input.sourceCatalog
+      .map(
+        (source) =>
+          `${source.key} | ${source.displayName} | posts=${source.supportsPosts} | comments=${source.supportsComments} | ${source.description.slice(0, 120)}`,
+      )
+      .join('\n');
+    const userPrompt = JSON.stringify({
+      mode: 'DOMAIN_DISCOVERY_WITHOUT_REQUEST_TEXT',
+      selectedDomains: input.domainNames,
+      language: input.language ?? LanguageCode.ANY,
+      activeSourceCatalog: sourceCatalogText,
+      requiredOutput: {
+        searchQueries: '8-12 short search strings',
+        selectedSourceKeys: '6-8 exact active source keys',
+        confidence: '0-100',
+      },
+    });
+    const systemInstruction = [
+      'You are Voxidence pre-collection evidence planner.',
+      'The user supplied no concrete problem statement. Never invent one.',
+      'Return JSON only with keys searchQueries, selectedSourceKeys, confidence.',
+      'Create broad but problem-first discovery queries that find real complaints, failures, barriers, incidents, unmet needs, rework, delays, cost pressure, or operational friction inside the selected domains.',
+      'Cover every selected domain with multiple independent query angles.',
+      'Keep each query short, natural, and source-searchable; include the selected domain identity plus a concrete pain/discovery term.',
+      'Choose 6-8 exact source keys from the supplied active source catalog. Prefer complementary source families: direct community/reviews, practitioner or technical sources when appropriate, and research/news for corroboration.',
+      'Do not return a guessed opportunity, solution, actor, market claim, or problem family. Planning only.',
+    ].join(' ');
+
+    const controllers = REQUEST_COLLECTION_PLAN_PROVIDER_LANES.map(
+      () => new AbortController(),
+    );
+
+    return new Promise<RequestDomainDiscoveryAiPlan | null>((resolve) => {
+      let settledCount = 0;
+      let resolved = false;
+      const deadline = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        controllers.forEach((controller) => controller.abort());
+        this.logger.warn(
+          `[PREPARING] Domain-discovery AI planning deadline ${REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS}ms reached; deterministic discovery planning remains available as the safety fallback.`,
+        );
+        resolve(null);
+      }, REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS);
+
+      const finishFailure = (): void => {
+        settledCount += 1;
+        if (
+          !resolved &&
+          settledCount >= REQUEST_COLLECTION_PLAN_PROVIDER_LANES.length
+        ) {
+          resolved = true;
+          clearTimeout(deadline);
+          controllers.forEach((controller) => controller.abort());
+          resolve(null);
+        }
+      };
+
+      REQUEST_COLLECTION_PLAN_PROVIDER_LANES.forEach(
+        (preferredApiModelIds, index) => {
+          void this.aiExecutionService
+            .execute({
+              userPrompt,
+              systemInstruction,
+              requestType: ApiRequestType.NLP_ENHANCEMENT,
+              promptType: PromptType.NLP_ANALYSIS,
+              generationType: input.generationType,
+              userId: input.userId,
+              guestSessionId: input.guestSessionId,
+              responseFormat: AiResponseFormat.TEXT,
+              strategy: AiRoutingStrategy.BALANCED,
+              preferredApiModelIds,
+              estimatedOutputTokens: 220,
+              maxOutputTokens: 420,
+              temperature: 0.1,
+              timeoutMs: REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS,
+              maxRetriesPerModel: 0,
+              maxModelsPerOperation: 1,
+              excludeLocalFallback: true,
+              allowProviderFallbackOnInvalidPrompt: true,
+              allowPartialTextOnMaxTokens: true,
+              signal: controllers[index]?.signal,
+            })
+            .then((result) => {
+              if (resolved) return;
+              try {
+                const parsed = this.aiResponseParser.parseJson(result.text);
+                const record = this.unwrapProviderPlan(parsed);
+
+                const rawQueries = Array.isArray(record.searchQueries)
+                  ? record.searchQueries
+                  : Array.isArray(record.queries)
+                    ? record.queries
+                    : [];
+                const searchQueries = this.deduplicateQueries(
+                  rawQueries.filter(
+                    (value): value is string => typeof value === 'string',
+                  ),
+                )
+                  .filter((query) =>
+                    input.domainNames.some((domain) =>
+                      this.discoveryQueryMatchesDomain(query, domain),
+                    ),
+                  )
+                  .filter(SourceSpecificEvidenceQueryUtil.isSafe.bind(SourceSpecificEvidenceQueryUtil))
+                  .slice(0, 12);
+
+                const rawSourceKeys = Array.isArray(record.selectedSourceKeys)
+                  ? record.selectedSourceKeys
+                  : Array.isArray(record.sourceKeys)
+                    ? record.sourceKeys
+                    : [];
+                const selectedSourceKeys = this.deduplicatePhrases(
+                  rawSourceKeys.filter(
+                    (value): value is string => typeof value === 'string',
+                  ),
+                )
+                  .map((key) => key.toLocaleLowerCase())
+                  .filter((key) => activeSourceKeys.has(key))
+                  .slice(0, 8);
+
+                if (searchQueries.length < Math.min(4, input.domainNames.length * 2)) {
+                  throw new Error(
+                    `Domain-discovery AI returned too few domain-grounded queries (${searchQueries.length}).`,
+                  );
+                }
+                if (selectedSourceKeys.length < Math.min(4, input.sourceCatalog.length)) {
+                  throw new Error(
+                    `Domain-discovery AI returned too few active sources (${selectedSourceKeys.length}).`,
+                  );
+                }
+
+                const confidence = this.normalizeScore(record.confidence, 72);
+                resolved = true;
+                clearTimeout(deadline);
+                controllers.forEach((controller, controllerIndex) => {
+                  if (controllerIndex !== index) controller.abort();
+                });
+                this.logger.log(
+                  `[PREPARING] AI domain-discovery evidence plan accepted. provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${searchQueries.length}, prioritySources=${selectedSourceKeys.length}.`,
+                );
+                resolve({ searchQueries, selectedSourceKeys, confidence });
+              } catch (error: unknown) {
+                this.logger.warn(
+                  `Domain-discovery AI lane returned unusable planning output: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                );
+                finishFailure();
+              }
+            })
+            .catch((error: unknown) => {
+              if (resolved) return;
+              this.logger.warn(
+                `Domain-discovery AI lane failed: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+              finishFailure();
+            });
+        },
+      );
+    });
+  }
+
+  /**
+   * Creates natural, source-shaped discovery queries for paths where the user
+   * supplied domains but no concrete problem. These queries intentionally ask
+   * for observed failures, complaints, barriers, or incidents instead of the
+   * old generic "<domain> operational problem" phrase. Domain names remain
+   * fully dynamic/admin-controlled; no domain taxonomy is hard-coded here.
+   */
+  private buildDomainProbeQueriesForSource(
+    domainName: string,
+    sourceKey: string,
+    maxQueries: number,
+  ): string[] {
+    const domain = domainName.trim();
+    const key = sourceKey.trim().toLocaleLowerCase();
+    const candidates = (() => {
+      if (key === 'reddit' || key === 'forum') {
+        return [
+          `${domain} user problems complaints`,
+          `${domain} workflow frustrations unmet needs`,
+          `${domain} operators recurring issues`,
+          `${domain} service failures user experience`,
+        ];
+      }
+      if (key === 'news' || key === 'gdelt') {
+        return [
+          `${domain} service failures delays incidents`,
+          `${domain} operational disruptions reported`,
+          `${domain} recurring service problems`,
+          `${domain} outages failures investigation`,
+        ];
+      }
+      if (key === 'crossref') {
+        return [
+          `${domain} operational challenges study`,
+          `${domain} workflow barriers service delivery`,
+          `${domain} unmet needs study`,
+          `${domain} process failures analysis`,
+        ];
+      }
+      if (key === 'blog' || key === 'youtube') {
+        return [
+          `${domain} practitioner workflow problems`,
+          `${domain} recurring operational issues`,
+          `${domain} user experience problems`,
+          `${domain} workflow failures lessons learned`,
+        ];
+      }
+      if (key === 'app-store' || key === 'google-play') {
+        return [`${domain} app`, `${domain} service app`];
+      }
+      if (key === 'github' || key === 'stackoverflow' || key === 'dev-to') {
+        return [
+          `${domain} software workflow issue`,
+          `${domain} integration failure`,
+        ];
+      }
+      if (key === 'hacker-news' || key === 'product-hunt') {
+        return [
+          `${domain} workflow software problems`,
+          `${domain} product workflow pain`,
+        ];
+      }
+      return CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+        [domain],
+        maxQueries,
+      );
+    })();
+
+    return this.deduplicateQueries(candidates)
+      .filter(SourceSpecificEvidenceQueryUtil.isSafe.bind(SourceSpecificEvidenceQueryUtil))
+      .slice(0, Math.max(1, Math.min(4, maxQueries)));
   }
 
   private buildPlanCacheKey(input: {
@@ -355,11 +743,22 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     return new Promise<RequestCollectionPlan | null>((resolve) => {
       let settledCount = 0;
       let resolved = false;
+      const globalDeadline = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        controllers.forEach((controller) => controller.abort());
+        this.logger.warn(
+          `[PREPARING] Global planning deadline ${REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS}ms reached; using the deterministic request-derived plan without waiting for additional providers.`,
+        );
+        resolve(null);
+      }, REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS);
 
       const finishFailure = (): void => {
         settledCount += 1;
         if (!resolved && settledCount >= REQUEST_COLLECTION_PLAN_PROVIDER_LANES.length) {
           resolved = true;
+          clearTimeout(globalDeadline);
+          controllers.forEach((controller) => controller.abort());
           resolve(null);
         }
       };
@@ -391,8 +790,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           responseFormat: AiResponseFormat.TEXT,
           strategy: AiRoutingStrategy.BALANCED,
           preferredApiModelIds,
-          estimatedOutputTokens: 600,
-          maxOutputTokens: 1_250,
+          estimatedOutputTokens: 420,
+          maxOutputTokens: 800,
           temperature: 0.1,
           timeoutMs: REQUEST_COLLECTION_PLAN_TIMEOUT_MS,
           maxRetriesPerModel: 0,
@@ -439,6 +838,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               }
 
               resolved = true;
+              clearTimeout(globalDeadline);
               controllers.forEach((controller, controllerIndex) => {
                 if (controllerIndex !== index) controller.abort();
               });
@@ -869,11 +1269,17 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       rawAiQueries,
       description,
     );
-    // An accepted AI plan is authoritative for query wording. If the model
-    // did not return the six grounded queries required by the contract, reject
-    // this response and use the normal fallback path instead of silently mixing
-    // deterministic phrases into an AI-owned plan.
-    const searchQueries = this.deduplicatePhrases(rankedAiQueries).slice(0, 6);
+    // Keep AI ownership without making one omitted seed invalidate the whole
+    // PREPARING result. Three grounded AI seeds are enough to prove that the
+    // model understood the requester; any missing slots are completed from the
+    // already request-derived deterministic plan. This dramatically reduces
+    // false planner fallback while preserving the exact six-query runtime cap.
+    const acceptedAiQueries = this.deduplicatePhrases(rankedAiQueries).slice(0, 6);
+    if (acceptedAiQueries.length < 3) return fallback;
+    const searchQueries = this.deduplicatePhrases([
+      ...acceptedAiQueries,
+      ...fallback.searchQueries,
+    ]).slice(0, 6);
     if (searchQueries.length < 6) return fallback;
 
     const evidenceTargets = this.deduplicatePhrases([
@@ -1337,10 +1743,28 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       this.composeDomainNameFromProblemProfile(problemProfile) ??
       this.inferGenericProfessionalDomainName(combined);
 
-    const searchQueries = CanonicalRequestUnderstandingUtil.buildSearchQueries(
+    const canonicalQueries = CanonicalRequestUnderstandingUtil.buildSearchQueries(
       problemProfile,
-      6,
+      8,
     );
+    /*
+     * PREPARING fallback must still begin with human-searchable problem
+     * language. The canonical query builder is safe but can be overly literal
+     * for long requester sentences; promote the compact actor/object/pain
+     * combinations first and use canonical queries only to fill uncovered
+     * facets. This keeps fallback quality close to the AI-planned path.
+     */
+    const searchQueries = this.deduplicateQueries([
+      ...this.buildFallbackHighSignalQueries(description, problemProfile),
+      ...canonicalQueries,
+    ])
+      .filter((query) =>
+        RequestQueryProvenanceUtil.isQueryGrounded({
+          requestDescription: description,
+          query,
+        }),
+      )
+      .slice(0, 6);
     const evidenceTargets = this.deduplicatePhrases([
       ...(problemProfile.evidenceFacets ?? []),
       ...problemProfile.failureModes,
@@ -1400,6 +1824,32 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ];
     }
 
+    const connectedEquipmentMaintenanceRequest =
+      /\b(?:equipment|machines?|refrigerators?|freezers?|ovens?|ventilation|hvac|coolers?|sensors?|iot|internet of things|telemetry|maintenance alerts?|equipment alerts?|temperature changes?|energy usage|energy consumption)\b/iu.test(normalizedDescription) &&
+      /\b(?:failure|failures|fault|faults|breakdown|breakdowns|downtime|spoilage|maintenance|repair|repairs|abnormal|early signs?|attention first|prioriti[sz](?:e|ation|ing)|disrupted operations?)\w*\b/iu.test(normalizedDescription);
+    if (connectedEquipmentMaintenanceRequest) {
+      const actor = RequestDynamicQueryUtil.extractActor(description)
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(/\s+/u)
+        .slice(0, 4)
+        .join(' ');
+      const actorPrefix = actor || 'equipment operators';
+      return this.deduplicateQueries([
+        `${actorPrefix} equipment failure maintenance alerts`,
+        `${actorPrefix} temperature equipment failure warning`,
+        `${actorPrefix} predictive maintenance equipment downtime`,
+        `${actorPrefix} equipment alerts maintenance prioritization`,
+        `${actorPrefix} refrigeration equipment failure monitoring`,
+        `${actorPrefix} equipment energy usage abnormal maintenance`,
+        `${actorPrefix} sensor alerts equipment breakdown downtime`,
+        `${actorPrefix} maintenance records equipment failure detection`,
+      ]).slice(0, 8);
+    }
+
     const niche = RequestNicheCustomCraftUtil.resolve(description);
     if (niche) {
       return this.deduplicateQueries([
@@ -1425,8 +1875,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const actor = compact(profile.actor, 3);
     const normalized = description.replace(/\s+/gu, ' ').trim();
     const fragmentedSubject = normalized.match(
-      /([^.!?]{8,220}?)\s+(?:are|is)\s+(?:often\s+|frequently\s+|usually\s+)?(?:reviewed|managed|analy[sz]ed|stored|tracked)\s+separately/iu,
-    )?.[1]?.trim() ?? '';
+      /([^.!?]{8,260}?)\s+(?:are|is)\s+(?:often\s+|frequently\s+|usually\s+)?(?:reviewed|managed|analy[sz]ed|stored|tracked)(?:\s+across)?\s+(?:separate|different|disconnected|fragmented)\s+(?:systems?|tools?|sources?|records?)|([^.!?]{8,220}?)\s+(?:are|is)\s+(?:often\s+|frequently\s+|usually\s+)?(?:reviewed|managed|analy[sz]ed|stored|tracked)\s+separately/iu,
+    )?.slice(1).find((value) => Boolean(value?.trim()))?.trim() ?? '';
     const enumeratedObjects = fragmentedSubject
       ? fragmentedSubject
           .replace(/^.*?\b(?:however|but)\b[:,]?\s*/iu, '')
@@ -1441,10 +1891,14 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(description)
         .map((value) => compact(value, 3)),
     ]).filter(Boolean).slice(0, 6);
+    const difficultyClause = normalized.match(
+      /(?:making it difficult to|difficult to|unable to|cannot)\s+([^.!?]{8,180})/iu,
+    )?.[1]?.trim() ?? '';
     const pains = this.deduplicatePhrases([
-      ...profile.failureModes.map((value) => compact(value, 3)),
-      ...profile.consequences.map((value) => compact(value, 3)),
-    ]).filter(Boolean).slice(0, 6);
+      compact(difficultyClause, 5),
+      ...profile.failureModes.map((value) => compact(value, 4)),
+      ...profile.consequences.map((value) => compact(value, 4)),
+    ]).filter(Boolean).slice(0, 7);
 
     const candidates: string[] = [];
     const add = (...parts: string[]) => {
@@ -4684,10 +5138,21 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const plannerPriorityKeys = new Set(
       plannerPrioritySourceKeys.map((key) => key.toLocaleLowerCase()),
     );
+    const normalizedDescription = description.toLocaleLowerCase();
+    const peopleProblemHeavy =
+      /\b(?:complaints?|residents?|tenants?|customers?|clients?|patients?|passengers?|workers?|staff|operators?|specialists?|practitioners?|collectors?|performers?|restaurants?|kitchens?|facilities?|facility teams?|maintenance teams?|technicians?)\b/u.test(normalizedDescription) &&
+      /\b(?:delay|delayed|missing|wrong|incorrect|repeated|rework|struggle|difficult|complaint|failure|failed|fault|breakdown|downtime|spoilage|fragmented|scattered|separate systems?|maintenance|repair|inspection|approval|preference|alert|temperature)\w*\b/u.test(normalizedDescription);
+    const researchOnly = /\b(?:assay|molecular|genome|protein sequence|theorem|particle physics|pure mathematics)\b/u.test(normalizedDescription);
     const resolveTier = (
       sourceKey: string,
     ): 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE' => {
       const key = sourceKey.toLocaleLowerCase();
+      if (peopleProblemHeavy && !researchOnly && (key === 'reddit' || key === 'forum')) {
+        return 'PRIMARY';
+      }
+      if (peopleProblemHeavy && !researchOnly && (key === 'news' || key === 'crossref' || key === 'youtube')) {
+        return plannerPriorityKeys.has(key) || preferredKeys.has(key) ? 'PRIMARY' : 'SECONDARY';
+      }
       if (archetype.confidence >= 0.85) {
         if (preferredKeys.has(key)) return 'PRIMARY';
         if (blockedKeys.has(key)) return 'MICRO_PROBE';
@@ -4754,19 +5219,21 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         )
         .map((entry) => entry.query);
 
+      const sourceTier = resolveTier(sourceKey);
+      const sourceQueryBudget =
+        sourceTier === 'PRIMARY' ? 3 : sourceTier === 'SECONDARY' ? 2 : 1;
       const rankedQueries = this.deduplicateQueries([
-        ...ranked.slice(0, 2),
+        ...ranked.slice(0, sourceQueryBudget),
         normalizedQueries[(sourceIndex * 2) % normalizedQueries.length] ?? '',
       ])
         .filter(Boolean)
-        .slice(0, 2);
-      const sourceTier = resolveTier(sourceKey);
+        .slice(0, sourceQueryBudget);
       const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
         sourceKey,
         baseQueries: rankedQueries,
         requestDescription: description,
         problemProfile,
-        maxQueries: 2,
+        maxQueries: sourceQueryBudget,
         preserveBaseQueries: sourceTier !== 'MICRO_PROBE',
       });
       const queries = compiledQueries.length ? compiledQueries : rankedQueries;

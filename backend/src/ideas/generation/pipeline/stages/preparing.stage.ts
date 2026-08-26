@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { LanguageCode } from '@prisma/client';
+import { DomainResolutionSource, LanguageCode } from '@prisma/client';
 
 import { PrismaService } from '../../../../prisma/prisma.service';
 import {
@@ -122,37 +122,43 @@ export class PreparingStage implements IdeaGenerationStage {
       ...rawKeywords,
     ]).slice(0, 30);
 
-    const primary = await this.domainResolutionService.resolve({
-      ...(context.owner.type === IDEA_OWNER_TYPES.USER
-        ? { userId: context.owner.userId }
-        : {}),
-      ...(requestedDomainIds[0] ? { domainId: requestedDomainIds[0] } : {}),
-      ...(description ? { description } : {}),
-      keywords: plannedKeywords,
-      plannedExistingDomainId: collectionPlan?.selectedExistingDomainId ?? undefined,
-      plannedDomainSelectionMode: collectionPlan?.domainSelectionMode ?? undefined,
-      plannedDomainName: collectionPlan?.suggestedDomainName ?? undefined,
-      /*
-       * Domain selection is already request-derived even when the remote planner
-       * falls back. Pass that confidence through as well so EXISTING ids use the
-       * exact-id fast path and NEW request domains use the exact-name/create fast
-       * path instead of repeating a full visible+hidden semantic scan after the
-       * planning race has already finished.
-       */
-      plannedDomainConfidence:
-        collectionPlan?.domainSelectionMode
-          ? collectionPlan.confidence
-          : undefined,
-      plannedKeywords: collectionPlan
-        ? [
-            ...plannedKeywords,
-            ...collectionPlan.searchQueries,
-            ...collectionPlan.evidenceTargets,
-            ...collectionPlan.intentConcepts,
-          ]
-        : plannedKeywords,
-      language: context.location.language,
-    });
+    /*
+     * Text + Domains already has an authoritative requester-selected domain
+     * set, and those exact active rows were prefetched above. Re-running the
+     * full semantic DomainResolutionService here duplicates a database catalog
+     * scan and can add many seconds to PREPARING without changing the allowed
+     * search space. Choose the semantic primary only from the explicit set and
+     * reserve DomainResolutionService for Text Only / No Input paths.
+     */
+    const primary = requestedDomainIds.length > 0
+      ? this.resolveExplicitPrimaryDomain(
+          collectionPlan,
+          requestedDomainIds,
+          explicitDomains,
+        )
+      : await this.domainResolutionService.resolve({
+          ...(context.owner.type === IDEA_OWNER_TYPES.USER
+            ? { userId: context.owner.userId }
+            : {}),
+          ...(description ? { description } : {}),
+          keywords: plannedKeywords,
+          plannedExistingDomainId: collectionPlan?.selectedExistingDomainId ?? undefined,
+          plannedDomainSelectionMode: collectionPlan?.domainSelectionMode ?? undefined,
+          plannedDomainName: collectionPlan?.suggestedDomainName ?? undefined,
+          plannedDomainConfidence:
+            collectionPlan?.domainSelectionMode
+              ? collectionPlan.confidence
+              : undefined,
+          plannedKeywords: collectionPlan
+            ? [
+                ...plannedKeywords,
+                ...collectionPlan.searchQueries,
+                ...collectionPlan.evidenceTargets,
+                ...collectionPlan.intentConcepts,
+              ]
+            : plannedKeywords,
+          language: context.location.language,
+        });
     this.throwIfAborted(signal);
 
     const selectedDomains = await this.resolveSelectedDomains({
@@ -180,6 +186,15 @@ export class PreparingStage implements IdeaGenerationStage {
       collectionPlan = await this.requestCollectionPlanningService.buildDomainDiscoveryPlan({
         domainNames: selectedDomains.map((domain) => domain.name),
         language: context.location.language,
+        generationType: context.generationType,
+        userId:
+          context.owner.type === IDEA_OWNER_TYPES.USER
+            ? context.owner.userId
+            : undefined,
+        guestSessionId:
+          context.owner.type === IDEA_OWNER_TYPES.GUEST
+            ? context.owner.guestSessionId
+            : undefined,
       });
     }
 
@@ -252,6 +267,60 @@ export class PreparingStage implements IdeaGenerationStage {
           0,
         primaryDomainId: primary.domainId,
         primaryDomainName: primary.domainName,
+      },
+    };
+  }
+
+  private resolveExplicitPrimaryDomain(
+    plan: RequestCollectionPlan | null,
+    requestedDomainIds: readonly string[],
+    explicitDomains: readonly {
+      readonly id: string;
+      readonly name: string;
+      readonly domainKeywords: readonly { readonly keyword: string }[];
+    }[],
+  ): Awaited<ReturnType<DomainResolutionService['resolve']>> {
+    const byId = new Map(explicitDomains.map((domain) => [domain.id, domain] as const));
+    const preferredId =
+      plan?.selectedExistingDomainId && requestedDomainIds.includes(plan.selectedExistingDomainId)
+        ? plan.selectedExistingDomainId
+        : requestedDomainIds[0];
+    const primary = (preferredId ? byId.get(preferredId) : undefined) ?? explicitDomains[0];
+
+    if (!primary) {
+      throw new BadRequestException(
+        'At least one active explicitly selected generation domain is required.',
+      );
+    }
+
+    const candidates = requestedDomainIds
+      .map((id, index) => {
+        const domain = byId.get(id);
+        if (!domain) return null;
+        return {
+          domainId: domain.id,
+          domainName: domain.name,
+          score: domain.id === primary.id ? 1 : Math.max(0.8, 0.95 - index * 0.02),
+          reasons: [
+            domain.id === primary.id
+              ? 'Requester explicitly selected this domain and PREPARING selected it as the primary search lane.'
+              : 'Requester explicitly selected this domain as a required cross-domain search constraint.',
+          ],
+        };
+      })
+      .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+
+    return {
+      domainId: primary.id,
+      domainName: primary.name,
+      source: DomainResolutionSource.USER_SELECTED,
+      confidence: 1,
+      trace: {
+        reasons: [
+          'The primary domain was resolved directly from the requester-selected active domain set; no second semantic catalog scan was required.',
+        ],
+        matchedInterests: [],
+        candidates,
       },
     };
   }

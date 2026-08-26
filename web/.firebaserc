@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "nexora-ai-58018"
+  },
+  "targets": {
+    "nexora-ai-58018": {
+      "hosting": {
+        "voxidence": [
+          "voxidence"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

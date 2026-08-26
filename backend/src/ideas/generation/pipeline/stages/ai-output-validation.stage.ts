@@ -922,6 +922,39 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
             /\b(?:collected feedback|community feedback|community evidence|the supplied community discussion|the collected discussion)\s+(?:indicates|shows|demonstrates|highlights|confirms|reveals)\b/giu,
             'the pilot hypothesis considers whether',
           )
+          .replace(
+            /\b((?:municipal|public|private|independent|local|regional|national|urban|rural|small|large)?\s*(?:housing authorities?|authorities?|agencies|operators?|specialists?|restorers?|conservators?|managers?|teams?|staff|providers?|departments?|organizations?))\s+(?:often\s+|frequently\s+|commonly\s+|typically\s+)?(face|faces|encounter|encounters|experience|experiences|struggle|struggles)\b/giu,
+            (_match, subject: string, verb: string) =>
+              `${subject} may ${this.toTentativeBaseVerb(verb)}`,
+          )
+          .replace(
+            /\b(staff|teams?|authorities|operators?|specialists?|restorers?|conservators?|managers?)\s+(?:cannot|can't|are unable to)\b/giu,
+            '$1 may not be able to',
+          )
+          .replace(
+            /\bThis\s+(fragmentation|separation|workflow|condition|pattern)\s+increases?\b/giu,
+            'If confirmed during pilot validation, this $1 could increase',
+          )
+          .replace(
+            /\bThis\s+(fragmentation|separation|workflow|condition|pattern)\s+creates?\b/giu,
+            'If confirmed during pilot validation, this $1 could create',
+          )
+          .replace(
+            /\bThis\s+(fragmentation|separation|workflow|condition|pattern)\s+causes?\b/giu,
+            'If confirmed during pilot validation, this $1 could cause',
+          )
+          .replace(
+            /\bThis\s+(fragmentation|separation|workflow|condition|pattern)\s+leads? to\b/giu,
+            'If confirmed during pilot validation, this $1 could lead to',
+          )
+          .replace(
+            /\bThis\s+(fragmentation|separation|workflow|condition|pattern)\s+results? in\b/giu,
+            'If confirmed during pilot validation, this $1 could result in',
+          )
+          .replace(
+            /\bConsequently,\s*/giu,
+            'If the requester-described pattern is confirmed, ',
+          )
           .replace(/[ \t]{2,}/gu, ' ')
           .trim();
       }
@@ -7324,6 +7357,45 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         .replace(
           /\bThis fragmentation can lead to\b/giu,
           'If confirmed during pilot validation, this fragmentation could contribute to',
+        )
+        .replace(
+          /\bThis operational fragmentation can lead to\b/giu,
+          'If confirmed during pilot validation, this operational fragmentation could contribute to',
+        )
+        .replace(
+          /\bWithout a unified system\b/giu,
+          'If the requester hypothesis is confirmed, without a unified system',
+        )
+        .replace(
+          /\b(?:specialists|operators|teams|organizations|cities|businesses) risk\b/giu,
+          'the affected users could risk',
+        )
+        .replace(
+          /\bDocumentation is often split across\b/giu,
+          'The requester describes documentation that may be split across',
+        )
+        .replace(
+          /\bInformation is (?:often|usually|frequently) (?:split|scattered|fragmented) across\b/giu,
+          'The requester describes information that may be distributed across',
+        )
+        .replace(
+          /\b(?:equipment status|records|data|alerts|information) (?:is|are) often monitored through separate systems\b/giu,
+          'the requester describes these operational signals as potentially monitored through separate systems',
+        )
+        .replace(
+          /\b(?:face|faces) significant operational friction\b/giu,
+          'may face operational friction if the requester hypothesis is confirmed',
+        )
+        .replace(/\bstaff cannot\b/giu, 'staff may be unable to')
+        .replace(/\bteams cannot\b/giu, 'teams may be unable to')
+        .replace(/\boperators cannot\b/giu, 'operators may be unable to')
+        .replace(
+          /\bConsequently,\s*/giu,
+          'If the requester hypothesis is confirmed, this could mean that ',
+        )
+        .replace(
+          /\bThis (?:fragmentation|operational fragmentation|lack of coordination) increases the risk of\b/giu,
+          'If confirmed during pilot validation, this could increase the risk of',
         );
 
       if (!/^The requester describes an unvalidated workflow hypothesis|^No verified external problem evidence/iu.test(text)) {
@@ -7348,7 +7420,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         'The next product decision must be based on newly collected DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence, not on CONTEXT_ONLY or unrelated material.';
       const neutralObjectives = [
         `Collect bounded, provenance-preserving problem reports across ${domainScope}.`,
-        'Classify each retained item as DIRECT_PROBLEM, SUPPORTING_SIGNAL, CONTEXT_ONLY, or UNRELATED and keep the canonical evidence ledger as the single source of truth.',
+        'Classify each retained item as DIRECT_PROBLEM, SUPPORTING_SIGNAL, ANALOGOUS_WORKFLOW_SIGNAL, CONTEXT_ONLY, or UNRELATED and keep the canonical evidence ledger as the single source of truth.',
         'Compare problem-bearing evidence by domain, source diversity, and verified problem facets before selecting a software opportunity.',
         'Keep human review in the loop and generate a concrete software concept only after at least one verified direct or supporting signal is retained.',
       ];

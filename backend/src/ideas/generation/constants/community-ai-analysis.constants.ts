@@ -78,10 +78,10 @@ export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_OUTPUT_TOKENS = 7_200;
  * model response arrives, so this cap prevents provider hangs without turning a
  * normal slow response into lost evidence.
  */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_REQUEST_TIMEOUT_MS = 14_000;
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_REQUEST_TIMEOUT_MS = 8_500;
 
 /** Absolute safety ceiling for the three-model first-complete race. */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_TOTAL_TIMEOUT_MS = 15_000;
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_TOTAL_TIMEOUT_MS = 9_000;
 
 /** Number of parallel online models allowed for the full-corpus triage race. */
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS = 3;

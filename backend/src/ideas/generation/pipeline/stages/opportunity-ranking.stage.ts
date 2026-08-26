@@ -688,16 +688,51 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
 
     const rawEvidenceCount = context.rawEvidenceCorpus?.length ?? 0;
+    const rawSourceCount = new Set(
+      (context.rawEvidenceCorpus ?? []).map((item) => item.sourceKey.toLocaleLowerCase()),
+    ).size;
+    const selectedSourceCount = Math.max(1, context.selectedDataSources.length);
+    const minimumBroadRawCount = context.requestDescription?.trim()
+      ? 10
+      : Math.max(8, Math.min(14, selectedSourceCount));
+    const minimumBroadSourceCount = Math.min(4, selectedSourceCount);
+    const broadFirstPassCompleted =
+      rawEvidenceCount >= minimumBroadRawCount &&
+      rawSourceCount >= minimumBroadSourceCount;
+
+    /*
+     * The normal path is now intentionally broad in the first collection wave.
+     * If that wave produced a source-diverse corpus, a second collection wave
+     * usually repeats the same internet surface and adds latency rather than
+     * evidence. ZERO evidence after a broad verified pass is therefore a valid
+     * result, not a trigger to collect again. Recovery is reserved only for a
+     * genuinely sparse/failed first pass (outage, rate limits, or near-empty
+     * source coverage).
+     */
+    if (broadFirstPassCompleted) {
+      return false;
+    }
+
     const semanticClassificationCompleted = Boolean(
       classifications.length > 0 &&
       classifications.every(
         (item) =>
           item.classification === 'UNRELATED' ||
-          item.classification === 'CONTEXT_ONLY',
+          item.classification === 'CONTEXT_ONLY' ||
+          item.classification === 'ANALOGOUS_WORKFLOW_SIGNAL',
       ),
     );
 
-    // Do not recollect when the semantic AI layer itself was unavailable.
+    // If semantic triage completed on a smaller but still usable corpus, do not
+    // recollect the same zero-evidence problem unless source coverage was truly
+    // tiny (fewer than two sources or fewer than four raw items).
+    if (semanticClassificationCompleted && rawEvidenceCount >= 3) {
+      return false;
+    }
+
+    // Do not recollect when the semantic AI layer itself was unavailable but
+    // the first pass already returned material; retrying collection cannot fix
+    // a model outage.
     if (
       rawEvidenceCount > 0 &&
       primaryAi &&
@@ -707,7 +742,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       return false;
     }
 
-    return true;
+    return rawEvidenceCount < 4 || rawSourceCount < 2;
   }
 
   /**
@@ -4680,6 +4715,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
             trustedNlpEvidenceCount: state.trustedCount,
             directEvidenceClassificationCount: state.directCount,
             supportingEvidenceClassificationCount: state.supportingCount,
+            analogousWorkflowSignalClassificationCount: (context.canonicalEvidenceLedger ?? []).filter(
+              (item) => item.classification === 'ANALOGOUS_WORKFLOW_SIGNAL',
+            ).length,
             contextOnlyEvidenceClassificationCount: (context.canonicalEvidenceLedger ?? []).filter(
               (item) => item.classification === 'CONTEXT_ONLY',
             ).length,

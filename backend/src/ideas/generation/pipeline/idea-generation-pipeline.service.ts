@@ -1059,7 +1059,8 @@ export class IdeaGenerationPipelineService {
       }
     }
 
-    void this.enqueueStageCheckpoint(runId, async () => {
+    const stageStartedAt = new Date();
+    const persistRunningCheckpoint = async (): Promise<void> => {
       const stage = await this.databaseRetry.execute(
         () =>
           this.prisma.ideaGenerationStage.update({
@@ -1073,7 +1074,7 @@ export class IdeaGenerationPipelineService {
               status: IdeaGenerationStageStatus.RUNNING,
               progressPercent: definition.progressStart,
               attemptCount: attempt,
-              startedAt: new Date(),
+              startedAt: stageStartedAt,
               completedAt: null,
               errorMessage: null,
             },
@@ -1085,7 +1086,24 @@ export class IdeaGenerationPipelineService {
       );
 
       this.realtime.publishStageUpdated(stage);
-    });
+    };
+
+    /*
+     * FINALIZATION is intentionally tiny and its completion checkpoint is
+     * written synchronously. Letting the RUNNING row sit in the deferred queue
+     * while COMPLETED is written immediately creates a real timestamp race:
+     * the late RUNNING update can assign started_at after the already-created
+     * completed_at value and violate generation_stages_dates_check.
+     *
+     * Persist the FINALIZATION start row before executing the stage. All other
+     * stages keep the low-latency ordered checkpoint queue.
+     */
+    if (definition.key === IDEA_GENERATION_STAGE_KEYS.FINALIZATION) {
+      await persistRunningCheckpoint();
+      return;
+    }
+
+    void this.enqueueStageCheckpoint(runId, persistRunningCheckpoint);
   }
 
   /**
@@ -1099,7 +1117,8 @@ export class IdeaGenerationPipelineService {
     return (
       stageKey === IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION ||
       stageKey === IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION ||
-      stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
+      stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.FINALIZATION
     );
   }
 
@@ -1141,7 +1160,7 @@ export class IdeaGenerationPipelineService {
      * old completion transaction wrote both rows after every stage, creating
      * an unnecessary remote query and several seconds of idle time.
      */
-    return this.enqueueStageCheckpoint(runId, async () => {
+    const persistCompletion = async (): Promise<void> => {
       const stage = await this.databaseRetry.execute(
         () =>
           this.prisma.ideaGenerationStage.update({
@@ -1168,7 +1187,15 @@ export class IdeaGenerationPipelineService {
       );
 
       this.realtime.publishStageUpdated(stage);
-    });
+    };
+
+    // FINALIZATION must be durable before completeRun(), but it must not wait
+    // behind every earlier deferred stage-row checkpoint. Those independent
+    // rows can finish in the background without delaying the visible result.
+    if (definition.key === IDEA_GENERATION_STAGE_KEYS.FINALIZATION) {
+      return persistCompletion();
+    }
+    return this.enqueueStageCheckpoint(runId, persistCompletion);
   }
 
   /**
@@ -1227,31 +1254,39 @@ export class IdeaGenerationPipelineService {
     definition: IdeaGenerationStageDefinition,
     attempt: number,
   ): Promise<void> {
-    const stage = await this.databaseRetry.execute(
-      () =>
-        this.prisma.ideaGenerationStage.update({
-          where: {
-            runId_stageKey: {
-              runId,
-              stageKey: definition.key,
+    /*
+     * RUNNING is normally persisted through the ordered per-run queue. A very
+     * fast shouldExecute=false path can reach SKIPPED before that write lands.
+     * Serialize SKIPPED behind the pending RUNNING checkpoint so a late start
+     * update can never overwrite the terminal stage lifecycle.
+     */
+    await this.enqueueStageCheckpoint(runId, async () => {
+      const stage = await this.databaseRetry.execute(
+        () =>
+          this.prisma.ideaGenerationStage.update({
+            where: {
+              runId_stageKey: {
+                runId,
+                stageKey: definition.key,
+              },
             },
-          },
-          data: {
-            status: IdeaGenerationStageStatus.SKIPPED,
-            progressPercent: definition.progressEnd,
-            attemptCount: attempt,
-            resultPreview: Prisma.JsonNull,
-            errorMessage: null,
-            completedAt: new Date(),
-          },
-        }),
-      {
-        operationName: 'mark generation stage skipped',
-        runId,
-      },
-    );
+            data: {
+              status: IdeaGenerationStageStatus.SKIPPED,
+              progressPercent: definition.progressEnd,
+              attemptCount: attempt,
+              resultPreview: Prisma.JsonNull,
+              errorMessage: null,
+              completedAt: new Date(),
+            },
+          }),
+        {
+          operationName: 'mark generation stage skipped',
+          runId,
+        },
+      );
 
-    this.realtime.publishStageUpdated(stage);
+      this.realtime.publishStageUpdated(stage);
+    });
   }
 
   /**
@@ -1339,40 +1374,40 @@ export class IdeaGenerationPipelineService {
     attempt: number,
     error: Error,
   ): Promise<void> {
-    const stage = await this.databaseRetry.execute(
-      () =>
-        this.prisma.ideaGenerationStage.update({
-          where: {
-            runId_stageKey: {
-              runId,
-              stageKey: definition.key,
+    /*
+     * Keep retry lifecycle writes on the same queue as RUNNING. Otherwise a
+     * delayed RUNNING checkpoint from the failed attempt may arrive after the
+     * PENDING reset and resurrect the stage as RUNNING while the next attempt
+     * has already started.
+     */
+    await this.enqueueStageCheckpoint(runId, async () => {
+      const stage = await this.databaseRetry.execute(
+        () =>
+          this.prisma.ideaGenerationStage.update({
+            where: {
+              runId_stageKey: {
+                runId,
+                stageKey: definition.key,
+              },
             },
-          },
-          data: {
-            /*
-             * Return the stage to a clean pending lifecycle state before the
-             * next attempt. A pending stage is not actively executing, so both
-             * lifecycle timestamps must be null.
-             *
-             * The bounded error message is intentionally retained to make the
-             * previous failed attempt observable while the retry is pending.
-             */
-            status: IdeaGenerationStageStatus.PENDING,
-            progressPercent: definition.progressStart,
-            attemptCount: attempt,
-            resultPreview: Prisma.JsonNull,
-            errorMessage: this.toSafeErrorMessage(error),
-            startedAt: null,
-            completedAt: null,
-          },
-        }),
-      {
-        operationName: 'record retryable generation-stage failure',
-        runId,
-      },
-    );
+            data: {
+              status: IdeaGenerationStageStatus.PENDING,
+              progressPercent: definition.progressStart,
+              attemptCount: attempt,
+              resultPreview: Prisma.JsonNull,
+              errorMessage: this.toSafeErrorMessage(error),
+              startedAt: null,
+              completedAt: null,
+            },
+          }),
+        {
+          operationName: 'record retryable generation-stage failure',
+          runId,
+        },
+      );
 
-    this.realtime.publishStageUpdated(stage);
+      this.realtime.publishStageUpdated(stage);
+    });
   }
 
   /**

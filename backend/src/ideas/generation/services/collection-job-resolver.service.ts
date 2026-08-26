@@ -128,6 +128,11 @@ export type ResolveCollectionJobInput = {
     readonly sourceKey: string;
     readonly queries: readonly string[];
     readonly routingHints: readonly string[];
+    readonly discoveryDomainId?: string | null;
+    readonly discoveryDomainName?: string | null;
+    readonly queryIntentId?: string | null;
+    readonly sourceTier?: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE';
+    readonly problemFacetIds?: readonly string[];
   }[];
 
   readonly userDescription?: string;
@@ -342,6 +347,11 @@ export class CollectionJobResolverService {
             sourceKey: plan.sourceKey,
             queries: [...plan.queries],
             routingHints: [...plan.routingHints],
+            discoveryDomainId: plan.discoveryDomainId ?? null,
+            discoveryDomainName: plan.discoveryDomainName ?? null,
+            queryIntentId: plan.queryIntentId ?? null,
+            sourceTier: plan.sourceTier,
+            problemFacetIds: [...(plan.problemFacetIds ?? [])],
           }))
         : undefined,
 
@@ -518,6 +528,11 @@ export class CollectionJobResolverService {
           sourceKey: plan.sourceKey,
           queries: [...plan.queries].sort(),
           routingHints: [...plan.routingHints].sort(),
+          discoveryDomainId: plan.discoveryDomainId ?? null,
+          discoveryDomainName: plan.discoveryDomainName ?? null,
+          queryIntentId: plan.queryIntentId ?? null,
+          sourceTier: plan.sourceTier ?? null,
+          problemFacetIds: [...(plan.problemFacetIds ?? [])].sort(),
         }))
         .sort((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
       userDescription: input.userDescription
@@ -977,6 +992,11 @@ export class CollectionJobResolverService {
           sourceKey: plan.sourceKey.trim().toLocaleLowerCase(),
           queries: this.normalizeKeywords(plan.queries) ?? [],
           routingHints: this.normalizeKeywords(plan.routingHints) ?? [],
+          discoveryDomainId: this.normalizeOptionalText(plan.discoveryDomainId ?? undefined) ?? null,
+          discoveryDomainName: this.normalizeOptionalText(plan.discoveryDomainName ?? undefined) ?? null,
+          queryIntentId: this.normalizeOptionalText(plan.queryIntentId ?? undefined) ?? null,
+          sourceTier: plan.sourceTier,
+          problemFacetIds: this.normalizeKeywords(plan.problemFacetIds) ?? [],
         }))
         .filter((plan) => plan.sourceKey && plan.queries.length > 0),
 
