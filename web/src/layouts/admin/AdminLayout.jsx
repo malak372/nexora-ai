@@ -602,11 +602,10 @@ export default function AdminLayout() {
             }
             aria-label="Open admin command center"
           >
-            <VoxidenceMark size={35} />
+            <VoxidenceMark size={46} />
 
             <span className="admin-brand__copy">
               <strong>Voxidence</strong>
-              <small>Admin</small>
             </span>
           </button>
 

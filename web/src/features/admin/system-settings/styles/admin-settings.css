@@ -1358,3 +1358,851 @@
         flex: 1;
     }
 }
+
+/* ========================================================================== */
+/* System settings — polished mockup match                                     */
+/* Strong contrast / readable typography / card-only presentation              */
+/* ========================================================================== */
+.admin-settings-page {
+    --settings-ink: #173d3a;
+    --settings-text: #365953;
+    --settings-muted: #617b75;
+    --settings-line: rgba(47, 119, 116, .16);
+    --settings-a: #1d9b8e;
+    --settings-a-deep: #167c73;
+    --settings-pink: #ee6f8b;
+    --settings-pink-soft: #fff1f4;
+    --settings-mint: #e7f7f3;
+    color: var(--settings-ink);
+}
+
+.admin-settings-page .admin-settings-hero,
+.admin-settings-page .admin-settings-currency-panel,
+.admin-settings-page .admin-settings-overview,
+.admin-settings-page .admin-settings-card,
+.admin-settings-page .admin-settings-footerbar {
+    border-color: var(--settings-line);
+    box-shadow: 0 14px 34px rgba(35, 84, 77, .08);
+}
+
+.admin-settings-page .admin-settings-hero {
+    position: relative;
+    min-height: 300px;
+    margin-bottom: 16px;
+    padding: 38px 42px;
+    display: grid;
+    grid-template-columns: minmax(0, .95fr) minmax(430px, 1.05fr);
+    align-items: center;
+    gap: 34px;
+    border-radius: 28px;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 14% 14%, rgba(255, 220, 228, .62), transparent 26%),
+        radial-gradient(circle at 86% 16%, rgba(194, 238, 231, .62), transparent 31%),
+        linear-gradient(112deg, #fffafa 0%, #fff 42%, #f2fbf9 100%);
+}
+
+.admin-settings-page .admin-settings-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: .68;
+    background:
+        linear-gradient(28deg, transparent 0 48%, rgba(66, 165, 153, .055) 49% 50%, transparent 51%) 0 0 / 120px 90px,
+        linear-gradient(-28deg, transparent 0 48%, rgba(238, 111, 139, .04) 49% 50%, transparent 51%) 0 0 / 140px 110px;
+    mask-image: linear-gradient(90deg, transparent 28%, #000 55%, #000 100%);
+}
+
+.admin-settings-page .admin-settings-hero__copy {
+    position: relative;
+    z-index: 2;
+    max-width: 660px;
+}
+
+.admin-settings-page .admin-settings-eyebrow {
+    gap: 9px;
+    color: #dc5876;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .13em;
+}
+
+.admin-settings-page .admin-settings-hero h1 {
+    margin: 17px 0 12px;
+    color: #153c3a;
+    font-size: clamp(42px, 4.1vw, 68px);
+    line-height: .98;
+    font-weight: 820;
+    letter-spacing: -.055em;
+}
+
+.admin-settings-page .admin-settings-hero p {
+    max-width: 610px;
+    margin: 0;
+    color: #456760;
+    font-size: 16px;
+    line-height: 1.65;
+    font-weight: 580;
+}
+
+.admin-settings-page .admin-settings-hero__actions {
+    margin-top: 24px;
+    gap: 12px;
+}
+
+.admin-settings-page .admin-settings-button {
+    min-height: 48px;
+    padding: 0 18px;
+    border-radius: 13px;
+    color: #284e48;
+    font-size: 13px;
+    font-weight: 820;
+    box-shadow: 0 8px 18px rgba(42, 91, 83, .07);
+}
+
+.admin-settings-page .admin-settings-button.is-quiet {
+    border-color: rgba(47, 119, 116, .18);
+    background: #fff;
+    color: #294f49;
+}
+
+/* Review & save intentionally matches the administrator avatar A tone. */
+.admin-settings-page .admin-settings-button.is-primary,
+.admin-settings-page .admin-settings-review>footer button.is-primary {
+    border-color: rgba(29, 155, 142, .52);
+    background: linear-gradient(145deg, #25aa9d 0%, var(--settings-a) 48%, var(--settings-a-deep) 100%);
+    color: #fff;
+    box-shadow: 0 12px 24px rgba(29, 155, 142, .26);
+}
+
+.admin-settings-page .admin-settings-button.is-primary:hover:not(:disabled),
+.admin-settings-page .admin-settings-review>footer button.is-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 16px 30px rgba(29, 155, 142, .32);
+}
+
+.admin-settings-page .admin-settings-button:disabled {
+    opacity: .62;
+}
+
+/* Hero illustration built from HTML/CSS + Lucide icons; no bitmap dependency. */
+.admin-settings-hero-visual {
+    position: relative;
+    z-index: 1;
+    min-height: 235px;
+    align-self: stretch;
+}
+
+.admin-settings-hero-visual__platform {
+    position: absolute;
+    left: 52%;
+    top: 51%;
+    width: 210px;
+    height: 98px;
+    transform: translate(-50%, -20%);
+    border-radius: 50%;
+    background: linear-gradient(180deg, #fdfefd 0%, #e8f7f3 64%, #d8eee8 100%);
+    border: 1px solid rgba(60, 155, 144, .18);
+    box-shadow:
+        0 18px 28px rgba(32, 116, 106, .16),
+        0 8px 0 #fff2f5,
+        0 13px 0 rgba(236, 166, 183, .22);
+}
+
+.admin-settings-hero-visual__platform-ring {
+    position: absolute;
+    inset: 16px 26px;
+    border-radius: 50%;
+    border: 2px solid rgba(51, 170, 158, .22);
+    background: radial-gradient(circle, rgba(255, 255, 255, .96) 0 34%, rgba(199, 239, 232, .76) 35% 57%, rgba(255, 255, 255, .92) 58% 100%);
+}
+
+.admin-settings-hero-visual__gear {
+    position: absolute;
+    left: 50%;
+    bottom: 43px;
+    width: 116px;
+    height: 116px;
+    transform: translateX(-50%);
+    display: grid;
+    place-items: center;
+    border-radius: 34px;
+    color: #127d72;
+    background: linear-gradient(145deg, #95ded3 0%, #58c8ba 48%, #2fa89b 100%);
+    border: 8px solid rgba(255, 255, 255, .82);
+    box-shadow:
+        inset 0 0 0 1px rgba(20, 122, 113, .14),
+        0 19px 34px rgba(40, 143, 131, .24),
+        0 0 0 14px rgba(207, 243, 237, .52);
+}
+
+.admin-settings-hero-visual__gear svg {
+    filter: drop-shadow(0 3px 4px rgba(16, 106, 97, .16));
+}
+
+.admin-settings-hero-visual__chip {
+    position: absolute;
+    width: 72px;
+    height: 72px;
+    display: grid;
+    place-items: center;
+    border-radius: 18px;
+    border: 1px solid rgba(53, 146, 136, .14);
+    background: rgba(255, 255, 255, .91);
+    box-shadow: 0 13px 30px rgba(38, 95, 87, .11);
+    backdrop-filter: blur(12px);
+}
+
+.admin-settings-hero-visual__chip.is-sliders {
+    left: 10%;
+    top: 43%;
+    color: #2aa294;
+    transform: rotate(8deg);
+}
+
+.admin-settings-hero-visual__chip.is-money {
+    right: 12%;
+    top: 17%;
+    color: #ee6f8b;
+    background: rgba(255, 249, 250, .94);
+    transform: rotate(5deg);
+}
+
+.admin-settings-hero-visual__chip.is-chart {
+    right: 4%;
+    bottom: 10%;
+    color: #2aa294;
+    transform: rotate(7deg);
+}
+
+.admin-settings-hero-visual__orbit {
+    position: absolute;
+    left: 50%;
+    top: 49%;
+    border: 1px dashed rgba(38, 157, 145, .18);
+    border-radius: 50%;
+    transform: translate(-50%, -50%) rotate(-12deg);
+}
+
+.admin-settings-hero-visual__orbit.is-one {
+    width: 440px;
+    height: 174px;
+}
+
+.admin-settings-hero-visual__orbit.is-two {
+    width: 520px;
+    height: 220px;
+    transform: translate(-50%, -50%) rotate(17deg);
+    border-color: rgba(222, 102, 130, .12);
+}
+
+.admin-settings-hero-visual__node {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #72c8be;
+    box-shadow: 0 0 0 5px rgba(114, 200, 190, .12);
+}
+
+.admin-settings-hero-visual__node.is-one {
+    left: 24%;
+    top: 17%;
+}
+
+.admin-settings-hero-visual__node.is-two {
+    right: 18%;
+    top: 53%;
+}
+
+.admin-settings-hero-visual__node.is-three {
+    left: 19%;
+    bottom: 8%;
+    background: #ef8ba0;
+}
+
+/* Currency block */
+.admin-settings-page .admin-settings-currency-panel {
+    min-height: 112px;
+    padding: 20px 24px;
+    grid-template-columns: minmax(0, 1fr) 290px;
+    border-radius: 21px;
+    background: linear-gradient(100deg, #f0faf7 0%, #fff 58%, #fffafb 100%);
+}
+
+.admin-settings-page .admin-settings-currency-panel__copy>span {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    color: #177f75;
+    background: #daf2ed;
+}
+
+.admin-settings-page .admin-settings-currency-panel__copy small,
+.admin-settings-page .admin-settings-overview>header small,
+.admin-settings-page .admin-settings-card header small,
+.admin-settings-page .admin-settings-review header small {
+    color: #177f75;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .12em;
+}
+
+.admin-settings-page .admin-settings-currency-panel__copy h2 {
+    margin: 5px 0 0;
+    color: #244a44;
+    font-size: 17px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-currency-panel__copy p {
+    margin-top: 6px;
+    color: #5f7771;
+    font-size: 11px;
+    line-height: 1.55;
+    font-weight: 560;
+}
+
+.admin-settings-page .admin-settings-currency-panel>label>span {
+    color: #315b55;
+    font-size: 10px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-currency-picker__trigger {
+    min-height: 54px;
+    border-color: rgba(47, 119, 116, .18);
+}
+
+.admin-settings-page .admin-settings-currency-picker__symbol {
+    color: #177f75;
+    background: #def3ef;
+    font-size: 12px;
+}
+
+.admin-settings-page .admin-settings-currency-picker__selected strong {
+    color: #234d47;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-currency-picker__selected small {
+    color: #5f7771;
+    font-size: 10px;
+    font-weight: 650;
+}
+
+/* Current configuration — cards, never a table. */
+.admin-settings-page .admin-settings-overview {
+    margin-top: 16px;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, .95);
+}
+
+.admin-settings-page .admin-settings-overview>header {
+    min-height: 94px;
+    padding: 20px 24px 16px;
+    border-bottom: 0;
+}
+
+.admin-settings-page .admin-settings-overview>header h2 {
+    margin: 5px 0 3px;
+    color: #244a44;
+    font-size: 22px;
+    font-weight: 740;
+}
+
+.admin-settings-page .admin-settings-overview>header p {
+    color: #617b75;
+    font-size: 11px;
+    font-weight: 560;
+}
+
+.admin-settings-page .admin-settings-overview>header>span {
+    min-height: 38px;
+    padding: 0 13px;
+    border-color: rgba(29, 155, 142, .20);
+    background: #f0faf8;
+    color: #315b55;
+    font-size: 10px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-overview>header>span i {
+    background: #1d9b8e;
+}
+
+.admin-settings-page .admin-settings-metrics {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    padding: 0 18px 18px !important;
+}
+
+.admin-settings-page .admin-settings-metrics article {
+    min-height: 122px !important;
+    padding: 16px !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    border: 1px solid rgba(47, 119, 116, .15) !important;
+    border-radius: 18px !important;
+    background: linear-gradient(145deg, #f4fbf9 0%, #fff 100%) !important;
+    box-shadow: 0 7px 20px rgba(47, 91, 81, .07) !important;
+}
+
+.admin-settings-page .admin-settings-metrics article:nth-child(3),
+.admin-settings-page .admin-settings-metrics article:nth-child(5) {
+    background: linear-gradient(145deg, #fff3f6 0%, #fff 100%) !important;
+    border-color: rgba(218, 111, 138, .18) !important;
+}
+
+.admin-settings-page .admin-settings-metrics article::after {
+    display: none !important;
+}
+
+.admin-settings-page .admin-settings-metrics article>span {
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    color: #177f75 !important;
+    background: #daf2ed !important;
+    border-radius: 14px !important;
+}
+
+.admin-settings-page .admin-settings-metrics article:nth-child(3)>span,
+.admin-settings-page .admin-settings-metrics article:nth-child(5)>span {
+    color: #cf4d70 !important;
+    background: #ffe4eb !important;
+}
+
+.admin-settings-page .admin-settings-metrics article small {
+    color: #456760 !important;
+    font-size: 10px !important;
+    font-weight: 850 !important;
+}
+
+.admin-settings-page .admin-settings-metrics article strong {
+    margin: 5px 0 2px !important;
+    color: #173d3a !important;
+    font-size: 22px !important;
+    font-weight: 850 !important;
+    letter-spacing: -.025em !important;
+}
+
+.admin-settings-page .admin-settings-metrics article p {
+    margin: 0 !important;
+    color: #5e7771 !important;
+    font-size: 10px !important;
+    font-weight: 620 !important;
+}
+
+/* Lower cards — keep every label readable; no washed-out copy. */
+.admin-settings-page .admin-settings-card header h2 {
+    color: #244a44;
+    font-size: 18px;
+    font-weight: 780;
+}
+
+.admin-settings-page .admin-settings-card header p {
+    color: #5d7770;
+    font-size: 11px;
+    font-weight: 560;
+}
+
+.admin-settings-page .admin-settings-field__label strong {
+    color: #294f49;
+    font-size: 12px;
+    font-weight: 820;
+}
+
+.admin-settings-page .admin-settings-field__label small {
+    color: #5e7771;
+    font-size: 10px;
+    font-weight: 560;
+}
+
+.admin-settings-page .admin-settings-field__input input {
+    color: #173d3a;
+    font-size: 13px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-field__input em {
+    color: #3d625c;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.admin-settings-page .admin-settings-footerbar strong {
+    color: #2e554f;
+    font-size: 11px;
+}
+
+.admin-settings-page .admin-settings-footerbar small {
+    color: #607972;
+    font-size: 10px;
+}
+
+@media (max-width: 1250px) {
+    .admin-settings-page .admin-settings-metrics {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 1000px) {
+    .admin-settings-page .admin-settings-hero {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-settings-hero-visual {
+        min-height: 220px;
+    }
+
+    .admin-settings-page .admin-settings-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 700px) {
+    .admin-settings-page .admin-settings-hero {
+        padding: 26px 20px;
+        border-radius: 22px;
+    }
+
+    .admin-settings-page .admin-settings-hero h1 {
+        font-size: 42px;
+    }
+
+    .admin-settings-page .admin-settings-hero p {
+        font-size: 14px;
+    }
+
+    .admin-settings-hero-visual {
+        display: none;
+    }
+
+    .admin-settings-page .admin-settings-currency-panel {
+        grid-template-columns: 1fr;
+        padding: 18px;
+    }
+
+    .admin-settings-page .admin-settings-metrics {
+        grid-template-columns: 1fr !important;
+        padding: 0 12px 14px !important;
+    }
+}
+
+/* ========================================================================== */
+/* Final readability pass — stronger contrast, no washed-out text             */
+/* ========================================================================== */
+.admin-settings-page {
+    --settings-text: #294f49;
+    --settings-muted: #4f6d66;
+}
+
+/* Keep every informative line dark enough to read comfortably. */
+.admin-settings-page .admin-settings-hero p {
+    color: #355b54;
+    font-weight: 650;
+}
+
+.admin-settings-page .admin-settings-currency-panel__copy small,
+.admin-settings-page .admin-settings-overview>header small,
+.admin-settings-page .admin-settings-card header small,
+.admin-settings-page .admin-settings-review header small {
+    color: #126f67;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-currency-panel__copy h2 {
+    color: #193f3b;
+    font-size: 18px;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-currency-panel__copy p {
+    color: #45645e;
+    font-size: 12px;
+    line-height: 1.6;
+    font-weight: 650;
+}
+
+.admin-settings-page .admin-settings-currency-panel>label>span {
+    color: #294f49;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-currency-picker__selected strong,
+.admin-settings-page .admin-settings-currency-picker__option-copy strong {
+    color: #173d3a;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-currency-picker__selected small,
+.admin-settings-page .admin-settings-currency-picker__option-copy small {
+    color: #45645e;
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+.admin-settings-page .admin-settings-overview>header h2 {
+    color: #173d3a;
+    font-weight: 820;
+}
+
+.admin-settings-page .admin-settings-overview>header p {
+    color: #45645e;
+    font-size: 12px;
+    line-height: 1.55;
+    font-weight: 650;
+}
+
+.admin-settings-page .admin-settings-overview>header>span {
+    color: #244a44;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-metrics article small {
+    color: #315b55 !important;
+    font-size: 11px !important;
+    font-weight: 900 !important;
+}
+
+.admin-settings-page .admin-settings-metrics article strong {
+    color: #123a37 !important;
+    font-size: 23px !important;
+    font-weight: 900 !important;
+}
+
+.admin-settings-page .admin-settings-metrics article p {
+    color: #45645e !important;
+    font-size: 11px !important;
+    line-height: 1.45 !important;
+    font-weight: 700 !important;
+}
+
+.admin-settings-page .admin-settings-card header h2 {
+    color: #173d3a;
+    font-size: 18px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-card header p {
+    color: #45645e;
+    font-size: 12px;
+    line-height: 1.55;
+    font-weight: 650;
+}
+
+.admin-settings-page .admin-settings-field__label strong,
+.admin-settings-page .admin-settings-locked-field strong {
+    color: #234a44;
+    font-size: 12.5px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-field__label small,
+.admin-settings-page .admin-settings-locked-field small {
+    color: #4a6861;
+    font-size: 11px;
+    line-height: 1.5;
+    font-weight: 650;
+}
+
+.admin-settings-page .admin-settings-field__input input {
+    color: #123a37;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-field__input em,
+.admin-settings-page .admin-settings-locked-field i {
+    color: #315b55;
+    font-size: 10.5px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-field__error,
+.admin-settings-page .admin-settings-currency-panel>label>em {
+    color: #9c4055;
+    font-size: 10.5px;
+    font-weight: 800;
+}
+
+.admin-settings-page .admin-settings-footerbar strong {
+    color: #234a44;
+    font-size: 12px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-footerbar small {
+    color: #4a6861;
+    font-size: 11px;
+    line-height: 1.5;
+    font-weight: 650;
+}
+
+/* Review modal readability. */
+.admin-settings-page .admin-settings-review h2 {
+    color: #173d3a;
+    font-size: 21px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-review header p,
+.admin-settings-page .admin-settings-review__notice small,
+.admin-settings-page .admin-settings-review__changes small {
+    color: #4a6861;
+    font-size: 11px;
+    line-height: 1.45;
+    font-weight: 650;
+}
+
+.admin-settings-page .admin-settings-review__notice strong,
+.admin-settings-page .admin-settings-review__changes strong {
+    color: #234a44;
+    font-size: 12px;
+    font-weight: 850;
+}
+
+.admin-settings-page .admin-settings-review__changes strong span {
+    color: #526f68;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.admin-settings-page .admin-settings-review>footer button {
+    color: #294f49;
+    font-size: 12px;
+    font-weight: 850;
+}
+
+/* Review & save follows the exact teal used by the administrator A avatar.
+   It stays visibly muted until there is an actual unsaved change. */
+.admin-settings-page .admin-settings-button.is-primary,
+.admin-settings-page .admin-settings-review>footer button.is-primary {
+    border-color: rgba(79, 169, 164, .58);
+    background: linear-gradient(145deg, #69b7b1, #4fa9a4);
+    color: #ffffff;
+    font-weight: 850;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, .06);
+    box-shadow: 0 10px 22px rgba(47, 119, 116, .20);
+}
+
+.admin-settings-page .admin-settings-button:disabled,
+.admin-settings-page .admin-settings-review>footer button:disabled {
+    cursor: not-allowed;
+}
+
+/* No edits yet: keep the action intentionally faded and non-clickable.
+   As soon as `dirty` becomes true, React removes `disabled` and the exact
+   avatar-A gradient above becomes active automatically. */
+.admin-settings-page .admin-settings-button.is-primary:disabled,
+.admin-settings-page .admin-settings-review>footer button.is-primary:disabled {
+    opacity: 1;
+    border-color: rgba(79, 169, 164, .14);
+    background: linear-gradient(145deg, #edf5f4, #e4f0ee);
+    color: #91aaa6;
+    text-shadow: none;
+    box-shadow: none;
+}
+
+@media (max-width: 700px) {
+
+    .admin-settings-page .admin-settings-currency-panel__copy p,
+    .admin-settings-page .admin-settings-overview>header p,
+    .admin-settings-page .admin-settings-card header p {
+        font-size: 11.5px;
+    }
+
+    .admin-settings-page .admin-settings-metrics article small,
+    .admin-settings-page .admin-settings-metrics article p,
+    .admin-settings-page .admin-settings-field__label small {
+        font-size: 10.5px !important;
+    }
+}
+
+/* ========================================================================== */
+/* Stronger lower-card colors — clearer contrast without changing layout       */
+/* ========================================================================== */
+.admin-settings-page .admin-settings-card {
+    border-color: #cbded9;
+    background: #ffffff;
+    box-shadow: 0 16px 38px rgba(34, 86, 77, .09);
+}
+
+.admin-settings-page .admin-settings-card>header {
+    border-bottom-color: #d6e5e1;
+    background: linear-gradient(120deg, #f1faf7 0%, #ffffff 56%, #fff4f7 100%);
+}
+
+.admin-settings-page .admin-settings-card>header>span {
+    color: #27877f;
+    background: #e0f2ee;
+    box-shadow: inset 0 0 0 1px rgba(39, 135, 127, .16), 0 7px 16px rgba(39, 135, 127, .08);
+}
+
+.admin-settings-page .admin-settings-card.is-premium>header>span {
+    color: #24857e;
+    background: #dff2ee;
+}
+
+.admin-settings-page .admin-settings-card header small {
+    color: #126f67;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-card header h2 {
+    color: #183f3a;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-card header p {
+    color: #3f625b;
+    font-weight: 700;
+}
+
+.admin-settings-page .admin-settings-card__fields {
+    background: linear-gradient(180deg, #fbfefd 0%, #f7fbfa 100%);
+}
+
+.admin-settings-page .admin-settings-field {
+    border-color: #d1e0dc;
+    background: #ffffff;
+    box-shadow: 0 5px 16px rgba(38, 77, 70, .045);
+}
+
+.admin-settings-page .admin-settings-field:hover {
+    border-color: #9fcac3;
+    box-shadow: 0 10px 22px rgba(38, 77, 70, .075);
+}
+
+.admin-settings-page .admin-settings-field__label strong {
+    color: #1d4741;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-field__label small {
+    color: #3f625b;
+    font-weight: 700;
+}
+
+.admin-settings-page .admin-settings-field__input {
+    border-color: #c9ddd8;
+    background: #ffffff;
+}
+
+.admin-settings-page .admin-settings-field__input input {
+    color: #123a37;
+    font-weight: 900;
+}
+
+.admin-settings-page .admin-settings-field__input em {
+    border-left-color: #cfe0dc;
+    background: #eaf4f1;
+    color: #2b5d56;
+    font-weight: 900;
+}

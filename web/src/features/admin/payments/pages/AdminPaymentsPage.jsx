@@ -697,10 +697,52 @@ export default function AdminPaymentsPage() {
 
   return (
     <div className="admin-page admin-payment-page">
-      <section className="admin-hero admin-payment-hero">
-        <div className="admin-hero__eyebrow"><CircleDollarSign size={15} /> Billing operations</div>
-        <h2>Payments</h2>
-        <p>Monitor transaction health, revenue, purchase purpose and gateway activity without exposing financial records to destructive actions.</p>
+      <section className="admin-payment-hero">
+        <div className="admin-payment-hero__content">
+          <span className="admin-payment-hero__eyebrow"><CircleDollarSign size={15} /> BILLING OPERATIONS</span>
+          <h1>Payment <span>operations</span></h1>
+          <p>Monitor transaction health, revenue, purchase purpose and gateway activity without exposing financial records to destructive actions.</p>
+
+          <div className="admin-payment-hero__trust" aria-label="Payment workspace capabilities">
+            <span><ShieldCheck size={14} /> Audit-safe ledger</span>
+            <span><CreditCard size={14} /> Gateway visibility</span>
+            <span><ReceiptText size={14} /> Transaction records</span>
+          </div>
+        </div>
+
+        <div className="admin-payment-hero__scene" aria-hidden="true">
+          <span className="admin-payment-scene-line admin-payment-scene-line--one" />
+          <span className="admin-payment-scene-line admin-payment-scene-line--two" />
+          <span className="admin-payment-scene-node admin-payment-scene-node--one" />
+          <span className="admin-payment-scene-node admin-payment-scene-node--two" />
+          <span className="admin-payment-scene-node admin-payment-scene-node--three" />
+
+          <div className="admin-payment-hero-card">
+            <div className="admin-payment-hero-card__top">
+              <span className="admin-payment-hero-card__chip" />
+              <WalletCards size={21} />
+            </div>
+            <span className="admin-payment-hero-card__number">•••• &nbsp; 2048 &nbsp; •••• &nbsp; 7281</span>
+            <div className="admin-payment-hero-card__bottom">
+              <span><small>PAYMENT FLOW</small><strong>Voxidence</strong></span>
+              <span className="admin-payment-hero-card__badge"><Check size={14} /> Verified</span>
+            </div>
+          </div>
+
+          <div className="admin-payment-hero-receipt">
+            <span className="admin-payment-hero-receipt__icon"><ReceiptText size={18} /></span>
+            <div><small>TRANSACTION</small><strong>Secure record</strong></div>
+            <CheckCircle2 size={16} />
+          </div>
+
+          <div className="admin-payment-hero-coins">
+            <span><Coins size={18} /></span>
+            <div><small>REVENUE</small><strong>Tracked</strong></div>
+          </div>
+
+          <span className="admin-payment-scene-platform admin-payment-scene-platform--one" />
+          <span className="admin-payment-scene-platform admin-payment-scene-platform--two" />
+        </div>
       </section>
 
       <section className="admin-payment-panel">

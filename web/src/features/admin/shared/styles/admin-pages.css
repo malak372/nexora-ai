@@ -29,7 +29,7 @@
   align-items: center;
   gap: 7px;
   color: #2f7774;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 850;
   text-transform: uppercase;
   letter-spacing: .12em
@@ -44,7 +44,7 @@
 .admin-hero p {
   max-width: 740px;
   margin: 0;
-  color: #71807a;
+  color: #66736e;
   line-height: 1.6;
   font-size: 13px
 }
@@ -86,17 +86,17 @@
 .admin-stat small {
   display: block;
   margin-top: 3px;
-  color: #7c8b85;
-  font-size: 11px
+  color: #67736f;
+  font-size: 12px
 }
 
 .admin-stat i {
   position: absolute;
   right: 14px;
   bottom: 14px;
-  color: #4fa9a4;
+  color: #3a7b78;
   font-style: normal;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800
 }
 
@@ -125,8 +125,8 @@
 
 .admin-panel__head p {
   margin: 3px 0 0;
-  color: #84928d;
-  font-size: 11px
+  color: #687370;
+  font-size: 12px
 }
 
 .admin-toolbar {
@@ -148,7 +148,7 @@
   background: #fffdfc;
   color: #51635d;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   cursor: pointer;
   text-decoration: none;
@@ -169,7 +169,7 @@
 }
 
 .admin-btn--danger {
-  color: #b35f73;
+  color: #a7596b;
   background: #fff7f9;
   border-color: rgba(217, 143, 160, .25)
 }
@@ -213,7 +213,7 @@
   background: #fff;
   color: #566861;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   outline: 0
 }
 
@@ -230,9 +230,9 @@
 .admin-table th {
   padding: 11px 14px;
   text-align: left;
-  color: #899892;
+  color: #68736f;
   background: #fbfcfb;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 850;
   letter-spacing: .08em;
   text-transform: uppercase
@@ -241,7 +241,7 @@
 .admin-table td {
   padding: 13px 14px;
   border-top: 1px solid rgba(47, 119, 116, .07);
-  font-size: 11px;
+  font-size: 12px;
   color: #566861;
   vertical-align: middle
 }
@@ -252,7 +252,7 @@
 
 .admin-table strong {
   color: #364842;
-  font-size: 11px
+  font-size: 12px
 }
 
 .admin-table__actions {
@@ -286,7 +286,7 @@
   border-radius: 999px;
   background: #eef8f5;
   color: #3d7f75;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 850;
   text-transform: capitalize
 }
@@ -315,8 +315,8 @@
 }
 
 .admin-pagination span {
-  color: #83918c;
-  font-size: 10px
+  color: #687370;
+  font-size: 12px
 }
 
 .admin-empty {
@@ -339,7 +339,7 @@
 
 .admin-empty p {
   margin: 0;
-  font-size: 11px
+  font-size: 12px
 }
 
 .admin-loading {
@@ -369,7 +369,7 @@
   border-radius: 13px;
   background: #fff7f9;
   color: #a9576a;
-  font-size: 11px
+  font-size: 12px
 }
 
 .admin-dashboard-grid {
@@ -409,8 +409,8 @@
   left: 50%;
   bottom: -22px;
   transform: translateX(-50%);
-  color: #8c9a95;
-  font-size: 8px;
+  color: #69736f;
+  font-size: 12px;
   white-space: nowrap
 }
 
@@ -454,13 +454,13 @@
 }
 
 .admin-activity__item strong {
-  font-size: 11px
+  font-size: 12px
 }
 
 .admin-activity__item span {
   margin-top: 2px;
-  color: #899690;
-  font-size: 9px
+  color: #69736f;
+  font-size: 12px
 }
 
 .admin-summary-strip {
@@ -477,8 +477,8 @@
 
 .admin-summary-strip small {
   display: block;
-  color: #88958f;
-  font-size: 9px;
+  color: #69736f;
+  font-size: 12px;
   text-transform: capitalize
 }
 
@@ -504,8 +504,8 @@
 }
 
 .admin-field label {
-  color: #687a73;
-  font-size: 10px;
+  color: #63746e;
+  font-size: 12px;
   font-weight: 800
 }
 
@@ -600,7 +600,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: #65766f;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.55
 }
 
@@ -615,9 +615,9 @@
   border: 1px solid rgba(47, 119, 116, .12);
   border-radius: 10px;
   background: #fff;
-  color: #708079;
+  color: #65746e;
   font: inherit;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   cursor: pointer
 }
@@ -681,8 +681,8 @@
 }
 
 .admin-field label span {
-  color: #8a9993;
-  font-size: 10px;
+  color: #68736f;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -736,8 +736,8 @@
 
 .admin-modal__head p {
   margin: 4px 0 0;
-  color: #899792;
-  font-size: 10px;
+  color: #69736f;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -793,8 +793,8 @@
 
 .admin-record-identity__copy>span {
   display: block;
-  color: #4e9691;
-  font-size: 9px;
+  color: #407a76;
+  font-size: 12px;
   font-weight: 900;
   letter-spacing: .11em;
   text-transform: uppercase;
@@ -809,8 +809,8 @@
 
 .admin-record-identity__copy p {
   margin: 0;
-  color: #80908a;
-  font-size: 11px;
+  color: #67736f;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -851,8 +851,8 @@
 .admin-record-metrics small,
 .admin-detail-field small {
   display: block;
-  color: #899791;
-  font-size: 9px;
+  color: #69736f;
+  font-size: 12px;
   font-weight: 750;
 }
 
@@ -887,13 +887,13 @@
 .admin-detail-section__title h5 {
   margin: 0;
   color: #435750;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .admin-detail-section__title p {
   margin: 2px 0 0;
-  color: #8b9994;
-  font-size: 9px;
+  color: #69736f;
+  font-size: 12px;
 }
 
 .admin-detail-grid {
@@ -915,13 +915,13 @@
   margin-top: 5px;
   min-height: 22px;
   color: #42544d;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .admin-detail-empty {
-  color: #a0aaa6;
+  color: #6c7270;
   font-weight: 600;
 }
 
@@ -929,9 +929,9 @@
   display: inline-flex;
   padding: 4px 8px;
   border-radius: 999px;
-  color: #4d7f76;
+  color: #4a7971;
   background: #eef8f5;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 850;
 }
 
@@ -964,8 +964,8 @@
 
 .admin-confirm-card p {
   margin: 5px 0 0;
-  color: #7d8c86;
-  font-size: 10px;
+  color: #67736f;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -1029,8 +1029,8 @@
 
 .admin-action-review p {
   margin: 5px 0 0;
-  color: #7d8d87;
-  font-size: 10px;
+  color: #66736f;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -1073,8 +1073,8 @@
 
 .admin-action-review p {
   margin: 5px 0 0;
-  color: #7d8d87;
-  font-size: 10px;
+  color: #66736f;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -1108,8 +1108,8 @@
 }
 
 .admin-user-edit-head small {
-  color: #81918b;
-  font-size: 10px;
+  color: #67736f;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -1123,8 +1123,8 @@
 
 .admin-user-edit-head span {
   overflow: hidden;
-  color: #71817b;
-  font-size: 11px;
+  color: #65746e;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1132,8 +1132,8 @@
 .admin-field small {
   display: block;
   margin-top: 6px;
-  color: #8a9893;
-  font-size: 9.5px;
+  color: #69736f;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1160,7 +1160,7 @@
   border-radius: 11px;
   background: rgba(255, 255, 255, .76);
   color: #536761 !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
   letter-spacing: normal !important;
   text-transform: none !important;
@@ -1192,13 +1192,13 @@
 .admin-edit-safety-note strong {
   display: block;
   color: #40534d;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .admin-edit-safety-note p {
   margin: 4px 0 0;
-  color: #74847e;
-  font-size: 10px;
+  color: #65736e;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -1225,8 +1225,8 @@
 
 .admin-panel--users .admin-panel__head p {
   margin-top: 5px;
-  color: #84948e;
-  font-size: 10.5px;
+  color: #67736f;
+  font-size: 12px;
 }
 
 .admin-panel--ideas .admin-panel__head {
@@ -1290,8 +1290,8 @@
 }
 
 .admin-idea-stat__copy small {
-  color: #84928d;
-  font-size: 9px;
+  color: #687370;
+  font-size: 12px;
   font-weight: 780;
 }
 
@@ -1304,8 +1304,8 @@
 
 .admin-idea-stat__copy span {
   margin-top: 7px;
-  color: #9aa49f;
-  font-size: 8px;
+  color: #6c726f;
+  font-size: 12px;
 }
 
 .admin-idea-overview__secondary {
@@ -1342,8 +1342,8 @@
 }
 
 .admin-idea-mini-stat small {
-  color: #8d9995;
-  font-size: 8px;
+  color: #6a7270;
+  font-size: 12px;
 }
 
 .admin-idea-mini-stat strong {
@@ -1402,8 +1402,8 @@
   padding: 0 12px;
   border-bottom: 1px solid rgba(47, 119, 116, .08);
   background: rgba(247, 250, 248, .88);
-  color: #8b9994;
-  font-size: 8.5px;
+  color: #69736f;
+  font-size: 12px;
   letter-spacing: .095em;
 }
 
@@ -1479,7 +1479,7 @@
 .admin-owner-cell strong {
   display: block;
   color: #3c504a;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 790;
 }
 
@@ -1493,8 +1493,8 @@
 .admin-owner-cell small {
   display: block;
   margin-top: 3px;
-  color: #96a19d;
-  font-size: 8px;
+  color: #6b7270;
+  font-size: 12px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1515,7 +1515,7 @@
   max-width: 100%;
   padding: 0 9px;
   border-radius: 999px;
-  font-size: 8.5px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -1538,7 +1538,7 @@
 }
 
 .admin-region-cell {
-  color: #697b75;
+  color: #63746f;
   background: #f5f7f6;
 }
 
@@ -1595,8 +1595,8 @@
 
 .admin-idea-copy-grid small {
   display: block;
-  color: #7e8d88;
-  font-size: 9px;
+  color: #67736f;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .07em;
@@ -1605,7 +1605,7 @@
 .admin-idea-copy-grid p {
   margin: 6px 0 0;
   color: #4c605a;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;
 }
@@ -1629,13 +1629,13 @@
 
 .admin-idea-owner-card strong {
   color: #3f524c;
-  font-size: 11px
+  font-size: 12px
 }
 
 .admin-idea-owner-card span {
   margin-top: 3px;
-  color: #92a09b;
-  font-size: 9px
+  color: #69736f;
+  font-size: 12px
 }
 
 .admin-idea-stage-list {
@@ -1661,13 +1661,13 @@
 }
 
 .admin-idea-stage-list strong {
-  font-size: 10px;
+  font-size: 12px;
   color: #435650
 }
 
 .admin-idea-stage-list small {
   margin-top: 3px;
-  font-size: 8.5px;
+  font-size: 12px;
   color: #95a19d
 }
 
@@ -1686,12 +1686,12 @@
   border-radius: 999px;
   color: #54716a;
   background: #eef7f4;
-  font-size: 8.5px;
+  font-size: 12px;
   font-weight: 750;
 }
 
 .admin-idea-source-list b {
-  color: #7e918b;
+  color: #657470;
   font-weight: 700;
 }
 
@@ -1717,13 +1717,13 @@
 
 .admin-idea-publication strong {
   color: #43564f;
-  font-size: 10px
+  font-size: 12px
 }
 
 .admin-idea-publication small {
   margin-top: 3px;
-  color: #96a19d;
-  font-size: 8.5px
+  color: #6b7270;
+  font-size: 12px
 }
 
 .admin-detail-loading,
@@ -1747,8 +1747,8 @@
 .admin-detail-loading p,
 .admin-detail-error p {
   margin: 5px 0 0;
-  color: #8f9d98;
-  font-size: 10px;
+  color: #69736f;
+  font-size: 12px;
   line-height: 1.5
 }
 
@@ -1877,8 +1877,8 @@
 
 .admin-report-stat__copy small,
 .admin-report-mini-stat small {
-  color: #73837d;
-  font-size: 11px;
+  color: #65746e;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1890,8 +1890,8 @@
 
 .admin-report-stat__copy span {
   overflow: hidden;
-  color: #93a19c;
-  font-size: 10.5px;
+  color: #69736f;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2035,8 +2035,8 @@
 .admin-report-publication-cell small,
 .admin-report-reporter small {
   overflow: hidden;
-  color: #8a9993;
-  font-size: 10.5px;
+  color: #68736f;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2049,7 +2049,7 @@
   justify-content: center;
   gap: 5px;
   border-radius: 999px;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -2120,8 +2120,8 @@
 .admin-report-review-card__top small,
 .admin-report-review-card__facts small,
 .admin-report-review-card__details small {
-  color: #85948e;
-  font-size: 10.5px;
+  color: #68736f;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .055em;
@@ -2137,8 +2137,8 @@
 
 .admin-report-review-card__top>div>span {
   overflow: hidden;
-  color: #778983;
-  font-size: 11.5px;
+  color: #65746f;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2219,8 +2219,8 @@
 
 .admin-report-action-explainer p {
   margin: 3px 0 0;
-  color: #6f817a;
-  font-size: 11px;
+  color: #64746e;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -2269,7 +2269,7 @@
 }
 
 .admin-mini-btn--moderate span {
-  font-size: 10.5px;
+  font-size: 12px;
 }
 
 .admin-mini-btn--moderate:hover {
@@ -2324,8 +2324,8 @@
   padding: 0 14px;
   border-bottom: 1px solid rgba(67, 121, 108, .08);
   background: linear-gradient(180deg, rgba(249, 252, 250, .97), rgba(247, 250, 248, .90));
-  color: #879791;
-  font-size: 8.5px;
+  color: #67736f;
+  font-size: 12px;
   letter-spacing: .105em;
 }
 
@@ -2401,13 +2401,13 @@
 
 .admin-report-publication-cell strong {
   max-width: 240px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 820;
 }
 
 .admin-report-publication-cell small {
   margin-top: 1px;
-  font-size: 8.5px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -2428,7 +2428,7 @@
   color: #47736a;
   background: #eef6f3;
   border: 1px solid rgba(74, 135, 122, .10);
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 900;
   letter-spacing: .03em;
 }
@@ -2448,7 +2448,7 @@
 .admin-report-person strong {
   overflow: hidden;
   color: #3d5049;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 790;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2456,8 +2456,8 @@
 
 .admin-report-person small {
   overflow: hidden;
-  color: #97a39f;
-  font-size: 8px;
+  color: #6a7270;
+  font-size: 12px;
   font-weight: 620;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2468,29 +2468,29 @@
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid rgba(78, 130, 117, .08);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .admin-report-reason {
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid rgba(160, 126, 57, .08);
-  font-size: 8.5px;
+  font-size: 12px;
   letter-spacing: .01em;
 }
 
 .admin-table--reports .admin-status {
   min-height: 28px;
   padding: 0 10px;
-  font-size: 8.5px;
+  font-size: 12px;
 }
 
 .admin-table--reports .admin-date-cell strong {
-  font-size: 9.5px;
+  font-size: 12px;
 }
 
 .admin-table--reports .admin-date-cell small {
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .admin-table--reports .admin-table__actions {
@@ -2510,7 +2510,7 @@
   border-radius: 11px;
   color: #2d7d75;
   background: linear-gradient(145deg, #f0faf7, #fffdfb);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 850;
   box-shadow: 0 6px 16px rgba(48, 117, 106, .045);
   transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
@@ -2558,7 +2558,7 @@
   justify-content: center;
   flex-direction: column;
   gap: 9px;
-  color: #74867f;
+  color: #65746e;
   text-align: center;
 }
 
@@ -2577,8 +2577,8 @@
 }
 
 .admin-resource-empty span {
-  color: #8b9994;
-  font-size: 11px;
+  color: #69736f;
+  font-size: 12px;
 }
 
 .admin-spin {
@@ -2618,7 +2618,7 @@
   border-radius: 999px;
   color: #62736d;
   background: #f2f5f4;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -2678,8 +2678,8 @@
   justify-content: space-between;
   gap: 12px;
   border-top: 1px solid rgba(47, 119, 116, .08);
-  color: #82918c;
-  font-size: 10px;
+  color: #687370;
+  font-size: 12px;
 }
 
 .admin-resource-pagination>div {
@@ -2719,8 +2719,8 @@
 }
 
 .admin-resource-modal header small {
-  color: #65958b;
-  font-size: 9px;
+  color: #527870;
+  font-size: 12px;
   font-weight: 850;
   text-transform: uppercase;
   letter-spacing: .1em;
@@ -2752,15 +2752,15 @@
 .admin-resource-detail span {
   display: block;
   margin-bottom: 5px;
-  color: #899791;
-  font-size: 9px;
+  color: #69736f;
+  font-size: 12px;
 }
 
 .admin-resource-detail strong {
   display: block;
   overflow-wrap: anywhere;
   color: #445952;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
 }
 
@@ -2863,4 +2863,61 @@
   .admin-page table tbody tr>td {
     transition: none !important;
   }
+}
+
+/* ===== FINAL READABILITY: stronger admin text contrast ===== */
+.admin-hero p,
+.admin-stat small,
+.admin-panel__head p,
+.admin-table th,
+.admin-pagination span,
+.admin-empty,
+.admin-chart__bar span,
+.admin-activity__item span,
+.admin-summary-strip small,
+.admin-json-card pre {
+  color: #60736c;
+}
+
+.admin-btn,
+.admin-select,
+.admin-mini-btn,
+.admin-field label,
+.admin-tab {
+  color: #4f625b;
+}
+
+.admin-table td,
+.admin-table strong,
+.admin-empty h4 {
+  color: #42564e;
+}
+
+.admin-stat i,
+.admin-empty svg {
+  color: #2f7774;
+}
+
+.admin-status--neutral {
+  color: #5d7069;
+}
+
+
+/* Admin readability: clearer typography across every admin page. */
+.admin-page,
+.admin-page button,
+.admin-page input,
+.admin-page select,
+.admin-page textarea {
+  font-family: "Segoe UI", Inter, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.admin-page button,
+.admin-page input,
+.admin-page select,
+.admin-page textarea {
+  font-weight: 600;
 }

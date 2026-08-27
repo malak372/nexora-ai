@@ -632,9 +632,47 @@ export default function AdminCollectionRunsPage() {
   return (
     <div className="admin-page admin-cr-page">
       <section className="admin-hero admin-cr-hero">
-        <div className="admin-hero__eyebrow"><Database size={14} /> Evidence pipeline</div>
-        <h2>Collection runs</h2>
-        <p>Monitor evidence ingestion, inspect source-level execution, stop unhealthy active work, and retry failed collection jobs without exposing raw database fields.</p>
+        <div className="admin-cr-hero__copy">
+          <div className="admin-hero__eyebrow"><Database size={14} /> Evidence pipeline</div>
+          <h2>Collection runs</h2>
+          <p>Monitor evidence ingestion, inspect source-level execution, stop unhealthy active work, and retry failed collection jobs without exposing raw database fields.</p>
+        </div>
+
+        <div className="admin-cr-hero__visual" aria-hidden="true">
+          <span className="admin-cr-hero__orbit admin-cr-hero__orbit--one" />
+          <span className="admin-cr-hero__orbit admin-cr-hero__orbit--two" />
+          <span className="admin-cr-hero__spark admin-cr-hero__spark--one" />
+          <span className="admin-cr-hero__spark admin-cr-hero__spark--two" />
+          <span className="admin-cr-hero__spark admin-cr-hero__spark--three" />
+
+          <div className="admin-cr-hero__source-card">
+            <FileText size={23} />
+            <span className="admin-cr-hero__source-line" />
+            <span className="admin-cr-hero__source-line is-short" />
+            <span className="admin-cr-hero__source-search"><Search size={15} /></span>
+          </div>
+
+          <div className="admin-cr-hero__database">
+            <span />
+            <span />
+            <span />
+            <Database size={35} />
+          </div>
+
+          <div className="admin-cr-hero__status-card">
+            <span><i className="is-running" /> Running</span>
+            <span><i className="is-completed" /> Completed</span>
+            <span><i className="is-attention" /> Needs attention</span>
+          </div>
+
+          <div className="admin-cr-hero__check"><CheckCircle2 size={20} /></div>
+          <div className="admin-cr-hero__chart">
+            <span className="is-one" />
+            <span className="is-two" />
+            <span className="is-three" />
+            <i />
+          </div>
+        </div>
       </section>
 
       <section className="admin-cr-panel">
@@ -714,89 +752,102 @@ export default function AdminCollectionRunsPage() {
         {notice && <div className="admin-cr-notice"><CheckCircle2 size={15} /> {notice}</div>}
         {error && <div className="admin-cr-error"><AlertTriangle size={15} /> {error}</div>}
 
-        <div className="admin-cr-table-wrap">
-          <table className="admin-cr-table">
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Domain</th>
-                <th>Pipeline</th>
-                <th>Evidence</th>
-                <th>Timing</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr><td colSpan="6"><div className="admin-cr-empty"><LoaderCircle size={23} className="admin-spin" /><strong>Loading collection runs…</strong></div></td></tr>
-              )}
+        <div className="admin-cr-runs-grid">
+          {loading && (
+            <div className="admin-cr-runs-state">
+              <div className="admin-cr-empty">
+                <LoaderCircle size={23} className="admin-spin" />
+                <strong>Loading collection runs…</strong>
+              </div>
+            </div>
+          )}
 
-              {!loading && !error && rows.length === 0 && (
-                <tr><td colSpan="6"><div className="admin-cr-empty"><Database size={25} /><strong>No collection runs match this view.</strong><span>Try another status, data source, or search term.</span></div></td></tr>
-              )}
+          {!loading && !error && rows.length === 0 && (
+            <div className="admin-cr-runs-state">
+              <div className="admin-cr-empty">
+                <Database size={25} />
+                <strong>No collection runs match this view.</strong>
+                <span>Try another status, data source, or search term.</span>
+              </div>
+            </div>
+          )}
 
-              {!loading && rows.map((row) => {
-                const totalEvidence = Number(row.totalPosts || 0) + Number(row.totalComments || 0);
-                const isOpening = openingId === row.id;
-                return (
-                  <tr key={row.id}>
-                    <td data-label="Run">
-                      <div className="admin-cr-run-cell">
-                        <span className={`admin-cr-run-mark ${statusInfo(row.status).className}`} aria-label={`${statusInfo(row.status).label} collection run`}><Database size={16} /></span>
-                        <div>
-                          <strong>Run {row.id || '—'}</strong>
-                          <small>{row.createdBy?.fullName || row.createdBy?.email || (row.createdById ? `User ${shortId(row.createdById)}` : 'Internal / legacy')}</small>
-                          <span>{row.language || 'ANY'} · {formatDate(row.createdAt, true)}</span>
-                        </div>
+          {!loading && rows.map((row) => {
+            const totalEvidence = Number(row.totalPosts || 0) + Number(row.totalComments || 0);
+            const isOpening = openingId === row.id;
+            const currentStatus = statusInfo(row.status);
+
+            return (
+              <article key={row.id} className={`admin-cr-run-card ${currentStatus.className}`}>
+                <header className="admin-cr-run-card__head">
+                  <div className="admin-cr-run-cell">
+                    <span className={`admin-cr-run-mark ${currentStatus.className}`} aria-label={`${currentStatus.label} collection run`}>
+                      <Database size={16} />
+                    </span>
+                    <div>
+                      <strong>Run {row.id || '—'}</strong>
+                      <small>{row.createdBy?.fullName || row.createdBy?.email || (row.createdById ? `User ${shortId(row.createdById)}` : 'Internal / legacy')}</small>
+                      <span>{row.language || 'ANY'} · {formatDate(row.createdAt, true)}</span>
+                    </div>
+                  </div>
+                  <StatusBadge status={row.status} />
+                </header>
+
+                <div className="admin-cr-run-card__body">
+                  <div className="admin-cr-run-card__section admin-cr-run-card__section--domain">
+                    <span className="admin-cr-run-card__label"><Layers3 size={12} /> Domain & scope</span>
+                    <div className="admin-cr-domain-cell">
+                      <strong>{row.domain?.name || 'Unknown domain'}</strong>
+                      {(row.city || row.region || row.country) ? (
+                        <span><MapPin size={11} /> {[row.city, row.region, row.country].filter(Boolean).join(', ')}</span>
+                      ) : (
+                        <span><Layers3 size={11} /> Global scope</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="admin-cr-run-card__section admin-cr-run-card__section--pipeline">
+                    <span className="admin-cr-run-card__label"><Database size={12} /> Pipeline sources</span>
+                    <div className="admin-cr-pipeline-cell">
+                      <SourceChips sources={row.sources} />
+                    </div>
+                  </div>
+
+                  <div className="admin-cr-run-card__section admin-cr-run-card__section--evidence">
+                    <span className="admin-cr-run-card__label"><FileText size={12} /> Evidence</span>
+                    <div className="admin-cr-evidence-cell">
+                      <strong>{totalEvidence.toLocaleString()}</strong>
+                      <div>
+                        <span><FileText size={11} /> {Number(row.totalPosts || 0).toLocaleString()} posts</span>
+                        <span><MessageSquareText size={11} /> {Number(row.totalComments || 0).toLocaleString()} comments</span>
                       </div>
-                    </td>
+                    </div>
+                  </div>
 
-                    <td data-label="Domain">
-                      <div className="admin-cr-domain-cell">
-                        <strong>{row.domain?.name || 'Unknown domain'}</strong>
-                        {(row.city || row.region || row.country) ? (
-                          <span><MapPin size={11} /> {[row.city, row.region, row.country].filter(Boolean).join(', ')}</span>
-                        ) : (
-                          <span><Layers3 size={11} /> Global scope</span>
-                        )}
-                      </div>
-                    </td>
+                  <div className="admin-cr-run-card__section admin-cr-run-card__section--timing">
+                    <span className="admin-cr-run-card__label"><Clock3 size={12} /> Timing</span>
+                    <div className="admin-cr-time-cell">
+                      <strong>{formatDuration(row.startedAt, row.completedAt, row.status)}</strong>
+                      <span><Clock3 size={11} /> {row.completedAt ? `Ended ${formatDate(row.completedAt, true)}` : row.startedAt ? `Started ${formatDate(row.startedAt, true)}` : 'Waiting to start'}</span>
+                    </div>
+                  </div>
+                </div>
 
-                    <td data-label="Pipeline">
-                      <div className="admin-cr-pipeline-cell">
-                        <StatusBadge status={row.status} />
-                        <SourceChips sources={row.sources} />
-                      </div>
-                    </td>
-
-                    <td data-label="Evidence">
-                      <div className="admin-cr-evidence-cell">
-                        <strong>{totalEvidence.toLocaleString()}</strong>
-                        <div>
-                          <span><FileText size={11} /> {Number(row.totalPosts || 0).toLocaleString()} posts</span>
-                          <span><MessageSquareText size={11} /> {Number(row.totalComments || 0).toLocaleString()} comments</span>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td data-label="Timing">
-                      <div className="admin-cr-time-cell">
-                        <strong>{formatDuration(row.startedAt, row.completedAt, row.status)}</strong>
-                        <span><Clock3 size={11} /> {row.completedAt ? `Ended ${formatDate(row.completedAt, true)}` : row.startedAt ? `Started ${formatDate(row.startedAt, true)}` : 'Waiting to start'}</span>
-                      </div>
-                    </td>
-
-                    <td data-label="Actions" className="admin-cr-actions-cell">
-                      <button type="button" className="admin-cr-inspect" onClick={() => openDetails(row)} disabled={Boolean(openingId)}>
-                        {isOpening ? <LoaderCircle size={14} className="admin-spin" /> : <Search size={14} />}
-                        <span>Inspect</span>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                <footer className="admin-cr-run-card__footer">
+                  <div className="admin-cr-run-card__summary">
+                    <span className={`admin-cr-run-card__pulse ${currentStatus.className}`} />
+                    <span>{currentStatus.label}</span>
+                    <i />
+                    <span>{totalEvidence.toLocaleString()} evidence records</span>
+                  </div>
+                  <button type="button" className="admin-cr-inspect" onClick={() => openDetails(row)} disabled={Boolean(openingId)}>
+                    {isOpening ? <LoaderCircle size={14} className="admin-spin" /> : <Search size={14} />}
+                    <span>Inspect</span>
+                  </button>
+                </footer>
+              </article>
+            );
+          })}
         </div>
 
         <footer className="admin-cr-pagination">

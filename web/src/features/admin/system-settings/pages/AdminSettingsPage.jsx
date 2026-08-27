@@ -11,6 +11,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -206,6 +207,35 @@ const GROUPS = [
   },
 ];
 
+function SystemSettingsHeroVisual() {
+  return (
+    <div className="admin-settings-hero-visual" aria-hidden="true">
+      <span className="admin-settings-hero-visual__orbit is-one" />
+      <span className="admin-settings-hero-visual__orbit is-two" />
+      <span className="admin-settings-hero-visual__node is-one" />
+      <span className="admin-settings-hero-visual__node is-two" />
+      <span className="admin-settings-hero-visual__node is-three" />
+
+      <div className="admin-settings-hero-visual__platform">
+        <span className="admin-settings-hero-visual__platform-ring" />
+        <span className="admin-settings-hero-visual__gear">
+          <Settings size={62} strokeWidth={1.7} />
+        </span>
+      </div>
+
+      <span className="admin-settings-hero-visual__chip is-sliders">
+        <SlidersHorizontal size={23} />
+      </span>
+      <span className="admin-settings-hero-visual__chip is-money">
+        <BadgeDollarSign size={24} />
+      </span>
+      <span className="admin-settings-hero-visual__chip is-chart">
+        <CreditCard size={23} />
+      </span>
+    </div>
+  );
+}
+
 function normalizeSettings(payload) {
   if (!payload || typeof payload !== 'object') return {};
   return payload.settings && typeof payload.settings === 'object' ? payload.settings : payload;
@@ -371,15 +401,16 @@ function LockedSettingsPreview({
       onClickCapture={onLockedClick}
     >
       <section className="admin-settings-hero">
-        <div>
+        <div className="admin-settings-hero__copy">
           <span className="admin-settings-eyebrow"><SlidersHorizontal size={16} /> PLATFORM CONFIGURATION</span>
           <h1>System settings</h1>
           <p>Manage live pricing, Premium access, publication unlock costs and purchase bonuses from one governed workspace.</p>
+          <div className="admin-settings-hero__actions">
+            <button type="button" className="admin-settings-button is-quiet" disabled><RefreshCw size={16} /> Refresh</button>
+            <button type="button" className="admin-settings-button is-primary" disabled><Save size={16} /> Review & save</button>
+          </div>
         </div>
-        <div className="admin-settings-hero__actions">
-          <button type="button" className="admin-settings-button is-quiet" disabled><RefreshCw size={16} /> Refresh</button>
-          <button type="button" className="admin-settings-button is-primary" disabled><Save size={16} /> Review & save</button>
-        </div>
+        <SystemSettingsHeroVisual />
       </section>
 
       <section className="admin-settings-overview">
@@ -393,7 +424,7 @@ function LockedSettingsPreview({
         </header>
 
         <div className="admin-settings-metrics">
-          {[BadgeDollarSign, Sparkles, Crown, CreditCard].map((Icon, index) => (
+          {[BadgeDollarSign, Sparkles, Crown, CreditCard, ShieldCheck].map((Icon, index) => (
             <article key={index}>
               <span><Icon size={19} /></span>
               <div><small>Protected setting</small><strong>••••</strong><p>Verification required</p></div>
@@ -650,22 +681,23 @@ export default function AdminSettingsPage() {
   return (
     <div className="admin-settings-page">
       <section className="admin-settings-hero">
-        <div>
+        <div className="admin-settings-hero__copy">
           <span className="admin-settings-eyebrow"><SlidersHorizontal size={16} /> PLATFORM CONFIGURATION</span>
           <h1>System settings</h1>
           <p>Manage live pricing, Premium access, publication unlock costs and purchase bonuses from one governed workspace.</p>
-        </div>
 
-        <div className="admin-settings-hero__actions">
-          <button type="button" className="admin-settings-button is-quiet" onClick={refresh} disabled={refreshing || busy}>
-            <RefreshCw className={refreshing ? 'admin-settings-spin' : ''} size={16} />
-            Refresh
-          </button>
-          <button type="button" className="admin-settings-button is-primary" onClick={review} disabled={!dirty || busy}>
-            <Save size={16} />
-            Review & save
-          </button>
+          <div className="admin-settings-hero__actions">
+            <button type="button" className="admin-settings-button is-quiet" onClick={refresh} disabled={refreshing || busy}>
+              <RefreshCw className={refreshing ? 'admin-settings-spin' : ''} size={16} />
+              Refresh
+            </button>
+            <button type="button" className="admin-settings-button is-primary" onClick={review} disabled={!dirty || busy}>
+              <Save size={16} />
+              Review & save
+            </button>
+          </div>
         </div>
+        <SystemSettingsHeroVisual />
       </section>
 
       {error && (
@@ -733,7 +765,11 @@ export default function AdminSettingsPage() {
           </article>
           <article>
             <span><CreditCard size={19} /></span>
-            <div><small>Direct unlock</small><strong>{Number(form.directUnlockPrice || 0).toFixed(2)} {form.pricingCurrency}</strong><p>Owned free idea</p></div>
+            <div><small>Direct unlock</small><strong>{Number(form.directUnlockPrice || 0).toFixed(2)} {form.pricingCurrency}</strong><p>Unlock fee</p></div>
+          </article>
+          <article>
+            <span><ShieldCheck size={19} /></span>
+            <div><small>Publication unlock</small><strong>{Number(form.normalPublicationAdvancedPrice || 0).toFixed(2)} {form.pricingCurrency}</strong><p>Advanced publication</p></div>
           </article>
         </div>
       </section>

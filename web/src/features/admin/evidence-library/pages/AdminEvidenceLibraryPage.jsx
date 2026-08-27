@@ -242,11 +242,15 @@ function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
     <article className={`admin-evidence-metric ${tone}`}>
       <i aria-hidden="true" />
       <span className="admin-evidence-metric__icon"><Icon size={20} /></span>
-      <div>
+      <div className="admin-evidence-metric__copy">
         <small>{label}</small>
         <strong>{value}</strong>
         <span>{hint}</span>
       </div>
+      <svg className="admin-evidence-metric__sparkline" viewBox="0 0 86 36" aria-hidden="true">
+        <polyline points="2,27 14,24 24,28 35,17 46,23 58,12 70,19 84,10" />
+        <circle cx="84" cy="10" r="2.7" />
+      </svg>
     </article>
   );
 }
@@ -639,11 +643,61 @@ export default function AdminEvidenceLibraryPage() {
   return (
     <div className="admin-page admin-evidence-page">
       <section className="admin-hero admin-evidence-hero">
-        <div className="admin-hero__eyebrow"><BookOpenCheck size={14} /> Data & evidence</div>
-        <h2>Evidence Library</h2>
-        <p>
-          Inspect external text collected for discovery, NLP analysis and evidence-backed idea generation. These records are read-only evidence from external sources, not comments written inside Voxidence.
-        </p>
+        <div className="admin-evidence-hero__content">
+          <div className="admin-hero__eyebrow"><BookOpenCheck size={14} /> Data & evidence</div>
+          <h2>Evidence Library</h2>
+          <p>
+            Inspect external text collected for discovery, NLP analysis and evidence-backed idea generation. These records are read-only evidence from external sources, not comments written inside Voxidence.
+          </p>
+        </div>
+
+        <div className="admin-evidence-hero__visual" aria-hidden="true">
+          <span className="admin-evidence-hero__wave admin-evidence-hero__wave--one" />
+          <span className="admin-evidence-hero__wave admin-evidence-hero__wave--two" />
+          <span className="admin-evidence-hero__orbit admin-evidence-hero__orbit--one" />
+          <span className="admin-evidence-hero__orbit admin-evidence-hero__orbit--two" />
+
+          <span className="admin-evidence-hero__particle admin-evidence-hero__particle--one" />
+          <span className="admin-evidence-hero__particle admin-evidence-hero__particle--two" />
+          <span className="admin-evidence-hero__particle admin-evidence-hero__particle--three" />
+          <span className="admin-evidence-hero__particle admin-evidence-hero__particle--four" />
+          <span className="admin-evidence-hero__particle admin-evidence-hero__particle--five" />
+
+          <div className="admin-evidence-visual-card admin-evidence-visual-card--chart">
+            <span className="admin-evidence-visual-card__bar" />
+            <svg viewBox="0 0 92 38">
+              <polyline points="3,29 15,24 27,27 39,15 51,22 63,10 76,19 89,9" />
+            </svg>
+          </div>
+
+          <div className="admin-evidence-visual-card admin-evidence-visual-card--donut">
+            <span />
+          </div>
+
+          <div className="admin-evidence-visual-card admin-evidence-visual-card--record">
+            <i />
+            <i />
+            <i />
+          </div>
+
+          <div className="admin-evidence-visual-folder">
+            <span className="admin-evidence-visual-folder__tab" />
+            <span className="admin-evidence-visual-folder__paper"><FileText size={25} /></span>
+            <span className="admin-evidence-visual-folder__lens"><Search size={27} /></span>
+          </div>
+
+          <div className="admin-evidence-visual-database">
+            <span className="admin-evidence-visual-database__glow" />
+            <span className="admin-evidence-visual-database__top" />
+            <span className="admin-evidence-visual-database__layer admin-evidence-visual-database__layer--one" />
+            <span className="admin-evidence-visual-database__layer admin-evidence-visual-database__layer--two" />
+            <span className="admin-evidence-visual-database__layer admin-evidence-visual-database__layer--three" />
+            <Database size={48} />
+          </div>
+
+          <span className="admin-evidence-visual-base admin-evidence-visual-base--back" />
+          <span className="admin-evidence-visual-base admin-evidence-visual-base--front" />
+        </div>
       </section>
 
       <section className="admin-evidence-panel">

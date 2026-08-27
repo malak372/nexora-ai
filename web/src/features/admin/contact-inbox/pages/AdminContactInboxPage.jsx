@@ -398,15 +398,46 @@ export default function AdminContactInboxPage() {
   return (
     <div className="admin-page admin-support-page admin-support-page--contact">
       <section className="admin-support-hero admin-support-hero--contact">
-        <div>
+        <div className="admin-contact-hero__content">
           <span><Mail size={16} /> Support operations</span>
           <h2>Contact inbox</h2>
           <p>Handle guest and registered-user messages from one support queue, reply by email and keep each conversation state organized.</p>
+          <div className="admin-contact-hero__chips" aria-hidden="true">
+            <span><i /> Live support queue</span>
+            <span><MailCheck size={13} /> Email replies</span>
+          </div>
         </div>
-        <div className="admin-support-hero__pulse">
-          <Mail size={24} />
-          <strong>{Number(summary.newMessages || 0).toLocaleString()}</strong>
-          <span>new messages</span>
+
+        <div className="admin-contact-hero__visual" aria-hidden="true">
+          <span className="admin-contact-hero__orbit admin-contact-hero__orbit--one" />
+          <span className="admin-contact-hero__orbit admin-contact-hero__orbit--two" />
+          <span className="admin-contact-hero__particle admin-contact-hero__particle--one" />
+          <span className="admin-contact-hero__particle admin-contact-hero__particle--two" />
+          <span className="admin-contact-hero__particle admin-contact-hero__particle--three" />
+          <span className="admin-contact-hero__particle admin-contact-hero__particle--four" />
+
+          <div className="admin-contact-hero__mailbox">
+            <span className="admin-contact-hero__mailbox-shadow" />
+            <span className="admin-contact-hero__mailbox-back" />
+            <span className="admin-contact-hero__mailbox-paper admin-contact-hero__mailbox-paper--one" />
+            <span className="admin-contact-hero__mailbox-paper admin-contact-hero__mailbox-paper--two" />
+            <span className="admin-contact-hero__mailbox-front"><Mail size={48} /></span>
+          </div>
+
+          <div className="admin-contact-hero__stat admin-contact-hero__stat--new">
+            <span><Mail size={15} /></span>
+            <div><small>New messages</small><strong>{Number(summary.newMessages || 0).toLocaleString()}</strong></div>
+          </div>
+
+          <div className="admin-contact-hero__stat admin-contact-hero__stat--replied">
+            <span><MailCheck size={15} /></span>
+            <div><small>Replied</small><strong>{Number(summary.repliedMessages || 0).toLocaleString()}</strong></div>
+          </div>
+
+          <div className="admin-contact-hero__queue">
+            <Inbox size={18} />
+            <div><small>Inbox total</small><strong>{Number(summary.totalMessages || 0).toLocaleString()}</strong></div>
+          </div>
         </div>
       </section>
 

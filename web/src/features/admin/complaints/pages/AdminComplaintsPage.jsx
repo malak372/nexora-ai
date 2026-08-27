@@ -1,11 +1,7 @@
-/**
- * Administrator complaint-management workspace.
- *
- * @author  Malak
- */
 import {
   AlertCircle,
   CheckCircle2,
+  ClipboardCheck,
   ChevronLeft,
   ChevronRight,
   CircleDot,
@@ -15,10 +11,12 @@ import {
   Flag,
   Inbox,
   LoaderCircle,
+  MessageCircleMore,
   MessageSquareReply,
   RefreshCw,
   Search,
   ShieldCheck,
+  UserCheck,
   UserRound,
   X,
   XCircle,
@@ -139,6 +137,12 @@ function Metric({ icon: Icon, label, value, hint, tone = '' }) {
         <strong>{Number(value || 0).toLocaleString()}</strong>
         <span>{hint}</span>
       </div>
+      <span className="admin-complaint-metric__signal" aria-hidden="true">
+        <b />
+        <b />
+        <b />
+      </span>
+      <span className="admin-complaint-metric__dot" aria-hidden="true" />
     </article>
   );
 }
@@ -414,11 +418,22 @@ export default function AdminComplaintsPage() {
   return (
     <div className="admin-page admin-support-page admin-support-page--complaints">
       <section className="admin-support-hero">
-        <div>
+        <div className="admin-complaint-hero__copy">
           <span><ShieldCheck size={16} /> Trust & safety</span>
           <h2>Complaints center</h2>
           <p>Review user complaints, prioritize cases, reply directly and keep every resolution state clear.</p>
         </div>
+
+        <div className="admin-complaint-hero__visual" aria-hidden="true">
+          <span className="admin-complaint-hero__orbit admin-complaint-hero__orbit--one" />
+          <span className="admin-complaint-hero__orbit admin-complaint-hero__orbit--two" />
+          <span className="admin-complaint-hero__float admin-complaint-hero__float--one" />
+          <span className="admin-complaint-hero__float admin-complaint-hero__float--two" />
+          <div className="admin-complaint-hero__tile admin-complaint-hero__tile--clipboard"><ClipboardCheck size={42} strokeWidth={1.65} /></div>
+          <div className="admin-complaint-hero__tile admin-complaint-hero__tile--message"><MessageCircleMore size={31} strokeWidth={1.7} /></div>
+          <div className="admin-complaint-hero__tile admin-complaint-hero__tile--user"><UserCheck size={34} strokeWidth={1.65} /></div>
+        </div>
+
         <div className="admin-support-hero__pulse">
           <AlertCircle size={24} />
           <strong>{Number(summary.openComplaints || 0).toLocaleString()}</strong>

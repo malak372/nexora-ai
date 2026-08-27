@@ -811,9 +811,39 @@ export default function AdminCreditsPage() {
   return (
     <div className="admin-page admin-credit-page">
       <section className="admin-hero admin-credit-hero">
-        <div className="admin-hero__eyebrow"><Coins size={15} /> CREDIT OPERATIONS</div>
-        <h2>Credit ledger</h2>
-        <p>Review every credit movement, inspect its source, filter the ledger and apply audited administrative balance adjustments.</p>
+        <div className="admin-credit-hero__content">
+          <div className="admin-hero__eyebrow"><Coins size={15} /> CREDIT OPERATIONS</div>
+          <h2>Credit <span>ledger</span></h2>
+          <p>Review every credit movement, inspect its source, filter the ledger and apply audited administrative balance adjustments.</p>
+          <div className="admin-credit-hero__signals" aria-label="Credit ledger capabilities">
+            <span><History size={13} /> Traceable movements</span>
+            <span><ShieldCheck size={13} /> Audited adjustments</span>
+          </div>
+        </div>
+
+        <div className="admin-credit-hero__scene" aria-hidden="true">
+          <div className="admin-credit-scene__orbit admin-credit-scene__orbit--outer" />
+          <div className="admin-credit-scene__orbit admin-credit-scene__orbit--inner" />
+          <span className="admin-credit-scene__node admin-credit-scene__node--one" />
+          <span className="admin-credit-scene__node admin-credit-scene__node--two" />
+          <span className="admin-credit-scene__node admin-credit-scene__node--three" />
+
+          <div className="admin-credit-scene__token-stack">
+            <span className="admin-credit-scene__coin admin-credit-scene__coin--back" />
+            <span className="admin-credit-scene__coin admin-credit-scene__coin--middle" />
+            <span className="admin-credit-scene__coin admin-credit-scene__coin--front"><Coins size={35} /></span>
+          </div>
+
+          <div className="admin-credit-scene__movement admin-credit-scene__movement--plus">
+            <PlusCircle size={16} />
+            <span><small>CREDIT IN</small><strong>Purchased</strong></span>
+          </div>
+          <div className="admin-credit-scene__movement admin-credit-scene__movement--minus">
+            <MinusCircle size={16} />
+            <span><small>CREDIT OUT</small><strong>Usage</strong></span>
+          </div>
+          <div className="admin-credit-scene__seal"><ShieldCheck size={16} /> AUDITED</div>
+        </div>
       </section>
 
       <section className="admin-credit-panel">

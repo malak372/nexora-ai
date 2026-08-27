@@ -183,6 +183,51 @@ function ReliabilityBadge({ successRate }) {
   );
 }
 
+function AiAnalyticsHeroVisual({ totalRequests, successRate, modelCount, averageLatency, totalCost }) {
+  return (
+    <div className="admin-ai-analytics-hero-visual" aria-hidden="true">
+      <div className="admin-ai-analytics-hero-visual__grid" />
+      <div className="admin-ai-analytics-hero-visual__path is-one" />
+      <div className="admin-ai-analytics-hero-visual__path is-two" />
+
+      <span className="admin-ai-analytics-orbit is-provider"><ServerCog size={18} /></span>
+      <span className="admin-ai-analytics-orbit is-speed"><Timer size={18} /></span>
+      <span className="admin-ai-analytics-orbit is-token"><Coins size={18} /></span>
+
+      <div className="admin-ai-analytics-core">
+        <span className="admin-ai-analytics-core__ring is-outer" />
+        <span className="admin-ai-analytics-core__ring is-middle" />
+        <span className="admin-ai-analytics-core__ring is-inner" />
+        <div className="admin-ai-analytics-core__chip">
+          <BrainCircuit size={58} strokeWidth={1.55} />
+          <span>AI</span>
+        </div>
+        <i className="admin-ai-analytics-core__node is-a" />
+        <i className="admin-ai-analytics-core__node is-b" />
+        <i className="admin-ai-analytics-core__node is-c" />
+      </div>
+
+      <article className="admin-ai-analytics-float-card is-requests">
+        <span>Provider attempts</span>
+        <strong>{number(totalRequests)}</strong>
+        <small><Activity size={12} /> Aggregated AI traffic</small>
+      </article>
+
+      <article className="admin-ai-analytics-float-card is-health">
+        <span>Model reliability</span>
+        <strong>{Number(successRate || 0).toFixed(1)}%</strong>
+        <small><Gauge size={12} /> Success across attempts</small>
+      </article>
+
+      <div className="admin-ai-analytics-hero-visual__stats">
+        <span><Cpu size={13} /> {number(modelCount)} models</span>
+        <span><Timer size={13} /> {latency(averageLatency)}</span>
+        <span><CircleDollarSign size={13} /> {money(totalCost)}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminAiAnalyticsPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -287,10 +332,32 @@ export default function AdminAiAnalyticsPage() {
 
   return (
     <div className="admin-page admin-ai-analytics-page">
-      <section className="admin-hero admin-ai-analytics-hero">
-        <div className="admin-hero__eyebrow"><Sparkles size={14} /> AI intelligence</div>
-        <h2>AI analytics</h2>
-        <p>Understand model reliability, provider traffic, latency, token consumption and estimated AI spend from one operational view.</p>
+      <section className="admin-ai-analytics-hero">
+        <div className="admin-ai-analytics-hero__content">
+          <div className="admin-ai-analytics-eyebrow"><Sparkles size={16} /> AI intelligence</div>
+          <h1>AI analytics</h1>
+          <p>Understand model reliability, provider traffic, latency, token consumption and estimated AI spend from one operational view.</p>
+
+          <div className="admin-ai-analytics-hero__actions">
+            <button type="button" className="admin-ai-analytics-hero-button" onClick={() => load(appliedFilters, true)} disabled={refreshing || loading}>
+              <RefreshCw size={16} className={refreshing ? 'is-spinning' : ''} /> Refresh analytics
+            </button>
+          </div>
+
+          <div className="admin-ai-analytics-hero__status">
+            <span><BrainCircuit size={14} /> Provider telemetry aggregated</span>
+            <i />
+            <span><Coins size={14} /> Usage, latency & cost in one view</span>
+          </div>
+        </div>
+
+        <AiAnalyticsHeroVisual
+          totalRequests={totalRequests}
+          successRate={data?.successRate}
+          modelCount={rawModels.length}
+          averageLatency={data?.averageResponseTimeMs}
+          totalCost={data?.totalCost}
+        />
       </section>
 
       {error && <div className="admin-error">{error}</div>}
@@ -388,60 +455,61 @@ export default function AdminAiAnalyticsPage() {
           </div>
 
           {models.length ? (
-            <div className="admin-ai-analytics-table-wrap">
-              <table className="admin-ai-analytics-table">
-                <thead>
-                  <tr>
-                    <th>Model</th>
-                    <th>Requests</th>
-                    <th>Reliability</th>
-                    <th>Latency</th>
-                    <th>Tokens</th>
-                    <th>Cost</th>
-                    <th>Traffic share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {models.map((item, index) => {
-                    const requests = Number(item.requests || 0);
-                    const traffic = percent(requests, totalRequests);
-                    return (
-                      <tr key={item.aiModelId || `${modelName(item)}-${index}`}>
-                        <td>
-                          <div className="admin-ai-analytics-model-cell">
-                            <span className="admin-ai-analytics-model-icon"><BrainCircuit size={17} /></span>
-                            <div>
-                              <strong>{modelName(item)}</strong>
-                              <span>{providerName(item?.model?.providerKey)} · {item?.model?.apiModelId || 'Legacy / unmapped'}</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="admin-ai-analytics-number-cell">
-                            <strong>{number(requests)}</strong>
-                            <span>{number(item.successfulRequests)} success · {number(item.failedRequests)} failed</span>
-                          </div>
-                        </td>
-                        <td><ReliabilityBadge successRate={item.calculatedSuccessRate} /></td>
-                        <td><span className="admin-ai-analytics-latency"><Timer size={13} /> {latency(item.averageResponseTimeMs)}</span></td>
-                        <td>
-                          <div className="admin-ai-analytics-number-cell">
-                            <strong>{compactNumber(item.calculatedTokens)}</strong>
-                            <span>{compactNumber(item.inputTokens)} in · {compactNumber(item.outputTokens)} out</span>
-                          </div>
-                        </td>
-                        <td><span className="admin-ai-analytics-cost">{money(item.cost)}</span></td>
-                        <td>
-                          <div className="admin-ai-analytics-share">
-                            <div><i style={{ width: `${traffic}%` }} /></div>
-                            <span>{traffic.toFixed(1)}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="admin-ai-analytics-model-grid">
+              {models.map((item, index) => {
+                const requests = Number(item.requests || 0);
+                const traffic = percent(requests, totalRequests);
+                return (
+                  <article className="admin-ai-analytics-model-card" key={item.aiModelId || `${modelName(item)}-${index}`}>
+                    <div className="admin-ai-analytics-model-card__head">
+                      <div className="admin-ai-analytics-model-cell">
+                        <span className="admin-ai-analytics-model-icon"><BrainCircuit size={18} /></span>
+                        <div>
+                          <strong>{modelName(item)}</strong>
+                          <span>{providerName(item?.model?.providerKey)} · {item?.model?.apiModelId || 'Legacy / unmapped'}</span>
+                        </div>
+                      </div>
+                      <ReliabilityBadge successRate={item.calculatedSuccessRate} />
+                    </div>
+
+                    <div className="admin-ai-analytics-model-card__stats">
+                      <div className="admin-ai-analytics-model-stat is-requests">
+                        <span>Requests</span>
+                        <strong>{number(requests)}</strong>
+                        <small>{number(item.successfulRequests)} success · {number(item.failedRequests)} failed</small>
+                      </div>
+
+                      <div className="admin-ai-analytics-model-stat is-latency">
+                        <span>Latency</span>
+                        <strong><Timer size={14} /> {latency(item.averageResponseTimeMs)}</strong>
+                        <small>Average response time</small>
+                      </div>
+
+                      <div className="admin-ai-analytics-model-stat is-tokens">
+                        <span>Tokens</span>
+                        <strong>{compactNumber(item.calculatedTokens)}</strong>
+                        <small>{compactNumber(item.inputTokens)} in · {compactNumber(item.outputTokens)} out</small>
+                      </div>
+
+                      <div className="admin-ai-analytics-model-stat is-cost">
+                        <span>Cost</span>
+                        <strong>{money(item.cost)}</strong>
+                        <small>Estimated usage cost</small>
+                      </div>
+                    </div>
+
+                    <div className="admin-ai-analytics-model-card__traffic">
+                      <div className="admin-ai-analytics-model-card__traffic-copy">
+                        <span>Traffic share</span>
+                        <strong>{traffic.toFixed(1)}%</strong>
+                      </div>
+                      <div className="admin-ai-analytics-share">
+                        <div><i style={{ width: `${traffic}%` }} /></div>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <div className="admin-ai-analytics-empty">

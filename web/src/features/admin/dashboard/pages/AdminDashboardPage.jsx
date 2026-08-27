@@ -319,9 +319,9 @@ export default function AdminDashboardPage() {
           <div className="admin-hero__eyebrow">
             <Sparkles size={14} /> System intelligence
           </div>
-          <h2>Command your platform with clarity.</h2>
+          <h2>Platform Overview</h2>
           <p>
-            A calmer operational view of people, ideas, revenue, AI health and community activity — without the spreadsheet feeling.
+            See the health of Voxidence at a glance — people, ideas, revenue, AI performance and live platform activity in one clear operational view.
           </p>
 
           <div className="admin-command-hero__chips">
@@ -332,22 +332,44 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="admin-command-hero__visual" aria-hidden={!hasData}>
-          <div className="admin-health-orbit">
-            <div className="admin-health-orbit__ring" />
-            <div className="admin-health-orbit__core">
-              <BrainCircuit size={24} />
-              <strong>{hasData ? `${aiSuccess.toFixed(1)}%` : '—'}</strong>
-              <small>AI success</small>
+          <div className="admin-overview-scene">
+            <div className="admin-overview-scene__halo admin-overview-scene__halo--one" />
+            <div className="admin-overview-scene__halo admin-overview-scene__halo--two" />
+
+            <div className="admin-health-orbit">
+              <div className="admin-health-orbit__ring" />
+              <div className="admin-health-orbit__core">
+                <span className="admin-health-orbit__icon"><BrainCircuit size={24} /></span>
+                <strong>{hasData ? `${aiSuccess.toFixed(1)}%` : '—'}</strong>
+                <small>AI success</small>
+              </div>
+              <span className="admin-orbit-node admin-orbit-node--one" />
+              <span className="admin-orbit-node admin-orbit-node--two" />
+              <span className="admin-orbit-node admin-orbit-node--three" />
             </div>
-            <span className="admin-orbit-node admin-orbit-node--one" />
-            <span className="admin-orbit-node admin-orbit-node--two" />
-            <span className="admin-orbit-node admin-orbit-node--three" />
-          </div>
-          <div className="admin-command-hero__mini">
-            <Gauge size={15} />
-            <div>
-              <span>Response</span>
-              <strong>{hasData ? `${Number(data.averageResponseTime || 0).toFixed(0)} ms` : '—'}</strong>
+
+            <div className="admin-command-hero__mini admin-command-hero__mini--response">
+              <Gauge size={16} />
+              <div>
+                <span>Response</span>
+                <strong>{hasData ? `${Number(data.averageResponseTime || 0).toFixed(0)} ms` : '—'}</strong>
+              </div>
+            </div>
+
+            <div className="admin-command-hero__mini admin-command-hero__mini--users">
+              <UsersRound size={16} />
+              <div>
+                <span>People</span>
+                <strong>{hasData ? fmt(data.users) : '—'}</strong>
+              </div>
+            </div>
+
+            <div className="admin-command-hero__mini admin-command-hero__mini--ideas">
+              <Lightbulb size={16} />
+              <div>
+                <span>Ideas</span>
+                <strong>{hasData ? fmt(data.ideas) : '—'}</strong>
+              </div>
             </div>
           </div>
         </div>
@@ -414,18 +436,26 @@ export default function AdminDashboardPage() {
                 <div className="admin-chart__guide admin-chart__guide--one" />
                 <div className="admin-chart__guide admin-chart__guide--two" />
                 <div className="admin-chart__bars">
-                  {chart.length ? chart.map((point) => (
-                    <div className="admin-chart__column" key={point.date}>
-                      <div
-                        className="admin-chart__bar"
-                        title={`${point.date}: ${point.count}`}
-                        style={{ height: `${Math.max(8, (Number(point.count || 0) / maxChart) * 100)}%` }}
-                      >
-                        <b>{fmt(point.count)}</b>
+                  {chart.length ? chart.map((point) => {
+                    const pointCount = Number(point.count || 0);
+                    const isZero = pointCount <= 0;
+                    const barHeight = isZero
+                      ? '4px'
+                      : `${Math.max(8, (pointCount / maxChart) * 100)}%`;
+
+                    return (
+                      <div className="admin-chart__column" key={point.date}>
+                        <div
+                          className={`admin-chart__bar ${isZero ? 'is-zero' : ''}`}
+                          title={`${point.date}: ${point.count}`}
+                          style={{ height: barHeight }}
+                        >
+                          <b>{fmt(point.count)}</b>
+                        </div>
+                        <span>{shortDate(point.date)}</span>
                       </div>
-                      <span>{shortDate(point.date)}</span>
-                    </div>
-                  )) : <div className="admin-empty"><p>No chart data yet.</p></div>}
+                    );
+                  }) : <div className="admin-empty"><p>No chart data yet.</p></div>}
                 </div>
               </div>
             </article>

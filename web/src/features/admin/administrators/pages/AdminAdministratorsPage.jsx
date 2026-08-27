@@ -780,21 +780,260 @@ export default function AdminAdministratorsPage() {
         aria-hidden={gateVisible ? 'true' : undefined}
         onClickCapture={handleLockedPageClick}
       >
-        <section className="admin-administrators-overview">
-          <div className="admin-hero admin-administrators-hero">
-            <div className="admin-administrators-hero__copy">
-              <span className="admin-hero__eyebrow">
-                <ShieldCheck size={15} /> Identity & access
+        <section className="admin-administrators-workspace">
+          <aside className="admin-administrators-sidebar">
+            <div className="admin-administrators-sidebar__top">
+              <span className="admin-administrators-sidebar__label">
+                Staff directory
               </span>
 
-              <h2>Administrators</h2>
+              <div
+                className="admin-administrators-tabs"
+                role="tablist"
+                aria-label="Administration directory sections"
+              >
+                <button
+                  type="button"
+                  className={
+                    activeTab === 'administrators'
+                      ? 'is-active'
+                      : ''
+                  }
+                  onClick={() =>
+                    setActiveTab('administrators')
+                  }
+                  role="tab"
+                  aria-selected={
+                    activeTab === 'administrators'
+                  }
+                >
+                  <span className="admin-administrators-tabs__icon">
+                    <UsersRound size={17} />
+                  </span>
 
-              <p>
-                Manage trusted staff identities and private administrator
-                invitations without mixing them with Normal or Premium users.
-              </p>
+                  <span className="admin-administrators-tabs__copy">
+                    <strong>Administrators</strong>
+                    <small>Trusted staff accounts</small>
+                  </span>
 
-              <div className="admin-administrators-hero__actions">
+                  <span className="admin-administrators-tabs__count">
+                    {data.administrators.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className={
+                    activeTab === 'invitations'
+                      ? 'is-active'
+                      : ''
+                  }
+                  onClick={() =>
+                    setActiveTab('invitations')
+                  }
+                  role="tab"
+                  aria-selected={
+                    activeTab === 'invitations'
+                  }
+                >
+                  <span className="admin-administrators-tabs__icon">
+                    <Mail size={17} />
+                  </span>
+
+                  <span className="admin-administrators-tabs__copy">
+                    <strong>Pending invitations</strong>
+                    <small>Outstanding staff access</small>
+                  </span>
+
+                  <span className="admin-administrators-tabs__count">
+                    {data.invitations.length}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-administrators-sidebar__security">
+              <span>
+                <ShieldCheck size={16} />
+              </span>
+
+              <div>
+                <strong>Protected workspace</strong>
+                <small>Password-confirmed staff access</small>
+              </div>
+            </div>
+
+            <div className="admin-administrators-sidebar__decoration" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </div>
+          </aside>
+
+          <div className="admin-administrators-content">
+            <section className="admin-administrators-hero">
+              <div className="admin-administrators-hero__copy">
+                <span className="admin-administrators-hero__eyebrow">
+                  <ShieldCheck size={15} /> Identity & access
+                </span>
+
+                <h2>Administrators</h2>
+
+                <p>
+                  Manage trusted staff identities and private administrator
+                  invitations without mixing them with Normal or Premium users.
+                </p>
+
+                <div className="admin-administrators-hero__highlights">
+                  <div>
+                    <span><ShieldCheck size={16} /></span>
+                    <p>
+                      <strong>Secure access</strong>
+                      <small>Role-based administrator access and verification</small>
+                    </p>
+                  </div>
+
+                  <div>
+                    <span><BadgeCheck size={16} /></span>
+                    <p>
+                      <strong>Private workspace</strong>
+                      <small>Protected environment for administration tasks</small>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="admin-administrators-hero__actions">
+                  <button
+                    type="button"
+                    className="admin-btn"
+                    onClick={() =>
+                      load({
+                        quiet: true,
+                      })
+                    }
+                    disabled={refreshing || locked}
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={refreshing ? 'admin-spin' : ''}
+                    />
+                    Refresh
+                  </button>
+
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary"
+                    onClick={openInvite}
+                    disabled={locked}
+                  >
+                    <Send size={15} />
+                    Invite administrator
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className="admin-administrators-hero__visual"
+                aria-hidden="true"
+              >
+                <span className="admin-administrators-scene__wash" />
+                <span className="admin-administrators-scene__grid" />
+                <span className="admin-administrators-scene__orbit admin-administrators-scene__orbit--one" />
+                <span className="admin-administrators-scene__orbit admin-administrators-scene__orbit--two" />
+                <span className="admin-administrators-scene__node admin-administrators-scene__node--one" />
+                <span className="admin-administrators-scene__node admin-administrators-scene__node--two" />
+                <span className="admin-administrators-scene__node admin-administrators-scene__node--three" />
+
+                <div className="admin-administrators-shield-model">
+                  <span className="admin-administrators-shield-model__shadow" />
+                  <span className="admin-administrators-shield-model__layer admin-administrators-shield-model__layer--back" />
+                  <span className="admin-administrators-shield-model__layer admin-administrators-shield-model__layer--middle" />
+
+                  <div className="admin-administrators-shield-model__face">
+                    <span className="admin-administrators-shield-model__inner">
+                      <UsersRound size={48} strokeWidth={1.75} />
+                    </span>
+                  </div>
+
+                  <span className="admin-administrators-shield-model__base admin-administrators-shield-model__base--one" />
+                  <span className="admin-administrators-shield-model__base admin-administrators-shield-model__base--two" />
+                  <span className="admin-administrators-shield-model__base admin-administrators-shield-model__base--three" />
+                </div>
+
+                <span className="admin-administrators-scene__chip admin-administrators-scene__chip--verified">
+                  <BadgeCheck size={13} /> Verified
+                </span>
+
+                <span className="admin-administrators-scene__chip admin-administrators-scene__chip--protected">
+                  <ShieldCheck size={13} /> Protected
+                </span>
+
+                <span className="admin-administrators-scene__chip admin-administrators-scene__chip--staff">
+                  <UsersRound size={13} /> Staff
+                </span>
+              </div>
+            </section>
+
+            {error ? (
+              <div className="admin-administrators-feedback is-error">
+                <XCircle size={15} />
+                <span>{error}</span>
+
+                <button
+                  type="button"
+                  onClick={() => setError('')}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : null}
+
+            {notice ? (
+              <div className="admin-administrators-feedback is-success">
+                <CheckCircle2 size={15} />
+                <span>{notice}</span>
+
+                <button
+                  type="button"
+                  onClick={() => setNotice('')}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : null}
+
+            <section className="admin-panel admin-panel--administrators">
+              <div className="admin-panel__head">
+                <div>
+                  <h3>Administration directory</h3>
+
+                  <p>
+                    Staff accounts and outstanding invitation activity.
+                  </p>
+                </div>
+
+                <span className="admin-administrators-live-chip">
+                  <i /> Password-protected workspace
+                </span>
+              </div>
+
+              <div className="admin-filterbar admin-administrators-filterbar">
+                <label className="admin-searchbox">
+                  <Search size={17} />
+
+                  <input
+                    value={search}
+                    onChange={(event) =>
+                      setSearch(event.target.value)
+                    }
+                    placeholder={
+                      activeTab === 'administrators'
+                        ? 'Search administrators…'
+                        : 'Search pending invitations…'
+                    }
+                  />
+                </label>
+
                 <button
                   type="button"
                   className="admin-btn"
@@ -806,512 +1045,370 @@ export default function AdminAdministratorsPage() {
                   disabled={refreshing || locked}
                 >
                   <RefreshCw
-                    size={15}
+                    size={14}
                     className={refreshing ? 'admin-spin' : ''}
                   />
                   Refresh
                 </button>
-
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--primary"
-                  onClick={openInvite}
-                  disabled={locked}
-                >
-                  <Send size={15} />
-                  Invite administrator
-                </button>
               </div>
-            </div>
 
-            <div
-              className="admin-administrators-hero__visual"
-              aria-hidden="true"
-            >
-              <span className="admin-administrators-hero__orb" />
-              <span className="admin-administrators-hero__dots" />
-              <span className="admin-administrators-hero__wave admin-administrators-hero__wave--one" />
-              <span className="admin-administrators-hero__wave admin-administrators-hero__wave--two" />
+              {loading ? (
+                <div className="admin-administrators-loading">
+                  <LoaderCircle
+                    className="admin-spin"
+                    size={22}
+                  />
 
-              <div className="admin-administrators-hero__shield">
-                <div className="admin-administrators-hero__shield-core">
-                  <UsersRound size={36} strokeWidth={1.65} />
+                  <strong>
+                    Loading administration directory…
+                  </strong>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <section className="admin-stat-grid admin-administrators-stats">
-            <article className="admin-stat">
-              <span className="admin-stat__icon">
-                <UsersRound size={20} />
-              </span>
-
-              <strong>
-                {data.summary.activeAdministrators ?? 0}
-              </strong>
-
-              <small>Active administrators</small>
-              <i>Staff</i>
-            </article>
-
-            <article className="admin-stat">
-              <span className="admin-stat__icon">
-                <Mail size={20} />
-              </span>
-
-              <strong>
-                {data.summary.pendingInvitations ?? 0}
-              </strong>
-
-              <small>Pending invitations</small>
-              <i>24h expiry</i>
-            </article>
-
-            <article className="admin-stat">
-              <span className="admin-stat__icon">
-                <BadgeCheck size={20} />
-              </span>
-
-              <strong>{verifiedCount}</strong>
-              <small>Verified staff identities</small>
-              <i>Protected</i>
-            </article>
-
-            <article className="admin-stat admin-administrator-current-stat">
-              <span className="admin-stat__avatar">
-                {currentAdminInitials || 'A'}
-              </span>
-
-              <strong
-                title={
-                  currentAdmin?.fullName || 'Administrator'
-                }
-              >
-                {currentAdmin?.fullName || 'Administrator'}
-              </strong>
-
-              <small>Your staff identity</small>
-              <i>Current</i>
-            </article>
-          </section>
-        </section>
-
-        {error ? (
-          <div className="admin-administrators-feedback is-error">
-            <XCircle size={15} />
-            <span>{error}</span>
-
-            <button
-              type="button"
-              onClick={() => setError('')}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ) : null}
-
-        {notice ? (
-          <div className="admin-administrators-feedback is-success">
-            <CheckCircle2 size={15} />
-            <span>{notice}</span>
-
-            <button
-              type="button"
-              onClick={() => setNotice('')}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ) : null}
-
-        <section className="admin-panel admin-panel--administrators">
-          <div className="admin-panel__head">
-            <div>
-              <h3>Administration directory</h3>
-
-              <p>
-                Staff accounts and outstanding invitation activity.
-              </p>
-            </div>
-
-            <span className="admin-administrators-live-chip">
-              <i /> Password-protected workspace
-            </span>
-          </div>
-
-          <div
-            className="admin-administrators-tabs"
-            role="tablist"
-            aria-label="Administration directory sections"
-          >
-            <button
-              type="button"
-              className={
-                activeTab === 'administrators'
-                  ? 'is-active'
-                  : ''
-              }
-              onClick={() =>
-                setActiveTab('administrators')
-              }
-              role="tab"
-              aria-selected={
-                activeTab === 'administrators'
-              }
-            >
-              <UsersRound size={14} />
-              Administrators
-              <span>{data.administrators.length}</span>
-            </button>
-
-            <button
-              type="button"
-              className={
-                activeTab === 'invitations'
-                  ? 'is-active'
-                  : ''
-              }
-              onClick={() =>
-                setActiveTab('invitations')
-              }
-              role="tab"
-              aria-selected={
-                activeTab === 'invitations'
-              }
-            >
-              <Mail size={14} />
-              Pending invitations
-              <span>{data.invitations.length}</span>
-            </button>
-          </div>
-
-          <div className="admin-filterbar admin-administrators-filterbar">
-            <label className="admin-searchbox">
-              <Search size={15} />
-
-              <input
-                value={search}
-                onChange={(event) =>
-                  setSearch(event.target.value)
-                }
-                placeholder={
-                  activeTab === 'administrators'
-                    ? 'Search administrators…'
-                    : 'Search pending invitations…'
-                }
-              />
-            </label>
-
-            <button
-              type="button"
-              className="admin-btn"
-              onClick={() =>
-                load({
-                  quiet: true,
-                })
-              }
-              disabled={refreshing || locked}
-            >
-              <RefreshCw
-                size={14}
-                className={refreshing ? 'admin-spin' : ''}
-              />
-              Refresh
-            </button>
-          </div>
-
-          {loading ? (
-            <div className="admin-administrators-loading">
-              <LoaderCircle
-                className="admin-spin"
-                size={22}
-              />
-
-              <strong>
-                Loading administration directory…
-              </strong>
-            </div>
-          ) : activeTab === 'administrators' ? (
-            <div className="admin-table-wrap admin-administrators-table-wrap">
-              <table className="admin-table admin-administrators-table">
-                <thead>
-                  <tr>
-                    <th>Administrator</th>
-                    <th>Access</th>
-                    <th>Verification</th>
-                    <th>Last login</th>
-                    <th>Joined</th>
-                    <th className="is-actions">Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredAdministrators.length ? (
-                    filteredAdministrators.map((admin) => (
-                      <tr key={admin.id}>
-                        <td>
-                          <div className="admin-staff-identity">
-                            <span>
-                              {String(
-                                admin.fullName || 'A',
-                              )
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
-
-                            <div>
-                              <strong>
-                                {admin.fullName ||
-                                  'Administrator'}
-
-                                {admin.isCurrent ? (
-                                  <i>You</i>
-                                ) : null}
-                              </strong>
-
-                              <small>{admin.email}</small>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td>
-                          <span className="admin-status">
-                            <ShieldCheck size={12} />
-                            ADMIN
-                          </span>
-                        </td>
-
-                        <td>
-                          <span
-                            className={`admin-status ${admin.isVerified
-                              ? ''
-                              : 'admin-status--neutral'
-                              }`}
-                          >
-                            {admin.isVerified ? (
-                              <BadgeCheck size={12} />
-                            ) : (
-                              <XCircle size={12} />
-                            )}
-
-                            {admin.isVerified
-                              ? 'Verified'
-                              : 'Unverified'}
-                          </span>
-                        </td>
-
-                        <td>
-                          <span className="admin-administrators-date">
-                            <Clock3 size={12} />
-                            {formatDate(admin.lastLoginAt)}
-                          </span>
-                        </td>
-
-                        <td>
-                          {formatDate(admin.createdAt)}
-                        </td>
-
-                        <td className="is-actions">
-                          {admin.isCurrent ? (
-                            <span className="admin-administrators-self-action">
-                              Current admin
-                            </span>
-                          ) : admin.isActive &&
-                            admin.isVerified ? (
-                            <button
-                              type="button"
-                              className="admin-administrators-message-btn"
-                              onClick={() =>
-                                navigate(
-                                  `/admin/team-chat?adminId=${admin.id}`,
-                                  {
-                                    state: {
-                                      fromAdministrators: true,
-                                    },
-                                  },
-                                )
-                              }
-                            >
-                              <MessageCircleMore size={14} />
-                              Message
-                            </button>
-                          ) : (
-                            <span className="admin-administrators-self-action">
-                              Unavailable
-                            </span>
-                          )}
-                        </td>
+              ) : activeTab === 'administrators' ? (
+                <div className="admin-table-wrap admin-administrators-table-wrap">
+                  <table className="admin-table admin-administrators-table is-administrators">
+                    <thead>
+                      <tr>
+                        <th>Administrator</th>
+                        <th>Access</th>
+                        <th>Verification</th>
+                        <th>Last login</th>
+                        <th>Joined</th>
+                        <th className="is-actions">Actions</th>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6">
-                        <div className="admin-administrators-empty">
-                          <UsersRound size={23} />
+                    </thead>
 
-                          <strong>
-                            No administrators match this search.
-                          </strong>
-
-                          <span>
-                            Try another name or email address.
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="admin-table-wrap admin-administrators-table-wrap">
-              <table className="admin-table admin-administrators-table">
-                <thead>
-                  <tr>
-                    <th>Invited administrator</th>
-                    <th>Invited by</th>
-                    <th>Sent</th>
-                    <th>Expires</th>
-                    <th className="is-actions">Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredInvitations.length ? (
-                    filteredInvitations.map(
-                      (invitation) => (
-                        <tr key={invitation.id}>
-                          <td>
-                            <div className="admin-staff-identity">
-                              <span>
-                                {String(
-                                  invitation.fullName ||
-                                  'A',
-                                )
-                                  .charAt(0)
-                                  .toUpperCase()}
-                              </span>
-
-                              <div>
-                                <strong>
-                                  {invitation.fullName}
-                                </strong>
-
-                                <small>
-                                  {invitation.email}
-                                </small>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td>
-                            <div className="admin-administrators-inviter">
-                              <strong>
-                                {invitation.invitedBy
-                                  ?.fullName ||
-                                  'Administrator'}
-                              </strong>
-
-                              <small>
-                                {invitation.invitedBy
-                                  ?.email || '—'}
-                              </small>
-                            </div>
-                          </td>
-
-                          <td>
-                            {formatDate(
-                              invitation.createdAt,
-                            )}
-                          </td>
-
-                          <td>
-                            <span className="admin-administrators-date">
-                              <CalendarClock size={12} />
-
-                              {formatDate(
-                                invitation.expiresAt,
-                              )}
-                            </span>
-                          </td>
-
-                          <td>
-                            <div className="admin-table__actions admin-invite-actions">
-                              <button
-                                type="button"
-                                className="admin-btn"
-                                disabled={
-                                  actionId ===
-                                  invitation.id
-                                }
-                                onClick={() =>
-                                  resend(
-                                    invitation.id,
+                    <tbody>
+                      {filteredAdministrators.length ? (
+                        filteredAdministrators.map((admin) => (
+                          <tr
+                            key={admin.id}
+                            className={admin.isCurrent ? 'is-current' : ''}
+                          >
+                            <td data-label="Administrator">
+                              <div className="admin-staff-identity">
+                                <span>
+                                  {String(
+                                    admin.fullName || 'A',
                                   )
-                                }
+                                    .charAt(0)
+                                    .toUpperCase()}
+                                </span>
+
+                                <div>
+                                  <strong>
+                                    {admin.fullName ||
+                                      'Administrator'}
+
+                                    {admin.isCurrent ? (
+                                      <i>You</i>
+                                    ) : null}
+                                  </strong>
+
+                                  <small>{admin.email}</small>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td data-label="Access">
+                              <span className="admin-status">
+                                <ShieldCheck size={13} />
+                                ADMIN
+                              </span>
+                            </td>
+
+                            <td data-label="Verification">
+                              <span
+                                className={`admin-status ${admin.isVerified
+                                  ? ''
+                                  : 'admin-status--neutral'
+                                  }`}
                               >
-                                {actionId ===
-                                  invitation.id ? (
-                                  <LoaderCircle
-                                    className="admin-spin"
-                                    size={13}
-                                  />
+                                {admin.isVerified ? (
+                                  <BadgeCheck size={13} />
                                 ) : (
-                                  <RefreshCw
-                                    size={13}
-                                  />
+                                  <XCircle size={13} />
                                 )}
 
-                                Resend
-                              </button>
+                                {admin.isVerified
+                                  ? 'Verified'
+                                  : 'Unverified'}
+                              </span>
+                            </td>
 
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn--danger"
-                                disabled={
-                                  actionId ===
-                                  invitation.id
-                                }
-                                onClick={() =>
-                                  cancel(
-                                    invitation.id,
-                                  )
-                                }
-                              >
-                                <XCircle size={13} />
-                                Cancel
-                              </button>
+                            <td data-label="Last login">
+                              <span className="admin-administrators-date">
+                                <Clock3 size={14} />
+                                {formatDate(admin.lastLoginAt)}
+                              </span>
+                            </td>
+
+                            <td data-label="Joined">
+                              <span className="admin-administrators-date">
+                                <CalendarClock size={14} />
+                                {formatDate(admin.createdAt)}
+                              </span>
+                            </td>
+
+                            <td className="is-actions" data-label="Actions">
+                              {admin.isCurrent ? (
+                                <span className="admin-administrators-self-action">
+                                  Current admin
+                                </span>
+                              ) : admin.isActive &&
+                                admin.isVerified ? (
+                                <button
+                                  type="button"
+                                  className="admin-administrators-message-btn"
+                                  onClick={() =>
+                                    navigate(
+                                      `/admin/team-chat?adminId=${admin.id}`,
+                                      {
+                                        state: {
+                                          fromAdministrators: true,
+                                        },
+                                      },
+                                    )
+                                  }
+                                >
+                                  <MessageCircleMore size={14} />
+                                  Message
+                                </button>
+                              ) : (
+                                <span className="admin-administrators-self-action">
+                                  Unavailable
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr className="is-empty-row">
+                          <td colSpan="6">
+                            <div className="admin-administrators-empty">
+                              <UsersRound size={23} />
+
+                              <strong>
+                                No administrators match this search.
+                              </strong>
+
+                              <span>
+                                Try another name or email address.
+                              </span>
                             </div>
                           </td>
                         </tr>
-                      ),
-                    )
-                  ) : (
-                    <tr>
-                      <td colSpan="5">
-                        <div className="admin-administrators-empty">
-                          <Sparkles size={23} />
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="admin-table-wrap admin-administrators-table-wrap">
+                  <table className="admin-table admin-administrators-table is-invitations">
+                    <thead>
+                      <tr>
+                        <th>Invited administrator</th>
+                        <th>Invited by</th>
+                        <th>Sent</th>
+                        <th>Expires</th>
+                        <th className="is-actions">Actions</th>
+                      </tr>
+                    </thead>
 
-                          <strong>
-                            {search
-                              ? 'No invitations match this search.'
-                              : 'No pending invitations.'}
-                          </strong>
+                    <tbody>
+                      {filteredInvitations.length ? (
+                        filteredInvitations.map(
+                          (invitation) => (
+                            <tr key={invitation.id}>
+                              <td data-label="Invited administrator">
+                                <div className="admin-staff-identity">
+                                  <span>
+                                    {String(
+                                      invitation.fullName ||
+                                      'A',
+                                    )
+                                      .charAt(0)
+                                      .toUpperCase()}
+                                  </span>
 
-                          <span>
-                            {search
-                              ? 'Try another name or email address.'
-                              : 'The invitation queue is clear.'}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+                                  <div>
+                                    <strong>
+                                      {invitation.fullName}
+                                    </strong>
+
+                                    <small>
+                                      {invitation.email}
+                                    </small>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td data-label="Invited by">
+                                <div className="admin-administrators-inviter">
+                                  <strong>
+                                    {invitation.invitedBy
+                                      ?.fullName ||
+                                      'Administrator'}
+                                  </strong>
+
+                                  <small>
+                                    {invitation.invitedBy
+                                      ?.email || '—'}
+                                  </small>
+                                </div>
+                              </td>
+
+                              <td data-label="Sent">
+                                <span className="admin-administrators-date">
+                                  <Clock3 size={14} />
+                                  {formatDate(
+                                    invitation.createdAt,
+                                  )}
+                                </span>
+                              </td>
+
+                              <td data-label="Expires">
+                                <span className="admin-administrators-date">
+                                  <CalendarClock size={14} />
+
+                                  {formatDate(
+                                    invitation.expiresAt,
+                                  )}
+                                </span>
+                              </td>
+
+                              <td className="is-actions" data-label="Actions">
+                                <div className="admin-table__actions admin-invite-actions">
+                                  <button
+                                    type="button"
+                                    className="admin-btn"
+                                    disabled={
+                                      actionId ===
+                                      invitation.id
+                                    }
+                                    onClick={() =>
+                                      resend(
+                                        invitation.id,
+                                      )
+                                    }
+                                  >
+                                    {actionId ===
+                                      invitation.id ? (
+                                      <LoaderCircle
+                                        className="admin-spin"
+                                        size={13}
+                                      />
+                                    ) : (
+                                      <RefreshCw
+                                        size={13}
+                                      />
+                                    )}
+
+                                    Resend
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="admin-btn admin-btn--danger"
+                                    disabled={
+                                      actionId ===
+                                      invitation.id
+                                    }
+                                    onClick={() =>
+                                      cancel(
+                                        invitation.id,
+                                      )
+                                    }
+                                  >
+                                    <XCircle size={13} />
+                                    Cancel
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ),
+                        )
+                      ) : (
+                        <tr className="is-empty-row">
+                          <td colSpan="5">
+                            <div className="admin-administrators-empty">
+                              <Sparkles size={23} />
+
+                              <strong>
+                                {search
+                                  ? 'No invitations match this search.'
+                                  : 'No pending invitations.'}
+                              </strong>
+
+                              <span>
+                                {search
+                                  ? 'Try another name or email address.'
+                                  : 'The invitation queue is clear.'}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section className="admin-stat-grid admin-administrators-stats">
+              <article className="admin-stat">
+                <span className="admin-stat__icon">
+                  <UsersRound size={20} />
+                </span>
+
+                <strong>
+                  {data.summary.activeAdministrators ?? 0}
+                </strong>
+
+                <small>Active administrators</small>
+                <i>Staff</i>
+              </article>
+
+              <article className="admin-stat">
+                <span className="admin-stat__icon">
+                  <BadgeCheck size={20} />
+                </span>
+
+                <strong>{verifiedCount}</strong>
+                <small>Verified staff identities</small>
+                <i>Protected</i>
+              </article>
+
+              <article className="admin-stat">
+                <span className="admin-stat__icon">
+                  <Mail size={20} />
+                </span>
+
+                <strong>
+                  {data.summary.pendingInvitations ?? 0}
+                </strong>
+
+                <small>Pending invitations</small>
+                <i>24h expiry</i>
+              </article>
+
+              <article className="admin-stat admin-administrator-current-stat">
+                <span className="admin-stat__avatar">
+                  {currentAdminInitials || 'A'}
+                </span>
+
+                <strong
+                  title={
+                    currentAdmin?.fullName || 'Administrator'
+                  }
+                >
+                  {currentAdmin?.fullName || 'Administrator'}
+                </strong>
+
+                <small>Your staff identity</small>
+                <i>Current</i>
+              </article>
+            </section>
+          </div>
         </section>
       </div>
 

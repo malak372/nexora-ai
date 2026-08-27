@@ -231,6 +231,13 @@ function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
         <strong>{value}</strong>
         <span>{hint}</span>
       </div>
+      <span className="admin-prompt-metric__sparkline" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
     </article>
   );
 }
@@ -624,11 +631,40 @@ export default function AdminPromptsPage() {
   return (
     <div className="admin-prompt-page">
       <section className="admin-prompt-hero">
-        <div>
+        <div className="admin-prompt-hero__copy">
           <span className="admin-prompt-eyebrow"><Sparkles size={16} /> GENERATION GOVERNANCE</span>
           <h1>Prompt control</h1>
           <p>Safely manage the production idea-generation template and inspect the rendered prompts sent through the AI pipeline.</p>
         </div>
+
+        <div className="admin-prompt-hero__visual" aria-hidden="true">
+          <span className="admin-prompt-orbit admin-prompt-orbit--one" />
+          <span className="admin-prompt-orbit admin-prompt-orbit--two" />
+          <span className="admin-prompt-orbit-dot admin-prompt-orbit-dot--one" />
+          <span className="admin-prompt-orbit-dot admin-prompt-orbit-dot--two" />
+          <span className="admin-prompt-orbit-dot admin-prompt-orbit-dot--three" />
+
+          <div className="admin-prompt-visual-card">
+            <span className="admin-prompt-visual-card__badge"><Braces size={25} /></span>
+            <div className="admin-prompt-visual-card__lines">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </div>
+            <span className="admin-prompt-visual-card__spark"><Sparkles size={17} /></span>
+          </div>
+
+          <div className="admin-prompt-visual-sliders">
+            <span><i /><b /></span>
+            <span><i /><b /></span>
+            <span><i /><b /></span>
+          </div>
+
+          <span className="admin-prompt-visual-shield"><ShieldCheck size={42} /></span>
+        </div>
+
         <div className="admin-prompt-hero__actions">
           <button type="button" className="admin-prompt-button is-quiet" onClick={refreshAll} disabled={refreshing}>
             <RefreshCw className={refreshing ? 'admin-prompt-spin' : ''} size={16} />
