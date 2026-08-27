@@ -121,6 +121,24 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
       ReturnType<IdeaPersistenceService['persistIdea']>
     > | null = null;
 
+    // Zero-evidence discovery titles are intentionally descriptive and may be
+    // repeated for the same domain set. Resolve an existing exact title before
+    // entering the serializable persistence transaction so the common case
+    // does not pay for a failed transaction plus a retry.
+    if (
+      context.evidenceState === 'ZERO_VALIDATED_EVIDENCE' &&
+      !(await this.isExactTitleAvailable(persistenceCoreIdea))
+    ) {
+      const raceSafe = await this.buildRaceSafeDistinctOutput(
+        context,
+        persistenceCoreIdea,
+        persistenceAdvancedOutputs,
+        1,
+      );
+      persistenceCoreIdea = raceSafe.coreIdea;
+      persistenceAdvancedOutputs = raceSafe.advancedOutputs;
+    }
+
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const parsedOutput: ParsedIdeaAiOutput = {
         coreIdea: persistenceCoreIdea,
@@ -128,6 +146,33 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
       };
 
       try {
+        const collectionAnchorDomainId =
+          collection.anchorDomainId ??
+          context.domainResolution?.selectedDomain.id ??
+          context.domainEvidence.find(
+            (entry) => entry.collectionJobId === collection.collectionJobId,
+          )?.domainId ??
+          context.domainId;
+        const allowedIdeaDomainIds = context.selectedDomains.map(
+          (domain) => domain.id,
+        );
+
+        if (
+          allowedIdeaDomainIds.length > 0 &&
+          (!allowedIdeaDomainIds.includes(context.domainId) ||
+            !allowedIdeaDomainIds.includes(collectionAnchorDomainId))
+        ) {
+          this.throwPersistenceError(
+            'The idea domain or collection anchor escaped the validated generation domain scope.',
+          );
+        }
+
+        if (collectionAnchorDomainId !== context.domainId) {
+          this.logger.debug(
+            `Persisting multi-domain run "${context.runId}" with semantic idea domain "${context.domainId}" and collection anchor domain "${collectionAnchorDomainId}".`,
+          );
+        }
+
         persistedIdea = await this.persistenceService.persistIdea({
           runId: context.runId,
           promptHistoryId: prompt.promptHistoryId,
@@ -140,6 +185,8 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
               ? context.owner.guestSessionId
               : undefined,
           domainId: context.domainId,
+          collectionDomainId: collectionAnchorDomainId,
+          allowedIdeaDomainIds,
           selectedRegion: this.resolveSelectedRegion(context),
           collectionJobId: collection.collectionJobId,
           generationType: context.generationType,

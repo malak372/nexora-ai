@@ -164,6 +164,21 @@ const REQUEST_DOMAIN_TOPIC_DEFINITIONS: readonly RequestDomainTopicDefinition[] 
     minimumScore: 7,
   },
   {
+    name: 'Violin Bow Restoration & Conservation History',
+    primaryPatterns: [
+      /\b(?:independent )?(?:violin bow restoration specialists?|violin bow restorers?|bow restoration specialists?|bow restorers?|bow conservators?|violin bow conservators?)\b/iu,
+      /\bviolin bows?\b[^.!?]{0,220}\b(?:restoration|conservation|condition documentation|condition assessment|restoration history|repair history|previous repairs?|treatment history|replacement materials?|damaged frogs?|warped sticks?|worn hair|loose fittings?)\b/iu,
+    ],
+    supportingPatterns: [
+      /\b(?:warped sticks?|worn hair|damaged frogs?|loose fittings?|previous repairs?|repair history|restoration history|condition records?|condition documentation|treatment records?|replacement parts?|replacement materials?|material choices?|customer playing preferences?|repeated adjustments?|inconsistent performance|delayed restoration work)\b/iu,
+    ],
+    negativePatterns: [
+      /\b(?:bow hunting|archery|crossbow|violin lesson|music streaming|concert ticket|orchestra schedule)\b/iu,
+      /\b(?:new commissions?|custom commissions?|approved specifications?|completion deadlines?)\b/iu,
+    ],
+    minimumScore: 7,
+  },
+  {
     name: 'Custom Violin Bow Commission & Specification Management',
     primaryPatterns: [
       /\b(?:independent )?(?:violin bow makers?|bow makers?|archetiers?)\b/iu,
@@ -174,7 +189,7 @@ const REQUEST_DOMAIN_TOPIC_DEFINITIONS: readonly RequestDomainTopicDefinition[] 
     ],
     negativePatterns: [
       /\b(?:bow hunting|archery|crossbow|violin lesson|music streaming|concert ticket)\b/iu,
-      /\b(?:repair history|service history|previous rehair|rehair dates?)\b/iu,
+      /\b(?:restoration|conservation|restorers?|restoration specialists?|warped sticks?|worn hair|damaged frogs?|loose fittings?|repair history|service history|previous repairs?|previous rehair|rehair dates?|condition assessment|condition documentation|restoration history|treatment history)\b/iu,
     ],
     minimumScore: 7,
   },

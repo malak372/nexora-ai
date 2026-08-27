@@ -2035,3 +2035,112 @@
 .nx-login .nx-field__hint {
     color: #60756f;
 }
+
+
+/* VOXIDENCE_LOGIN_DARK_RTL_FIX */
+html.vox-user-dark .nx-login {
+  color: #eef8f5 !important;
+  background: #0f1d18 !important;
+}
+
+html.vox-user-dark .nx-login .nx-login__story,
+html.vox-user-dark .nx-login .nx-auth-card {
+  color: #eef8f5 !important;
+  border-color: rgba(112, 205, 198, .19) !important;
+  background: linear-gradient(145deg, rgba(29, 49, 41, .97), rgba(20, 37, 31, .97)) !important;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .nx-login :is(
+  .nx-login__story h1,
+  .nx-story-item strong,
+  .nx-login__story-footer strong,
+  .nx-auth-card__heading h2,
+  .nx-field__label-row label,
+  .nx-auth-card strong,
+  .nx-auth-card label
+) {
+  color: #eef8f5 !important;
+}
+
+html.vox-user-dark .nx-login :is(
+  .nx-brand__copy small,
+  .nx-login__lead,
+  .nx-auth-card__heading p,
+  .nx-login__story-footer,
+  .nx-form__footer,
+  .nx-story-item small,
+  .nx-check,
+  .nx-field__helper,
+  .nx-field__hint
+) {
+  color: #abc0ba !important;
+}
+
+html.vox-user-dark .nx-login :is(.nx-story-item, .nx-kicker, .nx-auth-card__back-home, .nx-login__mini-orbit span) {
+  color: #cce3de !important;
+  border-color: rgba(112, 205, 198, .17) !important;
+  background: #263b33 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-login .nx-field__control,
+html.vox-user-dark .nx-login .nx-field__control:focus-within {
+  color: #95ddd6 !important;
+  border-color: rgba(112, 205, 198, .21) !important;
+  background: #14271f !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-login .nx-field__control:focus-within {
+  border-color: rgba(112, 205, 198, .52) !important;
+  box-shadow: 0 0 0 4px rgba(112, 205, 198, .08) !important;
+}
+
+html.vox-user-dark .nx-login .nx-field__control input {
+  color: #eef8f5 !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .nx-login .nx-field__control input::placeholder {
+  color: #81978f !important;
+}
+
+html.vox-user-dark .nx-login .nx-field__control input:-webkit-autofill,
+html.vox-user-dark .nx-login .nx-field__control input:-webkit-autofill:hover,
+html.vox-user-dark .nx-login .nx-field__control input:-webkit-autofill:focus,
+html.vox-user-dark .nx-login .nx-field__control input:-webkit-autofill:active {
+  -webkit-text-fill-color: #eef8f5 !important;
+  caret-color: #eef8f5 !important;
+  -webkit-box-shadow: 0 0 0 1000px #14271f inset !important;
+  box-shadow: 0 0 0 1000px #14271f inset !important;
+  background-color: #14271f !important;
+}
+
+html.vox-user-dark .nx-login .nx-field__control input:-moz-autofill {
+  color: #eef8f5 !important;
+  caret-color: #eef8f5 !important;
+  box-shadow: 0 0 0 1000px #14271f inset !important;
+}
+
+html.vox-user-dark .nx-login .nx-check__box {
+  border-color: rgba(112, 205, 198, .25) !important;
+  background: #1c3028 !important;
+}
+
+html.vox-user-rtl .nx-login__experience,
+html.vox-user-rtl .nx-login__story,
+html.vox-user-rtl .nx-login__auth,
+html.vox-user-rtl .nx-auth-card {
+  direction: rtl;
+}
+
+html.vox-user-rtl .nx-login .nx-field__control input[type='email'],
+html.vox-user-rtl .nx-login .nx-field__control input[type='password'] {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+html.vox-user-rtl .nx-login :is(.nx-auth-card__back-home svg, .nx-form__submit svg) {
+  transform: scaleX(-1);
+}

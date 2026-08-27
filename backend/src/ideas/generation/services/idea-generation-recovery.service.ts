@@ -14,6 +14,8 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
+import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
+import type { IdeaOwner } from '../../shared/types/idea-owner.type';
 import {
   GENERATION_HEARTBEAT_INTERVAL_MS,
   GENERATION_RUN_MAX_RECOVERY_ATTEMPTS,
@@ -24,6 +26,7 @@ import {
 } from '../constants/idea-generation-stages.constants';
 import { REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS } from '../constants/idea-output.constants';
 import { IdeaGenerationOrchestratorService } from './idea-generation-orchestrator.service';
+import { IdeaGenerationLockService } from './idea-generation-lock.service';
 import { IdeaGenerationRealtimeService } from './idea-generation-realtime.service';
 import { IdeaGenerationRunService } from './idea-generation-run.service';
 
@@ -68,9 +71,12 @@ export class IdeaGenerationRecoveryService
    * Three missed heartbeats are enough to call it orphaned while remaining safe
    * in multi-instance deployments.
    */
-  private readonly staleRunningMs = this.readPositiveInteger(
-    process.env.IDEA_GENERATION_STALE_RUNNING_MS,
-    Math.max(45_000, GENERATION_HEARTBEAT_INTERVAL_MS * 3),
+  private readonly staleRunningMs = Math.max(
+    3 * 60_000,
+    this.readPositiveInteger(
+      process.env.IDEA_GENERATION_STALE_RUNNING_MS,
+      Math.max(3 * 60_000, GENERATION_HEARTBEAT_INTERVAL_MS * 3),
+    ),
   );
 
   /** A queued run normally starts immediately; older queued rows are orphaned. */
@@ -118,6 +124,7 @@ export class IdeaGenerationRecoveryService
   constructor(
     private readonly runService: IdeaGenerationRunService,
     private readonly orchestrator: IdeaGenerationOrchestratorService,
+    private readonly lockService: IdeaGenerationLockService,
     private readonly realtime: IdeaGenerationRealtimeService,
     private readonly prisma: PrismaService,
   ) {}
@@ -303,6 +310,53 @@ export class IdeaGenerationRecoveryService
         const message =
           error instanceof Error ? error.message : 'Unknown recovery error.';
 
+        /*
+         * Re-read before logging this as a failure. A foreground/competing
+         * recovery execution may have legitimately transitioned the same run
+         * back to RUNNING after this worker claimed RETRYING but before
+         * resumeRunFromCheckpoint() loaded it. In that case the correct action
+         * is to yield, not to mark/reschedule the healthy RUNNING execution.
+         */
+        const latest = await this.runService
+          .findRunOrThrow(claimed.id)
+          .catch(() => null);
+
+        if (
+          latest?.status === IdeaGenerationRunStatus.RUNNING &&
+          latest.completedAt === null &&
+          latest.cancelRequestedAt === null
+        ) {
+          const owner = this.resolveRunOwner(latest);
+          const activeLockRunId = owner
+            ? await this.lockService.getActiveRunId(owner).catch(() => null)
+            : null;
+
+          if (activeLockRunId === claimed.id) {
+            this.logger.debug(
+              `Recovery worker yielded run "${claimed.id}" because another execution already restored it to RUNNING and still owns the generation lock.`,
+            );
+            return;
+          }
+
+          /*
+           * RUNNING without the owner lock has no executor. Requeue it now
+           * instead of waiting for the multi-minute stale-running scanner.
+           */
+          await this.runService
+            .markRetrying(
+              claimed.id,
+              `Recovery observed RUNNING without an execution lock after a resume race: ${message}`,
+              new Date(Date.now() + this.recoveryFailureDelayMs),
+              false,
+            )
+            .catch(() => undefined);
+
+          this.logger.warn(
+            `Recovery requeued run "${claimed.id}" because it was RUNNING without its owner execution lock.`,
+          );
+          return;
+        }
+
         this.logger.warn(
           `Recovery attempt failed for run "${claimed.id}": ${message}`,
         );
@@ -313,10 +367,6 @@ export class IdeaGenerationRecoveryService
          * RETRYING row needs to be scheduled again here (for example owner-lock
          * contention before startRun()).
          */
-        const latest = await this.runService
-          .findRunOrThrow(claimed.id)
-          .catch(() => null);
-
         if (
           latest?.status === IdeaGenerationRunStatus.RETRYING &&
           latest.completedAt === null &&
@@ -350,6 +400,25 @@ export class IdeaGenerationRecoveryService
     }
   }
 
+  /** Resolves the durable run owner used by the distributed generation lock. */
+  private resolveRunOwner(run: {
+    userId: string | null;
+    guestSessionId: string | null;
+  }): IdeaOwner | null {
+    if (run.userId) {
+      return { type: IDEA_OWNER_TYPES.USER, userId: run.userId };
+    }
+
+    if (run.guestSessionId) {
+      return {
+        type: IDEA_OWNER_TYPES.GUEST,
+        guestSessionId: run.guestSessionId,
+      };
+    }
+
+    return null;
+  }
+
   /**
    * Finalizes runs for which the atomic IdeaPersistence transaction had already
    * committed before the server stopped.
@@ -366,6 +435,10 @@ export class IdeaGenerationRecoveryService
     if (this.shuttingDown) {
       return;
     }
+
+    const locallyActiveRunIds = new Set(
+      this.orchestrator.getLocallyActiveRunIds(),
+    );
 
     const runs = await this.prisma.ideaGenerationRun.findMany({
       where: {
@@ -406,6 +479,17 @@ export class IdeaGenerationRecoveryService
     for (const run of runs) {
       if (this.shuttingDown) {
         return;
+      }
+
+      /*
+       * A healthy foreground run can legitimately have ideaId populated for a
+       * short window between the atomic persistence commit and finalization.
+       * Do not let the recovery scanner race that live run and mark it as an
+       * interrupted committed run. Restart recovery remains unchanged because
+       * process-local active ids are empty after a restart.
+       */
+      if (locallyActiveRunIds.has(run.id)) {
+        continue;
       }
 
       if (!run.ideaId || !run.idea) {

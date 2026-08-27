@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { downloadMyInvoice, getMyInvoice, getMyInvoices, prefetchMyInvoice } from '../api/invoicesApi';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../styles/billing-history.css';
 
 const PURPOSE_LABELS = {
@@ -32,6 +33,7 @@ function formatDate(value) {
 }
 
 export default function BillingHistoryPage() {
+  const { t } = useUserExperience();
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [page, setPage] = useState(1);
@@ -184,10 +186,10 @@ export default function BillingHistoryPage() {
                 <div><small>Purpose</small><strong>{PURPOSE_LABELS[selected.paymentPurpose] || selected.paymentPurpose}</strong></div>
                 <div><small>Reference</small><strong>{selected.transactionReference || selected.providerPaymentId || 'Verified transaction'}</strong></div>
               </section>
-              <section className="invoice-sheet__total"><span>Total paid</span><strong>{formatMoney(selected.amount, selected.currency)}</strong></section>
+              <section className="invoice-sheet__total"><span>{t('Total paid')}</span><strong>{formatMoney(selected.amount, selected.currency)}</strong></section>
               <footer>
                 <div><ShieldCheck size={17} /><span><strong>Verified provider confirmation</strong><small>Voxidence stores no card or wallet credentials.</small></span></div>
-                <button type="button" disabled={downloadLoading} onClick={handleDownload}>{downloadLoading ? <LoaderCircle size={17} className="billing-spin" /> : <Download size={17} />} {downloadLoading ? 'Preparing PDF...' : 'Download PDF'}</button>
+                <button type="button" disabled={downloadLoading} onClick={handleDownload}>{downloadLoading ? <LoaderCircle size={17} className="billing-spin" /> : <Download size={17} />} {t(downloadLoading ? 'Preparing PDF...' : 'Download PDF')}</button>
               </footer>
             </article>
           </div>,

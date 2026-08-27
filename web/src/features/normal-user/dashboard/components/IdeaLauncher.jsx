@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { ArrowUpRight, Mic, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useUserExperience } from '../../../../system/user-experience';
 
 const EXAMPLES = [
   "University scheduling problems",
@@ -16,6 +17,7 @@ const EXAMPLES = [
 
 export default function IdeaLauncher({ compact = false }) {
   const navigate = useNavigate();
+  const { t, isArabic } = useUserExperience();
   const [problem, setProblem] = useState("");
 
   const continueToGenerator = () => {
@@ -33,8 +35,8 @@ export default function IdeaLauncher({ compact = false }) {
         <textarea
           value={problem}
           onChange={(event) => setProblem(event.target.value.slice(0, 2000))}
-          placeholder="Describe the challenge in your own words..."
-          aria-label="Describe the problem you want to solve"
+          placeholder={t('Describe the challenge in your own words...')}
+          aria-label={t('Describe the problem you want to solve')}
         />
 
         <div className="normal-launcher__input-meta">
@@ -44,8 +46,8 @@ export default function IdeaLauncher({ compact = false }) {
             <button
               className="normal-icon-button"
               type="button"
-              aria-label="Use voice input"
-              title="Voice input will be connected in the generation wizard"
+              aria-label={t('Use voice input')}
+              title={t('Voice input will be connected in the generation wizard')}
             >
               <Mic size={18} />
             </button>
@@ -55,7 +57,7 @@ export default function IdeaLauncher({ compact = false }) {
               type="button"
               onClick={continueToGenerator}
             >
-              Start discovery
+              {t('Start discovery')}
               <ArrowUpRight size={18} />
             </button>
           </div>
@@ -65,12 +67,12 @@ export default function IdeaLauncher({ compact = false }) {
       <div className="normal-launcher__examples">
         <span>
           <Sparkles size={14} />
-          Try an example
+          {t('Try an example')}
         </span>
 
         {EXAMPLES.map((example) => (
-          <button key={example} type="button" onClick={() => setProblem(example)}>
-            {example}
+          <button key={example} type="button" onClick={() => setProblem(isArabic ? t(example) : example)}>
+            {t(example)}
           </button>
         ))}
       </div>

@@ -27,6 +27,7 @@ import {
 } from './idea-generation-stage.service';
 
 import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
+import { IdeaGenerationLockService } from '../services/idea-generation-lock.service';
 import { IdeaGenerationRealtimeService } from '../services/idea-generation-realtime.service';
 import { IdeaGenerationDatabaseRetryService } from '../services/idea-generation-database-retry.service';
 import {
@@ -132,7 +133,7 @@ type ResolvedPipelineStage = {
  * RETRYING/PAUSED state with FAILED; the recovery worker will resume from the
  * latest saved checkpoint.
  */
-class IdeaGenerationRunHandoffError extends Error {
+export class IdeaGenerationRunHandoffError extends Error {
   constructor(
     readonly runId: string,
     readonly stageKey: IdeaGenerationStageKey,
@@ -192,6 +193,7 @@ export class IdeaGenerationPipelineService {
     private readonly prisma: PrismaService,
     private readonly stageService: IdeaGenerationStageService,
     private readonly runService: IdeaGenerationRunService,
+    private readonly lockService: IdeaGenerationLockService,
     private readonly realtime: IdeaGenerationRealtimeService,
     private readonly databaseRetry: IdeaGenerationDatabaseRetryService,
   ) {}
@@ -987,46 +989,10 @@ export class IdeaGenerationPipelineService {
      * while removing repeated 1-3 second Supabase gaps between tiny stages.
      */
     if (this.requiresSynchronousStartGuard(definition.key)) {
-      const runUpdate = await this.databaseRetry.execute(
-        () =>
-          this.prisma.ideaGenerationRun.updateMany({
-            where: {
-              id: runId,
-              status: 'RUNNING',
-              cancelRequestedAt: null,
-            },
-            data: {
-              currentStageKey: definition.key,
-              progressPercent: definition.progressStart,
-              lastHeartbeatAt: new Date(),
-
-              /*
-               * CollectionJobResolutionStage has already validated and
-               * completed this exact job. Attach it to the run during the
-               * existing guarded persistence-stage update so
-               * IdeaPersistenceService does not need a second defensive
-               * CollectionJob lookup inside the serializable transaction.
-               *
-               * Direct/non-pipeline callers still keep the persistence
-               * service's fallback validation when run.collectionJobId is null.
-               */
-              ...(definition.key ===
-                IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE &&
-              context.collection?.collectionJobId
-                ? {
-                    collectionJobId: context.collection.collectionJobId,
-                  }
-                : {}),
-            },
-          }),
-        {
-          operationName: 'guard stage start and update run progress',
-          runId,
-        },
-      );
+      let runUpdate = await this.guardRunningStageStart(context, definition);
 
       if (runUpdate.count !== 1) {
-        const state = await this.databaseRetry.execute(
+        let state = await this.databaseRetry.execute(
           () => this.runService.getCancellationState(runId),
           {
             operationName: 'resolve generation run state after guarded stage-start miss',
@@ -1038,24 +1004,78 @@ export class IdeaGenerationPipelineService {
           throw new IdeaGenerationCancelledError(runId, definition.key);
         }
 
+        /*
+         * A recovery scanner from another process (or an older deployment) can
+         * occasionally flip a healthy foreground RUNNING row to RETRYING while
+         * this process still owns the live generation lock. Treat the owner
+         * lock as the execution lease: the foreground pipeline is allowed one
+         * guarded self-heal back to RUNNING before handing the run to recovery.
+         *
+         * This is deliberately narrow. We only reclaim RETRYING/PAUSED, never
+         * terminal states, and only when the cache lock still belongs to this
+         * exact run. Legitimate shutdown/recovery handoffs therefore remain
+         * recoverable once the execution lock has been released.
+         */
         if (
           state.status === IdeaGenerationRunStatus.RETRYING ||
-          state.status === IdeaGenerationRunStatus.PAUSED ||
-          state.status === IdeaGenerationRunStatus.QUEUED
+          state.status === IdeaGenerationRunStatus.PAUSED
         ) {
-          throw new IdeaGenerationRunHandoffError(
-            runId,
-            definition.key,
-            state.status,
-          );
+          const activeLockRunId = await this.lockService
+            .getActiveRunId(context.owner)
+            .catch(() => null);
+
+          if (activeLockRunId === runId) {
+            const reclaimed = await this.databaseRetry.execute(
+              () => this.runService.reclaimRecoverableRunForActiveExecution(runId),
+              {
+                operationName: 'reclaim recoverable generation run for active owner',
+                runId,
+              },
+            );
+
+            if (reclaimed) {
+              runUpdate = await this.guardRunningStageStart(context, definition);
+              if (runUpdate.count === 1) {
+                this.logger.warn(
+                  `Recovered foreground generation run "${runId}" from an unexpected ${state.status} transition before stage "${definition.key}" because this process still owns the live generation lock.`,
+                );
+              } else {
+                state = await this.databaseRetry.execute(
+                  () => this.runService.getCancellationState(runId),
+                  {
+                    operationName: 'recheck generation run state after foreground reclaim',
+                    runId,
+                  },
+                );
+              }
+            }
+          }
         }
 
-        throw new ConflictException({
-          code: 'IDEA_GENERATION_RUN_NOT_ACTIVE',
-          message: `Generation run "${runId}" cannot start stage "${definition.key}" from status ${state.status}.`,
-          status: state.status,
-          stageKey: definition.key,
-        });
+        if (runUpdate.count !== 1) {
+          if (state.isCancellationRequested) {
+            throw new IdeaGenerationCancelledError(runId, definition.key);
+          }
+
+          if (
+            state.status === IdeaGenerationRunStatus.RETRYING ||
+            state.status === IdeaGenerationRunStatus.PAUSED ||
+            state.status === IdeaGenerationRunStatus.QUEUED
+          ) {
+            throw new IdeaGenerationRunHandoffError(
+              runId,
+              definition.key,
+              state.status,
+            );
+          }
+
+          throw new ConflictException({
+            code: 'IDEA_GENERATION_RUN_NOT_ACTIVE',
+            message: `Generation run "${runId}" cannot start stage "${definition.key}" from status ${state.status}.`,
+            status: state.status,
+            stageKey: definition.key,
+          });
+        }
       }
     }
 
@@ -1671,6 +1691,42 @@ export class IdeaGenerationPipelineService {
     };
 
     return JSON.parse(JSON.stringify(compactContext)) as Prisma.InputJsonValue;
+  }
+
+
+  /**
+   * Performs the single guarded durable update used at synchronous stage
+   * boundaries. Keeping it in one helper lets an actively-owned foreground run
+   * retry the exact same CAS after a false RETRYING/PAUSED transition without
+   * duplicating stage-start semantics.
+   */
+  private guardRunningStageStart(
+    context: IdeaGenerationContext,
+    definition: IdeaGenerationStageDefinition,
+  ): Promise<{ count: number }> {
+    return this.databaseRetry.execute(
+      () =>
+        this.prisma.ideaGenerationRun.updateMany({
+          where: {
+            id: context.runId,
+            status: IdeaGenerationRunStatus.RUNNING,
+            cancelRequestedAt: null,
+          },
+          data: {
+            currentStageKey: definition.key,
+            progressPercent: definition.progressStart,
+            lastHeartbeatAt: new Date(),
+            ...(definition.key === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE &&
+            context.collection?.collectionJobId
+              ? { collectionJobId: context.collection.collectionJobId }
+              : {}),
+          },
+        }),
+      {
+        operationName: 'guard stage start and update run progress',
+        runId: context.runId,
+      },
+    );
   }
 
   private async saveContextCheckpoint(

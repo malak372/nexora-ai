@@ -94,18 +94,34 @@ export class CreditBalanceService {
        * the decrement condition is still enforced by the database.
        */
       if (input.amount < 0) {
-        const deductionResult = await tx.user.updateMany({
-          where: {
-            id: input.userId,
-            role: UserRole.USER,
-            creditBalance: { gte: absoluteAmount },
-          },
-          data: {
-            creditBalance: { decrement: absoluteAmount },
-          },
-        });
+        /*
+         * One guarded UPDATE ... RETURNING replaces the previous successful
+         * updateMany + findUnique pair. Remote PostgreSQL latency made that
+         * redundant post-decrement read visible in every Premium persistence
+         * transaction. The predicate remains atomic, role-restricted, and
+         * balance-safe; the detailed lookup is still performed only when the
+         * guarded mutation fails.
+         */
+        const deducted = await tx.$queryRaw<Array<{
+          id: string;
+          balanceAfter: number;
+          accountStatus: AccountStatus;
+        }>>(Prisma.sql`
+          UPDATE "users"
+          SET
+            "credit_balance" = "credit_balance" - ${absoluteAmount},
+            "updated_at" = NOW()
+          WHERE "id" = ${input.userId}
+            AND "role"::text = ${UserRole.USER}
+            AND "credit_balance" >= ${absoluteAmount}
+          RETURNING
+            "id",
+            "credit_balance" AS "balanceAfter",
+            "account_status" AS "accountStatus"
+        `);
 
-        if (deductionResult.count !== 1) {
+        const user = deducted[0];
+        if (!user) {
           const failedUser = await tx.user.findUnique({
             where: { id: input.userId },
             select: { id: true, role: true },
@@ -122,22 +138,7 @@ export class CreditBalanceService {
           throw new BadRequestException('Insufficient credit balance.');
         }
 
-        const user = await tx.user.findUnique({
-          where: { id: input.userId },
-          select: {
-            id: true,
-            creditBalance: true,
-            accountStatus: true,
-          },
-        });
-
-        if (!user) {
-          throw new NotFoundException(
-            'User not found after credit balance update.',
-          );
-        }
-
-        const balanceAfter = user.creditBalance;
+        const balanceAfter = user.balanceAfter;
         const previousBalance = balanceAfter + absoluteAmount;
         const accountStatus = this.resolveAccountStatus({
           previousStatus: user.accountStatus,

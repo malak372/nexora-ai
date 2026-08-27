@@ -11,6 +11,7 @@ import {
 
 import { ROUTES } from '../../constants/routes.constants';
 import VoxidenceMark from '../brand/VoxidenceMark';
+import { useUserExperience } from '../../system/user-experience';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -43,6 +44,7 @@ const FOOTER_SECTION_LINKS = [
 export default function Footer() {
     const location = useLocation();
     const navigate = useNavigate();
+    const { t, isArabic } = useUserExperience();
 
     const navigateToSection = (sectionId) => {
         const destination = {
@@ -84,7 +86,7 @@ export default function Footer() {
                         <Link
                             to={ROUTES.HOME}
                             className="vox-footer__brand"
-                            aria-label="Go to Voxidence home page"
+                            aria-label={t('Go to Voxidence home page')}
                         >
                             <VoxidenceMark
                                 size={54}
@@ -92,27 +94,26 @@ export default function Footer() {
                             />
 
                             <span className="vox-footer__brand-copy">
-                                <strong>Voxidence</strong>
+                                <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
 
                                 <small>
-                                    Community voices. Verified direction.
+                                    {t('Community voices. Verified direction.')}
                                 </small>
                             </span>
                         </Link>
 
                         <p className="vox-footer__statement">
-                            We listen before we generate — turning recurring
-                            public needs into software ideas worth building.
+                            {t('We listen before we generate — turning recurring public needs into software ideas worth building.')}
                         </p>
                     </div>
 
                     <nav
                         className="vox-footer__navigation"
-                        aria-label="Footer navigation"
+                        aria-label={t('Footer navigation')}
                     >
                         <p className="vox-footer__label">
                             <Sparkles size={14} aria-hidden="true" />
-                            Explore Voxidence
+                            {t('Explore Voxidence')}
                         </p>
 
                         <div className="vox-footer__links">
@@ -124,7 +125,7 @@ export default function Footer() {
                                         navigateToSection(item.sectionId)
                                     }
                                 >
-                                    {item.label}
+                                    {t(item.label)}
                                 </button>
                             ))}
                         </div>
@@ -132,11 +133,11 @@ export default function Footer() {
 
                     <div className="vox-footer__contact">
                         <p className="vox-footer__label">
-                            Start a conversation
+                            {t('Start a conversation')}
                         </p>
 
                         <p className="vox-footer__contact-copy">
-                            Have a question, feedback, or collaboration in mind?
+                            {t('Have a question, feedback, or collaboration in mind?')}
                         </p>
 
                         <a
@@ -155,17 +156,17 @@ export default function Footer() {
                             onClick={() => navigateToSection('contact')}
                             className="vox-footer__contact-action"
                         >
-                            Contact our team
+                            {t('Contact our team')}
                             <ArrowUpRight size={17} aria-hidden="true" />
                         </button>
                     </div>
                 </div>
 
                 <div className="vox-footer__bottom">
-                    <p>© {CURRENT_YEAR} <span className="vox-footer__copyright-brand">Voxidence</span>. All rights reserved.</p>
+                    <p>© {CURRENT_YEAR} <span className="vox-footer__copyright-brand" dir="ltr" data-no-auto-translate="true">Voxidence</span>. {isArabic ? 'جميع الحقوق محفوظة.' : 'All rights reserved.'}</p>
 
                     <p>
-                        From community signal to evidence-backed direction.
+                        {t('From community signal to evidence-backed direction.')}
                     </p>
                 </div>
             </div>

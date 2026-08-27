@@ -149,7 +149,7 @@ export default function ResetPasswordPage() {
                 </span>
 
                 <span>
-                    <strong>Voxidence</strong>
+                    <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
                     <small>Ideas built from real needs</small>
                 </span>
             </Link>

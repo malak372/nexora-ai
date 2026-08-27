@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+import { useUserExperience } from '../../../system/user-experience';
+
 import { ROUTES, buildRoute } from '../../../constants/routes.constants';
 import {
     getFeaturedPublications,
@@ -32,7 +34,7 @@ import {
 
 const FEATURED_PUBLICATIONS_LIMIT = 3;
 
-function formatPublishedDate(value) {
+function formatPublishedDate(value, language) {
     if (!value) {
         return 'Recently published';
     }
@@ -43,7 +45,7 @@ function formatPublishedDate(value) {
         return 'Recently published';
     }
 
-    return new Intl.DateTimeFormat('en', {
+    return new Intl.DateTimeFormat(language === 'ar' ? 'ar-EG' : 'en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
@@ -66,12 +68,15 @@ function getDirection(publication) {
     );
 }
 
-function DiscoveryCard({ publication, index, shouldReduceMotion }) {
+function DiscoveryCard({ publication, index, shouldReduceMotion, language, t }) {
     const title = publication.publicTitle || 'Untitled software idea';
     const summary =
         publication.publicProblem ||
         publication.publicAbstract ||
         'A public software opportunity discovered through Voxidence.';
+    const localizedTitle = title;
+    const localizedSummary = summary;
+    const localizedDirection = getDirection(publication);
 
     return (
         <motion.article
@@ -93,31 +98,31 @@ function DiscoveryCard({ publication, index, shouldReduceMotion }) {
                 </span>
 
                 <span className="vox-discovery-card__badge">
-                    Public discovery
+                    {t('Public discovery')}
                 </span>
             </div>
 
             <div className="vox-discovery-card__meta">
                 <span>
                     <UserRound size={13} aria-hidden="true" />
-                    {publication.publisher?.fullName || 'Voxidence creator'}
+                    <span dir="auto" data-no-auto-translate="true">{publication.publisher?.fullName || t('Voxidence creator')}</span>
                 </span>
 
                 <span>
                     <CalendarDays size={13} aria-hidden="true" />
-                    {formatPublishedDate(publication.publishedAt)}
+                    {t(formatPublishedDate(publication.publishedAt, language))}
                 </span>
             </div>
 
-            <h3>{title}</h3>
+            <h3 dir="auto" data-idea-content="true">{localizedTitle}</h3>
 
-            <p className="vox-discovery-card__summary">
-                {summary}
+            <p className="vox-discovery-card__summary" dir="auto" data-idea-content="true">
+                {localizedSummary}
             </p>
 
             <div className="vox-discovery-card__direction">
-                <span>Selected direction</span>
-                <p>{getDirection(publication)}</p>
+                <span>{t('Selected direction')}</span>
+                <p dir="auto" data-idea-content="true">{localizedDirection}</p>
             </div>
 
             <div className="vox-discovery-card__footer">
@@ -136,9 +141,9 @@ function DiscoveryCard({ publication, index, shouldReduceMotion }) {
                 <Link
                     to={buildRoute.publicationDetails(publication.id)}
                     className="vox-discovery-card__link"
-                    aria-label={`Open ${title}`}
+                    aria-label={t('Open idea')}
                 >
-                    Open idea
+                    {t('Open idea')}
                     <ArrowRight size={16} aria-hidden="true" />
                 </Link>
             </div>
@@ -146,9 +151,9 @@ function DiscoveryCard({ publication, index, shouldReduceMotion }) {
     );
 }
 
-function FeaturedIdeasSkeleton() {
+function FeaturedIdeasSkeleton({ t }) {
     return (
-        <div className="vox-discoveries-grid" aria-label="Loading public ideas">
+        <div className="vox-discoveries-grid" aria-label={t('Loading public ideas')}>
             {[0, 1, 2].map((item) => (
                 <div
                     key={item}
@@ -169,6 +174,7 @@ function FeaturedIdeasSkeleton() {
 
 export default function FeaturedIdeasSection() {
     const shouldReduceMotion = useReducedMotion();
+    const { language, t } = useUserExperience();
 
     const {
         data,
@@ -204,34 +210,33 @@ export default function FeaturedIdeasSection() {
                         <div className="vox-discoveries-eyebrow-row">
                             <span className="vox-discoveries-eyebrow">
                                 <Sparkles size={15} aria-hidden="true" />
-                                Community discoveries
+                                {t('Community discoveries')}
                             </span>
 
                             <span className="vox-discoveries-live">
                                 <span aria-hidden="true" />
-                                Live publications
+                                {t('Live publications')}
                             </span>
                         </div>
 
                         <h2 id="featured-ideas-heading">
-                            Explore ideas shaped by real community evidence.
+                            {t('Explore ideas shaped by real community evidence.')}
                         </h2>
 
                         <p>
-                            A curated look at public software opportunities discovered,
-                            evaluated, and shared through Voxidence.
+                            {t('A curated look at public software opportunities discovered, evaluated, and shared through Voxidence.')}
                         </p>
                     </div>
                 </header>
 
-                {isLoading && <FeaturedIdeasSkeleton />}
+                {isLoading && <FeaturedIdeasSkeleton t={t} />}
 
                 {!isLoading && isError && (
                     <div className="vox-discoveries-state">
                         <Lightbulb size={27} aria-hidden="true" />
                         <div>
-                            <h3>Public ideas could not be loaded.</h3>
-                            <p>Make sure the backend is running, then try again.</p>
+                            <h3>{t('Public ideas could not be loaded.')}</h3>
+                            <p>{t('Make sure the backend is running, then try again.')}</p>
                         </div>
                         <button
                             type="button"
@@ -244,7 +249,7 @@ export default function FeaturedIdeasSection() {
                                 className={isFetching ? 'animate-spin' : ''}
                                 aria-hidden="true"
                             />
-                            Try again
+                            {t('Try again')}
                         </button>
                     </div>
                 )}
@@ -253,11 +258,11 @@ export default function FeaturedIdeasSection() {
                     <div className="vox-discoveries-state">
                         <Lightbulb size={27} aria-hidden="true" />
                         <div>
-                            <h3>No public ideas yet.</h3>
-                            <p>The first published discoveries will appear here automatically.</p>
+                            <h3>{t('No public ideas yet.')}</h3>
+                            <p>{t('The first published discoveries will appear here automatically.')}</p>
                         </div>
                         <Link to={ROUTES.REGISTER} className="vox-discoveries-retry">
-                            Create an account
+                            {t('Create an account')}
                         </Link>
                     </div>
                 )}
@@ -270,6 +275,8 @@ export default function FeaturedIdeasSection() {
                                 publication={publication}
                                 index={index}
                                 shouldReduceMotion={shouldReduceMotion}
+                                language={language}
+                                t={t}
                             />
                         ))}
                     </div>

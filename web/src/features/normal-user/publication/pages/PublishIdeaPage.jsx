@@ -28,6 +28,7 @@ import {
   publishIdea,
   savePublicationDraft,
 } from '../api/publicationApi';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../styles/publish-idea.css';
 
 const USER_TYPES = [
@@ -109,6 +110,7 @@ function buildIdeaSeed(ideaId, publicationSeed) {
 }
 
 export default function PublishIdeaPage() {
+  const { t } = useUserExperience();
   const shouldReduceMotion = useReducedMotion();
   const { ideaId } = useParams();
   const navigate = useNavigate();
@@ -389,13 +391,13 @@ export default function PublishIdeaPage() {
             </button>
           </div>
 
-          <label>Public title<input value={form.publicTitle} maxLength={200} onChange={(event) => updateField('publicTitle', event.target.value)} /></label>
-          <label>Public abstract<textarea rows={6} value={form.publicAbstract} maxLength={5000} onChange={(event) => updateField('publicAbstract', event.target.value)} /></label>
+          <label>Public title<input dir="auto" value={form.publicTitle} maxLength={200} onChange={(event) => updateField('publicTitle', event.target.value)} /></label>
+          <label>Public abstract<textarea dir="auto" rows={6} value={form.publicAbstract} maxLength={5000} onChange={(event) => updateField('publicAbstract', event.target.value)} /></label>
           <div className="publish-two">
-            <label>Public problem<textarea rows={5} value={form.publicProblem} onChange={(event) => updateField('publicProblem', event.target.value)} /></label>
-            <label>Target users<textarea rows={5} value={form.publicTargetUsers} onChange={(event) => updateField('publicTargetUsers', event.target.value)} /></label>
+            <label>Public problem<textarea dir="auto" rows={5} value={form.publicProblem} onChange={(event) => updateField('publicProblem', event.target.value)} /></label>
+            <label>Target users<textarea dir="auto" rows={5} value={form.publicTargetUsers} onChange={(event) => updateField('publicTargetUsers', event.target.value)} /></label>
           </div>
-          <label>Public objectives<textarea rows={5} value={form.publicObjectives} onChange={(event) => updateField('publicObjectives', event.target.value)} /></label>
+          <label>Public objectives<textarea dir="auto" rows={5} value={form.publicObjectives} onChange={(event) => updateField('publicObjectives', event.target.value)} /></label>
 
           <div className="publish-section-title"><div><span>02</span><h2>Visibility and community</h2></div></div>
           <div className="publish-visibility publish-visibility--three">
@@ -513,10 +515,10 @@ export default function PublishIdeaPage() {
           <span><Eye size={15} /> LIVE PREVIEW</span>
           <article className="publish-preview-card">
             <div className="publish-preview-card__shine" aria-hidden="true" />
-            <small>{idea?.domain?.name ?? 'Innovation'}</small>
-            <h2>{form.publicTitle || 'Your public title'}</h2>
-            <p>{form.publicAbstract || 'Your public abstract will appear here.'}</p>
-            <div><strong>{form.publicProblem || 'Problem statement'}</strong><span>{form.publicTargetUsers || 'Target audience'}</span></div>
+            <small dir="auto" data-idea-content="true">{idea?.domain?.name ?? t('Innovation')}</small>
+            <h2 dir="auto" data-idea-content="true">{form.publicTitle || t('Your public title')}</h2>
+            <p dir="auto" data-idea-content="true">{form.publicAbstract || t('Your public abstract will appear here.')}</p>
+            <div data-idea-content="true" dir="auto"><strong>{form.publicProblem || t('Problem statement')}</strong><span>{form.publicTargetUsers || t('Target audience')}</span></div>
           </article>
           <p className="publish-safety"><ShieldCheck size={16} />Only the safe public snapshot is submitted.</p>
         </motion.aside>

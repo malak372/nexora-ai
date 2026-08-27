@@ -117,4 +117,31 @@ export type CommunityAiAnalysis = {
    * exposed as accepted triage labels.
    */
   readonly evidenceClassifications?: readonly CommunityAiEvidenceTriage[];
+
+  /** Family proposed by the same online triage response that classified the full raw corpus. */
+  readonly aiProposedProblemFamily?: string | null;
+
+  /** Evidence ids proposed by that online triage response before deterministic verification. */
+  readonly aiProposedProblemFamilyEvidenceIds?: readonly string[];
+
+  /** Makes AI proposal versus deterministic verification/fallback ownership explicit. */
+  readonly selectedProblemFamilySelectionSource?:
+    | 'AI_SELECTED_PENDING_VERIFICATION'
+    | 'AI_SELECTED_VERIFIED'
+    | 'AI_CLUSTER_VERIFIED'
+    | 'DETERMINISTIC_VERIFIED_FALLBACK'
+    | 'AI_PROPOSAL_REJECTED'
+    | null;
+
+  /** Canonical problem-family identity selected from the verified evidence ledger. */
+  readonly selectedProblemFamily?: string | null;
+
+  /** Trusted evidence count for the selected family only (never the global ledger count). */
+  readonly selectedProblemFamilyTrustedEvidenceCount?: number;
+
+  /** Distinct external source count represented by trusted evidence for the selected family. */
+  readonly selectedProblemFamilyDistinctSourceCount?: number;
+
+  /** Canonical evidence ids that belong to the selected family. */
+  readonly selectedProblemFamilyEvidenceIds?: readonly string[];
 };

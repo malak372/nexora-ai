@@ -8,6 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 import SoftBulbMark from '../../../components/brand/SoftBulbMark';
+import { useUserExperience } from '../../../system/user-experience';
 import { HERO_CONTENT } from '../constants/home.constants';
 
 const HERO_STAGES = [
@@ -61,6 +62,7 @@ function scrollToSection(sectionId) {
 export default function HeroSection() {
     const navigate = useNavigate();
     const shouldReduceMotion = useReducedMotion();
+    const { t, isArabic } = useUserExperience();
     const [activeStageIndex, setActiveStageIndex] = useState(0);
 
     useEffect(() => {
@@ -119,19 +121,25 @@ export default function HeroSection() {
                     <div className="vox-hero-badge">
                         <span className="vox-hero-badge-dot" />
                         <Sparkles size={15} aria-hidden="true" />
-                        {HERO_CONTENT.badge}
+                        {t(HERO_CONTENT.badge)}
                     </div>
 
                     <h1 id="hero-heading" className="vox-hero-heading">
-                        Real voices reveal
-                        <span>the ideas worth building.</span>
+                        {t('Real voices reveal')}
+                        <span>{t('the ideas worth building.')}</span>
                     </h1>
 
                     <p className="vox-hero-lead">
-                        <strong className="vox-hero-brand-name">Voxidence</strong>{' '}
-                        listens to recurring community needs, connects them with evidence,
-                        and turns them into focused software opportunities with purpose,
-                        context, and local relevance.
+                        {isArabic ? (
+                            <>
+                                يستمع <bdi className="vox-hero-brand-name" dir="ltr" data-no-auto-translate="true">Voxidence</bdi> إلى احتياجات المجتمع المتكررة، ويربطها بالأدلة، ويحوّلها إلى فرص برمجية مركزة ذات هدف وسياق وملاءمة محلية.
+                            </>
+                        ) : (
+                            <>
+                                <bdi className="vox-hero-brand-name" dir="ltr" data-no-auto-translate="true">Voxidence</bdi>{' '}
+                                listens to recurring community needs, connects them with evidence, and turns them into focused software opportunities with purpose, context, and local relevance.
+                            </>
+                        )}
                     </p>
 
                     <div className="vox-hero-actions">
@@ -143,7 +151,7 @@ export default function HeroSection() {
                             <span className="vox-hero-button-mark" aria-hidden="true">
                                 <SoftBulbMark size={21} />
                             </span>
-                            Generate your free idea
+                            {t('Generate your free idea')}
                             <ArrowRight
                                 size={18}
                                 className="vox-hero-button-arrow"
@@ -156,7 +164,7 @@ export default function HeroSection() {
                             onClick={() => scrollToSection('how-it-works')}
                             className="vox-hero-button vox-hero-button-secondary"
                         >
-                            Explore how it works
+                            {t('Explore how it works')}
                             <ArrowRight size={18} aria-hidden="true" />
                         </button>
                     </div>
@@ -165,7 +173,7 @@ export default function HeroSection() {
                         {HERO_CONTENT.trustPoints.map((point) => (
                             <span key={point}>
                                 <CheckCircle2 size={16} aria-hidden="true" />
-                                {point}
+                                {t(point)}
                             </span>
                         ))}
                     </div>
@@ -176,7 +184,7 @@ export default function HeroSection() {
                     animate={shouldReduceMotion ? undefined : { opacity: 1, scale: 1, x: 0 }}
                     transition={{ duration: 0.86, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
                     className="vox-stage-showcase"
-                    aria-label="Voxidence project stages slideshow"
+                    aria-label={t('Voxidence project stages slideshow')}
                 >
                     <span className="vox-stage-backdrop vox-stage-backdrop-one" aria-hidden="true" />
                     <span className="vox-stage-backdrop vox-stage-backdrop-two" aria-hidden="true" />
@@ -192,7 +200,7 @@ export default function HeroSection() {
                             <motion.img
                                 key={activeStage.id}
                                 src={activeStage.image}
-                                alt={activeStage.title}
+                                alt={t(activeStage.title)}
                                 className="vox-stage-showcase-image"
                                 loading="eager"
                                 decoding="async"

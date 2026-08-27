@@ -24,6 +24,16 @@ import 'mobile_checkout_page.dart';
 import 'premium_chat_page.dart';
 import 'publish_idea_page.dart';
 
+// Workspace aqua palette. These values intentionally match the AI Chat
+// action on the web so every green accent in this creative workspace uses
+// one consistent Voxidence aqua family.
+const _workspaceAquaLight = Color(0xFF68C8C3);
+const _workspaceAqua = Color(0xFF52B9B5);
+const _workspaceAquaDark = Color(0xFF338F8B);
+const _workspaceAquaIcon = Color(0xFF2F8582);
+const _workspaceAquaSoft = Color(0xFFEAF8F7);
+const _workspaceAquaWash = Color(0xFFF0FAF9);
+
 class IdeaWorkspacePage extends StatefulWidget {
   const IdeaWorkspacePage({
     super.key,
@@ -300,7 +310,7 @@ class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
       ),
       body: WorkspaceBackground(
         child: RefreshIndicator(
-          color: AppColors.primary,
+          color: _workspaceAqua,
           onRefresh: () => _load(force: true),
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(
@@ -375,10 +385,15 @@ class _IdeaWorkspacePageState extends State<IdeaWorkspacePage> {
                     subtitle: 'Ask questions about this idea in real time',
                     onTap: _openAiChat,
                     fullWidth: true,
+                    aquaFilled: true,
                   ),
                 ],
 
                 const SizedBox(height: 14),
+
+                const _IdeaJourneyBand(),
+
+                const SizedBox(height: 12),
 
                 if (_hasContent(abstractValue))
                   _WorkspaceSectionCard(
@@ -519,15 +534,15 @@ class _IdeaWorkspaceHeader extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.surface, AppColors.surfaceRose, Color(0xFFF0F8F5)],
+          colors: [AppColors.surface, AppColors.surfaceRose, _workspaceAquaWash],
         ),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .065),
+          color: _workspaceAquaDark.withValues(alpha: .065),
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: .035),
+            color: _workspaceAquaDark.withValues(alpha: .035),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -541,7 +556,7 @@ class _IdeaWorkspaceHeader extends StatelessWidget {
             child: Icon(
               Icons.auto_awesome_rounded,
               size: 75,
-              color: AppColors.primaryDark.withValues(alpha: .025),
+              color: _workspaceAquaDark.withValues(alpha: .025),
             ),
           ),
           Column(
@@ -552,8 +567,8 @@ class _IdeaWorkspaceHeader extends StatelessWidget {
                   _HeaderBadge(
                     icon: Icons.auto_awesome_rounded,
                     label: generationType.toUpperCase(),
-                    accent: AppColors.primaryDark,
-                    tint: AppColors.primarySoft,
+                    accent: _workspaceAquaDark,
+                    tint: _workspaceAquaSoft,
                   ),
                   const Spacer(),
                   _HeaderBadge(
@@ -561,12 +576,8 @@ class _IdeaWorkspaceHeader extends StatelessWidget {
                         ? Icons.lock_open_rounded
                         : Icons.lock_outline_rounded,
                     label: unlocked ? 'ADVANCED' : 'NORMAL',
-                    accent: unlocked
-                        ? AppColors.success
-                        : AppColors.primaryDark,
-                    tint: unlocked
-                        ? const Color(0xFFEAF8F2)
-                        : AppColors.primarySoft,
+                    accent: _workspaceAquaDark,
+                    tint: _workspaceAquaSoft,
                   ),
                 ],
               ),
@@ -663,7 +674,7 @@ class _HeaderMeta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : _workspaceAquaDark;
 
     return Container(
       height: 28,
@@ -709,13 +720,13 @@ class _WorkspaceToolsHeading extends StatelessWidget {
         Icon(
           Icons.auto_awesome_rounded,
           size: 11,
-          color: AppColors.primaryDark,
+          color: _workspaceAquaDark,
         ),
         SizedBox(width: 5),
         Text(
           'WORKSPACE TOOLS',
           style: TextStyle(
-            color: AppColors.primaryDark,
+            color: _workspaceAquaDark,
             fontSize: 6.4,
             fontWeight: FontWeight.w900,
             letterSpacing: .66,
@@ -735,6 +746,7 @@ class _WorkspaceToolAction extends StatelessWidget {
     required this.onTap,
     this.rose = false,
     this.fullWidth = false,
+    this.aquaFilled = false,
   });
 
   final IconData icon;
@@ -745,6 +757,7 @@ class _WorkspaceToolAction extends StatelessWidget {
 
   final bool rose;
   final bool fullWidth;
+  final bool aquaFilled;
 
   @override
   Widget build(BuildContext context) {
@@ -752,9 +765,11 @@ class _WorkspaceToolAction extends StatelessWidget {
 
     final accent = !enabled
         ? AppColors.textMuted
+        : aquaFilled
+        ? Colors.white
         : rose
         ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+        : _workspaceAquaDark;
 
     return Material(
       color: Colors.transparent,
@@ -768,13 +783,24 @@ class _WorkspaceToolAction extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(10, 10, 9, 10),
             decoration: BoxDecoration(
               gradient: enabled
-                  ? LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: rose
-                          ? const [AppColors.surface, AppColors.surfaceRose]
-                          : const [AppColors.surface, Color(0xFFF0F8F5)],
-                    )
+                  ? aquaFilled
+                    ? const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          _workspaceAquaLight,
+                          _workspaceAqua,
+                          _workspaceAquaDark,
+                        ],
+                        stops: [0, .54, 1],
+                      )
+                    : LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: rose
+                            ? const [AppColors.surface, AppColors.surfaceRose]
+                            : const [AppColors.surface, _workspaceAquaWash],
+                      )
                   : null,
               color: enabled
                   ? null
@@ -782,14 +808,18 @@ class _WorkspaceToolAction extends StatelessWidget {
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: enabled
-                    ? accent.withValues(alpha: .09)
+                    ? aquaFilled
+                      ? _workspaceAqua.withValues(alpha: .28)
+                      : accent.withValues(alpha: .09)
                     : AppColors.silver.withValues(alpha: .25),
               ),
               boxShadow: enabled
                   ? [
                       BoxShadow(
-                        color: AppColors.primaryDeep.withValues(alpha: .035),
-                        blurRadius: 14,
+                        color: aquaFilled
+                            ? _workspaceAquaDark.withValues(alpha: .22)
+                            : _workspaceAquaDark.withValues(alpha: .035),
+                        blurRadius: aquaFilled ? 20 : 14,
                         offset: const Offset(0, 5),
                       ),
                     ]
@@ -803,6 +833,7 @@ class _WorkspaceToolAction extends StatelessWidget {
                         accent: accent,
                         rose: rose,
                         enabled: enabled,
+                        aquaFilled: aquaFilled,
                       ),
                       const SizedBox(width: 9),
                       Expanded(
@@ -812,9 +843,14 @@ class _WorkspaceToolAction extends StatelessWidget {
                           subtitle: subtitle,
                           accent: accent,
                           enabled: enabled,
+                          aquaFilled: aquaFilled,
                         ),
                       ),
-                      _ToolArrow(accent: accent, enabled: enabled),
+                      _ToolArrow(
+                        accent: accent,
+                        enabled: enabled,
+                        aquaFilled: aquaFilled,
+                      ),
                     ],
                   )
                 : Column(
@@ -829,7 +865,11 @@ class _WorkspaceToolAction extends StatelessWidget {
                             enabled: enabled,
                           ),
                           const Spacer(),
-                          _ToolArrow(accent: accent, enabled: enabled),
+                          _ToolArrow(
+                            accent: accent,
+                            enabled: enabled,
+                            aquaFilled: aquaFilled,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -839,6 +879,7 @@ class _WorkspaceToolAction extends StatelessWidget {
                         subtitle: subtitle,
                         accent: accent,
                         enabled: enabled,
+                        aquaFilled: aquaFilled,
                       ),
                     ],
                   ),
@@ -855,12 +896,14 @@ class _ToolIcon extends StatelessWidget {
     required this.accent,
     required this.rose,
     required this.enabled,
+    this.aquaFilled = false,
   });
 
   final IconData icon;
   final Color accent;
   final bool rose;
   final bool enabled;
+  final bool aquaFilled;
 
   @override
   Widget build(BuildContext context) {
@@ -871,21 +914,32 @@ class _ToolIcon extends StatelessWidget {
       decoration: BoxDecoration(
         color: !enabled
             ? AppColors.silver.withValues(alpha: .16)
+            : aquaFilled
+            ? Colors.white.withValues(alpha: .94)
             : rose
             ? AppColors.pinkSoft
-            : AppColors.primarySoft,
+            : _workspaceAquaSoft,
         borderRadius: BorderRadius.circular(11),
       ),
-      child: Icon(icon, size: 16, color: accent),
+      child: Icon(
+        icon,
+        size: 16,
+        color: aquaFilled ? _workspaceAquaIcon : accent,
+      ),
     );
   }
 }
 
 class _ToolArrow extends StatelessWidget {
-  const _ToolArrow({required this.accent, required this.enabled});
+  const _ToolArrow({
+    required this.accent,
+    required this.enabled,
+    this.aquaFilled = false,
+  });
 
   final Color accent;
   final bool enabled;
+  final bool aquaFilled;
 
   @override
   Widget build(BuildContext context) {
@@ -894,7 +948,9 @@ class _ToolArrow extends StatelessWidget {
       height: 25,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .68),
+        color: aquaFilled
+            ? Colors.white.withValues(alpha: .18)
+            : Colors.white.withValues(alpha: .68),
         shape: BoxShape.circle,
       ),
       child: Icon(
@@ -913,6 +969,7 @@ class _ToolText extends StatelessWidget {
     required this.subtitle,
     required this.accent,
     required this.enabled,
+    this.aquaFilled = false,
   });
 
   final String eyebrow;
@@ -920,6 +977,7 @@ class _ToolText extends StatelessWidget {
   final String subtitle;
   final Color accent;
   final bool enabled;
+  final bool aquaFilled;
 
   @override
   Widget build(BuildContext context) {
@@ -944,7 +1002,11 @@ class _ToolText extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: enabled ? AppColors.textPrimary : AppColors.textMuted,
+            color: aquaFilled
+                ? Colors.white
+                : enabled
+                ? AppColors.textPrimary
+                : AppColors.textMuted,
             fontSize: 10.1,
             fontWeight: FontWeight.w900,
           ),
@@ -954,8 +1016,10 @@ class _ToolText extends StatelessWidget {
           subtitle,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textMuted,
+          style: TextStyle(
+            color: aquaFilled
+                ? Colors.white.withValues(alpha: .78)
+                : AppColors.textMuted,
             fontSize: 7.1,
             height: 1.25,
           ),
@@ -963,6 +1027,437 @@ class _ToolText extends StatelessWidget {
       ],
     );
   }
+}
+
+
+class _IdeaJourneyBand extends StatelessWidget {
+  const _IdeaJourneyBand();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFFFFDFC),
+            _workspaceAquaWash,
+            Color(0xFFFFF6F8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _workspaceAquaDark.withValues(alpha: .07),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _workspaceAquaDark.withValues(alpha: .03),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.auto_awesome_rounded,
+                size: 10.5,
+                color: _workspaceAquaDark,
+              ),
+              SizedBox(width: 5),
+              Text(
+                'IDEA JOURNEY',
+                style: TextStyle(
+                  color: _workspaceAquaDark,
+                  fontSize: 6.1,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .72,
+                ),
+              ),
+              Spacer(),
+              Text(
+                'CORE STORY',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 5.8,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: .55,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 58,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  top: 13,
+                  bottom: 30,
+                  child: CustomPaint(
+                    painter: _JourneyLinePainter(),
+                  ),
+                ),
+                const Row(
+                  children: [
+                    Expanded(
+                      child: _JourneyNode(
+                        icon: Icons.description_outlined,
+                        number: '01',
+                        label: 'Overview',
+                        rose: false,
+                      ),
+                    ),
+                    Expanded(
+                      child: _JourneyNode(
+                        icon: Icons.layers_outlined,
+                        number: '02',
+                        label: 'Problem',
+                        rose: false,
+                      ),
+                    ),
+                    Expanded(
+                      child: _JourneyNode(
+                        icon: Icons.flag_outlined,
+                        number: '03',
+                        label: 'Objectives',
+                        rose: true,
+                      ),
+                    ),
+                    Expanded(
+                      child: _JourneyNode(
+                        icon: Icons.groups_outlined,
+                        number: '04',
+                        label: 'Users',
+                        rose: false,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _JourneyNode extends StatelessWidget {
+  const _JourneyNode({
+    required this.icon,
+    required this.number,
+    required this.label,
+    required this.rose,
+  });
+
+  final IconData icon;
+  final String number;
+  final String label;
+  final bool rose;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = rose ? AppColors.pinkDeep : _workspaceAquaDark;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 29,
+          height: 29,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: rose ? AppColors.pinkSoft : _workspaceAquaSoft,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: .10),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Icon(icon, size: 13, color: accent),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$number  $label',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: accent,
+            fontSize: 6.2,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _JourneyLinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _workspaceAqua.withValues(alpha: .22)
+      ..strokeWidth = 1.1
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path()
+      ..moveTo(size.width * .09, size.height * .55)
+      ..cubicTo(
+        size.width * .28,
+        size.height * .06,
+        size.width * .38,
+        size.height * .94,
+        size.width * .51,
+        size.height * .5,
+      )
+      ..cubicTo(
+        size.width * .65,
+        size.height * .06,
+        size.width * .73,
+        size.height * .94,
+        size.width * .91,
+        size.height * .45,
+      );
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _SectionVisualCanvas extends StatelessWidget {
+  const _SectionVisualCanvas({
+    required this.icon,
+    required this.number,
+    required this.rose,
+  });
+
+  final IconData icon;
+  final String number;
+  final bool rose;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = rose ? AppColors.pinkDeep : _workspaceAquaDark;
+    final tint = rose ? AppColors.pinkSoft : _workspaceAquaSoft;
+
+    return SizedBox(
+      height: 86,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _SectionConstellationPainter(rose: rose),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 9,
+            child: _ConstellationDot(
+              icon: Icons.auto_awesome_rounded,
+              accent: accent,
+              tint: tint,
+              size: 27,
+            ),
+          ),
+          Positioned(
+            right: 18,
+            top: 12,
+            child: _ConstellationDot(
+              icon: Icons.check_rounded,
+              accent: accent,
+              tint: Colors.white.withValues(alpha: .9),
+              size: 25,
+            ),
+          ),
+          Positioned(
+            right: 38,
+            bottom: 8,
+            child: _ConstellationDot(
+              icon: Icons.bolt_rounded,
+              accent: accent,
+              tint: tint.withValues(alpha: .84),
+              size: 23,
+            ),
+          ),
+          Center(
+            child: Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: rose
+                      ? const [Color(0xFFD98FA0), Color(0xFFB76D7F)]
+                      : const [_workspaceAquaLight, _workspaceAquaDark],
+                ),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: .9),
+                  width: 3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: .18),
+                    blurRadius: 18,
+                    offset: const Offset(0, 7),
+                  ),
+                ],
+              ),
+              child: Icon(icon, size: 21, color: Colors.white),
+            ),
+          ),
+          Positioned(
+            left: 10,
+            bottom: 7,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .72),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: accent.withValues(alpha: .06)),
+              ),
+              child: Text(
+                'SIGNAL $number',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 5.6,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .55,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConstellationDot extends StatelessWidget {
+  const _ConstellationDot({
+    required this.icon,
+    required this.accent,
+    required this.tint,
+    required this.size,
+  });
+
+  final IconData icon;
+  final Color accent;
+  final Color tint;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: tint,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white.withValues(alpha: .9),
+          width: 1.6,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: .07),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Icon(icon, size: size * .43, color: accent),
+    );
+  }
+}
+
+class _SectionConstellationPainter extends CustomPainter {
+  const _SectionConstellationPainter({required this.rose});
+
+  final bool rose;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final accent = rose ? AppColors.pinkDeep : _workspaceAquaDark;
+    final line = Paint()
+      ..color = accent.withValues(alpha: .10)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    final soft = Paint()
+      ..color = accent.withValues(alpha: .045)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      Offset(size.width * .5, size.height * .5),
+      34,
+      line,
+    );
+    canvas.drawCircle(
+      Offset(size.width * .5, size.height * .5),
+      25,
+      Paint()
+        ..color = accent.withValues(alpha: .12)
+        ..strokeWidth = 1
+        ..style = PaintingStyle.stroke,
+    );
+
+    final path = Path()
+      ..moveTo(size.width * .18, size.height * .22)
+      ..quadraticBezierTo(
+        size.width * .35,
+        size.height * .16,
+        size.width * .5,
+        size.height * .5,
+      )
+      ..quadraticBezierTo(
+        size.width * .72,
+        size.height * .22,
+        size.width * .85,
+        size.height * .27,
+      )
+      ..moveTo(size.width * .5, size.height * .5)
+      ..quadraticBezierTo(
+        size.width * .71,
+        size.height * .7,
+        size.width * .78,
+        size.height * .82,
+      );
+
+    canvas.drawPath(path, line);
+    canvas.drawCircle(
+      Offset(size.width * .82, size.height * .18),
+      22,
+      soft,
+    );
+    canvas.drawCircle(
+      Offset(size.width * .18, size.height * .76),
+      17,
+      soft,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SectionConstellationPainter oldDelegate) =>
+      oldDelegate.rose != rose;
 }
 
 class _WorkspaceSectionCard extends StatelessWidget {
@@ -982,7 +1477,7 @@ class _WorkspaceSectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : _workspaceAquaDark;
 
     return Container(
       width: double.infinity,
@@ -993,13 +1488,13 @@ class _WorkspaceSectionCard extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: rose
               ? const [AppColors.surface, AppColors.surfaceRose]
-              : const [AppColors.surface, Color(0xFFF2F9F7)],
+              : const [AppColors.surface, _workspaceAquaWash],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: accent.withValues(alpha: .07)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: .035),
+            color: _workspaceAquaDark.withValues(alpha: .035),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -1030,7 +1525,7 @@ class _WorkspaceSectionCard extends StatelessWidget {
                     height: 34,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
+                      color: rose ? AppColors.pinkSoft : _workspaceAquaSoft,
                       borderRadius: BorderRadius.circular(11),
                     ),
                     child: Icon(icon, size: 16, color: accent),
@@ -1048,8 +1543,38 @@ class _WorkspaceSectionCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 9),
-              _WorkspaceContent(value: value),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .48),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: accent.withValues(alpha: .045),
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: _SectionVisualCanvas(
+                    icon: icon,
+                    number: number,
+                    rose: rose,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .52),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: accent.withValues(alpha: .04),
+                  ),
+                ),
+                child: _WorkspaceContent(value: value),
+              ),
             ],
           ),
         ],
@@ -1080,14 +1605,14 @@ class _AdvancedPackageHeading extends StatelessWidget {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [AppColors.primarySoft, AppColors.surfaceRose],
+              colors: [_workspaceAquaSoft, AppColors.surfaceRose],
             ),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
             unlocked ? Icons.verified_outlined : Icons.lock_outline_rounded,
             size: 17,
-            color: AppColors.primaryDark,
+            color: _workspaceAquaDark,
           ),
         ),
         const SizedBox(width: 9),
@@ -1098,7 +1623,7 @@ class _AdvancedPackageHeading extends StatelessWidget {
               const Text(
                 'ADVANCED PACKAGE',
                 style: TextStyle(
-                  color: AppColors.primaryDark,
+                  color: _workspaceAquaDark,
                   fontSize: 6.1,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .68,
@@ -1158,10 +1683,10 @@ class _LockedAdvancedPanel extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.surface, Color(0xFFF0F8F5), AppColors.surfaceRose],
+          colors: [AppColors.surface, _workspaceAquaWash, AppColors.surfaceRose],
         ),
         borderRadius: BorderRadius.circular(21),
-        border: Border.all(color: AppColors.primary.withValues(alpha: .10)),
+        border: Border.all(color: _workspaceAqua.withValues(alpha: .10)),
       ),
       child: Column(
         children: [
@@ -1171,15 +1696,15 @@ class _LockedAdvancedPanel extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.primarySoft,
+              color: _workspaceAquaSoft,
               border: Border.all(
-                color: AppColors.primary.withValues(alpha: .10),
+                color: _workspaceAqua.withValues(alpha: .10),
               ),
             ),
             child: const Icon(
               Icons.lock_outline_rounded,
               size: 22,
-              color: AppColors.primaryDark,
+              color: _workspaceAquaDark,
             ),
           ),
           const SizedBox(height: 10),
@@ -1211,10 +1736,10 @@ class _LockedAdvancedPanel extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.primarySoft.withValues(alpha: .55),
+              color: _workspaceAquaSoft.withValues(alpha: .55),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: AppColors.primary.withValues(alpha: .10),
+                color: _workspaceAqua.withValues(alpha: .10),
               ),
             ),
             child: Row(
@@ -1224,7 +1749,7 @@ class _LockedAdvancedPanel extends StatelessWidget {
                       ? Icons.toll_rounded
                       : Icons.credit_card_outlined,
                   size: 16,
-                  color: AppColors.primaryDark,
+                  color: _workspaceAquaDark,
                 ),
                 const SizedBox(width: 8),
                 const Expanded(
@@ -1240,7 +1765,7 @@ class _LockedAdvancedPanel extends StatelessWidget {
                 Text(
                   priceLabel,
                   style: const TextStyle(
-                    color: AppColors.primaryDark,
+                    color: _workspaceAquaDark,
                     fontSize: 9.4,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1313,13 +1838,13 @@ class _AdvancedOutputCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.surface, Color(0xFFF2F9F7)],
+          colors: [AppColors.surface, _workspaceAquaWash],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .07)),
+        border: Border.all(color: _workspaceAquaDark.withValues(alpha: .07)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: .03),
+            color: _workspaceAquaDark.withValues(alpha: .03),
             blurRadius: 14,
             offset: const Offset(0, 5),
           ),
@@ -1339,13 +1864,13 @@ class _AdvancedOutputCard extends StatelessWidget {
             height: 36,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: AppColors.primarySoft,
+              color: _workspaceAquaSoft,
               borderRadius: BorderRadius.circular(11),
             ),
             child: Text(
               number,
               style: const TextStyle(
-                color: AppColors.primaryDark,
+                color: _workspaceAquaDark,
                 fontSize: 7.5,
                 fontWeight: FontWeight.w900,
               ),
@@ -1366,8 +1891,8 @@ class _AdvancedOutputCard extends StatelessWidget {
               style: TextStyle(color: AppColors.textMuted, fontSize: 6.6),
             ),
           ),
-          iconColor: AppColors.primaryDark,
-          collapsedIconColor: AppColors.primaryDark,
+          iconColor: _workspaceAquaDark,
+          collapsedIconColor: _workspaceAquaDark,
           children: [
             Container(
               width: double.infinity,
@@ -1376,7 +1901,7 @@ class _AdvancedOutputCard extends StatelessWidget {
                 color: Colors.white.withValues(alpha: .58),
                 borderRadius: BorderRadius.circular(13),
                 border: Border.all(
-                  color: AppColors.primaryDark.withValues(alpha: .04),
+                  color: _workspaceAquaDark.withValues(alpha: .04),
                 ),
               ),
               child: _WorkspaceContent(value: value),
@@ -1419,7 +1944,7 @@ class _WorkspaceContent extends StatelessWidget {
                       child: Icon(
                         Icons.check_circle_outline_rounded,
                         size: 13,
-                        color: AppColors.primary,
+                        color: _workspaceAqua,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -1448,7 +1973,7 @@ class _WorkspaceContent extends StatelessWidget {
                     color: Colors.white.withValues(alpha: .58),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: AppColors.primaryDark.withValues(alpha: .045),
+                      color: _workspaceAquaDark.withValues(alpha: .045),
                     ),
                   ),
                   child: Column(
@@ -1506,7 +2031,7 @@ class _WorkspaceContent extends StatelessWidget {
                     child: Icon(
                       Icons.auto_awesome_rounded,
                       size: 11,
-                      color: AppColors.primaryDark,
+                      color: _workspaceAquaDark,
                     ),
                   ),
                   const SizedBox(width: 6),

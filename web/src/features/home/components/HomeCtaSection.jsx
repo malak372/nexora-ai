@@ -25,6 +25,7 @@ import {
     Sparkles,
 } from 'lucide-react';
 
+import { useUserExperience } from '../../../system/user-experience';
 import { submitContactMessage } from '../api/contact.api';
 import { VALUE_POINTS } from '../constants/home.constants';
 
@@ -110,6 +111,7 @@ function resolveSubmitError(error) {
  * @returns {JSX.Element}
  */
 export default function HomeCtaSection() {
+    const { t } = useUserExperience();
     const [formValues, setFormValues] = useState(INITIAL_FORM);
 
     const [fieldErrors, setFieldErrors] = useState({});
@@ -233,18 +235,16 @@ export default function HomeCtaSection() {
                 <div className="vox-contact-header">
                     <span className="vox-contact-eyebrow">
                         <Sparkles size={16} aria-hidden="true" />
-                        Start a meaningful conversation
+                        {t('Start a meaningful conversation')}
                     </span>
 
                     <h2 id="contact-heading">
-                        Let&apos;s turn your question into
-                        <span> a clearer next step.</span>
+                        {t("Let's turn your question into") }
+                        <span> {t('a clearer next step.')}</span>
                     </h2>
 
                     <p>
-                        Share your question, feedback, or collaboration idea.
-                        The Voxidence team will review the context and reply to
-                        the email you provide.
+                        {t('Share your question, feedback, or collaboration idea. The Voxidence team will review the context and reply to the email you provide.')}
                     </p>
                 </div>
 
@@ -256,22 +256,20 @@ export default function HomeCtaSection() {
                             </span>
 
                             <div>
-                                <p className="vox-contact-copy__label">Why contact us</p>
-                                <h3>Bring us the context. We will help clarify the direction.</h3>
+                                <p className="vox-contact-copy__label">{t('Why contact us')}</p>
+                                <h3>{t('Bring us the context. We will help clarify the direction.')}</h3>
                             </div>
                         </div>
 
                         <p className="vox-contact-copy__description">
-                            Ask about the platform, share feedback, or tell us
-                            about a collaboration you are exploring. A clear
-                            message helps us respond with a useful next step.
+                            {t('Ask about the platform, share feedback, or tell us about a collaboration you are exploring. A clear message helps us respond with a useful next step.')}
                         </p>
 
                         <div className="vox-contact-values">
                             {VALUE_POINTS.slice(0, 3).map((point) => (
                                 <div key={point}>
                                     <CheckCircle2 size={18} aria-hidden="true" />
-                                    <span>{point}</span>
+                                    <span>{t(point)}</span>
                                 </div>
                             ))}
                         </div>
@@ -279,11 +277,9 @@ export default function HomeCtaSection() {
                         <div className="vox-contact-note">
                             <Mail size={18} aria-hidden="true" />
                             <div>
-                                <strong>Your message stays connected</strong>
+                                <strong>{t('Your message stays connected')}</strong>
                                 <span>
-                                    We keep your inquiry linked to the reply
-                                    email you provide, so the conversation stays
-                                    easy to follow.
+                                    {t('We keep your inquiry linked to the reply email you provide, so the conversation stays easy to follow.')}
                                 </span>
                             </div>
                         </div>
@@ -292,8 +288,8 @@ export default function HomeCtaSection() {
                     <div className="contact-card vox-contact-form-card">
                         <div className="vox-contact-form-card__header">
                             <div>
-                                <p>Contact Voxidence</p>
-                                <h3>Tell us how we can help.</h3>
+                                <p>{t('Contact Voxidence')}</p>
+                                <h3>{t('Tell us how we can help.')}</h3>
                             </div>
 
                             <span>
@@ -309,11 +305,11 @@ export default function HomeCtaSection() {
                             <div className="vox-contact-form__row">
                                 <ContactField
                                     id="contact-full-name"
-                                    label="Full name"
+                                    label={t('Full name')}
                                     name="fullName"
                                     value={formValues.fullName}
-                                    error={fieldErrors.fullName}
-                                    placeholder="Your full name"
+                                    error={fieldErrors.fullName ? t(fieldErrors.fullName) : ''}
+                                    placeholder={t('Your full name')}
                                     autoComplete="name"
                                     minLength={2}
                                     maxLength={100}
@@ -323,11 +319,11 @@ export default function HomeCtaSection() {
 
                                 <ContactField
                                     id="contact-email"
-                                    label="Email address"
+                                    label={t('Email address')}
                                     name="email"
                                     type="email"
                                     value={formValues.email}
-                                    error={fieldErrors.email}
+                                    error={fieldErrors.email ? t(fieldErrors.email) : ''}
                                     placeholder="you@example.com"
                                     autoComplete="email"
                                     maxLength={150}
@@ -338,11 +334,11 @@ export default function HomeCtaSection() {
 
                             <ContactField
                                 id="contact-subject"
-                                label="Subject"
+                                label={t('Subject')}
                                 name="subject"
                                 value={formValues.subject}
-                                error={fieldErrors.subject}
-                                placeholder="What would you like to discuss?"
+                                error={fieldErrors.subject ? t(fieldErrors.subject) : ''}
+                                placeholder={t('What would you like to discuss?')}
                                 minLength={3}
                                 maxLength={150}
                                 onChange={handleFieldChange}
@@ -351,7 +347,7 @@ export default function HomeCtaSection() {
 
                             <div className="vox-contact-field">
                                 <div className="vox-contact-field__label-row">
-                                    <label htmlFor="contact-message">Message</label>
+                                    <label htmlFor="contact-message">{t('Message')}</label>
                                     <span>{messageLength}/2000</span>
                                 </div>
 
@@ -361,7 +357,7 @@ export default function HomeCtaSection() {
                                     rows={4}
                                     value={formValues.message}
                                     onChange={handleFieldChange}
-                                    placeholder="Share the details of your question, feedback, or request..."
+                                    placeholder={t('Share the details of your question, feedback, or request...')}
                                     minLength={10}
                                     maxLength={2000}
                                     disabled={isSubmitting}
@@ -383,7 +379,7 @@ export default function HomeCtaSection() {
                                         id="contact-message-error"
                                         className="contact-field-error"
                                     >
-                                        {fieldErrors.message}
+                                        {t(fieldErrors.message)}
                                     </p>
                                 )}
                             </div>
@@ -391,7 +387,7 @@ export default function HomeCtaSection() {
                             {(formValues.email.trim() || submitState.replyEmail) && (
                                 <small className="vox-contact-reply-note">
                                     <Mail size={14} aria-hidden="true" />
-                                    Reply will be sent to{' '}
+                                    {t('Reply will be sent to')}{' '}
                                     <span>
                                         {formValues.email.trim() || submitState.replyEmail}
                                     </span>
@@ -406,10 +402,10 @@ export default function HomeCtaSection() {
                                 >
                                     <CheckCircle2 size={20} aria-hidden="true" />
                                     <div>
-                                        <p>{submitState.message}</p>
+                                        <p>{t(submitState.message)}</p>
                                         {submitState.referenceId && (
                                             <p className="vox-contact-reference">
-                                                Reference: {submitState.referenceId}
+                                                {t('Reference')}: {submitState.referenceId}
                                             </p>
                                         )}
                                     </div>
@@ -423,7 +419,7 @@ export default function HomeCtaSection() {
                                     aria-live="assertive"
                                 >
                                     <CircleAlert size={20} aria-hidden="true" />
-                                    <p>{submitState.message}</p>
+                                    <p>{t(submitState.message)}</p>
                                 </div>
                             )}
 
@@ -439,11 +435,11 @@ export default function HomeCtaSection() {
                                             size={18}
                                             aria-hidden="true"
                                         />
-                                        Sending message...
+                                        {t('Sending message...')}
                                     </>
                                 ) : (
                                     <>
-                                        Send message
+                                        {t('Send message')}
                                         <ArrowUpRight size={18} aria-hidden="true" />
                                     </>
                                 )}

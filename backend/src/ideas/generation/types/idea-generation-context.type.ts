@@ -120,6 +120,19 @@ export type IdeaGenerationCollectionResolution = {
   collectionJobId: string;
 
   /**
+   * Technical domain row that owns the unified collection job.
+   *
+   * Multi-domain ranking may later choose a different semantic winner for the
+   * persisted Idea.domainId. Keeping the collection anchor separate prevents
+   * persistence from treating a valid unified job as foreign merely because
+   * the opportunity winner changed after collection completed.
+   */
+  anchorDomainId?: string;
+
+  /** Human-readable name of the collection-job anchor domain. */
+  anchorDomainName?: string;
+
+  /**
    * Indicates whether an existing completed collection job was
    * reused instead of creating a new job.
    */
@@ -421,7 +434,7 @@ export type IdeaGenerationCanonicalEvidenceItem = {
   readonly confidence: number;
   readonly problemFamily: string | null;
   readonly verified: boolean;
-  readonly origin: 'COMMUNITY_AI' | 'DOMAIN_DIRECT_FALLBACK' | 'RECOVERY';
+  readonly origin: 'COMMUNITY_AI' | 'DOMAIN_DIRECT_FALLBACK' | 'DETERMINISTIC_FALLBACK' | 'RECOVERY';
   readonly matchedDomainIds: readonly string[];
   readonly matchedFacetIds: readonly string[];
   readonly discoveryDomainId: string | null;
@@ -528,6 +541,14 @@ export type IdeaGenerationContext = {
    * Collection location and language metadata.
    */
   location: IdeaGenerationLocation;
+
+  /**
+   * Language used for all human-readable generated idea content.
+   *
+   * This is independent from location.language, which remains collection
+   * metadata and may be ANY or a language different from the UI language.
+   */
+  outputLanguage: LanguageCode;
 
   /**
    * Indicates whether compatible historical collection jobs must be ignored.
@@ -712,6 +733,9 @@ export type CreateIdeaGenerationContextInput = {
    */
   location: IdeaGenerationLocation;
 
+  /** Language used for all human-readable generated idea content. */
+  outputLanguage: LanguageCode;
+
   /**
    * Indicates whether compatible historical collection jobs must be ignored.
    */
@@ -762,6 +786,7 @@ export function createIdeaGenerationContext(
     requestedDataSourceKeys: input.requestedDataSourceKeys ?? [],
 
     location: input.location,
+    outputLanguage: input.outputLanguage,
 
     forceRefresh: input.forceRefresh ?? false,
 

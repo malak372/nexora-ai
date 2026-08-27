@@ -32,7 +32,7 @@ export const COMMUNITY_AI_ANALYSIS_TEMPERATURE = 0.1;
  * collector corpus from exhausting the synthesis response token budget.
  */
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_SCHEMA_NAME =
-  'nexora_community_evidence_triage_v10_three_model_missing_id_completion';
+  'nexora_community_evidence_triage_v11_ai_owned_family_selection';
 
 /** Maximum evidence items one Community AI transport partition may classify. */
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST = 84;

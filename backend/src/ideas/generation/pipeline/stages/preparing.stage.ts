@@ -21,6 +21,12 @@ import type { RequestCollectionPlan } from '../../types/request-collection-plan.
 import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 import { CanonicalProblemSpecUtil } from '../../utils/canonical-problem-spec.util';
 
+type PreparedExplicitDomain = {
+  readonly id: string;
+  readonly name: string;
+  readonly domainKeywords: readonly { readonly keyword: string }[];
+};
+
 /**
  * First executable pipeline stage.
  *
@@ -34,6 +40,9 @@ export class PreparingStage implements IdeaGenerationStage {
   readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   private readonly logger = new Logger(PreparingStage.name);
+  private readonly explicitDomainCache = new Map<string, { readonly expiresAt: number; readonly value: readonly PreparedExplicitDomain[] }>();
+  private readonly explicitDomainInFlight = new Map<string, Promise<PreparedExplicitDomain[]>>();
+  private static readonly EXPLICIT_DOMAIN_CACHE_TTL_MS = 15 * 60_000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -55,42 +64,42 @@ export class PreparingStage implements IdeaGenerationStage {
       `[PREPARING] Pipeline stage started for run "${context.runId}". ` +
         'AI request/evidence planning and explicit-domain prefetch are running concurrently.',
     );
+    const preparingStartedAt = Date.now();
 
+    const planStartedAt = Date.now();
+    let planElapsedMs = 0;
     const planPromise: Promise<RequestCollectionPlan | null> = description
-      ? this.requestCollectionPlanningService.plan({
-          description,
-          keywords: rawKeywords,
-          generationType: context.generationType,
-          language: context.location.language,
-          requestedDomainIds,
-          ...(context.owner.type === IDEA_OWNER_TYPES.USER
-            ? { userId: context.owner.userId }
-            : { guestSessionId: context.owner.guestSessionId }),
-        })
+      ? this.requestCollectionPlanningService
+          .plan({
+            description,
+            keywords: rawKeywords,
+            generationType: context.generationType,
+            language: context.location.language,
+            requestedDomainIds,
+            ...(context.owner.type === IDEA_OWNER_TYPES.USER
+              ? { userId: context.owner.userId }
+              : { guestSessionId: context.owner.guestSessionId }),
+          })
+          .finally(() => {
+            planElapsedMs = Date.now() - planStartedAt;
+          })
       : Promise.resolve(null);
 
+    const explicitDomainsStartedAt = Date.now();
+    let explicitPrefetchMs = 0;
     const explicitDomainsPromise = requestedDomainIds.length > 0
-      ? this.prisma.domain.findMany({
-          where: { id: { in: requestedDomainIds }, isActive: true },
-          select: {
-            id: true,
-            name: true,
-            domainKeywords: {
-              where: {
-                language: { in: [context.location.language, LanguageCode.ANY] },
-              },
-              select: { keyword: true },
-              orderBy: { createdAt: 'asc' },
-              take: 20,
-            },
+      ? this.loadExplicitDomains(requestedDomainIds, context.location.language).finally(
+          () => {
+            explicitPrefetchMs = Date.now() - explicitDomainsStartedAt;
           },
-        })
-      : Promise.resolve([]);
+        )
+      : Promise.resolve<PreparedExplicitDomain[]>([]);
 
     const [rawCollectionPlan, explicitDomains] = await Promise.all([
       planPromise,
       explicitDomainsPromise,
     ]);
+    const planningAndExplicitMs = Date.now() - planStartedAt;
     this.throwIfAborted(signal);
 
     if (requestedDomainIds.length > 0 && explicitDomains.length !== requestedDomainIds.length) {
@@ -104,6 +113,30 @@ export class PreparingStage implements IdeaGenerationStage {
       requestedDomainIds,
       explicitDomains,
     );
+
+    /*
+     * DOMAINS_ONLY already has the exact active domain names after the explicit
+     * prefetch above. Start its provider-diverse discovery-plan race NOW and let
+     * it overlap with primary-domain/selected-domain resolution. Previously the
+     * stage waited for domain resolution first and only then started AI planning,
+     * adding an avoidable serial 4-6 second window.
+     */
+    const domainDiscoveryPlanPromise: Promise<RequestCollectionPlan> | null =
+      !description && explicitDomains.length > 0
+        ? this.requestCollectionPlanningService.buildDomainDiscoveryPlan({
+            domainNames: explicitDomains.map((domain) => domain.name),
+            language: context.location.language,
+            generationType: context.generationType,
+            userId:
+              context.owner.type === IDEA_OWNER_TYPES.USER
+                ? context.owner.userId
+                : undefined,
+            guestSessionId:
+              context.owner.type === IDEA_OWNER_TYPES.GUEST
+                ? context.owner.guestSessionId
+                : undefined,
+          })
+        : null;
 
     const profile = collectionPlan?.problemProfile;
     const plannedKeywords = this.normalizeStrings([
@@ -130,6 +163,7 @@ export class PreparingStage implements IdeaGenerationStage {
      * search space. Choose the semantic primary only from the explicit set and
      * reserve DomainResolutionService for Text Only / No Input paths.
      */
+    const primaryResolutionStartedAt = Date.now();
     const primary = requestedDomainIds.length > 0
       ? this.resolveExplicitPrimaryDomain(
           collectionPlan,
@@ -159,8 +193,10 @@ export class PreparingStage implements IdeaGenerationStage {
             : plannedKeywords,
           language: context.location.language,
         });
+    const primaryResolutionMs = Date.now() - primaryResolutionStartedAt;
     this.throwIfAborted(signal);
 
+    const selectedDomainsStartedAt = Date.now();
     const selectedDomains = await this.resolveSelectedDomains({
       context,
       primary,
@@ -169,6 +205,8 @@ export class PreparingStage implements IdeaGenerationStage {
       collectionPlan,
       rawKeywords,
     });
+    this.assertExplicitDomainInvariant(requestedDomainIds, selectedDomains);
+    const selectedDomainsMs = Date.now() - selectedDomainsStartedAt;
 
     const requestMode = CanonicalProblemSpecUtil.resolveRequestMode({
       description,
@@ -183,20 +221,32 @@ export class PreparingStage implements IdeaGenerationStage {
      * only probe the selected/resolved domain for externally observed pain.
      */
     if (!collectionPlan) {
-      collectionPlan = await this.requestCollectionPlanningService.buildDomainDiscoveryPlan({
-        domainNames: selectedDomains.map((domain) => domain.name),
-        language: context.location.language,
-        generationType: context.generationType,
-        userId:
-          context.owner.type === IDEA_OWNER_TYPES.USER
-            ? context.owner.userId
-            : undefined,
-        guestSessionId:
-          context.owner.type === IDEA_OWNER_TYPES.GUEST
-            ? context.owner.guestSessionId
-            : undefined,
-      });
+      collectionPlan = domainDiscoveryPlanPromise
+        ? await domainDiscoveryPlanPromise
+        : await this.requestCollectionPlanningService.buildDomainDiscoveryPlan({
+            domainNames: selectedDomains.map((domain) => domain.name),
+            language: context.location.language,
+            generationType: context.generationType,
+            userId:
+              context.owner.type === IDEA_OWNER_TYPES.USER
+                ? context.owner.userId
+                : undefined,
+            guestSessionId:
+              context.owner.type === IDEA_OWNER_TYPES.GUEST
+                ? context.owner.guestSessionId
+                : undefined,
+          });
     }
+
+    collectionPlan = this.requestCollectionPlanningService.enrichPlanWithResolvedScope(
+      collectionPlan,
+      {
+        description,
+        selectedDomains,
+        requestKeywords: rawKeywords,
+        preferenceTerms: primary.trace.matchedInterests,
+      },
+    );
 
     const canonicalProblemSpec = CanonicalProblemSpecUtil.build({
       mode: requestMode,
@@ -242,6 +292,13 @@ export class PreparingStage implements IdeaGenerationStage {
       evidenceState: 'ZERO_VALIDATED_EVIDENCE',
       keywords,
     };
+
+    this.logger.debug(
+      `[PREPARING] timing | run=${context.runId} | parallelWait=${planningAndExplicitMs}ms | ` +
+        `planElapsed=${planElapsedMs}ms | explicitPrefetch=${explicitPrefetchMs}ms | ` +
+        `primaryResolution=${primaryResolutionMs}ms | selectedDomains=${selectedDomainsMs}ms | ` +
+        `total=${Date.now() - preparingStartedAt}ms.`,
+    );
 
     this.logger.log(
       `[PREPARING] Pipeline plan resolved | run=${context.runId} | ` +
@@ -337,11 +394,33 @@ export class PreparingStage implements IdeaGenerationStage {
       selectedDomains.map((domain) => [domain.name.trim().toLocaleLowerCase(), domain] as const),
     );
     const primaryDomain = selectedDomains[0] ?? null;
+    const normalizedDomainTokens = selectedDomains.map((domain) => ({
+      domain,
+      tokens: domain.name
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((token) => token.length >= 3),
+    }));
     const sourcePlans = (plan.sourcePlans ?? []).map((sourcePlan, index) => {
       const boundByName = sourcePlan.discoveryDomainName
         ? domainByName.get(sourcePlan.discoveryDomainName.trim().toLocaleLowerCase())
         : undefined;
-      const boundDomain = boundByName ?? primaryDomain;
+      const queryText = sourcePlan.queries
+        .join(' ')
+        .normalize('NFKC')
+        .toLocaleLowerCase();
+      const queryMatchedDomain = [...normalizedDomainTokens]
+        .map(({ domain, tokens }) => ({
+          domain,
+          score: tokens.filter((token) => queryText.includes(token)).length,
+        }))
+        .sort((left, right) => right.score - left.score)[0];
+      const boundDomain =
+        boundByName ??
+        (queryMatchedDomain && queryMatchedDomain.score > 0
+          ? queryMatchedDomain.domain
+          : primaryDomain);
       const sourceTier = sourcePlan.sourceTier ??
         (priorityKeys.has(sourcePlan.sourceKey.toLocaleLowerCase())
           ? 'PRIMARY'
@@ -432,11 +511,12 @@ export class PreparingStage implements IdeaGenerationStage {
       !input.context.requestDescription?.trim() && input.requestedDomainIds.length === 0
         ? input.primary.trace.candidates.slice(0, 3).map((candidate) => candidate.domainId)
         : [];
-    const candidateIds = this.normalizeIds([
-      input.primary.domainId,
-      ...input.requestedDomainIds,
-      ...noInputDiscoveryCandidateIds,
-    ]).slice(0, 3);
+    const candidateIds = input.requestedDomainIds.length > 0
+      ? [...input.requestedDomainIds]
+      : this.normalizeIds([
+          input.primary.domainId,
+          ...noInputDiscoveryCandidateIds,
+        ]).slice(0, 3);
 
     const explicitById = new Map(input.explicitDomains.map((domain) => [domain.id, domain]));
     /*
@@ -516,6 +596,23 @@ export class PreparingStage implements IdeaGenerationStage {
       });
   }
 
+  private assertExplicitDomainInvariant(
+    requestedDomainIds: readonly string[],
+    selectedDomains: readonly SelectedGenerationDomain[],
+  ): void {
+    if (requestedDomainIds.length === 0) return;
+    const requested = new Set(requestedDomainIds);
+    const selected = new Set(selectedDomains.map((domain) => domain.id));
+    const exactMatch =
+      requested.size === selected.size &&
+      [...requested].every((id) => selected.has(id));
+    if (!exactMatch) {
+      throw new Error(
+        'Explicit-domain immutability invariant failed: PREPARING must preserve exactly the requester-selected domain set.',
+      );
+    }
+  }
+
   private buildRunKeywords(
     description: string,
     rawKeywords: readonly string[],
@@ -582,6 +679,40 @@ export class PreparingStage implements IdeaGenerationStage {
       result.push(words.slice(index, index + 5).join(' '));
     }
     return result;
+  }
+
+  private async loadExplicitDomains(
+    domainIds: readonly string[],
+    language: LanguageCode,
+  ): Promise<PreparedExplicitDomain[]> {
+    const normalizedIds = [...new Set(domainIds.map((id) => id.trim()).filter(Boolean))].sort();
+    const cacheKey = `${language}:${normalizedIds.join(',')}`;
+    const cached = this.explicitDomainCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value.map((domain) => ({
+        ...domain,
+        domainKeywords: domain.domainKeywords.map((item) => ({ ...item })),
+      }));
+    }
+    const inFlight = this.explicitDomainInFlight.get(cacheKey);
+    if (inFlight) return inFlight;
+
+    const request = this.requestCollectionPlanningService
+      .resolveActiveDomainsByIds(normalizedIds, language)
+      .then((domains) => {
+        const ordered = normalizedIds
+          .map((id) => domains.find((domain) => domain.id === id))
+          .filter((domain): domain is (typeof domains)[number] => Boolean(domain));
+        this.explicitDomainCache.set(cacheKey, {
+          expiresAt: Date.now() + PreparingStage.EXPLICIT_DOMAIN_CACHE_TTL_MS,
+          value: ordered,
+        });
+        return ordered;
+      })
+      .finally(() => this.explicitDomainInFlight.delete(cacheKey));
+
+    this.explicitDomainInFlight.set(cacheKey, request);
+    return request;
   }
 
   private normalizeStrings(values: readonly (string | null | undefined)[]): string[] {

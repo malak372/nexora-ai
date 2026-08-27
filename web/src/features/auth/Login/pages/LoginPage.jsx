@@ -261,7 +261,7 @@ export default function LoginPage() {
                             </motion.span>
 
                             <span className="nx-brand__copy">
-                                <strong>Voxidence</strong>
+                                <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
                                 <small>Ideas built from real needs</small>
                             </span>
                         </Link>
@@ -387,7 +387,7 @@ export default function LoginPage() {
                             </span>
 
                             <span className="nx-brand__copy">
-                                <strong>Voxidence</strong>
+                                <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
                                 <small>Ideas built from real needs</small>
                             </span>
                         </Link>

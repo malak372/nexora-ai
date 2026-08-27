@@ -7,6 +7,19 @@ export type RequestCollectionSourceFocus =
 
 export type RequestCollectionDomainSelectionMode = 'EXISTING' | 'NEW';
 
+export type RequestIntentMode = 'EXPLICIT_PROBLEM' | 'DISCOVERY_INTENT';
+
+export type RequestIntentInterpretation = {
+  /** AI-owned interpretation of whether the free text actually states a problem. */
+  readonly mode: RequestIntentMode;
+  /** Concise intent/context summary used to constrain discovery without becoming evidence. */
+  readonly summary: string;
+  /** Explicit problem extracted from the request only when the text truly states one. */
+  readonly explicitProblem: string | null;
+  /** Desired outcome/preference expressed by the requester, if any. */
+  readonly desiredOutcome: string | null;
+};
+
 export type RequestCollectionSourcePlan = {
   readonly sourceKey: string;
   readonly queries: readonly string[];
@@ -33,8 +46,10 @@ export type RequestCollectionDomainIdentity = {
  * Canonical, problem-first interpretation created during the PREPARING phase
  * before domain resolution or collector execution.
  *
- * The requester text is the source of truth. Explicit/inferred domains are
- * contextual constraints only and must never replace this problem profile.
+ * This profile exists only when PREPARING AI determines that the requester
+ * actually stated an explicit problem. Free text that only expresses a goal,
+ * preference, audience, or desired product direction remains request intent and
+ * must not be promoted into a problem statement before evidence analysis.
  */
 export type RequestCanonicalProblemProfile = {
   readonly actor: string;
@@ -66,6 +81,7 @@ export type RequestCollectionPlan = {
   readonly domainSelectionMode?: RequestCollectionDomainSelectionMode;
 
   readonly suggestedDomainName: string | null;
+  readonly requestIntent?: RequestIntentInterpretation;
   readonly domainIdentity?: RequestCollectionDomainIdentity;
   readonly problemProfile?: RequestCanonicalProblemProfile;
   readonly existingDomainMatchScore?: number;

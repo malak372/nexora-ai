@@ -21,6 +21,7 @@ import type { IdeaGenerationStage } from '../interfaces/idea-generation-stage.in
 
 import {
   IdeaGenerationPipelineService,
+  IdeaGenerationRunHandoffError,
   type IdeaGenerationPipelineResult,
 } from '../pipeline/idea-generation-pipeline.service';
 import { IdeaGenerationCancelledError } from '../pipeline/idea-generation-stage.service';
@@ -164,6 +165,9 @@ type ExecuteOwnedIdeaGenerationInput = {
    * Collection location and language information.
    */
   location: IdeaGenerationLocation;
+
+  /** Frontend-selected language for every human-readable generated idea value. */
+  outputLanguage: LanguageCode;
 
   /**
    * Whether the resolver must bypass compatible historical collection jobs.
@@ -350,6 +354,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       keywords: context.keywords,
       requestedDataSourceKeys: context.requestedDataSourceKeys,
       location: context.location,
+      outputLanguage: this.resolveOutputLanguage(context.outputLanguage),
       forceRefresh: context.forceRefresh,
     };
 
@@ -1110,6 +1115,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       region: this.normalizeOptionalValue(dto.region) ?? '',
       radiusKm: dto.radiusKm ?? null,
       language: dto.language,
+      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage),
       forceRefresh: dto.forceRefresh === true,
     });
   }
@@ -1125,6 +1131,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       region: this.normalizeOptionalValue(dto.region) ?? '',
       radiusKm: dto.radiusKm ?? null,
       language: dto.language,
+      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage),
       forceRefresh: dto.forceRefresh === true,
     });
   }
@@ -1145,8 +1152,15 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       region: context.location.region ?? '',
       radiusKm: context.location.radiusKm,
       language: context.location.language,
+      outputLanguage: this.resolveOutputLanguage(context.outputLanguage),
       forceRefresh: context.forceRefresh === true,
     });
+  }
+
+  private resolveOutputLanguage(
+    value: LanguageCode | null | undefined,
+  ): LanguageCode {
+    return value && value !== LanguageCode.ANY ? value : LanguageCode.EN;
   }
 
   private normalizeExplicitDomainIds(
@@ -1380,6 +1394,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
+      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage),
     });
   }
 
@@ -1438,6 +1453,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
+      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage),
     });
   }
 
@@ -1490,6 +1506,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
+      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage),
     });
   }
 
@@ -1537,6 +1554,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
+      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage),
     });
   }
 
@@ -1656,6 +1674,13 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
           return;
         }
 
+        if (error instanceof IdeaGenerationRunHandoffError) {
+          this.logger.warn(
+            `Queued idea-generation run "${run.id}" yielded to checkpoint recovery and remains non-terminal: ${normalized.message}`,
+          );
+          return;
+        }
+
         this.logger.error(
           `Queued idea-generation run "${run.id}" failed: ${normalized.message}`,
           normalized.stack,
@@ -1751,7 +1776,18 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         throw error;
       }
 
-      await this.persistUnfinishedRunFailure(runId, normalizedError);
+      if (error instanceof IdeaGenerationRunHandoffError) {
+        this.logger.warn(
+          `Idea-generation orchestration handed run "${runId}" to checkpoint recovery without marking it failed: ${normalizedError.message}`,
+        );
+        throw error;
+      }
+
+      await this.persistUnfinishedRunFailure(
+        runId,
+        normalizedError,
+        lockAcquired,
+      );
 
       this.logger.error(
         `Idea-generation orchestration failed for run "${runId}": ${normalizedError.message}`,
@@ -1810,6 +1846,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestedDataSourceKeys: input.requestedDataSourceKeys,
 
       location: input.location,
+
+      outputLanguage: input.outputLanguage,
 
       forceRefresh: input.forceRefresh,
     });
@@ -1976,6 +2014,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestedDataSourceKeys: this.normalizeRecoveredStringArray(
         checkpoint.requestedDataSourceKeys,
       ),
+      outputLanguage: this.resolveOutputLanguage(checkpoint.outputLanguage),
       forceRefresh: checkpoint.forceRefresh === true,
       policy: checkpoint.policy ?? null,
       selectedDataSources: Array.isArray(checkpoint.selectedDataSources)
@@ -2313,6 +2352,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
   private async persistUnfinishedRunFailure(
     runId: string,
     error: Error,
+    executionOwnershipEstablished: boolean,
   ): Promise<void> {
     try {
       const run = await this.runService.findRunOrThrow(runId);
@@ -2321,6 +2361,25 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         run.status !== IdeaGenerationRunStatus.QUEUED &&
         run.status !== IdeaGenerationRunStatus.RUNNING
       ) {
+        return;
+      }
+
+      /*
+       * A failed lock acquisition does not own a RUNNING durable run. Another
+       * process may be executing that same run (for example after duplicate
+       * queue delivery or a recovery scan). Marking it FAILED here used to let
+       * the losing contender kill the healthy foreground pipeline immediately
+       * before idea persistence. Only the execution that actually established
+       * ownership may terminally fail a RUNNING row. A newly-created QUEUED
+       * contender can still be closed normally when it never acquired a lock.
+       */
+      if (
+        run.status === IdeaGenerationRunStatus.RUNNING &&
+        !executionOwnershipEstablished
+      ) {
+        this.logger.warn(
+          `Skipped failure mutation for generation run "${runId}" because this orchestration attempt never acquired its execution lock; another process may still own the RUNNING run.`,
+        );
         return;
       }
 

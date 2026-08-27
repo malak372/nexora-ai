@@ -119,7 +119,7 @@ export default function PremiumWelcomeCelebration() {
 
         const timer = window.setTimeout(() => {
             setIsVisible(false);
-        }, 5600);
+        }, 4000);
 
         const handleEscape = (event) => {
             if (event.key === 'Escape') {

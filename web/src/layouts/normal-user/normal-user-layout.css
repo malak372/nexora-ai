@@ -1242,3 +1242,168 @@
     transition: none;
   }
 }
+/* Dashboard-only shell dark polish. Uses :has so other normal-user pages are not restyled here. */
+html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) {
+  color: #f1f8f5 !important;
+  background: #18231f !important;
+}
+
+html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) .normal-app-shell__aurora {
+  background:
+    radial-gradient(circle at 8% 8%, rgba(227, 168, 181, .08), transparent 29%),
+    radial-gradient(circle at 91% 12%, rgba(112, 205, 198, .10), transparent 30%),
+    radial-gradient(circle at 73% 88%, rgba(78, 139, 128, .08), transparent 31%),
+    linear-gradient(135deg, #18231f, #1b2823 48%, #18231f) !important;
+}
+
+html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) .normal-header.normal-header--professional,
+html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) .normal-sidebar,
+html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) .normal-header__profile-menu {
+  color: #f1f8f5 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: linear-gradient(120deg, rgba(35, 52, 45, .97), rgba(28, 43, 37, .97)) !important;
+  box-shadow: 0 16px 46px rgba(4, 12, 10, .22) !important;
+}
+
+html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) .normal-header__search,
+html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) :is(.normal-header__profile, .normal-header__icon, .normal-header__menu) {
+  color: #d5e5e0 !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+  background: #263831 !important;
+}
+
+html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) .normal-header__search input {
+  color: #f1f8f5 !important;
+  background: transparent !important;
+}
+
+html.vox-user-rtl .normal-app-shell:has(.normal-dashboard-page) {
+  direction: rtl;
+}
+
+html.vox-user-rtl .normal-app-shell:has(.normal-dashboard-page) .normal-header__search input {
+  direction: rtl;
+  text-align: right;
+}
+
+/* User dark canvas: keep every authenticated page on one continuous charcoal
+   background. Scoped to the user theme class, so English/light stays intact. */
+html.vox-user-dark .normal-app-shell,
+html.vox-user-dark .normal-app-shell__main {
+  background-color: #111a17 !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark .normal-app-shell__aurora {
+  opacity: 1 !important;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(223, 167, 180, .055), transparent 30%),
+    radial-gradient(circle at 91% 12%, rgba(115, 208, 202, .075), transparent 31%),
+    radial-gradient(circle at 74% 90%, rgba(79, 145, 133, .055), transparent 32%),
+    linear-gradient(145deg, #111a17, #15211d 52%, #111a17) !important;
+}
+
+html.vox-user-dark .normal-app-shell__aurora::after {
+  opacity: .12 !important;
+  background-image:
+    linear-gradient(rgba(115, 208, 202, .07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(115, 208, 202, .07) 1px, transparent 1px) !important;
+}
+
+/* ========================================================================== */
+/* Arabic account menu + dark-menu hardening                                  */
+/* ========================================================================== */
+
+html.vox-user-rtl .normal-header__profile-wrap {
+  z-index: 180;
+}
+
+html.vox-user-rtl .normal-header__profile-menu {
+  right: auto;
+  left: 0;
+  width: clamp(300px, 22vw, 340px);
+  max-width: calc(100vw - 24px);
+  transform-origin: top left;
+  overflow: visible;
+  direction: rtl;
+}
+
+html.vox-user-rtl .normal-header__profile-menu-head,
+html.vox-user-rtl .normal-header__profile-menu button {
+  direction: rtl;
+}
+
+html.vox-user-rtl .normal-header__profile-menu-head > div,
+html.vox-user-rtl .normal-header__profile-menu button span {
+  text-align: right;
+}
+
+html.vox-user-rtl .normal-header__profile-menu-head b,
+html.vox-user-rtl .normal-header__profile-menu button b,
+html.vox-user-rtl .normal-header__profile-menu button small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  line-height: 1.45;
+}
+
+html.vox-user-rtl .normal-header__profile-menu-head small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.vox-user-rtl .normal-header__profile-menu button {
+  min-height: 54px;
+  padding: 10px 12px;
+  justify-content: flex-start;
+}
+
+html.vox-user-rtl .normal-header__profile-menu button:hover {
+  transform: translateX(-2px);
+}
+
+html.vox-user-dark .normal-header__profile-menu,
+html.vox-user-dark .normal-header__profile-menu-head,
+html.vox-user-dark .normal-header__profile-menu button {
+  border-color: rgba(115, 208, 202, .18) !important;
+}
+
+html.vox-user-dark .normal-header__profile-menu {
+  background: linear-gradient(155deg, #1a2a24 0%, #17251f 55%, #14211d 100%) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255,255,255,.025) !important;
+}
+
+html.vox-user-dark .normal-header__profile-menu button {
+  color: #dceae6 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .normal-header__profile-menu button:hover {
+  color: #f4fbf8 !important;
+  background: rgba(115, 208, 202, .08) !important;
+}
+
+html.vox-user-dark .normal-header__profile-menu .normal-header__sign-out:hover {
+  color: #f0c0ca !important;
+  background: rgba(223, 167, 180, .09) !important;
+}
+
+html.vox-user-dark .normal-header__profile-menu-head b,
+html.vox-user-dark .normal-header__profile-menu button b {
+  color: #edf7f4 !important;
+}
+
+html.vox-user-dark .normal-header__profile-menu-head small,
+html.vox-user-dark .normal-header__profile-menu button small {
+  color: #a9bdb7 !important;
+}
+
+@media (max-width: 760px) {
+  html.vox-user-rtl .normal-header__profile-menu {
+    left: 0;
+    right: auto;
+    width: min(320px, calc(100vw - 18px));
+  }
+}

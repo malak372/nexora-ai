@@ -9,6 +9,7 @@ import { createHash } from 'crypto';
 import {
   CollectionJobStatus,
   IdeaGenerationType,
+  LanguageCode,
   Prisma,
   PromptType,
 } from '@prisma/client';
@@ -416,6 +417,7 @@ export class PromptBuilderService {
         region: normalizedRegion,
       }),
       renderedTemplate,
+      this.buildOutputLanguageDirective(input),
     ].join('\n\n');
 
     const compactPrompt = this.compactPrompt(renderedPrompt);
@@ -453,19 +455,84 @@ export class PromptBuilderService {
     }
 
     const requestDescription = input.requestDescription?.trim();
+    const interpretation = input.requestIntent;
 
-    if (!requestDescription) {
+    if (!requestDescription && !interpretation) {
       return '';
     }
 
+    if (
+      interpretation?.mode === 'EXPLICIT_PROBLEM' &&
+      interpretation.explicitProblem?.trim()
+    ) {
+      return [
+        'APPLICATION-ENFORCED REQUEST INTERPRETATION:',
+        '- PREPARING AI classified the requester text as an EXPLICIT_PROBLEM.',
+        `- Explicit requester problem: ${interpretation.explicitProblem.trim()}`,
+        interpretation.desiredOutcome?.trim()
+          ? `- Requested outcome/context: ${interpretation.desiredOutcome.trim()}`
+          : '',
+        '- The requester text is a scope constraint, never external evidence.',
+        '- Prefer a problem family that validates this stated failure or a tightly equivalent failure chain when retained DIRECT_PROBLEM/SUPPORTING_SIGNAL evidence exists.',
+        '- Do not replace the requester problem merely because another unrelated problem in the same domain has more evidence.',
+        '- If evidence does not validate the stated problem, preserve that uncertainty explicitly instead of inventing support.',
+      ].filter(Boolean).join('\n');
+    }
+
     return [
-      'APPLICATION-ENFORCED REQUEST INTENT:',
-      `- Requester problem scope: ${requestDescription}`,
-      '- Use this text to prioritize which collected problems are relevant to the requester.',
-      '- Preserve every material user pain, operational constraint, named data source, and requested outcome in the selected product scope. Do not silently drop a major dimension merely to simplify implementation; map each material dimension to the problem narrative, a concrete capability/objective, or an explicit pilot measurement/assumption.',
-      '- This text is not community evidence and must never be cited as proof that the problem exists.',
-      '- If collected evidence contradicts or does not support the requested scope, keep the output cautious and follow the evidence rather than inventing support.',
+      'APPLICATION-ENFORCED REQUEST INTERPRETATION:',
+      '- PREPARING AI classified the requester text as DISCOVERY_INTENT, not as a verified problem statement.',
+      requestDescription
+        ? `- Requester intent/context: ${requestDescription}`
+        : '',
+      interpretation?.summary?.trim()
+        ? `- Normalized intent: ${interpretation.summary.trim()}`
+        : '',
+      interpretation?.desiredOutcome?.trim()
+        ? `- Desired outcome: ${interpretation.desiredOutcome.trim()}`
+        : '',
+      '- Use the requester text only to constrain the actor, workflow, desired direction, exclusions, and domain search space. It is not evidence and must not be restated as the final problem merely because it was provided by the requester.',
+      '- The final software problem must come from the canonical problem family selected after collection by Community AI and deterministic evidence verification.',
+      '- Build the product around that evidence-backed selected problem while preserving compatible requester goals and constraints.',
+      '- If no DIRECT_PROBLEM or SUPPORTING_SIGNAL survives, do not fabricate a concrete market problem; return a clearly validation-stage direction consistent with the requester intent.',
+    ].filter(Boolean).join('\n');
+  }
+
+  private buildOutputLanguageDirective(input: PromptBuilderInput): string {
+    if (input.purpose !== 'IDEA_GENERATION') {
+      return '';
+    }
+
+    const languageName = this.resolveOutputLanguageName(input.outputLanguage);
+
+    return [
+      'APPLICATION-ENFORCED OUTPUT LANGUAGE — FINAL OVERRIDE:',
+      `- The frontend selected ${languageName} (${input.outputLanguage}) as the generated-idea language.`,
+      `- Write every human-readable generated VALUE in ${languageName}.`,
+      '- Keep JSON property names, enum values, stable output keys, schema structure, and machine identifiers exactly as required by the supplied response schema.',
+      '- Translate or summarize evidence semantically into the requested output language even when source evidence is written in another language.',
+      '- Do not mix narrative languages. Proper nouns, product names, API/library names, protocols, code identifiers, and standard technical acronyms may remain in their conventional form when translating them would reduce clarity.',
+      '- This directive overrides any older configurable template sentence that requests a different narrative language.',
     ].join('\n');
+  }
+
+  private resolveOutputLanguageName(language: LanguageCode): string {
+    switch (language) {
+      case LanguageCode.AR:
+        return 'Arabic';
+      case LanguageCode.FR:
+        return 'French';
+      case LanguageCode.ES:
+        return 'Spanish';
+      case LanguageCode.DE:
+        return 'German';
+      case LanguageCode.TR:
+        return 'Turkish';
+      case LanguageCode.EN:
+      case LanguageCode.ANY:
+      default:
+        return 'English';
+    }
   }
 
   private buildTierOutputDirective(input: PromptBuilderInput): string {
@@ -698,6 +765,9 @@ export class PromptBuilderService {
         'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
       ),
     );
+    const explicitRequesterProblem =
+      input.requestIntent?.mode === 'EXPLICIT_PROBLEM' &&
+      Boolean(input.requestIntent.explicitProblem?.trim());
 
     return [
       'APPLICATION-ENFORCED CROSS-DOMAIN EVIDENCE MAP:',
@@ -859,13 +929,18 @@ export class PromptBuilderService {
         'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
       ),
     );
+    const explicitRequesterProblem =
+      input.requestIntent?.mode === 'EXPLICIT_PROBLEM' &&
+      Boolean(input.requestIntent.explicitProblem?.trim());
 
     return [
       'APPLICATION-ENFORCED MULTI-DOMAIN IDEA NARRATIVE:',
       '- Return one coherent software product scoped to the selected opportunity. It is cross-domain when matchedDomainNames contains more than one domain backed by verified bundle evidence, or when the selected opportunity is an explicit zero-evidence/request-validation hypothesis whose allowed validation scope contains multiple selected domains.',
       '- title must be a concise public-facing product or capability name, normally 3-10 words. Never expose pipeline scaffolding in the title: do not use Cross-Domain, Multi-Domain, Validation, Request Validation, Validation Pilot, Evidence Validation, Opportunity Discovery, Primary Domain, Preliminary Pilot, or a plus-sign-joined list of domains. Validation status belongs in the problem/abstract, never in the title.',
       validationOnly
-        ? '- problemStatement must be one polished narrative paragraph of 90-180 words that preserves the requester-defined problem as an explicitly unvalidated hypothesis. Do not imply retained evidence proved it. Every material problem dimension must map to at least one concrete objective, affected user role, product capability, or pilot measurement.'
+        ? explicitRequesterProblem
+          ? '- problemStatement must be one polished narrative paragraph of 90-180 words that preserves the explicitly stated requester problem as an unvalidated hypothesis. Do not imply retained evidence proved it. Every material problem dimension must map to at least one concrete objective, affected user role, product capability, or pilot measurement.'
+          : '- problemStatement must be one polished narrative paragraph of 90-180 words describing a validation-stage discovery direction inside the requester intent/domain scope. Do not turn requester preferences or CONTEXT_ONLY evidence into a concrete market problem.'
         : '- problemStatement must be one polished narrative paragraph of 90-180 words. Include only evidence-backed problems that the returned objectives and solution capabilities directly address. Cross-domain and multi-problem ideas are allowed, but every included problem must map to at least one concrete objective, one affected user role, and one product capability.',
       '- Do not add legal, HR, recruitment, compliance, AI, or any other selected-domain module that falls outside the selected opportunity matchedDomainNames, even when a separate shortlisted alternative has evidence for it.',
       '- When evidence contains unrelated problems, select the strongest coherent problem cluster instead of combining unrelated feature bundles. relatedOpportunityBundle is the only exception: its items are separate atomic problems with independent evidence and may be combined only when the winning opportunity explicitly verifies the other domain as part of the same workflow. Lexical similarity, domain selection, or adjacent subject matter is never sufficient. Never describe bundle items as recurrence of one problem.',
@@ -957,20 +1032,26 @@ export class PromptBuilderService {
       (name) => !claimDomainSet.has(name.toLocaleLowerCase()),
     );
     const requestDescription = input.requestDescription?.trim();
+    const explicitRequesterProblem =
+      input.requestIntent?.mode === 'EXPLICIT_PROBLEM' &&
+      Boolean(input.requestIntent.explicitProblem?.trim());
     const isCrossDomain = claimDomains.length > 1;
 
     return [
       'APPLICATION-ENFORCED ZERO-EVIDENCE FALLBACK:',
       `- No retained direct community evidence exists for the final fallback. The allowed validation scope is: ${claimDomains.join(', ')}.`,
-      ...(requestDescription
+      ...(explicitRequesterProblem
         ? [
-            `- The requester description is authoritative for the pilot problem: ${requestDescription}`,
-            '- Preserve that exact problem scope. Do not replace it with a different problem merely because another collected signal looked stronger.',
-            '- Cover every material dimension named by the requester in the pilot design. A validation-first product may prioritize one core workflow, but it must not silently omit another named pain, data source, or desired outcome; represent secondary dimensions as a concrete capability, measurable pilot check, or explicit assumption.',
+            `- The requester explicitly stated this pilot problem: ${input.requestIntent?.explicitProblem?.trim() || requestDescription || ''}`,
+            '- Preserve that exact problem scope as an unvalidated requester hypothesis. Do not replace it with a different problem merely because another collected signal looked stronger.',
+            '- Cover every material dimension named by the requester in the pilot design, while clearly separating requester assumptions from external evidence.',
           ]
         : [
-            '- No requester problem exists in this mode. CONTEXT_ONLY and UNRELATED corpus items are forbidden as problem selectors.',
-            '- Do not invent a concrete operational failure, user segment, workflow pain, or remediation mechanism from generic/raw context.',
+            ...(requestDescription
+              ? [`- Requester discovery intent/context: ${requestDescription}`]
+              : []),
+            '- No explicit requester problem exists in this mode. CONTEXT_ONLY and UNRELATED corpus items are forbidden as problem selectors.',
+            '- Do not invent a concrete operational failure, user segment, workflow pain, or remediation mechanism from requester preferences or generic/raw context.',
             `- Keep the output inside the selected search space only: ${selectedDomainNames.join(', ') || fallbackPrimaryDomain}.`,
             '- Produce a neutral problem-signal discovery workspace whose job is to collect, classify, compare, and validate real people problems before a normal software idea is generated.',
             '- A concrete product problem may be selected only after canonicalEvidenceLedger contains at least one verified DIRECT_PROBLEM or SUPPORTING_SIGNAL.',

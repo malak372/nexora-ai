@@ -1,0 +1,158 @@
+/* Voxidence user-facing language + appearance controls.
+   Dark visual styling lives in user-dark-generated.css. */
+
+:root {
+  --vox-dark-bg: #111a17;
+  --vox-dark-surface: #192722;
+  --vox-dark-surface-2: #20312b;
+  --vox-dark-text: #f1f7f5;
+  --vox-dark-muted: #b4c6c0;
+  --vox-dark-border: rgba(111, 202, 197, .18);
+  --vox-dark-aqua: #73d0ca;
+  --vox-dark-aqua-deep: #48a8a2;
+}
+
+.vox-experience-controls {
+  position: fixed;
+  z-index: 10050;
+  right: 18px;
+  bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid rgba(92, 189, 185, .22);
+  border-radius: 14px;
+  background: rgba(255, 253, 252, .94);
+  box-shadow: 0 12px 30px rgba(47, 119, 116, .12);
+  backdrop-filter: blur(18px);
+}
+
+.vox-experience-button {
+  min-width: 38px;
+  height: 36px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgba(92, 189, 185, .20);
+  border-radius: 11px;
+  color: #2f7774;
+  background: #fbfefd;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.vox-experience-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(82, 185, 181, .42);
+  background: #eef9f7;
+}
+
+html.vox-user-dark .vox-experience-controls {
+  border-color: var(--vox-dark-border);
+  background: rgba(25, 39, 34, .96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+}
+
+html.vox-user-dark .vox-experience-button {
+  color: #c7ece7;
+  border-color: var(--vox-dark-border);
+  background: var(--vox-dark-surface-2);
+}
+
+/* Arabic reading direction. Layout mechanics and DOM order are unchanged. */
+html.vox-user-rtl body {
+  overflow-x: hidden;
+  font-family: 'Cairo', 'Inter', Arial, sans-serif;
+}
+
+html.vox-user-rtl body :is(
+  .vox-public-shell,
+  .vox-home-page,
+  .normal-app-shell,
+  .nx-login,
+  .nx-register,
+  .vx-recovery,
+  .nx-verify,
+  .guest-bootstrap-page,
+  .guest-generator-page,
+  .guest-progress-page,
+  .guest-publication-page,
+  .nx-generation-page
+) {
+  direction: rtl;
+}
+
+html.vox-user-rtl body :is(h1, h2, h3, h4, h5, h6, p, small, label, li, dt, dd, blockquote) {
+  text-align: start;
+  unicode-bidi: plaintext;
+}
+
+html.vox-user-rtl body :is(input, textarea, select) {
+  direction: rtl;
+  text-align: right;
+}
+
+html.vox-user-rtl body :is(
+  input[type='email'],
+  input[type='url'],
+  input[type='tel'],
+  [data-ltr='true'],
+  [dir='ltr'],
+  code,
+  pre,
+  a[href^='mailto:'],
+  a[href^='http']
+) {
+  direction: ltr !important;
+  text-align: left !important;
+  unicode-bidi: isolate !important;
+}
+
+html.vox-user-rtl body :is(table, thead, tbody, tr, th, td) { text-align: start; }
+html.vox-user-rtl body :is(input[type='number'], input[type='date'], input[type='time']) {
+  direction: ltr;
+  text-align: right;
+}
+
+html.vox-user-rtl body :is(
+  .vox-public-nav,
+  .normal-header__nav,
+  .normal-sidebar__nav,
+  .normal-header__actions,
+  .normal-header__profile,
+  .normal-header__search
+) { direction: rtl; }
+
+html.vox-user-rtl body :is(
+  [class$='-header'], [class*='-header '],
+  [class$='-toolbar'], [class*='-toolbar '],
+  [class$='-actions'], [class*='-actions '],
+  [class$='-controls'], [class*='-controls ']
+) { text-align: start; }
+
+/* Directional arrows used as navigation cues. */
+html.vox-user-rtl body :is(
+  .nx-domain-shortcut svg:last-child,
+  .nx-next-button svg,
+  .nx-back-button svg,
+  .vox-discovery-card__link svg,
+  .vox-footer__contact-action svg
+) { transform: rotate(180deg); }
+
+html.vox-user-rtl .vox-experience-controls { right: auto; left: 18px; }
+
+/* Portals are mounted below body rather than #root on several user pages. */
+html.vox-user-rtl body > :is([role='dialog'], [role='menu'], [role='listbox']) { direction: rtl; }
+html.vox-user-rtl body > :is([role='dialog'], [role='menu'], [role='listbox']) :is(h1,h2,h3,h4,p,label,button) { text-align: start; }
+
+@media (max-width: 720px) {
+  .vox-experience-controls { right: 10px; bottom: 10px; gap: 3px; padding: 3px; border-radius: 12px; }
+  html.vox-user-rtl .vox-experience-controls { right: auto; left: 10px; }
+  .vox-experience-button { min-width: 32px; height: 31px; padding: 0 7px; gap: 4px; border-radius: 9px; font-size: 10px; }
+}

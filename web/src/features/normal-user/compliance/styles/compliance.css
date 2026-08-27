@@ -3138,3 +3138,122 @@
         border-radius: 22px;
     }
 }
+
+/* ========================================================================== */
+/* Voxidence dark mode — compliance                                           */
+/* ========================================================================== */
+
+html.vox-user-dark .compliance-page {
+    --case-ink: #f2f7f5;
+    --case-muted: #aabdb7;
+    --case-violet: #73d0ca;
+    --case-violet-dark: #8edbd6;
+    --case-blue: #73b8b2;
+    --case-cyan: #8fd5cf;
+    --case-mint: #74d4ac;
+    --case-danger: #e1a0ae;
+    --case-border: rgba(115, 208, 202, .18);
+    --case-surface: #1a2a24;
+    color: #f2f7f5;
+    background: transparent !important;
+}
+
+html.vox-user-dark .compliance-page :is(
+    .compliance-hero,
+    .compliance-hero__story,
+    .compliance-principles__cards article,
+    .compliance-workspace,
+    .compliance-rail,
+    .compliance-case-card,
+    .compliance-detail,
+    .compliance-list-state,
+    .compliance-related-idea,
+    .compliance-message-card,
+    .compliance-reply-card,
+    .compliance-timeline-card,
+    .compliance-modal__dialog
+) {
+    color: #f2f7f5 !important;
+    border-color: rgba(115, 208, 202, .18) !important;
+    background-color: #1a2a24 !important;
+    background-image: linear-gradient(145deg, #1c2d27 0%, #17251f 100%) !important;
+    box-shadow: 0 18px 46px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .compliance-page :is(
+    .compliance-story__stats > div,
+    .compliance-stats article,
+    .compliance-hero__signal,
+    .compliance-search,
+    .compliance-filter,
+    .compliance-rail__tools,
+    .compliance-rail__actions button,
+    .compliance-case-card__footer,
+    .compliance-detail__meta,
+    .compliance-modal__actions button:not(.is-primary)
+) {
+    color: #dceae6 !important;
+    border-color: rgba(115, 208, 202, .18) !important;
+    background-color: #20312b !important;
+    background-image: none !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .compliance-page :is(
+    .compliance-hero h1,
+    .compliance-story__header span,
+    .compliance-story__rail strong,
+    .compliance-principles h2,
+    .compliance-principles__cards strong,
+    .compliance-section-title h2,
+    .compliance-case-card strong,
+    .compliance-detail h2,
+    .compliance-list-state strong,
+    .compliance-related-idea strong,
+    .compliance-message-card strong,
+    .compliance-reply-card strong,
+    .compliance-timeline-card strong
+) {
+    color: #f2f7f5 !important;
+}
+
+html.vox-user-dark .compliance-page :is(
+    .compliance-hero__content > p,
+    .compliance-story__header small,
+    .compliance-story__rail p,
+    .compliance-principles__cards p,
+    .compliance-case-card p,
+    .compliance-detail p,
+    .compliance-list-state span,
+    .compliance-related-idea p,
+    .compliance-message-card p,
+    .compliance-reply-card p,
+    .compliance-timeline-card p
+) {
+    color: #aabdb7 !important;
+}
+
+html.vox-user-dark .compliance-page .compliance-story__stats strong,
+html.vox-user-dark .compliance-page .compliance-stats strong,
+html.vox-user-dark .compliance-page .compliance-eyebrow,
+html.vox-user-dark .compliance-page .compliance-kicker {
+    color: #82d8d2 !important;
+}
+
+html.vox-user-dark .compliance-page .compliance-hero::before,
+html.vox-user-dark .compliance-page .compliance-hero__story::before,
+html.vox-user-dark .compliance-page .compliance-story__stats > div::after {
+    opacity: .16 !important;
+}
+
+html.vox-user-dark .compliance-page :is(input, textarea, select) {
+    color: #f2f7f5 !important;
+    border-color: rgba(115, 208, 202, .22) !important;
+    background: #17231f !important;
+}
+
+html.vox-user-rtl .compliance-page,
+html.vox-user-rtl .compliance-page :is(.compliance-hero__content, .compliance-story__header, .compliance-story__rail article, .compliance-principles__cards article, .compliance-case-card, .compliance-detail, .compliance-modal__dialog) {
+    direction: rtl;
+    text-align: right;
+}

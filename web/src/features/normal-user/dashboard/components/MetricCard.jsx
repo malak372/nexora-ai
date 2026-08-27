@@ -6,6 +6,7 @@
 
 import { ArrowUpRight, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
+import { useUserExperience } from '../../../../system/user-experience';
 
 export default function MetricCard({
   icon: Icon,
@@ -16,6 +17,7 @@ export default function MetricCard({
   index = "01",
   onClick,
 }) {
+  const { t } = useUserExperience();
   const Element = onClick ? motion.button : motion.article;
 
   return (
@@ -42,7 +44,7 @@ export default function MetricCard({
       </div>
 
       <div className="normal-metric-card__content">
-        <span className="normal-metric-card__trend"><TrendingUp size={13} /> Live workspace metric</span>
+        <span className="normal-metric-card__trend"><TrendingUp size={13} /> {t('Live workspace metric')}</span>
         <strong>{value}</strong>
         <span className="normal-metric-card__label">{label}</span>
         <small>{helper}</small>

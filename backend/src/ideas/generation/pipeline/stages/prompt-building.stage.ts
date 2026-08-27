@@ -88,6 +88,20 @@ export class PromptBuildingStage implements IdeaGenerationStage {
     this.validateContext(context);
 
     const collection = context.collection!;
+    const collectionAnchorDomainId =
+      collection.anchorDomainId ??
+      context.domainResolution?.selectedDomain.id ??
+      context.domainEvidence.find(
+        (entry) => entry.collectionJobId === collection.collectionJobId,
+      )?.domainId ??
+      context.domainId;
+    const collectionAnchorDomainName =
+      collection.anchorDomainName ??
+      context.selectedDomains.find(
+        (domain) => domain.id === collectionAnchorDomainId,
+      )?.name ??
+      context.domainResolution?.selectedDomain.name ??
+      context.domainName!;
 
     const prompt = await this.promptBuilderService.buildIdeaPrompt({
       purpose: 'IDEA_GENERATION',
@@ -102,6 +116,8 @@ export class PromptBuildingStage implements IdeaGenerationStage {
           : undefined,
 
       requestDescription: context.requestDescription,
+      requestIntent: context.collectionPlan?.requestIntent ?? null,
+      outputLanguage: context.outputLanguage,
 
       opportunityRanking: context.opportunityRanking ?? undefined,
 
@@ -124,8 +140,8 @@ export class PromptBuildingStage implements IdeaGenerationStage {
         city: context.location.city,
         region: context.location.region,
         domain: {
-          id: context.domainId,
-          name: context.domainName!,
+          id: collectionAnchorDomainId,
+          name: collectionAnchorDomainName,
         },
         sources: context.selectedDataSources.map((source) => ({
           dataSource: {

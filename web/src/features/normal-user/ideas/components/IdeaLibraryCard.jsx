@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useState } from 'react';
+import { useUserExperience } from '../../../../system/user-experience';
 
 const ACTIVE_RUN_STATUSES = new Set([
   'QUEUED',
@@ -30,7 +31,7 @@ const ACTIVE_RUN_STATUSES = new Set([
   'PAUSED',
 ]);
 
-function formatDate(value) {
+function formatDate(value, language) {
   if (!value) {
     return 'Recently created';
   }
@@ -41,7 +42,7 @@ function formatDate(value) {
     return 'Recently created';
   }
 
-  return new Intl.DateTimeFormat('en', {
+  return new Intl.DateTimeFormat(language === 'ar' ? 'ar-EG' : 'en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -109,6 +110,7 @@ export default function IdeaLibraryCard({
   favoriteProcessing = false,
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const { language, t } = useUserExperience();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const status = resolveStatus(idea);
@@ -212,7 +214,7 @@ export default function IdeaLibraryCard({
           className={`idea-tile__status idea-tile__status--${status.tone}`}
         >
           <StatusIcon size={13} />
-          {status.label}
+          {t(status.label)}
         </span>
 
         <div className="idea-tile__top-actions">
@@ -223,13 +225,13 @@ export default function IdeaLibraryCard({
             }`}
             aria-label={
               idea?.isFavorite
-                ? 'Remove from favorite ideas'
-                : 'Add to favorite ideas'
+                ? t('Remove from favorite ideas')
+                : t('Add to favorite ideas')
             }
             title={
               idea?.isFavorite
-                ? 'Remove from favorite ideas'
-                : 'Add to favorite ideas'
+                ? t('Remove from favorite ideas')
+                : t('Add to favorite ideas')
             }
             disabled={favoriteProcessing}
             onClick={onToggleFavorite}
@@ -253,7 +255,7 @@ export default function IdeaLibraryCard({
           <div className="idea-tile__menu">
           <motion.button
             type="button"
-            aria-label="Idea actions"
+            aria-label={t('Idea actions')}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() =>
@@ -321,9 +323,9 @@ export default function IdeaLibraryCard({
                   <ArrowUpRight size={15} />
                   {isAccepted
                     ? idea?.hasAdvancedAccess
-                      ? 'Go to idea workspace'
-                      : 'View accepted brief'
-                    : 'Open workspace'}
+                      ? t('Go to idea workspace')
+                      : t('View accepted brief')
+                    : t('Open workspace')}
                 </button>
 
                 {onDelete ? (
@@ -337,7 +339,7 @@ export default function IdeaLibraryCard({
                     }}
                   >
                     <Trash2 size={15} />
-                    Delete idea
+                    {t('Delete idea')}
                   </button>
                 ) : null}
               </motion.div>
@@ -352,13 +354,12 @@ export default function IdeaLibraryCard({
           <Sparkles size={14} />
         </span>
 
-        {idea?.domain?.name ||
-          'General innovation'}
+        <span dir="auto" data-idea-content="true">{idea?.domain?.name || 'General innovation'}</span>
       </div>
 
-      <h2>{idea?.title || 'Untitled idea'}</h2>
+      <h2 dir="auto" data-idea-content="true">{idea?.title || t('Untitled idea')}</h2>
 
-      <p>{abstract}</p>
+      <p dir="auto" data-idea-content="true">{abstract}</p>
 
       {status.tone === 'processing' ? (
         <div
@@ -366,7 +367,7 @@ export default function IdeaLibraryCard({
           aria-label={`Generation ${progress}% complete`}
         >
           <div>
-            <span>Generation progress</span>
+            <span>{t('Generation progress')}</span>
             <strong>{progress}%</strong>
           </div>
 
@@ -400,14 +401,14 @@ export default function IdeaLibraryCard({
           <div>
             <strong>
               {idea?.hasAdvancedAccess
-                ? 'Advanced access unlocked'
-                : 'Ready for the next step'}
+                ? t('Advanced access unlocked')
+                : t('Ready for the next step')}
             </strong>
 
             <small>
               {idea?.hasAdvancedAccess
-                ? 'Review the complete accepted opportunity package.'
-                : 'Continue when you are ready to unlock or publish.'}
+                ? t('Review the complete accepted opportunity package.')
+                : t('Continue when you are ready to unlock or publish.')}
             </small>
           </div>
         </div>
@@ -416,8 +417,8 @@ export default function IdeaLibraryCard({
       <footer>
         <span>
           <CalendarDays size={14} />
-          {isAccepted ? 'Accepted ' : ''}
-          {formatDate(cardDate)}
+          {isAccepted ? `${t('Accepted')} ` : ''}
+          {formatDate(cardDate, language)}
         </span>
 
         <motion.button
@@ -438,7 +439,7 @@ export default function IdeaLibraryCard({
                 }
           }
         >
-          {primaryActionLabel}
+          {t(primaryActionLabel)}
           <ArrowUpRight size={16} />
         </motion.button>
       </footer>

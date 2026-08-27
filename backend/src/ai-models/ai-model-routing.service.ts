@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   ServiceUnavailableException,
+  type OnModuleInit,
 } from '@nestjs/common';
 
 import { ConfigService } from '@nestjs/config';
@@ -35,6 +37,27 @@ const MODEL_TRANSIENT_ERROR_CODES = new Set([
 const MODEL_TRANSIENT_FAILURES_REQUIRED_FOR_COOLDOWN = 2;
 
 /**
+ * Concurrent AI races (request planning, triage, and similar fan-out) resolve
+ * routing at nearly the same instant. Re-reading the model table and recent
+ * health log once per lane can serialize several remote PostgreSQL round trips
+ * before the provider request even starts. A very short snapshot lets those
+ * sibling lanes share one authoritative DB read without materially delaying
+ * health changes between user operations.
+ */
+/*
+ * A single generation stage may start several provider-diverse AI lanes at
+ * once.  Re-querying model/health state from Supabase for each lane made the
+ * PREPARING wall clock 12-19s even when the winning provider answered in ~3s.
+ * Ninety seconds keeps consecutive stages/runs from repeating remote model-health
+ * reads while still refreshing operational routing state frequently. A stale
+ * snapshot is served only while a background refresh is already in flight.
+ */
+const ROUTABLE_EXECUTION_SNAPSHOT_TTL_MS = 90_000;
+const ROUTABLE_EXECUTION_SNAPSHOT_STALE_MAX_AGE_MS = 10 * 60_000;
+const ROUTABLE_EXECUTION_REFRESH_SOFT_WAIT_MS = 250;
+const ROUTABLE_EXECUTION_WARMUP_RETRY_DELAYS_MS = [0, 4_000, 12_000, 30_000] as const;
+
+/**
  * Service responsible for resolving the order in which routable
  * AI models should be executed.
  *
@@ -59,7 +82,8 @@ const MODEL_TRANSIENT_FAILURES_REQUIRED_FOR_COOLDOWN = 2;
  * @author Malak
  */
 @Injectable()
-export class AiModelRoutingService {
+export class AiModelRoutingService implements OnModuleInit {
+  private readonly logger = new Logger(AiModelRoutingService.name);
   /**
    * In-memory cursor used to rotate the first provider of balanced operations.
    *
@@ -80,6 +104,14 @@ export class AiModelRoutingService {
    * by the caller.
    */
   private readonly modelTransientCooldownMs: number;
+
+  private executionAvailabilityCache: {
+    readonly refreshedAt: number;
+    readonly expiresAt: number;
+    readonly models: readonly AiModel[];
+  } | null = null;
+
+  private executionAvailabilityInFlight: Promise<AiModel[]> | null = null;
 
   constructor(
     private readonly aiModelsService: AiModelsService,
@@ -111,6 +143,29 @@ export class AiModelRoutingService {
     this.modelTransientCooldownMs = modelCooldownMinutes * 60 * 1_000;
   }
 
+  onModuleInit(): void {
+    /*
+     * Warm routing state without extending Nest startup. The database can still
+     * be settling when the first zero-delay warmup fires, so one failed attempt
+     * must not leave the next text request paying the full remote routing read.
+     * Retries are bounded, background-only, and become no-ops as soon as the
+     * ordinary cache has been populated. Runtime routing order is unchanged.
+     */
+    for (const delayMs of ROUTABLE_EXECUTION_WARMUP_RETRY_DELAYS_MS) {
+      setTimeout(() => {
+        const cached = this.executionAvailabilityCache;
+        if (cached && cached.expiresAt > Date.now()) return;
+        void this.resolveSharedExecutionAvailability().catch((error: unknown) => {
+          this.logger.debug(
+            `AI routing snapshot warmup failed non-fatally at delay=${delayMs}ms; runtime routing remains authoritative. error=${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
+      }, delayMs);
+    }
+  }
+
   /**
    * Resolves the ordered list of AI models that should be attempted for
    * one logical AI execution.
@@ -134,9 +189,7 @@ export class AiModelRoutingService {
   ): Promise<AiModel[]> {
     this.validateCostContext(costContext);
 
-    const routableModels = await this.aiModelsService.getRoutableModels();
-    const models =
-      await this.filterTemporarilyUnavailableProviders(routableModels);
+    const models = await this.resolveSharedExecutionAvailability();
 
     if (models.length === 0) {
       throw new ServiceUnavailableException(
@@ -157,6 +210,80 @@ export class AiModelRoutingService {
       default:
         return this.assertNever(strategy);
     }
+  }
+
+  /**
+   * Resolves one short-lived availability snapshot for ordinary routing.
+   *
+   * The first caller performs the two DB-backed reads (routable models and
+   * recent provider/model health). Concurrent sibling callers await the same
+   * promise. The cache intentionally lasts only a couple of seconds: it exists
+   * to deduplicate one provider-diverse race, not to hide operational changes.
+   */
+  private async resolveSharedExecutionAvailability(): Promise<AiModel[]> {
+    const now = Date.now();
+    const cached = this.executionAvailabilityCache;
+    if (cached && cached.expiresAt > now) {
+      return [...cached.models];
+    }
+
+    const startRefresh = (): Promise<AiModel[]> => {
+      if (this.executionAvailabilityInFlight) {
+        return this.executionAvailabilityInFlight;
+      }
+
+      const request = this.aiModelsService
+        .getRoutableModels()
+        .then((routableModels) =>
+          this.filterTemporarilyUnavailableProviders(routableModels),
+        )
+        .then((models) => {
+          const refreshedAt = Date.now();
+          this.executionAvailabilityCache = {
+            refreshedAt,
+            expiresAt: refreshedAt + ROUTABLE_EXECUTION_SNAPSHOT_TTL_MS,
+            models: [...models],
+          };
+          return models;
+        })
+        .finally(() => {
+          this.executionAvailabilityInFlight = null;
+        });
+
+      this.executionAvailabilityInFlight = request;
+      return request;
+    };
+
+    const refresh = startRefresh();
+    const staleUsable = Boolean(
+      cached &&
+        cached.models.length > 0 &&
+        now - cached.refreshedAt <= ROUTABLE_EXECUTION_SNAPSHOT_STALE_MAX_AGE_MS,
+    );
+
+    if (!staleUsable) {
+      return [...(await refresh)];
+    }
+
+    /*
+     * Stale-while-revalidate is deliberate here. A saturated remote PostgreSQL
+     * pool must not hold PREPARING for tens of seconds after a healthy routing
+     * snapshot was already observed by this backend. Give the refresh a short
+     * chance to finish, then use the last-known healthy snapshot while the DB
+     * refresh continues in the background. The stale window is bounded so an
+     * administrator change cannot remain hidden indefinitely.
+     */
+    const refreshed = await Promise.race<AiModel[] | null>([
+      refresh,
+      new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), ROUTABLE_EXECUTION_REFRESH_SOFT_WAIT_MS),
+      ),
+    ]);
+    if (refreshed) {
+      return [...refreshed];
+    }
+
+    return [...cached!.models];
   }
 
   /**

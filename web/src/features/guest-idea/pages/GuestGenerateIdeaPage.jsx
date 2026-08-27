@@ -42,6 +42,7 @@ import {
     WandSparkles,
 } from 'lucide-react';
 
+import { useUserExperience } from '../../../system/user-experience';
 import { getAvailableDomains } from '../../domains/api/domains.api';
 import { getAvailableLanguages } from '../api/publicMetadataApi';
 import {
@@ -161,6 +162,7 @@ const INITIAL_DRAFT = {
  */
 export default function GuestGenerateIdeaPage() {
     const navigate = useNavigate();
+    const { language: uiLanguage } = useUserExperience();
 
     /**
      * Current form step index.
@@ -503,6 +505,7 @@ export default function GuestGenerateIdeaPage() {
                     : {}),
 
                 language: draft.language,
+                outputLanguage: uiLanguage === 'ar' ? 'AR' : 'EN',
                 forceRefresh: draft.forceRefresh,
             });
 
@@ -920,9 +923,9 @@ export default function GuestGenerateIdeaPage() {
                                 Your first Voxidence idea is ready
                             </p>
 
-                            <h1>{run.idea.title}</h1>
+                            <h1 dir="auto" data-idea-content="true">{run.idea.title}</h1>
 
-                            <p className="guest-result-abstract">
+                            <p className="guest-result-abstract" dir="auto" data-idea-content="true">
                                 {run.idea.limitedAbstract ||
                                     run.idea.problemStatement}
                             </p>
@@ -1178,6 +1181,7 @@ export default function GuestGenerateIdeaPage() {
 
                                     <div className="guest-canvas-textarea">
                                         <textarea
+                                            dir="auto"
                                             value={draft.description}
                                             maxLength={2000}
                                             placeholder="Example: Students struggle to coordinate shared transportation when class schedules change at short notice…"
@@ -1314,6 +1318,7 @@ export default function GuestGenerateIdeaPage() {
                                             <div className="guest-canvas-field">
                                                 <Globe2 />
                                                 <input
+                                                    dir="auto"
                                                     value={draft.country}
                                                     onChange={(event) =>
                                                         updateDraft({
@@ -1329,6 +1334,7 @@ export default function GuestGenerateIdeaPage() {
                                             <div className="guest-canvas-field">
                                                 <MapPin />
                                                 <input
+                                                    dir="auto"
                                                     value={draft.city}
                                                     placeholder="Nablus"
                                                     onChange={(event) =>
@@ -1345,6 +1351,7 @@ export default function GuestGenerateIdeaPage() {
                                             <div className="guest-canvas-field">
                                                 <MapPin />
                                                 <input
+                                                    dir="auto"
                                                     value={draft.region}
                                                     placeholder="West Bank"
                                                     onChange={(event) =>
@@ -1396,10 +1403,13 @@ export default function GuestGenerateIdeaPage() {
                                     <div className="guest-review guest-canvas-review">
                                         <article className="guest-canvas-review-signal">
                                             <span>Problem signal</span>
-                                            <p>
-                                                {draft.description ||
-                                                    'No written signal — generation will use the selected domain.'}
-                                            </p>
+                                            {draft.description ? (
+                                                <p dir="auto" data-no-auto-translate="true">
+                                                    {draft.description}
+                                                </p>
+                                            ) : (
+                                                <p>No written signal — generation will use the selected domain.</p>
+                                            )}
                                         </article>
 
                                         <div className="guest-canvas-review-grid">
@@ -1414,7 +1424,7 @@ export default function GuestGenerateIdeaPage() {
 
                                             <article>
                                                 <small>Location</small>
-                                                <b>
+                                                <b dir="auto" data-no-auto-translate="true">
                                                     {[draft.city, draft.region, draft.country]
                                                         .filter(Boolean)
                                                         .join(', ')}

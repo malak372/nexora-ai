@@ -8,6 +8,7 @@ import {
   IDEA_GENERATION_ERROR_CODES,
   IDEA_GENERATION_LOCK_PREFIX,
   IDEA_GENERATION_LOCK_TTL_MS,
+  GENERATION_HEARTBEAT_INTERVAL_MS,
 } from '../constants/idea-generation.constants';
 
 import type { IdeaOwner } from '../../shared/types/idea-owner.type';
@@ -20,6 +21,17 @@ import type { IdeaOwner } from '../../shared/types/idea-owner.type';
  *
  * @author Malak
  */
+/**
+ * A live run refreshes its lock on the generation heartbeat cadence. Reclaiming
+ * the same run ID is therefore allowed only after several missed lock
+ * heartbeats; otherwise a second backend process could execute the same durable
+ * run concurrently with the original owner.
+ */
+const SAME_RUN_LOCK_RECLAIM_STALE_MS = Math.max(
+  45_000,
+  GENERATION_HEARTBEAT_INTERVAL_MS * 3,
+);
+
 type IdeaGenerationLockValue = {
   /**
    * Identifier of the generation run that acquired the lock.
@@ -136,6 +148,18 @@ export class IdeaGenerationLockService {
        * be allowed to reclaim that lock instead of waiting for its TTL.
        */
       if (existingLock?.runId === input.runId) {
+        const lockAgeMs = Math.max(
+          0,
+          Date.now() - Date.parse(existingLock.acquiredAt),
+        );
+
+        if (lockAgeMs < SAME_RUN_LOCK_RECLAIM_STALE_MS) {
+          this.logger.debug(
+            `Skipped same-run lock reclaim for "${lockKey}" because run "${input.runId}" still has a fresh execution lease (age=${lockAgeMs}ms).`,
+          );
+          this.throwGenerationAlreadyRunning(existingLock.runId);
+        }
+
         await this.cacheManager.set(
           lockKey,
           {
@@ -145,8 +169,8 @@ export class IdeaGenerationLockService {
           IDEA_GENERATION_LOCK_TTL_MS,
         );
 
-        this.logger.debug(
-          `Reclaimed idea-generation lock "${lockKey}" for run "${input.runId}".`,
+        this.logger.warn(
+          `Reclaimed stale same-run idea-generation lock "${lockKey}" for run "${input.runId}" after ${lockAgeMs}ms without a lock heartbeat.`,
         );
         return;
       }

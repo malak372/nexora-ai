@@ -31,6 +31,14 @@ type QueueTaskMetadata = {
   signal?: AbortSignal;
 
   /**
+   * Small post-timeout grace window. After the hard budget is crossed the
+   * collector receives AbortSignal, but a cooperative collector may still
+   * return already-discovered partial results during this window. Those results
+   * are harvested instead of being discarded.
+   */
+  timeoutGraceMs?: number;
+
+  /**
    * When false, timeoutMs is a soft observability budget only. The queue logs
    * the overrun but never aborts/rejects a healthy collector task. This is used
    * by idea-generation collection so an app/news source that already found
@@ -136,6 +144,10 @@ export class CollectorQueueService {
     const platform = this.resolvePlatform(metadata);
     const timeoutMs = typeof metadata === 'object' ? metadata.timeoutMs : undefined;
     const parentSignal = typeof metadata === 'object' ? metadata.signal : undefined;
+    const timeoutGraceMs =
+      typeof metadata === 'object' && Number.isFinite(metadata.timeoutGraceMs)
+        ? Math.max(0, Number(metadata.timeoutGraceMs))
+        : 0;
     const abortOnTimeout =
       typeof metadata === 'object' ? metadata.abortOnTimeout !== false : true;
 
@@ -206,25 +218,57 @@ export class CollectorQueueService {
         }
       }
 
+      const taskPromise = task(controller.signal);
+      type TimedResult =
+        | { readonly kind: 'RESULT'; readonly value: T }
+        | { readonly kind: 'ERROR'; readonly error: unknown }
+        | { readonly kind: 'TIMEOUT' };
+
+      const wrappedTask = taskPromise.then<TimedResult, TimedResult>(
+        (value) => ({ kind: 'RESULT', value }),
+        (error: unknown) => ({ kind: 'ERROR', error }),
+      );
+
       try {
-        return await Promise.race([
-          task(controller.signal),
-          new Promise<never>((_, reject) => {
-            timeoutHandle = setTimeout(() => {
-              controller.abort(
-                new Error(
-                  `Collector task${platform ? ` for ${platform}` : ''} exceeded ${timeoutMs}ms.`,
-                ),
-              );
-              reject(
-                new ServiceUnavailableException(
-                  `Collector task${platform ? ` for ${platform}` : ''} exceeded ${timeoutMs}ms.`,
-                ),
-              );
-            }, timeoutMs);
+        const first = await Promise.race<TimedResult>([
+          wrappedTask,
+          new Promise<TimedResult>((resolve) => {
+            timeoutHandle = setTimeout(() => resolve({ kind: 'TIMEOUT' }), timeoutMs);
             timeoutHandle.unref?.();
           }),
         ]);
+
+        if (first.kind === 'RESULT') return first.value;
+        if (first.kind === 'ERROR') throw first.error;
+
+        const timeoutError = new Error(
+          `Collector task${platform ? ` for ${platform}` : ''} exceeded ${timeoutMs}ms.`,
+        );
+        controller.abort(timeoutError);
+
+        if (timeoutGraceMs > 0 && !parentSignal?.aborted) {
+          const grace = await Promise.race<TimedResult>([
+            wrappedTask,
+            new Promise<TimedResult>((resolve) => {
+              const handle = setTimeout(
+                () => resolve({ kind: 'TIMEOUT' }),
+                timeoutGraceMs,
+              );
+              handle.unref?.();
+            }),
+          ]);
+          if (grace.kind === 'RESULT') {
+            this.logger.warn(
+              `Collector task${platform ? ` for ${platform}` : ''} crossed ${timeoutMs}ms but returned harvestable partial/complete data inside ${timeoutGraceMs}ms grace; preserving the result.`,
+            );
+            return grace.value;
+          }
+          if (grace.kind === 'ERROR' && !controller.signal.aborted) {
+            throw grace.error;
+          }
+        }
+
+        throw new ServiceUnavailableException(timeoutError.message);
       } finally {
         if (timeoutHandle) {
           clearTimeout(timeoutHandle);

@@ -1072,7 +1072,7 @@ export default function AiChatPage() {
                                 </span>
 
                                 <span className="ai-chat-session-copy">
-                                    <strong>{session.title}</strong>
+                                    <strong data-idea-content="true" dir="auto">{session.title}</strong>
                                     <small className={loadingSessionId === session.id ? 'is-loading' : ''}>
                                         {loadingSessionId === session.id ? (
                                             <><LoaderCircle className="is-spinning" size={12} /> Loading chat…</>
@@ -1090,7 +1090,7 @@ export default function AiChatPage() {
                                 className="ai-chat-session__delete"
                                 type="button"
                                 onClick={() => setConfirmDeleteId(session.id)}
-                                aria-label={`Delete ${session.title}`}
+                                aria-label="Delete conversation"
                                 title="Delete conversation"
                             >
                                 <Trash2 size={15} />
@@ -1227,8 +1227,7 @@ export default function AiChatPage() {
                                         </span>
                                     ) : (
                                         <div
-                                            className="ai-chat-message__body"
-                                            dir="auto"
+                                            className="ai-chat-message__body" data-idea-content="true" dir="auto"
                                         >
                                             {cleanAssistantMessage(
                                                 message.message,
@@ -1322,6 +1321,7 @@ export default function AiChatPage() {
                         </div>
 
                         <textarea
+                            dir="auto"
                             value={draft}
                             onChange={(event) => setDraft(event.target.value)}
                             placeholder="Ask Voxidence anything about this idea…"

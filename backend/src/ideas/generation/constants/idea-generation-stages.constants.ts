@@ -149,7 +149,10 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       progressEnd: 5,
 
-      maxAttempts: 1,
+      // PREPARING is idempotent and caches successful AI planning. A second
+      // attempt therefore retries transient DB/domain reads without paying for
+      // another provider race in the common case.
+      maxAttempts: 2,
 
       requiredForPremium: false,
     },
@@ -181,7 +184,7 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       progressEnd: 10,
 
-      maxAttempts: 1,
+      maxAttempts: 2,
 
       requiredForPremium: false,
     },
@@ -197,7 +200,7 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       progressEnd: 14,
 
-      maxAttempts: 1,
+      maxAttempts: 2,
 
       requiredForPremium: false,
     },

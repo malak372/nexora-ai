@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react';
 import { getStoredUser } from '../../../auth/shared/auth.storage';
 import { getApiErrorMessage } from '../../shared/api/normalUserApi';
 import { createContactMessage } from '../api/dashboardApi';
+import { useUserExperience } from '../../../../system/user-experience';
 
 const INITIAL_FORM = {
   subject: '',
@@ -20,6 +21,7 @@ const INITIAL_FORM = {
 };
 
 export default function DashboardContactSection() {
+  const { t } = useUserExperience();
   const user = useMemo(() => getStoredUser() ?? {}, []);
   const [form, setForm] = useState(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
@@ -67,57 +69,55 @@ export default function DashboardContactSection() {
           <Sparkles size={21} />
         </div>
         <div>
-          <span className="normal-eyebrow"><Sparkles size={14} /> About Voxidence</span>
-          <h2>AI that starts with real community needs.</h2>
+          <span className="normal-eyebrow"><Sparkles size={14} /> {t('About Voxidence')}</span>
+          <h2>{t('AI that starts with real community needs.')}</h2>
           <p>
-            Voxidence collects public signals, analyzes repeated problems with NLP,
-            compares multiple AI-generated candidates, and returns one structured,
-            validated software opportunity.
+            {t('Voxidence collects public signals, analyzes repeated problems with NLP, compares multiple AI-generated candidates, and returns one structured, validated software opportunity.')}
           </p>
           <div className="normal-ai-story-card__points">
-            <span><CheckCircle2 size={16} /> Evidence-driven discovery</span>
-            <span><ShieldCheck size={16} /> Safe public publication</span>
-            <span><BrainCircuit size={16} /> Multi-model evaluation</span>
+            <span><CheckCircle2 size={16} /> {t('Evidence-driven discovery')}</span>
+            <span><ShieldCheck size={16} /> {t('Safe public publication')}</span>
+            <span><BrainCircuit size={16} /> {t('Multi-model evaluation')}</span>
           </div>
         </div>
       </article>
 
       <article className="normal-contact-card">
         <div className="normal-contact-card__heading">
-          <span className="normal-eyebrow"><MessageSquareText size={14} /> Contact us</span>
-          <h2>Need help or have feedback?</h2>
-          <p>Your message is stored directly in the Voxidence backend for the team to review.</p>
+          <span className="normal-eyebrow"><MessageSquareText size={14} /> {t('Contact us')}</span>
+          <h2>{t('Need help or have feedback?')}</h2>
+          <p>{t('Your message is stored directly in the Voxidence backend for the team to review.')}</p>
         </div>
 
         <form onSubmit={submit}>
           <label>
-            <span>Subject</span>
+            <span>{t('Subject')}</span>
             <input
               value={form.subject}
               maxLength={200}
-              placeholder="How can we help?"
+              placeholder={t('How can we help?')}
               onChange={(event) => updateField('subject', event.target.value)}
             />
           </label>
 
           <label>
-            <span>Message</span>
+            <span>{t('Message')}</span>
             <textarea
               value={form.message}
               rows={5}
               maxLength={5000}
-              placeholder="Describe your question or feedback..."
+              placeholder={t('Describe your question or feedback...')}
               onChange={(event) => updateField('message', event.target.value)}
             />
           </label>
 
-          {user.email ? <small className="normal-contact-card__email"><Mail size={14} /> Reply will be sent to {user.email}</small> : null}
-          {error ? <p className="normal-contact-card__notice is-error">{error}</p> : null}
-          {success ? <p className="normal-contact-card__notice is-success">{success}</p> : null}
+          {user.email ? <small className="normal-contact-card__email"><Mail size={14} /> {t('Reply will be sent to')} {user.email}</small> : null}
+          {error ? <p className="normal-contact-card__notice is-error">{t(error)}</p> : null}
+          {success ? <p className="normal-contact-card__notice is-success">{t(success)}</p> : null}
 
           <button type="submit" disabled={submitting}>
             {submitting ? <LoaderCircle className="normal-contact-spin" size={17} /> : <Send size={17} />}
-            {submitting ? 'Sending...' : 'Send message'}
+            {t(submitting ? 'Sending...' : 'Send message')}
           </button>
         </form>
       </article>

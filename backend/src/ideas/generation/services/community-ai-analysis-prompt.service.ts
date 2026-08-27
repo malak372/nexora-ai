@@ -69,6 +69,7 @@ export class CommunityAiAnalysisPromptService {
         canonicalProblemProfile: context.collectionPlan?.problemProfile ?? null,
         requestIntent: context.collectionPlan
           ? {
+              interpretation: context.collectionPlan.requestIntent ?? null,
               intentConcepts: context.collectionPlan.intentConcepts.slice(0, 5),
               evidenceTargets: context.collectionPlan.evidenceTargets.slice(0, 3),
             }
@@ -107,23 +108,24 @@ export class CommunityAiAnalysisPromptService {
     }[],
   ): CommunityAiAnalysisPrompt {
     const maxEvidenceChars =
-      batch.length >= 72
-        ? 720
-        : batch.length >= 48
-          ? 820
+      batch.length >= 64
+        ? 420
+        : batch.length >= 40
+          ? 500
           : batch.length >= 24
-            ? 960
-            : 1_200;
+            ? 650
+            : 900;
 
     return {
       systemInstruction: this.buildEvidenceTriageSystemInstruction(),
       userPrompt: JSON.stringify({
-        task: 'Classify EVERY supplied evidence item in this transport partition. The collection layer sends all partitions, so no collected item is intentionally omitted. Reuse concise evidence-native requester-owned problem-family labels when the evidence supports them. ROOT SHAPE IS EXACTLY {items:[...]}; never use a classifications field. Return only that JSON object; do not generate opportunities, summaries, explanations, or prose.',
+        task: 'Classify EVERY supplied evidence item in this transport partition. The collection layer sends all partitions, so no collected item is intentionally omitted. After classifying, choose selectedProblemFamily as the strongest concrete software-worthy problem family supported by DIRECT_PROBLEM/SUPPORTING_SIGNAL items in THIS supplied corpus, and selectedEvidenceIds as up to 8 supplied evidence ids that support that exact family. requestDescription is intent/context and is never evidence. If requestIntent.interpretation.mode=EXPLICIT_PROBLEM, prioritize evidence that validates that problem or a tightly related failure in the same actor/object/workflow. If mode=DISCOVERY_INTENT, discover the strongest evidence-backed problem inside the requested intent and selected-domain scope; do not force the text itself to be a problem. If no trusted problem item exists, return selectedProblemFamily as an empty string and selectedEvidenceIds as an empty array. ROOT SHAPE IS EXACTLY {selectedProblemFamily:"",selectedEvidenceIds:[],items:[...]}; never use a classifications field. Return only that JSON object; do not generate opportunities, summaries, explanations, or prose.',
         requestDescription: context.requestDescription,
         selectedDomains: context.selectedDomains.map((domain) => domain.name),
         canonicalProblemProfile: context.collectionPlan?.problemProfile ?? null,
         requestIntent: context.collectionPlan
           ? {
+              interpretation: context.collectionPlan.requestIntent ?? null,
               intentConcepts: context.collectionPlan.intentConcepts.slice(0, 4),
               evidenceTargets: context.collectionPlan.evidenceTargets.slice(0, 3),
             }
@@ -133,7 +135,7 @@ export class CommunityAiAnalysisPromptService {
           sourceKey: item.sourceKey,
           sourceType: item.sourceType,
           discoveryDomainName: item.discoveryDomainName ?? null,
-          queryText: item.queryText?.slice(0, 260) ?? null,
+          queryText: item.queryText?.slice(0, 120) ?? null,
           sourceTier: item.sourceTier ?? null,
           text: item.text.slice(0, maxEvidenceChars),
         })),
@@ -147,6 +149,8 @@ export class CommunityAiAnalysisPromptService {
       'Return one compact JSON object only and no Markdown.',
       `Return at most ${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} atomic evidence-grounded opportunities; return an empty opportunities array when no supplied evidence supports one.`,
       'Use only supplied evidence. Never invent facts, statistics, recurrence, causes, regulations, location evidence, or user behavior.',
+      'REQUEST-INTENT PRECEDENCE: requestDescription is not automatically a problem statement. requestIntent.interpretation is the PREPARING AI decision. EXPLICIT_PROBLEM means the requester truly stated a pain/failure and evidence should validate it. DISCOVERY_INTENT means the text only narrows audience, workflow, product direction, desired outcome, or interests; in that case you must choose the actual problem from the supplied evidence.',
+      'In every mode, the final selectedProblemFamily must be evidence-backed. Requester text, selected domains, query provenance, and domain names may constrain relevance but can never count as evidence.',
       'verifiedEvidenceCorpus, when present, has already passed semantic triage plus deterministic noise/identity verification. Do not reclassify it and do not output evidenceClassifications.',
       'Use verifiedEvidenceCorpus items labelled DIRECT_PROBLEM or SUPPORTING_SIGNAL as the preferred grounding source. Preserve the supplied evidence text verbatim in evidenceSamples.',
       'Do not promote generic words such as material, customer, maintenance, service, system, data, cost, equipment, traffic, or design into a new mechanism by themselves. Identity and workflow meaning must match.',
@@ -161,8 +165,8 @@ export class CommunityAiAnalysisPromptService {
       'Generic finance-adjacent words such as spending, receipts, budget, cost, or grocery do not support payment-method linking, bank linking, wallet linking, failed-charge, or charge-mismatch claims. Those mechanisms require explicit payment/card/bank/wallet/charge evidence in the same quote.',
       'Never use the opening sentence of a narrative review as an opportunity title. Titles must name the canonical problem family or unmet workflow need supported by the quote.',
       'Keep each opportunity tied to one atomic problem family. Complementary observations may be combined only when they form one coherent actor/workflow problem; do not combine unrelated failures or introduce mechanisms absent from the evidence.',
-      'When requestDescription is present, it is a scope constraint, not evidence. canonicalProblemProfile is the PREPARING-stage interpretation of that text and is the primary matching contract. Reject same-domain evidence that does not materially match the requested problem or workflow.',
-      'When requestDescription is present, evidence may corroborate or challenge facets of canonicalProblemProfile, but an evidence title or narrower problemFamily must never rename, replace, or shrink the requester-defined problem. Keep the canonical requester workflow primary through synthesis.',
+      'When requestDescription is present, it is a scope constraint, not evidence. If canonicalProblemProfile is non-null, PREPARING determined that the text contains an explicit problem and it is the primary matching contract. If canonicalProblemProfile is null, use requestIntent.interpretation plus actor/object/workflow to constrain discovery while allowing Community AI to select the strongest evidence-backed problem inside that intent.',
+      'When requestIntent.interpretation.mode=EXPLICIT_PROBLEM, evidence may corroborate or challenge facets of canonicalProblemProfile, but an evidence title or narrower problemFamily must never silently replace the explicit requester problem. When mode=DISCOVERY_INTENT, there is no requester problem to preserve: select the strongest verified evidence-backed problem inside the requester intent scope.',
       'When requestDescription is absent, prefer concrete direct-user problems over secondary reports when both are available inside the selected domains.',
       'domainName must match a selectedDomains.name. If uncertain, omit domainName and let the deterministic service map the evidence to a selected domain.',
       'Keep title, problem, unmetNeed, solutionArea, affectedUsers, risks, summary, and warnings concise.',
@@ -181,6 +185,7 @@ export class CommunityAiAnalysisPromptService {
       'Return exactly one classification item for every supplied compact evidenceId whenever possible. Never invent an evidenceId.',
       'You are seeing one transport partition of the complete collected Community ledger. Other partitions are classified concurrently when the ledger exceeds one provider request. Evidence ids are compact aliases used only for this response. Classify every supplied item from what that item actually states; downstream canonical normalization keeps equivalent problemFamily labels consistent across partitions.',
       'When several independent items support the same requester-owned problem family, reuse the same concise problemFamily label so downstream ranking can count evidence volume and source diversity correctly.',
+      'After classifying the supplied items, select exactly one strongest supported problem family in selectedProblemFamily. Prefer: verified-looking direct experienced problems, then larger same-family evidence count, then source diversity, then specificity/actionability. Never select a family whose own items are only CONTEXT_ONLY or UNRELATED. selectedEvidenceIds must reference only supplied DIRECT_PROBLEM/SUPPORTING_SIGNAL ids from that selected family.',
       'Allowed labels are DIRECT_PROBLEM, SUPPORTING_SIGNAL, CONTEXT_ONLY, and UNRELATED.',
       'Survey invitations, participant recruitment posts, thesis/dissertation recruitment, and research descriptions that explain what a study will explore but contain no reported findings are CONTEXT_ONLY when request-aligned, otherwise UNRELATED. They can never be DIRECT_PROBLEM or SUPPORTING_SIGNAL until the item itself states observed results, reported failures, shortages, delays, errors, barriers, or another concrete problem finding.',
       'When canonicalProblemProfile is supplied, classify problem-first in this priority order: coreProblem, workflow, actor/object, failureModes, consequences, then domain. Domain overlap alone never makes evidence relevant.',
@@ -188,6 +193,7 @@ export class CommunityAiAnalysisPromptService {
       'DISCOVERY MODE problemFamily must be evidence-native: name the concrete root friction actually stated in that evidence (for example GPU compute cost pressure, model deployment failure, account takeover refunds, temperature monitoring gaps). Never invent a user segment such as students/learners, a causal mechanism, or a workflow that is not stated in the evidence. Reuse the same short family label across independent items only when they truly describe the same root problem.',
       'DIRECT_PROBLEM means the evidence itself materially states the requester actor/workflow problem or a very close operational failure.',
       'SUPPORTING_SIGNAL means the evidence supports one real atomic part of the requester problem AND retains requester identity through the same actor, same object, or a clearly matching vertical identity. A similar workflow performed on a materially different object/actor is analogous context, not requester-problem validation; label it CONTEXT_ONLY and let the deterministic verifier preserve it as non-trusted analogous workflow context. It does NOT need to restate the complete causal chain or every requester field.',
+      'Use SUPPORTING_SIGNAL, not CONTEXT_ONLY, when a problem-bearing item in the requester-owned vertical proves a major atomic facet such as energy waste, maintenance prioritization, abnormal equipment consumption, missing documentation, repeated repairs, cost pressure, downtime, shortage, or another canonical failure/consequence even if it does not also state the requester\'s full data-silo or causal mechanism. CONTEXT_ONLY is for neutral methods/technology/market context with no concrete pain finding.',
       'Several independent SUPPORTING_SIGNAL items may complement one another across sources. Classify each item on its own evidence; do not require one sentence or one source to prove the whole requester problem. Read the full supplied excerpt because one useful signal may span multiple sentences.',
       'For digital-entertainment conversion requests, generic social-media marketing, education platforms, sales advice, AI tutorials, game reviews, or broad media trends are UNRELATED unless the same item explicitly connects a digital-entertainment/streaming/gaming platform to purchase, paid-content, subscription, transaction, conversion, abandonment/drop-off, promotion effectiveness, recommendations, or monetization friction.',
       'For digital-entertainment account-abuse/financial-loss requests, do not treat generic banking, telecom, e-commerce, authentication, wallet, or payment-platform evidence as DIRECT_PROBLEM. It may be SUPPORTING_SIGNAL only when it proves the same concrete account-takeover/refund/subscription/payment-abuse mechanism; the problemFamily must name only that mechanism actually stated by the evidence. Financial-loss/revenue-attribution wording requires explicit loss, revenue, chargeback, refund-cost, forecast, or financial-impact evidence in the same item.',
@@ -206,6 +212,8 @@ export class CommunityAiAnalysisPromptService {
       'Example: for a university tuition/refund/account-security problem, evidence about federal student-aid fraud, fraudulent student refunds, university-account identity theft, or false-positive student payment restrictions can be SUPPORTING_SIGNAL even if it does not mention every siloed system in the requester description.',
       'You are classifying EVERY collected raw item. Do not skip noisy items: explicitly label each supplied id as DIRECT_PROBLEM, SUPPORTING_SIGNAL, CONTEXT_ONLY, or UNRELATED. DIRECT_PROBLEM and SUPPORTING_SIGNAL are the only trusted problem-evidence labels. CONTEXT_ONLY means the item is genuinely useful for understanding the requester workflow, terminology, existing solution landscape, professional practice, or recovery-query expansion, but it does not itself prove user pain, demand, recurrence, or the requester problem. For every DIRECT_PROBLEM or SUPPORTING_SIGNAL item, assign a concise requester-owned problemFamily so downstream clustering can count evidence across sources and select the strongest problem family. CONTEXT_ONLY and UNRELATED use an empty problemFamily.',
       'Problem families must describe the root operational friction or causal mechanism, not a downstream consequence. For example, fragmented building-performance data / energy anomaly diagnosis is a family; delayed efficiency improvements by itself is only a consequence.',
+      'Weekly news roundups, newsletters, digests, recap posts, listicles, and headlines such as “catch up on what happened this week” are CONTEXT_ONLY unless the item itself contains a concrete first-person/affected-operator failure. Never derive problemFamily from the editorial series title, publication headline, or recap framing; derive it only from the actual operational failure stated in the evidence.',
+      'For research papers, reviews, reports, and studies in discovery mode, the publication title itself is never a problem family. SUPPORTING_SIGNAL requires the body/abstract to state an explicit operational challenge, barrier, limitation, failure, cost pressure, compliance/privacy risk, quality gap, downtime, or other concrete pain. Build problemFamily from those stated challenge facets (for example data quality + explainability + compliance), not from words such as Integrating, Opportunities, Architecture, Framework, Review, Study, or the paper title.',
       'For app-store and google-play, application listing/marketing text can never be DIRECT_PROBLEM or SUPPORTING_SIGNAL. If the listing materially matches the requester actor/object/workflow and is useful for terminology or solution-landscape discovery, classify it CONTEXT_ONLY; otherwise classify it UNRELATED. User reviews/comments may be DIRECT_PROBLEM or SUPPORTING_SIGNAL only when they describe real experienced workflow pain.',
       'CONTEXT_ONLY is not evidence of a problem: use it for aligned professional methods, condition/reporting tools, existing workflow products, standards, or neutral descriptions that can improve vocabulary and recovery but do not state a requester-owned pain. UNRELATED means lexical overlap only, broad-domain overlap only, a genuinely different actor/workflow/problem family, or developer-only software material for a non-developer request.',
       'For GENERAL and local-service workflows, same-domain or same-object vocabulary is not enough for SUPPORTING_SIGNAL. The item must establish at least one concrete requester-owned pain/workflow facet such as a fitting/measurement error, forgotten approved change, delay, rework, missing record, or other failure actually represented in canonicalProblemProfile.',

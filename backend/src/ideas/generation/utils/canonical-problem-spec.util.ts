@@ -27,23 +27,30 @@ export class CanonicalProblemSpecUtil {
     readonly selectedDomains: readonly SelectedGenerationDomain[];
     readonly requestedDomainIds?: readonly string[];
   }): IdeaGenerationCanonicalProblemSpec {
-    const profile = input.collectionPlan?.problemProfile;
+    const requestIntent = input.collectionPlan?.requestIntent;
+    const hasExplicitProblem = requestIntent?.mode === 'EXPLICIT_PROBLEM' &&
+      Boolean(requestIntent.explicitProblem?.trim());
+    const profile = hasExplicitProblem ? input.collectionPlan?.problemProfile : undefined;
     const identity = input.collectionPlan?.domainIdentity;
     const description = this.clean(input.description ?? '');
 
     const actor = this.firstNonEmpty(profile?.actor, identity?.actor);
     const object = this.firstNonEmpty(profile?.object, identity?.object);
     const workflow = this.firstNonEmpty(profile?.workflow, identity?.workflow);
-    const friction = this.firstNonEmpty(
-      profile?.friction,
-      profile?.failureModes?.[0],
-      identity?.failure,
-    );
+    const friction = hasExplicitProblem
+      ? this.firstNonEmpty(
+          profile?.friction,
+          profile?.failureModes?.[0],
+          identity?.failure,
+        )
+      : '';
     const failureModes = this.unique([
       ...(profile?.failureModes ?? []),
       ...(friction ? [friction] : []),
     ]).slice(0, 6);
-    const consequences = this.unique(profile?.consequences ?? []).slice(0, 8);
+    const consequences = hasExplicitProblem
+      ? this.unique(profile?.consequences ?? []).slice(0, 8)
+      : [];
 
     const facets: IdeaGenerationProblemFacet[] = [];
     const addFacet = (

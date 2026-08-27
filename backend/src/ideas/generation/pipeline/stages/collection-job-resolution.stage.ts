@@ -252,6 +252,8 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       domainName: result.job.domain.name,
       collection: {
         collectionJobId: result.job.id,
+        anchorDomainId: result.job.domain.id,
+        anchorDomainName: result.job.domain.name,
         reused: result.reused,
         totalPosts: effectiveTotalPostsAnalyzed,
         totalComments: effectiveTotalCommentsAnalyzed,
@@ -287,7 +289,9 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     return {
       context: updatedContext,
       resultPreview:
-        `Executed smart selective parallel collection and retained ${effectiveTotalTextsAnalyzed} evidence text(s) for ${domains.length} selected domain(s).`,
+        `Executed smart selective parallel collection for ${domains.length} selected domain(s): ` +
+        `${rawEvidenceCorpus.length} raw collector candidate(s) preserved for Community semantic triage, ` +
+        `${effectiveTotalTextsAnalyzed} stricter NLP-preprocessed text(s) retained.`,
       metadata: {
         stageRole: 'SMART_ALL_SOURCE_PARALLEL_COLLECTION',
         smartFirstPassExpanded,
@@ -562,7 +566,8 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     domainAwarePlannedQueries: readonly string[],
     signal?: AbortSignal,
   ): Promise<ResolveCollectionJobResult> {
-    const sourceKeys = this.selectAllActiveSourceKeys(
+    const sourceKeys = this.selectRuntimeSourceKeys(
+      context,
       context.selectedDataSources.map((source) => source.key),
     );
 
@@ -604,11 +609,13 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
          */
         keywords: this.buildCollectorVocabulary(context, domains),
       },
-      resolvedDataSources: context.selectedDataSources.map((source) => ({
-        id: source.id,
-        key: source.key,
-        displayName: source.displayName,
-      })),
+      resolvedDataSources: context.selectedDataSources
+        .filter((source) => sourceKeys.includes(source.key.trim().toLowerCase()))
+        .map((source) => ({
+          id: source.id,
+          key: source.key,
+          displayName: source.displayName,
+        })),
       /*
        * Collect a stronger first-pass corpus so most runs satisfy evidence
        * requirements without a second targeted-recovery collection. All
@@ -799,6 +806,78 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
             keywords: context.keywords,
           },
         ];
+  }
+
+  /**
+   * Text requests already have a semantic source plan. Execute every PRIMARY
+   * and SECONDARY lane plus only the MICRO_PROBE lanes that are necessary to
+   * preserve a unique planner query. This removes redundant low-fit collectors
+   * (and their DB writes) without losing any planned query coverage.
+   *
+   * DOMAINS_ONLY / NO_INPUT remain intentionally broad because discovery, not
+   * validation of a known requester problem, is the purpose of those paths.
+   */
+  private selectRuntimeSourceKeys(
+    context: IdeaGenerationContext,
+    activeKeys: readonly string[],
+  ): string[] {
+    const normalizedActive = this.selectAllActiveSourceKeys(activeKeys);
+    if (!context.requestDescription?.trim()) {
+      return normalizedActive;
+    }
+
+    const plans = context.collectionPlan?.sourcePlans ?? [];
+    if (plans.length === 0) return normalizedActive;
+
+    const active = new Set(normalizedActive);
+    const strongPlans = plans.filter(
+      (plan) =>
+        active.has(plan.sourceKey.trim().toLowerCase()) &&
+        plan.sourceTier !== 'MICRO_PROBE' &&
+        plan.queries.length > 0,
+    );
+    const selected = new Set(
+      strongPlans.map((plan) => plan.sourceKey.trim().toLowerCase()),
+    );
+    const coveredQueries = new Set(
+      strongPlans.flatMap((plan) =>
+        plan.queries.map((query) =>
+          query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase(),
+        ),
+      ),
+    );
+
+    for (const plan of plans) {
+      const key = plan.sourceKey.trim().toLowerCase();
+      if (!active.has(key) || selected.has(key) || plan.queries.length === 0) continue;
+      const contributesUniqueQuery = plan.queries.some(
+        (query) =>
+          !coveredQueries.has(
+            query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase(),
+          ),
+      );
+      if (!contributesUniqueQuery) continue;
+
+      selected.add(key);
+      for (const query of plan.queries) {
+        coveredQueries.add(
+          query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase(),
+        );
+      }
+    }
+
+    // Keep at least four complementary sources for sparse/niche text requests.
+    // Planner order is preferred; active catalog order is only a final fill.
+    for (const key of [
+      ...(context.collectionPlan?.selectedSourceKeys ?? []),
+      ...normalizedActive,
+    ]) {
+      if (selected.size >= 4) break;
+      const normalized = key.trim().toLowerCase();
+      if (active.has(normalized)) selected.add(normalized);
+    }
+
+    return normalizedActive.filter((key) => selected.has(key));
   }
 
   private selectAllActiveSourceKeys(keys: readonly string[]): string[] {

@@ -107,6 +107,18 @@ export class GenerateGuestIdeaDto {
   language!: LanguageCode;
 
   /**
+   * Language of the generated idea content.
+   *
+   * This is intentionally separate from `language`, which controls collection
+   * and community-evidence language metadata. The frontend should send its
+   * active interface language here so evidence may be collected in one
+   * language while the generated idea is written in another.
+   */
+  @IsOptional()
+  @IsEnum(LanguageCode)
+  outputLanguage?: LanguageCode;
+
+  /**
    * Forces the pipeline to ignore compatible historical collection jobs
    * and collect fresh community data for this request.
    *

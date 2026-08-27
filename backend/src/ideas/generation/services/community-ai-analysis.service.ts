@@ -96,11 +96,20 @@ import {
 type CommunityAiTriageTelemetry = {
   diagnostics: CommunityAiAttemptDiagnostic[];
   onlineAttemptCount: number;
+  /**
+   * Problem family chosen by the same accepted full-corpus AI triage response.
+   * Deterministic code may verify/normalize this choice, but a later ranking
+   * stage must not replace it with an unrelated family.
+   */
+  selectedProblemFamily: string | null;
+  selectedProblemEvidenceIds: string[];
 };
 
 type ParsedCommunityAiEvidenceTriageCorpus = {
   readonly classifications: readonly CommunityAiEvidenceTriage[];
   readonly missingEvidenceIds: readonly string[];
+  readonly selectedProblemFamily: string | null;
+  readonly selectedEvidenceIds: readonly string[];
 };
 
 export type CommunityAiAnalysisExecutionOptions = {
@@ -193,6 +202,8 @@ export class CommunityAiAnalysisService {
     const triageTelemetry: CommunityAiTriageTelemetry = {
       diagnostics: [],
       onlineAttemptCount: 0,
+      selectedProblemFamily: null,
+      selectedProblemEvidenceIds: [],
     };
     const modelDiscovery = await this.findOnlineFallbackModels(context);
     const onlineModels = modelDiscovery.models;
@@ -238,9 +249,9 @@ export class CommunityAiAnalysisService {
         ...analysis,
         qualityWarnings: [
           ...analysis.qualityWarnings,
-          context.requestDescription?.trim()
-            ? 'Opportunity synthesis was skipped because every classified raw evidence item was unrelated to the requester workflow.'
-            : 'Opportunity synthesis was skipped because the first-pass discovery corpus contained no trusted problem-bearing evidence in the selected domains.',
+          this.isEvidenceDiscoveryMode(context)
+            ? 'Opportunity synthesis was skipped because the first-pass discovery corpus contained no trusted problem-bearing evidence inside the requester intent/domain scope.'
+            : 'Opportunity synthesis was skipped because every classified raw evidence item was unrelated to the explicit requester problem/workflow.',
         ],
       };
     }
@@ -249,6 +260,8 @@ export class CommunityAiAnalysisService {
       const clustered = this.buildClassifiedEvidenceFallbackOpportunities(
         context,
         evidenceClassifications,
+        triageTelemetry.selectedProblemFamily,
+        triageTelemetry.selectedProblemEvidenceIds,
       );
       if (clustered.length > 0) {
         this.logger.log(
@@ -259,11 +272,13 @@ export class CommunityAiAnalysisService {
           aiAttempted: triageTelemetry.onlineAttemptCount > 0,
           onlineAttemptCount: triageTelemetry.onlineAttemptCount,
           fallbackReason:
-            context.requestDescription?.trim()
-              ? 'Online semantic triage classified the broad first-pass corpus; evidence-count and source-diversity clustering selected the best-supported requester problem family without a second synthesis call.'
-              : 'Online semantic triage classified the broad first-pass discovery corpus; evidence-count and source-diversity clustering selected the strongest evidence-native problem family without a second synthesis call.',
+            this.isEvidenceDiscoveryMode(context)
+              ? 'Online semantic triage classified the broad first-pass discovery corpus; evidence-count and source-diversity clustering selected the strongest evidence-native problem family inside the requester intent/domain scope without a second synthesis call.'
+              : 'Online semantic triage classified the broad first-pass corpus; evidence-count and source-diversity clustering selected the best-supported explicit requester problem family without a second synthesis call.',
           attemptDiagnostics: triageTelemetry.diagnostics,
           evidenceClassifications,
+          aiSelectedProblemFamily: triageTelemetry.selectedProblemFamily,
+          aiSelectedEvidenceIds: triageTelemetry.selectedProblemEvidenceIds,
           unvalidatedDomainHypotheses: this.buildUnvalidatedDomainHypotheses(
             context,
             clustered.map((item) => item.domainName),
@@ -862,7 +877,7 @@ export class CommunityAiAnalysisService {
       return [];
     }
 
-    const discoveryMode = !requestDescription;
+    const discoveryMode = this.isEvidenceDiscoveryMode(context);
     this.logger.debug(
       `Community AI raw-evidence triage starting. mode=${discoveryMode ? 'DOMAIN_DISCOVERY' : 'REQUEST_GROUNDED'}, raw=${rawCorpus.length}.`,
     );
@@ -1174,6 +1189,8 @@ export class CommunityAiAnalysisService {
       readonly index: number;
       readonly model: AiModel;
       readonly classifications: CommunityAiEvidenceTriage[] | null;
+      readonly selectedProblemFamily?: string | null;
+      readonly selectedEvidenceIds?: readonly string[];
       readonly partialClassifications?: readonly CommunityAiEvidenceTriage[];
       readonly missingEvidenceIds?: readonly string[];
       readonly error?: unknown;
@@ -1280,6 +1297,10 @@ export class CommunityAiAnalysisService {
                 index,
                 model,
                 classifications: remappedClassifications,
+                selectedProblemFamily: parsed.selectedProblemFamily,
+                selectedEvidenceIds: parsed.selectedEvidenceIds.map(
+                  (id) => aliasToOriginalId.get(id) ?? id,
+                ),
               };
             }
             return {
@@ -1336,6 +1357,11 @@ export class CommunityAiAnalysisService {
         }
         pending.delete(settled.index);
         if (settled.classifications) {
+          input.telemetry.selectedProblemFamily =
+            settled.selectedProblemFamily?.trim() || null;
+          input.telemetry.selectedProblemEvidenceIds = [
+            ...(settled.selectedEvidenceIds ?? []),
+          ];
           const acceptedAttempt = diagnosticAttemptByIndex.get(settled.index) ?? 1;
           const acceptedStartedAt =
             requestStartedAtByIndex.get(settled.index) ?? Date.now();
@@ -1533,8 +1559,22 @@ export class CommunityAiAnalysisService {
       throw new Error('Community AI evidence triage returned an invalid root object.');
     }
 
-    const discoveryMode = !context.requestDescription?.trim();
+    const discoveryMode = this.isEvidenceDiscoveryMode(context);
     const corpusById = new Map(corpus.map((item) => [item.id, item] as const));
+    const selectedProblemFamily = this.optionalString(
+      parsed.selectedProblemFamily,
+      '',
+    )
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, 120) || null;
+    const selectedEvidenceIds = Array.isArray(parsed.selectedEvidenceIds)
+      ? parsed.selectedEvidenceIds
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter((value) => corpusById.has(value))
+          .slice(0, 8)
+      : [];
     const providerById = new Map<string, {
       readonly classification: CommunityAiEvidenceClassification;
       readonly confidence: number;
@@ -1715,7 +1755,13 @@ export class CommunityAiAnalysisService {
         trustedProblemClassification &&
         context.collectionPlan?.problemProfile &&
         !canonicalProblemFamily
-          ? 'UNRELATED'
+          ? RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
+              requestDescription: context.requestDescription,
+              evidenceText: rawItem.text,
+              plannedQueries: context.collectionPlan?.searchQueries ?? [],
+            })
+            ? 'CONTEXT_ONLY'
+            : 'UNRELATED'
           : provenanceCappedClassification;
 
       return {
@@ -1744,7 +1790,12 @@ export class CommunityAiAnalysisService {
       };
     });
 
-    return { classifications, missingEvidenceIds };
+    return {
+      classifications,
+      missingEvidenceIds,
+      selectedProblemFamily,
+      selectedEvidenceIds,
+    };
   }
 
 
@@ -1800,7 +1851,7 @@ export class CommunityAiAnalysisService {
     rawItem: IdeaGenerationRawEvidenceItem,
   ): CommunityAiEvidenceTriage {
     const normalizedSource = (rawItem.sourceKey ?? '').trim().toLocaleLowerCase();
-    const discoveryMode = !context.requestDescription?.trim();
+    const discoveryMode = this.isEvidenceDiscoveryMode(context);
     if (RequestEvidenceAlignmentUtil.isResearchContextOnlyEvidence(rawItem.text)) {
       const alignedContext = discoveryMode
         ? this.isDiscoveryEvidenceDomainAligned(context, rawItem)
@@ -1952,18 +2003,35 @@ export class CommunityAiAnalysisService {
     }
 
     const requestDescription = context.requestDescription?.trim() ?? '';
+    const discoveryMode = this.isEvidenceDiscoveryMode(context);
     const selectedProviderFamily = providerFamily?.trim() ?? '';
+    const evidenceNativeFamily = this.buildEvidenceNativeProblemFamily(evidenceText);
     if (
       selectedProviderFamily &&
       !this.isGenericProblemFamilyLabel(selectedProviderFamily) &&
-      this.isEvidenceEntailedProblemFamily(evidenceText, selectedProviderFamily)
+      this.isWellFormedDiscoveryProblemFamilyLabel(selectedProviderFamily) &&
+      this.isEvidenceEntailedProblemFamily(evidenceText, selectedProviderFamily) &&
+      this.hasConcreteProblemSemantics(selectedProviderFamily)
     ) {
       return selectedProviderFamily.replace(/\s+/gu, ' ').trim().slice(0, 120);
+    }
+
+    /*
+     * In discovery mode a provider sometimes returns the product/app title as
+     * the problem family (for example "MyByram Order Medical Supplies").  The
+     * same AI triage is still authoritative about which evidence is relevant,
+     * but the persisted family must describe the pain rather than the entity
+     * that happened to expose it.  Prefer an evidence-native pain label when
+     * the provider label itself has no failure/friction semantics.
+     */
+    if (evidenceNativeFamily && discoveryMode) {
+      return evidenceNativeFamily;
     }
 
     const deterministicFamily = resolvePrimaryProblemFamily(evidenceText)?.label ?? null;
     if (deterministicFamily && this.isEvidenceEntailedProblemFamily(evidenceText, deterministicFamily)) {
       if (
+        !discoveryMode &&
         requestDescription &&
         !matchEvidenceToProblemFamily(requestDescription, evidenceText).matched
       ) {
@@ -1972,7 +2040,80 @@ export class CommunityAiAnalysisService {
       return deterministicFamily.replace(/\s+/gu, ' ').trim().slice(0, 120);
     }
 
-    return this.buildEvidenceNativeProblemFamily(evidenceText);
+    return evidenceNativeFamily;
+  }
+
+  private hasProblemSemantics(value: string): boolean {
+    return /\b(?:fail(?:ure|ures|ed|ing)?|error|wrong|incorrect|missing|delay(?:ed|s)?|late|difficult|unable|cannot|can['’]?t|outage|downtime|breach|incident|risk|instability|lockout|rework|waste|damag(?:e|ed)|mismatch|confusion|backlog|shortage|overload|friction|liabilit(?:y|ies)|accountability|complaint|problem|issue)\b/iu.test(
+      value,
+    );
+  }
+
+
+  /**
+   * Discovery-family labels must contain a concrete failure/pain concept.
+   * Generic words such as "problem", "issue", "challenge", or
+   * "workflow friction" are not sufficient because paper/article titles can
+   * contain them without naming the actual observed problem. Requester modes
+   * have a canonical problem profile; this stricter rule is primarily for
+   * DOMAINS_ONLY/NO_INPUT evidence-native discovery.
+   */
+  private hasConcreteProblemSemantics(value: string): boolean {
+    return /\b(?:fail(?:ure|ures|ed|ing)?|error|wrong|incorrect|missing|delay(?:ed|s)?|late|difficult(?:y|ies)?|unable|cannot|can['’]?t|outage|downtime|breach|incident|instability|lockout|rework|waste|damag(?:e|ed)|mismatch|confusion|backlog|shortage|overload|fatigue|bottleneck|burden|constraint|barrier|gap|loss(?:es)?|cost(?:s)?|expensive|pressure|privacy|compliance|explainab(?:ility|le)|quality|bias|unsafe|vulnerabilit(?:y|ies)|liabilit(?:y|ies)|accountability)\b/iu.test(
+      value,
+    );
+  }
+
+  private isWellFormedDiscoveryProblemFamilyLabel(value: string): boolean {
+    if (!this.hasConcreteProblemSemantics(value)) return false;
+    const stopwords = new Set([
+      'community', 'comment', 'comments', 'review', 'reviews', 'post', 'posts',
+      'article', 'articles', 'report', 'reports', 'user', 'users', 'customer',
+      'customers', 'says', 'saying', 'said', 'keeps', 'keep', 'there', 'this',
+      'that', 'these', 'those', 'something', 'someone', 'thing', 'things',
+      'workflow', 'friction', 'problem', 'problems', 'issue', 'issues',
+      'technical', 'system', 'systems', 'service', 'services',
+    ]);
+    const informative = this.normalizeComparableText(value)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((token) => token.length >= 4 && !stopwords.has(token));
+    const painTokens = informative.filter((token) =>
+      /^(?:fail|failure|failures|error|errors|wrong|incorrect|missing|delay|delays|delayed|outage|downtime|breach|incident|lockout|rework|waste|shortage|overload|fatigue|bottleneck|burden|constraint|barrier|gap|loss|losses|cost|costs|privacy|compliance|explainability|quality|bias|unsafe|vulnerability|vulnerabilities)$/u.test(token),
+    );
+    const contextual = informative.filter((token) => !painTokens.includes(token));
+    return contextual.length >= 2 && informative.length >= 3;
+  }
+
+  private discoveryProblemFamilySupportedByEvidenceGroup(
+    family: string,
+    evidenceTexts: readonly string[],
+  ): boolean {
+    if (!this.isWellFormedDiscoveryProblemFamilyLabel(family)) return false;
+    const combined = evidenceTexts.join(' ');
+    if (!this.hasConcreteProblemSemantics(combined)) return false;
+    if (matchEvidenceToProblemFamily(family, combined).matched) return true;
+
+    const stop = new Set([
+      'problem', 'problems', 'issue', 'issues', 'workflow', 'friction', 'system',
+      'systems', 'service', 'services', 'user', 'users', 'community', 'comment',
+      'comments', 'technical', 'application', 'applications',
+    ]);
+    const normalizeToken = (token: string): string => {
+      if (token.length > 6 && token.endsWith('ies')) return `${token.slice(0, -3)}y`;
+      if (token.length > 6 && token.endsWith('es')) return token.slice(0, -2);
+      if (token.length > 5 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+      return token;
+    };
+    const tokens = (value: string): string[] =>
+      this.normalizeComparableText(value)
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((token) => token.length >= 4 && !stop.has(token))
+        .map(normalizeToken);
+    const evidenceTokens = new Set(tokens(combined));
+    const familyTokens = [...new Set(tokens(family))];
+    if (familyTokens.length < 2) return false;
+    const overlap = familyTokens.filter((token) => evidenceTokens.has(token)).length;
+    return overlap >= 2 && overlap / familyTokens.length >= 0.4;
   }
 
   private async findOnlineFallbackModels(
@@ -2299,9 +2440,11 @@ export class CommunityAiAnalysisService {
           constraint,
         );
       const requestDescription = context.requestDescription?.trim() ?? '';
-      const evidenceMatches = requestDescription
+      const explicitRequesterProblem = !this.isEvidenceDiscoveryMode(context);
+      const evidenceMatches = requestDescription && explicitRequesterProblem
         ? RequestEvidenceAlignmentUtil.isCompositeAligned({
-            requestDescription,
+            requestDescription:
+              context.collectionPlan?.requestIntent?.explicitProblem ?? requestDescription,
             evidenceTexts: opportunity.evidenceSamples,
             plannedQueries: context.collectionPlan?.searchQueries ?? [],
           })
@@ -2625,9 +2768,24 @@ export class CommunityAiAnalysisService {
     const requestDescription = context.requestDescription?.trim() ?? '';
     if (!requestDescription) return false;
 
-    const family = RequestWorkflowIntentProfileUtil.resolve(requestDescription).family;
+    if (this.isEvidenceDiscoveryMode(context)) {
+      const selectedDomains = context.selectedDomains
+        .map((domain) => domain.name.trim())
+        .filter(Boolean);
+      const domainAligned =
+        selectedDomains.length === 0 ||
+        selectedDomains.some((domainName) =>
+          this.evidenceSemanticallySupportsDomain(context, domainName, evidenceText),
+        );
+      return domainAligned && this.hasConcreteProblemSemantics(evidenceText);
+    }
+
+    const explicitProblem =
+      context.collectionPlan?.requestIntent?.explicitProblem?.trim() ||
+      requestDescription;
+    const family = RequestWorkflowIntentProfileUtil.resolve(explicitProblem).family;
     const deterministicGuard = RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
-      requestDescription,
+      requestDescription: explicitProblem,
       evidenceText,
       plannedQueries: context.collectionPlan?.searchQueries ?? [],
     });
@@ -2731,14 +2889,84 @@ export class CommunityAiAnalysisService {
   private buildEvidenceNativeProblemFamily(evidenceText: string): string | null {
     const normalized = evidenceText.replace(/\s+/gu, ' ').trim();
     if (!normalized) return null;
-    const titleLike = normalized.split(/[.!?]/u)[0]?.trim() ?? normalized;
+    const comparable = normalized.toLocaleLowerCase();
+
+    if (
+      /\b(?:logistics|shipment|shipments|warehouse confirmation|carrier update|dispatch|drivers?|etas?|freight)\b/u.test(comparable) &&
+      /\b(?:waiting|wait|delay|delays|delayed|reply|replies|updates?|confirmation|response|answer the phone|information)\b/u.test(comparable)
+    ) {
+      return 'Shipment Update and Communication Delays';
+    }
+
+    if (
+      /\b(?:cybersecurity|cyber security|security controls?|security measures?|security updates?)\b/u.test(comparable) &&
+      /\b(?:reliability|uptime|availability|operational continuity|service continuity|downtime|disruption)\b/u.test(comparable)
+    ) {
+      return 'Cybersecurity Operational Reliability Friction';
+    }
+
+    if (
+      /\b(?:mybyram|medical supplies?|glucose sensors?|ostomy supplies?|healthcare supplies?)\b/u.test(comparable) &&
+      /\b(?:order|ordering|catalog|item|items|ship|shipping|delivery|supplies?)\b/u.test(comparable) &&
+      /\b(?:wrong|missing|difficult|delay|delayed|waiting|meaningless|cannot|can['’]?t|problem|issue|logs? out)\b/u.test(comparable)
+    ) {
+      return 'Medical Supply Ordering and Fulfillment Failures';
+    }
+
+    if (
+      /\b(?:crowdstrike|microsoft|software|technology|cloud|provider)\b/u.test(comparable) &&
+      /\b(?:outage|meltdown|major disruption|service disruption|incident)\b/u.test(comparable) &&
+      /\b(?:liabilit(?:y|ies)|accountability|penalt(?:y|ies)|legal incentive|responsib(?:le|ility))\b/u.test(comparable)
+    ) {
+      return 'Software Outage Liability and Vendor Accountability Gaps';
+    }
+
+    if (
+      /\b(?:order|ordering|catalog|checkout|shipment|shipping|delivery|fulfillment|fulfilment)\b/u.test(comparable) &&
+      /\b(?:wrong|incorrect|missing|delay|delayed|late|difficult|unable|cannot|can['’]?t|failed|failure|problem)\b/u.test(comparable)
+    ) {
+      return 'Ordering and Fulfillment Failures';
+    }
+
+    const explicitChallengeFamily = this.extractEvidenceChallengeFamily(normalized);
+    if (explicitChallengeFamily) return explicitChallengeFamily;
+
+    /*
+     * Never manufacture a discovery problem family from the first words of a
+     * title. The old fallback converted headlines such as "Integrating AI in
+     * Audit Workflow: Opportunities, Architecture, and Challenges" into a
+     * fake family even when the actual pain lived later in the abstract. If no
+     * explicit evidence-native pain can be extracted, return null so the item
+     * remains contextual instead of becoming the selected problem.
+     */
+    const clauses = normalized
+      .split(/(?<=[.!?;])\s+|\s+[—–-]\s+/u)
+      .map((value) => value.trim())
+      .filter((value) => value.length >= 18)
+      .filter((value) => this.hasConcreteProblemSemantics(value))
+      .filter((value) => !this.looksLikePromotionalOrPublisherText(value));
+
+    const best = clauses
+      .map((value) => ({
+        value,
+        score:
+          (this.hasProblemSemantics(value) ? 4 : 0) +
+          (this.hasConcreteProblemSemantics(value) ? 8 : 0) +
+          Math.min(3, value.split(/[,;]/u).length - 1),
+      }))
+      .sort((left, right) => right.score - left.score)[0]?.value;
+    if (!best) return null;
+
     const stopwords = new Set([
-      'opening', 'another', 'using', 'trying', 'working', 'problem', 'issue',
-      'with', 'from', 'into', 'between', 'when', 'where', 'this', 'that',
-      'have', 'has', 'were', 'been', 'running', 'same', 'need', 'needs',
-      'cannot', 'unable', 'error', 'failed', 'failure', 'service', 'system',
+      'opening', 'another', 'using', 'trying', 'working', 'problem', 'problems',
+      'issue', 'issues', 'challenge', 'challenges', 'workflow', 'workflows',
+      'friction', 'with', 'from', 'into', 'between', 'when', 'where', 'this',
+      'that', 'have', 'has', 'were', 'been', 'running', 'same', 'need', 'needs',
+      'cannot', 'unable', 'service', 'system', 'study', 'studies', 'paper',
+      'review', 'reviews', 'systematic', 'opportunities', 'architecture',
+      'integrating', 'integration', 'presents', 'presented', 'research',
     ]);
-    const tokens = titleLike
+    const tokens = best
       .normalize('NFKC')
       .toLocaleLowerCase()
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
@@ -2746,10 +2974,79 @@ export class CommunityAiAnalysisService {
       .filter((token) => token.length >= 4 && !stopwords.has(token));
     const unique = [...new Set(tokens)].slice(0, 6);
     if (unique.length < 2) return null;
-    return unique
+    const label = unique
       .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-      .join(' ')
-      .slice(0, 120);
+      .join(' ');
+    return this.hasConcreteProblemSemantics(label)
+      ? label.slice(0, 120)
+      : null;
+  }
+
+  private extractEvidenceChallengeFamily(evidenceText: string): string | null {
+    const normalized = evidenceText.replace(/\s+/gu, ' ').trim();
+    if (!normalized) return null;
+
+    const patterns = [
+      /\b(?:key\s+|main\s+|major\s+|persistent\s+|common\s+|remaining\s+)?(?:challenges?|barriers?|limitations?|constraints?|risks?|concerns?|issues?|problems?)\s*(?:include|includes|including|such as|are|remain|involve|related to|around|:)\s*([^.;!?]{12,240})/giu,
+      /\b(?:faces?|encounters?|experiences?|struggles? with|suffers? from)\s+([^.;!?]{12,220})/giu,
+    ];
+
+    const genericAcademic = /^(?:a\s+)?(?:systematic\s+)?(?:review|study|paper|analysis|survey|framework|architecture|opportunities?)\b/iu;
+    const candidates: string[] = [];
+    for (const pattern of patterns) {
+      for (const match of normalized.matchAll(pattern)) {
+        const fragment = (match[1] ?? '').replace(/\s+/gu, ' ').trim();
+        if (!fragment || genericAcademic.test(fragment)) continue;
+        const pieces = fragment
+          .split(/\s*(?:,|;|\band\b|\bor\b)\s*/iu)
+          .map((piece) => piece.trim())
+          .filter((piece) => piece.length >= 3)
+          .filter((piece) => !genericAcademic.test(piece))
+          .filter((piece) => !/^(?:other|various|several|multiple)\s+(?:issues?|challenges?|problems?)$/iu.test(piece));
+        if (pieces.length >= 2) {
+          candidates.push(pieces.slice(0, 3).join(' | '));
+        } else if (pieces.length === 1 && this.hasConcreteProblemSemantics(pieces[0]!)) {
+          candidates.push(pieces[0]!);
+        }
+      }
+    }
+    if (candidates.length === 0) return null;
+
+    const selected = candidates
+      .sort((left, right) => {
+        const leftConcrete = this.hasConcreteProblemSemantics(left) ? 1 : 0;
+        const rightConcrete = this.hasConcreteProblemSemantics(right) ? 1 : 0;
+        return rightConcrete - leftConcrete || right.length - left.length;
+      })[0]!;
+
+    const labels = selected
+      .split(' | ')
+      .map((piece) =>
+        piece
+          .replace(/^(?:the|a|an)\s+/iu, '')
+          .replace(/\b(?:in|for|of)\s+(?:the\s+)?(?:study|review|paper)\b.*$/iu, '')
+          .trim(),
+      )
+      .filter(Boolean)
+      .slice(0, 3)
+      .map((piece) =>
+        piece
+          .split(/\s+/u)
+          .slice(0, 5)
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLocaleLowerCase())
+          .join(' '),
+      );
+    if (labels.length === 0) return null;
+
+    const joined = labels.length === 1
+      ? labels[0]!
+      : labels.length === 2
+        ? `${labels[0]} and ${labels[1]}`
+        : `${labels[0]}, ${labels[1]} and ${labels[2]}`;
+    const label = /\b(?:failure|failures|delay|delays|downtime|outage|breach|shortage|overload|fatigue|cost|costs|pressure|risk|risks|barrier|barriers|constraint|constraints|gap|gaps|loss|losses|quality|compliance|privacy|explainability)\b/iu.test(joined)
+      ? `${joined} Challenges`
+      : joined;
+    return label.replace(/\s+/gu, ' ').trim().slice(0, 120);
   }
 
   private isGenericProblemFamilyLabel(value: string): boolean {
@@ -2800,8 +3097,12 @@ export class CommunityAiAnalysisService {
   private buildClassifiedEvidenceFallbackOpportunities(
     context: IdeaGenerationContext,
     classifications: readonly CommunityAiEvidenceTriage[],
+    aiSelectedProblemFamily: string | null = null,
+    aiSelectedEvidenceIds: readonly string[] = [],
   ): CommunityAiOpportunity[] {
     const requestDescription = context.requestDescription?.trim() ?? '';
+    const discoveryMode = this.isEvidenceDiscoveryMode(context);
+    const explicitRequesterProblem = !discoveryMode && Boolean(requestDescription);
     if (classifications.length === 0) return [];
 
     const rawById = new Map(
@@ -2817,11 +3118,46 @@ export class CommunityAiAnalysisService {
       .map((item) => ({ triage: item, raw: rawById.get(item.evidenceId)! }));
     if (verified.length === 0) return [];
 
+    const aiSelectedIds = new Set(
+      aiSelectedEvidenceIds.map((id) => id.trim()).filter(Boolean),
+    );
+    const normalizedAiFamily = this.normalizeComparableText(
+      aiSelectedProblemFamily ?? '',
+    );
     const familyClusters = new Map<
       string,
       { readonly family: string; readonly items: typeof verified }
     >();
+
+    const aiSelectedVerified = verified.filter((item) =>
+      aiSelectedIds.has(item.triage.evidenceId),
+    );
+    const aiSelectedFamilyRaw = aiSelectedProblemFamily?.replace(/\s+/gu, ' ').trim() ?? '';
+    const aiSelectedFamily = aiSelectedFamilyRaw
+      ? `${aiSelectedFamilyRaw.charAt(0).toUpperCase()}${aiSelectedFamilyRaw.slice(1)}`
+      : '';
+    const preserveAiSelectedFamily = Boolean(
+      discoveryMode &&
+      aiSelectedFamily &&
+      aiSelectedVerified.length > 0 &&
+      this.discoveryProblemFamilySupportedByEvidenceGroup(
+        aiSelectedFamily,
+        aiSelectedVerified.map((item) => (item.raw as IdeaGenerationRawEvidenceItem).text),
+      ),
+    );
+    const groupedAiSelectedIds = new Set<string>();
+    if (preserveAiSelectedFamily) {
+      for (const item of aiSelectedVerified) {
+        groupedAiSelectedIds.add(item.triage.evidenceId);
+      }
+      familyClusters.set(`ai-selected:${normalizedAiFamily}`, {
+        family: aiSelectedFamily.slice(0, 120),
+        items: [...aiSelectedVerified],
+      });
+    }
+
     for (const item of verified) {
+      if (groupedAiSelectedIds.has(item.triage.evidenceId)) continue;
       const resolvedFamily = this.resolveEvidenceClusterFamily(
         context,
         item.triage,
@@ -2838,7 +3174,6 @@ export class CommunityAiAnalysisService {
         });
       }
     }
-
     const rankedClusters = [...familyClusters.values()]
       .map((cluster, index) => {
         const items = cluster.items;
@@ -2846,14 +3181,46 @@ export class CommunityAiAnalysisService {
         const supporting = items.length - direct;
         const sources = new Set(items.map((item) => item.raw.sourceKey)).size;
         const averageConfidence = items.reduce((sum, item) => sum + item.triage.confidence, 0) / Math.max(1, items.length);
+        const aiSelectedItemCount = items.filter((item) =>
+          aiSelectedIds.has(item.triage.evidenceId),
+        ).length;
+        const normalizedClusterFamily = this.normalizeComparableText(cluster.family);
+        const aiFamilyMatches = Boolean(
+          normalizedAiFamily &&
+          normalizedClusterFamily &&
+          (normalizedAiFamily === normalizedClusterFamily ||
+            normalizedAiFamily.includes(normalizedClusterFamily) ||
+            normalizedClusterFamily.includes(normalizedAiFamily)),
+        );
         return {
           items,
           family: cluster.family,
           index,
+          aiSelectedItemCount,
+          aiFamilyMatches,
           score: direct * 6 + supporting * 3 + sources * 2.5 + averageConfidence / 25,
         };
       })
-      .sort((left, right) => right.score - left.score || right.items.length - left.items.length || left.index - right.index);
+      .sort((left, right) => {
+        /*
+         * The same online model that classified the full corpus owns the first
+         * problem-family choice. Deterministic clustering verifies that its
+         * selected ids survived canonical DIRECT/SUPPORTING guards and then
+         * preserves that family. Count/source scoring is only the fallback when
+         * the AI selector is absent, malformed, or points at rejected evidence.
+         */
+        const leftAiSelected = left.aiSelectedItemCount > 0 || left.aiFamilyMatches;
+        const rightAiSelected = right.aiSelectedItemCount > 0 || right.aiFamilyMatches;
+        if (leftAiSelected !== rightAiSelected) return leftAiSelected ? -1 : 1;
+        if (left.aiSelectedItemCount !== right.aiSelectedItemCount) {
+          return right.aiSelectedItemCount - left.aiSelectedItemCount;
+        }
+        return (
+          right.score - left.score ||
+          right.items.length - left.items.length ||
+          left.index - right.index
+        );
+      });
 
     const resolveDomainName = (samples: readonly string[]): string => {
       for (const domain of context.selectedDomains) {
@@ -2898,20 +3265,20 @@ export class CommunityAiAnalysisService {
          * so the AI-classified evidence-native family itself becomes the
          * candidate problem rather than inventing a synthetic user segment.
          */
-        problem: requestDescription
+        problem: explicitRequesterProblem
           ? this.boundProblemText(
               `Within the requester-defined workflow, the strongest retained evidence supports the "${familyTitle}" problem facet. Canonical requester scope: ${requestDescription}`,
               420,
             )
           : familyTitle,
-        unmetNeed: requestDescription
+        unmetNeed: explicitRequesterProblem
           ? `Prioritize product design around the evidence-leading requester facet "${familyTitle}" while preserving the broader canonical request only as secondary scope until its remaining facets are independently validated.`
           : `A focused software workflow that addresses ${familyTitle} while preserving human review and validating how broadly the problem occurs.`,
-        solutionArea: requestDescription
+        solutionArea: explicitRequesterProblem
           ? `Evidence-prioritized requester workflow: ${familyTitle}`
           : `Evidence-grounded workflow for ${familyTitle}`,
         affectedUsers: [
-          requestDescription
+          explicitRequesterProblem
             ? RequestDynamicQueryUtil.extractActor(requestDescription) ||
               'Users or operators described by the requester workflow'
             : 'Users or operators represented by the retained external evidence',
@@ -3485,6 +3852,8 @@ export class CommunityAiAnalysisService {
       readonly attemptDiagnostics?: readonly CommunityAiAttemptDiagnostic[];
       readonly unvalidatedDomainHypotheses?: readonly CommunityAiDomainHypothesis[];
       readonly evidenceClassifications?: readonly CommunityAiEvidenceTriage[];
+      readonly aiSelectedProblemFamily?: string | null;
+      readonly aiSelectedEvidenceIds?: readonly string[];
     } = {},
   ): CommunityAiAnalysis {
     const averageConfidence =
@@ -3538,6 +3907,14 @@ export class CommunityAiAnalysisService {
         ...(telemetry.unvalidatedDomainHypotheses ?? []),
       ],
       evidenceClassifications: [...(telemetry.evidenceClassifications ?? [])],
+      aiProposedProblemFamily: telemetry.aiSelectedProblemFamily?.trim() || null,
+      aiProposedProblemFamilyEvidenceIds: [
+        ...(telemetry.aiSelectedEvidenceIds ?? []),
+      ],
+      selectedProblemFamilySelectionSource:
+        (telemetry.aiSelectedEvidenceIds ?? []).length > 0
+          ? 'AI_SELECTED_PENDING_VERIFICATION'
+          : 'DETERMINISTIC_VERIFIED_FALLBACK',
     };
   }
 
@@ -3991,17 +4368,20 @@ export class CommunityAiAnalysisService {
       }
 
       const requestDescription = context.requestDescription?.trim() ?? '';
-      if (requestDescription) {
+      if (requestDescription && !this.isEvidenceDiscoveryMode(context)) {
+        const explicitProblem =
+          context.collectionPlan?.requestIntent?.explicitProblem?.trim() ||
+          requestDescription;
         const hasRequestAlignedEvidence =
           RequestEvidenceAlignmentUtil.isCompositeAligned({
-            requestDescription,
+            requestDescription: explicitProblem,
             evidenceTexts: opportunity.evidenceSamples,
             plannedQueries: context.collectionPlan?.searchQueries ?? [],
           });
 
         if (!hasRequestAlignedEvidence) {
           throw new Error(
-            `Opportunity "${opportunity.title}" is evidence-backed but the retained evidence does not support the requester-described problem/workflow.`,
+            `Opportunity "${opportunity.title}" is evidence-backed but the retained evidence does not support the explicit requester problem/workflow.`,
           );
         }
       }
@@ -4226,7 +4606,13 @@ export class CommunityAiAnalysisService {
         trustedProblemClassification &&
         context.collectionPlan?.problemProfile &&
         !canonicalProblemFamily
-          ? 'UNRELATED'
+          ? RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
+              requestDescription,
+              evidenceText: rawItem.text,
+              plannedQueries: context.collectionPlan?.searchQueries ?? [],
+            })
+            ? 'CONTEXT_ONLY'
+            : 'UNRELATED'
           : classification;
 
       return {
@@ -4237,8 +4623,11 @@ export class CommunityAiAnalysisService {
             ? Math.min(provider.confidence, 75)
             : provider.confidence,
         reason:
-          familyValidatedClassification === 'UNRELATED' && (classification === 'DIRECT_PROBLEM' || classification === 'SUPPORTING_SIGNAL')
-            ? 'Semantic support was rejected because it did not map to a requester-owned canonical problem family.'
+          familyValidatedClassification === 'CONTEXT_ONLY' &&
+              (classification === 'DIRECT_PROBLEM' || classification === 'SUPPORTING_SIGNAL')
+            ? 'Semantic support was preserved as CONTEXT_ONLY because it remained request-related but did not map safely to a requester-owned canonical problem family.'
+            : familyValidatedClassification === 'UNRELATED' && (classification === 'DIRECT_PROBLEM' || classification === 'SUPPORTING_SIGNAL')
+              ? 'Semantic support was rejected because it did not map to a requester-owned canonical problem family.'
             : deterministic === 'UNRELATED' &&
                 (provider.classification === 'DIRECT_PROBLEM' || provider.classification === 'SUPPORTING_SIGNAL')
               ? `${provider.reason} Deterministic request/workflow verification rejected the semantic match.`
@@ -7652,4 +8041,18 @@ export class CommunityAiAnalysisService {
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
+  private isEvidenceDiscoveryMode(context: IdeaGenerationContext): boolean {
+    const intent = context.collectionPlan?.requestIntent;
+    if (!context.requestDescription?.trim()) return true;
+    return intent?.mode !== 'EXPLICIT_PROBLEM' || !intent.explicitProblem?.trim();
+  }
+
+  private requestIntentScope(context: IdeaGenerationContext): string {
+    return (
+      context.collectionPlan?.requestIntent?.summary?.trim() ||
+      context.requestDescription?.trim() ||
+      ''
+    );
+  }
+
 }

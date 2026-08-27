@@ -763,14 +763,17 @@ export class AiExecutionService {
           providerResult,
         };
 
-        await this.recordSuccessfulAttempt(
-          context.operationId,
-          attemptNumber,
-          fallbackUsed,
-          model,
+        await this.settleSuccessfulGenerationMaintenance(
           input,
-          successfulResult,
-          providerResult.providerLatencyMs,
+          this.recordSuccessfulAttempt(
+            context.operationId,
+            attemptNumber,
+            fallbackUsed,
+            model,
+            input,
+            successfulResult,
+            providerResult.providerLatencyMs,
+          ),
         );
 
         return {
@@ -1342,20 +1345,23 @@ export class AiExecutionService {
         providerResult,
       };
 
-      await this.recordSuccessfulAttempt(
-        operationId,
-        attemptNumber,
-        fallbackUsed,
-        model,
+      await this.settleSuccessfulGenerationMaintenance(
         input,
-        result,
-        providerResult.providerLatencyMs,
+        this.recordSuccessfulAttempt(
+          operationId,
+          attemptNumber,
+          fallbackUsed,
+          model,
+          input,
+          result,
+          providerResult.providerLatencyMs,
 
-        /**
-         * Model health is updated by the model flow only after the
-         * complete repair flow succeeds.
-         */
-        false,
+          /**
+           * Model health is updated by the model flow only after the
+           * complete repair flow succeeds.
+           */
+          false,
+        ),
       );
 
       return {
@@ -1448,6 +1454,36 @@ export class AiExecutionService {
     }
 
     await Promise.allSettled(maintenanceOperations);
+  }
+
+  /**
+   * Successful generation responses are already complete and validated before
+   * logging/model-health maintenance begins. Remote database latency in those
+   * non-critical writes must not keep PREPARING, Community AI, recovery, or
+   * Core AI waiting several extra seconds. Give the maintenance a small
+   * foreground budget, then let the same promise finish without changing the
+   * provider result or routing decision. Non-generation callers preserve the
+   * original fully-awaited behavior.
+   */
+  private async settleSuccessfulGenerationMaintenance(
+    input: AiExecutionInput,
+    maintenance: Promise<void>,
+  ): Promise<void> {
+    const generationOperation =
+      input.generationType !== undefined &&
+      (input.requestType === ApiRequestType.NLP_ENHANCEMENT ||
+        input.requestType === ApiRequestType.IDEA_GENERATION);
+
+    if (!generationOperation) {
+      await maintenance;
+      return;
+    }
+
+    const safeMaintenance = maintenance.catch(() => undefined);
+    await Promise.race([
+      safeMaintenance,
+      this.delay(150),
+    ]);
   }
 
   /**

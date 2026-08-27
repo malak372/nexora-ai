@@ -238,14 +238,14 @@ function CaseDetail({ complaint, loading }) {
             <strong>Concern details</strong>
           </div>
         </div>
-        <p>{complaint.message}</p>
+        <p dir="auto" data-no-auto-translate="true">{complaint.message}</p>
 
         {complaint.idea ? (
           <div className="compliance-related-idea">
             <Sparkles size={16} />
             <span>
               Related idea
-              <strong>{complaint.idea.title || 'Untitled idea'}</strong>
+              <strong dir="auto" data-idea-content="true">{complaint.idea.title || 'Untitled idea'}</strong>
             </span>
           </div>
         ) : null}
@@ -347,6 +347,7 @@ function NewCaseModal({ ideas, form, setForm, onClose, onSubmit, submitting }) {
             <label>
               <span>Case subject</span>
               <input
+                dir="auto"
                 autoFocus
                 value={form.subject}
                 minLength={3}
@@ -362,6 +363,7 @@ function NewCaseModal({ ideas, form, setForm, onClose, onSubmit, submitting }) {
             <label>
               <span>What happened?</span>
               <textarea
+                dir="auto"
                 rows={7}
                 value={form.message}
                 minLength={10}
@@ -387,7 +389,7 @@ function NewCaseModal({ ideas, form, setForm, onClose, onSubmit, submitting }) {
               >
                 <option value="">This case is not related to a specific idea</option>
                 {ideas.map((idea) => (
-                  <option key={idea.id} value={idea.id}>
+                  <option key={idea.id} value={idea.id} dir="auto" data-idea-content="true">
                     {idea.title || idea.name || 'Untitled idea'}
                   </option>
                 ))}

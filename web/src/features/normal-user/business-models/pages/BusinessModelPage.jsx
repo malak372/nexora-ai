@@ -44,6 +44,7 @@ import {
 } from '../api/businessModelsApi';
 import { getIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
 import { getDiscoveryById } from '../../discoveries/api/discoveriesApi';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../styles/business-model.css';
 
 const TEMPLATE_LAYOUTS = {
@@ -307,7 +308,7 @@ function buildSections(content, templateKey) {
   }));
 }
 
-function buildPrintableHtml(model, sections, templateKey, ideaTitle) {
+function buildPrintableHtml(model, sections, templateKey, ideaTitle, translate, language, theme) {
   const cards = sections
     .map((section) => {
       const items = normalizeItems(section.value);
@@ -315,16 +316,16 @@ function buildPrintableHtml(model, sections, templateKey, ideaTitle) {
       const content =
         items.length > 1
           ? `<ul>${items
-              .map((item) => `<li>${escapeHtml(item)}</li>`)
+              .map((item) => `<li dir="auto">${escapeHtml(item)}</li>`)
               .join('')}</ul>`
-          : `<p>${escapeHtml(
-              items[0] || 'No content available.',
-            )}</p>`;
+          : items[0]
+            ? `<p dir="auto">${escapeHtml(items[0])}</p>`
+            : `<p>${escapeHtml(translate('No content available.'))}</p>`;
 
       return `
         <section class="card area-${escapeHtml(section.area)}">
           <span class="number">${escapeHtml(section.number)}</span>
-          <h2>${escapeHtml(section.label)}</h2>
+          <h2>${escapeHtml(translate(section.label))}</h2>
           ${content}
         </section>
       `;
@@ -332,20 +333,20 @@ function buildPrintableHtml(model, sections, templateKey, ideaTitle) {
     .join('');
 
   return `<!doctype html>
-<html>
+<html lang="${language}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
 <head>
 <meta charset="utf-8"/>
 <title>${escapeHtml(ideaTitle || 'Untitled idea')} · Voxidence Business Model</title>
 <style>
 @page{size:A4 landscape;margin:9mm}
 *{box-sizing:border-box}
-body{margin:0;padding:0;font-family:Inter,Arial,sans-serif;color:#36413d;background:#fff}
-header{display:flex;justify-content:space-between;align-items:flex-end;padding:0 0 6mm;border-bottom:1px solid #dce9e5}
-header span{color:#2f7774;font-size:9pt;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
-header h1{margin:2mm 0 0;font-size:22pt;letter-spacing:-.04em}
-header small{color:#78827e}
-.idea-title{margin:2mm 0 0;max-width:230mm;color:#60706a;font-size:9.5pt;font-weight:600;line-height:1.35}
-.idea-title strong{color:#36413d;font-weight:800}
+body{margin:0;padding:0;font-family:Inter,Arial,sans-serif;color:${theme === 'dark' ? '#eaf5f2' : '#36413d'};background:${theme === 'dark' ? '#13231d' : '#fff'}}
+header{display:flex;justify-content:space-between;align-items:flex-end;padding:0 0 6mm;border-bottom:1px solid ${theme === 'dark' ? '#2b4940' : '#dce9e5'}}
+header span{color:${theme === 'dark' ? '#83d4cd' : '#2f7774'};font-size:9pt;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+header h1{margin:2mm 0 0;font-size:22pt;letter-spacing:-.04em;color:${theme === 'dark' ? '#f3f9f7' : '#36413d'}}
+header small{color:${theme === 'dark' ? '#a8beb7' : '#78827e'}}
+.idea-title{margin:2mm 0 0;max-width:230mm;color:${theme === 'dark' ? '#b8cbc5' : '#60706a'};font-size:9.5pt;font-weight:600;line-height:1.35}
+.idea-title strong{color:${theme === 'dark' ? '#eef8f5' : '#36413d'};font-weight:800}
 .grid{display:grid;gap:3.4mm;padding-top:5mm}
 .grid.is-bmc{grid-template-columns:1.05fr 1fr 1.24fr 1fr 1.05fr;grid-template-areas:"partners activities value relationships segments" "partners resources value channels segments" "costs costs costs revenue revenue"}
 .grid.is-lean{grid-template-columns:1.05fr 1fr 1.24fr 1fr 1.05fr;grid-template-areas:"problem solution value advantage segments" "problem metrics value channels segments" "costs costs costs revenue revenue"}
@@ -354,32 +355,33 @@ header small{color:#78827e}
 .grid.is-impact{grid-template-columns:1fr 1.2fr 1fr;grid-template-areas:"problem intervention beneficiaries" "partners value metrics" "costs sustainability sustainability"}
 .grid.is-vpc{grid-template-columns:repeat(2,1fr);grid-template-areas:"products jobs" "relievers pains" "creators gains"}
 .grid.is-dynamic{grid-template-columns:repeat(3,1fr)}
-.card{position:relative;min-height:42mm;padding:5mm;border:1px solid #dce9e5;border-radius:11px;background:linear-gradient(145deg,#fff,#f7fbf9);break-inside:avoid}
-.card h2{margin:0 0 4mm;padding-right:11mm;color:#2f7774;font-size:10pt}
-.card p,.card li{font-size:8pt;line-height:1.42;color:#5f6b66}
-.card ul{margin:0;padding-left:4mm}
-.number{position:absolute;right:4mm;top:3.5mm;color:#cfe2dd;font-size:15pt;font-weight:900}
+.card{position:relative;min-height:42mm;padding:5mm;border:1px solid ${theme === 'dark' ? '#2b4940' : '#dce9e5'};border-radius:11px;background:${theme === 'dark' ? 'linear-gradient(145deg,#1e342c,#192b25)' : 'linear-gradient(145deg,#fff,#f7fbf9)'};break-inside:avoid}
+.card h2{margin:0 0 4mm;padding-inline-end:11mm;color:${theme === 'dark' ? '#83d4cd' : '#2f7774'};font-size:10pt}
+.card p,.card li{font-size:8pt;line-height:1.42;color:${theme === 'dark' ? '#bfd0cb' : '#5f6b66'};unicode-bidi:plaintext;text-align:start}
+.card ul{margin:0;padding-inline-start:4mm}
+.number{position:absolute;inset-inline-end:4mm;top:3.5mm;color:${theme === 'dark' ? '#40675c' : '#cfe2dd'};font-size:15pt;font-weight:900}
 ${sections.filter((section) => section.area).map((section) => `.area-${section.area}{grid-area:${section.area}}`).join('')}
-footer{margin-top:5mm;padding-top:3mm;border-top:1px solid #dce9e5;color:#87918d;font-size:8pt;text-align:center}
+footer{margin-top:5mm;padding-top:3mm;border-top:1px solid ${theme === 'dark' ? '#2b4940' : '#dce9e5'};color:${theme === 'dark' ? '#9eb3ad' : '#87918d'};font-size:8pt;text-align:center}
+@media print{body{color:#36413d!important;background:#fff!important}header{border-color:#dce9e5!important}header h1{color:#36413d!important}header span{color:#2f7774!important}header small,.idea-title{color:#60706a!important}.idea-title strong{color:#36413d!important}.card{border-color:#dce9e5!important;background:linear-gradient(145deg,#fff,#f7fbf9)!important}.card h2{color:#2f7774!important}.card p,.card li{color:#5f6b66!important}.number{color:#cfe2dd!important}footer{border-color:#dce9e5!important;color:#87918d!important}}
 </style>
 </head>
 <body>
 <header>
   <div>
-    <span>Voxidence · Business Model Studio</span>
+    <span>Voxidence · ${escapeHtml(translate('Business model studio'))}</span>
     <h1>${escapeHtml(
-      TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model',
+      translate(TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model'),
     )}</h1>
-    <p class="idea-title"><strong>Idea:</strong> ${escapeHtml(
-      ideaTitle || 'Untitled idea',
-    )}</p>
+    <p class="idea-title"><strong>${escapeHtml(translate('Idea'))}:</strong> <bdi dir="auto">${escapeHtml(
+      ideaTitle || translate('Untitled idea'),
+    )}</bdi></p>
   </div>
-  <small>Version ${escapeHtml(model?.version || 1)}</small>
+  <small>${escapeHtml(translate('Version'))} ${escapeHtml(model?.version || 1)}</small>
 </header>
 <main class="grid ${escapeHtml(
     TEMPLATE_LAYOUTS[templateKey]?.className || 'is-dynamic',
   )}">${cards}</main>
-<footer>Voxidence · Ideas built from real needs</footer>
+<footer>Voxidence · ${escapeHtml(translate('Ideas built from real needs'))}</footer>
 </body>
 </html>`;
 }
@@ -389,6 +391,7 @@ export default function BusinessModelPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const shouldReduceMotion = useReducedMotion();
+  const { t, language, theme } = useUserExperience();
 
   const isAcceptedBusinessModel =
     location.state?.businessModelOrigin === 'accepted-publication';
@@ -510,8 +513,11 @@ export default function BusinessModelPage() {
         sections,
         templateKey,
         idea?.title,
+        t,
+        language,
+        theme,
       ),
-    [idea?.title, sections, templateKey, visibleModel],
+    [idea?.title, language, sections, t, templateKey, theme, visibleModel],
   );
 
   const generate = async () => {
@@ -557,7 +563,7 @@ export default function BusinessModelPage() {
         }
       >
         <ArrowLeft size={17} />
-        {returnLabel}
+        {t(returnLabel)}
       </button>
 
       <section className="bm-hero">
@@ -565,29 +571,28 @@ export default function BusinessModelPage() {
           <span>
             <Sparkles size={15} />
             {isAcceptedBusinessModel
-              ? 'Accepted idea · Business design studio'
-              : 'Business design studio'}
+              ? t('Accepted idea · Business design studio')
+              : t('Business design studio')}
           </span>
 
           <h1>
-            Build the right model for the selected framework.
+            {t('Build the right model for the selected framework.')} 
           </h1>
 
           <p>
-            Every template now receives its own professional layout instead
-            of being forced into one generic grid.
+            {t('Every template now receives its own professional layout instead of being forced into one generic grid.')} 
           </p>
         </div>
 
         <div className="bm-hero__summary">
           <article>
-            <small>Active layout</small>
-            <strong>{layout.label}</strong>
+            <small>{t('Active layout')}</small>
+            <strong>{t(layout.label)}</strong>
           </article>
 
           <article>
-            <small>Version</small>
-            <strong>{modelMatchesSelection ? model?.version || 0 : 'New'}</strong>
+            <small>{t('Version')}</small>
+            <strong>{modelMatchesSelection ? model?.version || 0 : t('New')}</strong>
           </article>
         </div>
       </section>
@@ -595,12 +600,11 @@ export default function BusinessModelPage() {
       <section className="bm-layout">
         <aside className="bm-templates">
           <span className="bm-kicker">
-            Framework library
+            {t('Framework library')}
           </span>
-          <h2>Choose a framework</h2>
+          <h2>{t('Choose a framework')}</h2>
           <p>
-            The displayed board changes automatically with the chosen
-            template.
+            {t('The displayed board changes automatically with the chosen template.')} 
           </p>
 
           <div className="bm-template-list">
@@ -622,8 +626,8 @@ export default function BusinessModelPage() {
                 </span>
 
                 <div>
-                  <strong>{template.name}</strong>
-                  <small>{template.description}</small>
+                  <strong>{t(template.name)}</strong>
+                  <small>{t(template.description)}</small>
                 </div>
 
                 <i>
@@ -663,11 +667,11 @@ export default function BusinessModelPage() {
             <span className="bm-action__copy">
               <strong>
                 {modelMatchesSelection
-                  ? 'Generate new version'
-                  : 'Generate model'}
+                  ? t('Generate new version')
+                  : t('Generate model')}
               </strong>
               <small>
-                {selectedTemplate?.name || 'Choose a framework'}
+                {selectedTemplate?.name ? t(selectedTemplate.name) : t('Choose a framework')}
               </small>
             </span>
 
@@ -685,16 +689,16 @@ export default function BusinessModelPage() {
               <div className="bm-empty__icon" aria-hidden="true">
                 <WandSparkles size={31} strokeWidth={1.8} />
               </div>
-              <span className="bm-empty__eyebrow">Ready to build</span>
+              <span className="bm-empty__eyebrow">{t('Ready to build')}</span>
               <h2>
                 {selectedTemplate?.name
-                  ? `${selectedTemplate.name} is ready to generate.`
-                  : 'Your business model will appear here.'}
+                  ? `${t(selectedTemplate.name)} ${t('is ready to generate.')}`
+                  : t('Your business model will appear here.')}
               </h2>
               <p>
                 {model && !modelMatchesSelection
-                  ? 'You changed the framework. Generate it to create a new version with the correct canvas structure.'
-                  : 'Choose a framework, then generate a tailored model from your idea data.'}
+                  ? t('You changed the framework. Generate it to create a new version with the correct canvas structure.')
+                  : t('Choose a framework, then generate a tailored model from your idea data.')}
               </p>
               {/* Same visual language as the header credit CTA. */}
               <button
@@ -712,8 +716,8 @@ export default function BusinessModelPage() {
                 </span>
 
                 <span className="bm-action__copy">
-                  <strong>{busy ? 'Generating…' : 'Generate now'}</strong>
-                  <small>{selectedTemplate?.name || 'Business model'}</small>
+                  <strong>{busy ? t('Generating…') : t('Generate now')}</strong>
+                  <small>{selectedTemplate?.name ? t(selectedTemplate.name) : t('Business model')}</small>
                 </span>
 
                 <ArrowRight className="bm-action__arrow" size={17} aria-hidden="true" />
@@ -723,13 +727,14 @@ export default function BusinessModelPage() {
             <>
               <header>
                 <div>
-                  <span>{layout.label}</span>
+                  <span>{t(layout.label)}</span>
                   <h2>
-                    {visibleModel.businessModelTemplate?.name ||
-                      layout.label}
+                    {visibleModel.businessModelTemplate?.name
+                      ? t(visibleModel.businessModelTemplate.name)
+                      : t(layout.label)}
                   </h2>
                   <p>
-                    Template-specific structure · presentation ready
+                    {t('Template-specific structure · presentation ready')}
                   </p>
                 </div>
 
@@ -738,7 +743,7 @@ export default function BusinessModelPage() {
                   onClick={() => setPreviewOpen(true)}
                 >
                   <Eye size={16} />
-                  Open presentation
+                  {t('Open presentation')}
                 </button>
               </header>
 
@@ -781,7 +786,7 @@ export default function BusinessModelPage() {
                         {section.number}
                       </span>
 
-                      <h3>{section.label}</h3>
+                      <h3>{t(section.label)}</h3>
 
                       {items.length > 1 ? (
                         <ul>
@@ -790,15 +795,15 @@ export default function BusinessModelPage() {
                               <li
                                 key={`${section.originalKey}-${itemIndex}`}
                               >
-                                {item}
+                                <span dir="auto" data-idea-content="true">{item}</span>
                               </li>
                             ),
                           )}
                         </ul>
                       ) : (
-                        <p>
+                        <p dir="auto" data-idea-content="true">
                           {items[0] ||
-                            'No content available.'}
+                            t('No content available.')}
                         </p>
                       )}
                     </motion.section>
@@ -818,7 +823,7 @@ export default function BusinessModelPage() {
                   className="bm-modal"
                   role="dialog"
                   aria-modal="true"
-                  aria-label="Business model presentation preview"
+                  aria-label={t('Business model presentation preview')}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -853,11 +858,19 @@ export default function BusinessModelPage() {
                   >
                     <header>
                       <div>
-                        <strong>Presentation preview</strong>
+                        <strong>{t('Presentation preview')}</strong>
                         <small>
-                          {idea?.title
-                            ? `${idea.title} · ${layout.label}`
-                            : layout.label}
+                          {idea?.title ? (
+                            <>
+                              <bdi dir="auto" data-idea-content="true">
+                                {idea.title}
+                              </bdi>
+                              <span aria-hidden="true"> · </span>
+                              <span>{t(layout.label)}</span>
+                            </>
+                          ) : (
+                            t(layout.label)
+                          )}
                         </small>
                       </div>
 
@@ -868,13 +881,13 @@ export default function BusinessModelPage() {
                           onClick={printPdf}
                         >
                           <Printer size={16} />
-                          Print or save PDF
+                          {t('Print or save PDF')}
                         </button>
 
                         <button
                           type="button"
                           className="bm-preview-close"
-                          aria-label="Close"
+                          aria-label={t('Close')}
                           onClick={() =>
                             setPreviewOpen(false)
                           }
@@ -886,11 +899,7 @@ export default function BusinessModelPage() {
 
                     <iframe
                       id="business-model-preview-frame"
-                      title={
-                        idea?.title
-                          ? `${idea.title} business model preview`
-                          : 'Business model preview'
-                      }
+                      title={t('Business model preview')}
                       srcDoc={printableHtml}
                     />
                   </motion.div>

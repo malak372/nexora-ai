@@ -1,0 +1,773 @@
+/* Voxidence user-facing dark theme.
+   Applies only while UserExperienceLayer adds html.vox-user-dark.
+   Admin routes remove that class, so admin styling is not touched. */
+
+html.vox-user-dark {
+  color-scheme: dark;
+  --vx-dark-canvas: #111a17;
+  --vx-dark-canvas-2: #15211d;
+  --vx-dark-surface: #192722;
+  --vx-dark-surface-2: #20312b;
+  --vx-dark-surface-3: #293c35;
+  --vx-dark-field: #17231f;
+  --vx-dark-text: #f1f7f5;
+  --vx-dark-muted: #b4c6c0;
+  --vx-dark-subtle: #8fa59e;
+  --vx-dark-border: rgba(111, 202, 197, .18);
+  --vx-dark-border-strong: rgba(111, 202, 197, .34);
+  --vx-dark-aqua: #73d0ca;
+  --vx-dark-aqua-deep: #48a8a2;
+  --vx-dark-rose: #e2a9b6;
+  --vx-dark-shadow: 0 20px 54px rgba(2, 10, 8, .24);
+  /* Compatibility aliases used by a few existing page-specific dark rules. */
+  --vx-user-bg: var(--vx-dark-canvas);
+  --vx-user-surface: var(--vx-dark-surface);
+  --vx-user-surface-2: var(--vx-dark-surface-2);
+  --vx-user-text: var(--vx-dark-text);
+  --vx-user-muted: var(--vx-dark-muted);
+  --vx-user-border: var(--vx-dark-border);
+  --vx-user-aqua: var(--vx-dark-aqua);
+}
+
+html.vox-user-dark,
+html.vox-user-dark body,
+html.vox-user-dark #root {
+  min-height: 100%;
+  color: var(--vx-dark-text) !important;
+  background-color: var(--vx-dark-canvas) !important;
+}
+
+html.vox-user-dark body {
+  background-image:
+    radial-gradient(circle at 8% 1%, rgba(226, 169, 182, .055), transparent 28rem),
+    radial-gradient(circle at 93% 4%, rgba(115, 208, 202, .075), transparent 31rem),
+    linear-gradient(145deg, var(--vx-dark-canvas) 0%, var(--vx-dark-canvas-2) 52%, var(--vx-dark-canvas) 100%) !important;
+  background-attachment: fixed !important;
+}
+
+/* Page roots are canvases, never giant cards. */
+html.vox-user-dark body :is(
+  .vox-public-shell,
+  .vox-home-page,
+  .vox-home-content,
+  .vox-home-sections,
+  .normal-app-shell,
+  .normal-dashboard-page,
+  .ideas-page,
+  .discover-page,
+  .publication-detail-page,
+  .accepted-workspace-page,
+  .publish-page,
+  .published-page,
+  .preferences-page,
+  .profile-settings-page,
+  .billing-page,
+  .upgrade-page,
+  .notifications-page,
+  .compliance-page,
+  .bm-page,
+  .unlock-page,
+  .unlock-result-page,
+  .payment-result-page,
+  .ai-chat-page,
+  .nx-generation-page,
+  .nx-generation-progress,
+  .workspace-page,
+  .guest-bootstrap-page,
+  .guest-generator-page,
+  .guest-progress-page,
+  .guest-limit-page,
+  .guest-publication-page,
+  .nx-login,
+  .nx-register,
+  .vx-recovery,
+  .nx-verify-page,
+  .nx-verify
+) {
+  color: var(--vx-dark-text) !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* Public shell and home: keep one continuous charcoal canvas. */
+html.vox-user-dark body .vox-public-shell {
+  --public-ink: var(--vx-dark-text);
+  --public-muted: var(--vx-dark-muted);
+  --public-graphite: var(--vx-dark-text);
+  --public-pearl: var(--vx-dark-surface);
+  background: transparent !important;
+}
+
+html.vox-user-dark body :is(
+  .vox-home-background,
+  .vox-section-flow,
+  .vox-home-sections,
+  .vox-how-section,
+  .vox-about-section,
+  .vox-domains-section,
+  .vox-discoveries-section,
+  .vox-discoveries-container,
+  .vox-contact-section
+) {
+  background-color: transparent !important;
+}
+
+html.vox-user-dark body .vox-home-background {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(226, 169, 182, .08), transparent 32rem),
+    radial-gradient(circle at 88% 13%, rgba(115, 208, 202, .10), transparent 34rem),
+    linear-gradient(180deg, #11201b 0%, #14231f 48%, #111a17 100%) !important;
+}
+
+html.vox-user-dark body :is(.vox-home-background-grid, .vox-discoveries-header) {
+  border-color: var(--vx-dark-border) !important;
+}
+
+/* Public navigation/footer. */
+html.vox-user-dark body :is(
+  .vox-public-header__inner,
+  .vox-public-header__mobile-menu,
+  .normal-header,
+  .normal-header--professional,
+  .normal-sidebar,
+  .normal-drawer,
+  .normal-header__profile-menu
+) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background: linear-gradient(120deg, rgba(24, 40, 34, .985), rgba(18, 32, 28, .985)) !important;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark body :is(.vox-public-nav a, .normal-header__nav a, .normal-sidebar a) {
+  color: #c0d2cd !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark body :is(.vox-public-nav a, .normal-header__nav a, .normal-sidebar a):hover {
+  color: #ffffff !important;
+  background: rgba(115, 208, 202, .08) !important;
+}
+
+html.vox-user-dark body :is(
+  .vox-public-nav a.active,
+  .vox-public-nav a[aria-current='page'],
+  .normal-header__nav a.is-active,
+  .normal-sidebar a.is-active
+) {
+  color: #e8faf7 !important;
+  border-color: rgba(115, 208, 202, .26) !important;
+  background: linear-gradient(145deg, rgba(115, 208, 202, .15), rgba(72, 168, 162, .07)) !important;
+}
+
+html.vox-user-dark body :is(
+  .normal-header__search,
+  .normal-header__profile,
+  .normal-header__icon,
+  .normal-header__menu,
+  .normal-header__profile-menu button
+) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface-2) !important;
+}
+
+html.vox-user-dark body .vox-footer {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(115, 208, 202, .06), transparent 20rem),
+    radial-gradient(circle at 88% 72%, rgba(226, 169, 182, .05), transparent 21rem),
+    #14211d !important;
+}
+
+/* Real surfaces only. BEM children such as card__badge/art/visual are excluded. */
+html.vox-user-dark body :is(
+  article[class$='-card'], section[class$='-card'], div[class$='-card'], form[class$='-card'], aside[class$='-card'],
+  article[class$='-panel'], section[class$='-panel'], div[class$='-panel'], form[class$='-panel'], aside[class$='-panel'],
+  div[class$='-dialog'], section[class$='-dialog'], dialog[class$='-dialog'],
+  div[class$='-modal'], section[class$='-modal'],
+  div[class$='-popover'], section[class$='-popover'],
+  div[class$='-menu'], section[class$='-menu'],
+  div[class$='-sheet'], section[class$='-sheet']
+):not([class*='__']):not([class*='visual']):not([class*='art']):not([class*='orb']):not([class*='glow']):not([class*='skeleton']) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface) !important;
+  background-image: linear-gradient(145deg, rgba(27, 42, 36, .985), rgba(23, 36, 31, .985)) !important;
+  box-shadow: var(--vx-dark-shadow) !important;
+}
+
+/* Known root surfaces whose class shape is not covered by the safe generic rule. */
+html.vox-user-dark body :is(
+  .vox-hero-shell,
+  .vox-evidence-canvas,
+  .vox-signal-universe,
+  .vox-how-panel,
+  .vox-about-panel,
+  .domains-panel,
+  .contact-panel,
+  .normal-dashboard-hero,
+  .normal-active-generation,
+  .ideas-page__header,
+  .ideas-page__toolbar,
+  .discover-controls,
+  .discover-featured,
+  .discover-state,
+  .publication-detail-hero,
+  .publication-access-card,
+  .publication-engagement-card,
+  .publication-advanced-card,
+  .publish-hero,
+  .published-page__header,
+  .published-toolbar,
+  .preferences-hero,
+  .preferences-section,
+  .profile-settings-page__header,
+  .profile-settings-panel,
+  .billing-hero,
+  .billing-panel,
+  .notifications-shell,
+  .notifications-toolbar,
+  .notifications-panel,
+  .compliance-hero,
+  .compliance-story,
+  .upgrade-story,
+  .bm-hero,
+  .bm-layout,
+  .unlock-shell,
+  .ai-chat-panel,
+  .ai-chat-header,
+  .ai-chat-composer-shell,
+  .nx-generation-shell,
+  .nx-generator-shell,
+  .nx-panel,
+  .nx-progress-live-panel,
+  .guest-generator-shell,
+  .guest-generator-header,
+  .guest-panel,
+  .guest-canvas-panel,
+  .nx-auth-card,
+  .nx-register__story,
+  .nx-register__form-card,
+  .vx-recovery__story,
+  .vx-recovery__card,
+  .nx-verify-card
+) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface) !important;
+  background-image: linear-gradient(145deg, rgba(29, 46, 39, .99), rgba(24, 38, 33, .99)) !important;
+  box-shadow: var(--vx-dark-shadow) !important;
+}
+
+/* Home hero retains a branded deep-green composition rather than a flat/white panel. */
+html.vox-user-dark body :is(.vox-hero, .vox-hero-v5, .vox-hero-shell) {
+  color: var(--vx-dark-text) !important;
+  border-color: rgba(115, 208, 202, .20) !important;
+  background:
+    radial-gradient(circle at 85% 18%, rgba(115, 208, 202, .14), transparent 31rem),
+    radial-gradient(circle at 12% 92%, rgba(226, 169, 182, .08), transparent 28rem),
+    linear-gradient(135deg, #10251f 0%, #142a24 54%, #12211d 100%) !important;
+}
+
+/* Home supporting panels/cards. */
+html.vox-user-dark body :is(
+  .vox-how-card,
+  .vox-about-story-card,
+  .vox-about-feature,
+  .vox-about-story-points > div,
+  .vox-about-mission-strip,
+  .vox-domain-card,
+  .vox-domains-more,
+  .vox-discovery-card,
+  .vox-contact-copy,
+  .vox-contact-form-card,
+  .vox-discoveries-state
+) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background: linear-gradient(145deg, #192b25, #17251f) !important;
+  box-shadow: 0 16px 40px rgba(1, 10, 8, .18) !important;
+}
+
+html.vox-user-dark body :is(
+  .vox-discoveries-eyebrow,
+  .vox-discoveries-live,
+  .vox-discovery-card__icon,
+  .vox-discovery-card__badge,
+  .vox-discovery-card__direction,
+  .vox-about-refined__eyebrow,
+  .vox-domains-eyebrow,
+  .vox-domains-count,
+  .vox-contact-eyebrow
+) {
+  border-color: rgba(115, 208, 202, .18) !important;
+  background-color: rgba(34, 53, 46, .78) !important;
+  background-image: none !important;
+}
+
+
+/* Home stage artwork must not remain a bright light-theme island in dark mode. */
+html.vox-user-dark body .vox-home-page :is(
+  .vox-stage-showcase,
+  .vox-stage-showcase-frame,
+  .vox-stage-backdrop,
+  .vox-stage-window-rail,
+  .vox-stage-showcase-controls
+) {
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface) !important;
+  background-image: linear-gradient(145deg, #20322b, #17251f) !important;
+  box-shadow: 0 22px 54px rgba(2, 10, 8, .24) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  filter: brightness(.78) saturate(.88) contrast(1.05) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background:
+    linear-gradient(115deg, rgba(15, 31, 26, .24), transparent 34%, transparent 66%, rgba(15, 31, 26, .28)),
+    linear-gradient(180deg, rgba(13, 27, 23, .10), rgba(13, 27, 23, .30)) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span {
+  box-shadow: 0 0 0 1px rgba(255,255,255,.04) !important;
+}
+
+/* Current discoveries page: avoid purple/light cards while retaining visual hierarchy. */
+html.vox-user-dark body .discover-head {
+  color: var(--vx-dark-text) !important;
+  border-color: rgba(115, 208, 202, .20) !important;
+  background:
+    radial-gradient(circle at 86% 10%, rgba(115, 208, 202, .14), transparent 27%),
+    radial-gradient(circle at 10% 92%, rgba(226, 169, 182, .09), transparent 30%),
+    linear-gradient(135deg, #142b24 0%, #18342c 52%, #15251f 100%) !important;
+}
+
+html.vox-user-dark body :is(.discover-search, .discover-sort, .discover-sort__menu) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background: var(--vx-dark-surface) !important;
+  box-shadow: 0 12px 30px rgba(2, 10, 8, .18) !important;
+}
+
+html.vox-user-dark body .discovery-story {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background: linear-gradient(145deg, #182b25, #16241f) !important;
+}
+
+html.vox-user-dark body :is(.discovery-story__metrics span, .discovery-story__author > span) {
+  border-color: rgba(115, 208, 202, .14) !important;
+  background: rgba(35, 53, 47, .72) !important;
+}
+
+/* Forms and native controls, including portal content mounted under body. */
+html.vox-user-dark body :is(input, textarea, select) {
+  color: var(--vx-dark-text) !important;
+  border-color: rgba(115, 208, 202, .23) !important;
+  background-color: var(--vx-dark-field) !important;
+  caret-color: var(--vx-dark-aqua) !important;
+}
+
+html.vox-user-dark body :is(input, textarea)::placeholder {
+  color: #899f98 !important;
+  opacity: 1 !important;
+}
+
+html.vox-user-dark body select option {
+  color: var(--vx-dark-text) !important;
+  background-color: var(--vx-dark-surface) !important;
+}
+
+html.vox-user-dark body :is(input, textarea, select):focus {
+  border-color: rgba(115, 208, 202, .56) !important;
+  box-shadow: 0 0 0 3px rgba(115, 208, 202, .08) !important;
+}
+
+/* Portals/overlays live outside #root in several pages. */
+html.vox-user-dark body > :is([role='dialog'], [role='menu'], [role='listbox']),
+html.vox-user-dark body :is(
+  [role='dialog'],
+  [role='menu'],
+  [role='listbox'],
+  .register-verification-modal__card,
+  .register-legal-modal__card,
+  .invoice-modal,
+  .bm-modal__shell,
+  .publication-payment-modal__panel,
+  .publication-report-modal,
+  .compliance-modal__dialog,
+  .avatar-crop-dialog__card,
+  .delete-account-dialog__card,
+  .email-verification-dialog__card,
+  .premium-welcome__card,
+  .nx-active-run-conflict__dialog,
+  .nx-cancel-success__dialog
+) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface) !important;
+  background-image: linear-gradient(145deg, #1a2b25, #17241f) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .36) !important;
+}
+
+/* Typography. Do not paint backgrounds behind text. */
+html.vox-user-dark body :is(
+  .vox-public-shell,
+  .normal-app-shell,
+  .nx-login,
+  .nx-register,
+  .vx-recovery,
+  .nx-verify,
+  .guest-generator-page,
+  .guest-progress-page,
+  .guest-publication-page
+) :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--vx-dark-text) !important;
+  text-shadow: none !important;
+}
+
+html.vox-user-dark body :is(
+  .vox-public-shell,
+  .normal-app-shell,
+  .nx-login,
+  .nx-register,
+  .vx-recovery,
+  .nx-verify,
+  .guest-generator-page,
+  .guest-progress-page,
+  .guest-publication-page
+) :is(p, li, small, label, dt, dd, blockquote) {
+  color: var(--vx-dark-muted) !important;
+}
+
+html.vox-user-dark body :is([class*='eyebrow'], [class*='kicker'], [class*='overline']) {
+  color: #9bddD7 !important;
+}
+
+html.vox-user-dark body :is([class*='muted'], [class*='description'], [class*='subtitle'], [class*='helper'], [class*='caption'], [class*='meta']) {
+  color: var(--vx-dark-muted) !important;
+}
+
+html.vox-user-dark body :is(
+  .vox-discoveries-header h2,
+  .vox-discovery-card h3,
+  .vox-discovery-card__direction p,
+  .discover-section-title h2,
+  .discovery-story h2,
+  .normal-dashboard-page h1,
+  .normal-dashboard-page h2,
+  .normal-dashboard-page h3
+) {
+  color: var(--vx-dark-text) !important;
+}
+
+/* Intentional gradient headings: clip into glyphs, never rectangles. */
+html.vox-user-dark body :is(
+  .vox-hero-gradient-text,
+  .nexora-gradient-text,
+  .normal-dashboard-hero h1 span,
+  .nx-generation-hero h1 span,
+  .compliance-hero h1 span,
+  .nx-register__story h1 span,
+  .vx-recovery__story h1 span,
+  .vox-about-refined__heading h2 span,
+  .vox-contact-header h2 span
+) {
+  color: transparent !important;
+  background: linear-gradient(105deg, #79d5cf 0%, #73d0ca 48%, #e2a9b6 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+html.vox-user-dark body :is(h1, h2, h3, h4, h5, h6, p) > :is(span, strong, em)
+:not([class*='badge']):not([class*='chip']):not([class*='pill']):not([class*='tag']):not([class*='status']):not([class*='gradient']) {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Buttons. */
+html.vox-user-dark body :is(
+  .vox-navbar-cta,
+  .normal-upgrade-button,
+  .normal-primary-button,
+  .normal-work-card__open,
+  .nx-next-button,
+  button[class*='primary'],
+  button[class*='submit']
+) {
+  color: #ffffff !important;
+  border-color: rgba(115, 208, 202, .40) !important;
+  background: linear-gradient(135deg, var(--vx-dark-aqua), var(--vx-dark-aqua-deep)) !important;
+}
+
+html.vox-user-dark body :is(
+  button[class*='secondary'],
+  button[class*='ghost'],
+  a[class*='secondary'],
+  a[class*='ghost'],
+  .nx-back-button
+) {
+  color: #dceae6 !important;
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface-2) !important;
+  background-image: none !important;
+}
+
+/* Tables / list rows. */
+html.vox-user-dark body :is(table, thead, tbody, tr, th, td) {
+  border-color: var(--vx-dark-border) !important;
+}
+html.vox-user-dark body th {
+  color: #dcece8 !important;
+  background-color: rgba(37, 57, 50, .82) !important;
+}
+html.vox-user-dark body td { color: var(--vx-dark-muted) !important; }
+
+/* Tailwind hard-coded light utilities present in public/auth components. */
+html.vox-user-dark body :is(.vox-public-shell, .normal-app-shell, .guest-publication-page, .nx-login, .nx-register)
+  [class~='bg-white'],
+html.vox-user-dark body :is(.vox-public-shell, .normal-app-shell, .guest-publication-page, .nx-login, .nx-register)
+  [class*='bg-[#fff'],
+html.vox-user-dark body :is(.vox-public-shell, .normal-app-shell, .guest-publication-page, .nx-login, .nx-register)
+  [class*='bg-[#f'] {
+  background-color: var(--vx-dark-surface) !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark body :is(.vox-public-shell, .normal-app-shell, .guest-publication-page, .nx-login, .nx-register)
+  [class*='text-[#1'],
+html.vox-user-dark body :is(.vox-public-shell, .normal-app-shell, .guest-publication-page, .nx-login, .nx-register)
+  [class*='text-[#2'],
+html.vox-user-dark body :is(.vox-public-shell, .normal-app-shell, .guest-publication-page, .nx-login, .nx-register)
+  [class*='text-[#3'],
+html.vox-user-dark body :is(.vox-public-shell, .normal-app-shell, .guest-publication-page, .nx-login, .nx-register)
+  [class*='text-[#4'] {
+  color: var(--vx-dark-text) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+ * Final anti-light-leak pass.
+ * Many original light pages use `background: linear-gradient(...)`; changing
+ * only background-color leaves that light image painted on top. These rules
+ * target actual user-facing surfaces while keeping page/section canvases
+ * transparent. They are scoped to dark mode only.
+ * -------------------------------------------------------------------------- */
+html.vox-user-dark body :is(
+  .vox-public-shell,
+  .normal-app-shell,
+  .guest-generator-page,
+  .guest-publication-page,
+  .nx-login,
+  .nx-register,
+  .vx-recovery,
+  .nx-verify
+) :is(div, article, section, aside, form, li)[class*='-card']:not([class*='__']):not([class*='visual']):not([class*='art']):not([class*='skeleton']),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-panel']:not([class*='__']):not([class*='visual']):not([class*='art']),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-tile']:not([class*='__']),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-row']:not([class*='__']),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-item']:not([class*='__']),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-toolbar']:not([class*='__']),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-filters']:not([class*='__']),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-state']:not([class*='__']) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface) !important;
+  background-image: linear-gradient(145deg, rgba(29, 46, 39, .985), rgba(24, 38, 33, .985)) !important;
+}
+
+/* Public publication is Tailwind-heavy and uses bare article/aside elements. */
+html.vox-user-dark body .guest-publication-page :is(article, aside) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background: linear-gradient(145deg, #1b2c26, #17251f) !important;
+  box-shadow: var(--vx-dark-shadow) !important;
+}
+html.vox-user-dark body .guest-publication-page article > header {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background: linear-gradient(135deg, #20342d, #1a2a25) !important;
+}
+html.vox-user-dark body .guest-publication-page :is(ul > li, ol > li) {
+  border-color: var(--vx-dark-border) !important;
+}
+
+/* Stand-alone/public utility page. */
+html.vox-user-dark body .vox-not-found {
+  color: var(--vx-dark-text) !important;
+  background: transparent !important;
+}
+html.vox-user-dark body .vox-not-found__card {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background: linear-gradient(145deg, #1d2e28, #182620) !important;
+  box-shadow: var(--vx-dark-shadow) !important;
+}
+html.vox-user-dark body :is(.vox-not-found__icon, .vox-not-found__button--secondary) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background: var(--vx-dark-surface-2) !important;
+}
+
+/* Feature surfaces whose original light styles rely on large pale gradients. */
+html.vox-user-dark body :is(
+  .guest-generator-header,
+  .guest-form-card,
+  .guest-panel,
+  .guest-review > *,
+  .guest-preview-lock,
+  .guest-auto-domain,
+  .guest-studio-sidebar,
+  .guest-studio-field,
+  .guest-canvas,
+  .guest-canvas-auto-domain,
+  .guest-canvas-ready,
+  .ai-chat-sidebar,
+  .ai-chat-session,
+  .ai-chat-idea-card,
+  .ai-chat-starters,
+  .ai-chat-message:not(.is-user),
+  .profile-settings-card,
+  .profile-settings-panel,
+  .profile-settings-danger,
+  .profile-sessions,
+  .profile-sessions__summary,
+  .profile-session-card,
+  .compliance-principles__intro,
+  .compliance-rail,
+  .compliance-related-idea,
+  .discover-featured,
+  .discover-head__stat,
+  .publication-engagement,
+  .publication-detail-grid > aside,
+  .publication-payment-modal__methods,
+  .accepted-workspace-business-model,
+  .workspace-premium-chat,
+  .publish-layout > form,
+  .publish-layout > aside,
+  .publish-audience-picker,
+  .publish-toggle,
+  .upgrade-checkout,
+  .upgrade-activation-fee,
+  .upgrade-order-summary,
+  .upgrade-error,
+  .notifications-command,
+  .notifications-panel-actions,
+  .notifications-panel,
+  .notification-detail,
+  .notifications-read-filters,
+  .billing-hero__card,
+  .invoice-sheet,
+  .ideas-filters,
+  .ideas-search,
+  .ideas-date-filter__fields,
+  .ideas-accepted-note,
+  .idea-tile,
+  .preferences-hero__summary article,
+  .preferences-hero__progress,
+  .preferences-field,
+  .preference-option,
+  .preferences-payment-currencies,
+  .published-page__stat,
+  .published-search,
+  .published-card,
+  .published-state,
+  .insights-panel,
+  .insights-summary article,
+  .audience-response-item,
+  .publication-acceptors,
+  .publication-acceptors__list article,
+  .published-status-filter,
+  .bm-template-list,
+  .bm-templates,
+  .bm-studio,
+  .workspace-hero,
+  .workspace-document,
+  .workspace-paragraphs article,
+  .workspace-structured section,
+  .workspace-body > aside,
+  .unlock-checkout,
+  .unlock-result__steps article,
+  .payment-result-pop
+) {
+  color: var(--vx-dark-text) !important;
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface) !important;
+  background-image: linear-gradient(145deg, rgba(29, 46, 39, .99), rgba(24, 38, 33, .99)) !important;
+  box-shadow: none;
+}
+
+/* Controls/choices that are white in the light theme. */
+html.vox-user-dark body :is(
+  .guest-back-home,
+  .guest-secondary,
+  .guest-limit-home,
+  .guest-limit-signin,
+  .guest-canvas-back,
+  .normal-secondary-button,
+  .normal-icon-button,
+  .ai-chat-new,
+  .ai-chat-voice,
+  .publication-report-trigger,
+  .publication-feedback-delete,
+  .publish-visibility button,
+  .publish-audience-picker button,
+  .upgrade-quantity button,
+  .upgrade-methods label,
+  .notifications-action,
+  .notifications-read-filters button,
+  .billing-pagination button,
+  .ideas-date-filter__clear,
+  .idea-tile__favorite,
+  .preferences-payment-currencies button,
+  .published-pagination button,
+  .insights-pagination button,
+  .workspace-back,
+  .nx-cancel-run
+) {
+  color: #dcebe7 !important;
+  border-color: var(--vx-dark-border) !important;
+  background-color: var(--vx-dark-surface-2) !important;
+  background-image: none !important;
+}
+
+/* Selected controls stay visibly selected without becoming pale/white. */
+html.vox-user-dark body :is(
+  .guest-auto-domain.selected,
+  .preference-option.is-selected,
+  .preferences-payment-currencies button.is-selected,
+  .publish-visibility button.active,
+  .publish-toggle.is-enabled,
+  .upgrade-quantity button.selected,
+  .upgrade-methods label.selected,
+  .notifications-filters button.is-active,
+  .notifications-read-filters button.is-active
+) {
+  color: #e9fbf8 !important;
+  border-color: var(--vx-dark-border-strong) !important;
+  background: linear-gradient(145deg, rgba(61, 102, 89, .72), rgba(40, 67, 58, .90)) !important;
+}
+
+/* The home hero stage SVGs are intentionally very light assets. Tone them down
+ * only in dark mode so they no longer read as a bright white rectangle. */
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  filter: brightness(.68) saturate(.88) contrast(1.06) !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background: linear-gradient(135deg, rgba(9, 27, 22, .16), rgba(16, 43, 36, .28)) !important;
+  mix-blend-mode: multiply;
+}
+
+/* No pale inputs/buttons inside portal overlays. */
+html.vox-user-dark body :is([role='dialog'], [role='menu'], [role='listbox']) :is(button, input, textarea, select) {
+  border-color: var(--vx-dark-border) !important;
+}
+
+html.vox-user-dark ::selection { color: #fff; background: rgba(115, 208, 202, .30); }
+html.vox-user-dark * { scrollbar-color: rgba(115, 208, 202, .36) rgba(13, 25, 22, .74); }

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -235,6 +236,7 @@ export type IdeaGenerationCancellationState = {
  */
 @Injectable()
 export class IdeaGenerationRunService {
+  private readonly logger = new Logger(IdeaGenerationRunService.name);
   /**
    * Statuses after which a generation run must no longer be
    * modified through normal lifecycle methods.
@@ -754,6 +756,15 @@ export class IdeaGenerationRunService {
     }
 
     const now = new Date();
+    const heartbeatAgeMs = run.lastHeartbeatAt
+      ? Math.max(0, now.getTime() - run.lastHeartbeatAt.getTime())
+      : null;
+
+    this.logger.warn(
+      `Marking generation run "${runId}" FAILED | previousStatus=${run.status} | ` +
+        `stage=${run.currentStageKey ?? 'none'} | heartbeatAgeMs=${heartbeatAgeMs ?? 'none'} | ` +
+        `errorCode=${errorCode}.`,
+    );
 
     const result = await db.ideaGenerationRun.updateMany({
       where: {
@@ -835,6 +846,46 @@ export class IdeaGenerationRunService {
     }
 
     return this.findRunOrThrow(normalizedRunId, db);
+  }
+
+  /**
+   * Restores a recoverable row to RUNNING when the current foreground process
+   * still owns the generation lock. The caller must verify lock ownership
+   * before invoking this method; this database guard only accepts non-terminal
+   * recoverable states and never revives cancelled/completed/failed runs.
+   *
+   * This closes a multi-instance race where a stale recovery worker can mark a
+   * healthy foreground run RETRYING between two stage boundaries.
+   */
+  async reclaimRecoverableRunForActiveExecution(runId: string): Promise<boolean> {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+
+    const result = await this.prisma.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
+        completedAt: null,
+        cancelRequestedAt: null,
+      },
+      data: {
+        status: IdeaGenerationRunStatus.RUNNING,
+        nextRetryAt: null,
+        pausedAt: null,
+        errorCode: null,
+        errorMessage: null,
+        lastHeartbeatAt: new Date(),
+      },
+    });
+
+    return result.count === 1;
   }
 
   /** Moves an active run into RETRYING after a transient infrastructure error. */
@@ -1278,9 +1329,12 @@ export class IdeaGenerationRunService {
   }
 
   /**
-   * Marks stale legacy QUEUED/RUNNING rows without a recovery snapshot as
-   * failed. New runs always persist their initial context atomically, so this
-   * cleanup only prevents old orphaned rows from remaining stuck forever.
+   * Marks only stale legacy QUEUED rows without a recovery snapshot as failed.
+   * A RUNNING row is never terminally failed by background maintenance: another
+   * application instance may still own that foreground execution even when its
+   * heartbeat is temporarily delayed by remote database contention. New runs
+   * persist an initial checkpoint atomically, while recoverable stale RUNNING
+   * rows are handled by requeueStaleRunningRuns().
    */
   async failStaleUnrecoverableRuns(
     staleBefore: Date,
@@ -1292,27 +1346,10 @@ export class IdeaGenerationRunService {
         ...(excludedRunIds.length > 0
           ? { id: { notIn: [...excludedRunIds] } }
           : {}),
-        status: {
-          in: [
-            IdeaGenerationRunStatus.QUEUED,
-            IdeaGenerationRunStatus.RUNNING,
-          ],
-        },
+        status: IdeaGenerationRunStatus.QUEUED,
         completedAt: null,
         cancelRequestedAt: null,
-        OR: [
-          {
-            status: IdeaGenerationRunStatus.QUEUED,
-            createdAt: { lte: staleBefore },
-          },
-          {
-            status: IdeaGenerationRunStatus.RUNNING,
-            OR: [
-              { lastHeartbeatAt: { lte: staleBefore } },
-              { lastHeartbeatAt: null, updatedAt: { lte: staleBefore } },
-            ],
-          },
-        ],
+        createdAt: { lte: staleBefore },
       },
       select: {
         id: true,

@@ -143,6 +143,12 @@ export function buildCommunityAiEvidenceTriageSchema(): AiJsonSchema {
     additionalProperties: false,
     required: ['items'],
     properties: {
+      selectedProblemFamily: { type: 'string', maxLength: 120 },
+      selectedEvidenceIds: {
+        type: 'array',
+        maxItems: 8,
+        items: { type: 'string', maxLength: 220 },
+      },
       items: {
         type: 'array',
         minItems: 1,

@@ -532,13 +532,15 @@ export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
 
 /**
- * Maximum targeted evidence-recovery waves per generation run.
+ * Absolute ceiling for targeted evidence-recovery waves per generation run.
  *
- * The normal first pass is already broad and Community AI sees the complete
- * collected corpus. Recovery is therefore a single rescue wave only, never a
- * repeating search loop.
+ * Text-bearing requests have an immutable requester problem, so they may use a
+ * second source/query-rotated rescue wave when the first recovery attempt still
+ * retains zero trusted external evidence. Discovery-only paths remain bounded
+ * to one wave in OpportunityRankingStage. The canonical verifier is unchanged:
+ * extra waves improve recall only and never promote weak/context evidence.
  */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 2;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
 export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0;
@@ -696,6 +698,9 @@ export const IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS = new Set<string>([
  * bounded core request deadline.
  */
 export const IDEA_BENCHMARK_SECONDARY_CORE_MODEL_API_IDS = new Set<string>([
+  // Retain Mistral as a provider-diverse fallback, but keep its observed
+  // near-deadline latency out of the first core wave.
+  'mistralai/mistral-small-2603',
   'qwen/qwen3.6-35b-a3b',
   'mistralai/mistral-small-3.2-24b-instruct',
   'openai/gpt-5-mini',
@@ -714,6 +719,5 @@ export const IDEA_BENCHMARK_FAST_CORE_MODEL_API_IDS = new Set<string>([
   'google/gemini-3.6-flash',
   'gemini-3.5-flash-lite',
   'google/gemini-3.5-flash-lite',
-  'mistralai/mistral-small-2603',
   'openai/gpt-5.4-nano',
 ]);

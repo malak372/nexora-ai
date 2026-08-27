@@ -570,6 +570,7 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
         if (_city.text.trim().isNotEmpty) 'city': _city.text.trim(),
         if (_region.text.trim().isNotEmpty) 'region': _region.text.trim(),
         'language': _language,
+        'outputLanguage': 'EN',
         'forceRefresh': _forceRefresh,
         'keywords': const <String>[],
       };

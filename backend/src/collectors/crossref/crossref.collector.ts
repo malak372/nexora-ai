@@ -226,6 +226,20 @@ export class CrossrefCollector extends BaseCollector implements SocialCollector 
       );
     }
 
+    if (constraint.kind === 'RESTORATION_CONSERVATION') {
+      /*
+       * Crossref's lexical search can satisfy a compound query with only the
+       * object words (for example "violin" + "bow") and return performance or
+       * history papers. Preserve the selected Crossref source, but require the
+       * returned work itself to contain both the physical restoration identity
+       * and a treatment/condition workflow signal before it enters raw triage.
+       */
+      return (
+        RequestVerticalConstraintUtil.matchesVertical(evidence, constraint) &&
+        RequestVerticalConstraintUtil.matchesWorkflow(evidence, constraint)
+      );
+    }
+
     if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
       const publicContext = /\b(?:government|public sector|public agency|government agency|government department|public program|government program|public administration)\b/iu.test(evidence);
       const costDriver = /\b(?:staffing|payroll|procurement|purchasing|contractor|vendor payment|service usage|departmental spending|program expenditure|operating expense|operating cost|public expenditure)\w*\b/iu.test(evidence);

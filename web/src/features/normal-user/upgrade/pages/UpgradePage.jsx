@@ -27,6 +27,7 @@ import {
   getStoredPaymentCurrency,
   loadPreferredPaymentCurrency,
 } from '../../payments/utils/paymentCurrency';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../styles/upgrade.css';
 
 const QUICK_AMOUNTS = [15, 30, 45, 60];
@@ -81,6 +82,7 @@ const PAYMENT_METHODS = [
 ];
 
 export default function UpgradePage() {
+  const { t } = useUserExperience();
   const shouldReduceMotion = useReducedMotion();
   const storedUser = getStoredUser() || {};
 
@@ -398,7 +400,7 @@ export default function UpgradePage() {
           {isAlreadyPremium ? 'Additional premium purchase' : 'Premium activation'}
         </span>
 
-        <h2>{isAlreadyPremium ? 'Choose your credit amount' : 'Activate Premium'}</h2>
+        <h2>{t(isAlreadyPremium ? 'Choose your credit amount' : 'Activate Premium')}</h2>
 
         <p className="upgrade-summary-copy">
           {isAlreadyPremium

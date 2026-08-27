@@ -19,6 +19,8 @@ import {
     Sparkles,
 } from 'lucide-react';
 
+import { useUserExperience } from '../../../system/user-experience';
+
 import { HOW_IT_WORKS_STEPS } from '../constants/home.constants';
 
 const STEP_ICONS = {
@@ -29,6 +31,8 @@ const STEP_ICONS = {
 };
 
 export default function HowItWorksSection() {
+    const { t } = useUserExperience();
+
     return (
         <section
             id="how-it-works"
@@ -49,19 +53,15 @@ export default function HowItWorksSection() {
                     <header className="vox-how-header">
                         <span className="vox-how-eyebrow">
                             <Sparkles size={14} aria-hidden="true" />
-                            How Voxidence works
+                            {t('How Voxidence works')}
                         </span>
 
                         <h2 id="how-it-works-heading">
-                            One connected flow from community signal to
-                            evidence-backed direction.
+                            {t('One connected flow from community signal to evidence-backed direction.')}
                         </h2>
 
                         <p>
-                            Voxidence listens to recurring needs, verifies the
-                            supporting evidence, compares multiple AI directions,
-                            and shapes the strongest result into a clear software
-                            opportunity.
+                            {t('Voxidence listens to recurring needs, verifies the supporting evidence, compares multiple AI directions, and shapes the strongest result into a clear software opportunity.')}
                         </p>
                     </header>
 
@@ -89,8 +89,8 @@ export default function HowItWorksSection() {
                                         </div>
 
                                         <div className="vox-how-card-copy">
-                                            <h3>{step.title}</h3>
-                                            <p>{step.description}</p>
+                                            <h3>{t(step.title)}</h3>
+                                            <p>{t(step.description)}</p>
                                         </div>
                                     </article>
 
@@ -109,15 +109,15 @@ export default function HowItWorksSection() {
 
                     <div
                         className="vox-how-summary"
-                        aria-label="Voxidence workflow summary"
+                        aria-label={t('Voxidence workflow summary')}
                     >
-                        <span>Community signals</span>
+                        <span>{t('Community signals')}</span>
                         <i aria-hidden="true" />
-                        <span>Verified evidence</span>
+                        <span>{t('Verified evidence')}</span>
                         <i aria-hidden="true" />
-                        <span>Comparative intelligence</span>
+                        <span>{t('Comparative intelligence')}</span>
                         <i aria-hidden="true" />
-                        <strong>Selected direction</strong>
+                        <strong>{t('Selected direction')}</strong>
                     </div>
                 </div>
             </div>

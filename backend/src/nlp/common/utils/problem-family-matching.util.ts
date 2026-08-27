@@ -755,6 +755,20 @@ function passesAmbiguousFamilyContextGuard(
   value: string,
   familyKey: string,
 ): boolean {
+  if (familyKey === 'cybersecurity-learning-content-safety') {
+    const learningContext =
+      /\b(?:students?|learners?|course|courses|classroom|teaching|training|learning content|learning platform|security course|cybersecurity training)\b/iu.test(value);
+    const unsafeContentContext =
+      /\b(?:hacking tutorials?|unsafe content|malicious instructions?|student exposure|content safety|unsafe tutorials?|harmful content)\b/iu.test(value);
+
+    // The word "cybersecurity" by itself is far too broad. This family is
+    // eligible only when the evidence actually concerns learners/training AND
+    // unsafe or malicious instructional content.
+    if (!learningContext || !unsafeContentContext) {
+      return false;
+    }
+  }
+
   if (familyKey === 'regional-crypto-access') {
     const explicitCryptoIdentity =
       /\b(?:crypto|cryptocurrency|binance|pexcoin|bitcoin|ethereum|blockchain|digital assets?|crypto wallet|cryptocurrency wallet|crypto exchange|cryptocurrency exchange)\b/iu.test(

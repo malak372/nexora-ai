@@ -19,6 +19,7 @@ import type {
   RequestCollectionSourcePlan,
   RequestCollectionDomainIdentity,
   RequestCanonicalProblemProfile,
+  RequestIntentInterpretation,
 } from '../types/request-collection-plan.type';
 import { inferDominantRequestDomainName } from '../utils/request-domain-inference.util';
 import { RequestWorkflowArchetypeUtil } from '../utils/request-workflow-archetype.util';
@@ -32,17 +33,15 @@ import { SourceSpecificEvidenceQueryUtil } from '../utils/source-specific-eviden
 import { CollectorsFactory } from '../../../collectors/collectors.factory';
 
 const REQUEST_COLLECTION_PLAN_SCHEMA_NAME = 'nexora_request_collection_plan_v10_static_local';
-const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 5_800;
-const REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS = 6_500;
+const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 5_200;
+const REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS = 5_600;
 const REQUEST_COLLECTION_PLAN_PROVIDER_LANES = [
-  ['anthropic/claude-haiku-4.5'],
   ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
-  ['mistralai/mistral-small-2603'],
-  ['qwen/qwen3.5-flash-02-23'],
+  ['anthropic/claude-haiku-4.5'],
 ] as const;
-const REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS = 5_000;
-const REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS = 5_400;
-const REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS = 2 * 60 * 1000;
+const REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS = 4_700;
+const REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS = 5_100;
+const REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
 
 type RequestDomainCatalogEntry = {
   readonly id: string;
@@ -75,11 +74,19 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   private readonly inFlightPlans = new Map<string, Promise<RequestCollectionPlan | null>>();
   private readonly recentPlans = new Map<string, { readonly expiresAt: number; readonly plan: RequestCollectionPlan | null }>();
   private readonly planReuseTtlMs = 20_000;
-  private readonly domainCatalogCache = new Map<string, {
+  private domainIdentityCatalogCache: {
+    readonly expiresAt: number;
+    readonly value: readonly RequestDomainCatalogEntry[];
+  } | null = null;
+  private domainIdentityCatalogInFlight: Promise<RequestDomainCatalogEntry[]> | null = null;
+  private readonly domainSubsetCache = new Map<string, {
     readonly expiresAt: number;
     readonly value: readonly RequestDomainCatalogEntry[];
   }>();
-  private readonly domainCatalogInFlight = new Map<string, Promise<RequestDomainCatalogEntry[]>>();
+  private readonly domainSubsetInFlight = new Map<
+    string,
+    Promise<RequestDomainCatalogEntry[]>
+  >();
   private sourceCatalogCache: { readonly expiresAt: number; readonly value: readonly RequestSourceCatalogEntry[] } | null = null;
   private sourceCatalogInFlight: Promise<RequestSourceCatalogEntry[]> | null = null;
 
@@ -101,7 +108,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
      */
     setImmediate(() => {
       void Promise.all([
-        this.loadActiveDomainCatalog(LanguageCode.ANY),
+        // PREPARING only needs domain identity on its critical path. Warm the
+        // compact table projection rather than the keyword relation catalog so
+        // startup work cannot saturate the DB pool before the first AI race.
+        this.loadActiveDomainIdentityCatalog(),
         this.loadActiveSourceCatalog(),
       ]).catch((error: unknown) => {
         this.logger.debug(
@@ -111,6 +121,37 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         );
       });
     });
+  }
+
+  /**
+   * Resolves explicitly selected active domains from the same warm catalog used
+   * by PREPARING AI planning. Keeping one catalog cache/in-flight request avoids
+   * opening a second Supabase read through DomainResolutionService while the AI
+   * plan is already loading the exact same domain rows. Requested order is
+   * preserved and only active catalog entries are returned.
+   */
+  async resolveActiveDomainsByIds(
+    domainIds: readonly string[],
+    language?: LanguageCode,
+  ): Promise<Array<{
+    readonly id: string;
+    readonly name: string;
+    readonly domainKeywords: readonly { readonly keyword: string }[];
+  }>> {
+    const ids = [...new Set(domainIds.map((id) => id.trim()).filter(Boolean))];
+    if (ids.length === 0) return [];
+
+    const catalog = await this.loadActiveDomainSubset(ids, language);
+    const byId = new Map(catalog.map((domain) => [domain.id, domain] as const));
+
+    return ids
+      .map((id) => byId.get(id))
+      .filter((domain): domain is RequestDomainCatalogEntry => Boolean(domain))
+      .map((domain) => ({
+        id: domain.id,
+        name: domain.name,
+        domainKeywords: domain.keywords.map((keyword) => ({ keyword })),
+      }));
   }
 
   async plan(input: {
@@ -127,16 +168,33 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       return null;
     }
 
-    const [domainCatalog, sourceCatalog] = await Promise.all([
-      this.loadActiveDomainCatalog(input.language),
-      this.loadActiveSourceCatalog(),
-    ]);
-    const deterministic = this.decorateFallbackSourceSelection(
+    /*
+     * Start the provider race from in-memory/runtime metadata only. A catalog
+     * cache miss must never serialize PREPARING behind a remote PostgreSQL
+     * round trip. Exact explicit-domain binding is performed independently by
+     * PreparingStage before collection starts, while Text Only domain
+     * resolution remains authoritative after the planner returns.
+     */
+    const domainCatalog = this.readPlanningDomainCatalogImmediate(
+      input.language,
+      input.requestedDomainIds ?? [],
+    );
+    const sourceCatalog = this.readActiveSourceCatalogImmediate();
+    this.refreshPlanningCatalogsInBackground(
+      input.language,
+      input.requestedDomainIds ?? [],
+    );
+
+    /*
+     * Keep the critical-path fallback intentionally compact. The full
+     * deterministic expansion is built only if every online planning lane
+     * fails. This prevents large regex/query-expansion families from delaying
+     * the first provider request even when the provider itself answers in a
+     * couple of seconds.
+     */
+    const fastFallback = this.decorateFallbackSourceSelection(
       this.decorateFallbackDomainSelection(
-        this.buildDeterministicFallback(
-          description,
-          input.keywords ?? [],
-        ),
+        this.buildFastDeterministicFallback(description, input.keywords ?? []),
         domainCatalog,
       ),
       sourceCatalog,
@@ -156,20 +214,20 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     });
     const recent = this.recentPlans.get(cacheKey);
     if (recent && recent.expiresAt > Date.now()) {
-      return recent.plan ?? deterministic;
+      return recent.plan ?? fastFallback;
     }
     if (recent) this.recentPlans.delete(cacheKey);
 
     const active = this.inFlightPlans.get(cacheKey);
     if (active) {
       const shared = await active;
-      return shared ?? deterministic;
+      return shared ?? fastFallback;
     }
 
     const planningPromise = this.runProviderDiversePlanningRace({
       description,
       keywords: input.keywords ?? [],
-      deterministic,
+      deterministic: fastFallback,
       domainCatalog,
       sourceCatalog,
       requestedDomainIds: input.requestedDomainIds ?? [],
@@ -182,19 +240,40 @@ export class RequestCollectionPlanningService implements OnModuleInit {
 
     try {
       const aiPlan = await planningPromise;
-      this.recentPlans.set(cacheKey, {
-        expiresAt: Date.now() + this.planReuseTtlMs,
-        plan: aiPlan,
-      });
-      if (aiPlan) return aiPlan;
+      if (aiPlan) {
+        // Cache only successful AI-owned plans. Caching a null/provider-failure
+        // result caused later identical runs to skip AI planning entirely for
+        // the TTL window, which violated the always-attempt-AI contract.
+        this.recentPlans.set(cacheKey, {
+          expiresAt: Date.now() + this.planReuseTtlMs,
+          plan: aiPlan,
+        });
+        return aiPlan;
+      }
+      this.recentPlans.delete(cacheKey);
     } finally {
       this.inFlightPlans.delete(cacheKey);
     }
 
     this.logger.warn(
-      '[PREPARING] Provider-diverse AI planning produced no grounded plan; request-derived deterministic planning was used only as the final fallback.',
+      '[PREPARING] Provider-diverse AI planning produced no grounded plan; building the full request-derived deterministic plan only now as the final fallback.',
     );
-    return deterministic;
+    return this.decorateFallbackSourceSelection(
+      this.decorateFallbackDomainSelection(
+        this.buildDeterministicFallback(
+          description,
+          input.keywords ?? [],
+          {
+            skipBroadExpansion:
+              (input.requestedDomainIds?.length ?? 0) > 0 ||
+              Boolean(RequestNicheCustomCraftUtil.resolve(description)),
+          },
+        ),
+        domainCatalog,
+      ),
+      sourceCatalog,
+      description,
+    );
   }
 
 
@@ -211,23 +290,26 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const description = input.description.replace(/\s+/gu, ' ').trim();
     if (!description) return null;
 
-    const [domainCatalog, sourceCatalog] = await Promise.all([
-      this.loadActiveDomainCatalog(input.language),
-      this.loadActiveSourceCatalog(),
-    ]);
-    const deterministic = this.decorateFallbackSourceSelection(
+    const domainCatalog = this.readPlanningDomainCatalogImmediate(
+      input.language,
+      [],
+    );
+    const sourceCatalog = this.readActiveSourceCatalogImmediate();
+    this.refreshPlanningCatalogsInBackground(input.language, []);
+
+    const fastFallback = this.decorateFallbackSourceSelection(
       this.decorateFallbackDomainSelection(
-        this.buildDeterministicFallback(description, input.keywords ?? []),
+        this.buildFastDeterministicFallback(description, input.keywords ?? []),
         domainCatalog,
       ),
       sourceCatalog,
       description,
     );
 
-    return this.runProviderDiversePlanningRace({
+    const aiPlan = await this.runProviderDiversePlanningRace({
       description,
       keywords: input.keywords ?? [],
-      deterministic,
+      deterministic: fastFallback,
       domainCatalog,
       sourceCatalog,
       requestedDomainIds: [],
@@ -238,6 +320,17 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       recoveryPreviousQueries: input.previousQueries ?? [],
       recoveryEvidenceTargets: input.evidenceTargets ?? [],
     });
+
+    if (aiPlan) return aiPlan;
+
+    return this.decorateFallbackSourceSelection(
+      this.decorateFallbackDomainSelection(
+        this.buildDeterministicFallback(description, input.keywords ?? []),
+        domainCatalog,
+      ),
+      sourceCatalog,
+      description,
+    );
   }
 
   /**
@@ -376,6 +469,117 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       confidence: aiDiscoveryPlan?.confidence ?? 58,
       aiUsed: Boolean(aiDiscoveryPlan),
       fallbackUsed: !aiDiscoveryPlan,
+    };
+  }
+
+
+  /**
+   * Enriches the accepted PREPARING plan after the real selected-domain scope
+   * is known. Free text remains request intent: only EXPLICIT_PROBLEM supplies
+   * a fixed problem target. DISCOVERY_INTENT, selected domains, request
+   * keywords, and saved preference terms contribute search vocabulary only;
+   * none of them are promoted into evidence or a winning problem family.
+   */
+  enrichPlanWithResolvedScope(
+    plan: RequestCollectionPlan,
+    input: {
+      readonly description?: string | null;
+      readonly selectedDomains: readonly {
+        readonly id: string;
+        readonly name: string;
+      }[];
+      readonly requestKeywords?: readonly string[];
+      readonly preferenceTerms?: readonly string[];
+    },
+  ): RequestCollectionPlan {
+    const description = (input.description ?? '').replace(/\s+/gu, ' ').trim();
+    const domainNames = this.deduplicatePhrases(
+      input.selectedDomains.map((domain) => domain.name),
+    ).slice(0, 4);
+    const requestKeywords = this.deduplicatePhrases(
+      input.requestKeywords ?? [],
+    ).slice(0, 8);
+    const preferenceTerms = this.deduplicatePhrases(
+      input.preferenceTerms ?? [],
+    ).slice(0, 6);
+    const explicitProblem =
+      plan.requestIntent?.mode === 'EXPLICIT_PROBLEM'
+        ? plan.requestIntent.explicitProblem?.trim() ?? ''
+        : '';
+
+    const intentQueries = RequestDynamicQueryUtil.buildIntentDiscoveryQueries({
+      requestDescription: description,
+      domainNames,
+      preferenceTerms,
+      explicitProblem,
+      desiredOutcome: plan.requestIntent?.desiredOutcome ?? null,
+      actor: plan.domainIdentity?.actor ?? null,
+      object: plan.domainIdentity?.object ?? null,
+      workflow: plan.domainIdentity?.workflow ?? null,
+      intentConcepts: [
+        ...(plan.intentConcepts ?? []),
+        ...(plan.domainIdentity
+          ? [
+              plan.domainIdentity.actor,
+              plan.domainIdentity.object,
+              plan.domainIdentity.workflow,
+            ]
+          : []),
+        ...requestKeywords,
+      ],
+      evidenceTargets:
+        plan.requestIntent?.mode === 'EXPLICIT_PROBLEM'
+          ? plan.evidenceTargets
+          : [],
+      plannedQueries: plan.searchQueries,
+      maxQueries: 12,
+    });
+
+    const professionalQueries = explicitProblem && description
+      ? RequestDynamicQueryUtil.buildProfessionalTerminologyQueries({
+          requestDescription: description,
+          intentConcepts: plan.intentConcepts,
+          evidenceTargets: plan.evidenceTargets,
+          plannedQueries: plan.searchQueries,
+          maxQueries: 4,
+        })
+      : [];
+
+    const domainProbeQueries = domainNames.flatMap((domainName) =>
+      CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+        [domainName],
+        2,
+      ),
+    );
+
+    const searchQueries = this.deduplicateQueries([
+      ...plan.searchQueries.slice(0, 4),
+      ...intentQueries,
+      ...professionalQueries,
+      ...plan.searchQueries.slice(4),
+      ...domainProbeQueries,
+    ]).slice(0, 12);
+
+    if (searchQueries.length === 0) return plan;
+
+    const runtimeSourceKeys = this.deduplicatePhrases([
+      ...(plan.selectedSourceKeys ?? []),
+      ...(plan.sourcePlans ?? []).map((sourcePlan) => sourcePlan.sourceKey),
+    ]);
+    const sourcePlans = runtimeSourceKeys.length > 0
+      ? this.buildRuntimeSourcePlans(
+          runtimeSourceKeys,
+          searchQueries,
+          description,
+          explicitProblem ? plan.problemProfile : undefined,
+          plan.selectedSourceKeys ?? [],
+        )
+      : plan.sourcePlans;
+
+    return {
+      ...plan,
+      searchQueries,
+      sourcePlans,
     };
   }
 
@@ -570,15 +774,17 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                   .filter((key) => activeSourceKeys.has(key))
                   .slice(0, 8);
 
-                if (searchQueries.length < Math.min(4, input.domainNames.length * 2)) {
-                  throw new Error(
-                    `Domain-discovery AI returned too few domain-grounded queries (${searchQueries.length}).`,
-                  );
+                // A partial AI plan is still an AI plan. One grounded query/source
+                // is enough to prove useful semantic understanding; the caller
+                // deterministically enriches missing queries and source coverage.
+                // This prevents DOMAINS_ONLY/NO_INPUT from flipping aiUsed=false
+                // merely because the fastest provider returned 2 good queries
+                // instead of the requested 8-12 before its bounded deadline.
+                if (searchQueries.length === 0) {
+                  throw new Error('Domain-discovery AI returned no domain-grounded query.');
                 }
-                if (selectedSourceKeys.length < Math.min(4, input.sourceCatalog.length)) {
-                  throw new Error(
-                    `Domain-discovery AI returned too few active sources (${selectedSourceKeys.length}).`,
-                  );
+                if (selectedSourceKeys.length === 0) {
+                  throw new Error('Domain-discovery AI returned no active source key.');
                 }
 
                 const confidence = this.normalizeScore(record.confidence, 72);
@@ -817,21 +1023,36 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                 buildRequestCollectionPlanSchema(),
                 REQUEST_COLLECTION_PLAN_SCHEMA_NAME,
               );
-              if (!localValidation.success) {
-                const details = localValidation.issues
-                  .slice(0, 4)
-                  .map((issue) => `${issue.path}: ${issue.message}`)
-                  .join('; ');
-                throw new Error(`PREPARING AI plan failed local schema validation: ${details}`);
-              }
+
+              /*
+               * Provider JSON can be semantically useful while omitting one
+               * non-essential envelope field. normalizeAiPlan() already has a
+               * strict grounding gate and deterministically fills missing domain
+               * identity/source coverage from the immutable requester problem.
+               * Therefore a schema-incomplete response with at least one safe AI
+               * query should remain AI-owned instead of falling all the way back
+               * to token-stitched deterministic retrieval.
+               */
+              const candidate = localValidation.success
+                ? localValidation.data
+                : parsed;
               const planned = this.normalizeAiPlan(
-                localValidation.data,
+                candidate,
                 input.deterministic,
                 input.description,
                 input.domainCatalog,
                 input.sourceCatalog,
                 input.requestedDomainIds ?? [],
               );
+              if (!localValidation.success && !planned.fallbackUsed) {
+                const details = localValidation.issues
+                  .slice(0, 3)
+                  .map((issue) => `${issue.path}: ${issue.message}`)
+                  .join('; ');
+                this.logger.debug(
+                  `[PREPARING] Accepted grounded partial AI plan after local enrichment; schema gaps=${details || 'non-essential provider envelope variation'}.`,
+                );
+              }
               if (planned.fallbackUsed) {
                 finishFailure();
                 return;
@@ -871,16 +1092,17 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   private buildSystemInstruction(): string {
     return [
       'You are the PREPARING-stage semantic retrieval planner for software opportunity research.',
-      'The requester description is the source of truth. Understand that concrete problem first; domains are constraints/context only and must never replace the requester problem.',
-      'Return ONLY one compact JSON object. The first non-whitespace character must be { and the last must be }. Never return an array, string, Markdown fence, or wrapper object. Use these exact canonical keys: domainSelectionMode, selectedExistingDomainId, suggestedDomainName, domainIdentity, searchQueries, selectedSourceKeys, confidence. domainIdentity should prefer exactly actor, object, workflow, failure. Do not add prose and do not return problemProfile, evidenceTargets, intentConcepts, sourcePlans, routingHints, or explanations; the runtime derives those locally.',
-      'Canonical example shape: {"domainSelectionMode":"EXISTING","selectedExistingDomainId":"catalog-id","suggestedDomainName":"","domainIdentity":{"actor":"...","object":"...","workflow":"...","failure":"..."},"searchQueries":["query 1","query 2","query 3","query 4","query 5","query 6"],"selectedSourceKeys":["reddit","news","crossref"],"confidence":90}. For NEW use selectedExistingDomainId:"" and a non-empty suggestedDomainName. For EXISTING use the exact catalog id and suggestedDomainName:"". Never return null for these two fields. Keep values short.',
+      'The requester description is intent/context, not automatically a problem statement and never evidence. First decide whether the text truly states a concrete operational problem or merely expresses a goal, preference, audience, product direction, or area of interest.',
+      'Return ONLY one compact JSON object. The first non-whitespace character must be { and the last must be }. Never return an array, string, Markdown fence, or wrapper object. Use these exact canonical keys: domainSelectionMode, selectedExistingDomainId, suggestedDomainName, requestIntent, domainIdentity, searchQueries, selectedSourceKeys, confidence. requestIntent must contain exactly mode, summary, explicitProblem, desiredOutcome. domainIdentity should contain exactly actor, object, workflow, failure. Do not add prose and do not return problemProfile, evidenceTargets, intentConcepts, sourcePlans, routingHints, or explanations; the runtime derives those locally.',
+      'requestIntent.mode must be EXPLICIT_PROBLEM only when the requester directly asserts a concrete current pain/failure/friction as the problem to solve (for example, a workflow is fragmented, users cannot complete a task, records are lost, or delays/rework are already occurring). Do NOT mark EXPLICIT_PROBLEM merely because the text mentions possible risks, desired capabilities, an audience, a workflow, examples of what might go wrong, or what the requester wants a future product to improve. Those are DISCOVERY_INTENT. In EXPLICIT_PROBLEM put a concise faithful problem in explicitProblem. Otherwise use DISCOVERY_INTENT and explicitProblem:"". desiredOutcome may capture what the requester wants to improve/build/serve, without turning that desire into a market problem.',
+      'Canonical example shape: {"domainSelectionMode":"EXISTING","selectedExistingDomainId":"catalog-id","suggestedDomainName":"","requestIntent":{"mode":"DISCOVERY_INTENT","summary":"...","explicitProblem":"","desiredOutcome":"..."},"domainIdentity":{"actor":"...","object":"...","workflow":"...","failure":""},"searchQueries":["query 1","query 2","query 3","query 4","query 5","query 6"],"selectedSourceKeys":["reddit","news","crossref"],"confidence":90}. For NEW use selectedExistingDomainId:"" and a non-empty suggestedDomainName. For EXISTING use the exact catalog id and suggestedDomainName:"".',
       'DOMAIN: choose EXISTING only when the active catalog contains the same professional actor, primary object/resource, and operational workflow. Broad-sector similarity is not enough. Otherwise choose NEW. For EXISTING, return the exact catalog id when available. For NEW, return a narrow reusable professional domain name.',
-      'DOMAIN IDENTITY: return concise actor, object, workflow, and failure phrases grounded only in the current requester description.',
-      'QUERIES: return exactly 6 high-signal evidence-search seed queries. Write them like a human would type into Google: short, concrete, natural phrases of 4-9 words. Every query must keep the real actor/object identity plus one workflow or pain mechanism. Never output a consequence by itself, never copy a full sentence, never use meta phrases such as evidence of/reports about/complaints about, and never stuff every request noun into one query. Prefer simple variants that maximize recall while staying on the same causal problem. The runtime will enforce the six-query budget even if you return more.',
+      'DOMAIN IDENTITY: return concise actor, object, and workflow phrases grounded in the requester intent. Return failure only when the request explicitly states one; otherwise return an empty string.',
+      "QUERIES: target 6 ordered evidence-search seed queries (a partial response is still useful; never exceed 8). When requestIntent.mode=EXPLICIT_PROBLEM, search to validate that problem and its strongest facets. When mode=DISCOVERY_INTENT, search for real complaints, failures, delays, rework, cost pressure, access barriers, unmet needs, incidents, or operational friction that occur inside the requester's actor/object/workflow/desired-outcome scope. Do not invent the winning problem during planning; collection + Community AI choose it from evidence. Write human-searchable 4-9 word queries and avoid proposed-solution terms unless the request itself concerns software/API/system failures or a review-store lane.",
       'SOURCES: select 3-4 exact sourceKey values from ACTIVE SOURCE CATALOG. Prefer community/practitioner sources for niche/local-service workflows and research/news/institutional sources for public-sector or documented operational workflows. IMPORTANT: when a comparable mobile app or workflow tool plausibly exists, include app-store and google-play because USER REVIEWS are valuable problem evidence. Store listing descriptions are discovery metadata only; reviews/comments are the evidence. Use technical developer sources only for genuine software/API/infrastructure problems.',
-      'When requester-selected domains are present, choose the best-matching one of those exact existing domains as the primary domain. Do not create an additional NEW domain from the actor phrase. The description defines actor/object/workflow identity inside the selected domains; evidence still must match that problem identity.',
-      'If this is recovery, materially change wording/source mix while preserving the exact requester problem.',
-      'Be compact: short identity phrases, exactly 6 short queries, source keys only, and confidence. The runtime expands seeds and builds the full plan locally.',
+      'When requester-selected domains are present, choose the best-matching one of those exact existing domains as the primary collection anchor. Do not create an additional NEW domain from the actor phrase. The selected domains are authoritative search scope. If requestIntent.mode=EXPLICIT_PROBLEM, preserve the requester problem and collect evidence that validates or tightly supports it inside that scope. If mode=DISCOVERY_INTENT, use the description only to constrain actor/object/workflow/outcome search intent and let collected verified evidence determine the final problem after collection.',
+      'If this is recovery, materially change wording/source mix while preserving the requester intent and any truly explicit problem.',
+      'Be compact: short identity phrases, about 6 short ordered queries, source keys only, and confidence. The runtime preserves safe AI seeds, enriches partial responses, and builds the full source-aware plan locally.',
     ].join(' ');
   }
 
@@ -922,7 +1144,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       description,
       '',
       'PREPARING CONTRACT:',
-      'Treat the request description as the canonical problem. Return only the compact schema fields. The runtime will derive the full problem profile, evidence targets, intent concepts, source plans, and expanded queries locally.',
+      'Interpret the request as intent/context first. Do not assume it is a problem statement. Return requestIntent so downstream stages know whether an explicit problem was actually stated; the runtime derives retrieval metadata locally.',
       '',
       'OPTIONAL REQUEST KEYWORDS:',
       keywords.filter(Boolean).slice(0, 12).join(', ') || 'none',
@@ -949,8 +1171,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         : []),
       '',
       isRecovery
-        ? 'Return a compact recovery seed plan: domain identity, exactly 6 materially different evidence-search seeds, 3-4 exact active source keys, and confidence. Preserve the exact requester actor/object/workflow.'
-        : 'Return a compact first-pass seed plan: domain choice + domain identity + exactly 6 strong evidence-search seeds + 3-4 exact active source keys + confidence. Do not return derived fields or source-specific subplans.',
+        ? 'Return a compact recovery seed plan: request intent + domain identity + exactly 6 materially different evidence-search seeds + 3-4 exact active source keys + confidence. Preserve the requester actor/object/workflow and any explicit problem without inventing one.'
+        : 'Return a compact first-pass seed plan: domain choice + request intent + domain identity + exactly 6 strong evidence-search seeds + 3-4 exact active source keys + confidence. The final software problem is chosen only after evidence collection.',
     ].join('\n');
   }
 
@@ -1052,6 +1274,37 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       return phrases.length > 0 ? phrases.join('; ') : null;
     };
 
+    const rawIntent = this.isRecord(parsed.requestIntent)
+      ? parsed.requestIntent
+      : this.isRecord(parsed.request_intent)
+        ? parsed.request_intent
+        : {};
+    const requestIntent: Record<string, unknown> = {
+      mode: readString(
+        rawIntent.mode,
+        rawIntent.intentMode,
+        rawIntent.intent_mode,
+        rawIntent.type,
+      ),
+      summary: readString(
+        rawIntent.summary,
+        rawIntent.intentSummary,
+        rawIntent.intent_summary,
+      ),
+      explicitProblem: readString(
+        rawIntent.explicitProblem,
+        rawIntent.explicit_problem,
+        rawIntent.problemStatement,
+        rawIntent.problem_statement,
+      ) ?? '',
+      desiredOutcome: readString(
+        rawIntent.desiredOutcome,
+        rawIntent.desired_outcome,
+        rawIntent.goal,
+        rawIntent.preference,
+      ) ?? '',
+    };
+
     const rawIdentity = this.isRecord(parsed.domainIdentity)
       ? parsed.domainIdentity
       : this.isRecord(parsed.domain_identity)
@@ -1132,6 +1385,12 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       domainSelectionMode: explicitMode ?? inferredMode ?? 'NEW',
       selectedExistingDomainId: selectedExistingDomainId ?? '',
       suggestedDomainName: suggestedDomainName ?? '',
+      requestIntent: {
+        mode: readString(requestIntent.mode) ?? 'DISCOVERY_INTENT',
+        summary: readString(requestIntent.summary) ?? '',
+        explicitProblem: readString(requestIntent.explicitProblem) ?? '',
+        desiredOutcome: readString(requestIntent.desiredOutcome) ?? '',
+      },
       domainIdentity: {
         actor: readString(identity.actor) ?? '',
         object: readString(identity.object) ?? '',
@@ -1160,12 +1419,19 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       parsed.domainSelectionMode,
       rawSelectedDomainId,
     );
-    const domainIdentity = this.normalizeDomainIdentity(parsed.domainIdentity, description);
-    const problemProfile = this.normalizeProblemProfile(
-      parsed.problemProfile,
+    const requestIntent = this.normalizeRequestIntent(parsed.requestIntent, description);
+    const domainIdentity = this.normalizeDomainIdentity(
+      parsed.domainIdentity,
       description,
-      domainIdentity,
+      requestIntent.mode === 'DISCOVERY_INTENT',
     );
+    const problemProfile = requestIntent.mode === 'EXPLICIT_PROBLEM' && requestIntent.explicitProblem
+      ? this.normalizeProblemProfile(
+          parsed.problemProfile,
+          requestIntent.explicitProblem,
+          domainIdentity,
+        )
+      : undefined;
     const existingDomainMatchScore = this.normalizeScore(
       parsed.existingDomainMatchScore,
       rawSelectionMode === 'EXISTING' ? 100 : 0,
@@ -1254,59 +1520,180 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       (reuseExistingDomain ? requestedExistingDomain!.name : semanticNewDomainName);
 
     const rawAiQueries = this.filterAiQueriesForRequest(
-      this.normalizeQueries(parsed.searchQueries, 12),
+      this.normalizeQueries(parsed.searchQueries, 8),
       description,
     );
     /*
-     * The model owns retrieval wording, but the runtime enforces the budget.
-     * Providers occasionally return 9-12 queries despite the prompt. Sending
-     * all of them downstream made every collector fan out into long, noisy
-     * query ledgers. Rank AI seeds first, then fill only missing slots with
-     * request-derived atomic phrases. The final first-pass contract is EXACTLY
-     * six short queries.
+     * The model owns the strongest retrieval wording. The runtime accepts a
+     * bounded partial response, preserves every safe AI seed, then enriches it
+     * with requester-derived supporting and broad recall lanes.
      */
     const rankedAiQueries = this.rankAiQueriesForRequest(
       rawAiQueries,
       description,
     );
-    // Keep AI ownership without making one omitted seed invalidate the whole
-    // PREPARING result. Three grounded AI seeds are enough to prove that the
-    // model understood the requester; any missing slots are completed from the
-    // already request-derived deterministic plan. This dramatically reduces
-    // false planner fallback while preserving the exact six-query runtime cap.
-    const acceptedAiQueries = this.deduplicatePhrases(rankedAiQueries).slice(0, 6);
-    if (acceptedAiQueries.length < 3) return fallback;
-    const searchQueries = this.deduplicatePhrases([
-      ...acceptedAiQueries,
+    // Keep AI ownership without making an omitted seed invalidate the whole
+    // PREPARING result. One grounded AI seed is enough; missing coverage is
+    // completed deterministically without changing aiUsed/fallbackUsed.
+    const acceptedAiQueries = this.deduplicateQueries(rankedAiQueries).slice(0, 6);
+    // Do not discard a useful fastest-provider response simply because it is
+    // partial. At least one safe, requester-grounded AI query keeps aiUsed=true;
+    // deterministic/request-derived lanes fill the remaining retrieval budget.
+    if (acceptedAiQueries.length === 0) return fallback;
+
+    const explicitTextDomainPath = requestedDomainIds.length > 0;
+    const nicheCraftProfile = RequestNicheCustomCraftUtil.resolve(description);
+    /*
+     * The AI already owns the primary retrieval wording. Three successive
+     * generic query-expansion passes used to run synchronously after the model
+     * had answered, which could turn a 3-4s provider response into a 20-30s
+     * PREPARING stage and could inject archetype vocabulary such as
+     * refrigeration into unrelated manufacturing requests. Explicit-domain
+     * requests therefore use the AI seeds plus the already-grounded canonical
+     * fallback only. Sparse bespoke crafts use their source-native niche
+     * vocabulary. Generic Text Only requests keep the broader expansion path.
+     */
+    const supportingQueries = explicitTextDomainPath || nicheCraftProfile
+      ? []
+      : RequestDynamicQueryUtil.buildEvidenceFacetQueries({
+          requestDescription: description,
+          intentConcepts: fallback.intentConcepts,
+          evidenceTargets: fallback.evidenceTargets,
+          plannedQueries: acceptedAiQueries,
+          maxQueries: 6,
+        });
+    const professionalQueries = nicheCraftProfile
+      ? this.deduplicateQueries([
+          ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'reddit'),
+          ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'forum'),
+          ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'crossref'),
+          ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'news'),
+        ]).slice(0, 8)
+      : explicitTextDomainPath
+        ? this.deduplicateQueries([
+            ...RequestDynamicQueryUtil.buildProfessionalTerminologyQueries({
+              requestDescription: description,
+              intentConcepts: fallback.intentConcepts,
+              evidenceTargets: fallback.evidenceTargets,
+              plannedQueries: acceptedAiQueries,
+              maxQueries: 8,
+            }),
+            ...fallback.searchQueries,
+          ]).slice(0, 8)
+        : RequestDynamicQueryUtil.buildProfessionalTerminologyQueries({
+            requestDescription: description,
+            intentConcepts: fallback.intentConcepts,
+            evidenceTargets: fallback.evidenceTargets,
+            plannedQueries: acceptedAiQueries,
+            maxQueries: 5,
+          });
+    const broadQueries = explicitTextDomainPath || nicheCraftProfile
+      ? []
+      : RequestDynamicQueryUtil.buildRelaxedRetrievalQueries({
+          requestDescription: description,
+          intentConcepts: fallback.intentConcepts,
+          evidenceTargets: fallback.evidenceTargets,
+          plannedQueries: [
+            ...acceptedAiQueries,
+            ...supportingQueries,
+            ...professionalQueries,
+          ],
+          maxQueries: 4,
+        });
+
+    const normalizedDescription = description.toLocaleLowerCase();
+    const governmentRecordIntegrityRequest =
+      /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|licensing authorities?)\b/u.test(normalizedDescription) &&
+      /\b(?:licenses?|licences?|certificates?|permits?|official records?|official documents?|approval records?|security logs?)\b/u.test(normalizedDescription) &&
+      /\b(?:altered|tamper|unauthorized|unauthorised|fraud|forged|verification|integrity|audit)\w*\b/u.test(normalizedDescription);
+    const restorationProfessionalRequest =
+      RequestWorkflowIntentProfileUtil.resolve(description).family ===
+      'RESTORATION_CONSERVATION';
+    const contractVersionGovernanceRequest =
+      /\b(?:contracts?|agreements?)\b/u.test(normalizedDescription) &&
+      /\b(?:versions?|amendments?|digital signatures?|approval histor(?:y|ies)|authorization|authorisation|compliance obligations?|legally valid|terms? (?:were )?changed|executed agreement|negotiation records?)\b/u.test(
+        normalizedDescription,
+      );
+    const prioritizeProfessionalRetrieval =
+      Boolean(nicheCraftProfile) ||
+      restorationProfessionalRequest ||
+      contractVersionGovernanceRequest ||
+      governmentRecordIntegrityRequest ||
+      (/\b(?:lace|textile)\b/u.test(normalizedDescription) &&
+        /\b(?:restoration|conservation|thread|pattern)\w*\b/u.test(normalizedDescription)) ||
+      (/\b(?:fitness centers?|fitness clubs?|gyms?|health clubs?|sports clubs?)\b/u.test(normalizedDescription) &&
+        /\b(?:energy|electricity|treadmill|hvac|climate control|sauna|occupancy|maintenance|downtime)\b/u.test(normalizedDescription));
+
+    /*
+     * Ordered retrieval strength:
+     *   1) every safe AI-authored query (strongest semantic contract),
+     *   2) request-facet supporting queries,
+     *   3) deterministic high-signal fallback coverage,
+     *   4) relaxed/broad lexical recall.
+     *
+     * We keep a bounded mixed-strength plan (up to twelve unique seeds) and
+     * later guarantee that every accepted AI seed is assigned to at least one
+     * collector. Therefore an AI query can no longer
+     * disappear merely because source adaptation picked a different phrase.
+     */
+    const searchQueries = this.deduplicateQueries([
+      // Preserve the strongest AI seeds, but in sparse craft/facility-energy
+      // workflows immediately follow them with practitioner-native terminology.
+      // Search engines and communities use phrases such as "lace conservation"
+      // or "gym HVAC energy use" much more often than specification-language
+      // generated from the full requester paragraph.
+      ...acceptedAiQueries.slice(0, prioritizeProfessionalRetrieval ? 2 : 3),
+      ...(prioritizeProfessionalRetrieval
+        ? professionalQueries.slice(0, 5)
+        : supportingQueries.slice(0, 3)),
+      ...(prioritizeProfessionalRetrieval
+        ? supportingQueries.slice(0, 2)
+        : professionalQueries.slice(0, 3)),
+      // Every remaining accepted AI seed is still preserved in the bounded
+      // runtime plan; weaker deterministic/broad lanes fill only spare slots.
+      ...acceptedAiQueries.slice(prioritizeProfessionalRetrieval ? 2 : 3),
       ...fallback.searchQueries,
-    ]).slice(0, 6);
-    if (searchQueries.length < 6) return fallback;
+      ...broadQueries,
+    ])
+      .filter((query) =>
+        RequestQueryProvenanceUtil.isQueryGrounded({
+          requestDescription: description,
+          query,
+        }),
+      )
+      .slice(0, 12);
+    if (searchQueries.length === 0) return fallback;
 
     const evidenceTargets = this.deduplicatePhrases([
-      ...problemProfile.failureModes,
-      ...problemProfile.consequences,
+      ...(problemProfile?.failureModes ?? []),
+      ...(problemProfile?.consequences ?? []),
       ...fallback.evidenceTargets,
     ])
       .filter((target) =>
         RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, target),
       )
       .slice(0, 8);
-    if (evidenceTargets.length < 3) return fallback;
+    if (
+      requestIntent.mode === 'EXPLICIT_PROBLEM' &&
+      evidenceTargets.length === 0
+    ) {
+      return fallback;
+    }
 
     const intentConcepts = this.deduplicatePhrases([
-      problemProfile.actor,
-      problemProfile.object,
-      problemProfile.coreProblem,
-      problemProfile.workflow,
-      ...problemProfile.failureModes,
-      ...problemProfile.consequences,
+      problemProfile?.actor ?? '',
+      problemProfile?.object ?? '',
+      problemProfile?.coreProblem ?? '',
+      problemProfile?.workflow ?? '',
+      ...(problemProfile?.failureModes ?? []),
+      ...(problemProfile?.consequences ?? []),
       ...fallback.intentConcepts,
     ])
       .filter((concept) =>
         RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, concept),
       )
       .slice(0, 10);
-    if (intentConcepts.length < 3) return fallback;
+    if (intentConcepts.length === 0) return fallback;
 
     const activeSourceKeys = new Set(sourceCatalog.map((source) => source.key));
     const selectedSourceKeys = this.normalizeSourceKeys(
@@ -1332,7 +1719,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const clinicalPractitionerRequest =
       /\b(?:sports rehabilitation|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|clinics?|clinical)\b/iu.test(description) &&
       /\b(?:athletes?|patients?|recovery|rehabilitation|wearable|pain reports?|mobility|therapy|therapist|remote monitoring|reinjury|return to play)\b/iu.test(description);
-    const reviewStoresUseful = this.shouldUseReviewStores(description);
+    const reviewStoresUseful =
+      !nicheCraftProfile && this.shouldUseReviewStores(description);
     const institutionalPublicWorkflow =
       /\b(?:smart cit(?:y|ies)|municipal|municipality|city government|local authority|public transit|public transportation|public utility|government agency|government agencies|public sector)\b/iu.test(description);
     const emergencyPublicLogisticsWorkflow =
@@ -1349,8 +1737,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     }).archetype;
     const transactionAccountAbuse =
       workflowArchetype === 'TRANSACTION_ACCOUNT_ABUSE_OPERATIONS';
-    const portfolioPriority = emergencyPublicLogisticsWorkflow
-      ? ['news', 'crossref', 'gdelt', 'forum', 'reddit', 'youtube', 'blog']
+    const portfolioPriority = nicheCraftProfile
+      ? ['reddit', 'forum', 'crossref', 'news', 'blog', 'youtube', 'gdelt']
+      : emergencyPublicLogisticsWorkflow
+        ? ['news', 'crossref', 'gdelt', 'forum', 'reddit', 'youtube', 'blog']
       : transactionAccountAbuse
       ? institutionalPublicWorkflow
         ? ['news', 'crossref', 'gdelt', 'forum', 'reddit', ...reviewStorePriority, 'youtube', 'blog']
@@ -1364,10 +1754,15 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           : ['reddit', 'news', 'crossref', ...reviewStorePriority, 'forum', 'gdelt', 'youtube', 'blog'];
     const desiredPortfolioSize = 4;
     const effectiveSourceKeys = this.deduplicatePhrases([
+      // Sparse physical-service niches need practitioner/community sources more
+      // than generic video/app results. Keep AI-selected sources available, but
+      // let the source-native niche portfolio occupy the bounded primary slots
+      // first. This is retrieval routing only; evidence trust remains unchanged.
+      ...(nicheCraftProfile ? portfolioPriority.slice(0, desiredPortfolioSize) : []),
       ...selectedSourceKeys,
-      // The AI chooses sources first. When the request describes a workflow
-      // that commonly has mobile tools, make both review stores available as
-      // bounded evidence lanes even if one provider omitted them.
+      // The AI chooses sources first for non-niche workflows. When the request
+      // describes a workflow that commonly has mobile tools, make review stores
+      // available as bounded evidence lanes even if one provider omitted them.
       ...reviewStorePriority,
     ])
       .filter((key) => activeSourceKeys.has(key))
@@ -1422,8 +1817,9 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       selectedExistingDomainId,
       domainSelectionMode,
       suggestedDomainName,
+      requestIntent,
       domainIdentity,
-      problemProfile,
+      ...(problemProfile ? { problemProfile } : {}),
       existingDomainMatchScore,
       searchQueries,
       evidenceTargets,
@@ -1652,6 +2048,17 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         const longQueryPenalty = wordCount > 10 ? Math.min(5, wordCount - 10) : 0;
         const weakProblemShapePenalty =
           painTokens.size > 0 && painOverlap === 0 && wordCount <= 5 ? 5 : 0;
+        const technicalRequest =
+          /\b(?:api|sdk|source code|repository|github|webhook|endpoint|database|firmware|programming|developer|software engineering|runtime|deployment)\b/iu.test(
+            description,
+          );
+        const solutionBiasPenalty =
+          !technicalRequest &&
+          /\b(?:software|platform|application|app|tracker|dashboard|tool)\b/iu.test(
+            query,
+          )
+            ? 7
+            : 0;
 
         return {
           query,
@@ -1664,6 +2071,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
             metaSearchPenalty -
             longQueryPenalty -
             weakProblemShapePenalty -
+            solutionBiasPenalty -
             index * 0.01,
         };
       })
@@ -1734,6 +2142,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   private buildDeterministicFallback(
     description: string,
     keywords: readonly string[],
+    options: { readonly skipBroadExpansion?: boolean } = {},
   ): RequestCollectionPlan {
     const combined = `${description} ${keywords.join(' ')}`.trim();
     const problemProfile = this.buildDeterministicProblemProfile(description);
@@ -1754,17 +2163,35 @@ export class RequestCollectionPlanningService implements OnModuleInit {
      * combinations first and use canonical queries only to fill uncovered
      * facets. This keeps fallback quality close to the AI-planned path.
      */
-    const searchQueries = this.deduplicateQueries([
+    const fallbackStrongQueries = this.deduplicateQueries([
       ...this.buildFallbackHighSignalQueries(description, problemProfile),
       ...canonicalQueries,
-    ])
-      .filter((query) =>
-        RequestQueryProvenanceUtil.isQueryGrounded({
+    ]).filter((query) =>
+      RequestQueryProvenanceUtil.isQueryGrounded({
+        requestDescription: description,
+        query,
+      }),
+    );
+    const fallbackBroadQueries = options.skipBroadExpansion
+      ? []
+      : RequestDynamicQueryUtil.buildRelaxedRetrievalQueries({
           requestDescription: description,
-          query,
-        }),
-      )
-      .slice(0, 6);
+          intentConcepts: [
+            problemProfile.actor,
+            problemProfile.object,
+            problemProfile.workflow,
+          ],
+          evidenceTargets: [
+            ...problemProfile.failureModes,
+            ...problemProfile.consequences,
+          ],
+          plannedQueries: fallbackStrongQueries,
+          maxQueries: 5,
+        });
+    const searchQueries = this.deduplicateQueries([
+      ...fallbackStrongQueries,
+      ...fallbackBroadQueries,
+    ]).slice(0, 10);
     const evidenceTargets = this.deduplicatePhrases([
       ...(problemProfile.evidenceFacets ?? []),
       ...problemProfile.failureModes,
@@ -1782,18 +2209,20 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       selectedExistingDomainId: null,
       domainSelectionMode: 'NEW',
       suggestedDomainName: domainName,
+      requestIntent: {
+        mode: 'DISCOVERY_INTENT',
+        summary: description.slice(0, 360),
+        explicitProblem: null,
+        desiredOutcome: null,
+      },
       domainIdentity: {
         actor: problemProfile.actor,
         object: problemProfile.object,
         workflow: problemProfile.workflow,
-        failure:
-          problemProfile.friction ??
-          problemProfile.failureModes[0] ??
-          problemProfile.coreProblem,
+        failure: '',
       },
-      problemProfile,
       searchQueries,
-      evidenceTargets,
+      evidenceTargets: [],
       intentConcepts,
       sourceFocus: this.inferSourceFocus(description),
       confidence: domainName ? 78 : 62,
@@ -1808,6 +2237,42 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     profile: RequestCanonicalProblemProfile,
   ): string[] {
     const normalizedDescription = description.toLocaleLowerCase();
+    const municipalHousingCostRequest =
+      /\b(?:municipal housing authorities?|public housing authorities?|housing authorities?|public housing properties?|social housing|municipal housing)\b/iu.test(normalizedDescription) &&
+      /\b(?:maintenance|repair expenses?|operating costs?|operating expenses?|occupancy|utility bills?|utilities|subsidy payments?|inspection results?|tenant complaints?|budget allocation|financially inefficient|housing quality)\b/iu.test(normalizedDescription);
+    if (municipalHousingCostRequest) {
+      return [
+        'public housing maintenance cost per unit benchmark',
+        'housing authority operating cost outlier properties',
+        'public housing utility consumption building operating expense',
+        'public housing work order backlog repair cost',
+        'housing authority high maintenance cost building intervention',
+        'public housing inspection complaints repair prioritization',
+        'public housing operating expense occupancy subsidy',
+        'municipal housing budget maintenance backlog spending',
+        'public housing property operating expense benchmark maintenance',
+        'housing authority repair backlog budget allocation complaints',
+      ];
+    }
+
+    const bookEdgeGildingRequest =
+      /\b(?:book[- ]edge gilding specialists?|book edge gilders?|fore[- ]edge gilders?|fore[- ]edge gilding specialists?|book gilding specialists?)\b/iu.test(normalizedDescription) &&
+      /\b(?:gold|metallic|gilding|edge preparation|decorative patterns?|book dimensions?|material compatibility|revision requests?|incorrect finishes?|damaged pages?|wasted materials?|delayed commissions?)\b/iu.test(normalizedDescription);
+    if (bookEdgeGildingRequest) {
+      return [
+        'fore edge gilding damaged pages mistake repair',
+        'book edge gilding gold leaf finish went wrong',
+        'bookbinder gilded edges customer commission mistake',
+        'custom bookbinding client revision rework gilded edges',
+        'book edge gilding material compatibility paper problem',
+        'gilded book edge preparation failure gold leaf',
+        'bookbinding customer specification error remake',
+        'fore edge gilding customer approval revision delay',
+        'gold leaf book edge paper damage bookbinding',
+        'custom book gilding wrong finish repeated work',
+      ];
+    }
+
     const publicHealthDemandCapacityRequest =
       /\b(?:urban healthcare networks?|healthcare networks?|hospital networks?|emergency departments?|ambulance services?|clinics?)\b/u.test(normalizedDescription) &&
       /\b(?:patient demand|hospital capacity|ambulance availability|overcrowded emergency rooms?|resource allocation|response times?|delayed patient care)\b/u.test(normalizedDescription);
@@ -1821,6 +2286,41 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         'hospital capacity resource allocation delayed patient care',
         'healthcare networks patient demand resource allocation',
         'emergency rooms patient demand delayed patient care',
+      ];
+    }
+
+    const warehouseEnergyAttributionRequest =
+      /\b(?:distribution centers?|warehouses?|fulfillment centers?|fulfilment centers?|logistics facilities?)\b/iu.test(normalizedDescription) &&
+      /\b(?:energy|electricity|conveyor|refrigeration|lighting|charging stations?|loading equipment|shipment volumes?|shipment demand|equipment activity|maintenance records?|consumption)\b/iu.test(normalizedDescription) &&
+      /\b(?:inefficient|efficiency|rising consumption|workload changes?|technical problems?|energy costs?|downtime|analy[sz]ed separately|compare|attribution)\b/iu.test(normalizedDescription);
+    if (warehouseEnergyAttributionRequest) {
+      return [
+        'warehouse energy intensity shipment throughput',
+        'distribution center energy consumption benchmarking shipment volume',
+        'warehouse energy use per shipment workload normalization',
+        'conveyor refrigeration energy efficiency distribution center',
+        'warehouse equipment energy monitoring predictive maintenance',
+        'distribution center electricity consumption equipment activity maintenance',
+        'warehouse energy anomaly workload versus equipment fault',
+        'logistics facility energy consumption maintenance downtime',
+      ];
+    }
+
+    const publicManufacturingAgencyPerformanceRequest =
+      /\b(?:public manufacturing|industrial development agenc(?:y|ies)|manufacturing development agenc(?:y|ies)|industrial authorit(?:y|ies)|public industrial|government manufacturing)\b/iu.test(normalizedDescription) &&
+      /\b(?:factories|factory|facilities|production output|equipment failures?|workforce capacity|inspection results?|subsid(?:y|ies)|moderni[sz]ation|regulatory intervention|operational support|performance|inefficient|funding)\b/iu.test(normalizedDescription);
+    if (publicManufacturingAgencyPerformanceRequest) {
+      return [
+        'industrial development agency factory performance assessment',
+        'factory modernization support prioritization government agency',
+        'manufacturing facility underperformance production inspection subsidy',
+        'industrial subsidy targeting factory performance problems',
+        'factory operational support modernization intervention criteria',
+        'manufacturing inspection production performance intervention',
+        'industrial development agency inefficient factory identification',
+        'factory equipment failures workforce capacity performance assessment',
+        'public industrial funding modernization poorly targeted factories',
+        'manufacturing facility performance benchmark regulatory intervention',
       ];
     }
 
@@ -1838,15 +2338,27 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         .slice(0, 4)
         .join(' ');
       const actorPrefix = actor || 'equipment operators';
+      const temperatureContext = /\b(?:temperature|thermal|heat|cold|cooling|freezer|refrigerat(?:or|ion)|cold storage)\b/iu.test(normalizedDescription);
+      const refrigerationContext = /\b(?:refrigerat(?:or|ion)|freezers?|cold storage|coolers?)\b/iu.test(normalizedDescription);
+      const energyContext = /\b(?:energy|electricity|power consumption|utility costs?)\b/iu.test(normalizedDescription);
+      const sensorContext = /\b(?:sensors?|iot|internet of things|telemetry|equipment alerts?|maintenance alerts?)\b/iu.test(normalizedDescription);
       return this.deduplicateQueries([
         `${actorPrefix} equipment failure maintenance alerts`,
-        `${actorPrefix} temperature equipment failure warning`,
         `${actorPrefix} predictive maintenance equipment downtime`,
         `${actorPrefix} equipment alerts maintenance prioritization`,
-        `${actorPrefix} refrigeration equipment failure monitoring`,
-        `${actorPrefix} equipment energy usage abnormal maintenance`,
-        `${actorPrefix} sensor alerts equipment breakdown downtime`,
         `${actorPrefix} maintenance records equipment failure detection`,
+        ...(temperatureContext
+          ? [`${actorPrefix} temperature equipment failure warning`]
+          : []),
+        ...(refrigerationContext
+          ? [`${actorPrefix} refrigeration equipment failure monitoring`]
+          : []),
+        ...(energyContext
+          ? [`${actorPrefix} equipment energy usage abnormal maintenance`]
+          : []),
+        ...(sensorContext
+          ? [`${actorPrefix} sensor alerts equipment breakdown downtime`]
+          : []),
       ]).slice(0, 8);
     }
 
@@ -1929,74 +2441,311 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   }
 
 
-  private async loadActiveDomainCatalog(
+  /**
+   * Returns only metadata already available in memory. No database await is
+   * permitted here because this method is used immediately before the online
+   * PREPARING race starts.
+   */
+  private readPlanningDomainCatalogImmediate(
+    language: LanguageCode | undefined,
+    requestedDomainIds: readonly string[],
+  ): RequestDomainCatalogEntry[] {
+    const ids = [...new Set(
+      requestedDomainIds.map((id) => id.trim()).filter(Boolean),
+    )].sort();
+
+    if (ids.length > 0) {
+      const cacheKey = `${language ?? LanguageCode.ANY}:${ids.join(',')}`;
+      const subset = this.domainSubsetCache.get(cacheKey);
+      if (subset && subset.expiresAt > Date.now()) {
+        return subset.value.map((entry) => ({
+          ...entry,
+          keywords: [...entry.keywords],
+        }));
+      }
+
+      const identity = this.readFreshDomainIdentityCatalog();
+      if (identity) {
+        const byId = new Map(identity.map((entry) => [entry.id, entry] as const));
+        return ids
+          .map((id) => byId.get(id))
+          .filter((entry): entry is RequestDomainCatalogEntry => Boolean(entry))
+          .map((entry) => ({ ...entry, keywords: [] }));
+      }
+
+      return [];
+    }
+
+    return this.readFreshDomainIdentityCatalog() ?? [];
+  }
+
+  private readActiveSourceCatalogImmediate(): RequestSourceCatalogEntry[] {
+    const runtimeAvailable = new Set(
+      this.collectorsFactory
+        .getRuntimeAvailableSourceKeys()
+        .map((key) => key.trim().toLocaleLowerCase()),
+    );
+    const cached = this.sourceCatalogCache;
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value
+        .filter((entry) => runtimeAvailable.has(entry.key.toLocaleLowerCase()))
+        .map((entry) => ({ ...entry }));
+    }
+    return this.buildRuntimeSourceCatalogFallback();
+  }
+
+  private refreshPlanningCatalogsInBackground(
+    language: LanguageCode | undefined,
+    requestedDomainIds: readonly string[],
+  ): void {
+    const ids = [...new Set(
+      requestedDomainIds.map((id) => id.trim()).filter(Boolean),
+    )];
+    const domainRefresh = ids.length > 0
+      ? this.loadActiveDomainSubset(ids, language)
+      : this.loadActiveDomainIdentityCatalog();
+
+    void Promise.allSettled([
+      domainRefresh,
+      this.loadActiveSourceCatalog(),
+    ]).then((results) => {
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          this.logger.debug(
+            `[PREPARING] Background planning catalog refresh failed non-fatally: ${
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason)
+            }`,
+          );
+        }
+      }
+    });
+  }
+
+  /**
+   * Small request-owned baseline used only to normalize a successful online
+   * plan. It deliberately avoids the broad relaxed-query expansion and the
+   * large special-case fallback query family. If online planning fails, the
+   * full deterministic fallback is still built before PREPARING returns.
+   */
+  private buildFastDeterministicFallback(
+    description: string,
+    keywords: readonly string[],
+  ): RequestCollectionPlan {
+    const profile = this.buildDeterministicProblemProfile(description);
+    const canonicalQueries =
+      CanonicalRequestUnderstandingUtil.buildSearchQueries(profile, 6);
+    const searchQueries = this.deduplicateQueries([
+      ...canonicalQueries,
+      ...keywords.map((keyword) => keyword.trim()).filter(Boolean),
+    ])
+      .filter((query) =>
+        RequestQueryProvenanceUtil.isQueryGrounded({
+          requestDescription: description,
+          query,
+        }),
+      )
+      .slice(0, 8);
+
+    const evidenceTargets = this.deduplicatePhrases([
+      ...(profile.evidenceFacets ?? []),
+      ...profile.failureModes,
+      ...profile.consequences,
+    ]).slice(0, 8);
+    const intentConcepts = this.deduplicatePhrases([
+      profile.actor,
+      ...(profile.actorAliases ?? []),
+      profile.object,
+      ...(profile.objectAliases ?? []),
+      profile.workflow,
+    ]).slice(0, 10);
+
+    return {
+      selectedExistingDomainId: null,
+      domainSelectionMode: 'NEW',
+      suggestedDomainName:
+        this.composeDomainNameFromProblemProfile(profile) ??
+        this.inferGenericProfessionalDomainName(description),
+      requestIntent: {
+        mode: 'DISCOVERY_INTENT',
+        summary: description.slice(0, 360),
+        explicitProblem: null,
+        desiredOutcome: null,
+      },
+      domainIdentity: {
+        actor: profile.actor,
+        object: profile.object,
+        workflow: profile.workflow,
+        failure: '',
+      },
+      searchQueries,
+      evidenceTargets: [],
+      intentConcepts,
+      sourceFocus: this.inferSourceFocus(description),
+      confidence: 68,
+      aiUsed: false,
+      fallbackUsed: true,
+    };
+  }
+
+
+  private async loadActiveDomainSubset(
+    domainIds: readonly string[],
     language?: LanguageCode,
   ): Promise<RequestDomainCatalogEntry[]> {
-    const cacheKey = language ?? LanguageCode.ANY;
-    const cached = this.domainCatalogCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.value.map((entry) => ({ ...entry, keywords: [...entry.keywords] }));
-    }
-    if (cached) this.domainCatalogCache.delete(cacheKey);
+    const ids = [...new Set(domainIds.map((id) => id.trim()).filter(Boolean))].sort();
+    if (ids.length === 0) return [];
 
-    const active = this.domainCatalogInFlight.get(cacheKey);
+    const identityCached = this.readFreshDomainIdentityCatalog();
+    if (identityCached) {
+      const byId = new Map(identityCached.map((entry) => [entry.id, entry] as const));
+      const selected = ids
+        .map((id) => byId.get(id))
+        .filter((entry): entry is RequestDomainCatalogEntry => Boolean(entry));
+      if (selected.length === ids.length) return selected;
+    }
+    /*
+     * Never wait for a startup/background all-domain refresh just to resolve a
+     * few explicit ids. A three-row subset lookup is cheaper and, on a remote
+     * database, avoids turning one slow catalog refresh into a PREPARING-wide
+     * latency dependency.
+     */
+    const cacheKey = `${language ?? LanguageCode.ANY}:${ids.join(',')}`;
+    const cached = this.domainSubsetCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value.map((entry) => ({
+        ...entry,
+        keywords: [...entry.keywords],
+      }));
+    }
+    if (cached) this.domainSubsetCache.delete(cacheKey);
+
+    const active = this.domainSubsetInFlight.get(cacheKey);
     if (active) return active;
 
-    const request = this.loadActiveDomainCatalogUncached(language)
-      .then((value) => {
-        this.domainCatalogCache.set(cacheKey, {
+    /*
+     * Explicit-domain planning needs authoritative identity, not a joined keyword
+     * relation. Loading domainKeywords here made a three-domain Text+Domains
+     * prefetch take several seconds on a remote database and serialized the end
+     * of PREPARING. Request-specific planner terms are stronger for text paths,
+     * while DOMAINS_ONLY discovery already generates domain-name pain queries.
+     * Generic configured keywords are rehydrated later for the primary domain by
+     * normal selection, so keep this critical lookup to one compact table read.
+     */
+    const request = this.prisma.domain
+      .findMany({
+        where: { id: { in: ids }, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          isVisible: true,
+          isAutoGenerated: true,
+        },
+      })
+      .then((rows) => {
+        const rowById = new Map(rows.map((row) => [row.id, row] as const));
+        const value = ids
+          .map((id) => rowById.get(id))
+          .filter((row): row is (typeof rows)[number] => Boolean(row))
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            isVisible: row.isVisible,
+            isAutoGenerated: row.isAutoGenerated,
+            keywords: [] as string[],
+          }));
+        this.domainSubsetCache.set(cacheKey, {
           expiresAt: Date.now() + REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS,
           value,
         });
         return value;
       })
-      .finally(() => this.domainCatalogInFlight.delete(cacheKey));
-    this.domainCatalogInFlight.set(cacheKey, request);
+      .finally(() => this.domainSubsetInFlight.delete(cacheKey));
+
+    this.domainSubsetInFlight.set(cacheKey, request);
     return request;
   }
 
-  private async loadActiveDomainCatalogUncached(
-    language?: LanguageCode,
-  ): Promise<RequestDomainCatalogEntry[]> {
-    const domains = await this.prisma.domain.findMany({
-      where: { isActive: true },
-      select: {
-        id: true,
-        name: true,
-        isVisible: true,
-        isAutoGenerated: true,
-        domainKeywords: {
-          ...(language
-            ? {
-                where: {
-                  language: { in: [language, LanguageCode.ANY] },
-                },
-              }
-            : {}),
-          select: { keyword: true },
-          orderBy: { createdAt: 'asc' },
-          take: 6,
-        },
-      },
-      orderBy: { name: 'asc' },
-    });
+  private readFreshDomainIdentityCatalog(): RequestDomainCatalogEntry[] | null {
+    const cached = this.domainIdentityCatalogCache;
+    if (!cached) return null;
+    if (cached.expiresAt <= Date.now()) {
+      this.domainIdentityCatalogCache = null;
+      return null;
+    }
+    return cached.value.map((entry) => ({ ...entry, keywords: [] }));
+  }
 
-    return domains
-      .filter((domain) => domain.name.trim().toLocaleLowerCase() !== 'general')
-      .map((domain) => ({
-        id: domain.id,
-        name: domain.name,
-        isVisible: domain.isVisible,
-        isAutoGenerated: domain.isAutoGenerated,
-        keywords: domain.domainKeywords.map((item) => item.keyword),
-      }));
+  private async loadActiveDomainIdentityCatalog(): Promise<RequestDomainCatalogEntry[]> {
+    const cached = this.readFreshDomainIdentityCatalog();
+    if (cached) return cached;
+    if (this.domainIdentityCatalogInFlight) return this.domainIdentityCatalogInFlight;
+
+    const request = this.prisma.domain
+      .findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          isVisible: true,
+          isAutoGenerated: true,
+        },
+        orderBy: { name: 'asc' },
+      })
+      .then((rows: Array<{
+        readonly id: string;
+        readonly name: string;
+        readonly isVisible: boolean;
+        readonly isAutoGenerated: boolean;
+      }>) => {
+        const value = rows
+          .filter((domain) => domain.name.trim().toLocaleLowerCase() !== 'general')
+          .map((domain) => ({
+            id: domain.id,
+            name: domain.name,
+            isVisible: domain.isVisible,
+            isAutoGenerated: domain.isAutoGenerated,
+            keywords: [] as string[],
+          }));
+        this.domainIdentityCatalogCache = {
+          expiresAt: Date.now() + REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS,
+          value,
+        };
+        return value;
+      })
+      .finally(() => {
+        this.domainIdentityCatalogInFlight = null;
+      });
+    this.domainIdentityCatalogInFlight = request;
+    return request;
   }
 
   private async loadActiveSourceCatalog(): Promise<RequestSourceCatalogEntry[]> {
+    const filterRuntimeAvailable = (
+      entries: readonly RequestSourceCatalogEntry[],
+    ): RequestSourceCatalogEntry[] => {
+      const runtimeAvailable = new Set(
+        this.collectorsFactory
+          .getRuntimeAvailableSourceKeys()
+          .map((key) => key.trim().toLocaleLowerCase()),
+      );
+      return entries
+        .filter((entry) => runtimeAvailable.has(entry.key.toLocaleLowerCase()))
+        .map((entry) => ({ ...entry }));
+    };
+
     if (this.sourceCatalogCache && this.sourceCatalogCache.expiresAt > Date.now()) {
-      return this.sourceCatalogCache.value.map((entry) => ({ ...entry }));
+      return filterRuntimeAvailable(this.sourceCatalogCache.value);
     }
-    if (this.sourceCatalogInFlight) return this.sourceCatalogInFlight;
+
+    const fallback = this.buildRuntimeSourceCatalogFallback();
+    if (this.sourceCatalogInFlight) {
+      // Startup warmup may still be waiting on a saturated DB connection. The
+      // runtime collector registry already tells us which sources are usable,
+      // so never serialize PREPARING behind that metadata read.
+      return fallback;
+    }
 
     this.sourceCatalogInFlight = this.loadActiveSourceCatalogUncached()
       .then((value) => {
@@ -2006,10 +2755,46 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         };
         return value;
       })
+      .catch((error: unknown) => {
+        this.logger.debug(
+          `Source planning catalog refresh failed non-fatally; runtime collector metadata remains available. error=${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return fallback;
+      })
       .finally(() => {
         this.sourceCatalogInFlight = null;
       });
-    return this.sourceCatalogInFlight;
+
+    return fallback;
+  }
+
+  private buildRuntimeSourceCatalogFallback(): RequestSourceCatalogEntry[] {
+    const commentSources = new Set([
+      'reddit',
+      'forum',
+      'stackoverflow',
+      'youtube',
+      'app-store',
+      'google-play',
+      'dev-to',
+      'product-hunt',
+    ]);
+    return this.collectorsFactory.getRuntimeAvailableSourceKeys().map((rawKey) => {
+      const key = rawKey.trim().toLocaleLowerCase();
+      return {
+        key,
+        displayName: rawKey,
+        description: this.describeSourceForPlanning(key, ''),
+        supportsPosts: true,
+        supportsComments: commentSources.has(key),
+        supportsRegion: ['reddit', 'news', 'gdelt', 'app-store', 'google-play'].includes(
+          key,
+        ),
+        supportsLanguage: true,
+      };
+    });
   }
 
   private async loadActiveSourceCatalogUncached(): Promise<RequestSourceCatalogEntry[]> {
@@ -2118,13 +2903,19 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const activeKeys = sourceCatalog.map((source) => source.key);
     const active = new Set(activeKeys);
     const existing = this.normalizeSourceKeys(plan.selectedSourceKeys, active);
+    const nicheCraft = RequestNicheCustomCraftUtil.resolve(description);
+    const nichePriority = nicheCraft
+      ? ['reddit', 'forum', 'news', 'crossref'].filter((key) => active.has(key))
+      : [];
     const selected = existing.length > 0
       ? existing.slice(0, 4)
-      : CanonicalRequestUnderstandingUtil.recommendSourceKeys(
-          description,
-          activeKeys,
-          4,
-        );
+      : nichePriority.length > 0
+        ? nichePriority.slice(0, 4)
+        : CanonicalRequestUnderstandingUtil.recommendSourceKeys(
+            description,
+            activeKeys,
+            4,
+          );
 
     const priority = selected.length > 0 ? selected : activeKeys.slice(0, 4);
     const allActive = this.deduplicatePhrases([...priority, ...activeKeys]);
@@ -2331,10 +3122,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     }
 
     if (
-      /\b(?:calligraphy artists?|calligraphers?|lettering artists?|custom stationery artists?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|commissions?|wording|lettering styles?|paper selections?|ink preferences?|dimensions?|reference examples?|revision requests?|approved versions?|delivery deadlines?|social media messages?|handwritten notes?)\b/u.test(normalized)
+      /\b(?:calligraphy artists?|calligraphers?|lettering artists?|custom stationery artists?|wedding invitation calligraphers?)\b/u.test(normalized) &&
+      /\b(?:custom orders?|commissions?|wedding invitations?|guest names?|spelling variations?|wording|lettering styles?|paper selections?|paper sizes?|ink preferences?|ink colors?|ink colours?|layout approvals?|envelope details?|revision requests?|approved versions?|approved specifications?|delivery deadlines?|customer messages?|handwritten notes?)\b/u.test(normalized)
     ) {
-      return 'Calligraphy Commission & Design Management';
+      return 'Custom Calligraphy & Wedding Stationery';
     }
 
     const nicheCraftDomainName = RequestNicheCustomCraftUtil.suggestedDomainName(normalized);
@@ -3131,16 +3922,18 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     }
 
     if (
-      /\b(?:calligraphy artists?|calligraphers?|lettering artists?|custom stationery artists?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|commissions?|wording|lettering styles?|paper selections?|ink preferences?|dimensions?|reference examples?|revision requests?|approved versions?|delivery deadlines?|social media messages?|handwritten notes?)\b/u.test(normalized)
+      /\b(?:calligraphy artists?|calligraphers?|lettering artists?|custom stationery artists?|wedding invitation calligraphers?)\b/u.test(normalized) &&
+      /\b(?:custom orders?|commissions?|wedding invitations?|guest names?|spelling variations?|wording|lettering styles?|paper selections?|paper sizes?|ink preferences?|ink colors?|ink colours?|dimensions?|layout approvals?|envelope details?|revision requests?|approved versions?|approved specifications?|delivery deadlines?|social media messages?|customer messages?|handwritten notes?|misspelled names?|wasted stationery|repeated work)\b/u.test(normalized)
     ) {
       return [
-        'calligraphy commission wrong wording missed revision client',
-        'calligrapher custom order approved version tracking problem',
-        'custom stationery artist client revisions scattered messages',
-        'art commission latest approved design version mistake rework',
-        'commissioned artist client instructions lost dm notes deadline',
-        'custom lettering paper ink waste outdated design revision',
+        'wedding calligrapher misspelled guest name invitation remake',
+        'custom wedding invitation client proof approval revision',
+        'envelope calligraphy wrong guest name spelling redo',
+        'wedding stationery paper size ink color client changes rework',
+        'custom invitation lettering style layout approval mistake',
+        'calligraphy commission guest list changes deadline rework',
+        'wedding invitation personalization error wasted stationery',
+        'calligrapher customer messages final approved specification',
       ];
     }
 
@@ -4559,9 +5352,11 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     if (!description.trim()) return [...queries];
 
     /*
-     * Text-bearing retrieval is AI-owned. This gate is intentionally generic:
-     * it rejects only ungrounded concept drift and malformed/meta queries.
-     * Domain-specific templates are not allowed to rewrite the AI plan.
+     * Text-bearing retrieval is AI-owned, but provider output still has to be
+     * a natural search string.  Normalize incomplete clause tails before the
+     * provenance gate so fragments such as "... determine sensitive has" do
+     * not become literal collector queries.  This is syntax cleanup only; it
+     * never substitutes a domain template or changes requester intent.
      */
     const actorTokens = this.semanticTokens(
       RequestDynamicQueryUtil.extractActor(description),
@@ -4570,54 +5365,107 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       description,
     );
 
-    return queries.filter((query) => {
-      const normalized = query.replace(/\s+/gu, ' ').trim();
-      if (!normalized) return false;
-      if (
-        !RequestQueryProvenanceUtil.isQueryGrounded({
-          requestDescription: description,
-          query: normalized,
-        })
-      ) {
-        return false;
-      }
+    return queries
+      .map((query) => this.normalizeAiSearchQuery(query))
+      .filter((query): query is string => Boolean(query))
+      .filter((normalized) => {
+        if (
+          !RequestQueryProvenanceUtil.isQueryGrounded({
+            requestDescription: description,
+            query: normalized,
+          })
+        ) {
+          return false;
+        }
 
-      const words = normalized.split(/\s+/u).filter(Boolean);
-      if (words.length < 3 || words.length > 9) return false;
-      if (
-        /^(?:find|search for|look for|evidence of|examples? of|reports? about|complaints? about)\b/iu.test(
-          normalized,
-        )
-      ) {
-        return false;
-      }
-      if (
-        /^(?:delayed?|higher|lower|inaccurate|inefficient|unnecessary|poor|wrong|missed?|separate(?:ly)?|scattered|fragmented|repeated)\b/iu.test(normalized) &&
-        words.length <= 5
-      ) {
-        return false;
-      }
+        const words = normalized.split(/\s+/u).filter(Boolean);
+        if (words.length < 3 || words.length > 9) return false;
+        if (
+          /^(?:find|search for|look for|evidence of|examples? of|reports? about|complaints? about)\b/iu.test(
+            normalized,
+          )
+        ) {
+          return false;
+        }
+        if (
+          /^(?:delayed?|higher|lower|inaccurate|inefficient|unnecessary|poor|wrong|missed?|separate(?:ly)?|scattered|fragmented|repeated)\b/iu.test(normalized) &&
+          words.length <= 5
+        ) {
+          return false;
+        }
+        if (
+          /\b(?:verify|determine|manage|track|handle|confirm)\s+(?:disputed|sensitive|altered|incorrect|missing|unauthorized|changed)$/iu.test(
+            normalized,
+          )
+        ) {
+          return false;
+        }
+        if (
+          words.length >= 7 &&
+          /\b(?:scattered|fragmented|repeated|delayed|inconsistent|incorrect|wrong|missing|unauthorized|changed)$/iu.test(normalized)
+        ) {
+          return false;
+        }
 
-      const queryTokens = this.semanticTokens(normalized);
-      const actorOverlap = [...actorTokens].filter((token) =>
-        queryTokens.has(token),
-      ).length;
-      const identityOverlap = identityTerms.filter((term) =>
-        queryTokens.has(term),
-      ).length;
-      /*
-       * A first-pass query must retain a distinctive requester identity. This
-       * prevents generic fragments such as "payment customer account refund"
-       * from drifting into banking/tax evidence when the actor is a restaurant
-       * chain, while still allowing short synonym-rich queries that keep two
-       * distinctive object/workflow terms.
-       */
-      if (actorOverlap < 1 && identityOverlap < 2) {
-        return false;
-      }
+        const queryTokens = this.semanticTokens(normalized);
+        const actorOverlap = [...actorTokens].filter((token) =>
+          queryTokens.has(token),
+        ).length;
+        const identityOverlap = identityTerms.filter((term) =>
+          queryTokens.has(term),
+        ).length;
+        /*
+         * A first-pass query must retain a distinctive requester identity. This
+         * prevents generic fragments such as "payment customer account refund"
+         * from drifting into banking/tax evidence when the actor is a restaurant
+         * chain, while still allowing short synonym-rich queries that keep two
+         * distinctive object/workflow terms.
+         */
+        if (actorOverlap < 1 && identityOverlap < 2) {
+          return false;
+        }
 
+        return true;
+      });
+  }
+
+  private normalizeAiSearchQuery(value: string): string | null {
+    let query = value
+      .normalize('NFKC')
+      .replace(/[\r\n\t]+/gu, ' ')
+      .replace(/[“”"'`]+/gu, '')
+      .replace(/\s+/gu, ' ')
+      .replace(/^[\s|,:;.-]+|[\s|,:;.-]+$/gu, '')
+      .trim();
+    if (!query) return null;
+
+    query = query
+      .replace(
+        /\s+\b(?:determine|determining)\s+(?:whether\s+)?[^,;]{0,80}$/iu,
+        '',
+      )
+      .replace(
+        /\s+\b(?:whether)\s+[^,;]{0,80}$/iu,
+        '',
+      )
+      .replace(
+        /\s+\b(?:has|have|had|is|are|was|were|be|been|being|do|does|did|can|could|should|would|may|might|must)$/iu,
+        '',
+      )
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    const words = query.split(/\s+/u).filter(Boolean);
+    const seenContentWords = new Set<string>();
+    const deduplicatedWords = words.filter((word) => {
+      const key = word.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+      if (key.length < 4) return true;
+      if (seenContentWords.has(key)) return false;
+      seenContentWords.add(key);
       return true;
     });
+    if (deduplicatedWords.length < 3) return null;
+    return deduplicatedWords.slice(0, 9).join(' ');
   }
 
   private queryPreservesSpecializedRequestIntent(
@@ -4826,6 +5674,39 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     ).slice(0, maxItems);
   }
 
+  private normalizeRequestIntent(
+    value: unknown,
+    description: string,
+  ): RequestIntentInterpretation {
+    const record = this.isRecord(value) ? value : {};
+    const modeRaw = typeof record.mode === 'string'
+      ? record.mode.trim().toLocaleUpperCase()
+      : '';
+    const summaryRaw = typeof record.summary === 'string'
+      ? record.summary.replace(/\s+/gu, ' ').trim().slice(0, 360)
+      : '';
+    const explicitProblemRaw = typeof record.explicitProblem === 'string'
+      ? record.explicitProblem.replace(/\s+/gu, ' ').trim().slice(0, 600)
+      : '';
+    const desiredOutcomeRaw = typeof record.desiredOutcome === 'string'
+      ? record.desiredOutcome.replace(/\s+/gu, ' ').trim().slice(0, 360)
+      : '';
+    const explicitProblem = explicitProblemRaw &&
+      RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, explicitProblemRaw)
+      ? explicitProblemRaw
+      : null;
+    const mode = modeRaw === 'EXPLICIT_PROBLEM' && explicitProblem
+      ? 'EXPLICIT_PROBLEM'
+      : 'DISCOVERY_INTENT';
+
+    return {
+      mode,
+      summary: summaryRaw || description.slice(0, 360),
+      explicitProblem: mode === 'EXPLICIT_PROBLEM' ? explicitProblem : null,
+      desiredOutcome: desiredOutcomeRaw || null,
+    };
+  }
+
   private normalizeProblemProfile(
     value: unknown,
     description: string,
@@ -4975,6 +5856,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   private normalizeDomainIdentity(
     value: unknown,
     description: string,
+    allowEmptyFailure = false,
   ): RequestCollectionDomainIdentity {
     const record = this.isRecord(value) ? value : {};
     const read = (key: string): string => {
@@ -4988,7 +5870,11 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       actor: read('actor'),
       object: read('object'),
       workflow: read('workflow'),
-      failure: read('failure'),
+      failure:
+        allowEmptyFailure &&
+        (!this.isRecord(value) || typeof (value as Record<string, unknown>).failure !== 'string' || !(value as Record<string, unknown>).failure)
+          ? ''
+          : read('failure'),
     };
   }
 
@@ -5143,6 +6029,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       /\b(?:complaints?|residents?|tenants?|customers?|clients?|patients?|passengers?|workers?|staff|operators?|specialists?|practitioners?|collectors?|performers?|restaurants?|kitchens?|facilities?|facility teams?|maintenance teams?|technicians?)\b/u.test(normalizedDescription) &&
       /\b(?:delay|delayed|missing|wrong|incorrect|repeated|rework|struggle|difficult|complaint|failure|failed|fault|breakdown|downtime|spoilage|fragmented|scattered|separate systems?|maintenance|repair|inspection|approval|preference|alert|temperature)\w*\b/u.test(normalizedDescription);
     const researchOnly = /\b(?:assay|molecular|genome|protein sequence|theorem|particle physics|pure mathematics)\b/u.test(normalizedDescription);
+
     const resolveTier = (
       sourceKey: string,
     ): 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE' => {
@@ -5165,89 +6052,128 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       const value = query.toLocaleLowerCase();
       let score = 0;
       if (sourceKey === 'reddit' || sourceKey === 'forum') {
-        if (/\b(?:struggle|missing|lost|wrong|failed|problem|issue|delay|rework|customer|client|handoff|scattered|unauthorized|fraud)\w*\b/u.test(value)) score += 4;
-        if (/\b(?:specialist|practitioner|operator|manager|warehouse|restorer|conservator|therapist|driver)\w*\b/u.test(value)) score += 2;
+        if (/\b(?:struggle|missing|lost|wrong|failed|problem|issue|delay|rework|customer|client|handoff|scattered|unauthorized|fraud|waste|maintenance)\w*\b/u.test(value)) score += 4;
+        if (/\b(?:specialist|practitioner|operator|manager|warehouse|restorer|conservator|therapist|driver|hospital|facility)\w*\b/u.test(value)) score += 2;
       } else if (sourceKey === 'crossref') {
-        if (/\b(?:assessment|management|monitoring|records?|documentation|analysis|detection|conservation|rehabilitation|procurement|logistics)\w*\b/u.test(value)) score += 4;
+        if (/\b(?:assessment|management|monitoring|records?|documentation|analysis|detection|conservation|rehabilitation|procurement|logistics|energy|maintenance|efficiency)\w*\b/u.test(value)) score += 4;
       } else if (sourceKey === 'news' || sourceKey === 'gdelt') {
-        if (/\b(?:fraud|theft|stolen|missing|unauthorized|incident|delay|investigation|risk|failure|loss|oversight)\w*\b/u.test(value)) score += 4;
+        if (/\b(?:fraud|theft|stolen|missing|unauthorized|incident|delay|investigation|risk|failure|loss|oversight|waste|cost|maintenance|energy)\w*\b/u.test(value)) score += 4;
       } else if (sourceKey === 'youtube' || sourceKey === 'blog') {
-        if (/\b(?:repair|restoration|workflow|how|condition|diagnos|treatment|material|tracking|monitoring)\w*\b/u.test(value)) score += 3;
+        if (/\b(?:repair|restoration|workflow|condition|diagnos|treatment|material|tracking|monitoring|maintenance|energy)\w*\b/u.test(value)) score += 3;
       } else if (sourceKey === 'app-store' || sourceKey === 'google-play') {
-        // Store search needs product-discovery phrases, not long complaint
-        // sentences. Actor/object and workflow nouns therefore outrank generic
-        // consequences; the collector itself converts them to 2-3 word terms.
-        if (/\b(?:management|manager|monitor|tracking|scheduler|booking|inventory|billing|maintenance|energy|property|tenant|customer|client|delivery|security|tattoo|engraving|workflow)\w*\b/u.test(value)) score += 5;
+        if (/\b(?:management|manager|monitor|tracking|scheduler|booking|inventory|billing|maintenance|energy|property|tenant|customer|client|delivery|security|workflow)\w*\b/u.test(value)) score += 5;
         if (/\b(?:wrong|missing|delay|rework|error|problem|issue|approval|revision)\w*\b/u.test(value)) score += 1;
       }
       if (RequestQueryProvenanceUtil.isQueryGrounded({
         requestDescription: description,
         query,
       })) score += 3;
+      if (plannerPriorityKeys.has(sourceKey)) score += 2;
+      if (preferredKeys.has(sourceKey)) score += 2;
+      if (blockedKeys.has(sourceKey)) score -= 4;
       return score;
     };
 
-    return selectedSourceKeys.map((sourceKey, sourceIndex) => {
-      if (sourceKey === 'app-store' || sourceKey === 'google-play') {
-        const sourceTier = resolveTier(sourceKey);
-        const queries = SourceSpecificEvidenceQueryUtil.compile({
-          sourceKey,
-          baseQueries: normalizedQueries.slice(0, 2),
-          requestDescription: description,
-          problemProfile,
-          maxQueries: 2,
-          preserveBaseQueries: false,
-        });
-        return {
-          sourceKey,
-          queries: queries.length ? queries : normalizedQueries.slice(0, 2),
-          routingHints: [],
-          sourceTier,
-        };
-      }
-
-      const ranked = normalizedQueries
-        .map((query, queryIndex) => ({
-          query,
-          queryIndex,
-          score: scoreForSource(sourceKey, query),
-        }))
-        .sort((left, right) =>
-          right.score - left.score ||
-          ((left.queryIndex + sourceIndex) % normalizedQueries.length) -
-            ((right.queryIndex + sourceIndex) % normalizedQueries.length),
-        )
-        .map((entry) => entry.query);
-
+    const descriptors = selectedSourceKeys.map((sourceKey) => {
       const sourceTier = resolveTier(sourceKey);
-      const sourceQueryBudget =
-        sourceTier === 'PRIMARY' ? 3 : sourceTier === 'SECONDARY' ? 2 : 1;
-      const rankedQueries = this.deduplicateQueries([
-        ...ranked.slice(0, sourceQueryBudget),
-        normalizedQueries[(sourceIndex * 2) % normalizedQueries.length] ?? '',
-      ])
-        .filter(Boolean)
-        .slice(0, sourceQueryBudget);
-      const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
-        sourceKey,
-        baseQueries: rankedQueries,
-        requestDescription: description,
-        problemProfile,
-        maxQueries: sourceQueryBudget,
-        preserveBaseQueries: sourceTier !== 'MICRO_PROBE',
-      });
-      const queries = compiledQueries.length ? compiledQueries : rankedQueries;
-
       return {
         sourceKey,
-        queries,
         sourceTier,
-        routingHints:
-          sourceKey === 'forum'
-            ? this.resolveDeterministicForumRoutingHints(description).slice(0, 4)
-            : [],
-      };
-    }).filter((plan) => plan.queries.length > 0);
+        budget: sourceTier === 'PRIMARY' ? 3 : sourceTier === 'SECONDARY' ? 2 : 1,
+      } as const;
+    });
+
+    /*
+     * Coverage invariant: every PREPARING search query is executed by at least
+     * one collector whenever aggregate source capacity permits it. The old
+     * per-source ranking could silently omit the model's third/fourth query,
+     * making the persisted plan disagree with what actually reached sources.
+     */
+    const assignedCoverage = new Map<string, string[]>();
+    descriptors.forEach((descriptor) => assignedCoverage.set(descriptor.sourceKey, []));
+    for (const query of normalizedQueries) {
+      const candidates = descriptors
+        .filter((descriptor) =>
+          (assignedCoverage.get(descriptor.sourceKey)?.length ?? 0) < descriptor.budget,
+        )
+        // Review stores are product-discovery lanes; use them for guaranteed
+        // coverage only if ordinary community/research lanes are saturated.
+        .sort((left, right) => {
+          const leftStore = ['app-store', 'google-play'].includes(left.sourceKey) ? 1 : 0;
+          const rightStore = ['app-store', 'google-play'].includes(right.sourceKey) ? 1 : 0;
+          const tierWeight = (tier: typeof left.sourceTier): number =>
+            tier === 'PRIMARY' ? 8 : tier === 'SECONDARY' ? 4 : 0;
+          const leftLoad = assignedCoverage.get(left.sourceKey)?.length ?? 0;
+          const rightLoad = assignedCoverage.get(right.sourceKey)?.length ?? 0;
+          return (
+            tierWeight(right.sourceTier) +
+            scoreForSource(right.sourceKey, query) -
+            rightStore * 3 -
+            rightLoad * 2
+          ) - (
+            tierWeight(left.sourceTier) +
+            scoreForSource(left.sourceKey, query) -
+            leftStore * 3 -
+            leftLoad * 2
+          );
+        });
+      const selected = candidates[0];
+      if (!selected) break;
+      assignedCoverage.get(selected.sourceKey)?.push(query);
+    }
+
+    return descriptors
+      .map((descriptor, sourceIndex) => {
+        const { sourceKey, sourceTier, budget } = descriptor;
+        const ranked = normalizedQueries
+          .map((query, queryIndex) => ({
+            query,
+            queryIndex,
+            score: scoreForSource(sourceKey, query),
+          }))
+          .sort((left, right) =>
+            right.score - left.score ||
+            ((left.queryIndex + sourceIndex) % normalizedQueries.length) -
+              ((right.queryIndex + sourceIndex) % normalizedQueries.length),
+          )
+          .map((entry) => entry.query);
+
+        const guaranteedQueries = assignedCoverage.get(sourceKey) ?? [];
+        const rankedQueries = this.deduplicateQueries([
+          ...guaranteedQueries,
+          ...ranked,
+          normalizedQueries[(sourceIndex * 2) % normalizedQueries.length] ?? '',
+        ])
+          .filter(Boolean)
+          .slice(0, budget);
+
+        const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
+          sourceKey,
+          baseQueries: rankedQueries,
+          requestDescription: description,
+          problemProfile,
+          maxQueries: budget,
+          // Always preserve an assigned planner query. Source adaptation adds
+          // weaker supporting/broad variants; it never replaces the AI seed.
+          preserveBaseQueries: true,
+        });
+        const queries = this.deduplicateQueries([
+          ...guaranteedQueries,
+          ...compiledQueries,
+          ...rankedQueries,
+        ]).slice(0, budget);
+
+        return {
+          sourceKey,
+          queries,
+          sourceTier,
+          routingHints:
+            sourceKey === 'forum'
+              ? this.resolveDeterministicForumRoutingHints(description).slice(0, 4)
+              : [],
+        };
+      })
+      .filter((plan) => plan.queries.length > 0);
   }
 
   private normalizeSourcePlans(
