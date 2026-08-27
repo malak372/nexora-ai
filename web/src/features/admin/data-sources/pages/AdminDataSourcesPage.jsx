@@ -753,11 +753,44 @@ export default function AdminDataSourcesPage() {
   return (
     <div className="admin-page admin-ds-page">
       <section className="admin-hero admin-ds-hero">
-        <div className="admin-hero__eyebrow"><Database size={14} /> Collection infrastructure</div>
-        <h2>Data sources</h2>
-        <p>
-          Configure the external evidence sources used by the collection pipeline, control availability, and keep runtime collector state visible to administrators.
-        </p>
+        <div className="admin-ds-hero__copy">
+          <div className="admin-hero__eyebrow"><Database size={14} /> Collection infrastructure</div>
+          <h2>Data sources</h2>
+          <p>
+            Configure the external evidence sources used by the collection pipeline, control availability, and keep runtime collector state visible to administrators.
+          </p>
+        </div>
+
+        <div className="admin-ds-hero__visual" aria-hidden="true">
+          <span className="admin-ds-hero__grid" />
+          <span className="admin-ds-hero__orbit admin-ds-hero__orbit--one" />
+          <span className="admin-ds-hero__orbit admin-ds-hero__orbit--two" />
+
+          <div className="admin-ds-hero__signal-card admin-ds-hero__signal-card--chart">
+            <span><FileText size={18} /></span>
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+
+          <div className="admin-ds-hero__database-stack">
+            <span className="admin-ds-hero__database-top"><Database size={34} /></span>
+            <span className="admin-ds-hero__database-tier"><i /><b /></span>
+            <span className="admin-ds-hero__database-tier"><i /><b /></span>
+            <span className="admin-ds-hero__database-tier"><i /><b /></span>
+          </div>
+
+          <div className="admin-ds-hero__signal-card admin-ds-hero__signal-card--search"><Search size={24} /></div>
+          <div className="admin-ds-hero__signal-card admin-ds-hero__signal-card--shield"><ShieldCheck size={24} /></div>
+
+          <span className="admin-ds-hero__link admin-ds-hero__link--left" />
+          <span className="admin-ds-hero__link admin-ds-hero__link--right-top" />
+          <span className="admin-ds-hero__link admin-ds-hero__link--right-bottom" />
+          <span className="admin-ds-hero__node admin-ds-hero__node--one" />
+          <span className="admin-ds-hero__node admin-ds-hero__node--two" />
+          <span className="admin-ds-hero__node admin-ds-hero__node--three" />
+        </div>
       </section>
 
       <section className="admin-ds-panel">

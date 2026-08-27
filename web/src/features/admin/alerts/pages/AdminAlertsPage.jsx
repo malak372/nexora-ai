@@ -1,12 +1,3 @@
-/**
- * Administrator alerts and messaging workspace.
- *
- * Keeps the existing alert, recipient, filtering, history, inspection, and
- * sending logic while presenting notification and communication records as
- * responsive cards that match the Data Sources visual language.
- *
- * @author Eman
- */
 import {
   ArrowDown,
   ArrowUp,
@@ -1240,7 +1231,7 @@ export default function AdminAlertsPage() {
   return (
     <div className="admin-alert-page">
       <section className="admin-alert-hero">
-        <div>
+        <div className="admin-alert-hero__content">
           <span className="admin-alert-eyebrow"><BellRing size={16} /> PLATFORM COMMUNICATION</span>
           <h1>Alerts & messaging</h1>
           <p>Review notification activity and send targeted administrator communication by in-app alert, email, or both.</p>
@@ -1256,6 +1247,52 @@ export default function AdminAlertsPage() {
             <Send size={16} />
             Send alert
           </button>
+        </div>
+
+        <div className="admin-alert-hero__visual" aria-hidden="true">
+          <span className="admin-alert-hero__wave admin-alert-hero__wave--one" />
+          <span className="admin-alert-hero__wave admin-alert-hero__wave--two" />
+          <span className="admin-alert-hero__orbit admin-alert-hero__orbit--one" />
+          <span className="admin-alert-hero__orbit admin-alert-hero__orbit--two" />
+
+          <span className="admin-alert-hero__particle admin-alert-hero__particle--one" />
+          <span className="admin-alert-hero__particle admin-alert-hero__particle--two" />
+          <span className="admin-alert-hero__particle admin-alert-hero__particle--three" />
+          <span className="admin-alert-hero__particle admin-alert-hero__particle--four" />
+          <span className="admin-alert-hero__particle admin-alert-hero__particle--five" />
+
+          <div className="admin-alert-visual-card admin-alert-visual-card--message">
+            <MessageSquareText size={18} />
+            <span>
+              <i />
+              <i />
+            </span>
+          </div>
+
+          <div className="admin-alert-visual-card admin-alert-visual-card--mail">
+            <Mail size={24} />
+          </div>
+
+          <div className="admin-alert-visual-card admin-alert-visual-card--audience">
+            <UsersRound size={19} />
+            <span>
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+
+          <div className="admin-alert-visual-core">
+            <span className="admin-alert-visual-core__glow" />
+            <span className="admin-alert-visual-core__ring admin-alert-visual-core__ring--back" />
+            <span className="admin-alert-visual-core__bell"><BellRing size={44} /></span>
+            <span className="admin-alert-visual-core__ring admin-alert-visual-core__ring--front" />
+          </div>
+
+          <div className="admin-alert-visual-send">
+            <Send size={25} />
+          </div>
+
         </div>
       </section>
 

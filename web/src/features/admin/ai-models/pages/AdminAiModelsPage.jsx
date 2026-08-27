@@ -973,20 +973,55 @@ export default function AdminAiModelsPage() {
   return (
     <div className="admin-model-page">
       <section className="admin-model-hero">
-        <div>
-          <span className="admin-model-eyebrow"><BrainCircuit size={16} /> MODEL OPERATIONS</span>
-          <h1>AI model registry</h1>
+        <div className="admin-model-hero__content">
+          <span className="admin-model-eyebrow"><BrainCircuit size={15} /> MODEL OPERATIONS</span>
+          <h1>AI model <span>registry</span></h1>
           <p>Control provider models, routing priority, runtime capabilities and activation from one operational workspace.</p>
+
+          <div className="admin-model-hero__actions">
+            <button type="button" className="admin-model-button is-primary is-single-line" onClick={openCreate}>
+              <Plus size={17} />
+              Add model
+            </button>
+            <button type="button" className="admin-model-button is-quiet" onClick={refresh} disabled={refreshing}>
+              <RefreshCw className={refreshing ? 'admin-model-spin' : ''} size={16} />
+              Refresh registry
+            </button>
+          </div>
         </div>
-        <div className="admin-model-hero__actions">
-          <button type="button" className="admin-model-button is-quiet" onClick={refresh} disabled={refreshing}>
-            <RefreshCw className={refreshing ? 'admin-model-spin' : ''} size={16} />
-            Refresh
-          </button>
-          <button type="button" className="admin-model-button is-primary is-single-line" onClick={openCreate}>
-            <Plus size={17} />
-            Add model
-          </button>
+
+        <div className="admin-model-hero__scene" aria-hidden="true">
+          <span className="admin-model-scene-grid" />
+          <span className="admin-model-scene-orbit admin-model-scene-orbit--outer" />
+          <span className="admin-model-scene-orbit admin-model-scene-orbit--middle" />
+          <span className="admin-model-scene-orbit admin-model-scene-orbit--inner" />
+          <span className="admin-model-scene-line admin-model-scene-line--one" />
+          <span className="admin-model-scene-line admin-model-scene-line--two" />
+          <span className="admin-model-scene-node admin-model-scene-node--one" />
+          <span className="admin-model-scene-node admin-model-scene-node--two" />
+          <span className="admin-model-scene-node admin-model-scene-node--three" />
+          <span className="admin-model-scene-particle admin-model-scene-particle--one" />
+          <span className="admin-model-scene-particle admin-model-scene-particle--two" />
+          <span className="admin-model-scene-particle admin-model-scene-particle--three" />
+          <span className="admin-model-scene-particle admin-model-scene-particle--four" />
+
+          <span className="admin-model-scene-card admin-model-scene-card--route"><Gauge size={19} /></span>
+          <span className="admin-model-scene-card admin-model-scene-card--data"><DatabaseZap size={20} /></span>
+          <span className="admin-model-scene-card admin-model-scene-card--speed"><Zap size={18} /></span>
+
+          <div className="admin-model-core">
+            <span className="admin-model-core__halo admin-model-core__halo--outer" />
+            <span className="admin-model-core__halo admin-model-core__halo--inner" />
+            <span className="admin-model-core__base admin-model-core__base--bottom" />
+            <span className="admin-model-core__base admin-model-core__base--top" />
+            <span className="admin-model-core__chip">
+              <i className="admin-model-core__pins admin-model-core__pins--horizontal" />
+              <i className="admin-model-core__pins admin-model-core__pins--vertical" />
+              <span className="admin-model-core__chip-face">
+                <BrainCircuit size={53} strokeWidth={1.7} />
+              </span>
+            </span>
+          </div>
         </div>
       </section>
 
@@ -1006,6 +1041,13 @@ export default function AdminAiModelsPage() {
         </div>
       )}
 
+      <section className="admin-model-metrics" aria-label="AI model registry metrics">
+        <MetricCard icon={BrainCircuit} label="Total models" value={total} hint="Registered configurations" />
+        <MetricCard icon={Activity} label="Active" value={active} hint="Eligible for routing" tone="is-green" />
+        <MetricCard icon={Star} label="Default" value={defaultCount} hint="Default-first routing" tone="is-mint" />
+        <MetricCard icon={TriangleAlert} label="Needs attention" value={attention} hint="Degraded or unavailable" tone="is-rose" />
+      </section>
+
       <section className="admin-model-directory">
         <header className="admin-model-directory__header">
           <div>
@@ -1015,13 +1057,6 @@ export default function AdminAiModelsPage() {
           </div>
           <span className="admin-model-live"><i /> Runtime registry</span>
         </header>
-
-        <div className="admin-model-metrics">
-          <MetricCard icon={BrainCircuit} label="Total models" value={total} hint="Registered configurations" />
-          <MetricCard icon={Activity} label="Active" value={active} hint="Eligible for routing" tone="is-green" />
-          <MetricCard icon={Star} label="Default" value={defaultCount} hint="Default-first routing" tone="is-mint" />
-          <MetricCard icon={TriangleAlert} label="Needs attention" value={attention} hint="Degraded or unavailable" tone="is-rose" />
-        </div>
 
         <div className="admin-model-status-tabs">
           {STATUS_FILTERS.map((filter) => (

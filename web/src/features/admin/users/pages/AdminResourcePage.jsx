@@ -437,38 +437,6 @@ function UserAvatar({ user, name, className = 'admin-user-identity-cell__avatar'
   );
 }
 
-function UserSortHeader({ column, sortBy, sortOrder, onSort }) {
-  const field = USER_COLUMN_SORT_FIELD[column];
-  const active = field && sortBy === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
-
-  const label = {
-    identity: 'User',
-    accountStatus: 'Plan',
-    usage: 'Usage',
-    accountHealth: 'Account',
-    userType: 'Type',
-    createdAt: 'Joined',
-  }[column] || toReadableLabel(column);
-
-  if (!field) return <th>{label}</th>;
-
-  return (
-    <th aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button
-        type="button"
-        className={`admin-users-sort-head ${active ? 'is-active' : ''}`}
-        onClick={() => onSort(field)}
-        title={`Sort by ${label}`}
-      >
-        <span>{label}</span>
-        <Icon size={12} />
-      </button>
-    </th>
-  );
-}
-
-
 function AdminUserStatusPicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
   const current = USER_STATUS_OPTIONS.find((option) => option.key === value) || USER_STATUS_OPTIONS[0];
@@ -1115,13 +1083,47 @@ export default function AdminResourcePage({ section }) {
 
   return (
     <div className={`admin-page admin-resource-page ${section === 'users' ? 'admin-users-page' : ''}`}>
-      <section className="admin-hero">
-        <div className="admin-hero__eyebrow">
-          <Icon size={14} />
-          {config.eyebrow}
+      <section className={`admin-hero ${section === 'users' ? 'admin-hero--users' : ''}`}>
+        <div className={section === 'users' ? 'admin-users-hero__copy' : undefined}>
+          <div className="admin-hero__eyebrow">
+            <Icon size={14} />
+            {config.eyebrow}
+          </div>
+          <h2>{config.title}</h2>
+          <p>{config.description}</p>
+          {section === 'users' && (
+            <span className="admin-users-hero__rule" aria-hidden="true">
+              <i />
+              <i />
+            </span>
+          )}
         </div>
-        <h2>{config.title}</h2>
-        <p>{config.description}</p>
+
+        {section === 'users' && (
+          <div className="admin-users-hero__visual" aria-hidden="true">
+            <span className="admin-users-hero__orbit admin-users-hero__orbit--one" />
+            <span className="admin-users-hero__orbit admin-users-hero__orbit--two" />
+            <span className="admin-users-hero__node admin-users-hero__node--one"><UserCheck size={18} /></span>
+            <span className="admin-users-hero__node admin-users-hero__node--two"><UsersRound size={17} /></span>
+            <span className="admin-users-hero__node admin-users-hero__node--three"><BadgeCheck size={16} /></span>
+
+            <div className="admin-users-hero__directory-card">
+              <span className="admin-users-hero__directory-row">
+                <span><UserCheck size={15} /></span><i /><i />
+              </span>
+              <span className="admin-users-hero__directory-row">
+                <span><UsersRound size={15} /></span><i /><i />
+              </span>
+              <span className="admin-users-hero__directory-row">
+                <span><BadgeCheck size={15} /></span><i /><i />
+              </span>
+            </div>
+
+            <span className="admin-users-hero__profile"><UsersRound size={34} /></span>
+            <span className="admin-users-hero__shield"><ShieldCheck size={25} /></span>
+            <span className="admin-users-hero__platform" />
+          </div>
+        )}
       </section>
 
       <section className={`admin-panel ${section === 'users' ? 'admin-panel--users' : ''}`}>
@@ -1156,30 +1158,62 @@ export default function AdminResourcePage({ section }) {
         {!loading && !error && stats.length > 0 && (
           <div className={section === 'users' ? 'admin-user-overview' : 'admin-resource-stats'}>
             <div className={section === 'users' ? 'admin-user-overview__primary' : 'admin-stat-grid'}>
-              {stats.slice(0, 4).map((stat, index) => (
-                section === 'users' ? (
+              {stats.slice(0, 4).map((stat, index) => {
+                if (section !== 'users') {
+                  return (
+                    <article className="admin-stat" key={stat.label}>
+                      <span className="admin-stat__icon"><Icon size={18} /></span>
+                      <strong>{Number(stat.value || 0).toLocaleString()}</strong>
+                      <small>{stat.label}</small>
+                    </article>
+                  );
+                }
+
+                const label = String(stat.label || '');
+                const inactive = /inactive|deleted|blocked|banned/i.test(label);
+                const active = !inactive && /active/i.test(label);
+                const verified = /verified/i.test(label);
+                const premium = /premium/i.test(label);
+                const tone = inactive
+                  ? 'inactive'
+                  : active
+                    ? 'active'
+                    : verified
+                      ? 'verified'
+                      : premium
+                        ? 'premium'
+                        : 'total';
+
+                return (
                   <article
-                    className={`admin-user-stat ${index === 0 ? 'is-featured' : ''} ${/premium/i.test(stat.label) ? 'admin-user-stat--premium' : ''} ${/verified/i.test(stat.label) ? 'admin-user-stat--verified' : ''}`}
+                    className={`admin-user-stat admin-user-stat--${tone} ${index === 0 ? 'is-featured' : ''}`}
                     key={stat.label}
                   >
-                    <i />
+                    <span className="admin-user-stat__glow" aria-hidden="true" />
                     <span className="admin-user-stat__icon">
-                      {index === 0 ? <UsersRound size={20} /> : index === 1 ? <UserCheck size={20} /> : index === 2 ? <BadgeCheck size={20} /> : <Sparkles size={20} />}
+                      {inactive
+                        ? <Ban size={22} />
+                        : active
+                          ? <UserCheck size={22} />
+                          : verified
+                            ? <ShieldCheck size={22} />
+                            : premium
+                              ? <Crown size={22} />
+                              : <UsersRound size={22} />}
                     </span>
                     <span className="admin-user-stat__copy">
                       <small>{stat.label}</small>
                       <strong>{Number(stat.value || 0).toLocaleString()}</strong>
                       <span>Current platform snapshot</span>
                     </span>
+                    <span className="admin-user-stat__signal" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
                   </article>
-                ) : (
-                  <article className="admin-stat" key={stat.label}>
-                    <span className="admin-stat__icon"><Icon size={18} /></span>
-                    <strong>{Number(stat.value || 0).toLocaleString()}</strong>
-                    <small>{stat.label}</small>
-                  </article>
-                )
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1262,37 +1296,112 @@ export default function AdminResourcePage({ section }) {
           <EmptyState search={search} />
         ) : !error ? (
           <>
-            <div className="admin-table-wrap">
-              <table className={`admin-table ${section === 'users' ? 'admin-users-compact-table' : ''}`}>
-                <thead>
-                  <tr>
-                    {columns.map((column) => (
-                      section === 'users'
-                        ? <UserSortHeader key={column} column={column} sortBy={userSortBy} sortOrder={userSortOrder} onSort={applyUserSort} />
-                        : <th key={column}>{toReadableLabel(column)}</th>
-                    ))}
-                    {section === 'users' && <th className="admin-users-actions-head">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((item, index) => {
-                    const rowId = item?.id || item?.userId || item?.ideaId || item?.paymentId || `${page}-${index}`;
+            {section === 'users' ? (
+              <div className="admin-users-cards-shell">
+                <div className="admin-users-card-sortbar" aria-label="User sorting controls">
+                  {columns.map((column) => {
+                    const field = USER_COLUMN_SORT_FIELD[column];
+                    const active = Boolean(field && userSortBy === field);
+                    const SortIcon = !active ? ArrowUpDown : userSortOrder === 'asc' ? ArrowUp : ArrowDown;
+                    const label = {
+                      identity: 'User',
+                      accountStatus: 'Plan',
+                      usage: 'Usage',
+                      accountHealth: 'Account',
+                      userType: 'Type',
+                      createdAt: 'Joined',
+                    }[column] || toReadableLabel(column);
+
                     return (
-                      <tr key={rowId} onClick={() => section === 'users' ? openUserModal(item, 'view') : setSelected(item)}>
-                        {columns.map((column) => (
-                          <td key={`${rowId}-${column}`}>
-                            {section === 'users'
-                              ? renderUserCell(item, column)
-                              : <CellValue value={item?.[column]} column={column} />}
-                          </td>
-                        ))}
-                        {section === 'users' && <td>{renderUserActions(item)}</td>}
-                      </tr>
+                      <button
+                        type="button"
+                        key={column}
+                        className={`admin-users-card-sortbar__item ${active ? 'is-active' : ''}`}
+                        onClick={() => field && applyUserSort(field)}
+                        disabled={!field}
+                        aria-pressed={active}
+                        title={field ? `Sort by ${label}` : label}
+                      >
+                        <span>{label}</span>
+                        {field ? <SortIcon size={12} /> : null}
+                      </button>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                  <span className="admin-users-card-sortbar__item admin-users-card-sortbar__item--actions">Actions</span>
+                </div>
+
+                <div className="admin-users-card-grid">
+                  {rows.map((item, index) => {
+                    const rowId = item?.id || item?.userId || `${page}-${index}`;
+                    return (
+                      <article
+                        key={rowId}
+                        className="admin-user-directory-card"
+                        onClick={() => openUserModal(item, 'view')}
+                      >
+                        <div className="admin-user-directory-card__profile">
+                          {renderUserCell(item, 'identity')}
+                          <span className="admin-user-directory-card__profile-chip">User profile</span>
+                        </div>
+
+                        <div className="admin-user-directory-card__details">
+                          <div className="admin-user-directory-card__detail">
+                            <span className="admin-user-directory-card__label">Plan</span>
+                            {renderUserCell(item, 'accountStatus')}
+                          </div>
+                          <div className="admin-user-directory-card__detail">
+                            <span className="admin-user-directory-card__label">Usage</span>
+                            {renderUserCell(item, 'usage')}
+                          </div>
+                          <div className="admin-user-directory-card__detail">
+                            <span className="admin-user-directory-card__label">Account</span>
+                            {renderUserCell(item, 'accountHealth')}
+                          </div>
+                          <div className="admin-user-directory-card__detail">
+                            <span className="admin-user-directory-card__label">Type</span>
+                            {renderUserCell(item, 'userType')}
+                          </div>
+                          <div className="admin-user-directory-card__detail">
+                            <span className="admin-user-directory-card__label">Joined</span>
+                            {renderUserCell(item, 'createdAt')}
+                          </div>
+                          <div className="admin-user-directory-card__detail admin-user-directory-card__detail--actions">
+                            <span className="admin-user-directory-card__label">Actions</span>
+                            {renderUserActions(item)}
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      {columns.map((column) => (
+                        <th key={column}>{toReadableLabel(column)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((item, index) => {
+                      const rowId = item?.id || item?.userId || item?.ideaId || item?.paymentId || `${page}-${index}`;
+                      return (
+                        <tr key={rowId} onClick={() => setSelected(item)}>
+                          {columns.map((column) => (
+                            <td key={`${rowId}-${column}`}>
+                              <CellValue value={item?.[column]} column={column} />
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <div className="admin-resource-pagination">
               <span>Page {meta.page} of {meta.totalPages}</span>

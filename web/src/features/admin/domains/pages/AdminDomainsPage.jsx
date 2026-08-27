@@ -672,9 +672,41 @@ export default function AdminDomainsPage() {
   return (
     <div className="admin-page admin-domain-page">
       <section className="admin-page-hero admin-domain-hero">
-        <span className="admin-page-hero__eyebrow"><Layers3 size={15} /> DISCOVERY CONFIGURATION</span>
-        <h2>Domains</h2>
-        <p>Manage the fields users can discover and generate ideas in, together with the vocabulary that guides evidence collection.</p>
+        <div className="admin-domain-hero__content">
+          <span className="admin-page-hero__eyebrow"><Layers3 size={15} /> DISCOVERY CONFIGURATION</span>
+          <h2>Domains</h2>
+          <p>Manage the fields users can discover and generate ideas in, together with the vocabulary that guides evidence collection.</p>
+        </div>
+
+        <div className="admin-domain-hero__visual" aria-hidden="true">
+          <span className="admin-domain-hero__orbit admin-domain-hero__orbit--one" />
+          <span className="admin-domain-hero__orbit admin-domain-hero__orbit--two" />
+          <span className="admin-domain-hero__dot admin-domain-hero__dot--one" />
+          <span className="admin-domain-hero__dot admin-domain-hero__dot--two" />
+          <span className="admin-domain-hero__dot admin-domain-hero__dot--three" />
+
+          <span className="admin-domain-hero__node admin-domain-hero__node--tag"><Tag size={17} /></span>
+          <span className="admin-domain-hero__node admin-domain-hero__node--data"><Database size={18} /></span>
+          <span className="admin-domain-hero__node admin-domain-hero__node--spark"><Sparkles size={17} /></span>
+
+          <div className="admin-domain-hero__globe">
+            <span className="admin-domain-hero__globe-line admin-domain-hero__globe-line--v1" />
+            <span className="admin-domain-hero__globe-line admin-domain-hero__globe-line--v2" />
+            <span className="admin-domain-hero__globe-line admin-domain-hero__globe-line--h1" />
+            <span className="admin-domain-hero__globe-line admin-domain-hero__globe-line--h2" />
+          </div>
+
+          <div className="admin-domain-hero__search-lens"><Search size={26} /></div>
+
+          <div className="admin-domain-hero__directory-card">
+            <span className="admin-domain-hero__directory-icon"><FolderKanban size={18} /></span>
+            <span className="admin-domain-hero__directory-line is-wide" />
+            <span className="admin-domain-hero__directory-line" />
+            <span className="admin-domain-hero__directory-line is-short" />
+          </div>
+
+          <span className="admin-domain-hero__scan" />
+        </div>
       </section>
 
       <section className="admin-domain-panel">

@@ -14,7 +14,9 @@ import {
   FileText,
   Fingerprint,
   History,
+  Layers3,
   LoaderCircle,
+  LockKeyhole,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -413,14 +415,60 @@ function changeSummary(row) {
 function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
   return (
     <article className={`admin-audit-metric ${tone}`}>
-      <i aria-hidden="true" />
-      <span className="admin-audit-metric__icon"><Icon size={19} /></span>
-      <div>
+      <span className="admin-audit-metric__icon"><Icon size={20} /></span>
+      <div className="admin-audit-metric__copy">
         <small>{label}</small>
         <strong>{Number(value || 0).toLocaleString()}</strong>
         <span>{hint}</span>
       </div>
+      <span className="admin-audit-metric__signal" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
     </article>
+  );
+}
+
+function AuditHeroVisual({ totalLogs, adminActions, systemEvents, uniqueActors }) {
+  return (
+    <div className="admin-audit-hero-visual" aria-hidden="true">
+      <div className="admin-audit-hero-visual__mesh" />
+      <div className="admin-audit-hero-visual__path is-one" />
+      <div className="admin-audit-hero-visual__path is-two" />
+
+      <span className="admin-audit-orbit is-users"><UsersRound size={18} /></span>
+      <span className="admin-audit-orbit is-ledger"><FileText size={18} /></span>
+
+      <div className="admin-audit-ledger-stack">
+        <span className="admin-audit-ledger-stack__layer is-back" />
+        <span className="admin-audit-ledger-stack__layer is-middle" />
+        <span className="admin-audit-ledger-stack__layer is-front" />
+        <div className="admin-audit-ledger-stack__shield">
+          <ShieldCheck size={68} strokeWidth={1.65} />
+          <span><LockKeyhole size={23} strokeWidth={2.1} /></span>
+        </div>
+      </div>
+
+      <article className="admin-audit-float-card is-events">
+        <span>Tracked events</span>
+        <strong>{Number(totalLogs || 0).toLocaleString()}</strong>
+        <small><Activity size={12} /> Immutable activity ledger</small>
+      </article>
+
+      <article className="admin-audit-float-card is-integrity">
+        <span>Ledger integrity</span>
+        <strong>Verified</strong>
+        <small><Check size={13} /> Read-only · append-only</small>
+      </article>
+
+      <div className="admin-audit-hero-visual__stats">
+        <span><ShieldCheck size={13} /> {Number(adminActions || 0).toLocaleString()} admin</span>
+        <span><TerminalSquare size={13} /> {Number(systemEvents || 0).toLocaleString()} system</span>
+        <span><UsersRound size={13} /> {Number(uniqueActors || 0).toLocaleString()} actors</span>
+      </div>
+    </div>
   );
 }
 
@@ -808,23 +856,39 @@ export default function AdminAuditLogsPage() {
   return (
     <div className="admin-audit-page">
       <section className="admin-audit-hero">
-        <div>
+        <div className="admin-audit-hero__content">
           <span className="admin-audit-eyebrow"><ShieldCheck size={16} /> SECURITY & GOVERNANCE</span>
           <h1>Audit trail</h1>
-          <p>Trace privileged changes, user activity and internal system events with immutable before-and-after snapshots.</p>
+          <p>
+            Trace privileged changes, user activity and internal system events through a clear,
+            immutable history with before-and-after snapshots.
+          </p>
+
+          <div className="admin-audit-hero__actions">
+            <button type="button" className="admin-audit-button is-primary" onClick={refresh} disabled={refreshing}>
+              <RefreshCw className={refreshing ? 'admin-audit-spin' : ''} size={16} />
+              Refresh ledger
+            </button>
+
+            <button type="button" className="admin-audit-button is-quiet" onClick={exportCsv} disabled={exporting}>
+              {exporting ? <LoaderCircle className="admin-audit-spin" size={16} /> : <Download size={16} />}
+              Export CSV
+            </button>
+          </div>
+
+          <div className="admin-audit-hero__status">
+            <span><ShieldCheck size={14} /> Immutable ledger active</span>
+            <i />
+            <span><Layers3 size={14} /> Before-and-after snapshots protected</span>
+          </div>
         </div>
 
-        <div className="admin-audit-hero__actions">
-          <button type="button" className="admin-audit-button is-quiet" onClick={refresh} disabled={refreshing}>
-            <RefreshCw className={refreshing ? 'admin-audit-spin' : ''} size={16} />
-            Refresh
-          </button>
-
-          <button type="button" className="admin-audit-button is-primary" onClick={exportCsv} disabled={exporting}>
-            {exporting ? <LoaderCircle className="admin-audit-spin" size={16} /> : <Download size={16} />}
-            Export CSV
-          </button>
-        </div>
+        <AuditHeroVisual
+          totalLogs={totalLogs}
+          adminActions={adminActions}
+          systemEvents={systemEvents}
+          uniqueActors={uniqueActors}
+        />
       </section>
 
       {error && (
@@ -837,10 +901,13 @@ export default function AdminAuditLogsPage() {
 
       <section className="admin-audit-directory">
         <header className="admin-audit-directory__header">
-          <div>
-            <small>IMMUTABLE EVENT LEDGER</small>
-            <h2>Audit activity</h2>
-            <p>{meta.total.toLocaleString()} matching {meta.total === 1 ? 'record' : 'records'}</p>
+          <div className="admin-audit-directory__title">
+            <span className="admin-audit-directory__mark"><Activity size={19} /></span>
+            <div>
+              <small>IMMUTABLE EVENT LEDGER</small>
+              <h2>Audit activity</h2>
+              <p>{meta.total.toLocaleString()} matching {meta.total === 1 ? 'record' : 'records'} across the current filters.</p>
+            </div>
           </div>
 
           <span className="admin-audit-readonly">
@@ -852,8 +919,8 @@ export default function AdminAuditLogsPage() {
         <div className="admin-audit-metrics">
           <MetricCard icon={FileText} label="Total records" value={totalLogs} hint="Matching audit events" />
           <MetricCard icon={ShieldCheck} label="Admin actions" value={adminActions} hint="Privileged administrator events" tone="is-mint" />
-          <MetricCard icon={TerminalSquare} label="System events" value={systemEvents} hint="Events without a user actor" tone="is-gray" />
-          <MetricCard icon={UsersRound} label="Active actors" value={uniqueActors} hint="Distinct actors in this result set" />
+          <MetricCard icon={TerminalSquare} label="System events" value={systemEvents} hint="Events without a user actor" tone="is-rose" />
+          <MetricCard icon={UsersRound} label="Active actors" value={uniqueActors} hint="Distinct actors in this result set" tone="is-aqua" />
         </div>
 
         <div className="admin-audit-toolbar">
@@ -952,95 +1019,101 @@ export default function AdminAuditLogsPage() {
           </label>
         </div>
 
-        <div className="admin-audit-table-wrap">
+        <div className="admin-audit-feed-wrap">
           {loading ? (
-            <div className="admin-audit-table-state">
-              <LoaderCircle className="admin-audit-spin" size={24} />
+            <div className="admin-audit-feed-state">
+              <span className="admin-audit-feed-state__icon"><LoaderCircle className="admin-audit-spin" size={24} /></span>
               <strong>Loading audit history…</strong>
+              <span>Preparing the latest immutable event records.</span>
             </div>
           ) : rows.length === 0 ? (
-            <div className="admin-audit-table-state">
-              <History size={27} />
+            <div className="admin-audit-feed-state">
+              <span className="admin-audit-feed-state__icon"><History size={25} /></span>
               <strong>No audit events match these filters.</strong>
               <span>Try another action, target type, date range or search phrase.</span>
             </div>
           ) : (
-            <table className="admin-audit-table">
-              <thead>
-                <tr>
-                  <th>EVENT</th>
-                  <th>ACTOR</th>
-                  <th>TARGET</th>
-                  <th>CHANGE</th>
-                  <th>CREATED</th>
-                  <th className="is-actions">ACTIONS</th>
-                </tr>
-              </thead>
+            <div className="admin-audit-feed" role="list">
+              {rows.map((row) => {
+                const group = actionGroup(row.action);
+                const change = changeSummary(row);
+                const actorName = row.actor?.fullName || (row.actor ? 'Platform user' : 'Internal system');
+                const actorEmail = row.actor?.email || 'No actor account';
 
-              <tbody>
-                {rows.map((row) => {
-                  const group = actionGroup(row.action);
-                  const change = changeSummary(row);
+                return (
+                  <article className={`admin-audit-event-card is-${group}`} key={row.id} role="listitem">
+                    <div className="admin-audit-event-card__rail">
+                      <span className={`admin-audit-event__icon is-${group}`}>
+                        {group === 'system' ? <TerminalSquare size={18} /> : group === 'admin' ? <ShieldCheck size={18} /> : <UserRound size={18} />}
+                      </span>
+                      <i aria-hidden="true" />
+                    </div>
 
-                  return (
-                    <tr key={row.id}>
-                      <td>
-                        <div className="admin-audit-event">
-                          <span className={`admin-audit-event__icon is-${group}`}>
-                            {group === 'system' ? <TerminalSquare size={16} /> : <History size={16} />}
-                            <i aria-hidden="true" />
+                    <div className="admin-audit-event-card__body">
+                      <header className="admin-audit-event-card__header">
+                        <div className="admin-audit-event-card__title">
+                          <div>
+                            <span className={`admin-audit-event-type is-${group}`}>
+                              {group === 'admin' ? 'Administrator action' : group === 'user' ? 'User activity' : 'System event'}
+                            </span>
+                            <h3>{humanize(row.action)}</h3>
+                          </div>
+                          <span className={`admin-audit-target-badge is-${targetTone(row.targetType)}`}>
+                            {humanize(row.targetType)}
                           </span>
-
-                          <div>
-                            <strong title={humanize(row.action)}>{humanize(row.action)}</strong>
-                            <span>{group === 'admin' ? 'Administrator action' : group === 'user' ? 'User activity' : 'System pipeline event'}</span>
-                            <small>{row.id?.slice(0, 12)}…</small>
-                          </div>
                         </div>
-                      </td>
 
-                      <td>
-                        <div className="admin-audit-actor">
-                          <span>{row.actor ? String(row.actor.fullName || row.actor.email || 'U').charAt(0).toUpperCase() : 'S'}</span>
-                          <div>
-                            <strong>{row.actor?.fullName || (row.actor ? 'Platform user' : 'Internal system')}</strong>
-                            <small>{row.actor?.email || 'No actor account'}</small>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td>
-                        <div className="admin-audit-target">
-                          <span className={`is-${targetTone(row.targetType)}`}>{humanize(row.targetType)}</span>
-                          <small title={row.targetId || ''}>{row.targetId || 'No target ID'}</small>
-                        </div>
-                      </td>
-
-                      <td>
-                        <div className="admin-audit-change">
-                          <strong>{change.label}</strong>
-                          <span>{change.detail}</span>
-                        </div>
-                      </td>
-
-                      <td>
-                        <div className="admin-audit-created">
-                          <strong>{formatShortDate(row.createdAt)}</strong>
-                          <span><Clock3 size={11} /> {formatTime(row.createdAt)}</span>
-                        </div>
-                      </td>
-
-                      <td className="is-actions">
                         <button type="button" className="admin-audit-view" onClick={() => setSelectedRow(row)}>
                           <Eye size={15} />
-                          Inspect
+                          Inspect event
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </header>
+
+                      <div className="admin-audit-event-card__meta">
+                        <article>
+                          <span><UserRound size={15} /></span>
+                          <div>
+                            <small>Actor</small>
+                            <strong>{actorName}</strong>
+                            <p title={actorEmail}>{actorEmail}</p>
+                          </div>
+                        </article>
+
+                        <article>
+                          <span><Fingerprint size={15} /></span>
+                          <div>
+                            <small>Target ID</small>
+                            <strong>{row.targetId || 'No target ID'}</strong>
+                            <p>{humanize(row.targetType)}</p>
+                          </div>
+                        </article>
+
+                        <article>
+                          <span><Clock3 size={15} /></span>
+                          <div>
+                            <small>Created</small>
+                            <strong>{formatShortDate(row.createdAt)}</strong>
+                            <p>{formatTime(row.createdAt)}</p>
+                          </div>
+                        </article>
+                      </div>
+
+                      <div className="admin-audit-event-card__change">
+                        <span className="admin-audit-event-card__change-icon"><FileDiff size={16} /></span>
+                        <div>
+                          <small>State change</small>
+                          <strong>{change.label}</strong>
+                          <p>{change.detail}</p>
+                        </div>
+                        <span className="admin-audit-event-card__id" title={row.id || ''}>
+                          ID {row.id ? `${row.id.slice(0, 12)}…` : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           )}
         </div>
 

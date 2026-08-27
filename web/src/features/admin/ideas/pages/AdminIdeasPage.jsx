@@ -52,11 +52,6 @@ const FILTERS = [
 ];
 
 
-/**
- * Server-side sort options for the directory.
- * Sorting is applied by the backend before pagination, so the result is
- * correct across all records rather than only the currently visible page.
- */
 const SORT_OPTIONS = [
   { key: 'createdAt', label: 'Created date' },
   { key: 'title', label: 'Idea title' },
@@ -323,11 +318,6 @@ export default function AdminIdeasPage() {
   };
 
 
-  /**
-   * Changes the global directory ordering and resets pagination. Clicking the
-   * same table header toggles direction; clicking a new header starts with a
-   * natural order (newest-first for dates, A-Z for text).
-   */
   const applySort = (field) => {
     if (field === sortBy) {
       setSortOrder((value) => (value === 'asc' ? 'desc' : 'asc'));
@@ -580,12 +570,48 @@ export default function AdminIdeasPage() {
           </div>
         </div>
         <div className="admin-ideas-hero__visual" aria-hidden="true">
-          <div className="admin-ideas-orbit">
-            <span className="admin-ideas-orbit__ring" />
-            <span className="admin-ideas-orbit__ring admin-ideas-orbit__ring--two" />
-            <div><Lightbulb size={24} /><strong>{fmt(totalIdeas)}</strong><small>ideas</small></div>
-            <span className="admin-ideas-orbit__track admin-ideas-orbit__track--one"><i className="admin-ideas-orbit__node" /></span>
-            <span className="admin-ideas-orbit__track admin-ideas-orbit__track--two"><i className="admin-ideas-orbit__node" /></span>
+          <div className="admin-ideas-visual-stage">
+            <span className="admin-ideas-visual-stage__halo admin-ideas-visual-stage__halo--one" />
+            <span className="admin-ideas-visual-stage__halo admin-ideas-visual-stage__halo--two" />
+            <span className="admin-ideas-visual-stage__glow" />
+
+            <div className="admin-ideas-float-card admin-ideas-float-card--records">
+              <span><FileText size={15} /></span>
+              <div><small>Directory</small><strong>{fmt(meta.total)} records</strong></div>
+            </div>
+
+            <div className="admin-ideas-float-card admin-ideas-float-card--published">
+              <span><Globe2 size={15} /></span>
+              <div><small>Published</small><strong>{fmt(publishedIdeas)}</strong></div>
+            </div>
+
+            <div className="admin-ideas-float-card admin-ideas-float-card--locked">
+              <span><LockKeyhole size={15} /></span>
+              <div><small>Locked</small><strong>{fmt(lockedIdeas)}</strong></div>
+            </div>
+
+            <div className="admin-ideas-float-card admin-ideas-float-card--unlocked">
+              <span><Unlock size={15} /></span>
+              <div><small>Unlocked</small><strong>{fmt(unlockedIdeas)}</strong></div>
+            </div>
+
+            <div className="admin-ideas-orbit">
+              <span className="admin-ideas-orbit__ring" />
+              <span className="admin-ideas-orbit__ring admin-ideas-orbit__ring--two" />
+              <span className="admin-ideas-orbit__ring admin-ideas-orbit__ring--three" />
+              <div className="admin-ideas-orbit__core">
+                <span className="admin-ideas-orbit__bulb"><Lightbulb size={25} /></span>
+                <strong>{fmt(totalIdeas)}</strong>
+                <small>ideas</small>
+              </div>
+              <span className="admin-ideas-orbit__track admin-ideas-orbit__track--one"><i className="admin-ideas-orbit__node" /></span>
+              <span className="admin-ideas-orbit__track admin-ideas-orbit__track--two"><i className="admin-ideas-orbit__node" /></span>
+              <span className="admin-ideas-orbit__track admin-ideas-orbit__track--three"><i className="admin-ideas-orbit__node" /></span>
+            </div>
+
+            <div className="admin-ideas-stage-base">
+              <span />
+            </div>
           </div>
         </div>
       </section>

@@ -400,16 +400,43 @@ export default function AdminPublicationReportsPage() {
 
   return (
     <div className="admin-page admin-publication-reports-page">
-      <section className="admin-publication-reports-hero">
-        <div>
-          <span><ShieldCheck size={14} /> TRUST & SAFETY</span>
+      <section className="admin-publication-reports-hero admin-publication-reports-hero--document">
+        <div className="admin-publication-reports-hero__copy">
+          <span><ShieldCheck size={14} /> TRUST & SAFETY · REPORT DESK</span>
           <h2>Publication report center</h2>
-          <p>One moderation queue for reports raised against community publications.</p>
+          <p>Review each community report as a structured moderation file, complete the decision sections, then close the case with a traceable outcome.</p>
+          <div className="admin-report-template-legend">
+            <span><i /> Report details</span>
+            <span><i /> Parties & context</span>
+            <span><i /> Decision & record</span>
+          </div>
         </div>
-        <div className="admin-publication-reports-hero__pulse">
-          <Flag size={20} />
-          <strong>{summaryLoading ? '…' : Number(summaryValue.pendingReports || 0)}</strong>
-          <span>need review</span>
+
+        <div className="admin-report-template-preview" aria-hidden="true">
+          <div className="admin-report-template-preview__shadow" />
+          <div className="admin-report-template-preview__paper">
+            <header>
+              <span>VOXIDENCE</span>
+              <strong>PUBLICATION REPORT</strong>
+              <em>MODERATION COPY</em>
+            </header>
+            <div className="admin-report-template-preview__meta">
+              <div><small>CASE</small><b>Auto-filled</b></div>
+              <div><small>QUEUE</small><b>{summaryLoading ? '…' : `${Number(summaryValue.pendingReports || 0)} pending`}</b></div>
+            </div>
+            <div className="admin-report-template-preview__section">
+              <span>01 · REPORTED PUBLICATION</span>
+              <i /><i /><i className="is-short" />
+            </div>
+            <div className="admin-report-template-preview__section">
+              <span>02 · MODERATION DECISION</span>
+              <div className="admin-report-template-preview__checks"><b>✓</b><b /><b /></div>
+            </div>
+            <footer>
+              <span>Administrator review</span>
+              <strong>{summaryLoading ? '…' : Number(summaryValue.pendingReports || 0)} NEED REVIEW</strong>
+            </footer>
+          </div>
         </div>
       </section>
 
@@ -444,8 +471,8 @@ export default function AdminPublicationReportsPage() {
       <section className="admin-publication-reports-workspace">
         <header>
           <div>
-            <span>MODERATION QUEUE</span>
-            <h3>Reports</h3>
+            <span>REPORT REGISTER</span>
+            <h3>Moderation files</h3>
             <p>{meta.total} matching reports</p>
           </div>
           <button type="button" onClick={() => { void load({ quiet: true, fresh: true }); void loadSummary({ fresh: true }); }}>
@@ -630,7 +657,7 @@ export default function AdminPublicationReportsPage() {
           <aside className="admin-report-review-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <div>
-                <span><Flag size={14} /> REPORT REVIEW</span>
+                <span><Flag size={14} /> MODERATION REPORT · REVIEW COPY</span>
                 <h3>{selected?.publication?.publicTitle || 'Publication report'}</h3>
                 <p>{titleCase(selected.reason)} · submitted {formatDate(selected.createdAt)}</p>
               </div>

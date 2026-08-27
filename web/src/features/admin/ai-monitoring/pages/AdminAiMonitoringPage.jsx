@@ -169,12 +169,15 @@ function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
   return (
     <article className={`admin-ai-monitor-metric ${tone}`}>
       <i aria-hidden="true" />
-      <span className="admin-ai-monitor-metric__icon"><Icon size={19} /></span>
+      <span className="admin-ai-monitor-metric__icon"><Icon size={20} /></span>
       <div className="admin-ai-monitor-metric__copy">
         <small>{label}</small>
         <strong>{value}</strong>
         <span>{hint}</span>
       </div>
+      <span className="admin-ai-monitor-metric__spark" aria-hidden="true">
+        <i /><i /><i /><i /><i /><i />
+      </span>
     </article>
   );
 }
@@ -682,11 +685,74 @@ export default function AdminAiMonitoringPage() {
 
   return (
     <div className="admin-page admin-ai-monitor-page">
-      <section className="admin-hero admin-ai-monitor-hero">
-        <div className="admin-hero__eyebrow"><Activity size={14} /> Observability</div>
-        <h2>AI monitoring</h2>
-        <p>Trace provider attempts, retries, fallback decisions, latency and operational failures without exposing raw provider payloads.</p>
+      <section className="admin-ai-monitor-overview-hero">
+        <div className="admin-ai-monitor-overview-hero__content">
+          <div className="admin-ai-monitor-overview-topline">
+            <div className="admin-ai-monitor-overview-eyebrow"><Activity size={14} /> AI observability</div>
+            <span className="admin-ai-monitor-overview-live"><i /> Live diagnostics</span>
+          </div>
+          <h1>AI <span>monitoring</span></h1>
+          <p>Trace provider attempts, retries, fallback decisions, latency and operational failures without exposing raw provider payloads.</p>
+
+          <div className="admin-ai-monitor-overview-hero__actions">
+            <button
+              type="button"
+              className="admin-ai-monitor-overview-primary"
+              onClick={() => loadData({ fresh: true, quiet: true })}
+              disabled={refreshing}
+            >
+              <RefreshCw size={14} className={refreshing ? 'is-spinning' : ''} />
+              Refresh monitoring
+            </button>
+            <button
+              type="button"
+              className="admin-ai-monitor-overview-secondary"
+              onClick={handleExport}
+              disabled={refreshing}
+            >
+              <Download size={14} /> Export CSV
+            </button>
+          </div>
+        </div>
+
+        <div className="admin-ai-monitor-overview-scene" aria-hidden="true">
+          <span className="admin-ai-monitor-scene-grid" />
+          <span className="admin-ai-monitor-scene-orbit admin-ai-monitor-scene-orbit--outer" />
+          <span className="admin-ai-monitor-scene-orbit admin-ai-monitor-scene-orbit--middle" />
+          <span className="admin-ai-monitor-scene-orbit admin-ai-monitor-scene-orbit--inner" />
+          <span className="admin-ai-monitor-scene-line admin-ai-monitor-scene-line--one" />
+          <span className="admin-ai-monitor-scene-line admin-ai-monitor-scene-line--two" />
+          <span className="admin-ai-monitor-scene-line admin-ai-monitor-scene-line--three" />
+          <span className="admin-ai-monitor-scene-node admin-ai-monitor-scene-node--one" />
+          <span className="admin-ai-monitor-scene-node admin-ai-monitor-scene-node--two" />
+          <span className="admin-ai-monitor-scene-node admin-ai-monitor-scene-node--three" />
+          <span className="admin-ai-monitor-scene-particle admin-ai-monitor-scene-particle--one" />
+          <span className="admin-ai-monitor-scene-particle admin-ai-monitor-scene-particle--two" />
+          <span className="admin-ai-monitor-scene-particle admin-ai-monitor-scene-particle--three" />
+          <span className="admin-ai-monitor-scene-particle admin-ai-monitor-scene-particle--four" />
+
+          <span className="admin-ai-monitor-scene-card admin-ai-monitor-scene-card--provider"><ServerCog size={20} /></span>
+          <span className="admin-ai-monitor-scene-card admin-ai-monitor-scene-card--model"><Bot size={21} /></span>
+          <span className="admin-ai-monitor-scene-card admin-ai-monitor-scene-card--signal"><Zap size={20} /></span>
+
+          <div className="admin-ai-monitor-core">
+            <span className="admin-ai-monitor-core__orbit admin-ai-monitor-core__orbit--outer" />
+            <span className="admin-ai-monitor-core__orbit admin-ai-monitor-core__orbit--inner" />
+            <span className="admin-ai-monitor-core__plate"><Cpu size={48} /></span>
+            <span className="admin-ai-monitor-core__pulse" />
+          </div>
+
+          <div className="admin-ai-monitor-scene-platform admin-ai-monitor-scene-platform--one" />
+          <div className="admin-ai-monitor-scene-platform admin-ai-monitor-scene-platform--two" />
+        </div>
       </section>
+
+      <div className="admin-ai-monitor-metrics admin-ai-monitor-metrics--overview">
+        <MetricCard icon={Activity} label="Total requests" value={number(summary?.totalRequests)} hint="Matching provider attempts" tone="is-primary" />
+        <MetricCard icon={CheckCircle2} label="Success rate" value={`${successRate.toFixed(1)}%`} hint={`${number(summary?.successfulRequests)} successful`} tone="is-success" />
+        <MetricCard icon={CircleAlert} label="Failed requests" value={number(summary?.failedRequests)} hint={`${number(summary?.retryableFailures)} retryable`} tone="is-failed" />
+        <MetricCard icon={Timer} label="Average latency" value={`${number(avgLatency)} ms`} hint={`${money(summary?.totalCost)} estimated cost`} tone="is-latency" />
+      </div>
 
       {error && <div className="admin-error">{error}</div>}
 
@@ -698,22 +764,10 @@ export default function AdminAiMonitoringPage() {
             <p>{number(meta.total)} matching request attempts</p>
           </div>
           <div className="admin-ai-monitor-panel__actions">
-            <span className="admin-ai-monitor-live"><i /> Live diagnostics</span>
-            <button type="button" className="admin-ai-monitor-action" onClick={() => loadData({ fresh: true, quiet: true })} disabled={refreshing}>
-              <RefreshCw size={14} className={refreshing ? 'is-spinning' : ''} /> Refresh
-            </button>
-            <button type="button" className="admin-ai-monitor-action" onClick={handleExport} disabled={refreshing}>
-              <Download size={14} /> Export CSV
-            </button>
+            <span className="admin-ai-monitor-panel__scope"><Activity size={13} /> {number(meta.total)} attempts in scope</span>
           </div>
         </header>
 
-        <div className="admin-ai-monitor-metrics">
-          <MetricCard icon={Activity} label="Total requests" value={number(summary?.totalRequests)} hint="Matching provider attempts" tone="is-primary" />
-          <MetricCard icon={CheckCircle2} label="Success rate" value={`${successRate.toFixed(1)}%`} hint={`${number(summary?.successfulRequests)} successful`} tone="is-success" />
-          <MetricCard icon={CircleAlert} label="Failed requests" value={number(summary?.failedRequests)} hint={`${number(summary?.retryableFailures)} retryable`} tone="is-failed" />
-          <MetricCard icon={Timer} label="Average latency" value={`${number(avgLatency)} ms`} hint={`${money(summary?.totalCost)} estimated cost`} tone="is-latency" />
-        </div>
 
         <div className="admin-ai-monitor-signal-strip">
           <span><RefreshCw size={13} /><strong>{number(summary?.retryableFailures)}</strong> retryable failures</span>
