@@ -2095,3 +2095,63 @@
   line-clamp: unset;
   -webkit-box-orient: initial;
 }
+
+/* Dark-mode source fix for Discover. Removes the light hero/card washes while
+   preserving the original light theme when vox-user-dark is absent. */
+html.vox-user-dark .discover-page,
+html.vox-user-dark .discover-controls,
+html.vox-user-dark .discover-section-title {
+  color: #f2f7f5 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .discover-head {
+  color: #f2f7f5 !important;
+  border-color: rgba(115, 208, 202, .19) !important;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(115, 208, 202, .09), transparent 28%),
+    linear-gradient(145deg, #1c2d27, #17251f) !important;
+  box-shadow: 0 18px 44px rgba(2, 10, 8, .18) !important;
+}
+
+html.vox-user-dark .discover-search,
+html.vox-user-dark .discover-sort,
+html.vox-user-dark .discover-sort__menu,
+html.vox-user-dark .discover-featured,
+html.vox-user-dark .discover-state,
+html.vox-user-dark .discovery-story,
+html.vox-user-dark .vox-discovery-card {
+  color: #f2f7f5 !important;
+  border-color: rgba(115, 208, 202, .19) !important;
+  background: linear-gradient(145deg, #1b2c26, #17251f) !important;
+  box-shadow: 0 16px 40px rgba(2, 10, 8, .16) !important;
+}
+
+html.vox-user-dark .discover-search input {
+  color: #f2f7f5 !important;
+  background: transparent !important;
+}
+
+/* Dark discovery actions must not become bright white strips. */
+html.vox-user-dark .discover-page :is(
+  .discovery-story__content > button,
+  .discover-featured__content > button
+) {
+  color: #ffffff !important;
+  border-color: rgba(104, 200, 195, .35) !important;
+  background: linear-gradient(135deg, #4faeaa, #338f8b) !important;
+  background-image: linear-gradient(135deg, #4faeaa, #338f8b) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .discover-page :is(
+  .discovery-story__metrics > span,
+  .discover-featured__metrics > strong
+) {
+  color: #dcebe7 !important;
+  border-color: rgba(104, 200, 195, .16) !important;
+  background: #20322b !important;
+  background-image: none !important;
+}

@@ -24,6 +24,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { getApiErrorMessage } from '../../shared/api/normalUserApi';
 import { getActiveGenerationRun } from '../../idea-generation/api/ideaGenerationApi';
 import { clearActiveGenerationRunId, saveActiveGenerationRunId } from '../../idea-generation/store/activeGenerationRun.storage';
@@ -46,6 +47,7 @@ const signalNodes = [
 export default function NormalDashboardPage() {
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
+  const { t } = useUserExperience();
   const [summary, setSummary] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -122,11 +124,11 @@ export default function NormalDashboardPage() {
   };
 
   if (isLoading) {
-    return <div className="normal-dashboard-state" role="status"><span className="normal-dashboard-spinner" /><strong>Preparing your Voxidence workspace...</strong></div>;
+    return <div className="normal-dashboard-state" role="status"><span className="normal-dashboard-spinner" /><strong>{t('Preparing your Voxidence workspace...')}</strong></div>;
   }
 
   if (error) {
-    return <div className="normal-dashboard-state"><h2>Workspace unavailable</h2><p>{error}</p><button className="normal-primary-button" type="button" onClick={() => loadSummary({ force: true })}><RefreshCw size={17} />Try again</button></div>;
+    return <div className="normal-dashboard-state"><h2>{t('Workspace unavailable')}</h2><p>{t(error)}</p><button className="normal-primary-button" type="button" onClick={() => loadSummary({ force: true })}><RefreshCw size={17} />{t('Try again')}</button></div>;
   }
 
   return (
@@ -134,17 +136,17 @@ export default function NormalDashboardPage() {
       <motion.section className="normal-dashboard-hero normal-dashboard-hero--core" {...reveal}>
         <div className="normal-dashboard-hero__mesh" aria-hidden="true" />
         <div className="normal-dashboard-hero__copy">
-          <span className="normal-eyebrow"><Sparkles size={14} />{isPremium ? 'Premium intelligence workspace' : 'Intelligent discovery workspace'}</span>
-          <h1>Welcome back, <span>{getFirstName(summary?.fullName)}.</span></h1>
-          <p>Describe a real need. Voxidence listens across communities, finds repeated evidence, compares multiple AI candidates, and returns one validated software direction.</p>
+          <span className="normal-eyebrow"><Sparkles size={14} />{t(isPremium ? 'Premium intelligence workspace' : 'Intelligent discovery workspace')}</span>
+          <h1>{t('Welcome back,')} <span>{getFirstName(summary?.fullName)}.</span></h1>
+          <p>{t('Describe a real need. Voxidence listens across communities, finds repeated evidence, compares multiple AI candidates, and returns one validated software direction.')}</p>
           <div className="normal-dashboard-hero__actions">
-            <motion.button className="normal-primary-button" type="button" onClick={() => navigate('/normal/generate')} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}><Rocket size={18} />Start discovering</motion.button>
-            <button className="normal-secondary-button" type="button" onClick={() => navigate('/normal/ideas')}>Open my ideas <ArrowRight size={17} /></button>
+            <motion.button className="normal-primary-button" type="button" onClick={() => navigate('/normal/generate')} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}><Rocket size={18} />{t('Start discovering')}</motion.button>
+            <button className="normal-secondary-button" type="button" onClick={() => navigate('/normal/ideas')}>{t('Open my ideas')} <ArrowRight size={17} /></button>
           </div>
-          <div className="normal-dashboard-hero__access"><strong>{accessMessage}</strong><span>{isPremium ? 'Each premium generation includes all advanced outputs immediately, plus contextual AI Chat for unlocked ideas.' : 'Review the result first. Direct payment appears only when you choose to unlock that specific idea.'}</span></div>
+          <div className="normal-dashboard-hero__access"><strong>{t(accessMessage)}</strong><span>{t(isPremium ? 'Each premium generation includes all advanced outputs immediately, plus contextual AI Chat for unlocked ideas.' : 'Review the result first. Direct payment appears only when you choose to unlock that specific idea.')}</span></div>
         </div>
 
-        <div className="normal-signal-core" aria-label="Animated Voxidence intelligence pipeline">
+        <div className="normal-signal-core" aria-label={t('Animated Voxidence intelligence pipeline')}>
           <motion.div className="normal-signal-core__ring normal-signal-core__ring--one" animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 24, ease: 'linear' }} />
           <motion.div className="normal-signal-core__ring normal-signal-core__ring--two" animate={{ rotate: -360 }} transition={{ repeat: Infinity, duration: 17, ease: 'linear' }} />
           <motion.div className="normal-signal-core__beam" animate={{ scaleY: [0.72, 1.12, 0.72], opacity: [0.35, 0.9, 0.35] }} transition={{ repeat: Infinity, duration: 3 }} />
@@ -153,12 +155,12 @@ export default function NormalDashboardPage() {
             <motion.div key={label} className={`normal-signal-core__node normal-signal-core__node--${index + 1}`} animate={{ y: [0, -7, 0], rotate: [0, index % 2 ? 3 : -3, 0] }} transition={{ repeat: Infinity, duration: 3.2 + index * 0.35, delay: index * 0.22 }} title={label}><Icon size={19} /></motion.div>
           ))}
           {Array.from({ length: 9 }, (_, index) => <motion.i key={index} style={{ '--i': index }} animate={{ opacity: [0.18, 0.85, 0.18], y: [0, -14, 0] }} transition={{ repeat: Infinity, duration: 2.5 + index * 0.1, delay: index * 0.14 }} />)}
-          <div className="normal-signal-core__counter"><strong>{isPremium ? creditBalance : freeGenerations}</strong><span>{isPremium ? 'premium credits' : 'free discoveries'}</span></div>
+          <div className="normal-signal-core__counter"><strong>{isPremium ? creditBalance : freeGenerations}</strong><span>{t(isPremium ? 'premium credits' : 'free discoveries')}</span></div>
         </div>
       </motion.section>
 
       <motion.section className="normal-dashboard-launch normal-dashboard-launch--v4" {...reveal}>
-        <div className="normal-dashboard-launch__heading"><span className="normal-eyebrow">AI discovery prompt</span><h2>What should Voxidence investigate?</h2><p>Type naturally or speak. Domain and evidence sources are resolved automatically by the backend.</p></div>
+        <div className="normal-dashboard-launch__heading"><span className="normal-eyebrow">{t('AI discovery prompt')}</span><h2>{t('What should Voxidence investigate?')}</h2><p>{t('Type naturally or speak. Domain and evidence sources are resolved automatically by the backend.')}</p></div>
         <IdeaLauncher compact />
       </motion.section>
 
@@ -166,10 +168,10 @@ export default function NormalDashboardPage() {
         className="normal-dashboard-metrics normal-dashboard-metrics--v4"
         {...metricsContainer}
       >
-        <motion.div {...metricItem}><MetricCard icon={Lightbulb} label="Ideas created" value={summary?.ideasCount ?? 0} helper="All generated idea workspaces" tone="violet" index="01" onClick={() => navigate('/normal/ideas')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={CheckCircle2} label="Validated ideas" value={summary?.validatedIdeasCount ?? summary?.ideasCount ?? 0} helper="Passed the Voxidence quality pipeline" tone="blue" index="02" onClick={() => navigate('/normal/ideas?status=validated')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={Heart} label="Favorite ideas" value={summary?.favoriteIdeasCount ?? 0} helper="Owned and accepted ideas you love" tone="mint" index="03" onClick={() => navigate('/normal/ideas?view=favorites')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={isPremium ? Coins : BookOpenCheck} label={isPremium ? "Premium credits" : "Published ideas"} value={isPremium ? creditBalance : (summary?.publishedIdeasCount ?? 0)} helper={isPremium ? "Credits available for complete idea generation" : "Ideas shared with the community"} tone="amber" index="04" onClick={() => navigate(isPremium ? '/normal/credits' : '/normal/published')} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={Lightbulb} label={t('Ideas created')} value={summary?.ideasCount ?? 0} helper={t('All generated idea workspaces')} tone="violet" index="01" onClick={() => navigate('/normal/ideas')} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={CheckCircle2} label={t('Validated ideas')} value={summary?.validatedIdeasCount ?? summary?.ideasCount ?? 0} helper={t('Passed the Voxidence quality pipeline')} tone="blue" index="02" onClick={() => navigate('/normal/ideas?status=validated')} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={Heart} label={t('Favorite ideas')} value={summary?.favoriteIdeasCount ?? 0} helper={t('Owned and accepted ideas you love')} tone="mint" index="03" onClick={() => navigate('/normal/ideas?view=favorites')} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={isPremium ? Coins : BookOpenCheck} label={t(isPremium ? 'Premium credits' : 'Published ideas')} value={isPremium ? creditBalance : (summary?.publishedIdeasCount ?? 0)} helper={t(isPremium ? 'Credits available for complete idea generation' : 'Ideas shared with the community')} tone="amber" index="04" onClick={() => navigate(isPremium ? '/normal/credits' : '/normal/published')} /></motion.div>
       </motion.section>
 
 
@@ -182,20 +184,20 @@ export default function NormalDashboardPage() {
         >
           <span className="normal-active-generation__icon"><Radio size={20} /></span>
           <span className="normal-active-generation__copy">
-            <small>Generation in progress</small>
-            <strong>{activeRun.currentStageLabel || activeRun.currentStageKey || 'Preparing your idea'}</strong>
-            <em><Clock3 size={14} />You can safely continue tracking this run</em>
+            <small>{t('Generation in progress')}</small>
+            <strong>{t(activeRun.currentStageLabel || activeRun.currentStageKey || 'Preparing your idea')}</strong>
+            <em><Clock3 size={14} />{t('You can safely continue tracking this run')}</em>
           </span>
           <span className="normal-active-generation__progress">
             <b>{Math.round(Number(activeRun.progressPercent ?? 0))}%</b>
             <i><span style={{ width: `${Math.max(0, Math.min(100, Number(activeRun.progressPercent ?? 0)))}%` }} /></i>
           </span>
-          <span className="normal-active-generation__action">Continue tracking <ArrowRight size={17} /></span>
+          <span className="normal-active-generation__action">{t('Continue tracking')} <ArrowRight size={17} /></span>
         </motion.button>
       ) : null}
 
       <motion.section className="normal-dashboard-latest" {...reveal}>
-        <div className="normal-section-heading"><div><span className="normal-eyebrow">Continue building</span><h2>Your latest workspace</h2></div><button className="normal-text-button" type="button" onClick={() => navigate('/normal/ideas')}>View all ideas <ArrowRight size={17} /></button></div>
+        <div className="normal-section-heading"><div><span className="normal-eyebrow">{t('Continue building')}</span><h2>{t('Your latest workspace')}</h2></div><button className="normal-text-button" type="button" onClick={() => navigate('/normal/ideas')}>{t('View all ideas')} <ArrowRight size={17} /></button></div>
         <LatestIdeaCard idea={summary?.latestIdea ?? null} />
         {isPremium && summary?.latestIdea?.isUnlocked ? (
           <button
@@ -214,7 +216,7 @@ export default function NormalDashboardPage() {
             }
           >
             <Bot size={17} />
-            Open AI Chat for this idea
+            {t('Open AI Chat for this idea')}
           </button>
         ) : null}
       </motion.section>

@@ -3766,7 +3766,7 @@ export class RequestVerticalConstraintUtil {
     if (!normalized) return false;
     if (
       constraint.excludedAnchors.some((anchor) =>
-        normalized.includes(this.normalize(anchor)),
+        this.containsNormalizedPhrase(normalized, anchor),
       )
     ) {
       return false;
@@ -3777,8 +3777,20 @@ export class RequestVerticalConstraintUtil {
       return publicIdentity && programOrBudgetIdentity;
     }
     return constraint.requiredAnchors.some((anchor) =>
-      normalized.includes(this.normalize(anchor)),
+      this.containsNormalizedPhrase(normalized, anchor),
     );
+  }
+
+  private static containsNormalizedPhrase(
+    normalizedValue: string,
+    rawAnchor: string,
+  ): boolean {
+    const anchor = this.normalize(rawAnchor);
+    if (!anchor) return false;
+    // normalize() collapses punctuation/whitespace. Adding spaces around both
+    // sides gives us a cheap phrase boundary so short craft identities such as
+    // "lace" cannot match unrelated words such as "palace".
+    return ` ${normalizedValue} `.includes(` ${anchor} `);
   }
 
   static matchesWorkflow(

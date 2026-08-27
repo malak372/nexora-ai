@@ -7,7 +7,7 @@
 
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
-import { IdeaGenerationType } from '@prisma/client';
+import { IdeaGenerationType, LanguageCode } from '@prisma/client';
 
 import { IDEA_GENERATION_ERROR_CODES } from '../../constants/idea-generation.constants';
 
@@ -146,44 +146,55 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const parsedOutput = this.outputParserService.parseOrThrow(rawOutput);
 
     /*
-     * Provider schemas can guarantee that problemStatement is a string, but
-     * they cannot reliably guarantee the application's readable portfolio
-     * grammar. Normalize an otherwise valid candidate before applying the
-     * strict business checks so a formatting miss does not discard the whole
-     * generation run.
+     * Narrative repair rules in this stage were historically authored for
+     * English. Running them over Arabic/French/etc. can inject English fallback
+     * sentences into an otherwise correct localized response. For non-English
+     * idea generation we therefore keep only the language-neutral entitlement
+     * projection here. The Core prompt/benchmark remains responsible for the
+     * semantic narrative, while structural tier validation still runs below.
      */
-    const normalizedNarrative = this.repairPublicHealthcareAccessGovernanceDrift(
-      context,
-      this.normalizeUnifiedIdeaNarrative(context, parsedOutput),
-    );
+    let normalizedOutput: ParsedIdeaAiOutput;
 
-    /*
-     * Providers occasionally return optional premium fields even when the
-     * active entitlement is free. This is a schema-adherence defect, not a
-     * reason to discard an otherwise valid idea. Apply a deterministic tier
-     * projection before strict validation so unauthorized fields are removed
-     * rather than leaked or allowed to fail the complete generation run.
-     */
-    let normalizedOutput = this.repairSupportingOnlyEvidenceWording(
-      context,
-      this.repairExplicitSelectedDomainCoverage(
+    if (this.shouldApplyEnglishNarrativeRepairs(context)) {
+      const normalizedNarrative = this.repairPublicHealthcareAccessGovernanceDrift(
         context,
-        this.sanitizeOutputForContext(
+        this.normalizeUnifiedIdeaNarrative(context, parsedOutput),
+      );
+
+      normalizedOutput = this.repairSupportingOnlyEvidenceWording(
+        context,
+        this.repairExplicitSelectedDomainCoverage(
           context,
-          this.projectOutputToGenerationTier(context, normalizedNarrative),
+          this.sanitizeOutputForContext(
+            context,
+            this.projectOutputToGenerationTier(context, normalizedNarrative),
+          ),
         ),
-      ),
-    );
-    normalizedOutput = this.enforceCanonicalEvidenceStateNarrative(
-      context,
-      normalizedOutput,
-    );
+      );
+      normalizedOutput = this.enforceCanonicalEvidenceStateNarrative(
+        context,
+        normalizedOutput,
+      );
+      normalizedOutput = this.enforceCanonicalSelectedFamilyNarrative(
+        context,
+        normalizedOutput,
+      );
+    } else {
+      normalizedOutput = this.projectOutputToGenerationTier(
+        context,
+        parsedOutput,
+      );
+    }
 
     this.validateOutputForGenerationType(context, normalizedOutput);
-    this.validateRequesterIntentAlignment(context, normalizedOutput);
-    this.validateSelectedOpportunityFamilyAlignment(context, normalizedOutput);
-    this.validateExplicitSelectedDomainCoverage(context, normalizedOutput);
-    this.validateUnifiedIdeaNarrative(context, normalizedOutput);
+    this.validateRequestedOutputLanguage(context, normalizedOutput);
+
+    if (this.shouldApplyEnglishNarrativeRepairs(context)) {
+      this.validateRequesterIntentAlignment(context, normalizedOutput);
+      this.validateSelectedOpportunityFamilyAlignment(context, normalizedOutput);
+      this.validateExplicitSelectedDomainCoverage(context, normalizedOutput);
+      this.validateUnifiedIdeaNarrative(context, normalizedOutput);
+    }
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
@@ -233,8 +244,51 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         includePremiumOutputs: context.policy?.includePremiumOutputs ?? false,
 
         outputValidated: true,
+        outputLanguage: context.outputLanguage,
       },
     };
+  }
+
+
+  private shouldApplyEnglishNarrativeRepairs(
+    context: IdeaGenerationContext,
+  ): boolean {
+    return context.outputLanguage === LanguageCode.EN;
+  }
+
+  private validateRequestedOutputLanguage(
+    context: IdeaGenerationContext,
+    output: ParsedIdeaAiOutput,
+  ): void {
+    if (context.outputLanguage !== LanguageCode.AR) {
+      return;
+    }
+
+    const coreNarrative = [
+      output.coreIdea.title,
+      output.coreIdea.problemStatement,
+      ...output.coreIdea.objectives,
+      ...output.coreIdea.targetUsers,
+      output.coreIdea.limitedAbstract ?? '',
+      output.coreIdea.partialAbstract ?? '',
+      output.coreIdea.fullAbstract ?? '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const arabicLetters = (coreNarrative.match(/[\u0600-\u06ff]/gu) ?? []).length;
+    const latinLetters = (coreNarrative.match(/[A-Za-z]/gu) ?? []).length;
+
+    if (arabicLetters < 30 || arabicLetters * 1.25 < latinLetters) {
+      this.throwInvalidOutput(
+        'Generated idea did not follow the frontend-selected Arabic output language.',
+        {
+          requestedOutputLanguage: context.outputLanguage,
+          arabicLetters,
+          latinLetters,
+        },
+      );
+    }
   }
 
 
@@ -267,7 +321,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       if (value === undefined) return undefined;
       let text = value.replace(/\s+/gu, ' ').trim();
       text = text
-        .replace(/\bZero retained community observations suggest that\b/giu, `${subject}. The requester-defined problem remains broader than this preliminary support;`)
+        .replace(/\bZero retained community observations(?:\s+(?:from|across)\s+[^.]{1,120})?\s+suggest that\b/giu, `${subject}. The requester-defined problem remains broader than this preliminary support;`)
         .replace(/\bNo problem-matched external evidence survived\b/giu, `${subject}; no direct problem-matched user complaint survived`)
         .replace(/\bNo qualifying problem-matched community feedback was retained\b/giu, `${subject}; no direct qualifying community complaint was retained`)
         .replace(/\bno problem-matched retained evidence\b/giu, 'no verified direct problem-matched user complaint')
@@ -298,6 +352,103 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   }
 
   /**
+   * Makes the canonical discovery family the final semantic source of truth
+   * for every persisted narrative field. Provider drafts may contain a stale
+   * taxonomy label from an earlier candidate even when Ranking/Benchmark use
+   * the correct family. Rewriting the evidence-qualification sentence here
+   * prevents a SUPPORTING_VALIDATED partial abstract from mentioning an
+   * unrelated family such as an old education/content-safety label.
+   */
+  private enforceCanonicalSelectedFamilyNarrative(
+    context: IdeaGenerationContext,
+    output: ParsedIdeaAiOutput,
+  ): ParsedIdeaAiOutput {
+    if (this.hasExplicitRequesterProblem(context)) return output;
+
+    const family = context.communityAiAnalysis?.selectedProblemFamily
+      ?.replace(/\s+/gu, ' ')
+      .trim();
+    const trustedCount = Math.max(
+      0,
+      context.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0,
+    );
+    if (!family || trustedCount <= 0) return output;
+
+    const directCount = this.countRetainedDirectEvidence(context);
+    const sourceCount = Math.max(
+      1,
+      context.communityAiAnalysis?.selectedProblemFamilyDistinctSourceCount ??
+        this.countRetainedIndependentSources(context),
+    );
+    const evidenceSentence = directCount > 0
+      ? `${this.formatEvidenceCount(directCount, true)} retained direct problem signal${directCount === 1 ? '' : 's'} across ${sourceCount === 1 ? 'one independent source' : `${sourceCount} independent sources`} document${directCount === 1 ? 's' : ''} ${family} as the selected verified problem family.`
+      : `${this.formatEvidenceCount(trustedCount, true)} retained supporting signal${trustedCount === 1 ? '' : 's'} across ${sourceCount === 1 ? 'one independent source' : `${sourceCount} independent sources`} support${trustedCount === 1 ? 's' : ''} ${family} as the selected preliminary problem family.`;
+
+    const sanitize = (value: string | undefined): string | undefined => {
+      if (value === undefined) return undefined;
+      return value
+        .replace(
+          /\b(?:cybersecurity\s+)?Learning Content Safety and Student Exposure Risks\b/giu,
+          family,
+        )
+        .replace(
+          /\bOne retained (?:secondary|supporting|community) report(?: from one retained source| from one independent source)? indicates that [^.!?]{1,220}[.!?]/giu,
+          evidenceSentence,
+        )
+        .replace(
+          /\bA preliminary secondary report(?: related to [^:]{1,100})? describes an operational challenge:\s*[^.!?]{1,180}[.!?]/giu,
+          evidenceSentence,
+        )
+        .replace(
+          /\bA preliminary community signal(?:\s+(?:from|across)\s+[^:]{1,120})? reports an operational challenge:\s*[^.!?]{1,180}[.!?]/giu,
+          evidenceSentence,
+        )
+        .replace(/\s+/gu, ' ')
+        .trim();
+    };
+
+    const sanitizeStructured = (value: unknown): unknown => {
+      if (typeof value === 'string') return sanitize(value) ?? value;
+      if (Array.isArray(value)) return value.map(sanitizeStructured);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [key, sanitizeStructured(item)]),
+        );
+      }
+      return value;
+    };
+
+    return {
+      ...output,
+      coreIdea: {
+        ...output.coreIdea,
+        problemStatement:
+          sanitize(output.coreIdea.problemStatement) ?? output.coreIdea.problemStatement,
+        ...(output.coreIdea.limitedAbstract !== undefined
+          ? { limitedAbstract: sanitize(output.coreIdea.limitedAbstract) }
+          : {}),
+        ...(output.coreIdea.partialAbstract !== undefined
+          ? { partialAbstract: sanitize(output.coreIdea.partialAbstract) }
+          : {}),
+        ...(output.coreIdea.fullAbstract !== undefined
+          ? { fullAbstract: sanitize(output.coreIdea.fullAbstract) }
+          : {}),
+      },
+      advancedOutputs: output.advancedOutputs.map((item) => ({
+        ...item,
+        content: sanitize(item.content) ?? item.content,
+        ...(item.structuredContent !== undefined
+          ? {
+              structuredContent: sanitizeStructured(
+                item.structuredContent,
+              ) as typeof item.structuredContent,
+            }
+          : {}),
+      })),
+    };
+  }
+
+  /**
    * Enforces the requester description as a final persistence invariant.
    * Benchmark generation performs the same check earlier so another model can
    * be tried; this stage is the last safety boundary before duplicate checking
@@ -309,7 +460,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   ): void {
     const requesterDescription = context.requestDescription?.trim();
 
-    if (!requesterDescription) {
+    if (!requesterDescription || !this.hasExplicitRequesterProblem(context)) {
       return;
     }
 
@@ -612,6 +763,16 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     parsedOutput: ParsedIdeaAiOutput,
   ): void {
+    if (
+      !this.hasExplicitRequesterProblem(context) &&
+      (context.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0) > 0
+    ) {
+      // Discovery validation is locked by the canonical evidence-native family
+      // in the benchmark service. Do not apply a second raw.familyKey taxonomy
+      // guard here; it can be stale or coarser than the selected family.
+      return;
+    }
+
     const selected =
       context.benchmarkWinnerOpportunity ?? context.opportunityRanking?.selected;
     const raw = selected?.raw;
@@ -692,6 +853,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   ): ParsedIdeaAiOutput {
     const selectedRegion = context.location.city?.trim() ?? '';
     const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const canonicalSelectedFamily =
+      !this.hasExplicitRequesterProblem(context) &&
+      (context.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0) > 0
+        ? context.communityAiAnalysis?.selectedProblemFamily?.trim() ?? ''
+        : '';
     const featureRequestEvidenceCount =
       this.countRetainedFeatureRequestEvidence(context);
     const singleFeatureRequest =
@@ -712,9 +878,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         selectedEvidenceText,
       );
     const selectedProblemSemantic = [
-      context.opportunityRanking?.selected.title ?? '',
+      canonicalSelectedFamily || context.opportunityRanking?.selected.title || '',
       context.opportunityRanking?.selected.problem ?? '',
       context.opportunityRanking?.selected.solutionArea ?? '',
+      !canonicalSelectedFamily &&
       context.opportunityRanking?.selected.raw &&
       typeof context.opportunityRanking.selected.raw === 'object' &&
       'familyKey' in context.opportunityRanking.selected.raw
@@ -966,6 +1133,19 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         );
       }
 
+      if (canonicalSelectedFamily && directEvidenceCount > 0) {
+        const canonicalStatement = `One retained direct user report from one independent source documents ${canonicalSelectedFamily} as the selected verified problem family.`;
+        sanitized = sanitized
+          .replace(
+            /\bOne retained direct user report from one independent source indicates that [^.!?]{3,220}[.!?]/giu,
+            canonicalStatement,
+          )
+          .replace(
+            /\bOne retained direct user report indicates that [^.!?]{3,220}[.!?]/giu,
+            canonicalStatement,
+          );
+      }
+
       if (directEvidenceCount === 1) {
         sanitized = sanitized
           .replace(
@@ -1211,7 +1391,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   private resolveValidationOnlySingleDomain(
     context: IdeaGenerationContext,
   ): string | null {
-    if (context.requestDescription?.trim()) return null;
+    if (this.hasExplicitRequesterProblem(context)) return null;
 
     const selected = context.opportunityRanking?.selected;
     if (
@@ -2584,7 +2764,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
 
     const opportunity =
       context.benchmarkWinnerOpportunity ?? context.opportunityRanking?.selected;
-    const requiresRequestMatch = Boolean(context.requestDescription?.trim());
+    const requiresRequestMatch = this.hasExplicitRequesterProblem(context);
     const evidenceCount = Math.max(
       requiresRequestMatch
         ? opportunity?.verifiedProblemMatchedEvidenceCount ?? 0
@@ -2808,7 +2988,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return { ...output, content };
     }
 
-    const selectedProblem = opportunity?.problem?.trim() || context.requestDescription?.trim();
+    const selectedProblem = opportunity?.problem?.trim() || this.resolveExplicitRequesterProblem(context);
     const content = technicalOnlyEvidence
       ? `${technicalSubject} documents${selectedProblem ? ` ${this.lowercaseSentenceStart(selectedProblem.replace(/\s+/gu, ' ').replace(/[.]+$/u, ''))}` : ' the selected technical workflow issue'}. It is technical evidence, not a verified direct user complaint or proof of recurrence, prevalence, or broader market demand.`
       : secondaryOnlyEvidence
@@ -3305,7 +3485,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         );
 
       if (!/\bpilot hypothesis\b/iu.test(cleaned)) {
-        cleaned = `${cleaned} The proposed intervention is a bounded pilot hypothesis to test; the retained observation does not establish that scheduling, micro-break duration, or any other product mechanism is the primary cause or proven remedy.`;
+        cleaned = `${cleaned} The proposed intervention is a bounded pilot hypothesis to test; the retained observation does not establish that any specific product mechanism is the primary cause or a proven remedy.`;
       }
     }
 
@@ -4806,6 +4986,15 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     if (this.hasStrongIndependentEvidence(context)) {
       return { problemStatement, overview };
     }
+    if (
+      !this.hasExplicitRequesterProblem(context) &&
+      (context.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0) > 0
+    ) {
+      // Discovery output has already passed the exact canonical family/evidence
+      // lock during benchmarking. A raw taxonomy key is not allowed to rewrite
+      // that narrative after the winner has been selected.
+      return { problemStatement, overview };
+    }
 
     const winner = this.resolveWinnerOpportunityRaw(context);
     if (!winner?.familyKey) {
@@ -5457,10 +5646,33 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     return [evidenceQualifier, ...paragraphs].join('\n\n');
   }
 
+  private resolveSelectedCanonicalEvidence(
+    context: IdeaGenerationContext,
+  ): Array<IdeaGenerationContext['canonicalEvidenceLedger'][number]> {
+    const selectedIds = new Set(
+      (context.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    if (selectedIds.size === 0) return [];
+    return (context.canonicalEvidenceLedger ?? []).filter(
+      (item) =>
+        selectedIds.has(item.id) &&
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    );
+  }
+
   private countRetainedDirectEvidence(
     context: IdeaGenerationContext,
   ): number {
     const selected = context.opportunityRanking?.selected;
+
+    const canonicalDirectCount = this.resolveSelectedCanonicalEvidence(context).filter(
+      (item) => item.classification === 'DIRECT_PROBLEM',
+    ).length;
+    if (canonicalDirectCount > 0) return canonicalDirectCount;
 
     if (
       selected?.disqualificationReasons?.includes('NO_DIRECT_EVIDENCE') ||
@@ -5593,6 +5805,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const insights = context.nlp?.insights;
     if (!Array.isArray(insights)) return [];
 
+    const selectedFamilyEvidenceIds = new Set(
+      (context.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
     const output: Array<{ readonly evidenceId: string }> = [];
     const seen = new Set<string>();
     for (const rawInsight of insights) {
@@ -5614,6 +5831,16 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
             ? classification.evidenceId.trim()
             : '';
         if (!evidenceId || seen.has(evidenceId)) continue;
+        // If Community/canonical clustering has already locked a winner family,
+        // final-output wording may count only supporting signals belonging to
+        // that family. Global trusted signals from unrelated families remain in
+        // diagnostics, but they must not inflate the selected opportunity.
+        if (
+          selectedFamilyEvidenceIds.size > 0 &&
+          !selectedFamilyEvidenceIds.has(evidenceId)
+        ) {
+          continue;
+        }
         const rawText = rawById.get(evidenceId);
         if (!rawText) continue;
         /*
@@ -5745,6 +5972,9 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   }
 
   private countRetainedEvidence(context: IdeaGenerationContext): number {
+    const canonicalSelectedCount = this.resolveSelectedCanonicalEvidence(context).length;
+    if (canonicalSelectedCount > 0) return canonicalSelectedCount;
+
     const selected = context.opportunityRanking?.selected;
     const verifiedCount =
       selected?.verifiedProblemMatchedEvidenceCount ??
@@ -5789,6 +6019,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   private countRetainedIndependentSources(
     context: IdeaGenerationContext,
   ): number {
+    const canonicalItems = this.resolveSelectedCanonicalEvidence(context);
+    if (canonicalItems.length > 0) {
+      return new Set(canonicalItems.map((item) => item.sourceKey)).size;
+    }
+
     const selected = context.opportunityRanking?.selected;
     const directEvidenceCount = this.countRetainedDirectEvidence(context);
 
@@ -6108,9 +6343,12 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       'the selected domain';
     const domainLabel =
       claimDomains.length > 0 ? claimDomains.join(' + ') : fallbackDomain;
-    const requestDescription = context.requestDescription?.trim();
+    const explicitProblem = this.resolveExplicitRequesterProblem(context);
+    const discoveryIntent = !explicitProblem
+      ? context.requestDescription?.replace(/\s+/gu, ' ').trim() ?? ''
+      : '';
     const hypothesis = (
-      requestDescription ||
+      explicitProblem ||
       context.opportunityRanking?.selected.problem?.trim() ||
       `teams in ${domainLabel} may lack a structured workflow for identifying and validating operational friction before implementation`
     )
@@ -6118,15 +6356,19 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .trim();
 
     const externalContextPrefix = this.hasExternalSupportingContext(context)
-      ? 'One real external sample was retained as preliminary contextual support, but it did not independently verify the exact requester problem. '
+      ? explicitProblem
+        ? 'One real external sample was retained as preliminary contextual support, but it did not independently verify the exact requester problem. '
+        : 'One real external sample was retained as contextual material, but it did not survive as a canonical DIRECT/SUPPORTING problem family. '
       : '';
 
     return this.polishProblemStatement(
-      requestDescription
-        ? `${externalContextPrefix}No direct community evidence sufficiently aligned to the requester description was retained within the fast collection budget for the ${domainLabel} validation scope. The requester-defined problem is: "${hypothesis}." The proposed pilot keeps this problem unchanged and validates it with real target participants instead of substituting a different, better-evidenced problem. The selected domains define the validation search space; they are not evidence that existing demand has already been established. Market-wide prevalence, recurrence, causal impact, and cross-domain demand remain unproven until direct evidence is collected.`
-        : `No direct community evidence was retained within the fast collection budget for the ${domainLabel} validation scope. The proposed pilot tests whether ${this.lowercaseSentenceStart(
-            hypothesis,
-          )}. The selected domains define the validation search space; they are not evidence that existing demand has already been established. Market-wide prevalence, recurrence, causal impact, and cross-domain demand remain unproven until direct evidence is collected.`,
+      explicitProblem
+        ? `${externalContextPrefix}No direct community evidence sufficiently aligned to the explicitly requester-stated problem was retained within the fast collection budget for the ${domainLabel} validation scope. The requester-defined problem is: "${hypothesis}." The proposed pilot keeps this problem unchanged and validates it with real target participants instead of substituting a different, better-evidenced problem. The selected domains define the validation search space; they are not evidence that existing demand has already been established. Market-wide prevalence, recurrence, causal impact, and cross-domain demand remain unproven until direct evidence is collected.`
+        : discoveryIntent
+          ? `${externalContextPrefix}No canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL family survived within the bounded evidence search for ${domainLabel}. The requester text was classified as discovery intent and is used only to constrain audience, workflow, goals, and search scope: "${discoveryIntent.slice(0, 620)}". It is not promoted into a problem statement or treated as evidence. The pilot therefore remains an evidence-discovery and validation direction until a real external problem family is retained.`
+          : `No direct community evidence was retained within the fast collection budget for the ${domainLabel} validation scope. The proposed pilot tests whether ${this.lowercaseSentenceStart(
+              hypothesis,
+            )}. The selected domains define the validation search space; they are not evidence that existing demand has already been established. Market-wide prevalence, recurrence, causal impact, and cross-domain demand remain unproven until direct evidence is collected.`,
     );
   }
 
@@ -6357,7 +6599,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
      * turn an unvalidated requester hypothesis into an evidence-backed winner.
      * Only evidence explicitly verified against the described problem counts.
      */
-    if (context.requestDescription?.trim()) {
+    if (this.hasExplicitRequesterProblem(context)) {
       return false;
     }
 
@@ -6374,7 +6616,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       selected?.disqualificationReasons.includes(
         'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
       ) ||
-        (context.requestDescription?.trim()
+        (this.hasExplicitRequesterProblem(context)
           ? !this.hasSelectedProblemMatchedEvidence(context)
           : !this.hasAnyRetainedEvidence(context)),
     );
@@ -7339,7 +7581,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           'No verified external evidence currently establishes friction in a concrete task;',
         )
         .replace(
-          /\bZero retained community observations(?:\s+across\s+[^.]{1,120})?\s+suggest that\b/giu,
+          /\bZero retained community observations(?:\s+(?:from|across)\s+[^.]{1,120})?\s+suggest that\b/giu,
           'No verified observation currently establishes that',
         )
         .replace(
@@ -7411,10 +7653,9 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
      * administrator/user-selected search space.
      */
     if (!request) {
-      const neutralTitle =
-        uniqueDomains.length <= 1
-          ? `${uniqueDomains[0] ?? context.domainName ?? 'Software'} Problem Signal Discovery Workspace`
-          : 'Problem Signal Discovery Workspace';
+      const neutralDomainLabel =
+        uniqueDomains.slice(0, 3).join(' & ') || context.domainName || 'Software';
+      const neutralTitle = `${neutralDomainLabel} Problem Signal Discovery Workspace`.slice(0, 100);
       const neutralProblem =
         `${qualifier} The active search space is ${domainScope}. ` +
         'The next product decision must be based on newly collected DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence, not on CONTEXT_ONLY or unrelated material.';
@@ -8008,6 +8249,16 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     return this.throwInvalidOutput(
       `Unsupported idea generation type "${String(generationType)}".`,
     );
+  }
+
+  private hasExplicitRequesterProblem(context: IdeaGenerationContext): boolean {
+    return Boolean(this.resolveExplicitRequesterProblem(context));
+  }
+
+  private resolveExplicitRequesterProblem(context: IdeaGenerationContext): string {
+    const intent = context.collectionPlan?.requestIntent;
+    if (intent?.mode !== 'EXPLICIT_PROBLEM') return '';
+    return intent.explicitProblem?.replace(/\s+/gu, ' ').trim() ?? '';
   }
 
   /**

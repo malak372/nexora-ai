@@ -1602,3 +1602,220 @@
   color: currentColor !important;
   stroke: currentColor !important;
 }
+
+
+/* VOXIDENCE_BUSINESS_MODEL_DARK_RTL_FIX */
+html.vox-user-rtl .bm-page,
+html.vox-user-rtl .bm-modal {
+  direction: rtl;
+}
+
+html.vox-user-rtl .bm-page :is(.bm-back, .bm-template-list > button, .bm-generate, .bm-studio > header, .bm-empty),
+html.vox-user-rtl .bm-modal__shell > header {
+  text-align: right;
+}
+
+html.vox-user-rtl .bm-template-list > button {
+  grid-template-columns: 30px minmax(0, 1fr) 28px;
+}
+
+html.vox-user-rtl .bm-back svg,
+html.vox-user-rtl .bm-action__arrow {
+  transform: scaleX(-1);
+}
+
+html.vox-user-rtl .bm-generate:hover .bm-action__arrow,
+html.vox-user-rtl .bm-empty__generate:hover .bm-action__arrow {
+  transform: scaleX(-1) translateX(2px);
+}
+
+html.vox-user-rtl .bm-card__number {
+  right: auto;
+  left: 12px;
+}
+
+html.vox-user-rtl .bm-card h3 {
+  max-width: calc(100% - 45px);
+  padding-inline-end: 0;
+}
+
+html.vox-user-rtl .bm-card ul {
+  padding-left: 0;
+  padding-right: 17px;
+}
+
+html.vox-user-dark .bm-page {
+  --bm-ink: #edf7f4;
+  --bm-muted: #afc2bc;
+  --bm-brand: #83d4cd;
+  --bm-brand-strong: #63bcb5;
+  --bm-brand-soft: #274138;
+  --bm-brand-pale: #1b2d27;
+  --bm-border: rgba(112, 205, 198, .20);
+  color: #edf7f4 !important;
+}
+
+html.vox-user-dark .bm-page .bm-back {
+  color: #a9c0b9 !important;
+}
+
+html.vox-user-dark .bm-page .bm-back:hover {
+  color: #9ce1da !important;
+}
+
+html.vox-user-dark .bm-page :is(.bm-hero, .bm-templates, .bm-studio) {
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .19) !important;
+  background: linear-gradient(145deg, #1d3129, #16261f) !important;
+  box-shadow: 0 24px 62px rgba(0, 0, 0, .19) !important;
+}
+
+html.vox-user-dark .bm-page .bm-hero {
+  background:
+    radial-gradient(circle at 86% 12%, rgba(120, 209, 202, .13), transparent 29%),
+    radial-gradient(circle at 13% 93%, rgba(227, 168, 181, .08), transparent 32%),
+    linear-gradient(135deg, #1e332b, #172820 58%, #1a3029) !important;
+}
+
+html.vox-user-dark .bm-page :is(
+  .bm-hero h1,
+  .bm-hero__summary strong,
+  .bm-template-list strong,
+  .bm-studio > header h2,
+  .bm-empty h2,
+  .bm-card h3
+) {
+  color: #eff8f5 !important;
+}
+
+html.vox-user-dark .bm-page :is(
+  .bm-hero p,
+  .bm-templates > p,
+  .bm-template-list small,
+  .bm-studio > header p,
+  .bm-empty p,
+  .bm-card p,
+  .bm-card li
+) {
+  color: #b3c6c0 !important;
+}
+
+html.vox-user-dark .bm-page .bm-hero__summary article {
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .16) !important;
+  background: #263b33 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .bm-page .bm-hero__summary small {
+  color: #9db2ac !important;
+}
+
+html.vox-user-dark .bm-page .bm-template-list > button,
+html.vox-user-dark .bm-page .bm-template-list > button:hover {
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .15) !important;
+  background: #20342c !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .bm-page .bm-template-list > button.active {
+  color: #f5fbf9 !important;
+  border-color: rgba(112, 205, 198, .42) !important;
+  background: linear-gradient(145deg, #2a463c, #21382f) !important;
+  box-shadow: 0 13px 30px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .bm-page .bm-template-list > button > span:first-child {
+  color: #a9beb7 !important;
+  background: #2b4038 !important;
+}
+
+html.vox-user-dark .bm-page .bm-template-list > button.active > span:first-child,
+html.vox-user-dark .bm-page .bm-template-list > button.active i {
+  color: #f7fffd !important;
+  background: #4f9e98 !important;
+}
+
+html.vox-user-dark .bm-page .bm-empty__icon {
+  color: #9ce1da !important;
+  border-color: rgba(112, 205, 198, .22) !important;
+  background: linear-gradient(145deg, #29463c, #20372f) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .bm-page .bm-card {
+  --card-end: #1b3028;
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .17) !important;
+  background: linear-gradient(150deg, #21382f, #192c25) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .13) !important;
+}
+
+html.vox-user-dark .bm-page .bm-card__number {
+  color: rgba(131, 212, 205, .25) !important;
+}
+
+html.vox-user-dark .bm-page .bm-studio > header {
+  border-bottom-color: rgba(112, 205, 198, .15) !important;
+}
+
+html.vox-user-dark .bm-modal {
+  background:
+    radial-gradient(circle at 18% 10%, rgba(105, 183, 177, 0.12), transparent 30%),
+    radial-gradient(circle at 88% 90%, rgba(227, 168, 181, 0.08), transparent 28%),
+    rgba(5, 16, 13, .80) !important;
+}
+
+html.vox-user-dark .bm-modal__shell {
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .22) !important;
+  background: #14251f !important;
+  box-shadow: 0 34px 100px rgba(0, 0, 0, .44) !important;
+}
+
+html.vox-user-dark .bm-modal__shell > header {
+  border-bottom-color: rgba(112, 205, 198, .17) !important;
+  background: linear-gradient(135deg, #1e332b, #172820 62%, #1b3029) !important;
+}
+
+html.vox-user-dark .bm-modal__shell > header strong {
+  color: #eff8f5 !important;
+}
+
+html.vox-user-dark .bm-modal__shell > header small {
+  color: #a9beb8 !important;
+}
+
+html.vox-user-dark .bm-modal .bm-preview-close,
+html.vox-user-dark .bm-modal .bm-preview-close:hover,
+html.vox-user-dark .bm-modal .bm-preview-close:focus-visible {
+  color: #a3ded8 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #263b33 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .bm-modal iframe {
+  background: #13231d !important;
+}
+
+
+html.vox-user-dark .bm-page :is(.bm-generate, .bm-empty__generate):disabled {
+  opacity: .78 !important;
+  filter: saturate(.82) !important;
+}
+
+html.vox-user-dark .bm-page :is(.bm-generate, .bm-empty__generate):disabled .bm-action__copy strong {
+  color: #f2faf8 !important;
+}
+
+html.vox-user-dark .bm-page :is(.bm-generate, .bm-empty__generate):disabled .bm-action__copy small,
+html.vox-user-dark .bm-page :is(.bm-generate, .bm-empty__generate):disabled .bm-action__arrow {
+  color: rgba(240, 250, 247, .76) !important;
+}
+
+html.vox-user-dark .bm-modal .bm-preview-print {
+  color: #ffffff !important;
+}

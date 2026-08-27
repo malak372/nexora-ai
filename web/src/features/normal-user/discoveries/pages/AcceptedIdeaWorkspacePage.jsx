@@ -290,6 +290,7 @@ export default function AcceptedIdeaWorkspacePage() {
           caption: 'Advanced execution output',
           icon: Sparkles,
           content: getOutputContent(output),
+          preserveTitle: Boolean(output.title),
         })),
       ...(hasBusinessModel
         ? [
@@ -376,12 +377,14 @@ export default function AcceptedIdeaWorkspacePage() {
             Accepted idea · advanced access
           </span>
 
-          <h1>{publication.publicTitle}</h1>
+          <h1 dir="auto" data-idea-content="true">{publication.publicTitle}</h1>
 
           <p>
-            {publication.domain?.name || publication.domainName || 'Accepted opportunity'}
+            <span dir="auto" data-idea-content="true">
+              {publication.domain?.name || publication.domainName || 'Accepted opportunity'}
+            </span>
             <span aria-hidden="true">·</span>
-            {advancedCount} advanced outputs unlocked
+            <span>{advancedCount} advanced outputs unlocked</span>
           </p>
 
           <div className="workspace-hero__status">
@@ -515,7 +518,11 @@ export default function AcceptedIdeaWorkspacePage() {
                   </span>
                   <span className="workspace-nav__icon"><Icon size={16} /></span>
                   <span className="workspace-nav__copy">
-                    <strong>{section.title}</strong>
+                    {section.preserveTitle ? (
+                      <strong dir="auto" data-idea-content="true">{section.title}</strong>
+                    ) : (
+                      <strong>{section.title}</strong>
+                    )}
                     <small>{section.caption}</small>
                   </span>
                   <ChevronRight className="workspace-nav__arrow" size={15} />
@@ -529,7 +536,11 @@ export default function AcceptedIdeaWorkspacePage() {
           <div className="workspace-document__header">
             <div>
               <span>Accepted idea workspace</span>
-              <h2>{current.title}</h2>
+              {current.preserveTitle ? (
+                <h2 dir="auto" data-idea-content="true">{current.title}</h2>
+              ) : (
+                <h2>{current.title}</h2>
+              )}
               <p>{current.caption}</p>
             </div>
             <span className="workspace-document__badge">
@@ -544,7 +555,7 @@ export default function AcceptedIdeaWorkspacePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
           >
-            <WorkspaceContent value={current.content} />
+            <div data-idea-content="true" dir="auto"><WorkspaceContent value={current.content} /></div>
           </motion.div>
         </article>
       </motion.section>

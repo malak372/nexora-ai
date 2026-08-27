@@ -32,7 +32,10 @@ import {
   classifyDirectCommunityEvidence,
   isStructuredOperationalProblemEvidence,
 } from '../../../../nlp/common/utils/community-evidence.util';
-import { resolvePrimaryProblemFamily } from '../../../../nlp/common/utils/problem-family-matching.util';
+import {
+  matchEvidenceToProblemFamily,
+  resolvePrimaryProblemFamily,
+} from '../../../../nlp/common/utils/problem-family-matching.util';
 import { RequestEvidenceAlignmentUtil } from '../../utils/request-evidence-alignment.util';
 import { CanonicalEvidenceVerificationUtil } from '../../utils/canonical-evidence-verification.util';
 import { CanonicalEvidenceStateUtil } from '../../utils/canonical-evidence-state.util';
@@ -76,12 +79,13 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     const plannedRequest = Boolean(
       context.requestDescription?.trim() && context.collectionPlan,
     );
+    const requesterProblemLocked = this.hasExplicitRequesterProblem(context);
     const hasSelectedDomainEvidence =
       this.hasAnyRetainedSelectedDomainEvidence(context);
-    const hasRequestAlignedEvidence = plannedRequest
+    const hasRequestAlignedEvidence = requesterProblemLocked
       ? this.hasAnyRetainedRequestAlignedEvidence(context)
       : hasSelectedDomainEvidence;
-    const hasGroundedEvidenceForOnlineAi = plannedRequest
+    const hasGroundedEvidenceForOnlineAi = requesterProblemLocked
       ? hasRequestAlignedEvidence
       : hasSelectedDomainEvidence;
     const retainedEvidenceCount = this.countRetainedEvidenceTexts(context);
@@ -217,6 +221,16 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             fallbackReason:
               analysis.fallbackReason ??
               'No canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence survived deterministic verification.',
+            selectedProblemFamily: null,
+            selectedProblemFamilyEvidenceIds: [],
+            selectedProblemFamilyTrustedEvidenceCount: 0,
+            selectedProblemFamilyDistinctSourceCount: 0,
+            selectedProblemFamilySelectionSource:
+              analysis.aiProposedProblemFamily?.trim() ||
+              analysis.selectedProblemFamilySelectionSource ===
+                'AI_SELECTED_PENDING_VERIFICATION'
+                ? 'AI_PROPOSAL_REJECTED'
+                : null,
             qualityWarnings: [
               ...analysis.qualityWarnings,
               'Canonical evidence state is ZERO_VALIDATED_EVIDENCE; unverified/context-only material was not promoted into NLP opportunities, recurring problems, or extracted needs.',
@@ -336,6 +350,33 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
               (item) => item.verifiedByDeterministicGuard &&
                 (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
             ).length,
+          /*
+           * ZERO_VALIDATED_EVIDENCE means zero trustworthy demand-validation
+           * signals, not "the collectors found nothing".  Persist the reviewed
+           * contextual pool separately so UI/QA can show that nearby material
+           * was considered without falsely promoting it to evidence of demand.
+           */
+          contextualEvidenceCandidateCount:
+            canonicalClassifications.filter(
+              (item) =>
+                item.classification === 'CONTEXT_ONLY' ||
+                item.classification === 'ANALOGOUS_WORKFLOW_SIGNAL',
+            ).length,
+          reviewedEvidenceCandidateCount: canonicalClassifications.length,
+          aiProposedProblemFamily:
+            authoritativeAnalysis.aiProposedProblemFamily ?? null,
+          aiProposedProblemFamilyEvidenceIds:
+            [...(authoritativeAnalysis.aiProposedProblemFamilyEvidenceIds ?? [])],
+          selectedProblemFamilySelectionSource:
+            authoritativeAnalysis.selectedProblemFamilySelectionSource ?? null,
+          selectedProblemFamily:
+            authoritativeAnalysis.selectedProblemFamily ?? null,
+          selectedProblemFamilyTrustedEvidenceCount:
+            authoritativeAnalysis.selectedProblemFamilyTrustedEvidenceCount ?? 0,
+          selectedProblemFamilyDistinctSourceCount:
+            authoritativeAnalysis.selectedProblemFamilyDistinctSourceCount ?? 0,
+          selectedProblemFamilyEvidenceIds:
+            [...(authoritativeAnalysis.selectedProblemFamilyEvidenceIds ?? [])],
           evidencePipelineSemantics:
             'Raw collector candidates are semantically triaged before final trusted evidence admission. DIRECT_PROBLEM + SUPPORTING_SIGNAL are trusted. ANALOGOUS_WORKFLOW_SIGNAL is useful adjacent-workflow context but never validates requester demand.',
           directEvidenceClassificationCount:
@@ -417,6 +458,12 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           (item) => item.verified &&
             (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
         ).length,
+        contextualEvidenceCandidateCount: canonicalEvidenceLedger.filter(
+          (item) =>
+            item.classification === 'CONTEXT_ONLY' ||
+            item.classification === 'ANALOGOUS_WORKFLOW_SIGNAL',
+        ).length,
+        reviewedEvidenceCandidateCount: canonicalEvidenceLedger.length,
       },
     };
   }
@@ -434,74 +481,263 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     analysis: CommunityAiAnalysis,
     ledger: IdeaGenerationContext['canonicalEvidenceLedger'],
   ): CommunityAiAnalysis {
-    if (context.requestDescription?.trim()) return analysis;
+    if (this.hasExplicitRequesterProblem(context)) {
+      return this.attachSelectedProblemFamilyMetrics(analysis, ledger);
+    }
 
-    const trusted = [...ledger]
-      .filter(
-        (item) =>
-          item.verified &&
-          (item.classification === 'DIRECT_PROBLEM' ||
-            item.classification === 'SUPPORTING_SIGNAL'),
-      )
-      .sort((left, right) => {
-        const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
-        const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
-        return rightDirect - leftDirect || right.confidence - left.confidence;
-      });
+    const trusted = [...ledger].filter(
+      (item) =>
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    );
+    if (trusted.length === 0) {
+      const aiProposalExists = Boolean(
+        analysis.aiProposedProblemFamily?.trim() ||
+          (analysis.aiProposedProblemFamilyEvidenceIds?.length ?? 0) > 0,
+      );
+      return {
+        ...analysis,
+        selectedProblemFamily: null,
+        selectedProblemFamilySelectionSource: aiProposalExists
+          ? 'AI_PROPOSAL_REJECTED'
+          : null,
+        selectedProblemFamilyTrustedEvidenceCount: 0,
+        selectedProblemFamilyDistinctSourceCount: 0,
+        selectedProblemFamilyEvidenceIds: [],
+      };
+    }
 
-    const lead = trusted[0];
+    /*
+     * The semantic-triage clustering step already compared complete verified
+     * families by evidence count, direct/supporting class, source diversity,
+     * and confidence.  Do not throw that decision away here by selecting the
+     * single highest-confidence ledger row.  Doing so previously changed a
+     * clustered winner such as one restaurant family into a different family
+     * merely because one unrelated row had a slightly higher confidence.
+     */
+    const clusteredWinner = analysis.opportunities[0] ?? null;
+    const clusteredFamily = clusteredWinner?.title?.trim() ?? '';
+    const familyTrusted = clusteredFamily
+      ? trusted.filter((item) =>
+          this.discoveryProblemFamilyEntails(
+            clusteredFamily,
+            item.problemFamily,
+          ) ||
+          this.problemFamilyMatchesSelectedFamily(
+            clusteredFamily,
+            item.problemFamily,
+            item.text,
+          ),
+        )
+      : [];
+    const aiProposedIds = new Set(
+      (analysis.aiProposedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    const aiProposedFamilyRaw = analysis.aiProposedProblemFamily?.trim() ?? '';
+    const aiProposedFamily = aiProposedFamilyRaw
+      ? `${aiProposedFamilyRaw.charAt(0).toUpperCase()}${aiProposedFamilyRaw.slice(1)}`
+      : '';
+    const aiSelectedTrusted = aiProposedIds.size > 0
+      ? trusted.filter((item) => aiProposedIds.has(item.id))
+      : [];
+
+    /*
+     * The provider chooses a family from the complete corpus, so verification
+     * must evaluate its surviving selected evidence as one semantic group.
+     * Requiring every individual row to repeat every family token fragmented a
+     * coherent problem across labels such as one raw review sentence and one
+     * normalized provider family. Canonical trust still remains item-level;
+     * only the family-name entailment check is group-level.
+     */
+    const aiSelectionSurvived = Boolean(
+      aiProposedFamily &&
+      aiSelectedTrusted.length > 0 &&
+      this.problemFamilyMatchesSelectedFamilyGroup(
+        aiProposedFamily,
+        aiSelectedTrusted,
+      ),
+    );
+    const lockedClusteredWinner =
+      clusteredWinner &&
+      ((aiSelectionSurvived &&
+        this.problemFamilyMatchesSelectedFamilyGroup(
+          aiProposedFamily,
+          familyTrusted.length > 0 ? familyTrusted : aiSelectedTrusted,
+        )) ||
+        (!aiSelectionSurvived && familyTrusted.length > 0))
+        ? clusteredWinner
+        : null;
+    const selectedFamilyItems = aiSelectionSurvived
+      ? aiSelectedTrusted
+      : familyTrusted.length > 0
+        ? familyTrusted
+        : this.selectStrongestTrustedFamilyItems(trusted);
+
+    const lead = selectedFamilyItems[0];
     if (!lead) return analysis;
 
     const domain =
       context.selectedDomains.find((candidate) =>
         lead.matchedDomainIds.includes(candidate.id),
       ) ??
-      context.selectedDomains.find((candidate) => candidate.id === lead.discoveryDomainId) ??
+      context.selectedDomains.find(
+        (candidate) => candidate.id === lead.discoveryDomainId,
+      ) ??
       context.selectedDomains[0];
     const domainName = domain?.name ?? context.domainName ?? 'Selected domain';
-    const family = lead.problemFamily?.trim() || `${domainName} Verified Workflow Problem`;
+    const evidenceNativeFallbackFamily = this.deriveProblemBearingFamilyFromEvidence(
+      lead.text,
+      domainName,
+    );
+    const ledgerFamily = this.isUsableEvidenceFamilyLabel(
+      lead.problemFamily,
+      lead.text,
+    )
+      ? lead.problemFamily?.trim() ?? ''
+      : '';
+    const family = aiSelectionSurvived
+      ? aiProposedFamily
+      : familyTrusted.length > 0
+        ? clusteredFamily
+        : evidenceNativeFallbackFamily || ledgerFamily;
+    if (!family) {
+      const rejectedAiProposalExists = Boolean(
+        aiProposedFamily || aiProposedIds.size > 0,
+      );
+      return {
+        ...analysis,
+        selectedProblemFamily: null,
+        selectedProblemFamilySelectionSource: rejectedAiProposalExists
+          ? 'AI_PROPOSAL_REJECTED'
+          : null,
+        selectedProblemFamilyTrustedEvidenceCount: 0,
+        selectedProblemFamilyDistinctSourceCount: 0,
+        selectedProblemFamilyEvidenceIds: [],
+        qualityWarnings: Array.from(new Set([
+          ...analysis.qualityWarnings,
+          'Trusted evidence was retained globally, but no concrete pain-bearing problem family could be derived from it without inventing a placeholder or copying a source title. The evidence remains in the canonical ledger for recovery/diagnostics only.',
+        ])),
+      };
+    }
+    const selectionSource = aiSelectionSurvived
+      ? 'AI_SELECTED_VERIFIED' as const
+      : familyTrusted.length > 0
+        ? 'AI_CLUSTER_VERIFIED' as const
+        : 'DETERMINISTIC_VERIFIED_FALLBACK' as const;
+
+    const orderedFamilyItems = [...selectedFamilyItems].sort((left, right) => {
+      const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+      const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+      return rightDirect - leftDirect || right.confidence - left.confidence;
+    });
+    const evidenceSamples = orderedFamilyItems
+      .slice(0, 8)
+      .map((item) => item.text);
+    const distinctSourceCount = new Set(
+      orderedFamilyItems.map((item) => item.sourceKey),
+    ).size;
+    const averageConfidence =
+      orderedFamilyItems.reduce((sum, item) => sum + item.confidence, 0) /
+      Math.max(1, orderedFamilyItems.length);
     const compactEvidence = lead.text.replace(/\s+/gu, ' ').trim().slice(0, 520);
-    const problem = compactEvidence
-      ? `A retained external ${lead.sourceType.toLocaleLowerCase()} documents this verified problem signal: ${compactEvidence}`
-      : `A retained external evidence item documents a verified ${family} problem signal.`;
-    const unmetNeed =
-      `A focused software workflow that addresses ${family} while preserving human review and validating how broadly the problem occurs.`;
+    const problem = lockedClusteredWinner?.problem?.trim()
+      ? lockedClusteredWinner.problem
+      : compactEvidence
+        ? `A retained external ${lead.sourceType.toLocaleLowerCase()} documents this verified problem signal: ${compactEvidence}`
+        : `A retained external evidence item documents a verified ${family} problem signal.`;
+    const unmetNeed = lockedClusteredWinner?.unmetNeed?.trim()
+      ? lockedClusteredWinner.unmetNeed
+      : `A focused software workflow that addresses ${family} while preserving human review and validating how broadly the problem occurs.`;
+
     const opportunity: CommunityAiOpportunity = {
+      ...(lockedClusteredWinner ?? {
+        domainName,
+        title: family,
+        problem,
+        unmetNeed,
+        solutionArea: `Evidence-grounded workflow for ${family}`,
+        affectedUsers: [
+          'Users or operators represented by the retained external evidence',
+        ],
+        evidenceSamples,
+        frequency: orderedFamilyItems.length,
+        severity: 'MEDIUM' as const,
+        confidence: Math.max(35, Math.min(90, Math.round(averageConfidence))),
+        problemImportance: Math.max(
+          40,
+          Math.min(85, Math.round(averageConfidence)),
+        ),
+        localEvidenceAvailable: false,
+        localEvidenceSamples: [],
+        localRelevance: 20,
+        groundingScore: Math.max(
+          40,
+          Math.min(100, Math.round(averageConfidence)),
+        ),
+        technicalFeasibility: 65,
+        marketPotential: 40,
+        innovationPotential: 50,
+        risks: [],
+      }),
       domainName,
       title: family,
       problem,
       unmetNeed,
-      solutionArea: `Evidence-grounded workflow for ${family}`,
-      affectedUsers: ['Users or operators represented by the retained external evidence'],
-      evidenceSamples: [lead.text],
-      frequency: 1,
-      severity: 'MEDIUM',
-      confidence: Math.max(35, Math.min(90, lead.confidence)),
-      problemImportance: Math.max(40, Math.min(85, lead.confidence)),
-      localEvidenceAvailable: false,
-      localEvidenceSamples: [],
-      localRelevance: 20,
-      groundingScore: Math.max(40, Math.min(100, lead.confidence)),
-      technicalFeasibility: 65,
-      marketPotential: 40,
-      innovationPotential: 50,
+      solutionArea:
+        lockedClusteredWinner?.solutionArea?.trim() ||
+        `Evidence-grounded workflow for ${family}`,
+      evidenceSamples,
+      frequency: orderedFamilyItems.length,
+      confidence: Math.max(
+        35,
+        Math.min(
+          90,
+          Math.max(
+            lockedClusteredWinner?.confidence ?? 0,
+            Math.round(averageConfidence),
+          ),
+        ),
+      ),
+      groundingScore: Math.max(
+        50,
+        Math.min(
+          100,
+          Math.max(
+            lockedClusteredWinner?.groundingScore ?? 0,
+            Math.round(averageConfidence),
+          ),
+        ),
+      ),
       risks: [
-        `The direction is grounded by ${trusted.length} retained verified evidence item(s) and still requires broader independent validation before prevalence claims are made.`,
+        `The selected problem family is grounded by ${orderedFamilyItems.length} retained verified evidence item(s) across ${distinctSourceCount} distinct source(s); broader validation is still required before prevalence claims are made.`,
       ],
     };
 
     return {
       ...analysis,
       summary:
-        `Canonical evidence verification retained ${trusted.length} trusted problem signal(s). ` +
-        `The discovery opportunity was locked to the strongest evidence-entailing family: ${family}.`,
+        `Canonical evidence verification retained ${trusted.length} trusted problem signal(s) globally. ` +
+        `${selectionSource === 'AI_SELECTED_VERIFIED'
+          ? 'The full-corpus Community AI proposal survived deterministic evidence verification'
+          : selectionSource === 'AI_CLUSTER_VERIFIED'
+            ? 'The AI-derived verified evidence cluster survived deterministic verification'
+            : 'The AI proposal did not retain verified evidence, so the strongest deterministic verified fallback was used'}; ` +
+        `the discovery opportunity is locked to "${family}" with ${orderedFamilyItems.length} trusted family-matched signal(s) across ${distinctSourceCount} distinct source(s).`,
       dominantProblems: [problem],
       unmetNeeds: [unmetNeed],
       opportunities: [opportunity],
       overallConfidence: Math.max(
         analysis.overallConfidence,
-        Math.min(80, Math.round(lead.confidence * 0.75)),
+        Math.min(80, Math.round(averageConfidence * 0.75)),
       ),
+      selectedProblemFamily: family,
+      selectedProblemFamilySelectionSource: selectionSource,
+      selectedProblemFamilyTrustedEvidenceCount: orderedFamilyItems.length,
+      selectedProblemFamilyDistinctSourceCount: distinctSourceCount,
+      selectedProblemFamilyEvidenceIds: orderedFamilyItems.map((item) => item.id),
       fallbackUsed: analysis.fallbackUsed || analysis.opportunities.length === 0,
       fallbackReason:
         analysis.opportunities.length === 0
@@ -509,12 +745,235 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           : analysis.fallbackReason,
       qualityWarnings: [
         ...analysis.qualityWarnings.filter(
-          (warning) => !/no persisted nlp evidence samples are available for grounding/iu.test(warning),
+          (warning) =>
+            !/no persisted nlp evidence samples are available for grounding/iu.test(
+              warning,
+            ),
         ),
-        'Discovery opportunity identity is locked to the canonical verified evidence family; downstream stages must not rename it to an unrelated taxonomy family.',
+        selectionSource === 'AI_SELECTED_VERIFIED'
+          ? 'The full-corpus Community AI selected this family and the same selected evidence ids both survived deterministic verification and semantically entail the family label; downstream stages must preserve that canonical identity.'
+          : 'The original AI family label was not preserved unless surviving trusted evidence entailed that exact family. The canonical discovery family therefore reflects the strongest evidence-native verified family and downstream stages must preserve that identity.',
       ],
     };
   }
+
+  private attachSelectedProblemFamilyMetrics(
+    analysis: CommunityAiAnalysis,
+    ledger: IdeaGenerationContext['canonicalEvidenceLedger'],
+  ): CommunityAiAnalysis {
+    const family = analysis.opportunities[0]?.title?.trim() ?? '';
+    if (!family) return analysis;
+    let selectedFamily = family;
+    let familyItems = ledger.filter(
+      (item) =>
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL') &&
+        this.problemFamilyMatchesSelectedFamily(
+          family,
+          item.problemFamily,
+          item.text,
+        ),
+    );
+
+    if (familyItems.length === 0) {
+      const trusted = ledger
+        .filter(
+          (item) =>
+            item.verified &&
+            Boolean(item.problemFamily?.trim()) &&
+            (item.classification === 'DIRECT_PROBLEM' ||
+              item.classification === 'SUPPORTING_SIGNAL'),
+        )
+        .sort((left, right) => {
+          const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+          const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+          return rightDirect - leftDirect || right.confidence - left.confidence;
+        });
+      const leadFamily = trusted[0]?.problemFamily?.trim() ?? '';
+      if (!leadFamily) {
+        const aiProposalExists = Boolean(
+          analysis.aiProposedProblemFamily?.trim() ||
+            (analysis.aiProposedProblemFamilyEvidenceIds?.length ?? 0) > 0,
+        );
+        return {
+          ...analysis,
+          selectedProblemFamily: null,
+          selectedProblemFamilySelectionSource: aiProposalExists
+            ? 'AI_PROPOSAL_REJECTED'
+            : null,
+          selectedProblemFamilyTrustedEvidenceCount: 0,
+          selectedProblemFamilyDistinctSourceCount: 0,
+          selectedProblemFamilyEvidenceIds: [],
+        };
+      }
+
+      selectedFamily = leadFamily;
+      familyItems = trusted.filter((item) =>
+        this.problemFamilyMatchesSelectedFamily(
+          leadFamily,
+          item.problemFamily,
+          item.text,
+        ),
+      );
+    }
+
+    if (familyItems.length === 0) return analysis;
+    const selectedOpportunity = analysis.opportunities[0];
+    const opportunities = selectedOpportunity
+      ? [
+          {
+            ...selectedOpportunity,
+            title: selectedFamily,
+            solutionArea: `Evidence-prioritized requester workflow: ${selectedFamily}`,
+            evidenceSamples: familyItems.map((item) => item.text).slice(0, 8),
+            frequency: familyItems.length,
+          },
+          ...analysis.opportunities.slice(1),
+        ]
+      : analysis.opportunities;
+
+    return {
+      ...analysis,
+      opportunities,
+      selectedProblemFamily: selectedFamily,
+      selectedProblemFamilyTrustedEvidenceCount: familyItems.length,
+      selectedProblemFamilyDistinctSourceCount: new Set(
+        familyItems.map((item) => item.sourceKey),
+      ).size,
+      selectedProblemFamilyEvidenceIds: familyItems.map((item) => item.id),
+    };
+  }
+
+  private discoveryProblemFamilyEntails(
+    selectedFamily: string,
+    evidenceFamily: string | null,
+  ): boolean {
+    const normalize = (value: string): string =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+    const selected = normalize(selectedFamily);
+    const evidence = normalize(evidenceFamily ?? '');
+    if (!selected || !evidence) return false;
+    if (selected === evidence) return true;
+
+    const stop = new Set([
+      'workflow','friction','problem','problems','issue','issues','operational',
+      'system','systems','software','service','services','user','users','the',
+      'and','for','with','from','after','before','company','technical',
+    ]);
+    const tokens = (value: string) =>
+      value.split(/\s+/u).filter((token) => token.length >= 4 && !stop.has(token));
+    const left = tokens(selected);
+    const right = new Set(tokens(evidence));
+    if (left.length < 2 || right.size < 2) return false;
+    const overlap = left.filter((token) => right.has(token)).length;
+    return overlap >= 2 && overlap / Math.min(left.length, right.size) >= 0.6;
+  }
+
+  private problemFamilyMatchesSelectedFamilyGroup(
+    selectedFamily: string,
+    items: readonly IdeaGenerationContext['canonicalEvidenceLedger'][number][],
+  ): boolean {
+    if (!selectedFamily.trim() || items.length === 0) return false;
+    if (
+      items.some((item) =>
+        this.problemFamilyMatchesSelectedFamily(
+          selectedFamily,
+          item.problemFamily,
+          item.text,
+        ),
+      )
+    ) {
+      return true;
+    }
+    const combinedEvidence = items.map((item) => item.text).join(' ');
+    return matchEvidenceToProblemFamily(
+      selectedFamily,
+      combinedEvidence,
+    ).matched;
+  }
+
+  private problemFamilyMatchesSelectedFamily(
+    selectedFamily: string,
+    evidenceFamily: string | null,
+    evidenceText: string,
+  ): boolean {
+    const normalize = (value: string): string =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+    const selected = normalize(selectedFamily);
+    const evidence = normalize(evidenceFamily ?? '');
+    if (selected && evidence && selected === evidence) return true;
+    if (selected && evidence && (selected.includes(evidence) || evidence.includes(selected))) {
+      return true;
+    }
+    return matchEvidenceToProblemFamily(selectedFamily, evidenceText).matched;
+  }
+
+  private selectStrongestTrustedFamilyItems(
+    trusted: readonly IdeaGenerationContext['canonicalEvidenceLedger'][number][],
+  ): IdeaGenerationContext['canonicalEvidenceLedger'] {
+    const candidates = trusted
+      .map((item) => item.problemFamily?.trim() ?? '')
+      .filter(Boolean);
+    if (candidates.length === 0) {
+      return [...trusted]
+        .sort((left, right) => {
+          const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+          const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+          return rightDirect - leftDirect || right.confidence - left.confidence;
+        })
+        .slice(0, 1);
+    }
+
+    let best: IdeaGenerationContext['canonicalEvidenceLedger'] = [];
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (const family of [...new Set(candidates)]) {
+      const items = trusted.filter((item) =>
+        this.problemFamilyMatchesSelectedFamily(
+          family,
+          item.problemFamily,
+          item.text,
+        ),
+      );
+      if (items.length === 0) continue;
+
+      const directCount = items.filter(
+        (item) => item.classification === 'DIRECT_PROBLEM',
+      ).length;
+      const sourceCount = new Set(items.map((item) => item.sourceKey)).size;
+      const averageConfidence =
+        items.reduce((sum, item) => sum + item.confidence, 0) /
+        Math.max(1, items.length);
+      const score =
+        directCount * 100 +
+        sourceCount * 35 +
+        items.length * 20 +
+        averageConfidence;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = items;
+      }
+    }
+
+    return [...best].sort((left, right) => {
+      const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+      const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+      return rightDirect - leftDirect || right.confidence - left.confidence;
+    });
+  }
+
 
   private buildCanonicalEvidenceLedger(
     context: IdeaGenerationContext,
@@ -545,35 +1004,30 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     }
 
     /*
-     * Discovery paths may continue when the online triage produced no usable
-     * classifications, but deterministic fallback goes through the exact same
-     * canonical verifier. Retrieval provenance is not evidence: a technical
-     * ticket found while probing IoT, for example, cannot become DIRECT unless
-     * the evidence text itself semantically matches the discovery domain and
-     * contains a concrete human problem signal.
+     * Canonical completeness invariant: every raw item gets exactly one row in
+     * the canonical ledger, even when the online triage timed out, returned a
+     * partial batch, or omitted an evidence id.  Missing classifications are
+     * conservatively proposed by deterministic rules and then pass through the
+     * exact same verifier as AI classifications.  Raw evidence is therefore
+     * never lost, while only verified DIRECT/SUPPORTING rows become trusted.
      */
-    if (!context.requestDescription?.trim()) {
-      for (const raw of context.rawEvidenceCorpus ?? []) {
-        if (ledger.has(raw.id)) continue;
-        const kind = classifyDirectCommunityEvidence(raw.text, raw.sourceType);
-        if (kind !== 'USER_COMPLAINT' && kind !== 'FEATURE_REQUEST' && kind !== 'OBSERVED_UNMET_NEED') {
-          continue;
-        }
-        const verified = CanonicalEvidenceVerificationUtil.verify({
+    for (const raw of context.rawEvidenceCorpus ?? []) {
+      if (ledger.has(raw.id)) continue;
+      const proposal = CanonicalEvidenceVerificationUtil.buildDeterministicFallbackProposal({
+        raw,
+        requestMode: context.requestMode,
+        origin: 'DETERMINISTIC_FALLBACK',
+      });
+      ledger.set(
+        raw.id,
+        CanonicalEvidenceVerificationUtil.verify({
           raw,
-          proposal: {
-            classification: 'DIRECT_PROBLEM',
-            confidence: 70,
-            problemFamily: resolvePrimaryProblemFamily(raw.text)?.key || null,
-            verifiedByDeterministicGuard: true,
-            origin: 'DOMAIN_DIRECT_FALLBACK',
-          },
+          proposal,
           requestMode: context.requestMode,
           problemSpec: context.canonicalProblemSpec,
           selectedDomains: context.selectedDomains,
-        });
-        ledger.set(raw.id, verified);
-      }
+        }),
+      );
     }
 
     return [...ledger.values()];
@@ -884,6 +1338,97 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       explicitProblemSignal &&
       (sourceType === 'COMMENT' || userAuthoredPostSignal || technicalTicketSignal)
     );
+  }
+
+  private isUsableEvidenceFamilyLabel(
+    family: string | null | undefined,
+    evidenceText: string,
+  ): boolean {
+    const value = family?.replace(/\s+/gu, ' ').trim() ?? '';
+    if (!value) return false;
+    if (/\b(?:verified workflow problem|operational friction requiring validation|validation[- ]first workflow opportunity)\b/iu.test(value)) {
+      return false;
+    }
+    const painCue = /\b(?:problem|problems|failure|failures|failed|delay|delays|delayed|difficulty|difficult|challenge|challenges|barrier|barriers|risk|risks|breach|outage|downtime|fatigue|error|errors|loss|losses|missing|unavailable|unreliable|reliability|bottleneck|bottlenecks|rework|waste|wasted|fragmented|siloed|unauthorized|inconsistent|unable|cannot|can['’]?t|stuck)\b/iu;
+    if (!painCue.test(value)) return false;
+    return this.problemFamilyMatchesSelectedFamily(value, family ?? null, evidenceText);
+  }
+
+  /**
+   * Produces a pain-bearing discovery label only from the retained evidence
+   * body. It deliberately refuses the old "Verified Workflow Problem"
+   * placeholder and avoids turning an academic/source title into a problem
+   * unless the text itself contains an explicit failure, barrier, risk, delay,
+   * loss, reliability, or other operational-friction cue.
+   */
+  private deriveProblemBearingFamilyFromEvidence(
+    value: string,
+    domainName: string,
+  ): string | null {
+    const text = value
+      .replace(/^.*?\bCommunity comment:\s*/isu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!text) return null;
+
+    const strongPainCue = /\b(?:problem|problems|failure|failures|failed|delay|delays|delayed|difficulty|difficult|challenge|challenges|barrier|barriers|risk|risks|breach|outage|downtime|fatigue|error|errors|loss|losses|missing|unavailable|unreliable|reliability|bottleneck|bottlenecks|rework|waste|wasted|fragmented|siloed|unauthorized|inconsistent|unable|cannot|can['’]?t|stuck)\b/iu;
+    const solutionOrPaperTitle = /\b(?:automating|automation|framework|architecture|integrating|integration|approach|methodology|model for|system for|platform for|using (?:ai|artificial intelligence)|detection)\b/iu.test(text);
+    if (solutionOrPaperTitle && !strongPainCue.test(text)) return null;
+
+    const knownFamily = resolvePrimaryProblemFamily(text);
+    if (knownFamily && !knownFamily.key.startsWith('lexical:') && knownFamily.key !== 'generic-friction') {
+      return knownFamily.label;
+    }
+
+    if (/\balert fatigue\b/iu.test(text)) {
+      return 'Alert Fatigue and Incident-Response Friction';
+    }
+    if (/\bdata breach\b[^.!?]{0,180}\bincident handling\b|\bincident handling\b[^.!?]{0,180}\bdata breach\b/iu.test(text)) {
+      return 'Data-Breach Incident Handling and Response Friction';
+    }
+    if (/\breliability problem\b|\breliability (?:failure|failures|risk|risks|issues?)\b/iu.test(text)) {
+      return `${domainName} Reliability and Operational Friction`;
+    }
+
+    const painCue = /\b(?:problem|problems|failure|failures|failing|failed|delay|delays|delayed|difficult|difficulty|challenge|challenges|barrier|barriers|risk|risks|breach|outage|downtime|fatigue|error|errors|loss|losses|missing|unavailable|unreliable|reliability|bottleneck|bottlenecks|rework|waste|wasted|cost pressure|fragmented|siloed|unauthorized|inconsistent|unable|cannot|can['’]?t|stuck)\b/iu;
+    const sentences = text
+      .split(/(?<=[.!?])\s+|\n+/u)
+      .map((sentence) => sentence.replace(/\s+/gu, ' ').trim())
+      .filter((sentence) => sentence.length >= 12 && sentence.length <= 420);
+    const painSentence = sentences.find((sentence) => painCue.test(sentence));
+    if (!painSentence) return null;
+
+    const cleaned = painSentence
+      .replace(/^(?:abstract|purpose|background|objective|objectives|study|paper|article|research)\s*[:.-]?\s*/iu, '')
+      .replace(/^(?:how|why)\s+/iu, '')
+      .replace(/\b(?:this|the) (?:study|paper|article|research)\b/giu, ' ')
+      .replace(/[^\p{L}\p{N}\s&'’-]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!cleaned || !painCue.test(cleaned)) return null;
+
+    const stop = new Set([
+      'a', 'an', 'the', 'of', 'for', 'to', 'and', 'or', 'with', 'in', 'on',
+      'from', 'that', 'this', 'these', 'those', 'is', 'are', 'was', 'were',
+      'be', 'been', 'being', 'can', 'could', 'may', 'might', 'often',
+    ]);
+    const words = cleaned
+      .split(/\s+/u)
+      .filter((word) => !stop.has(word.toLocaleLowerCase()))
+      .slice(0, 10);
+    if (words.length < 2) return null;
+
+    const label = words
+      .map((word) =>
+        word.length <= 3 && /^[A-Z0-9]+$/u.test(word)
+          ? word
+          : `${word.charAt(0).toLocaleUpperCase()}${word.slice(1)}`,
+      )
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    return label.length >= 8 ? label.slice(0, 120) : null;
   }
 
   private isCanonicalMissingEvidenceWarning(warning: string): boolean {
@@ -1323,4 +1868,13 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     }
     return definition;
   }
+  private hasExplicitRequesterProblem(context: IdeaGenerationContext): boolean {
+    const intent = context.collectionPlan?.requestIntent;
+    return Boolean(
+      context.requestDescription?.trim() &&
+      intent?.mode === 'EXPLICIT_PROBLEM' &&
+      intent.explicitProblem?.trim(),
+    );
+  }
+
 }

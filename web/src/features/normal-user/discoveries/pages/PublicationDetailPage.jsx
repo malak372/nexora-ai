@@ -95,14 +95,18 @@ function ContentBlock({ value, fallback }) {
         {items.map((item, index) => (
           <li key={`${index}-${item}`}>
             <CheckCircle2 size={17} />
-            <span>{item}</span>
+            <span dir="auto" data-idea-content="true">{item}</span>
           </li>
         ))}
       </ul>
     );
   }
 
-  return <p>{items[0] || fallback}</p>;
+  if (items[0]) {
+    return <p dir="auto" data-idea-content="true">{items[0]}</p>;
+  }
+
+  return <p>{fallback}</p>;
 }
 
 function extractAcceptance(payload) {
@@ -650,15 +654,15 @@ export default function PublicationDetailPage() {
           <span className="publication-detail-label">
             <Sparkles size={14} /> Community discovery
           </span>
-          <h1>{publication.publicTitle || 'Untitled discovery'}</h1>
-          <ContentBlock
+          <h1 dir="auto" data-idea-content="true">{publication.publicTitle || 'Untitled discovery'}</h1>
+          <div data-idea-content="true" dir="auto"><ContentBlock
             value={publication.publicAbstract}
             fallback="No public abstract was provided."
-          />
+          /></div>
           <div className="publication-detail-author-row">
             <div className="publication-detail-author">
               <UserRound size={17} /> Published by{' '}
-              <strong>{publication?.publisher?.fullName || 'Nexora creator'}</strong>
+              <strong dir="auto" data-no-auto-translate="true">{publication?.publisher?.fullName || 'Voxidence creator'}</strong>
             </div>
             {publication?.publisher?.id !== getStoredUser()?.id ? (
               <button type="button" className="publication-report-trigger" onClick={() => setReportOpen(true)}>
@@ -772,6 +776,7 @@ export default function PublicationDetailPage() {
               <h2>Written feedback</h2>
               <p>Share useful feedback before or after acceptance.</p>
               <textarea
+                dir="auto"
                 value={feedback}
                 maxLength={2000}
                 onChange={(event) => setFeedbackValue(event.target.value)}

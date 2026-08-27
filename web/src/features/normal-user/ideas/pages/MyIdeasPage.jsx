@@ -36,6 +36,7 @@ import {
   preloadDiscoveryDetail,
   preloadIdeaWorkspace,
 } from '../../../../routes/routePreloaders';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../styles/ideas.css';
 
 const PAGE_SIZE = 9;
@@ -257,6 +258,7 @@ function normalizeAcceptedRecord(record) {
  * @returns {JSX.Element}
  */
 export default function MyIdeasPage() {
+  const { language, t } = useUserExperience();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -816,12 +818,12 @@ export default function MyIdeasPage() {
       return;
     }
 
-    const confirmed =
-      window.confirm(
-        `Delete “${idea?.title ||
-        'this idea'
-        }”? It will be removed from your library.`,
-      );
+    const ideaTitle = idea?.title || t('this idea');
+    const confirmed = window.confirm(
+      language === 'ar'
+        ? `${t('Delete idea')} “${ideaTitle}”؟ ${t('It will be removed from your library.')}`
+        : `Delete “${ideaTitle}”? It will be removed from your library.`,
+    );
 
     if (!confirmed) return;
 
@@ -927,16 +929,12 @@ export default function MyIdeasPage() {
       <header className="ideas-page__header">
         <div>
           <span className="ideas-page__kicker">
-            Private workspace
+            {t('Private workspace')}
           </span>
 
-          <h1>My ideas</h1>
+          <h1>{t('My ideas')}</h1>
 
-          <p>
-            Review, continue, and
-            manage every idea you
-            created.
-          </p>
+          <p>{t('Review, continue, and manage every idea you created.')}</p>
         </div>
 
         <div
@@ -965,13 +963,13 @@ export default function MyIdeasPage() {
           </strong>
 
           <span>
-            {isAcceptedView
+            {t(isAcceptedView
               ? 'accepted'
               : isPublishedView
                 ? 'published'
                 : isFavoritesView
                 ? 'favorites'
-                : 'ideas'}
+                : 'ideas')}
           </span>
         </div>
       </header>
@@ -997,11 +995,11 @@ export default function MyIdeasPage() {
                 event.target.value,
               )
             }
-            placeholder="Search by title, problem, or domain..."
+            placeholder={t('Search by title, problem, or domain...')}
           />
 
           <button type="submit">
-            Search
+            {t('Search')}
           </button>
         </form>
 
@@ -1010,17 +1008,17 @@ export default function MyIdeasPage() {
               ? ' has-value'
               : ''
             }`}
-          aria-label="Creation date range"
+          aria-label={t('Creation date range')}
         >
           <div className="ideas-date-filter__heading">
-            <span>Date range</span>
+            <span>{t('Date range')}</span>
 
             {fromDate || toDate ? (
               <button
                 className="ideas-date-filter__clear"
                 type="button"
-                aria-label="Clear selected dates"
-                title="Clear selected dates"
+                aria-label={t('Clear selected dates')}
+                title={t('Clear selected dates')}
                 onClick={() => {
                   setFromDate('');
                   setToDate('');
@@ -1034,7 +1032,7 @@ export default function MyIdeasPage() {
 
           <div className="ideas-date-filter__fields">
             <label>
-              <span>From</span>
+              <span>{t('From')}</span>
 
               <input
                 type="date"
@@ -1060,7 +1058,7 @@ export default function MyIdeasPage() {
             </label>
 
             <label>
-              <span>To</span>
+              <span>{t('To')}</span>
 
               <input
                 type="date"
@@ -1093,7 +1091,7 @@ export default function MyIdeasPage() {
 
         <div
           className="ideas-filters"
-          aria-label="Idea filters"
+          aria-label={t('Idea filters')}
         >
           {FILTERS.map((option) => {
             const FilterIcon =
@@ -1130,7 +1128,7 @@ export default function MyIdeasPage() {
                   />
                 ) : null}
 
-                {option.label}
+                {t(option.label)}
               </button>
             );
           })}
@@ -1148,17 +1146,9 @@ export default function MyIdeasPage() {
           </span>
 
           <div>
-            <strong>
-              Accepted idea library
-            </strong>
+            <strong>{t('Accepted idea library')}</strong>
 
-            <p>
-              These ideas were adopted
-              from Discover and are
-              ready for their next
-              publication or access
-              step.
-            </p>
+            <p>{t('These ideas were adopted from Discover and are ready for their next publication or access step.')}</p>
           </div>
         </div>
       ) : null}
@@ -1166,7 +1156,7 @@ export default function MyIdeasPage() {
       {loading && items.length === 0 ? (
         <div
           className="ideas-grid"
-          aria-label="Loading ideas"
+          aria-label={t('Loading ideas')}
         >
           {Array.from({
             length: 6,
@@ -1181,18 +1171,15 @@ export default function MyIdeasPage() {
         <div className="ideas-state ideas-state--error">
           <RefreshCw size={28} />
 
-          <h2>
-            We could not load your
-            ideas
-          </h2>
+          <h2>{t('We could not load your ideas')}</h2>
 
-          <p>{error}</p>
+          <p>{t(error)}</p>
 
           <button
             type="button"
             onClick={() => loadIdeas({ force: true })}
           >
-            Try again
+            {t('Try again')}
           </button>
         </div>
       ) : items.length === 0 ? (
@@ -1213,19 +1200,19 @@ export default function MyIdeasPage() {
           )}
 
           <h2>
-            {isAcceptedView
+            {t(isAcceptedView
               ? 'No accepted ideas yet'
               : isPublishedView
                 ? 'No published ideas yet'
-                : 'No ideas in this view'}
+                : 'No ideas in this view')}
           </h2>
 
           <p>
-            {isAcceptedView
+            {t(isAcceptedView
               ? 'Open Discover, review an opportunity, then choose Accept & continue.'
               : isPublishedView
                 ? 'Publish one of your completed ideas and it will appear here.'
-                : 'Change the active filter or create a new idea from the Generate page.'}
+                : 'Change the active filter or create a new idea from the Generate page.')}
           </p>
 
           <button
@@ -1240,11 +1227,11 @@ export default function MyIdeasPage() {
               )
             }
           >
-            {isAcceptedView
+            {t(isAcceptedView
               ? 'Open Discover'
               : isPublishedView
                 ? 'View all ideas'
-                : 'Go to Generate'}
+                : 'Go to Generate')}
           </button>
         </div>
       ) : (
@@ -1290,7 +1277,7 @@ export default function MyIdeasPage() {
         1 && (
           <nav
             className="ideas-pagination"
-            aria-label="Ideas pagination"
+            aria-label={t('Ideas pagination')}
           >
             <button
               type="button"
@@ -1303,13 +1290,13 @@ export default function MyIdeasPage() {
               }
             >
               <ArrowLeft size={17} />
-              Previous
+              {t('Previous')}
             </button>
 
             <span>
-              Page{' '}
+              {t('Page')} {' '}
               <strong>{page}</strong>{' '}
-              of{' '}
+              {t('of')} {' '}
               {pagination.totalPages}
             </span>
 
@@ -1326,7 +1313,7 @@ export default function MyIdeasPage() {
                 )
               }
             >
-              Next
+              {t('Next')}
               <ArrowRight size={17} />
             </button>
           </nav>

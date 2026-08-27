@@ -3687,3 +3687,47 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ========================================================================== */
+/* Dark publication detail — remove large pearl/white content islands          */
+/* ========================================================================== */
+html.vox-user-dark .publication-detail-page :is(
+  .publication-detail-hero,
+  .publication-engagement article,
+  .publication-engagement form,
+  .publication-access-card,
+  .publication-accepted-banner,
+  .publication-detail-grid article,
+  .publication-notice,
+  .publication-advanced-upsell,
+  .publication-advanced-section,
+  .publication-advanced-grid article,
+  .publication-advanced-cta,
+  .publication-workspace-cta,
+  .publication-payment-modal__panel,
+  .publication-payment-modal > section,
+  .publication-report-modal form
+) {
+  color: #edf7f4 !important;
+  border-color: rgba(104, 200, 195, .19) !important;
+  background: linear-gradient(145deg, #1c2e27, #17261f) !important;
+  background-image: linear-gradient(145deg, #1c2e27, #17261f) !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.16) !important;
+}
+
+html.vox-user-dark .publication-detail-page :is(
+  .publication-detail-metrics span,
+  .publication-payment-modal__benefits span,
+  .publication-payment-modal__methods > button,
+  .publication-payment-methods > button,
+  .publication-detail-list li
+) {
+  color: #dcebe7 !important;
+  border-color: rgba(104, 200, 195, .16) !important;
+  background: #20322b !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark .publication-detail-page :is(h1,h2,h3,strong,b) { color: #f1f8f6 !important; }
+html.vox-user-dark .publication-detail-page :is(p,small,li) { color: #aec1bb !important; }

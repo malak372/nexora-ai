@@ -272,10 +272,16 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
 
     if (queries.length === 0) return [];
 
-    const requests = sites.flatMap((site) =>
-      queries.slice(0, sites.length > 1 ? 1 : 2).map((query) =>
-        this.searchStackExchange(site, query, input),
-      ),
+    /*
+     * Preserve every authoritative source-plan query. The previous multi-site
+     * branch executed only queries[0], so a PRIMARY plan carrying three AI
+     * queries could silently lose queries[1]/queries[2] before any HTTP call.
+     * Distribute the bounded query set across resolved sites instead of taking
+     * the Cartesian product; this keeps all planner intent while retaining the
+     * same small request budget.
+     */
+    const requests = queries.map((query, index) =>
+      this.searchStackExchange(sites[index % sites.length], query, input),
     );
     const settled = await Promise.allSettled(requests);
     const firstPass = settled.flatMap((result) =>
@@ -774,6 +780,10 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
 
   private resolveStackExchangeSites(input: CollectorRequestSupportInput): string[] {
     const requestText = this.cleanNormalizedText(input.requestDescription ?? '');
+    const routingIdentityText = this.cleanNormalizedText([
+      input.requestDescription ?? '',
+      input.domainName ?? '',
+    ].join(' '));
     const text = this.cleanNormalizedText([
       input.requestDescription ?? '',
       input.domainName ?? '',
@@ -784,6 +794,9 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     ].join(' '));
 
     const nicheCustomCraft = RequestNicheCustomCraftUtil.resolve(input.requestDescription);
+    const requestWorkflowProfile = RequestWorkflowIntentProfileUtil.resolve(
+      input.requestDescription,
+    );
 
     const sites: string[] = [];
     const add = (site: string) => {
@@ -825,6 +838,15 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     }
 
     if (
+      /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|regulatory agencies?|licensing authorities?)\b/u.test(requestText) &&
+      /\b(?:licenses?|licences?|certificates?|permits?|official records?|official documents?|approval records?|security logs?)\b/u.test(requestText) &&
+      /\b(?:altered|tamper(?:ed|ing)?|unauthorized access|unauthorised access|fraud(?:ulent)?|forged|verification|integrity|audit trail|access logs?)\b/u.test(requestText)
+    ) {
+      add('security.stackexchange.com');
+      add('law.stackexchange.com');
+    }
+
+    if (
       /\b(?:urban healthcare networks?|healthcare networks?|hospital networks?|emergency departments?|ambulance services?|clinics?)\b/u.test(requestText) &&
       /\b(?:patient demand|hospital capacity|ambulance availability|overcrowd(?:ed|ing)?|response times?|resource allocation|delayed patient care|care gaps?)\b/u.test(requestText)
     ) {
@@ -862,19 +884,45 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       add('engineering.stackexchange.com');
     }
     if (
-      /\b(?:violin varnish|violin restoration|luthier|string instrument restoration)\b/u.test(requestText) &&
-      /\b(?:varnish|coating|surface condition|treatment history|restoration history|formula|color matching|colour matching|preservation|documentation|records?|notes?)\b/u.test(requestText)
+      /\b(?:agricultural cooperatives?|farm cooperatives?|farmers?|farms?|farm operators?|farm managers?|agricultural enterprises?|crop producers?)\b/u.test(requestText) &&
+      /\b(?:water consumption|water use|irrigation|fertilizer|fertiliser|crop losses?|yield losses?|resource use|resource usage|environmental conditions?|weather impacts?|market prices?|input costs?|expenses?|profitability|profit margins?)\b/u.test(requestText)
     ) {
-      add('music.stackexchange.com');
+      add('economics.stackexchange.com');
+      add('sustainability.stackexchange.com');
+    }
+
+    if (
+      /\b(?:music box makers?|musical box makers?|custom music box makers?|music box artisans?|mechanical music box makers?)\b/u.test(requestText) &&
+      /\b(?:melody|tune|mechanism|wood|engraving|decorative details?|dimensions?|design revisions?|approved specifications?|completion deadlines?|commissions?)\b/u.test(requestText) &&
+      !this.isTechnicalRequest(input)
+    ) {
       add('crafts.stackexchange.com');
+      add('woodworking.stackexchange.com');
+    }
+    if (
+      /\b(?:violin bow restoration|violin restoration|violin varnish|luthier|string instrument restoration)\b/u.test(requestText) &&
+      /\b(?:restoration|conservation|repair|varnish|coating|surface condition|condition assessment|treatment history|restoration history|previous repairs?|replacement materials?|warped sticks?|worn hair|damaged frogs?|loose fittings?|preservation|documentation|records?|notes?)\b/u.test(requestText)
+    ) {
+      // Route by the requester workflow before the musical object. Restoration
+      // and conservation records belong to craft/physical-treatment forums;
+      // Music.SE is appropriate only when the requester is actually asking
+      // about performance, setup, playing technique, or musical practice.
+      add('crafts.stackexchange.com');
+      add('diy.stackexchange.com');
+      if (
+        !requestWorkflowProfile.restorationIntent &&
+        /\b(?:playing technique|performance|setup|tone|intonation|bow hold|bowing|repertoire|music theory)\b/u.test(requestText)
+      ) {
+        add('music.stackexchange.com');
+      }
     }
 
     if (
       /\b(?:violin case restoration specialists?|violin case restorers?|instrument case restoration specialists?|instrument case restorers?|violin case restoration)\b/u.test(requestText) &&
       /\b(?:damaged hinges?|interior padding|fabric condition|handle repairs?|replacement hardware|previous restoration|restoration history|repeated repairs?|incorrect materials?|overlooked damage)\b/u.test(requestText)
     ) {
-      add('music.stackexchange.com');
       add('crafts.stackexchange.com');
+      add('diy.stackexchange.com');
     }
 
     if (
@@ -934,7 +982,10 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       }
       add('crafts.stackexchange.com');
     }
-    if (/\b(?:guitar repair|guitar technician|guitar technicians|luthier|luthiers|instrument repair|instrument repairs|musical instrument repair|fret wear|neck adjustment|neck adjustments|setup preferences?|repair history|service history)\b/u.test(text)) {
+    if (
+      !requestWorkflowProfile.restorationIntent &&
+      /\b(?:guitar repair|guitar technician|guitar technicians|luthier|luthiers|instrument repair|instrument repairs|musical instrument repair|fret wear|neck adjustment|neck adjustments|setup preferences?|repair history|service history)\b/u.test(text)
+    ) {
       add('music.stackexchange.com');
     }
     if (/\b(?:sneaker cleaning|shoe cleaning|sneaker cleaner|shoe cleaner|sneaker restoration|shoe restoration|footwear cleaning|footwear restoration)\b/u.test(text)) {
@@ -948,13 +999,23 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     if (/\b(?:upholstery|furniture repair|woodworking|home repair|home improvement|frame restoration|picture frame restoration|frame restorer|gilded frame restoration)\b/u.test(text)) {
       add('diy.stackexchange.com');
     }
-    if (/\b(?:legal|law|contract|compliance)\b/u.test(text)) {
+    // Generic forum routing is identity-bound. Query/keyword text may mention
+    // legal, education, or finance terms incidentally; those retrieval hints
+    // must not reroute an AI/Cybersecurity discovery lane to Law.SE.
+    if (/\b(?:artificial intelligence|machine learning|\bai\b|large language model|\bllm\b)\b/u.test(routingIdentityText)) {
+      add('ai.stackexchange.com');
+      add('datascience.stackexchange.com');
+    }
+    if (/\b(?:cybersecurity|information security|security operations|soc)\b/u.test(routingIdentityText)) {
+      add('security.stackexchange.com');
+    }
+    if (/\b(?:legal|law|contract|compliance)\b/u.test(routingIdentityText)) {
       add('law.stackexchange.com');
     }
-    if (/\b(?:education|academic|university|student|research)\b/u.test(text)) {
+    if (/\b(?:education|academic|university|student|research)\b/u.test(routingIdentityText)) {
       add('academia.stackexchange.com');
     }
-    if (/\b(?:workplace|human resources|hr policy|employee|employment|faculty workload|teaching workload|course staffing)\b/u.test(text)) {
+    if (/\b(?:workplace|human resources|hr policy|employee|employment|faculty workload|teaching workload|course staffing)\b/u.test(routingIdentityText)) {
       add('workplace.stackexchange.com');
     }
     if (/\b(?:sign language interpretation agenc(?:y|ies)|sign language interpreting agenc(?:y|ies)|asl interpreting agenc(?:y|ies)|interpreter agenc(?:y|ies)|language service providers?|interpreter availability|assignment matching|interpreter scheduling)\b/u.test(text)) {
@@ -964,6 +1025,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       add('pets.stackexchange.com');
     }
     if (
+      !requestWorkflowProfile.restorationIntent &&
       /\b(?:music|musical|musician|orchestra|band|guitar|violin|piano|instrument)\w*\b/u.test(requestText) &&
       /\b(?:rental|rentals|hire|booking|availability|return dates?|deposit|accessories|maintenance|condition|damage)\w*\b/u.test(requestText) &&
       !this.isTechnicalRequest(input)
@@ -1002,7 +1064,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         add('security.stackexchange.com');
       }
       const businessOperationalFinance =
-        /\b(?:companies?|businesses?|operators?|agencies|tour packages?|routes?|services?|facilities|departments|suppliers?|bookings?|reservations?)\b/u.test(requestText) &&
+        /\b(?:companies?|businesses?|operators?|agencies|cooperatives?|farms?|farmers?|growers?|agricultural enterprises?|tour packages?|routes?|services?|facilities|departments|suppliers?|bookings?|reservations?)\b/u.test(requestText) &&
         /\b(?:profitability|margin|pricing|budget|operating costs?|supplier fees?|cost drivers?|cost attribution|forecast)\w*\b/u.test(requestText);
       const personalOrTransactionFinance =
         /\b(?:personal finance|credit card|mortgage|loan|bank account|investment|salary|tax|consumer payment|refund dispute|chargeback|payment fraud)\w*\b/u.test(requestText);
@@ -1037,7 +1099,11 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         add('crafts.stackexchange.com');
         add('diy.stackexchange.com');
       }
-      if (/\b(?:energy|environment|waste|sustainability|agriculture|farm|emission|resource efficiency)\w*\b/u.test(requestText)) {
+      const environmentalSustainabilityWorkflow =
+        /\b(?:energy|environment|environmental|sustainability|agriculture|farm|emissions?|resource efficiency|waste management|industrial waste|food waste|municipal waste|material waste reduction)\b/iu.test(
+          requestText,
+        );
+      if (!nicheCustomCraft && environmentalSustainabilityWorkflow) {
         add('sustainability.stackexchange.com');
       }
       if (/\b(?:staff|employee|workload|assignment|scheduling|workplace|team coordination|availability)\w*\b/u.test(requestText)) {
@@ -1055,7 +1121,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     }
 
     return sites
-      .filter((site) => this.isStackExchangeSiteCompatible(site, requestText))
+      .filter((site) => this.isStackExchangeSiteCompatible(site, routingIdentityText))
       .slice(0, 2);
   }
 
@@ -1067,7 +1133,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         /\b(?:platforms?|streaming|gaming|digital entertainment|subscription services?|restaurant|food delivery|marketplace|universit(?:y|ies)|healthcare|government|businesses?|companies?|organizations?)\b/u.test(requestText) &&
         /\b(?:account takeover|account theft|fraudulent subscriptions?|refund abuse|unauthorized refunds?|unauthorised refunds?|payment abuse|security alerts?|coordinated fraud|fraud detection|suspicious activity)\b/u.test(requestText);
       const businessOperationalFinance =
-        /\b(?:companies?|businesses?|operators?|agencies|platforms?|services?|packages?|routes?|suppliers?|bookings?|reservations?)\b/u.test(requestText) &&
+        /\b(?:companies?|businesses?|operators?|agencies|cooperatives?|farms?|farmers?|growers?|agricultural enterprises?|platforms?|services?|packages?|routes?|suppliers?|bookings?|reservations?)\b/u.test(requestText) &&
         /\b(?:profitability|margin|pricing|budget|operating costs?|supplier fees?|cost drivers?|cost attribution|financial forecasts?|revenue leakage)\b/u.test(requestText);
       const explicitPersonalFinance =
         /\b(?:personal finance|credit cards?|mortgages?|loans?|bank accounts?|consumer banking|salary|income tax|tax return|retirement|debt|investment portfolio|stock investing|property investment|real estate investment|rental property cash flow|landlord mortgage)\b/u.test(requestText);
@@ -1078,8 +1144,15 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     if (/^music\./u.test(normalizedSite)) {
       const restorationArtifactRequest = /\b(?:restor\w*|conserv\w*|repair history|previous repairs?|replacement materials?|missing components?|damaged mechanisms?)\b/u.test(requestText);
       const mechanicalMusicBoxRequest = /\b(?:music box|musical box|cylinder music box|disc music box|tune[- ]?cylinder|comb mechanism|governor mechanism|spring mechanism)\b/u.test(requestText);
+      const musicBoxCommissionRequest =
+        mechanicalMusicBoxRequest &&
+        /\b(?:makers?|artisan|custom|commission|melody|mechanism|wood|engraving|dimensions?|design revisions?|customer|client|approved specifications?)\b/u.test(requestText);
       const explicitInstrumentRepairRequest = /\b(?:guitar|violin|piano|flute|woodwind|brass instrument|musical instrument repair|instrument repair|luthier)\b/u.test(requestText);
-      if (restorationArtifactRequest && mechanicalMusicBoxRequest && !explicitInstrumentRepairRequest) {
+      if (
+        mechanicalMusicBoxRequest &&
+        !explicitInstrumentRepairRequest &&
+        (restorationArtifactRequest || musicBoxCommissionRequest)
+      ) {
         return false;
       }
     }

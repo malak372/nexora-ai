@@ -28,6 +28,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getIdeaWorkspaceBundle } from '../api/ideaWorkspaceApi';
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import { preloadAiChatWorkspace } from '../../../../routes/routePreloaders';
+import { useUserExperience } from '../../../../system/user-experience';
 
 import '../styles/idea-workspace.css';
 
@@ -138,12 +139,50 @@ function WorkspaceLoadingState() {
   );
 }
 
+function WorkspaceSectionArtwork({ section, index }) {
+  const Icon = section?.icon || FileText;
+  const tone = ['mint', 'rose', 'sky', 'pearl'][index % 4];
+
+  return (
+    <div
+      className={`workspace-section-art workspace-section-art--${tone}`}
+      aria-hidden="true"
+    >
+      <span className="workspace-section-art__grid" />
+      <span className="workspace-section-art__orbit workspace-section-art__orbit--one" />
+      <span className="workspace-section-art__orbit workspace-section-art__orbit--two" />
+      <span className="workspace-section-art__line workspace-section-art__line--one" />
+      <span className="workspace-section-art__line workspace-section-art__line--two" />
+
+      <span className="workspace-section-art__node workspace-section-art__node--a">
+        <Sparkles size={13} />
+      </span>
+      <span className="workspace-section-art__node workspace-section-art__node--b">
+        <CheckCircle2 size={13} />
+      </span>
+      <span className="workspace-section-art__node workspace-section-art__node--c">
+        <Rocket size={13} />
+      </span>
+
+      <span className="workspace-section-art__core">
+        <Icon size={28} />
+      </span>
+
+      <span className="workspace-section-art__label">
+        <Sparkles size={11} />
+        Idea signal
+      </span>
+    </div>
+  );
+}
+
 export default function IdeaWorkspacePage() {
   const shouldReduceMotion = useReducedMotion();
   const { ideaId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { isPremium } = useAccountAccess();
+  const { t, language } = useUserExperience();
 
   const routeIdeaSeed = location.state?.ideaSeed ?? null;
   const [idea, setIdea] = useState(() => routeIdeaSeed);
@@ -288,12 +327,18 @@ export default function IdeaWorkspacePage() {
         caption: 'Advanced execution output',
         icon: Sparkles,
         content: output.content || output.structuredContent,
+        preserveTitle: Boolean(output.title),
       })),
     ];
   }, [idea, outputs]);
 
   const current =
     sections.find((section) => section.key === activeKey) ?? sections[0];
+  const currentIndex = Math.max(
+    0,
+    sections.findIndex((section) => section.key === current?.key),
+  );
+  const coreJourneySections = sections.slice(0, Math.min(4, sections.length));
 
   if (loading) return <WorkspaceLoadingState />;
 
@@ -316,12 +361,12 @@ export default function IdeaWorkspacePage() {
   }
 
   const createdDate = idea.createdAt
-    ? new Date(idea.createdAt).toLocaleDateString(undefined, {
+    ? new Date(idea.createdAt).toLocaleDateString(language === 'ar' ? 'ar' : 'en', {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
     })
-    : 'Not available';
+    : t('Not available');
 
   return (
     <motion.main
@@ -361,12 +406,12 @@ export default function IdeaWorkspacePage() {
             Private idea workspace
           </span>
 
-          <h1>{idea.title}</h1>
+          <h1 dir="auto" data-idea-content="true">{idea.title}</h1>
 
           <p>
-            {idea.domain?.name || 'General innovation'}
+            <span dir="auto" data-idea-content="true">{idea.domain?.name || 'General innovation'}</span>
             <span aria-hidden="true">·</span>
-            {idea.selectedRegion || 'Global scope'}
+            <span dir="auto" data-idea-content="true">{idea.selectedRegion || 'Global scope'}</span>
           </p>
 
           <div className="workspace-hero__status">
@@ -517,7 +562,7 @@ export default function IdeaWorkspacePage() {
           </span>
           <div>
             <span>Generation type</span>
-            <strong>{formatGenerationType(idea.generationType)}</strong>
+            <strong>{t(formatGenerationType(idea.generationType))}</strong>
           </div>
         </motion.article>
 
@@ -530,7 +575,7 @@ export default function IdeaWorkspacePage() {
           </span>
           <div>
             <span>Workspace access</span>
-            <strong>{idea.isUnlocked ? 'Unlocked' : 'Core access'}</strong>
+            <strong>{t(idea.isUnlocked ? 'Unlocked' : 'Core access')}</strong>
           </div>
         </motion.article>
 
@@ -549,6 +594,63 @@ export default function IdeaWorkspacePage() {
       </motion.section>
 
       <motion.section
+        className="workspace-storyline"
+        initial={shouldReduceMotion ? undefined : { opacity: 0, y: 18 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.2 }}
+        transition={{ duration: 0.5 }}
+        aria-label="Core idea journey"
+      >
+        <div className="workspace-storyline__intro">
+          <span className="workspace-storyline__spark">
+            <Sparkles size={17} />
+          </span>
+          <div>
+            <span>IDEA JOURNEY</span>
+            <strong>Explore the story visually</strong>
+          </div>
+        </div>
+
+        <div className="workspace-storyline__track">
+          {coreJourneySections.map((section, index) => {
+            const Icon = section.icon || FileText;
+            const isActive = current?.key === section.key;
+
+            return (
+              <button
+                key={section.key}
+                className={isActive ? 'is-active' : ''}
+                type="button"
+                onClick={() => setActiveKey(section.key)}
+              >
+                <span className="workspace-storyline__node">
+                  <Icon size={17} />
+                </span>
+                <span>
+                  <small>{String(index + 1).padStart(2, '0')}</small>
+                  {section.preserveTitle ? (
+                    <strong dir="auto" data-idea-content="true">{section.title}</strong>
+                  ) : (
+                    <strong>{section.title}</strong>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {sections.length > 4 ? (
+          <div className="workspace-storyline__advanced">
+            <WandSparkles size={15} />
+            <span>
+              <strong>{sections.length - 4} advanced outputs</strong>
+              <small>Continue the journey in the document navigator.</small>
+            </span>
+          </div>
+        ) : null}
+      </motion.section>
+
+      <motion.section
         className="workspace-body"
         initial={shouldReduceMotion ? undefined : { opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -562,6 +664,17 @@ export default function IdeaWorkspacePage() {
               <strong>Idea document</strong>
               <small>{sections.length} sections available</small>
             </div>
+          </div>
+
+          <div className="workspace-nav__progress" aria-hidden="true">
+            <span
+              style={{
+                width: `${Math.max(
+                  8,
+                  ((currentIndex + 1) / Math.max(sections.length, 1)) * 100,
+                )}%`,
+              }}
+            />
           </div>
 
           <div className="workspace-nav__list">
@@ -593,7 +706,11 @@ export default function IdeaWorkspacePage() {
                     <Icon size={16} />
                   </span>
                   <span className="workspace-nav__copy">
-                    <strong>{section.title}</strong>
+                    {section.preserveTitle ? (
+                      <strong dir="auto" data-idea-content="true">{section.title}</strong>
+                    ) : (
+                      <strong>{section.title}</strong>
+                    )}
                     <small>{section.caption}</small>
                   </span>
                   <ChevronRight
@@ -614,21 +731,32 @@ export default function IdeaWorkspacePage() {
           transition={{ duration: 0.55 }}
         >
           <div className="workspace-document__header">
-            <div>
+            <div className="workspace-document__heading">
               <span>Idea document</span>
-              <h2>{current.title}</h2>
+              {current.preserveTitle ? (
+                <h2 dir="auto" data-idea-content="true">{current.title}</h2>
+              ) : (
+                <h2>{current.title}</h2>
+              )}
               <p>{current.caption}</p>
+
+              <div className="workspace-document__chapter">
+                <span>
+                  Chapter {String(currentIndex + 1).padStart(2, '0')}
+                </span>
+                <i aria-hidden="true" />
+                <span>
+                  {currentIndex < 4 ? 'Core narrative' : 'Execution output'}
+                </span>
+              </div>
             </div>
 
-            <span className="workspace-document__badge">
-              {String(
-                Math.max(
-                  1,
-                  sections.findIndex((section) => section.key === current.key) +
-                  1,
-                ),
-              ).padStart(2, '0')}
-            </span>
+            <div className="workspace-document__visual">
+              <WorkspaceSectionArtwork section={current} index={currentIndex} />
+              <span className="workspace-document__badge">
+                {String(currentIndex + 1).padStart(2, '0')}
+              </span>
+            </div>
           </div>
 
           <motion.div
@@ -638,7 +766,7 @@ export default function IdeaWorkspacePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
           >
-            <WorkspaceContent value={current.content} />
+            <div data-idea-content="true" dir="auto"><WorkspaceContent value={current.content} /></div>
           </motion.div>
         </motion.article>
       </motion.section>

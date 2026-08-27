@@ -36,3 +36,22 @@
     transform: rotate(360deg);
   }
 }
+
+/* VOXIDENCE_CONTENT_DIRECTION_FIX */
+[data-idea-content="true"] {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
+input[dir="auto"],
+textarea[dir="auto"],
+[contenteditable="true"][dir="auto"] {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
+html.vox-user-rtl [data-idea-content="true"][dir="auto"],
+html.vox-user-rtl input[dir="auto"],
+html.vox-user-rtl textarea[dir="auto"] {
+  text-align: start !important;
+}

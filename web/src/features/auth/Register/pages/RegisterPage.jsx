@@ -213,7 +213,7 @@ export default function RegisterPage() {
                             </motion.span>
 
                             <span className="nx-register__brand-copy">
-                                <strong>Voxidence</strong>
+                                <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
 
                                 <small>
                                     Ideas built from real needs

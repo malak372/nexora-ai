@@ -20,6 +20,8 @@ import {
     Sparkles,
 } from 'lucide-react';
 
+import { useUserExperience } from '../../../system/user-experience';
+
 import {
     ABOUT_NEXORA_CONTENT,
     ABOUT_NEXORA_FEATURES,
@@ -32,7 +34,7 @@ const ABOUT_ICONS = {
     trust: ShieldCheck,
 };
 
-function AboutFeatureCard({ feature, index }) {
+function AboutFeatureCard({ feature, index, t }) {
     const Icon = ABOUT_ICONS[feature.icon] || BrainCircuit;
 
     return (
@@ -48,8 +50,8 @@ function AboutFeatureCard({ feature, index }) {
             </div>
 
             <div className="vox-about-feature-copy">
-                <h3>{feature.title}</h3>
-                <p>{feature.description}</p>
+                <h3>{t(feature.title)}</h3>
+                <p>{t(feature.description)}</p>
             </div>
 
             <ArrowUpRight
@@ -62,6 +64,8 @@ function AboutFeatureCard({ feature, index }) {
 }
 
 export default function AboutNexoraSection() {
+    const { t } = useUserExperience();
+
     return (
         <section
             id="about"
@@ -83,12 +87,12 @@ export default function AboutNexoraSection() {
                         <div className="vox-about-refined__heading">
                             <span className="vox-about-refined__eyebrow">
                                 <Sparkles size={14} aria-hidden="true" />
-                                Why Voxidence
+                                {t('Why Voxidence')}
                             </span>
 
                             <h2 id="about-nexora-heading">
-                                Ideas should begin with{' '}
-                                <span>real human needs.</span>
+                                {t('Ideas should begin with')}{' '}
+                                <span>{t('real human needs.')}</span>
                             </h2>
                         </div>
                     </header>
@@ -96,28 +100,28 @@ export default function AboutNexoraSection() {
                     <div className="vox-about-layout">
                         <article className="vox-about-story-card">
                             <span className="vox-about-story-kicker">
-                                The Voxidence difference
+                                {t('The Voxidence difference')}
                             </span>
 
                             <p className="vox-about-story-lead">
-                                {ABOUT_NEXORA_CONTENT.secondaryDescription}
+                                {t(ABOUT_NEXORA_CONTENT.secondaryDescription)}
                             </p>
 
                             <div className="vox-about-story-points">
                                 <div>
-                                    <strong>Listen first</strong>
-                                    <span>Start with real community signals.</span>
+                                    <strong>{t('Listen first')}</strong>
+                                    <span>{t('Start with real community signals.')}</span>
                                 </div>
 
                                 <div>
-                                    <strong>Validate deeply</strong>
-                                    <span>Turn repeated needs into reliable direction.</span>
+                                    <strong>{t('Validate deeply')}</strong>
+                                    <span>{t('Turn repeated needs into reliable direction.')}</span>
                                 </div>
                             </div>
 
                             <div className="vox-about-mission-strip">
-                                <span>{ABOUT_NEXORA_CONTENT.missionLabel}</span>
-                                <p>{ABOUT_NEXORA_CONTENT.mission}</p>
+                                <span>{t(ABOUT_NEXORA_CONTENT.missionLabel)}</span>
+                                <p>{t(ABOUT_NEXORA_CONTENT.mission)}</p>
                             </div>
                         </article>
 
@@ -127,6 +131,7 @@ export default function AboutNexoraSection() {
                                     key={feature.id}
                                     feature={feature}
                                     index={index}
+                                    t={t}
                                 />
                             ))}
                         </div>

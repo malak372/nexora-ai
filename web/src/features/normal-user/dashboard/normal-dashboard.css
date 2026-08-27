@@ -3393,3 +3393,173 @@ button.normal-metric-card:hover {
 .normal-dashboard-page .normal-launcher__examples>span {
   color: #3f8f89;
 }
+/* =========================================================
+   Arabic + dark-mode hardening for the normal-user dashboard
+   ========================================================= */
+html.vox-user-dark .normal-dashboard-page {
+  --nx-dashboard-ink: #f1f8f5 !important;
+  --nx-dashboard-muted: #b4c6c0 !important;
+  --nx-dashboard-violet: #82d7d0 !important;
+  --nx-dashboard-violet-dark: #59bbb5 !important;
+  --nx-dashboard-lavender: #315d55 !important;
+  --nx-dashboard-border: rgba(112, 205, 198, 0.20) !important;
+
+  color: #f1f8f5 !important;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 8% 5%, rgba(225, 164, 179, .06), transparent 24rem),
+    radial-gradient(circle at 93% 4%, rgba(112, 205, 198, .08), transparent 27rem),
+    linear-gradient(145deg, #18231f 0%, #1b2823 52%, #18231f 100%) !important;
+}
+
+html.vox-user-dark .normal-dashboard-page :is(
+  .normal-dashboard-hero,
+  .normal-dashboard-launch,
+  .normal-active-generation,
+  .normal-metric-card,
+  .normal-work-card,
+  .normal-ai-story-card,
+  .normal-contact-card
+) {
+  color: #f1f8f5 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background-color: #22312b !important;
+  background-image: linear-gradient(145deg, rgba(36, 53, 46, .98), rgba(29, 43, 37, .97)) !important;
+  box-shadow: 0 20px 54px rgba(4, 12, 10, .20) !important;
+}
+
+html.vox-user-dark .normal-dashboard-page :is(
+  .normal-dashboard-hero h1,
+  .normal-dashboard-launch__heading h2,
+  .normal-section-heading h2,
+  .normal-work-card h3,
+  .normal-ai-story-card h2,
+  .normal-contact-card h2,
+  .normal-metric-card strong,
+  .normal-metric-card__label,
+  .normal-active-generation__copy strong
+) {
+  color: #f1f8f5 !important;
+}
+
+html.vox-user-dark .normal-dashboard-page :is(
+  .normal-dashboard-hero p,
+  .normal-dashboard-launch__heading p,
+  .normal-metric-card small,
+  .normal-work-card p,
+  .normal-work-card__date,
+  .normal-ai-story-card p,
+  .normal-contact-card p,
+  .normal-active-generation__copy em,
+  .normal-contact-card__email
+) {
+  color: #b4c6c0 !important;
+}
+
+html.vox-user-dark .normal-dashboard-page :is(
+  .normal-eyebrow,
+  .normal-text-button,
+  .normal-active-generation__copy small,
+  .normal-active-generation__action,
+  .normal-metric-card__trend
+) {
+  color: #96dfd9 !important;
+}
+
+html.vox-user-dark .normal-dashboard-page .normal-dashboard-hero h1 span {
+  background: linear-gradient(100deg, #78d1ca 0%, #a2ddd7 54%, #e3a8b5 100%) !important;
+  background-clip: text !important;
+  -webkit-background-clip: text !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .normal-dashboard-page :is(
+  .normal-dashboard-hero__access,
+  .normal-direct-unlock-hint,
+  .normal-launcher__input-shell,
+  .normal-launcher__examples button,
+  .normal-metric-card__arrow,
+  .normal-contact-card__notice,
+  .normal-signal-core__counter
+) {
+  color: #c9d9d4 !important;
+  border-color: rgba(112, 205, 198, .17) !important;
+  background: #283a33 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .normal-dashboard-page .normal-launcher__input-shell textarea,
+html.vox-user-dark .normal-dashboard-page .normal-contact-card :is(input, textarea) {
+  color: #f1f8f5 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #21302a !important;
+  caret-color: #78d1ca !important;
+}
+
+html.vox-user-dark .normal-dashboard-page :is(textarea, input)::placeholder {
+  color: #829891 !important;
+  opacity: 1 !important;
+}
+
+html.vox-user-dark .normal-dashboard-page :is(
+  .normal-secondary-button,
+  .normal-icon-button
+) {
+  color: #dff3ef !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #283a33 !important;
+}
+
+html.vox-user-dark .normal-dashboard-page :is(
+  .normal-primary-button,
+  .normal-work-card__open,
+  .normal-contact-card button[type='submit']
+) {
+  color: #fff !important;
+  border-color: rgba(112, 205, 198, .38) !important;
+  background: linear-gradient(135deg, #69c5be, #469c96) !important;
+}
+
+html.vox-user-dark .normal-dashboard-page .normal-work-card__visual {
+  background:
+    radial-gradient(circle at 30% 24%, rgba(227, 168, 181, .17), transparent 34%),
+    linear-gradient(145deg, #3f8f89, #2f706b) !important;
+}
+
+html.vox-user-rtl .normal-dashboard-page {
+  direction: rtl;
+}
+
+html.vox-user-rtl .normal-dashboard-page :is(
+  .normal-dashboard-hero__copy,
+  .normal-dashboard-launch__heading,
+  .normal-metric-card,
+  .normal-work-card__body,
+  .normal-section-heading,
+  .normal-ai-story-card,
+  .normal-contact-card
+) {
+  text-align: right;
+}
+
+html.vox-user-rtl .normal-dashboard-page .normal-metric-card__arrow {
+  right: auto !important;
+  left: 28px !important;
+}
+
+html.vox-user-rtl .normal-dashboard-page :is(textarea, input) {
+  direction: rtl;
+  text-align: right;
+}
+
+html.vox-user-rtl .normal-dashboard-page :is(
+  .normal-secondary-button svg:last-child,
+  .normal-text-button svg:last-child,
+  .normal-work-card__open svg:last-child,
+  .normal-active-generation__action svg
+) {
+  transform: rotate(180deg);
+}
+

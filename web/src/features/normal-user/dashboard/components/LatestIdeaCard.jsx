@@ -20,27 +20,30 @@ import {
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { warmIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
+import { useUserExperience } from '../../../../system/user-experience';
 
 export default function LatestIdeaCard({ idea }) {
   const navigate = useNavigate();
+  const { language, t } = useUserExperience();
 
   if (!idea) {
     return (
       <motion.article className="normal-work-card normal-work-card--empty" whileHover={{ y: -4 }}>
         <IdeaVisual />
         <div className="normal-work-card__body">
-          <span className="normal-eyebrow">Your next workspace</span>
-          <h3>Your first validated idea starts here.</h3>
-          <p>Describe one meaningful problem and let Voxidence transform it into a structured software opportunity.</p>
+          <span className="normal-eyebrow">{t('Your next workspace')}</span>
+          <h3>{t('Your first validated idea starts here.')}</h3>
+          <p>{t('Describe one meaningful problem and let Voxidence transform it into a structured software opportunity.')}</p>
           <button className="normal-work-card__open" type="button" onClick={() => navigate('/normal/generate')}>
-            Generate an idea <ArrowUpRight size={17} />
+            {t('Generate an idea')} <ArrowUpRight size={17} />
           </button>
         </div>
       </motion.article>
     );
   }
 
-  const formattedDate = new Date(idea.createdAt).toLocaleDateString(undefined, {
+  const formattedDate = new Date(idea.createdAt).toLocaleDateString(
+    language === 'ar' ? 'ar-EG' : 'en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -56,39 +59,39 @@ export default function LatestIdeaCard({ idea }) {
 
       <div className="normal-work-card__body">
         <div className="normal-work-card__meta">
-          <span className="normal-eyebrow">Latest validated idea</span>
+          <span className="normal-eyebrow">{t('Latest validated idea')}</span>
           <span className={idea.isUnlocked ? 'status-pill status-pill--unlocked' : 'status-pill'}>
             {idea.isUnlocked ? <CheckCircle2 size={14} /> : <LockKeyhole size={13} />}
-            {idea.isUnlocked ? 'Full workspace' : 'Free preview'}
+            {t(idea.isUnlocked ? 'Full workspace' : 'Free preview')}
           </span>
         </div>
 
-        <h3>{idea.title}</h3>
+        <h3 dir="auto" data-idea-content="true">{idea.title}</h3>
 
         <span className="normal-muted-row normal-work-card__date">
           <CalendarDays size={15} />
-          Created {formattedDate}
+          {t('Created')} {formattedDate}
         </span>
 
         {!idea.isUnlocked ? (
           <div className="normal-direct-unlock-hint">
             <span className="normal-direct-unlock-hint__icon"><WandSparkles size={19} /></span>
             <div>
-              <b>Turn this preview into a complete build workspace</b>
-              <small>Review the idea first, then use a secure one-time Direct Unlock only when it is worth developing.</small>
+              <b>{t('Turn this preview into a complete build workspace')}</b>
+              <small>{t('Review the idea first, then use a secure one-time Direct Unlock only when it is worth developing.')}</small>
             </div>
           </div>
         ) : (
           <div className="normal-direct-unlock-hint normal-direct-unlock-hint--unlocked">
             <span className="normal-direct-unlock-hint__icon"><CheckCircle2 size={19} /></span>
-            <div><b>Your advanced workspace is ready</b><small>All unlocked outputs remain available for this idea.</small></div>
+            <div><b>{t('Your advanced workspace is ready')}</b><small>{t('All unlocked outputs remain available for this idea.')}</small></div>
           </div>
         )}
 
         <div className="normal-work-card__footer">
           <span className="normal-work-card__availability">
             {!idea.isUnlocked ? <LockKeyhole size={15} /> : <CheckCircle2 size={15} />}
-            {!idea.isUnlocked ? 'Advanced outputs available inside' : 'Advanced outputs unlocked'}
+            {t(!idea.isUnlocked ? 'Advanced outputs available inside' : 'Advanced outputs unlocked')}
           </span>
 
           <motion.button
@@ -109,7 +112,7 @@ export default function LatestIdeaCard({ idea }) {
             whileHover={{ x: 2 }}
             whileTap={{ scale: 0.98 }}
           >
-            Open workspace <ArrowUpRight size={17} />
+            {t('Open workspace')} <ArrowUpRight size={17} />
           </motion.button>
         </div>
       </div>

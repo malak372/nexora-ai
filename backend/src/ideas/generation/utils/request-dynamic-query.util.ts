@@ -10,6 +10,16 @@ export type DynamicRequestQueryInput = {
   readonly maxQueries?: number;
 };
 
+export type IntentDiscoveryQueryInput = DynamicRequestQueryInput & {
+  readonly domainNames?: readonly string[];
+  readonly preferenceTerms?: readonly string[];
+  readonly explicitProblem?: string | null;
+  readonly desiredOutcome?: string | null;
+  readonly actor?: string | null;
+  readonly object?: string | null;
+  readonly workflow?: string | null;
+};
+
 export class RequestDynamicQueryUtil {
   static build(input: DynamicRequestQueryInput): string[] {
     const rawDescription = (input.requestDescription ?? '')
@@ -103,6 +113,118 @@ export class RequestDynamicQueryUtil {
           this.compose(compactActor, descriptionTokens.slice(0, 5).join(' ')),
         );
       }
+    }
+
+    return this.deduplicate(queries)
+      .filter((query) => query.split(/\s+/u).length >= 3)
+      .slice(0, maxQueries);
+  }
+
+  /**
+   * Builds domain-aware discovery/validation queries after PREPARING has
+   * resolved the actual request scope. Free text is treated as intent first:
+   * an explicit problem is searched as a validation target, while discovery
+   * intent searches for real pains inside the actor/object/workflow/domain
+   * scope. Saved preference terms are used only as search context and never as
+   * evidence or as a manufactured problem statement.
+   */
+  static buildIntentDiscoveryQueries(input: IntentDiscoveryQueryInput): string[] {
+    const description = this.cleanText(input.requestDescription ?? '');
+    const explicitProblem = this.cleanText(input.explicitProblem ?? '');
+    const desiredOutcome = this.cleanText(input.desiredOutcome ?? '');
+    const maxQueries = Math.max(1, Math.min(input.maxQueries ?? 10, 16));
+    const domainNames = this.unique(
+      (input.domainNames ?? [])
+        .map((value) => this.cleanText(value))
+        .filter(Boolean),
+    ).slice(0, 4);
+    const preferenceTerms = this.unique(
+      (input.preferenceTerms ?? [])
+        .map((value) => this.compactPhrase(value, 5))
+        .filter(Boolean),
+    ).slice(0, 6);
+    const structuredActor = this.compactPhrase(input.actor ?? '', 5);
+    const structuredObject = this.compactPhrase(input.object ?? '', 5);
+    const structuredWorkflow = this.compactPhrase(input.workflow ?? '', 6);
+    const inferredActor = description ? this.extractActor(description) : '';
+    const actor = structuredActor || this.stripRequesterLeadIn(inferredActor);
+    const actorAliases = actor ? this.buildActorAliases(actor) : [];
+    const actorTerm = actorAliases[1] || actorAliases[0] || actor;
+    const workflows = this.unique([
+      structuredWorkflow,
+      structuredObject,
+      ...(input.intentConcepts ?? []).map((value) => this.compactPhrase(value, 5)),
+      ...(description ? this.extractWorkflowPhrases(description) : []),
+    ]).filter(Boolean).slice(0, 8);
+    const pains = this.unique([
+      ...(explicitProblem ? this.extractFailurePhrases(explicitProblem) : []),
+      ...(input.evidenceTargets ?? []).flatMap((value) =>
+        this.extractFailurePhrases(value),
+      ),
+      ...(explicitProblem && description
+        ? this.extractFailurePhrases(description)
+        : []),
+    ]).filter(Boolean).slice(0, 8);
+    const identityTerms = description
+      ? this.extractEvidenceIdentityTerms(description).slice(0, 8)
+      : [];
+    const identity = identityTerms.slice(0, 3).join(' ');
+    const outcome = desiredOutcome
+      ? this.compactPhrase(desiredOutcome, 5)
+      : '';
+    const queries: string[] = [];
+    const add = (...parts: string[]) => {
+      const query = this.compose(...parts)
+        .replace(/\b(?:software|platform|application|app|dashboard|tool)\b/giu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(/\s+/u)
+        .slice(0, 9)
+        .join(' ');
+      if (query.split(/\s+/u).length >= 3) queries.push(query);
+    };
+
+    const domains = domainNames.length > 0 ? domainNames : [''];
+    if (explicitProblem) {
+      for (let index = 0; index < domains.length && queries.length < maxQueries; index += 1) {
+        const domain = domains[index] ?? '';
+        add(domain, actorTerm || identity, workflows[index % Math.max(1, workflows.length)] ?? '', pains[index % Math.max(1, pains.length)] ?? explicitProblem);
+        add(domain, identity || actorTerm, pains[(index + 1) % Math.max(1, pains.length)] ?? explicitProblem);
+      }
+    } else {
+      const discoverySignals = [
+        'workflow failures delays rework',
+        'user complaints unmet needs',
+        'operational barriers cost pressure',
+        'recurring problems service friction',
+      ];
+      for (let index = 0; index < domains.length && queries.length < maxQueries; index += 1) {
+        const domain = domains[index] ?? '';
+        const workflow = workflows[index % Math.max(1, workflows.length)] ?? '';
+        const preference = preferenceTerms[index % Math.max(1, preferenceTerms.length)] ?? '';
+        add(domain, actorTerm || identity || preference, workflow, discoverySignals[index % discoverySignals.length]);
+        if (outcome) add(domain, actorTerm || identity, outcome, 'barriers unmet needs');
+        if (preference) add(domain, preference, 'workflow problems complaints');
+      }
+    }
+
+    for (let index = 0; index < workflows.length && queries.length < maxQueries; index += 1) {
+      add(
+        domainNames[index % Math.max(1, domainNames.length)] ?? '',
+        actorTerm || identity,
+        workflows[index],
+        explicitProblem
+          ? pains[index % Math.max(1, pains.length)] ?? ''
+          : 'failures delays unmet needs',
+      );
+    }
+
+    for (let index = 0; index < preferenceTerms.length && queries.length < maxQueries; index += 1) {
+      add(
+        domainNames[index % Math.max(1, domainNames.length)] ?? '',
+        preferenceTerms[index],
+        explicitProblem ? 'reported problems' : 'user pain workflow challenges',
+      );
     }
 
     return this.deduplicate(queries)
@@ -215,6 +337,254 @@ export class RequestDynamicQueryUtil {
       ]).slice(0, maxQueries);
     }
     return genericQueries.slice(0, maxQueries);
+  }
+
+  /**
+   * Builds short profession-native discovery terms for evidence sources. These
+   * intentionally describe how practitioners/researchers name the work, record,
+   * condition, cost, failure, or decision problem rather than naming a proposed
+   * software solution. This lane is especially important for sparse professional
+   * domains where papers and forums rarely contain words such as "software",
+   * "platform", or "tracker" even though the requester ultimately wants software.
+   */
+  static buildProfessionalTerminologyQueries(
+    input: DynamicRequestQueryInput,
+  ): string[] {
+    const description = this.cleanText(input.requestDescription ?? '');
+    if (!description) return [];
+
+    const maxQueries = Math.max(1, Math.min(input.maxQueries ?? 5, 8));
+    const actor = this.extractActor(description);
+    const aliases = this.buildActorAliases(actor || description);
+    const actorTerm = aliases[1] || aliases[0] || actor || this.extractFallbackSubject(description);
+    const identityTerms = this.extractEvidenceIdentityTerms(description);
+    const identity = identityTerms.slice(0, 4).join(' ');
+    const workflows = this.extractWorkflowPhrases(description)
+      .map((value) => this.compactPhrase(value, 4))
+      .filter(Boolean)
+      .slice(0, 4);
+    const pains = this.extractFailurePhrases(description)
+      .map((value) => this.compactPhrase(value, 4))
+      .filter(Boolean)
+      .slice(0, 4);
+    const intentProfile = RequestWorkflowIntentProfileUtil.resolve(description);
+    const restorationProfessionalWorkflow =
+      intentProfile.family === 'RESTORATION_CONSERVATION';
+    const restorationSubject =
+      intentProfile.restorationSubject ||
+      this.extractFallbackSubject(description) ||
+      'restoration object';
+    const contractVersionGovernance =
+      /\b(?:contracts?|agreements?)\b/iu.test(description) &&
+      /\b(?:versions?|amendments?|digital signatures?|approval histor(?:y|ies)|authorization|authorisation|compliance obligations?|legally valid|terms? (?:were )?changed|executed agreement|negotiation records?)\b/iu.test(description);
+    const fragmentedRecords = /\b(?:scattered|fragmented|separate systems?|handwritten|notes?|photographs?|photos?|samples?|historical references?|records?)\b/iu.test(description);
+    const financialImpact = /\b(?:cost|costs|expense|expenses|financial|bill|bills|investment|revenue|waste|inefficien|operating expense)\w*\b/iu.test(description);
+    const conservation = /\b(?:restoration|conservation|conservator|treatment|parchment|manuscript|artifact|heritage|pigment|binding)\w*\b/iu.test(description);
+    const manufacturingCost =
+      /\b(?:industrial manufacturers?|manufacturing|factory|factories|production lines?|machine runtime|production output|production volumes?)\b/iu.test(description) &&
+      /\b(?:energy|electricity|maintenance|cost|costs|expense|expenses|profitability|financial)\w*\b/iu.test(description);
+    const agriculturalResourceProfitability =
+      /\b(?:agricultural cooperatives?|farm cooperatives?|farmers?|farms?|farm operators?|farm managers?|growers?|agricultural enterprises?|crop producers?)\b/iu.test(description) &&
+      /\b(?:water consumption|water use|irrigation|fertilizer use|fertiliser use|crop losses?|yield losses?|field performance|resource usage|resource use|weather impacts?|environmental conditions?|market prices?|input costs?|farm expenses?|profitability|profit margins?)\b/iu.test(description) &&
+      /\b(?:profitability|profit margins?|costs?|expenses?|resource efficiency|resource use|environmental pressure|crop planning|yield|losses?)\b/iu.test(description);
+    const musicBoxCommissionWorkflow =
+      /\b(?:music box makers?|musical box makers?|custom music box makers?|music box artisans?|mechanical music box makers?)\b/iu.test(description) &&
+      /\b(?:melody selections?|tune selections?|mechanism types?|mechanism choices?|box dimensions?|wood choices?|wood selections?|decorative details?|engraving requests?|design revisions?|approved specifications?|final approved specifications?|completion deadlines?|incorrect mechanisms?|missed design details?|wasted materials?|repeated work|delayed commissions?)\b/iu.test(description);
+    const leatherBookCoverCommission =
+      /\b(?:leather book[- ]cover|book cover makers?|leather bookbinding|book-cover makers?)\b/iu.test(description) &&
+      /\b(?:dimensions?|embossing|closure|color|colour|customer|approval|specification|personalization|leather selection|sizing|wasted supplies?|delayed orders?)\w*\b/iu.test(description);
+    const healthcareEquipmentOperations =
+      /\b(?:public healthcare networks?|hospital networks?|health systems?|hospitals?|clinics?|biomedical engineers?)\b/iu.test(description) &&
+      /\b(?:medical equipment|medical devices?|clinical equipment|biomedical equipment|maintenance history|equipment availability|equipment location|utilization|fault alerts?|servicing|redistribution)\b/iu.test(description);
+    const calligraphyStationeryCommission =
+      /\b(?:calligraphers?|calligraphy artists?|wedding invitation calligraphers?|custom stationery artists?|lettering artists?)\b/iu.test(description) &&
+      /\b(?:wedding invitations?|guest names?|spelling|paper sizes?|ink colors?|ink colours?|lettering styles?|layout approval|envelope details?|delivery deadlines?|misspelled|wasted stationery|repeated work)\w*\b/iu.test(description);
+    const educationCybersecurityRecords =
+      /\b(?:public education systems?|school districts?|schools?|universities|colleges|education authorities?|ministr(?:y|ies) of education)\b/iu.test(description) &&
+      /\b(?:student records?|examination data|exam records?|academic records?|scholarship information|staff accounts?|login activity|permission changes?|unauthorized access|suspicious changes?|security alerts?|data breach|record tampering)\b/iu.test(description);
+    const weddingVeilCommission =
+      /\b(?:wedding veil makers?|veil makers?|bridal veil makers?|custom veil makers?)\b/iu.test(description) &&
+      /\b(?:bride measurements?|veil lengths?|fabric selections?|lace patterns?|embroidery details?|comb styles?|design revisions?|completion deadlines?|sizing errors?|incorrect materials?|missed design changes?|repeated adjustments?|delayed orders?)\b/iu.test(description);
+    const floralPreservationCommission =
+      /\b(?:floral preservation specialists?|flower preservation specialists?|bouquet preservation specialists?|floral preservation studios?|wedding bouquet preservation)\b/iu.test(description) &&
+      /\b(?:bouquet condition|flower varieties?|drying methods?|resin|framing|color changes?|colour changes?|layout preferences?|personalization|delivery deadlines?|incorrect layouts?|unsuitable preservation methods?|repeated work|delayed orders?)\b/iu.test(description);
+    const warehouseEnergyOperations =
+      /\b(?:distribution centers?|warehouses?|fulfillment centers?|fulfilment centers?|logistics facilities?)\b/iu.test(description) &&
+      /\b(?:energy|electricity|conveyor|refrigeration|lighting|charging stations?|loading equipment|shipment volume|shipment demand|equipment activity|maintenance records?|consumption|downtime)\b/iu.test(description);
+    const fitnessFacilityEnergyOperations =
+      /\b(?:fitness centers?|fitness clubs?|gyms?|health clubs?|sports clubs?|fitness facilities?)\b/iu.test(description) &&
+      /\b(?:energy|electricity|treadmills?|climate[- ]control|hvac|lighting|saunas?|occupancy|members?|operating hours?|equipment activity|maintenance records?|consumption|downtime)\b/iu.test(description);
+    const hospitalityFacilityEnergyOperations =
+      /\b(?:hotels?|tourist resorts?|resorts?|hospitality properties?|hospitality facilities?|lodging properties?)\b/iu.test(description) &&
+      /\b(?:energy consumption|electricity|heating|cooling|hvac|lighting|pools?|kitchens?|guest[- ]room equipment|occupancy|seasonal demand|maintenance records?|energy waste|unusual consumption|equipment problem|operating costs?)\b/iu.test(description) &&
+      /\b(?:wast(?:e|ing)|unusual|anomal(?:y|ies|ous)|fault|problem|maintenance|cost|costs|resource use|occupancy|seasonal|efficien|consumption)\w*\b/iu.test(description);
+    const laceRestorationConservation =
+      /\blace\b/iu.test(description) &&
+      /\b(?:restoration|conservation|conservator|threads?|patterns?|textile|fabric age|previous repairs?|torn|weakened)\w*\b/iu.test(description);
+    const municipalHousingCostOperations =
+      /\b(?:municipal housing authorities?|public housing authorities?|housing authorities?|public housing properties?|social housing|municipal housing)\b/iu.test(description) &&
+      /\b(?:maintenance|repair expenses?|operating costs?|operating expenses?|occupancy|utility bills?|utilities|subsidy payments?|inspection results?|tenant complaints?|budget allocation|financially inefficient|housing quality)\b/iu.test(description);
+    const bookEdgeGildingCommission =
+      /\b(?:book[- ]edge gilding specialists?|book edge gilders?|fore[- ]edge gilders?|fore[- ]edge gilding specialists?|book gilding specialists?|bookbinders?)\b/iu.test(description) &&
+      /\b(?:gold|metallic|gilding|edge preparation|decorative patterns?|book dimensions?|material compatibility|revision requests?|incorrect finishes?|damaged pages?|wasted materials?|delayed commissions?)\b/iu.test(description);
+    const governmentRecordIntegrity =
+      /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|regulatory agencies?|licensing authorities?)\b/iu.test(description) &&
+      /\b(?:licenses?|licences?|certificates?|permits?|official records?|official documents?|approval records?|document histor(?:y|ies)|security logs?|credential records?)\b/iu.test(description) &&
+      /\b(?:altered|tamper(?:ed|ing)?|unauthorized access|unauthorised access|fraudulent|forged|verification|verify|integrity|audit trail|security logs?|access logs?|approval history|delayed public services?|investigations?)\b/iu.test(description);
+    const floralDesignCommission =
+      /\b(?:independent floral designers?|floral designers?|florists?|wedding florists?|event florists?|flower designers?|floral studios?|flower shops?)\b/iu.test(description) &&
+      /\b(?:color preferences?|colour preferences?|flower varieties?|arrangement sizes?|reference photos?|event themes?|substitution approvals?|delivery instructions?|last[- ]minute design changes?|incorrect flower combinations?|missed design requests?|wasted materials?|repeated work|delayed deliveries?)\b/iu.test(description);
+
+    const priorityCandidates = [
+      contractVersionGovernance ? 'contract version control amendment audit trail legal' : '',
+      contractVersionGovernance ? 'executed agreement authoritative version verification' : '',
+      contractVersionGovernance ? 'contract amendment approval history signature validity' : '',
+      contractVersionGovernance ? 'contract terms changed after approval dispute' : '',
+      contractVersionGovernance ? 'contract lifecycle amendment negotiation audit history' : '',
+      contractVersionGovernance ? 'contract obligation amendment approval verification' : '',
+      agriculturalResourceProfitability ? 'farm enterprise budget irrigation fertilizer profitability' : '',
+      agriculturalResourceProfitability ? 'agricultural cooperative input use farm profit margin' : '',
+      agriculturalResourceProfitability ? 'water use efficiency farm profitability irrigation cost' : '',
+      agriculturalResourceProfitability ? 'fertilizer input reduction farm economic viability yield' : '',
+      agriculturalResourceProfitability ? 'crop loss weather impact farm income profitability' : '',
+      agriculturalResourceProfitability ? 'farm resource use benchmarking cost yield margin' : '',
+      agriculturalResourceProfitability ? 'whole farm profitability input cost field performance' : '',
+      agriculturalResourceProfitability ? 'farm records resource use market price profitability' : '',
+      musicBoxCommissionWorkflow ? 'music box maker melody mechanism commission specification' : '',
+      musicBoxCommissionWorkflow ? 'custom music box mechanism customer revision approval' : '',
+      musicBoxCommissionWorkflow ? 'wooden music box engraving client design approval' : '',
+      musicBoxCommissionWorkflow ? 'music box commission wrong mechanism rework' : '',
+      musicBoxCommissionWorkflow ? 'music box maker wood dimensions engraving specification' : '',
+      musicBoxCommissionWorkflow ? 'custom music box design revision delayed commission' : '',
+      restorationProfessionalWorkflow ? `${restorationSubject} conservation condition report previous repairs` : '',
+      restorationProfessionalWorkflow ? `${restorationSubject} restoration treatment record replacement materials` : '',
+      restorationProfessionalWorkflow ? `${restorationSubject} object condition assessment photographic documentation` : '',
+      restorationProfessionalWorkflow ? `${restorationSubject} restoration provenance repair history` : '',
+      restorationProfessionalWorkflow ? `${restorationSubject} client preservation preferences treatment plan` : '',
+      restorationProfessionalWorkflow ? `${restorationSubject} missing components restoration documentation` : '',
+      healthcareEquipmentOperations ? 'hospital medical equipment asset tracking availability' : '',
+      healthcareEquipmentOperations ? 'biomedical equipment inventory maintenance hospital network' : '',
+      healthcareEquipmentOperations ? 'medical device utilization maintenance backlog hospital' : '',
+      healthcareEquipmentOperations ? 'unable to locate medical equipment hospital' : '',
+      calligraphyStationeryCommission ? 'wedding calligrapher misspelled guest name invitation remake' : '',
+      calligraphyStationeryCommission ? 'wedding invitation client proof approval revision' : '',
+      calligraphyStationeryCommission ? 'envelope calligraphy guest list spelling correction' : '',
+      calligraphyStationeryCommission ? 'wedding stationery personalization reprint error' : '',
+      educationCybersecurityRecords ? 'student information system unauthorized access school records' : '',
+      educationCybersecurityRecords ? 'university student records data breach account compromise' : '',
+      educationCybersecurityRecords ? 'academic record unauthorized modification permission change' : '',
+      educationCybersecurityRecords ? 'education identity access management privilege escalation' : '',
+      educationCybersecurityRecords ? 'school district cyber incident student data investigation' : '',
+      weddingVeilCommission ? 'custom wedding veil wrong length measurement remake' : '',
+      weddingVeilCommission ? 'bridal veil alteration wrong measurements sizing mistake' : '',
+      weddingVeilCommission ? 'veil maker client changed design after approval' : '',
+      weddingVeilCommission ? 'custom veil wrong fabric lace material rework' : '',
+      floralPreservationCommission ? 'bouquet preservation came out wrong redo' : '',
+      floralPreservationCommission ? 'resin bouquet flowers changed color problem' : '',
+      floralPreservationCommission ? 'wedding bouquet preservation wrong layout remake' : '',
+      floralPreservationCommission ? 'flower preservation wrong drying method rework' : '',
+      floralPreservationCommission ? 'bouquet preservation customer customization missed' : '',
+      warehouseEnergyOperations ? 'warehouse energy intensity shipment throughput' : '',
+      warehouseEnergyOperations ? 'distribution center energy consumption benchmarking' : '',
+      warehouseEnergyOperations ? 'warehouse energy use per shipment workload' : '',
+      warehouseEnergyOperations ? 'conveyor refrigeration energy efficiency warehouse' : '',
+      warehouseEnergyOperations ? 'warehouse equipment energy monitoring predictive maintenance' : '',
+      warehouseEnergyOperations ? 'load normalized warehouse energy consumption anomaly' : '',
+      fitnessFacilityEnergyOperations ? 'fitness center energy consumption benchmarking' : '',
+      fitnessFacilityEnergyOperations ? 'gym electricity use per member occupancy' : '',
+      fitnessFacilityEnergyOperations ? 'fitness club HVAC energy consumption' : '',
+      fitnessFacilityEnergyOperations ? 'treadmill electricity consumption gym facility' : '',
+      fitnessFacilityEnergyOperations ? 'gym equipment energy monitoring maintenance' : '',
+      fitnessFacilityEnergyOperations ? 'fitness center energy anomaly occupancy equipment fault' : '',
+      fitnessFacilityEnergyOperations ? 'health club electricity cost HVAC lighting sauna' : '',
+      fitnessFacilityEnergyOperations ? 'fitness facility energy intensity operating hours' : '',
+      hospitalityFacilityEnergyOperations ? 'hotel energy consumption occupancy benchmarking HVAC lighting' : '',
+      hospitalityFacilityEnergyOperations ? 'hotel HVAC energy anomaly equipment fault maintenance' : '',
+      hospitalityFacilityEnergyOperations ? 'resort energy use occupancy seasonal demand operating cost' : '',
+      hospitalityFacilityEnergyOperations ? 'hotel guest room energy consumption occupancy controls' : '',
+      hospitalityFacilityEnergyOperations ? 'hotel pool kitchen lighting HVAC energy waste' : '',
+      hospitalityFacilityEnergyOperations ? 'hospitality building energy intensity occupancy normalized' : '',
+      hospitalityFacilityEnergyOperations ? 'hotel energy management maintenance records abnormal consumption' : '',
+      hospitalityFacilityEnergyOperations ? 'resort energy efficiency guest comfort operating cost' : '',
+      laceRestorationConservation ? 'antique lace conservation thread repair' : '',
+      laceRestorationConservation ? 'lace restoration thread matching color repair' : '',
+      laceRestorationConservation ? 'historic lace textile conservation treatment records' : '',
+      laceRestorationConservation ? 'needle lace repair missing pattern reconstruction' : '',
+      laceRestorationConservation ? 'antique lace previous repairs conservation documentation' : '',
+      laceRestorationConservation ? 'lace textile weakened threads restoration technique' : '',
+      laceRestorationConservation ? 'museum lace conservation condition report treatment' : '',
+      laceRestorationConservation ? 'lace restoration wrong thread matching rework' : '',
+      municipalHousingCostOperations ? 'public housing maintenance cost per unit benchmark' : '',
+      municipalHousingCostOperations ? 'housing authority operating cost outlier properties' : '',
+      municipalHousingCostOperations ? 'public housing utility consumption building operating expense' : '',
+      municipalHousingCostOperations ? 'public housing work order backlog repair cost' : '',
+      municipalHousingCostOperations ? 'housing authority high maintenance cost building intervention' : '',
+      municipalHousingCostOperations ? 'public housing inspection complaints repair prioritization' : '',
+      municipalHousingCostOperations ? 'public housing operating expense occupancy subsidy' : '',
+      municipalHousingCostOperations ? 'municipal housing budget maintenance backlog spending' : '',
+      bookEdgeGildingCommission ? 'fore edge gilding damaged pages mistake repair' : '',
+      bookEdgeGildingCommission ? 'book edge gilding gold leaf finish went wrong' : '',
+      bookEdgeGildingCommission ? 'bookbinder gilded edges customer commission mistake' : '',
+      bookEdgeGildingCommission ? 'custom bookbinding client revision rework gilded edges' : '',
+      bookEdgeGildingCommission ? 'book edge gilding material compatibility paper problem' : '',
+      bookEdgeGildingCommission ? 'gilded book edge preparation failure gold leaf' : '',
+      bookEdgeGildingCommission ? 'bookbinding customer specification error remake' : '',
+      bookEdgeGildingCommission ? 'fore edge gilding customer approval revision delay' : '',
+      governmentRecordIntegrity ? 'government forged license certificate verification fraud' : '',
+      governmentRecordIntegrity ? 'public agency permit certificate tampering unauthorized access' : '',
+      governmentRecordIntegrity ? 'interagency document verification delay permits licenses' : '',
+      governmentRecordIntegrity ? 'official certificate altered record audit trail government' : '',
+      governmentRecordIntegrity ? 'government credential verification fraud investigation records' : '',
+      governmentRecordIntegrity ? 'permit licensing system unauthorized modification audit log' : '',
+      governmentRecordIntegrity ? 'public records document authenticity verification delay' : '',
+      governmentRecordIntegrity ? 'government certificate permit approval history fragmented records' : '',
+      floralDesignCommission ? 'florist customer changed flowers after approval' : '',
+      floralDesignCommission ? 'wedding florist substitution approval customer complaint' : '',
+      floralDesignCommission ? 'flower arrangement wrong color remake florist' : '',
+      floralDesignCommission ? 'floral designer missed customer reference photo request' : '',
+      floralDesignCommission ? 'florist last minute design change order rework' : '',
+      floralDesignCommission ? 'custom flower arrangement wrong size customer order' : '',
+      floralDesignCommission ? 'florist delivery instruction missed event order' : '',
+      floralDesignCommission ? 'flower shop custom order notes customer changes' : '',
+    ];
+
+    const candidates = [
+      ...priorityCandidates,
+      this.compose(actorTerm, workflows[0] ?? '', pains[0] ?? ''),
+      this.compose(identity, workflows[0] ?? ''),
+      this.compose(actorTerm, identity, pains[1] ?? pains[0] ?? ''),
+      fragmentedRecords
+        ? this.compose(actorTerm, workflows[0] ?? identity, 'documentation records history')
+        : '',
+      financialImpact
+        ? this.compose(actorTerm, identity, 'cost efficiency financial impact')
+        : '',
+      conservation
+        ? this.compose(identity || actorTerm, 'condition treatment history documentation')
+        : '',
+      conservation
+        ? this.compose(identity || actorTerm, 'material selection previous treatment records')
+        : '',
+      manufacturingCost ? 'manufacturing energy cost allocation production line' : '',
+      manufacturingCost ? 'production line cost attribution machine energy maintenance' : '',
+      manufacturingCost ? 'maintenance cost production line profitability' : '',
+      manufacturingCost ? 'OEE energy consumption production cost' : '',
+      leatherBookCoverCommission ? 'custom leather book cover customer specifications dimensions materials' : '',
+      leatherBookCoverCommission ? 'leather book cover embossing closure customer approval revision' : '',
+      leatherBookCoverCommission ? 'book cover maker sizing error wrong leather remake' : '',
+      this.compose(identity || actorTerm, pains[0] ?? 'operational challenges'),
+    ];
+
+    return this.deduplicate(candidates)
+      .map((query) =>
+        query
+          .replace(/\b(?:software|platform|application|app|tracker|dashboard|tool)\b/giu, ' ')
+          .replace(/\s+/gu, ' ')
+          .trim(),
+      )
+      .filter((query) => query.split(/\s+/u).length >= 3)
+      .map((query) => query.split(/\s+/u).slice(0, 9).join(' '))
+      .slice(0, maxQueries);
   }
 
   /**
@@ -466,7 +836,14 @@ export class RequestDynamicQueryUtil {
       );
     }
 
+    const professionalTerminologyQueries =
+      this.buildProfessionalTerminologyQueries({
+        ...input,
+        maxQueries: Math.min(8, maxQueries),
+      });
+
     return this.deduplicate([
+      ...professionalTerminologyQueries,
       ...targetQueries,
       ...plannedQueries,
       ...derived,
@@ -591,6 +968,100 @@ export class RequestDynamicQueryUtil {
       ]).slice(0, maxQueries);
     }
 
+
+    if (
+      /\b(?:public healthcare networks?|public health networks?|hospital networks?|health systems?|hospitals?|clinics?|emergency facilities?|biomedical engineers?)\b/u.test(normalized) &&
+      /\b(?:medical equipment|medical devices?|clinical equipment|biomedical equipment|device status|maintenance history|equipment availability|equipment location|usage levels?|utilization|fault alerts?|servicing|redistribution)\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'hospital medical equipment asset tracking availability',
+        'biomedical equipment inventory management hospital network',
+        'clinical equipment availability utilization hospital',
+        'medical device maintenance backlog hospital biomedical engineering',
+        'unable to locate medical equipment hospital',
+        'hospital equipment downtime maintenance management',
+        'medical equipment redistribution hospital network shortage',
+        'biomedical equipment maintenance management system hospital',
+        'medical equipment inventory shortage emergency hospital',
+        'hospital medical device utilization asset management',
+        'medical equipment location tracking hospital workflow',
+        'biomedical engineering equipment maintenance records fragmented systems',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
+      /\b(?:industrial manufacturers?|manufacturing plants?|manufacturers?|factories?|production plants?|plant managers?|production lines?)\b/u.test(normalized) &&
+      /\b(?:machine efficiency|equipment efficiency|electricity consumption|energy consumption|machine runtime|maintenance expenses?|repair records?|production output|production volumes?|production line|unit cost|cost per unit|profitability)\b/u.test(normalized) &&
+      /\b(?:cost|costs|expense|expenses|financial|profitability|investment|maintenance|energy|electricity|inefficien)\w*\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'manufacturing energy cost allocation production line',
+        'energy cost per unit manufacturing production',
+        'production line cost attribution machine energy maintenance',
+        'activity based costing energy manufacturing equipment',
+        'machine level energy monitoring production cost',
+        'maintenance cost production line profitability',
+        'OEE energy consumption production cost',
+        'manufacturing cost data silos energy maintenance production',
+        'total cost ownership industrial equipment energy maintenance',
+        'production line profitability energy maintenance cost allocation',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
+      /\b(?:hotels?|tourist resorts?|resorts?|hospitality properties?|hospitality facilities?|lodging properties?)\b/u.test(normalized) &&
+      /\b(?:energy consumption|electricity|heating|cooling|hvac|lighting|pools?|kitchens?|guest[- ]room equipment|occupancy|seasonal demand|maintenance records?|unusual consumption|energy waste|equipment problem|operating costs?)\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'hotel energy consumption occupancy benchmarking HVAC lighting',
+        'hotel HVAC energy anomaly equipment fault maintenance',
+        'resort energy use occupancy seasonal demand operating cost',
+        'hotel guest room energy consumption occupancy controls',
+        'hotel pool kitchen lighting HVAC energy waste',
+        'hospitality building energy intensity occupancy normalized',
+        'hotel energy management maintenance records abnormal consumption',
+        'resort energy efficiency guest comfort operating cost',
+        'hotel energy consumption maintenance fault detection occupancy',
+        'hospitality energy benchmarking seasonal occupancy equipment maintenance',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
+      /\b(?:commercial facilities?|commercial buildings?|office buildings?|facility managers?|building operators?|building portfolios?|commercial real estate)\b/u.test(normalized) &&
+      /\b(?:energy|electricity|utility bills?|emissions?|energy efficiency|equipment efficiency|maintenance expenses?|operating expenses?)\b/u.test(normalized) &&
+      /\b(?:financial|cost|costs|expense|expenses|investment|sustainability|inefficien|waste|performance)\w*\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'commercial building energy cost inefficiency',
+        'building energy performance financial impact',
+        'facility energy management fragmented data',
+        'commercial building utility cost benchmarking',
+        'building energy efficiency investment barriers',
+        'facility maintenance energy operating costs',
+        'building energy emissions performance monitoring',
+        'commercial building energy audit cost savings',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
+      /\b(?:public education systems?|public school systems?|school districts?|schools?|universities|colleges|education authorities?|education departments?|ministr(?:y|ies) of education)\b/u.test(normalized) &&
+      /\b(?:student records?|examination data|exam records?|academic records?|scholarship information|staff accounts?|login activity|permission changes?|unauthorized access|suspicious changes?|security alerts?|data breach|record tampering|account compromise)\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'student information system unauthorized access school records',
+        'university student records data breach account compromise',
+        'academic record unauthorized modification permission change',
+        'education identity access management privilege escalation',
+        'school district cyber incident student data investigation',
+        'student records access control audit university security',
+        'exam record tampering university cybersecurity incident',
+        'school staff account compromise student information system',
+        'education security alert investigation identity access logs',
+        'student data breach unauthorized access university records',
+        'academic records audit trail suspicious permission changes',
+        'education sector ransomware student records access disruption',
+      ]).slice(0, maxQueries);
+    }
 
     if (
       /\b(?:public education authorities?|education authorities?|school districts?|education departments?|ministr(?:y|ies) of education|public school systems?)\b/u.test(normalized) &&
@@ -771,14 +1242,18 @@ export class RequestDynamicQueryUtil {
         : [];
       const hasHistory = /\b(?:history|previous coatings?|previous treatments?|previous repairs?|records?|documentation|notes?|formulas?|photos?|photographs?|samples?)\b/iu.test(description);
       const hasSurface = /\b(?:surface condition|condition|damaged areas?|damage|color variations?|colour variations?|color matching|colour matching)\b/iu.test(description);
-      const hasMaterials = /\b(?:material mixtures?|materials?|coatings?|varnish|finish|resin|pigment)\b/iu.test(description);
+      const hasMaterials = /\b(?:material mixtures?|materials?|coatings?|varnish|finish|resin|pigment|parchment|paper|binding)\b/iu.test(description);
+      const hasCoatingFormula = /\b(?:coatings?|varnish|finish|resin|mixtures?|formula|formulas)\b/iu.test(description);
+      const hasFragments = /\b(?:missing fragments?|missing sections?|missing leaves?|torn pages?|damaged parchment|binding details?|faded illustrations?)\b/iu.test(description);
       const hasTechnique = /\b(?:application techniques?|treatment techniques?|methods?|process)\b/iu.test(description);
       const hasPreferences = /\b(?:customer|client|owner|preservation preferences?|preferences?)\b/iu.test(description);
       const derived = [
         hasHistory ? `${subject} restoration treatment history documentation records` : '',
         hasHistory && hasSurface ? `${subject} condition history photos notes restoration` : '',
-        hasMaterials ? `${subject} restoration coating material formula records` : '',
-        hasMaterials && hasSurface ? `${subject} color matching material treatment history` : '',
+        hasCoatingFormula ? `${subject} restoration coating material formula records` : '',
+        hasMaterials ? `${subject} conservation material selection treatment records` : '',
+        hasMaterials && hasSurface ? `${subject} condition material treatment history` : '',
+        hasFragments ? `${subject} condition report missing fragments previous treatment` : '',
         hasTechnique ? `${subject} restoration application technique treatment record` : '',
         hasPreferences ? `${subject} restoration preservation preferences treatment history` : '',
         `${subject} restoration documentation history problem`,
@@ -1051,18 +1526,34 @@ export class RequestDynamicQueryUtil {
 
     if (
       /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|regulatory agencies?|licensing authorities?)\b/u.test(normalized) &&
-      /\b(?:legal records?|licensing documents?|citizen applications?|regulatory files?|official records?|public records?|permit records?|case files?)\b/u.test(normalized) &&
-      /\b(?:unauthorized access|unauthorised access|manipulation|tamper(?:ing|ed)?|access logs?|document histor(?:y|ies)|employee activity|security alerts?|suspicious changes?|who accessed|incident investigation|audit trail)\b/u.test(normalized)
+      /\b(?:legal records?|licensing documents?|licenses?|licences?|certificates?|permits?|citizen applications?|regulatory files?|official records?|official documents?|public records?|permit records?|approval records?|credential records?|case files?)\b/u.test(normalized) &&
+      /\b(?:unauthorized access|unauthorised access|manipulation|altered|forged|fraudulent|fraud|verification|verify|integrity|tamper(?:ing|ed)?|access logs?|document histor(?:y|ies)|employee activity|security alerts?|suspicious changes?|who accessed|incident investigation|audit trail)\b/u.test(normalized)
     ) {
       return this.deduplicate([
-        'government sensitive records unauthorized access audit log investigation',
-        'public sector legal record tampering document history security alert',
-        'government licensing document unauthorized change access log incident',
-        'citizen application record suspicious modification employee activity',
-        'regulatory file integrity who accessed changed record investigation',
-        'government document version history access anomaly compliance incident',
-        'public records compromised credentials suspicious change audit trail',
-        'government records security incident access reconstruction legal compliance',
+        'government forged license certificate verification fraud',
+        'public agency permit certificate tampering unauthorized access',
+        'interagency document verification delay permits licenses',
+        'official certificate altered record audit trail government',
+        'government credential verification fraud investigation records',
+        'permit licensing system unauthorized modification audit log',
+        'public records document authenticity verification delay',
+        'government certificate permit approval history fragmented records',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
+      /\b(?:independent floral designers?|floral designers?|florists?|wedding florists?|event florists?|flower designers?|floral studios?|flower shops?)\b/u.test(normalized) &&
+      /\b(?:color preferences?|colour preferences?|flower varieties?|arrangement sizes?|reference photos?|event themes?|substitution approvals?|delivery instructions?|last[- ]minute design changes?|incorrect flower combinations?|missed design requests?|wasted materials?|repeated work|delayed deliveries?)\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'florist customer changed flowers after approval',
+        'wedding florist substitution approval customer complaint',
+        'flower arrangement wrong color remake florist',
+        'floral designer missed customer reference photo request',
+        'florist last minute design change order rework',
+        'custom flower arrangement wrong size customer order',
+        'florist delivery instruction missed event order',
+        'flower shop custom order notes customer changes',
       ]).slice(0, maxQueries);
     }
 
@@ -1772,6 +2263,15 @@ export class RequestDynamicQueryUtil {
       output.push(value);
     }
     return output;
+  }
+
+  private static stripRequesterLeadIn(value: string): string {
+    return value
+      .replace(/^(?:i|we)\s+(?:want|need|would like|am looking for|are looking for|hope)\s+(?:to\s+)?/iu, '')
+      .replace(/^(?:something|anything|a solution|an idea|a workflow|a product)\s+(?:useful\s+)?(?:for|to)\s+/iu, '')
+      .replace(/^(?:useful|helpful)\s+(?:for|to)\s+/iu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   private static cleanText(value: string): string {

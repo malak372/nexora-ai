@@ -142,12 +142,20 @@ export class IdeaEvidenceRecoveryService {
   ] as const;
 
   /**
-   * Recovery is a rare infrastructure-rescue path. The broad AI-owned first
-   * pass should do discovery; recovery stays intentionally tiny so a collector
-   * outage cannot turn into a second full pipeline.
+   * Recovery is a bounded infrastructure/recall rescue path. The broad AI-owned
+   * first pass should do discovery; each wave stays intentionally tiny. Text
+   * requests may invoke a second rotated wave from OpportunityRankingStage,
+   * while discovery-only paths remain single-wave.
    */
   private readonly maximumRecoveryKeywords = 8;
-  private readonly maximumRecoverySourcesPerWave = 2;
+  /*
+   * Keep recovery to one wall-clock wave, but allow three healthy lanes in
+   * parallel.  Very sparse crafts frequently lose Reddit to rate limiting and
+   * have no dedicated forum result; a third professional/secondary lane gives
+   * the same bounded wave a realistic chance to find supporting evidence
+   * without adding a second serial recovery cycle.
+   */
+  private readonly maximumRecoverySourcesPerWave = 3;
 
   constructor(
     private readonly configService: ConfigService,
@@ -277,19 +285,57 @@ export class IdeaEvidenceRecoveryService {
           });
         })
       : [];
-    const preferredRecoverySources = aiSelectedRecoverySources.length > 0
-      ? aiSelectedRecoverySources
-      : selectedRecoverySources;
+    const preferredRecoverySources = requestSpecificRecovery
+      ? this.deduplicateRecoverySources([
+          // Recovery source diversity is deterministic and evidence-gap aware.
+          // The AI recovery planner may contribute additional healthy lanes,
+          // but it must not replace an unused professional/community family
+          // with another app/review lane simply because that provider returned
+          // first.
+          ...selectedRecoverySources,
+          ...aiSelectedRecoverySources,
+        ])
+      : aiSelectedRecoverySources.length > 0
+        ? aiSelectedRecoverySources
+        : selectedRecoverySources;
+    const requesterRecoverySourceLimit =
+      requestSpecificRecovery && rawEvidenceCount >= 8 && rawEvidenceSourceCount >= 2
+        ? 2
+        : this.maximumRecoverySourcesPerWave;
+    const selectedFamilyIds = new Set(
+      (context.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    const canonicalTrustedForCorroboration = (
+      context.canonicalEvidenceLedger ?? []
+    ).filter(
+      (item) =>
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL') &&
+        (selectedFamilyIds.size === 0 || selectedFamilyIds.has(item.id)),
+    );
+    const singleSourceFamilyCorroboration =
+      canonicalTrustedForCorroboration.length > 0 &&
+      new Set(
+        canonicalTrustedForCorroboration.map((item) =>
+          item.sourceKey.trim().toLocaleLowerCase(),
+        ),
+      ).size < 2;
     const recoverySources = (compactDomainsOnlySecondaryRecovery
       ? preferredRecoverySources.slice(0, 2)
       : requestSpecificRecovery
         /*
-         * One request-scoped recovery wave may use at most two unused healthy runnable lanes
-         * in parallel. This improves source diversity without adding serial
-         * latency; the per-source collectors remain independently bounded.
+         * A broad text first pass already covered multiple source families.
+         * Its single recovery wave therefore uses two rotated lanes instead of
+         * three; sparse text niches retain the third lane for recall. This cuts
+         * the slowest recovery tail without weakening verification.
          */
-        ? preferredRecoverySources.slice(0, this.maximumRecoverySourcesPerWave)
-        : preferredRecoverySources
+        ? preferredRecoverySources.slice(0, requesterRecoverySourceLimit)
+        : singleSourceFamilyCorroboration
+          ? preferredRecoverySources.slice(0, 2)
+          : preferredRecoverySources
     ).filter((source) =>
       this.collectorsFactory.isCollectorRuntimeAvailable(source.key),
     );
@@ -545,6 +591,21 @@ export class IdeaEvidenceRecoveryService {
     const novelRawRecoverySamples = this.deduplicateEvidenceSamples(
       novelRawRecoveryEvidence.map((evidence) => evidence.text),
     );
+    const rawRecoveryInputCount = result.rawEvidenceInputs?.length ?? 0;
+    const mappedRecoveryEvidenceCount = inMemoryRecoveryEvidence.length;
+    const provenanceDeduplicatedCount = persistedRecoveryEvidence.length;
+    const duplicateAgainstPrimaryCount = Math.max(
+      0,
+      persistedRecoveryEvidence.length - novelRawRecoveryEvidence.length,
+    );
+    const textEquivalentCollapseCount = Math.max(
+      0,
+      novelRawRecoveryEvidence.length - novelRawRecoverySamples.length,
+    );
+    const existingCanonicalIds = new Set(
+      (context.canonicalEvidenceLedger ?? []).map((item) => item.id),
+    );
+
     const rawEvidenceCorpus: IdeaGenerationRawEvidenceItem[] =
       novelRawRecoveryEvidence.map((evidence) => ({
         id: this.buildRecoveryEvidenceId(evidence),
@@ -563,6 +624,19 @@ export class IdeaEvidenceRecoveryService {
         collectionPhase: 'RECOVERY',
         sourceTier: evidence.sourceTier ?? 'PRIMARY',
       }));
+
+    const recoveryCanonicalIds = new Set(
+      rawEvidenceCorpus.map((item) => item.id),
+    );
+    const duplicateCanonicalIdCount = [...recoveryCanonicalIds].filter((id) =>
+      existingCanonicalIds.has(id),
+    ).length;
+    const canonicalNewIdCount =
+      recoveryCanonicalIds.size - duplicateCanonicalIdCount;
+
+    this.logger.debug(
+      `Targeted recovery retention accounting | rawInputs=${rawRecoveryInputCount} | mapped=${mappedRecoveryEvidenceCount} | provenanceDeduplicated=${provenanceDeduplicatedCount} | duplicateAgainstPrimary=${duplicateAgainstPrimaryCount} | uniqueProvenance=${novelRawRecoveryEvidence.length} | uniqueTextForCommunity=${novelRawRecoverySamples.length} | textEquivalentCollapsed=${textEquivalentCollapseCount} | duplicateCanonicalId=${duplicateCanonicalIdCount} | canonicalNewIds=${canonicalNewIdCount}.`,
+    );
 
     /*
      * Keep deterministic candidates as a non-AI emergency fallback only. When
@@ -697,11 +771,11 @@ export class IdeaEvidenceRecoveryService {
 
     if (retainedRecoveryTextCount > 0) {
       this.logger.debug(
-        `Targeted recovery retained ${retainedRecoveryTextCount} verified ${requestSpecificRecovery ? 'request-aligned' : 'selected-domain-aligned'} evidence sample(s) after ${hasAiEvidenceClassifications ? 'Community AI semantic classification + deterministic verification' : 'deterministic fallback verification'}; direct=${retainedDirectEvidenceCount}, supporting=${supportingEvidenceSamples.length}.`,
+        `Targeted recovery produced ${retainedRecoveryTextCount} provisional ${requestSpecificRecovery ? 'request-aligned' : 'selected-domain-aligned'} DIRECT/SUPPORTING candidate sample(s); direct=${retainedDirectEvidenceCount}, supporting=${supportingEvidenceSamples.length}. These candidates are not authoritative until they are merged and re-verified in the run-level canonical evidence ledger.`,
       );
     } else {
       this.logger.debug(
-        `Targeted recovery retained no trusted ${requestSpecificRecovery ? 'request-aligned' : 'selected-domain-aligned'} DIRECT/SUPPORTING evidence after semantic classification. Raw candidates=${novelRawRecoverySamples.length}, supporting=${supportingEvidenceSamples.length}.`,
+        `Targeted recovery produced no provisional ${requestSpecificRecovery ? 'request-aligned' : 'selected-domain-aligned'} DIRECT/SUPPORTING candidate after semantic classification. Raw provenance rows=${novelRawRecoveryEvidence.length}, unique Community-AI texts=${novelRawRecoverySamples.length}. The run-level canonical ledger remains authoritative.`,
       );
     }
 
@@ -1155,6 +1229,7 @@ export class IdeaEvidenceRecoveryService {
       this.isCraftRestorationNicheRequest(context.requestDescription ?? '') ||
       Boolean(RequestNicheCustomCraftUtil.resolve(context.requestDescription));
     const communityFirstNiche =
+      Boolean(RequestNicheCustomCraftUtil.resolve(context.requestDescription)) ||
       archetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' ||
       archetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS' ||
       archetype.archetype === 'FOOD_STORAGE_CONDITION_OPERATIONS' ||
@@ -1277,6 +1352,12 @@ export class IdeaEvidenceRecoveryService {
       Boolean(context.requestDescription?.trim()) &&
       context.evidenceRecoveryAttempts === 0;
 
+    const observedSourceFamilies = new Set(
+      (context.rawEvidenceCorpus ?? []).map((item) =>
+        this.resolveEvidenceSourceFamily(item.sourceKey),
+      ),
+    );
+
     return sourcePool
       .sort((left, right) => {
         const leftKey = left.key.toLocaleLowerCase();
@@ -1293,15 +1374,41 @@ export class IdeaEvidenceRecoveryService {
           !(communityFirstNiche && ['forum', 'reddit'].includes(rightKey))
             ? 100
             : 0;
-        const leftRank = priority.get(left.key) ?? Number.MAX_SAFE_INTEGER;
-        const rightRank = priority.get(right.key) ?? Number.MAX_SAFE_INTEGER;
+        const leftFamilyPenalty = observedSourceFamilies.has(
+          this.resolveEvidenceSourceFamily(leftKey),
+        ) ? 1 : 0;
+        const rightFamilyPenalty = observedSourceFamilies.has(
+          this.resolveEvidenceSourceFamily(rightKey),
+        ) ? 1 : 0;
+        const leftRank = priority.get(leftKey) ?? Number.MAX_SAFE_INTEGER;
+        const rightRank = priority.get(rightKey) ?? Number.MAX_SAFE_INTEGER;
         const leftHealth = this.collectorSourceHealth.score(leftKey);
         const rightHealth = this.collectorSourceHealth.score(rightKey);
+
+        if (context.requestDescription?.trim()) {
+          /*
+           * Request recovery is a semantic source-gap fill, not a global
+           * health contest. Prefer an unused evidence family first, then the
+           * requester/archetype source order, and use health only as a
+           * tie-breaker among semantically equivalent lanes. This is what
+           * prevents App Store + Google Play from becoming the recovery pair
+           * after an Agriculture/Finance first pass that actually needed
+           * research/news/community corroboration.
+           */
+          return (
+            leftPrimaryPenalty - rightPrimaryPenalty ||
+            leftFamilyPenalty - rightFamilyPenalty ||
+            leftRank - rightRank ||
+            rightHealth - leftHealth ||
+            leftKey.localeCompare(rightKey)
+          );
+        }
+
         return (
           leftPrimaryPenalty - rightPrimaryPenalty ||
           rightHealth - leftHealth ||
           leftRank - rightRank ||
-          left.key.localeCompare(right.key)
+          leftKey.localeCompare(rightKey)
         );
       })
       .slice(
@@ -1310,6 +1417,28 @@ export class IdeaEvidenceRecoveryService {
           ? Math.min(4, this.maximumRecoverySourcesPerWave)
           : this.maximumRecoverySourcesPerWave,
       );
+  }
+
+  private deduplicateRecoverySources(
+    sources: readonly SelectedIdeaDataSource[],
+  ): SelectedIdeaDataSource[] {
+    const seen = new Set<string>();
+    return sources.filter((source) => {
+      const key = source.key.trim().toLocaleLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private resolveEvidenceSourceFamily(sourceKey: string): string {
+    const key = sourceKey.trim().toLocaleLowerCase();
+    if (['reddit', 'forum'].includes(key)) return 'COMMUNITY';
+    if (['news', 'gdelt', 'crossref'].includes(key)) return 'AUTHORITATIVE';
+    if (['blog', 'youtube'].includes(key)) return 'PRACTITIONER';
+    if (['app-store', 'google-play', 'product-hunt'].includes(key)) return 'REVIEWS';
+    if (['github', 'stackoverflow', 'dev-to', 'hacker-news'].includes(key)) return 'TECHNICAL';
+    return `OTHER:${key}`;
   }
 
   private resolveRecoveryDomainLanes(
@@ -1390,6 +1519,33 @@ export class IdeaEvidenceRecoveryService {
         Math.min(6, this.maximumRecoveryKeywords),
       );
       if (canonicalQueries.length > 0) {
+        const nicheQueries = RequestNicheCustomCraftUtil.buildSourceQueries(
+          context.requestDescription,
+          'forum',
+        );
+        const professionalQueries = RequestDynamicQueryUtil.buildProfessionalEvidenceQueries({
+          requestDescription: context.requestDescription,
+          intentConcepts: context.collectionPlan?.intentConcepts ?? [],
+          evidenceTargets: context.collectionPlan?.evidenceTargets ?? [],
+          plannedQueries: context.collectionPlan?.searchQueries ?? [],
+          maxQueries: this.maximumRecoveryKeywords,
+        });
+        const primaryQueryKeys = new Set(
+          (context.collectionPlan?.searchQueries ?? []).map((query) =>
+            query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase(),
+          ),
+        );
+        const expanded = [...new Set([
+          ...nicheQueries,
+          ...professionalQueries,
+          ...canonicalQueries,
+        ])]
+          .map((query) => this.sanitizeRecoveryQuery(query))
+          .filter(Boolean)
+          .filter((query) => !primaryQueryKeys.has(query.toLocaleLowerCase()))
+          .filter((query) => this.isSemanticallyUsefulRecoveryQuery(query, context))
+          .slice(0, this.maximumRecoveryKeywords);
+        if (expanded.length > 0) return expanded;
         return canonicalQueries;
       }
     }

@@ -28,6 +28,7 @@ import { useNavigate } from 'react-router-dom';
 import DiscoveryCard from '../components/DiscoveryCard';
 import { getDiscoveries } from '../api/discoveriesApi';
 import { preloadDiscoveryDetail } from '../../../../routes/routePreloaders';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../styles/discoveries.css';
 
 const PAGE_SIZE = 12;
@@ -79,6 +80,7 @@ function sortPublications(publications, sortValue) {
 }
 
 export default function DiscoveriesPage() {
+  const { t } = useUserExperience();
   const navigate = useNavigate();
   const shouldReduceMotion = useReducedMotion();
 
@@ -230,32 +232,28 @@ export default function DiscoveriesPage() {
         <div className="discover-head__copy">
           <span>
             <Sparkles size={15} />
-            Community intelligence
+            {t('Community intelligence')}
           </span>
 
           <h1>
-            Discover ideas shaped by
-            <em>real community needs.</em>
+            {t('Discover ideas shaped by')}
+            <em>{t('real community needs.')}</em>
           </h1>
 
-          <p>
-            Explore public opportunities created through Voxidence's
-            evidence-driven generation workflow and shared by creators
-            across the community.
-          </p>
+          <p>{t("Explore public opportunities created through Voxidence's evidence-driven generation workflow and shared by creators across the community.")}</p>
 
           <div className="discover-head__chips">
             <span>
               <TrendingUp size={14} />
-              Evidence driven
+              {t('Evidence driven')}
             </span>
             <span>
               <Star size={14} />
-              Community rated
+              {t('Community rated')}
             </span>
             <span>
               <ThumbsUp size={14} />
-              Open for feedback
+              {t('Open for feedback')}
             </span>
           </div>
         </div>
@@ -266,9 +264,9 @@ export default function DiscoveriesPage() {
           </div>
 
           <div>
-            <small>Available now</small>
+            <small>{t('Available now')}</small>
             <strong>{publications.length}</strong>
-            <span>discoveries loaded</span>
+            <span>{t('discoveries loaded')}</span>
           </div>
 
           <i aria-hidden="true" />
@@ -277,7 +275,7 @@ export default function DiscoveriesPage() {
 
       <motion.section
         className="discover-controls"
-        aria-label="Discovery filters"
+        aria-label={t('Discovery filters')}
         initial={
           shouldReduceMotion
             ? undefined
@@ -308,8 +306,8 @@ export default function DiscoveriesPage() {
             onChange={(event) =>
               setSearchValue(event.target.value)
             }
-            placeholder="Search titles, problems, creators..."
-            aria-label="Search discoveries"
+            placeholder={t('Search titles, problems, creators...')}
+            aria-label={t('Search discoveries')}
           />
 
           {searchValue ? (
@@ -317,11 +315,11 @@ export default function DiscoveriesPage() {
               type="button"
               onClick={() => setSearchValue('')}
             >
-              Clear
+              {t('Clear')}
             </button>
           ) : (
             <span className="discover-search__hint">
-              Search
+              {t('Search')}
             </span>
           )}
         </label>
@@ -330,7 +328,7 @@ export default function DiscoveriesPage() {
           <Filter size={17} />
 
           <div className="discover-sort__content">
-            <small>Sort discoveries</small>
+            <small>{t('Sort discoveries')}</small>
 
             <button
               type="button"
@@ -340,14 +338,14 @@ export default function DiscoveriesPage() {
               }
               aria-haspopup="listbox"
               aria-expanded={sortMenuOpen}
-              aria-label="Sort discoveries"
+              aria-label={t('Sort discoveries')}
             >
               <span>
-                {sortValue === 'rating'
+                {t(sortValue === 'rating'
                   ? 'Highest rated'
                   : sortValue === 'upvotes'
                     ? 'Most upvoted'
-                    : 'Newest'}
+                    : 'Newest')}
               </span>
               <ChevronDown
                 size={15}
@@ -361,7 +359,7 @@ export default function DiscoveriesPage() {
               <div
                 className="discover-sort__menu"
                 role="listbox"
-                aria-label="Sort discoveries"
+                aria-label={t('Sort discoveries')}
               >
                 {[
                   ['newest', 'Newest'],
@@ -383,7 +381,7 @@ export default function DiscoveriesPage() {
                       setSortMenuOpen(false);
                     }}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
@@ -395,7 +393,7 @@ export default function DiscoveriesPage() {
       {isLoading ? (
         <section
           className="discover-grid"
-          aria-label="Loading discoveries"
+          aria-label={t('Loading discoveries')}
         >
           {Array.from({ length: 6 }).map(
             (_, index) => (
@@ -411,8 +409,8 @@ export default function DiscoveriesPage() {
       {!isLoading && errorMessage ? (
         <section className="discover-state discover-state--error">
           <Sparkles size={28} />
-          <h2>We could not load Discover</h2>
-          <p>{errorMessage}</p>
+          <h2>{t('We could not load Discover')}</h2>
+          <p>{t(errorMessage)}</p>
         </section>
       ) : null}
 
@@ -421,11 +419,8 @@ export default function DiscoveriesPage() {
         !featuredPublication ? (
         <section className="discover-state">
           <Sparkles size={28} />
-          <h2>No discoveries found</h2>
-          <p>
-            Try another search or return after new
-            ideas are published.
-          </p>
+          <h2>{t('No discoveries found')}</h2>
+          <p>{t('Try another search or return after new ideas are published.')}</p>
         </section>
       ) : null}
 
@@ -468,21 +463,21 @@ export default function DiscoveriesPage() {
                 <Sparkles size={34} />
               </span>
 
-              <small>Featured opportunity</small>
+              <small>{t('Featured opportunity')}</small>
             </div>
 
             <div className="discover-featured__content">
-              <span>Editor's community highlight</span>
+              <span>{t("Editor's community highlight")}</span>
 
-              <h2>
+              <h2 dir="auto">
                 {featuredPublication?.publicTitle ||
-                  'Untitled discovery'}
+                  t('Untitled discovery')}
               </h2>
 
-              <p>
+              <p dir="auto">
                 {featuredPublication?.publicAbstract ||
                   featuredPublication?.publicProblem ||
-                  'A public software opportunity shared with the Voxidence community.'}
+                  t('A public software opportunity shared with the Voxidence community.')}
               </p>
 
               <div className="discover-featured__metrics">
@@ -492,20 +487,20 @@ export default function DiscoveriesPage() {
                     featuredPublication?.averageRating ??
                     0,
                   ).toFixed(1)}{' '}
-                  rating
+                  {t('rating')}
                 </strong>
 
                 <strong>
                   <ThumbsUp size={14} />
                   {featuredPublication?.upvotesCount ??
                     0}{' '}
-                  upvotes
+                  {t('upvotes')}
                 </strong>
 
                 <strong>
                   <UsersRound size={14} />
                   {featuredPublication?.acceptanceCount ?? 0}{' '}
-                  accepted
+                  {t('accepted')}
                 </strong>
               </div>
 
@@ -518,7 +513,7 @@ export default function DiscoveriesPage() {
                   openPublication(featuredPublication)
                 }
               >
-                Explore featured idea
+                {t('Explore featured idea')}
                 <ArrowRight size={17} />
               </button>
             </div>
@@ -531,16 +526,14 @@ export default function DiscoveriesPage() {
               </span>
 
               <div>
-                <small>Community gallery</small>
-                <h2>More discoveries</h2>
-                <p>
-                  Explore ideas shared by Voxidence creators.
-                </p>
+                <small>{t('Community gallery')}</small>
+                <h2>{t('More discoveries')}</h2>
+                <p>{t('Explore ideas shared by Voxidence creators.')}</p>
               </div>
             </div>
 
             <strong>
-              {remainingPublications.length} results
+              {remainingPublications.length} {t('results')}
             </strong>
           </section>
 

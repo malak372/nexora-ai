@@ -36,6 +36,7 @@ import {
   PAYMENT_CURRENCIES,
   storePaymentCurrency,
 } from '../../payments/utils/paymentCurrency';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../styles/preferences.css';
 
 const LANGUAGE_OPTIONS = ['EN', 'AR', 'FR', 'ES', 'DE', 'TR', 'ANY'];
@@ -76,6 +77,7 @@ const revealVariants = {
 };
 
 export default function PreferencesPage() {
+  const { t } = useUserExperience();
   const shouldReduceMotion = useReducedMotion();
   const location = useLocation();
   const navigate = useNavigate();
@@ -522,7 +524,7 @@ export default function PreferencesPage() {
               ) : (
                 <Save size={17} />
               )}
-              {saving ? 'Saving…' : 'Save preferences'}
+              {t(saving ? 'Saving…' : 'Save preferences')}
             </button>
           </footer>
         </>

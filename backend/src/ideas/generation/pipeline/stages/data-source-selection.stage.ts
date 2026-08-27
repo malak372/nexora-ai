@@ -266,25 +266,16 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
     dataSources: readonly T[],
     context: IdeaGenerationContext,
   ): T[] {
-    /*
-     * Evidence coverage is a product differentiator: every administrator-enabled,
-     * implemented runtime collector participates in the first pass. PREPARING
-     * still chooses priority sources, but those priorities control ordering and
-     * per-source query/budget quality rather than silently dropping collectors.
-     * Admin is therefore always authoritative: disabling a source removes it
-     * upstream; enabling/adding an implemented source automatically includes it.
-     */
     const priority = new Map(
       (context.collectionPlan?.selectedSourceKeys ?? []).map((key, index) => [
         key.toLocaleLowerCase(),
         index,
       ] as const),
     );
-    const explicit = new Set(
+    const explicit = new Set<string>(
       (context.requestedDataSourceKeys ?? []).map((key) => key.toLocaleLowerCase()),
     );
-
-    return [...dataSources].sort((left, right) => {
+    const ordered = [...dataSources].sort((left, right) => {
       const leftKey = left.key.toLocaleLowerCase();
       const rightKey = right.key.toLocaleLowerCase();
       const leftExplicit = explicit.has(leftKey) ? 1 : 0;
@@ -300,36 +291,179 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
         leftKey.localeCompare(rightKey)
       );
     });
+
+    /*
+     * Every automatic path is bounded. NO_INPUT still receives the widest
+     * automatic budget, but it must honor the planner/source-tier cap instead
+     * of launching every enabled collector. This protects source quality and
+     * rate limits while retaining a diverse discovery surface.
+     */
+
+    const planKeys = context.collectionPlan?.selectedSourceKeys ?? [];
+    const tieredPlanKeys = (context.collectionPlan?.sourcePlans ?? [])
+      .filter((plan) => plan.sourceTier !== 'MICRO_PROBE')
+      .map((plan) => plan.sourceKey);
+    const focusKeys = [...this.resolveSourceFocusKeys(
+      context.collectionPlan?.sourceFocus ?? [],
+    )];
+    const workflowFamily = RequestWorkflowIntentProfileUtil.resolve(
+      context.requestDescription,
+    ).family;
+    const niche = RequestNicheCustomCraftUtil.resolve(
+      context.requestDescription,
+    );
+    const nicheBackfillKeys = niche
+      ? ['reddit', 'forum', 'blog', 'youtube', 'news', 'crossref', 'gdelt']
+      : [];
+    const workflowBackfillKeys = context.requestDescription?.trim()
+      ? this.resolveAiSourceBackfillKeys(workflowFamily)
+      : [];
+
+    const requestGroundedPlanning = Boolean(
+      context.requestDescription?.trim() && context.collectionPlan,
+    );
+    const preferredKeys = [
+      ...explicit,
+      // For requester-grounded paths the AI/source plan is the authoritative
+      // source order. Niche/workflow backfills may fill unavailable lanes but
+      // must never outrank a healthy source explicitly selected by PREPARING.
+      ...(requestGroundedPlanning ? planKeys : nicheBackfillKeys),
+      ...tieredPlanKeys,
+      ...(requestGroundedPlanning ? nicheBackfillKeys : planKeys),
+      ...focusKeys,
+      ...workflowBackfillKeys,
+    ]
+      .map((key) => key.toLocaleLowerCase())
+      .filter((key, index, values) => values.indexOf(key) === index);
+    const byKey = new Map(
+      ordered.map((source) => [source.key.toLocaleLowerCase(), source] as const),
+    );
+    const preferred = preferredKeys
+      .map((key) => byKey.get(key))
+      .filter((source): source is T => Boolean(source));
+
+    const discoveryMode =
+      context.requestMode === 'DOMAINS_ONLY' || context.requestMode === 'NO_INPUT';
+    const minimumSources = discoveryMode ? 6 : 4;
+    const maximumSources = discoveryMode ? 8 : 6;
+    const backfill = ordered.filter(
+      (source) => !preferredKeys.includes(source.key.toLocaleLowerCase()),
+    );
+    const candidates = [...preferred, ...backfill];
+
+    const selected = this.applySourceHealth(
+      candidates,
+      explicit,
+      Math.min(minimumSources, candidates.length),
+      Math.max(maximumSources, explicit.size),
+      requestGroundedPlanning,
+    );
+
+    /*
+     * A recognized niche request must actually reach the community-oriented
+     * collectors that make the niche profile useful. Health scoring may
+     * otherwise push Forum/Reddit just below a six-source cap even though the
+     * plan contains excellent specialist queries. Preserve them when healthy;
+     * never displace an explicitly requested source.
+     */
+    if (niche) {
+      for (const requiredKey of ['forum', 'reddit']) {
+        const required = byKey.get(requiredKey);
+        if (
+          !required ||
+          this.collectorSourceHealth.isTemporarilyDegraded(required.key) ||
+          selected.some(
+            (source) => source.key.toLocaleLowerCase() === requiredKey,
+          )
+        ) {
+          continue;
+        }
+
+        const replaceIndex = [...selected]
+          .map((source, index) => ({ source, index }))
+          .reverse()
+          .find(
+            ({ source }) =>
+              !explicit.has(source.key.toLocaleLowerCase()) &&
+              !['forum', 'reddit'].includes(source.key.toLocaleLowerCase()),
+          )?.index;
+        if (replaceIndex !== undefined) {
+          selected[replaceIndex] = required;
+        }
+      }
+    }
+
+    return selected;
   }
 
   private applySourceHealth<T extends { readonly key: string }>(
     sources: readonly T[],
     explicitlyRequested: ReadonlySet<string>,
     minimumSources: number,
+    maximumSources: number,
+    preservePlannerOrder = false,
   ): T[] {
     const normalizedExplicit = new Set(
       [...explicitlyRequested].map((key) => key.toLocaleLowerCase()),
     );
-    const scored = sources
-      .map((source, index) => ({
-        source,
-        index,
-        explicit: normalizedExplicit.has(source.key.toLocaleLowerCase()),
-        health: this.collectorSourceHealth.score(source.key),
-      }))
-      .sort((left, right) =>
-        Number(right.explicit) - Number(left.explicit) ||
-        right.health - left.health ||
-        left.index - right.index,
-      );
+    const scored = sources.map((source, index) => ({
+      source,
+      index,
+      explicit: normalizedExplicit.has(source.key.toLocaleLowerCase()),
+      health: this.collectorSourceHealth.score(source.key),
+      degraded: this.collectorSourceHealth.isTemporarilyDegraded(source.key),
+    }));
 
-    const healthy = scored.filter(
-      (entry) => entry.explicit || !this.collectorSourceHealth.isTemporarilyDegraded(entry.source.key),
+    if (preservePlannerOrder) {
+      /*
+       * Requester-grounded planning already performed semantic source
+       * selection. Health is a circuit-breaker here, not a second recommender.
+       * Keep every healthy planned lane in its original order and use later
+       * candidates only to replace lanes that are actually degraded. This
+       * prevents a globally healthy but semantically weak source (for example
+       * GitHub/App Store for farm-profitability research) from displacing
+       * Reddit/News/Crossref/Forum merely because its recent HTTP score is
+       * higher.
+       */
+      const healthyInPlanOrder = scored.filter(
+        (entry) => entry.explicit || !entry.degraded,
+      );
+      const selected = healthyInPlanOrder
+        .slice(0, maximumSources)
+        .map((entry) => entry.source);
+
+      if (selected.length >= minimumSources) return selected;
+
+      const selectedKeys = new Set(
+        selected.map((source) => source.key.toLocaleLowerCase()),
+      );
+      const emergencyBackfill = scored
+        .filter((entry) => !selectedKeys.has(entry.source.key.toLocaleLowerCase()))
+        .sort(
+          (left, right) =>
+            Number(right.explicit) - Number(left.explicit) ||
+            right.health - left.health ||
+            left.index - right.index,
+        );
+      for (const entry of emergencyBackfill) {
+        if (selected.length >= minimumSources || selected.length >= maximumSources) break;
+        selected.push(entry.source);
+      }
+      return selected;
+    }
+
+    const healthRanked = scored.sort((left, right) =>
+      Number(right.explicit) - Number(left.explicit) ||
+      right.health - left.health ||
+      left.index - right.index,
     );
-    const chosen = healthy.length >= minimumSources
-      ? healthy
-      : scored;
-    return chosen.slice(0, 4).map((entry) => entry.source);
+    const healthy = healthRanked.filter(
+      (entry) => entry.explicit || !entry.degraded,
+    );
+    const chosen = healthy.length >= minimumSources ? healthy : healthRanked;
+    return chosen
+      .slice(0, Math.max(minimumSources, maximumSources))
+      .map((entry) => entry.source);
   }
 
   private resolveAiSourceBackfillKeys(

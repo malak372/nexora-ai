@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-
 import { IDEA_MIN_ACCEPTED_QUALITY_SCORE } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
 import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
@@ -34,7 +33,8 @@ export type IdeaQualityIssue = {
     | 'NO_DIRECT_EVIDENCE'
     | 'REQUEST_SCOPE_TITLE_DRIFT'
     | 'CATASTROPHIC_REQUEST_SCOPE_DRIFT'
-    | 'SECONDARY_DOMAIN_LEAKAGE';
+    | 'SECONDARY_DOMAIN_LEAKAGE'
+    | 'WRONG_OUTPUT_LANGUAGE';
   readonly message: string;
   readonly penalty: number;
 };
@@ -80,6 +80,8 @@ export type IdeaQualityEvaluationContext = {
   readonly externalSupportingEvidenceCount?: number;
   readonly verifiedIndependentSourceCount?: number;
   readonly requesterDescription?: string | null;
+  readonly outputLanguage?: string;
+  readonly allowZeroEvidenceValidationCandidate?: boolean;
   readonly primaryDomainName?: string | null;
   readonly secondaryDomainNames?: readonly string[];
 };
@@ -192,6 +194,14 @@ export class IdeaQualityEvaluatorService {
     output: ParsedIdeaAiOutput,
     context: IdeaQualityEvaluationContext = {},
   ): IdeaQualityEvaluation {
+    if (
+      context.outputLanguage &&
+      context.outputLanguage !== 'EN' &&
+      context.outputLanguage !== 'ANY'
+    ) {
+      return this.evaluateLocalizedOutput(output, context);
+    }
+
     const issues: IdeaQualityIssue[] = [];
     const idea = output.coreIdea;
 
@@ -630,9 +640,134 @@ export class IdeaQualityEvaluatorService {
         issue.code === 'MALFORMED_MEASURABLE_TARGET' ||
         issue.code === 'UNSUPPORTED_IMPACT_TARGET' ||
         issue.code === 'COMMON_TITLE_MISSPELLING' ||
-        issue.code === 'NO_DIRECT_EVIDENCE' ||
+        // Supporting evidence is a real trusted problem signal in the
+        // canonical evidence contract. Absence of DIRECT evidence therefore
+        // lowers confidence and forbids prevalence claims, but it must not
+        // force another 20-30 second model wave when at least one verified
+        // SUPPORTING_SIGNAL exists. Zero trusted evidence remains blocking.
+        (issue.code === 'NO_DIRECT_EVIDENCE' &&
+          externalSupportingEvidenceCount === 0) ||
         issue.code === 'SECONDARY_DOMAIN_LEAKAGE' ||
         issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT',
+    );
+
+    return {
+      score,
+      accepted: score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE && !hasBlockingIssue,
+      dimensions,
+      issues,
+    };
+  }
+
+  private evaluateLocalizedOutput(
+    output: ParsedIdeaAiOutput,
+    context: IdeaQualityEvaluationContext,
+  ): IdeaQualityEvaluation {
+    const issues: IdeaQualityIssue[] = [];
+    const idea = output.coreIdea;
+    const titleLength = idea.title.trim().length;
+    const problemLength = idea.problemStatement.trim().length;
+    const objectives = idea.objectives.map((value) => value.trim()).filter(Boolean);
+    const targetUsers = idea.targetUsers.map((value) => value.trim()).filter(Boolean);
+    const advancedComplete = !context.requireAdvancedOutputs || output.advancedOutputs.length >= 10;
+    const directEvidenceCount = Math.max(0, context.directEvidenceCount ?? 0);
+    const supportingEvidenceCount = Math.max(0, context.externalSupportingEvidenceCount ?? 0);
+    const coreNarrative = [
+      idea.title,
+      idea.problemStatement,
+      ...idea.objectives,
+      ...idea.targetUsers,
+      idea.limitedAbstract ?? '',
+      idea.partialAbstract ?? '',
+      idea.fullAbstract ?? '',
+    ].join(' ');
+
+    if (context.outputLanguage === 'AR') {
+      const arabicLetters = (coreNarrative.match(/[\u0600-\u06ff]/gu) ?? []).length;
+      const latinLetters = (coreNarrative.match(/[A-Za-z]/gu) ?? []).length;
+      if (arabicLetters < 30 || arabicLetters * 1.25 < latinLetters) {
+        issues.push({
+          code: 'WRONG_OUTPUT_LANGUAGE',
+          message: 'Rewrite every human-readable value in the frontend-selected output language while keeping schema keys and standard technical names unchanged.',
+          penalty: 100,
+        });
+      }
+    }
+
+    if (titleLength < 8 || titleLength > 140) {
+      issues.push({
+        code: 'GENERIC_TITLE',
+        message: 'Use a concise, distinctive public-facing title in the requested output language.',
+        penalty: 12,
+      });
+    }
+
+    if (problemLength < 120) {
+      issues.push({
+        code: 'WEAK_PROBLEM',
+        message: 'Expand the problem narrative with affected users, workflow friction, and consequences in the requested output language.',
+        penalty: 16,
+      });
+    }
+
+    if (objectives.length < 4 || objectives.some((value) => value.length < 18)) {
+      issues.push({
+        code: 'GENERIC_OBJECTIVES',
+        message: 'Return four concrete, non-empty objectives in the requested output language.',
+        penalty: 16,
+      });
+    }
+
+    if (targetUsers.length < 2 || targetUsers.some((value) => value.length < 4)) {
+      issues.push({
+        code: 'WEAK_TARGET_USERS',
+        message: 'Return concrete target-user roles in the requested output language.',
+        penalty: 10,
+      });
+    }
+
+    if (!advancedComplete) {
+      issues.push({
+        code: 'LOW_ACTIONABILITY',
+        message: 'Complete every required premium output section.',
+        penalty: 18,
+      });
+    }
+
+    if (directEvidenceCount <= 0 && supportingEvidenceCount <= 0) {
+      issues.push({
+        code: 'NO_DIRECT_EVIDENCE',
+        message: 'No verified direct or supporting evidence exists; keep the idea explicitly validation-stage and avoid prevalence claims.',
+        penalty: context.allowZeroEvidenceValidationCandidate ? 4 : 18,
+      });
+    }
+
+    const dimensions: IdeaQualityDimensions = {
+      innovation: 78,
+      marketFit:
+        directEvidenceCount > 0 ? 82 : supportingEvidenceCount > 0 ? 74 : 58,
+      technicalQuality: advancedComplete ? 82 : 68,
+      completeness:
+        problemLength >= 120 && objectives.length >= 4 && targetUsers.length >= 2
+          ? 86
+          : 65,
+      originality: 76,
+    };
+
+    const weightedScore =
+      dimensions.innovation * 0.25 +
+      dimensions.marketFit * 0.25 +
+      dimensions.technicalQuality * 0.2 +
+      dimensions.completeness * 0.15 +
+      dimensions.originality * 0.15;
+    const issuePenalty = issues.reduce((sum, issue) => sum + issue.penalty, 0);
+    const score = this.clamp(weightedScore - issuePenalty * 0.18);
+    const hasBlockingIssue = issues.some(
+      (issue) =>
+        issue.code === 'WRONG_OUTPUT_LANGUAGE' ||
+        (issue.code === 'NO_DIRECT_EVIDENCE' &&
+          !context.allowZeroEvidenceValidationCandidate &&
+          supportingEvidenceCount === 0),
     );
 
     return {

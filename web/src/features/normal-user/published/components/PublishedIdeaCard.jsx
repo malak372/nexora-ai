@@ -22,11 +22,12 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { useUserExperience } from '../../../../system/user-experience';
 
-function formatDate(value, fallback) {
+function formatDate(value, fallback, language) {
   if (!value) return fallback;
 
-  return new Intl.DateTimeFormat('en', {
+  return new Intl.DateTimeFormat(language === 'ar' ? 'ar' : 'en', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -44,6 +45,7 @@ export default function PublishedIdeaCard({
   index = 0,
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const { t, language } = useUserExperience();
   const isArchived = publication?.status === 'ARCHIVED';
 
   return (
@@ -76,36 +78,40 @@ export default function PublishedIdeaCard({
 
         {isArchived ? <Archive size={28} /> : <BarChart3 size={28} />}
 
-        <small>{isArchived ? 'Stopped publication' : 'Live signal'}</small>
+        <small>{t(isArchived ? 'Stopped publication' : 'Live signal')}</small>
       </div>
 
       <div className="published-card__body">
         <div className="published-card__topline">
           <span>
             <Eye size={13} />
-            {publication?.visibility || 'PUBLIC'}
+            {t(publication?.visibility || 'PUBLIC')}
           </span>
 
           <small>
             <CalendarDays size={13} />
             {isArchived
-              ? formatDate(publication?.archivedAt, 'Stopped recently')
-              : formatDate(publication?.publishedAt, 'Published recently')}
+              ? formatDate(publication?.archivedAt, t('Stopped recently'), language)
+              : formatDate(publication?.publishedAt, t('Published recently'), language)}
           </small>
         </div>
 
         <div className={`published-card__status ${isArchived ? 'is-archived' : 'is-live'
           }`}>
           {isArchived ? <Archive size={13} /> : <BarChart3 size={13} />}
-          {isArchived ? 'Stopped' : 'Published'}
+          {t(isArchived ? 'Stopped' : 'Published')}
         </div>
 
-        <h2>{publication?.publicTitle || 'Untitled publication'}</h2>
+        {publication?.publicTitle ? (
+          <h2 dir="auto" data-idea-content="true">{publication.publicTitle}</h2>
+        ) : (
+          <h2>{t('Untitled publication')}</h2>
+        )}
 
-        <p>
+        <p dir="auto" data-idea-content="true">
           {publication?.publicAbstract ||
             publication?.publicProblem ||
-            'Published idea snapshot.'}
+            t('Published idea snapshot.')}
         </p>
 
         <div className="published-card__metrics">
@@ -133,7 +139,7 @@ export default function PublishedIdeaCard({
           <span className="is-accepted">
             <UsersRound size={15} />
             {publication?.acceptanceCount ?? publication?.acceptedCount ?? 0}
-            <small>accepted</small>
+            <small>{t('accepted')}</small>
           </span>
 
         </div>
@@ -145,7 +151,7 @@ export default function PublishedIdeaCard({
             whileHover={shouldReduceMotion ? undefined : { y: -2 }}
             whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
           >
-            Audience ledger
+            {t('Audience ledger')}
             <BarChart3 size={16} />
           </motion.button>
 
@@ -160,7 +166,7 @@ export default function PublishedIdeaCard({
               onClick={onEdit}
               whileHover={shouldReduceMotion ? undefined : { y: -2 }}
             >
-              Edit publication
+              {t('Edit publication')}
               <PencilLine size={16} />
             </motion.button>
           ) : null}
@@ -175,7 +181,7 @@ export default function PublishedIdeaCard({
                 shouldReduceMotion || processing ? undefined : { y: -2 }
               }
             >
-              {processing ? 'Re-publishing…' : 'Re-publish'}
+              {t(processing ? 'Re-publishing…' : 'Re-publish')}
               <RefreshCw size={16} />
             </motion.button>
           ) : (
@@ -188,7 +194,7 @@ export default function PublishedIdeaCard({
                 shouldReduceMotion || processing ? undefined : { y: -2 }
               }
             >
-              {processing ? 'Stopping…' : 'Stop publishing'}
+              {t(processing ? 'Stopping…' : 'Stop publishing')}
               <PauseCircle size={16} />
             </motion.button>
           )}

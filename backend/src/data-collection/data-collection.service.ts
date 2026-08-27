@@ -313,13 +313,14 @@ export class DataCollectionService {
       requestVerticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' &&
       requestVerticalConstraint.label ===
         'violin case restoration condition materials and repair history operations';
-    const hasAiOwnedTextPlan =
-      Boolean(requestDescription) &&
+    const hasAiOwnedPlan =
       isTrustedInternalGeneration &&
       'queriesGeneratedByAi' in dto &&
       dto.queriesGeneratedByAi === true &&
-      'plannedQueries' in dto &&
-      (dto.plannedQueries?.length ?? 0) > 0;
+      ((('plannedQueries' in dto ? dto.plannedQueries?.length ?? 0 : 0) > 0) ||
+        (('sourcePlans' in dto
+          ? dto.sourcePlans?.some((plan) => (plan.queries?.length ?? 0) > 0)
+          : false) === true));
     // The AI-owned plan is authoritative for query/source planning, but it must
     // never erase requester identity during evidence admission. A rich plan used
     // to downgrade strict verticals to GENERAL here, allowing lexical collisions
@@ -327,7 +328,7 @@ export class DataCollectionService {
     // corpus. Keep the request-derived constraint active for every collector item.
     const effectiveRequestVerticalConstraint = requestVerticalConstraint;
     const preferredRequestSourceKeys = new Set(
-      (hasAiOwnedTextPlan
+      (hasAiOwnedPlan
         ? ('sourcePlans' in dto && dto.sourcePlans?.length
             ? dto.sourcePlans.slice(0, 4).map((plan) => plan.sourceKey)
             : dataSources.slice(0, 4).map((source) => source.key))
@@ -337,7 +338,7 @@ export class DataCollectionService {
       ).map((key) => key.toLocaleLowerCase()),
     );
     const blockedRequestSourceKeys = new Set(
-      (hasAiOwnedTextPlan
+      (hasAiOwnedPlan
         ? []
         : violinCaseRestorationRequest
           ? [
@@ -452,7 +453,7 @@ export class DataCollectionService {
               requestDescription,
               preferredRequestSourceKeys,
               blockedRequestSourceKeys,
-              hasAiOwnedTextPlan,
+              hasAiOwnedPlan,
             );
 
             const sourcePlan =
@@ -485,7 +486,7 @@ export class DataCollectionService {
               isTrustedInternalGeneration &&
               sourceSpecificAiQueries.length > 0;
             const queriesGeneratedByAi =
-              authoritativeRuntimeQueries && hasAiOwnedTextPlan;
+              authoritativeRuntimeQueries && hasAiOwnedPlan;
 
             const sourcePlannedQueries = authoritativeRuntimeQueries
               ? sourceSpecificAiQueries
@@ -560,6 +561,18 @@ export class DataCollectionService {
                   blockedRequestSourceKeys,
                   sourcePlan?.sourceTier,
                 ),
+                // Preserve already-discovered partial data after timeout. The
+                // queue aborts the expensive remaining HTTP work, then gives a
+                // very small tier-aware grace window for cooperative collectors
+                // (especially app/review sources) to return what they already
+                // found instead of discarding the entire source result.
+                timeoutGraceMs: isFastPathCollection
+                  ? sourcePlan?.sourceTier === 'PRIMARY'
+                    ? 900
+                    : sourcePlan?.sourceTier === 'SECONDARY'
+                      ? 650
+                      : 400
+                  : 0,
                 // FAST_GENERATION/TARGETED_RECOVERY are latency-bounded. A slow
                 // collector must never hold the whole generation run hostage.
                 // Collectors receive the AbortSignal and may return partial data;

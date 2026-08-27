@@ -20,6 +20,7 @@ export function buildRequestCollectionPlanSchema(): AiJsonSchema {
       'selectedExistingDomainId',
       'suggestedDomainName',
       'domainIdentity',
+      'requestIntent',
       'searchQueries',
       'selectedSourceKeys',
       'confidence',
@@ -37,6 +38,17 @@ export function buildRequestCollectionPlanSchema(): AiJsonSchema {
         type: 'string',
         maxLength: 180,
       },
+      requestIntent: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['mode', 'summary', 'explicitProblem', 'desiredOutcome'],
+        properties: {
+          mode: { type: 'string', enum: ['EXPLICIT_PROBLEM', 'DISCOVERY_INTENT'] },
+          summary: { type: 'string', minLength: 1, maxLength: 360 },
+          explicitProblem: { type: 'string', maxLength: 600 },
+          desiredOutcome: { type: 'string', maxLength: 360 },
+        },
+      },
       domainIdentity: {
         type: 'object',
         additionalProperties: false,
@@ -45,19 +57,23 @@ export function buildRequestCollectionPlanSchema(): AiJsonSchema {
           actor: { type: 'string', minLength: 1, maxLength: 160 },
           object: { type: 'string', minLength: 1, maxLength: 180 },
           workflow: { type: 'string', minLength: 1, maxLength: 220 },
-          failure: { type: 'string', minLength: 1, maxLength: 220 },
+          failure: { type: 'string', maxLength: 220 },
         },
       },
       searchQueries: {
         type: 'array',
-        minItems: 6,
-        maxItems: 6,
+        // Providers occasionally return a partial but high-quality plan before
+        // hitting their token/time ceiling. Accept that partial envelope and let
+        // RequestCollectionPlanningService enrich missing lanes locally instead
+        // of throwing away the AI plan and marking the whole stage as fallback.
+        minItems: 1,
+        maxItems: 8,
         items: { type: 'string', minLength: 8, maxLength: 140 },
       },
       selectedSourceKeys: {
         type: 'array',
-        minItems: 3,
-        maxItems: 6,
+        minItems: 1,
+        maxItems: 8,
         uniqueItems: true,
         items: { type: 'string', minLength: 2, maxLength: 80 },
       },

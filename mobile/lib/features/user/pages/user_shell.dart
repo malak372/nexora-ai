@@ -640,14 +640,14 @@ class _PremiumCelebrationState extends State<_PremiumCelebration>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 5600),
+    duration: const Duration(milliseconds: 4000),
   )..forward();
 
   @override
   void initState() {
     super.initState();
 
-    Future<void>.delayed(const Duration(milliseconds: 5600), () {
+    Future<void>.delayed(const Duration(milliseconds: 4000), () {
       if (mounted) {
         Navigator.of(context).maybePop();
       }

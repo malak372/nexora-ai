@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 
 import { useDomains } from '../../domains/hooks/useDomains';
+import { useUserExperience } from '../../../system/user-experience';
 
 /**
  * Maps domain icon identifiers to Lucide React icon components.
@@ -255,7 +256,7 @@ function getDomainIcon(iconKey) {
  *
  * @returns {JSX.Element} A single domain card.
  */
-function DomainCard({ domain }) {
+function DomainCard({ domain, t }) {
     const Icon = getDomainIcon(domain.icon);
 
     return (
@@ -274,11 +275,11 @@ function DomainCard({ domain }) {
 
             <div className="vox-domain-card__copy">
                 <h3 className="vox-domain-card__title">
-                    {domain.title}
+                    {t(domain.title)}
                 </h3>
 
                 <p className="vox-domain-card__description">
-                    {domain.label}
+                    {t(domain.label)}
                 </p>
             </div>
         </article>
@@ -317,6 +318,7 @@ function DomainSkeleton({ index }) {
  * @returns {JSX.Element}
  */
 export default function DomainsSection() {
+    const { t } = useUserExperience();
     const [isExpanded, setIsExpanded] = useState(false);
 
     const {
@@ -358,32 +360,31 @@ export default function DomainsSection() {
                 <div className="vox-domains-header">
                     <div className="vox-domains-heading">
                         <div className="vox-domains-kicker-row">
-                            <p className="vox-domains-eyebrow">Explore opportunities</p>
+                            <p className="vox-domains-eyebrow">{t('Explore opportunities')}</p>
 
                             {!isLoading && !isError && normalizedDomains.length > 0 && (
-                                <span className="vox-domains-count" aria-label={`${normalizedDomains.length} domains available`}>
+                                <span className="vox-domains-count" aria-label={t(`${normalizedDomains.length} domains available`)}>
                                     <strong>{normalizedDomains.length}</strong>
-                                    <span>live domains</span>
+                                    <span>{t('live domains')}</span>
                                 </span>
                             )}
                         </div>
 
                         <div className="vox-domains-title-row">
                             <h2 id="domains-heading" className="vox-domains-title">
-                                Explore the domains where community needs become software opportunities.
+                                {t('Explore the domains where community needs become software opportunities.')}
                             </h2>
                         </div>
 
                         <p className="vox-domains-intro">
-                            Choose a focus area to see where real community evidence can
-                            lead to a meaningful, locally relevant software direction.
+                            {t('Choose a focus area to see where real community evidence can lead to a meaningful, locally relevant software direction.')}
                         </p>
                     </div>
                 </div>
 
                 {isError && (
                     <p className="vox-domains-error" role="alert">
-                        Domains could not be loaded from the server. Please try again shortly.
+                        {t('Domains could not be loaded from the server. Please try again shortly.')}
                     </p>
                 )}
 
@@ -402,10 +403,9 @@ export default function DomainsSection() {
                     {!isLoading && !isError && normalizedDomains.length === 0 && (
                         <div className="vox-domains-empty">
                             <CircleHelp size={30} aria-hidden="true" />
-                            <h3>No domains are available yet</h3>
+                            <h3>{t('No domains are available yet')}</h3>
                             <p>
-                                New opportunity domains will appear here as soon as
-                                they are enabled in Voxidence.
+                                {t('New opportunity domains will appear here as soon as they are enabled in Voxidence.')}
                             </p>
                         </div>
                     )}
@@ -414,7 +414,7 @@ export default function DomainsSection() {
                         <>
                             <div className="vox-domains-grid">
                                 {initialDomains.map((domain) => (
-                                    <DomainCard key={domain.id} domain={domain} />
+                                    <DomainCard key={domain.id} domain={domain} t={t} />
                                 ))}
 
                                 {hasMoreDomains && (
@@ -422,6 +422,7 @@ export default function DomainsSection() {
                                         remainingCount={remainingDomains.length}
                                         isExpanded={isExpanded}
                                         onClick={toggleExpandedDomains}
+                                        t={t}
                                     />
                                 )}
                             </div>
@@ -430,8 +431,8 @@ export default function DomainsSection() {
                                 <div id="additional-domains" className="vox-domains-more">
                                     <div className="vox-domains-more__header">
                                         <div>
-                                            <p>More Voxidence domains</p>
-                                            <span>Additional live domains from the database</span>
+                                            <p>{t('More Voxidence domains')}</p>
+                                            <span>{t('Additional live domains from the database')}</span>
                                         </div>
 
                                         <button
@@ -441,14 +442,14 @@ export default function DomainsSection() {
                                             aria-expanded="true"
                                             aria-controls="additional-domains"
                                         >
-                                            Show less
+                                            {t('Show less')}
                                             <ChevronUp size={17} aria-hidden="true" />
                                         </button>
                                     </div>
 
                                     <div className="vox-domains-grid">
                                         {remainingDomains.map((domain) => (
-                                            <DomainCard key={domain.id} domain={domain} />
+                                            <DomainCard key={domain.id} domain={domain} t={t} />
                                         ))}
                                     </div>
                                 </div>
@@ -474,6 +475,7 @@ function ExploreMoreCard({
     remainingCount,
     isExpanded,
     onClick,
+    t,
 }) {
     return (
         <button
@@ -497,17 +499,16 @@ function ExploreMoreCard({
 
             <div className="vox-domain-card__copy">
                 <h3 className="vox-domain-card__title">
-                    {isExpanded ? 'Hide More' : 'Explore More'}
+                    {t(isExpanded ? 'Hide More' : 'Explore More')}
                 </h3>
 
                 <p className="vox-domain-card__description">
-                    {remainingCount} additional domain
-                    {remainingCount === 1 ? '' : 's'} available
+                    {t(`${remainingCount} additional domain${remainingCount === 1 ? '' : 's'} available`)}
                 </p>
             </div>
 
             <span className="vox-domain-card__action">
-                {isExpanded ? 'Show less' : 'View all domains'}
+                {t(isExpanded ? 'Show less' : 'View all domains')}
 
                 {isExpanded ? (
                     <ChevronUp

@@ -29,6 +29,7 @@ import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth
 import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
 import { preloadRoute } from '../../routes/routePreloaders';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
+import { useUserExperience } from '../../system/user-experience';
 
 const BASE_ITEMS = [
   ['/normal/dashboard', 'Home', LayoutDashboard],
@@ -55,6 +56,7 @@ export default function NormalSidebar({ isOpen, onClose }) {
   const [user, setUser] = useState(() => getStoredUser() ?? {});
   const [avatarFailed, setAvatarFailed] = useState(false);
   const { isPremium, creditBalance } = useAccountAccess();
+  const { t } = useUserExperience();
 
   const displayName = user.fullName || user.name || 'Voxidence user';
   const imageUrl = resolveMediaUrl(
@@ -97,7 +99,7 @@ export default function NormalSidebar({ isOpen, onClose }) {
         type="button"
         className={`normal-drawer-backdrop ${isOpen ? 'is-open' : ''}`}
         onClick={onClose}
-        aria-label="Close menu"
+        aria-label={t('Close menu')}
         tabIndex={isOpen ? 0 : -1}
       />
 
@@ -108,15 +110,15 @@ export default function NormalSidebar({ isOpen, onClose }) {
       >
         <div className="normal-drawer__head">
           <div>
-            <strong>Voxidence</strong>
-            <small>Workspace menu</small>
+            <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
+            <small>{t('Workspace menu')}</small>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close menu">
+          <button type="button" onClick={onClose} aria-label={t('Close menu')}>
             <X size={19} />
           </button>
         </div>
 
-        <nav aria-label="Responsive workspace navigation">
+        <nav aria-label={t('Responsive workspace navigation')}>
           {items.map(([to, label, Icon]) => (
             <NavLink
               key={to}
@@ -137,7 +139,7 @@ export default function NormalSidebar({ isOpen, onClose }) {
               <span className="normal-drawer__nav-icon">
                 <Icon size={18} />
               </span>
-              <span>{label}</span>
+              <span>{t(label)}</span>
             </NavLink>
           ))}
         </nav>
@@ -158,11 +160,11 @@ export default function NormalSidebar({ isOpen, onClose }) {
             <b>{displayName}</b>
             <small>
               {isPremium
-                ? `Premium · ${creditBalance} credits`
-                : (user.email || 'Normal account')}
+                ? `${t('Premium')} · ${t(`${creditBalance} credits`)}`
+                : (user.email || t('Normal account'))}
             </small>
           </div>
-          <button type="button" onClick={logout} aria-label="Sign out">
+          <button type="button" onClick={logout} aria-label={t('Sign out')}>
             <LogOut size={18} />
           </button>
         </div>

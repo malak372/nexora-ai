@@ -445,3 +445,137 @@
         border-radius: 17px;
     }
 }
+/* Public Home chrome: Arabic + dark mode. Light/English rules above stay untouched. */
+html.vox-user-dark .vox-public-shell {
+    color: #f1f8f5 !important;
+    background: #18231f !important;
+}
+
+html.vox-user-dark .vox-public-header .vox-public-header__inner,
+html.vox-user-dark .vox-public-header__mobile-menu {
+    color: #f1f8f5 !important;
+    border-color: rgba(112, 205, 198, .20) !important;
+    background: linear-gradient(120deg, rgba(35, 52, 45, .97), rgba(28, 43, 37, .97)) !important;
+    box-shadow: 0 16px 44px rgba(4, 12, 10, .22) !important;
+}
+
+html.vox-user-dark .vox-public-header :is(a, button) {
+    color: #c7d8d3 !important;
+}
+
+html.vox-user-dark .vox-public-header :is(a, button):hover {
+    color: #f1f8f5 !important;
+    background-color: rgba(112, 205, 198, .08) !important;
+}
+
+html.vox-user-dark .vox-public-header .vox-navbar-cta {
+    color: #fff !important;
+    border-color: rgba(112, 205, 198, .34) !important;
+    background: linear-gradient(135deg, #69c5be, #469c96) !important;
+}
+
+html.vox-user-dark .vox-public-header .vox-navbar-brand p:first-of-type {
+    color: #8edbd4 !important;
+}
+
+html.vox-user-dark .vox-public-header .vox-navbar-brand p:last-of-type {
+    color: #a9beb8 !important;
+}
+
+html.vox-user-dark .vox-footer {
+    color: #f1f8f5 !important;
+    border-color: rgba(112, 205, 198, .16) !important;
+    background:
+        radial-gradient(circle at 10% 12%, rgba(112, 205, 198, .07), transparent 20rem),
+        radial-gradient(circle at 90% 75%, rgba(227, 168, 181, .06), transparent 22rem),
+        #1b2823 !important;
+}
+
+html.vox-user-dark .vox-footer :is(
+    .vox-footer__brand small,
+    .vox-footer__statement,
+    .vox-footer__contact-copy,
+    .vox-footer__bottom
+) {
+    color: #adc0ba !important;
+}
+
+html.vox-user-dark .vox-footer :is(
+    .vox-footer__brand strong,
+    .vox-footer__label,
+    .vox-footer__links button,
+    .vox-footer__contact-action,
+    .vox-footer__email
+) {
+    color: #9be0da !important;
+}
+
+html.vox-user-dark .vox-footer :is(.vox-footer__email, .vox-footer__contact-action) {
+    border-color: rgba(112, 205, 198, .18) !important;
+    background: #263831 !important;
+}
+
+html.vox-user-rtl .vox-public-header,
+html.vox-user-rtl .vox-footer {
+    direction: rtl;
+}
+
+html.vox-user-rtl .vox-public-header__mobile-menu :is(a, button),
+html.vox-user-rtl .vox-footer__links button,
+html.vox-user-rtl .vox-footer__statement,
+html.vox-user-rtl .vox-footer__contact-copy {
+    text-align: right !important;
+}
+
+html.vox-user-rtl .vox-footer__contact-action svg {
+    transform: rotate(180deg);
+}
+
+
+/* VOXIDENCE_PUBLIC_NAV_DARK_RTL_FIX */
+html.vox-user-dark .vox-public-header .vox-public-nav-link,
+html.vox-user-dark .vox-public-header .vox-public-nav-link:hover {
+  color: #c7d8d3 !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark .vox-public-header .vox-public-nav-link.is-active,
+html.vox-user-dark .vox-public-header .vox-public-nav-link.is-active:hover {
+  color: #eef9f6 !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+  background: #2a4038 !important;
+  background-image: none !important;
+  box-shadow: inset 0 -2px 0 rgba(120, 209, 202, .56) !important;
+}
+
+html.vox-user-rtl .vox-public-header__inner,
+html.vox-user-rtl .vox-public-header nav,
+html.vox-user-rtl .vox-public-header__mobile-menu {
+  direction: rtl;
+}
+
+html.vox-user-rtl .vox-navbar-brand__name {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+
+html.vox-user-dark .vox-public-header button[aria-label*='navigation menu'],
+html.vox-user-dark .vox-public-header button[aria-label*='قائمة التنقل'] {
+  color: #d9ebe6 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #263a33 !important;
+}
+
+html.vox-user-rtl .vox-public-header__inner > :first-child {
+  direction: rtl;
+}
+
+html.vox-user-rtl .vox-public-header .vox-navbar-brand {
+  direction: rtl;
+}
+
+html.vox-user-rtl .vox-public-header .vox-navbar-brand__name {
+  unicode-bidi: isolate;
+}

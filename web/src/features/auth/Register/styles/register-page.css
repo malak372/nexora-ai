@@ -1964,3 +1964,154 @@
 .nx-register .register-verification-modal p {
     color: #60756f;
 }
+
+
+/* VOXIDENCE_REGISTER_DARK_RTL_FIX */
+html.vox-user-dark .nx-register {
+  color: #eef8f5 !important;
+  background: #0f1d18 !important;
+}
+
+html.vox-user-dark .nx-register :is(.nx-register__story, .nx-register__form-card) {
+  color: #eef8f5 !important;
+  border-color: rgba(112, 205, 198, .19) !important;
+  background: linear-gradient(145deg, rgba(29, 49, 41, .97), rgba(20, 37, 31, .97)) !important;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .nx-register :is(
+  .nx-register__story h1,
+  .nx-register__benefit strong,
+  .nx-register__story-footer strong,
+  .nx-register__form-heading h2,
+  .register-label,
+  .register-user-type-copy strong
+) {
+  color: #eef8f5 !important;
+}
+
+html.vox-user-dark .nx-register :is(
+  .nx-register__brand-copy small,
+  .nx-register__story-lead,
+  .nx-register__benefit p,
+  .nx-register__form-heading > p,
+  .register-user-type-copy small,
+  .register-login-link
+) {
+  color: #abc0ba !important;
+}
+
+html.vox-user-dark .nx-register :is(
+  .register-input-shell,
+  .register-user-type-card,
+  .nx-register__benefit,
+  .nx-register__back-home
+) {
+  color: #d9e9e5 !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+  background: #1c3028 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-register .register-input-shell input {
+  color: #eef8f5 !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .nx-register .register-input-shell input::placeholder {
+  color: #81978f !important;
+}
+
+html.vox-user-dark :is(.register-legal-modal__card, .register-verification-modal__card) {
+  color: #eef8f5 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: linear-gradient(145deg, #1d3129, #14261f) !important;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .38) !important;
+}
+
+html.vox-user-dark :is(.register-legal-modal__header h2, .register-legal-modal__content h3, .register-verification-modal__card h2, .register-verification-modal__form label) {
+  color: #eef8f5 !important;
+}
+
+html.vox-user-dark :is(.register-legal-modal__content p, .register-verification-modal__message, .register-verification-modal__signin) {
+  color: #b2c5bf !important;
+}
+
+html.vox-user-dark .register-legal-modal__header {
+  border-bottom-color: rgba(112, 205, 198, .16) !important;
+}
+
+html.vox-user-dark :is(.register-legal-modal__header > button, .register-verification-modal__secondary) {
+  color: #a6e3dd !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #263b33 !important;
+}
+
+html.vox-user-dark .register-verification-modal__email,
+html.vox-user-dark .register-verification-modal__form input {
+  color: #eef8f5 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #14271f !important;
+}
+
+html.vox-user-rtl :is(.register-legal-modal, .register-verification-modal) {
+  direction: rtl;
+}
+
+html.vox-user-rtl .nx-register {
+  direction: rtl;
+}
+
+html.vox-user-rtl .nx-register :is(input[type='email'], input[type='password']) {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+
+html.vox-user-dark .nx-register .register-user-type-card,
+html.vox-user-dark .nx-register .register-user-type-card:hover {
+  color: #d9e9e5 !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+  background: #1c3028 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-register .register-user-type-card-selected,
+html.vox-user-dark .nx-register .register-user-type-card-selected:hover {
+  color: #f2faf7 !important;
+  border-color: rgba(112, 205, 198, .46) !important;
+  background: linear-gradient(145deg, #29453b, #20372f) !important;
+  box-shadow: 0 0 0 3px rgba(112, 205, 198, .07) !important;
+}
+
+html.vox-user-dark .nx-register .register-user-type-icon,
+html.vox-user-dark .nx-register .register-password-toggle,
+html.vox-user-dark .nx-register .register-custom-checkbox {
+  color: #9ce1da !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #263d35 !important;
+}
+
+html.vox-user-dark .nx-register .register-checkbox-label input:checked + .register-custom-checkbox {
+  color: #ffffff !important;
+  border-color: rgba(112, 205, 198, .48) !important;
+  background: #4fa9a4 !important;
+}
+
+html.vox-user-dark .nx-register .register-input-shell input:-webkit-autofill,
+html.vox-user-dark .nx-register .register-input-shell input:-webkit-autofill:hover,
+html.vox-user-dark .nx-register .register-input-shell input:-webkit-autofill:focus,
+html.vox-user-dark .nx-register .register-input-shell input:-webkit-autofill:active {
+  -webkit-text-fill-color: #eef8f5 !important;
+  caret-color: #eef8f5 !important;
+  -webkit-box-shadow: 0 0 0 1000px #14271f inset !important;
+  box-shadow: 0 0 0 1000px #14271f inset !important;
+  background-color: #14271f !important;
+}
+
+html.vox-user-dark .nx-register .register-input-shell input:-moz-autofill {
+  color: #eef8f5 !important;
+  caret-color: #eef8f5 !important;
+  box-shadow: 0 0 0 1000px #14271f inset !important;
+}

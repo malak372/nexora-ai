@@ -52,7 +52,7 @@ GENERATION RULES
 17. The problem statement must identify affected users, the observed failure pattern, consequences, and supported deployment context. State a root cause only when directly supported; otherwise label it as a plausible technical cause or hypothesis to validate.
 18. Objectives must describe concrete capabilities or measurable outcomes and cover the core workflow, differentiator, reliability needs, and one evaluation outcome.
 18A. Present related actions as one unified end-to-end user workflow. Do not write "implement one primary user workflow" and then list several disconnected actions; name the job and show how the actions complete it.
-18B. Use polished, natural English throughout. Prefer "common navigation friction" or "recurring navigation friction" and reject malformed wording such as "commonly navigation friction". Remove duplicated qualifiers, awkward noun stacks, and literal-translation phrasing.
+18B. Use polished, natural language throughout in the application-enforced output language. Remove duplicated qualifiers, awkward noun stacks, and literal-translation phrasing.
 19. Unsupported numbers must be written as measurable pilot targets, evaluation thresholds, or controlled-test objectives—not achieved results or guarantees.
 20. A percentage objective must use exactly one complete grammatical form: "Target at least a X percent change during a defined pilot period, measured by ..." or "Evaluate whether the pilot can achieve at least a X percent change during a defined period, measured by ...". Include the metric, baseline plan, measurement method, and evaluation period. Never combine the openings or write "target an evaluate".
 21. Target users must be concrete roles, teams, organizations, or customer groups.

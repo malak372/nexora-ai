@@ -173,21 +173,46 @@ export class CanonicalRequestUnderstandingUtil {
   }
 
   static buildDomainDiscoveryQueries(domainNames: readonly string[], maxQueries = 6): string[] {
-    const cleanDomains = this.unique(domainNames.map((name) => this.cleanPhrase(name, 80))).filter(Boolean);
+    const cleanDomains = this.unique(
+      domainNames.map((name) => this.cleanPhrase(name, 80)),
+    ).filter(Boolean);
     const queries: string[] = [];
-    for (const domain of cleanDomains) {
-      queries.push(`${domain} operational problems user complaints`);
-      queries.push(`${domain} workflow failures delays unmet needs`);
+
+    /*
+     * Deterministic discovery is the provider-timeout safety net. Keep it
+     * problem-first instead of issuing only generic "domain problems"
+     * searches: each domain receives independent user/operator, workflow, and
+     * cost/reliability pain angles. Community AI still decides whether any
+     * returned item represents a real problem; these strings are retrieval
+     * seeds only.
+     */
+    const painAngles = [
+      'user complaints recurring failures',
+      'workflow bottlenecks delays rework',
+      'operational cost waste shortages',
+      'service disruption downtime recurring issues',
+    ];
+    for (const pain of painAngles) {
+      for (const domain of cleanDomains) {
+        queries.push(`${domain} ${pain}`);
+        if (queries.length >= maxQueries) break;
+      }
       if (queries.length >= maxQueries) break;
     }
-    return this.unique(queries).map((query) => this.normalizeQuery(query)).slice(0, maxQueries);
+
+    return this.unique(queries)
+      .map((query) => this.normalizeQuery(query))
+      .slice(0, maxQueries);
   }
 
   private static resolveObject(firstSentence: string, full: string, actor: string): string {
     const matched = firstSentence.match(
-      /\b(?:manage|protect|track|document|coordinate|monitor|handle|verify|assess|inspect|diagnose|organize|organise|maintain|respond to)\w*\s+([^.!?]{5,220})/iu,
+      /\b(?:manage|protect|track|document|coordinate|monitor|control|optimise|optimize|reduce|balance|handle|verify|assess|inspect|diagnose|organize|organise|maintain|respond to)\w*\s+([^.!?]{5,220})/iu,
     )?.[1];
-    let object = this.cleanPhrase(matched ?? '', 180);
+    let object = this.cleanPhrase(matched ?? '', 180)
+      .replace(/\s+while\s+(?:maintaining|preserving|keeping|balancing)\b.*$/iu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
     if (/\bcustomer requests? involving\b/iu.test(object) && /\bapproved specifications?\b/iu.test(full)) {
       object = 'customer requests and final approved specifications';
     }
@@ -202,7 +227,7 @@ export class CanonicalRequestUnderstandingUtil {
 
   private static extractConsequences(description: string): string[] {
     const match = description.match(
-      /\b(?:can\s+lead\s+to|lead\s+to|leads\s+to|can\s+result\s+in|results?\s+in|caus(?:e|es|ing))\s+([^.!?]{5,360})/iu,
+      /\b(?:can\s+lead\s+to|lead\s+to|leads\s+to|leading\s+to|can\s+result\s+in|results?\s+in|resulting\s+in|(?:the\s+)?result\s+can\s+be|(?:the\s+)?results?\s+(?:can|may)\s+(?:include|be)|caus(?:e|es|ing))\s+([^.!?]{5,360})/iu,
     );
     if (!match?.[1]) return [];
     return this.unique(

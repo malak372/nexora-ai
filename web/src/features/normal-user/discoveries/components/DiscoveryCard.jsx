@@ -19,6 +19,7 @@ import {
   motion,
   useReducedMotion,
 } from 'framer-motion';
+import { useUserExperience } from '../../../../system/user-experience';
 
 function getInitials(value = 'Voxidence') {
   return value
@@ -37,6 +38,7 @@ export default function DiscoveryCard({
   onPrefetch,
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const { t } = useUserExperience();
 
   const publisherName =
     publication?.publisher?.fullName ||
@@ -103,9 +105,7 @@ export default function DiscoveryCard({
         <span className="discovery-story__ring discovery-story__ring--two" />
 
         <span className="discovery-story__planet">
-          {getInitials(
-            publication?.publicTitle || 'VX',
-          )}
+          {getInitials(publication?.publicTitle || 'VX')}
         </span>
 
         <small>
@@ -118,25 +118,24 @@ export default function DiscoveryCard({
           <span>{getInitials(publisherName)}</span>
 
           <div>
-            <strong>{publisherName}</strong>
+            <strong dir="auto" data-no-auto-translate="true">{publisherName}</strong>
             <small>
               <UserRound size={12} />
-              Published in Voxidence
+              {t('Published in Voxidence')}
             </small>
           </div>
         </div>
 
         <span className={`discovery-story__label ${isAccepted ? 'is-accepted' : ''}`}>
           {isAccepted ? <CheckCircle2 size={13} /> : <Sparkles size={13} />}
-          {isAccepted ? 'Accepted opportunity' : 'Community discovery'}
+          {t(isAccepted ? 'Accepted opportunity' : 'Community discovery')}
         </span>
 
         <h2>
-          {publication?.publicTitle ||
-            'Untitled discovery'}
+          <span dir="auto" data-idea-content="true">{publication?.publicTitle || t('Untitled discovery')}</span>
         </h2>
 
-        <p>{abstract}</p>
+        <p dir="auto" data-idea-content="true">{abstract}</p>
 
         <div className="discovery-story__metrics">
           <span>
@@ -164,7 +163,7 @@ export default function DiscoveryCard({
           <span className="is-accepted-count">
             <UsersRound size={15} />
             {publication?.acceptanceCount ?? 0}
-            <small>accepted</small>
+            <small>{t('accepted')}</small>
           </span>
         </div>
 
@@ -189,7 +188,7 @@ export default function DiscoveryCard({
                 }
           }
         >
-          Explore the idea
+          {t('Explore the idea')}
           <ArrowUpRight size={16} />
         </motion.button>
       </div>

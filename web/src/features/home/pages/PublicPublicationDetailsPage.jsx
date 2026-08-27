@@ -259,13 +259,17 @@ export default function PublicPublicationDetailsPage() {
                         </span>
 
                         <h1 className="mt-6 max-w-4xl text-3xl font-black leading-tight text-[#233633] sm:text-5xl">
-                            {data.publicTitle || 'Untitled software idea'}
+                            {data.publicTitle ? (
+                                <span dir="auto" data-idea-content="true">{data.publicTitle}</span>
+                            ) : (
+                                'Untitled software idea'
+                            )}
                         </h1>
 
                         <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-[#71837f]">
                             <span className="inline-flex items-center gap-2">
                                 <UserRound size={17} aria-hidden="true" />
-                                {data.publisher?.fullName || 'Voxidence creator'}
+                                <span dir="auto" data-no-auto-translate="true">{data.publisher?.fullName || 'Voxidence creator'}</span>
                             </span>
                             <span className="inline-flex items-center gap-2">
                                 <CalendarDays size={17} aria-hidden="true" />
@@ -287,7 +291,11 @@ export default function PublicPublicationDetailsPage() {
                             <section>
                                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4d8a80]">Problem</p>
                                 <p className="mt-4 whitespace-pre-line text-base leading-8 text-[#526965]">
-                                    {data.publicProblem || data.publicAbstract || 'No public problem statement was provided.'}
+                                    {data.publicProblem || data.publicAbstract ? (
+                                        <span dir="auto" data-idea-content="true">{data.publicProblem || data.publicAbstract}</span>
+                                    ) : (
+                                        'No public problem statement was provided.'
+                                    )}
                                 </p>
                             </section>
 
@@ -295,7 +303,7 @@ export default function PublicPublicationDetailsPage() {
                                 <section>
                                     <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4d8a80]">Abstract</p>
                                     <p className="mt-4 whitespace-pre-line text-base leading-8 text-[#526965]">
-                                        {data.publicAbstract}
+                                        <span dir="auto" data-idea-content="true">{data.publicAbstract}</span>
                                     </p>
                                 </section>
                             )}
@@ -309,7 +317,7 @@ export default function PublicPublicationDetailsPage() {
                                     <ul className="mt-4 space-y-3">
                                         {objectives.map((objective, index) => (
                                             <li key={`${objective}-${index}`} className="rounded-2xl bg-[#f7fbfa] px-4 py-3 text-sm font-semibold leading-6 text-[#526965]">
-                                                {objective}
+                                                <span dir="auto" data-idea-content="true">{objective}</span>
                                             </li>
                                         ))}
                                     </ul>
@@ -327,7 +335,7 @@ export default function PublicPublicationDetailsPage() {
                                 <ul className="mt-5 space-y-3">
                                     {targetUsers.map((user, index) => (
                                         <li key={`${user}-${index}`} className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#526965] shadow-sm">
-                                            {user}
+                                            <span dir="auto" data-idea-content="true">{user}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -405,7 +413,7 @@ export default function PublicPublicationDetailsPage() {
                                     {data.allowFeedback !== false && (
                                         <form className="mt-5" onSubmit={saveFeedback}>
                                             <label className="text-sm font-extrabold text-[#526965]" htmlFor="guest-feedback">Feedback</label>
-                                            <textarea id="guest-feedback" value={feedback} onChange={(event) => setFeedback(event.target.value)} maxLength={1000} rows={4} className="mt-2 w-full resize-none rounded-xl border border-[#dceae7] bg-white p-3 text-sm text-[#526965] outline-none focus:border-[#5cbdb9]" placeholder="Share useful feedback with the publisher…" />
+                                            <textarea id="guest-feedback" dir="auto" value={feedback} onChange={(event) => setFeedback(event.target.value)} maxLength={1000} rows={4} className="mt-2 w-full resize-none rounded-xl border border-[#dceae7] bg-white p-3 text-sm text-[#526965] outline-none focus:border-[#5cbdb9]" placeholder="Share useful feedback with the publisher…" />
                                             <button type="submit" disabled={!guestReady || busy === 'feedback' || !feedback.trim()} className="nexora-button-primary mt-3 w-full disabled:opacity-50">
                                                 <Send size={16} /> Save feedback
                                             </button>

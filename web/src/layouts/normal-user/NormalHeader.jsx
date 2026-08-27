@@ -34,6 +34,7 @@ import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth
 import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
 import { preloadRoute } from '../../routes/routePreloaders';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
+import { useUserExperience } from '../../system/user-experience';
 
 const PRIMARY_ITEMS = [
   { to: '/normal/dashboard', label: 'Home', icon: LayoutDashboard },
@@ -58,6 +59,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
   const [headerSearch, setHeaderSearch] = useState('');
   const [avatarFailed, setAvatarFailed] = useState(false);
   const { isPremium, creditBalance } = useAccountAccess();
+  const { t, isArabic } = useUserExperience();
 
   const displayName = user.fullName || user.name || 'Voxidence user';
   const accessLabel = isPremium ? 'Premium' : 'Normal access';
@@ -146,7 +148,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
         <NavLink
           className="normal-header__brand"
           to="/normal/dashboard"
-          aria-label="Voxidence workspace home"
+          aria-label={t('Voxidence workspace home')}
         >
           <motion.span
             className="normal-header__brand-mark"
@@ -155,11 +157,11 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
             <VoxidenceMark size={46} />
           </motion.span>
           <div className="normal-header__brand-copy">
-            <strong>Voxidence</strong>
+            <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
           </div>
         </NavLink>
 
-        <nav className="normal-header__nav" aria-label="Workspace navigation">
+        <nav className="normal-header__nav" aria-label={t('Workspace navigation')}>
           {PRIMARY_ITEMS.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
@@ -171,7 +173,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
               {({ isActive }) => (
                 <>
                   <Icon size={16} strokeWidth={1.9} />
-                  <span>{label}</span>
+                  <span>{t(label)}</span>
                   {isActive ? (
                     <motion.i
                       className="normal-header__active-line"
@@ -202,8 +204,8 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
             <input
               value={headerSearch}
               onChange={(event) => setHeaderSearch(event.target.value)}
-              placeholder="Search ideas"
-              aria-label="Search your ideas"
+              placeholder={t('Search ideas')}
+              aria-label={t('Search your ideas')}
             />
             <kbd>↵</kbd>
           </form>
@@ -212,7 +214,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
             type="button"
             className={`normal-upgrade-button ${isPremium ? 'is-premium' : ''}`}
             onClick={() => navigate('/normal/credits')}
-            aria-label={isPremium ? 'Buy more credits' : 'Upgrade to Premium'}
+            aria-label={t(isPremium ? 'Buy more credits' : 'Upgrade to Premium')}
             whileHover={{ y: -2, scale: 1.015 }}
             whileTap={{ scale: 0.975 }}
           >
@@ -220,11 +222,11 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
               {isPremium ? <Coins size={16} /> : <Crown size={16} />}
             </span>
             <span className="normal-upgrade-button__copy">
-              <b>{isPremium ? 'Buy more credits' : 'Upgrade'}</b>
+              <b>{t(isPremium ? 'Buy more credits' : 'Upgrade')}</b>
               <small>
                 {isPremium
-                  ? `${creditBalance} credits remaining`
-                  : 'Premium workspace'}
+                  ? t(`${creditBalance} credits remaining`)
+                  : t('Premium workspace')}
               </small>
             </span>
           </motion.button>
@@ -233,7 +235,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
             type="button"
             className="normal-header__icon"
             onClick={() => navigate('/normal/notifications')}
-            aria-label="Notifications"
+            aria-label={t('Notifications')}
             whileHover={{ y: -2 }}
             whileTap={{ scale: 0.94 }}
           >
@@ -248,7 +250,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
               onClick={() => setProfileMenuOpen((open) => !open)}
               aria-expanded={profileMenuOpen}
               aria-haspopup="menu"
-              aria-label="Open account menu"
+              aria-label={t('Open account menu')}
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.97 }}
             >
@@ -264,11 +266,11 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                     {initials}
                   </b>
                 )}
-                <i className="normal-header__online-dot" title="Online" />
+                <i className="normal-header__online-dot" title={t('Online')} />
               </span>
               <div className="normal-header__profile-copy">
                 <b>{displayName}</b>
-                <small>{accessLabel}</small>
+                <small>{t(accessLabel)}</small>
               </div>
               <ChevronDown
                 className={profileMenuOpen ? 'is-rotated' : ''}
@@ -281,6 +283,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                 <motion.div
                   className="normal-header__profile-menu"
                   role="menu"
+                  dir={isArabic ? 'rtl' : 'ltr'}
                   initial={{ opacity: 0, y: -8, scale: 0.96 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -6, scale: 0.97 }}
@@ -298,13 +301,13 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                       )}
                       <i
                         className="normal-header__online-dot normal-header__online-dot--menu"
-                        title="Online"
+                        title={t('Online')}
                       />
                     </span>
                     <div>
                       <b>{displayName}</b>
                       <small>
-                        {user.email || 'Manage your Voxidence experience'}
+                        {user.email || t('Manage your Voxidence experience')}
                       </small>
                     </div>
                   </div>
@@ -316,8 +319,8 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   >
                     <ShieldAlert size={16} />
                     <span>
-                      <b>Complaints</b>
-                      <small>Cases and admin replies</small>
+                      <b>{t('Complaints')}</b>
+                      <small>{t('Cases and admin replies')}</small>
                     </span>
                   </button>
 
@@ -328,8 +331,8 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   >
                     <ReceiptText size={16} />
                     <span>
-                      <b>Billing & invoices</b>
-                      <small>Payments and downloadable records</small>
+                      <b>{t('Billing & invoices')}</b>
+                      <small>{t('Payments and downloadable records')}</small>
                     </span>
                   </button>
 
@@ -340,8 +343,8 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   >
                     <SlidersHorizontal size={16} />
                     <span>
-                      <b>Preferences</b>
-                      <small>Discovery defaults</small>
+                      <b>{t('Preferences')}</b>
+                      <small>{t('Discovery defaults')}</small>
                     </span>
                   </button>
 
@@ -352,8 +355,8 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   >
                     <Settings size={16} />
                     <span>
-                      <b>Settings</b>
-                      <small>Profile and privacy</small>
+                      <b>{t('Settings')}</b>
+                      <small>{t('Profile and privacy')}</small>
                     </span>
                   </button>
 
@@ -365,8 +368,8 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   >
                     <LogOut size={16} />
                     <span>
-                      <b>Sign out</b>
-                      <small>End this session safely</small>
+                      <b>{t('Sign out')}</b>
+                      <small>{t('End this session safely')}</small>
                     </span>
                   </button>
                 </motion.div>
@@ -379,7 +382,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
             id="normal-responsive-menu-button"
             className="normal-header__menu"
             onClick={openResponsiveMenu}
-            aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-label={t(isMenuOpen ? 'Close menu' : 'Open menu')}
             aria-expanded={isMenuOpen}
             aria-controls="normal-responsive-drawer"
           >

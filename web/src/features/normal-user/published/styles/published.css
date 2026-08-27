@@ -2738,3 +2738,36 @@
   height: 15px;
   color: #2f7774 !important;
 }
+
+/* ========================================================================== */
+/* Dark publishing desk — card bodies/metrics/actions stay on dark surfaces    */
+/* ========================================================================== */
+html.vox-user-dark .published-page .published-card__body {
+  color: #edf7f4 !important;
+  border-color: rgba(104, 200, 195, .18) !important;
+  background: linear-gradient(145deg, #1c2e27, #17261f) !important;
+  background-image: linear-gradient(145deg, #1c2e27, #17261f) !important;
+}
+
+html.vox-user-dark .published-page .published-card :is(
+  .published-card__topline span,
+  .published-card__topline small,
+  .published-card__metrics > span,
+  .published-card__status,
+  .published-card__actions button
+) {
+  color: #dcebe7 !important;
+  border-color: rgba(104, 200, 195, .18) !important;
+  background: #20322b !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .published-page .published-card__actions button:hover {
+  color: #f4faf8 !important;
+  border-color: rgba(104, 200, 195, .38) !important;
+  background: #294039 !important;
+}
+
+html.vox-user-dark .published-page .published-card :is(h2,strong,b) { color: #f1f8f6 !important; }
+html.vox-user-dark .published-page .published-card p { color: #aec1bb !important; }

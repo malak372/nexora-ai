@@ -1,6 +1,7 @@
-import { IdeaGenerationType } from '@prisma/client';
+import { IdeaGenerationType, LanguageCode } from '@prisma/client';
 
 import type { IdeaOpportunityRanking } from '../../ideas/generation/types/idea-opportunity-ranking.type';
+import type { RequestIntentInterpretation } from '../../ideas/generation/types/request-collection-plan.type';
 import type {
   IdeaGenerationDomainEvidence,
   IdeaGenerationNlpContext,
@@ -73,6 +74,12 @@ export type IdeaGenerationPromptInput = {
   readonly requesterUserId?: string;
 
   readonly requestDescription?: string | null;
+
+  /** PREPARING AI interpretation of whether the text is a problem or discovery intent. */
+  readonly requestIntent?: RequestIntentInterpretation | null;
+
+  /** Language required for all human-readable generated values. */
+  readonly outputLanguage: LanguageCode;
 
   /**
    * Deterministic opportunity ranking resolved before prompt construction.

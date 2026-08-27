@@ -9,6 +9,7 @@ import {
 import { ROUTES } from '../../constants/routes.constants';
 import VoxidenceMark from '../brand/VoxidenceMark';
 import SoftBulbMark from '../brand/SoftBulbMark';
+import { useUserExperience } from '../../system/user-experience';
 
 const HEADER_OFFSET = 110;
 
@@ -21,6 +22,7 @@ function getSectionItems(items) {
 export default function Navbar() {
     const location = useLocation();
     const navigate = useNavigate();
+    const { t } = useUserExperience();
 
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [activeSectionId, setActiveSectionId] = useState('');
@@ -164,18 +166,18 @@ export default function Navbar() {
                 <Link
                     to={ROUTES.HOME}
                     className="vox-navbar-brand group flex items-center gap-3"
-                    aria-label="Go to Voxidence home page"
+                    aria-label={t('Go to Voxidence home page')}
                 >
                     <span className="vox-navbar-logo flex h-12 w-12 shrink-0 items-center justify-center">
                         <VoxidenceMark size={46} />
                     </span>
 
                     <div className="min-w-0">
-                        <p className="text-[1.02rem] font-black tracking-[-0.03em] text-[#2f7774]">
+                        <p className="vox-navbar-brand__name text-[1.02rem] font-black tracking-[-0.03em] text-[#2f7774]" dir="ltr" data-no-auto-translate="true">
                             Voxidence
                         </p>
                         <p className="hidden text-[0.72rem] font-semibold text-[#6d817d] md:block">
-                            Turning Community Voices into Evidence-Based Ideas.
+                            {t('Turning Community Voices into Evidence-Based Ideas.')}
                         </p>
                     </div>
                 </Link>
@@ -195,12 +197,12 @@ export default function Navbar() {
                                     key={item.id}
                                     type="button"
                                     onClick={() => handleSectionNavigation(item)}
-                                    className={`rounded-full px-4 py-2 text-sm font-bold transition ${isActive
-                                        ? 'bg-[#edf8f6] text-[#2e746f]'
+                                    className={`vox-public-nav-link rounded-full px-4 py-2 text-sm font-bold transition ${isActive
+                                        ? 'is-active bg-[#edf8f6] text-[#2e746f]'
                                         : 'text-[#5e7470] hover:bg-[#f4faf8] hover:text-[#2e746f]'
                                         }`}
                                 >
-                                    {item.label}
+                                    {t(item.label)}
                                 </button>
                             );
                         }
@@ -209,12 +211,12 @@ export default function Navbar() {
                             <Link
                                 key={item.id}
                                 to={item.path}
-                                className={`rounded-full px-4 py-2 text-sm font-bold transition ${isActive
-                                    ? 'bg-[#edf8f6] text-[#2e746f]'
+                                className={`vox-public-nav-link rounded-full px-4 py-2 text-sm font-bold transition ${isActive
+                                    ? 'is-active bg-[#edf8f6] text-[#2e746f]'
                                     : 'text-[#5e7470] hover:bg-[#f4faf8] hover:text-[#2e746f]'
                                     }`}
                             >
-                                {item.label}
+                                {t(item.label)}
                             </Link>
                         );
                     })}
@@ -225,7 +227,7 @@ export default function Navbar() {
                         to={AUTH_NAVIGATION_ITEMS.LOGIN.path}
                         className="rounded-full px-4 py-2 text-sm font-bold text-[#45635f] transition hover:bg-[#f4faf8] hover:text-[#2e746f]"
                     >
-                        {AUTH_NAVIGATION_ITEMS.LOGIN.label}
+                        {t(AUTH_NAVIGATION_ITEMS.LOGIN.label)}
                     </Link>
 
                     <Link
@@ -233,7 +235,7 @@ export default function Navbar() {
                         className="vox-navbar-cta group inline-flex items-center justify-center gap-2 rounded-full border border-[#5cbdb9]/35 bg-gradient-to-r from-[#69b7b1] via-[#5cbdb9] to-[#4fa9a4] px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_16px_35px_rgba(47,119,116,0.22)] transition hover:-translate-y-0.5"
                     >
                         <span className="vox-navbar-cta-logo"><SoftBulbMark size={18} /></span>
-                        {AUTH_NAVIGATION_ITEMS.REGISTER.label}
+                        {t(AUTH_NAVIGATION_ITEMS.REGISTER.label)}
                     </Link>
                 </div>
 
@@ -241,7 +243,7 @@ export default function Navbar() {
                     type="button"
                     onClick={() => setIsMenuOpen((value) => !value)}
                     className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#dcece8] bg-white/85 text-[#34504b] shadow-sm lg:hidden"
-                    aria-label={isMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                    aria-label={isMenuOpen ? t('Close navigation menu') : t('Open navigation menu')}
                     aria-expanded={isMenuOpen}
                 >
                     {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -260,7 +262,7 @@ export default function Navbar() {
                                         onClick={() => handleSectionNavigation(item)}
                                         className="rounded-2xl px-4 py-3 text-left text-sm font-bold text-[#48635f] transition hover:bg-[#f4faf8] hover:text-[#2e746f]"
                                     >
-                                        {item.label}
+                                        {t(item.label)}
                                     </button>
                                 );
                             }
@@ -272,7 +274,7 @@ export default function Navbar() {
                                     onClick={closeMenu}
                                     className="rounded-2xl px-4 py-3 text-sm font-bold text-[#48635f] transition hover:bg-[#f4faf8] hover:text-[#2e746f]"
                                 >
-                                    {item.label}
+                                    {t(item.label)}
                                 </Link>
                             );
                         })}
@@ -284,7 +286,7 @@ export default function Navbar() {
                             onClick={closeMenu}
                             className="rounded-2xl border border-[#e3efec] px-4 py-3 text-center text-sm font-bold text-[#3d5c57]"
                         >
-                            {AUTH_NAVIGATION_ITEMS.LOGIN.label}
+                            {t(AUTH_NAVIGATION_ITEMS.LOGIN.label)}
                         </Link>
 
                         <Link
@@ -292,7 +294,7 @@ export default function Navbar() {
                             onClick={closeMenu}
                             className="rounded-2xl bg-gradient-to-r from-[#69b7b1] via-[#5cbdb9] to-[#4fa9a4] px-4 py-3 text-center text-sm font-extrabold text-white"
                         >
-                            {AUTH_NAVIGATION_ITEMS.REGISTER.label}
+                            {t(AUTH_NAVIGATION_ITEMS.REGISTER.label)}
                         </Link>
                     </div>
                 </div>

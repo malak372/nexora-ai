@@ -366,6 +366,7 @@ class _GuestGenerateIdeaPageState extends State<GuestGenerateIdeaPage> {
       if (city.isNotEmpty) 'city': city,
       if (region.isNotEmpty) 'region': region,
       'language': _language,
+      'outputLanguage': 'EN',
       'forceRefresh': false,
     };
 

@@ -59,7 +59,7 @@ const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
  * Maximum time Prisma may wait to acquire an interactive
  * transaction connection before failing the persistence attempt.
  */
-const SERIALIZABLE_TRANSACTION_MAX_WAIT_MS = 2_500;
+const SERIALIZABLE_TRANSACTION_MAX_WAIT_MS = 1_500;
 
 /**
  * Maximum lifetime of one interactive persistence transaction.
@@ -69,7 +69,7 @@ const SERIALIZABLE_TRANSACTION_MAX_WAIT_MS = 2_500;
  * default timeout from closing the transaction before entitlement
  * consumption and generation-run linking are completed.
  */
-const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 20_000;
+const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 14_000;
 
 /**
  * Maximum server-side execution time for one SQL statement inside idea
@@ -77,7 +77,7 @@ const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 20_000;
  * a stalled remote query fails early and the complete atomic transaction can
  * be retried on a fresh pooled connection.
  */
-const SERIALIZABLE_STATEMENT_TIMEOUT_MS = 8_000;
+const SERIALIZABLE_STATEMENT_TIMEOUT_MS = 6_000;
 
 /**
  * Maximum time one persistence statement may wait on a PostgreSQL lock.
@@ -85,7 +85,7 @@ const SERIALIZABLE_STATEMENT_TIMEOUT_MS = 8_000;
  * user waits on the completion screen; a short lock timeout lets the bounded
  * serializable retry path recover instead.
  */
-const SERIALIZABLE_LOCK_TIMEOUT_MS = 2_000;
+const SERIALIZABLE_LOCK_TIMEOUT_MS = 1_200;
 
 /**
  * Prisma transaction client accepted by idea-persistence
@@ -135,9 +135,25 @@ export type PersistGeneratedIdeaInput = {
   readonly guestSessionId?: string;
 
   /**
-   * Selected software-domain identifier.
+   * Semantic domain assigned to the persisted idea. In multi-domain discovery
+   * this may differ from the technical domain that owns the unified collection
+   * job after ranking selects a stronger domain-aligned opportunity.
    */
   readonly domainId: string;
+
+  /**
+   * Technical domain row that owns collectionJobId.
+   *
+   * This value is intentionally separate from domainId. The collection job is
+   * created before ranking, while the final idea domain may be selected later.
+   */
+  readonly collectionDomainId: string;
+
+  /**
+   * Domain ids that were part of the validated generation scope. The semantic
+   * idea domain must remain inside this immutable set.
+   */
+  readonly allowedIdeaDomainIds?: readonly string[];
 
   /**
    * Most specific selected geographic region.
@@ -369,9 +385,9 @@ export class IdeaPersistenceService {
       where: { id: input.collectionJobId },
       select: { domainId: true },
     });
-    if (!collection || collection.domainId !== input.domainId) {
+    if (!collection || collection.domainId !== input.collectionDomainId) {
       throw new BadRequestException(
-        'The collection job does not belong to the selected domain.',
+        'The collection job does not belong to the generation collection anchor domain.',
       );
     }
   }
@@ -402,27 +418,31 @@ export class IdeaPersistenceService {
              * Apply narrow server-side limits and execute the validation reads
              * in their actual database order.
              */
-            await transaction.$executeRawUnsafe(
-              `SET LOCAL statement_timeout = '${SERIALIZABLE_STATEMENT_TIMEOUT_MS}ms'`,
-            );
-            await transaction.$executeRawUnsafe(
-              `SET LOCAL lock_timeout = '${SERIALIZABLE_LOCK_TIMEOUT_MS}ms'`,
+            /*
+             * Apply both local transaction limits in one PostgreSQL round trip.
+             * Supabase latency made the two sequential SET statements visible
+             * in the 9-10s persistence envelope even though they carry no
+             * business data. set_config(..., true) has the same transaction-
+             * local semantics and automatically resets at transaction end.
+             */
+            await transaction.$queryRawUnsafe(
+              `SELECT set_config('statement_timeout', '${SERIALIZABLE_STATEMENT_TIMEOUT_MS}ms', true), set_config('lock_timeout', '${SERIALIZABLE_LOCK_TIMEOUT_MS}ms', true)`,
             );
 
-            const run = await this.validateGenerationRun(transaction, input);
+            /*
+             * The duplicate-title predicate stays inside SERIALIZABLE so
+             * concurrent identical generations still conflict safely. The
+             * generation-run read is intentionally removed from the successful
+             * path: attachIdeaToGenerationRun performs the owner/type/status/
+             * cancellation/prompt/collection checks atomically and returns the
+             * guarded run row. A diagnostic read happens only if that guarded
+             * update fails.
+             */
             await this.duplicateDetectionService.assertNoExactTitleDuplicate(
               input.parsedOutput.coreIdea,
               transaction,
             );
             const validationMs = Date.now() - timingStartedAt;
-            /*
-             * CollectionJob is normally attached to the run before this stage.
-             * Keep a defensive fallback for legacy/direct callers so removing
-             * the normal-path round-trip never weakens domain validation.
-             */
-            if (!run.collectionJobId) {
-              await this.validateCollectionJob(transaction, input);
-            }
 
             const commentsCount = input.analyzedCommentsCount;
 
@@ -452,11 +472,10 @@ export class IdeaPersistenceService {
               input,
               idea.id,
             );
-            await this.attachIdeaToGenerationRun(
+            const run = await this.attachIdeaToGenerationRun(
               transaction,
-              run.id,
+              input,
               idea.id,
-              input.collectionJobId,
             );
             const guardedWritesMs = Date.now() - guardedWritesStartedAt;
 
@@ -506,10 +525,10 @@ export class IdeaPersistenceService {
 
         const transientConnectionFailure = isTransientDatabaseError(error);
         const retryDelayMs = transientConnectionFailure
-          ? Math.min(1_500, 300 * 2 ** (attempt - 1))
-          : Math.min(500, 150 * attempt);
+          ? Math.min(500, 150 * 2 ** (attempt - 1))
+          : Math.min(350, 100 * attempt);
         const jitterMs = transientConnectionFailure
-          ? Math.floor(Math.random() * 120)
+          ? Math.floor(Math.random() * 60)
           : 0;
         const boundedDelayMs = retryDelayMs + jitterMs;
 
@@ -557,6 +576,34 @@ export class IdeaPersistenceService {
     );
 
     const domainId = this.requireText(input.domainId, 'Domain ID');
+    const collectionDomainId = this.requireText(
+      input.collectionDomainId,
+      'Collection domain ID',
+    );
+    const allowedIdeaDomainIds = [
+      ...new Set(
+        (input.allowedIdeaDomainIds ?? [])
+          .map((value) => this.normalizeOptionalText(value))
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+
+    if (
+      allowedIdeaDomainIds.length > 0 &&
+      !allowedIdeaDomainIds.includes(domainId)
+    ) {
+      throw new BadRequestException(
+        'The persisted idea domain is outside the validated generation domain scope.',
+      );
+    }
+    if (
+      allowedIdeaDomainIds.length > 0 &&
+      !allowedIdeaDomainIds.includes(collectionDomainId)
+    ) {
+      throw new BadRequestException(
+        'The collection anchor domain is outside the validated generation domain scope.',
+      );
+    }
 
     const selectedRegion = this.requireText(
       input.selectedRegion,
@@ -582,6 +629,8 @@ export class IdeaPersistenceService {
       userId,
       guestSessionId,
       domainId,
+      collectionDomainId,
+      allowedIdeaDomainIds,
       selectedRegion,
       collectionJobId,
       generationType: input.generationType,
@@ -951,7 +1000,7 @@ export class IdeaPersistenceService {
         progressPercent: true,
         promptHistories: {
           where: { id: input.promptHistoryId },
-          select: { id: true },
+          select: { id: true, collectionJobId: true },
           take: 1,
         },
       },
@@ -1014,14 +1063,20 @@ export class IdeaPersistenceService {
       );
     }
 
+    if (run.promptHistories[0]?.collectionJobId !== input.collectionJobId) {
+      throw new BadRequestException(
+        'The prompt history is not linked to the collection job used by this generation run.',
+      );
+    }
+
     return run;
   }
 
   /**
    * Validates the referenced collection job.
    *
-   * The collection job must exist and belong to the selected
-   * domain.
+   * The collection job must exist and belong to the technical collection
+   * anchor domain. The final semantic idea domain is validated separately.
    *
    * @param transaction Active Prisma transaction.
    * @param input Normalized persistence input.
@@ -1052,9 +1107,9 @@ export class IdeaPersistenceService {
       );
     }
 
-    if (collectionJob.domainId !== input.domainId) {
+    if (collectionJob.domainId !== input.collectionDomainId) {
       throw new BadRequestException(
-        'The collection job does not belong to the selected domain.',
+        'The collection job does not belong to the generation collection anchor domain.',
       );
     }
 
@@ -1196,43 +1251,40 @@ export class IdeaPersistenceService {
       );
     }
 
-    const user = await transaction.user.findUnique({
-      where: {
-        id: userId,
-      },
+    /*
+     * Consume the free entitlement in one guarded SQL round trip. The previous
+     * findUnique + updateMany sequence doubled remote latency on every normal
+     * free persistence and still needed the update predicate for concurrency.
+     * The database-side comparison is atomic and preserves the same limit.
+     */
+    const consumed = await transaction.$queryRaw<Array<{ id: string }>>`
+      UPDATE "users"
+      SET
+        "free_generations_used" = "free_generations_used" + 1,
+        "updated_at" = NOW()
+      WHERE "id" = ${userId}
+        AND "free_generations_used" < "free_generation_limit"
+      RETURNING "id"
+    `;
 
-      select: {
-        id: true,
-        freeGenerationLimit: true,
-        freeGenerationsUsed: true,
-      },
+    if (consumed.length === 1) {
+      return;
+    }
+
+    // Failure-path lookup only: distinguish a missing user from an exhausted
+    // entitlement without paying this read on successful generations.
+    const user = await transaction.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
     });
 
     if (!user) {
       throw new NotFoundException('User not found.');
     }
 
-    const updated = await transaction.user.updateMany({
-      where: {
-        id: user.id,
-
-        freeGenerationsUsed: {
-          lt: user.freeGenerationLimit,
-        },
-      },
-
-      data: {
-        freeGenerationsUsed: {
-          increment: 1,
-        },
-      },
-    });
-
-    if (updated.count !== 1) {
-      throw new BadRequestException(
-        'No remaining free generations are available.',
-      );
-    }
+    throw new BadRequestException(
+      'No remaining free generations are available.',
+    );
   }
 
   /**
@@ -1411,35 +1463,83 @@ export class IdeaPersistenceService {
    */
   private async attachIdeaToGenerationRun(
     transaction: IdeaPersistenceDatabaseClient,
-    runId: string,
+    input: PersistGeneratedIdeaInput,
     ideaId: string,
-    collectionJobId: string,
-  ): Promise<void> {
-    const updated = await transaction.ideaGenerationRun.updateMany({
-      where: {
-        id: runId,
+  ): Promise<{
+    readonly id: string;
+    readonly status: IdeaGenerationRunStatus;
+    readonly progressPercent: number;
+  }> {
+    /*
+     * One guarded UPDATE replaces the previous successful-path
+     * IdeaGenerationRun.findUnique + later updateMany pair. The predicates
+     * preserve every run invariant and additionally verify that the prompt
+     * belongs to this run and collection job, and that the supplied collection
+     * job exists under the immutable collection-anchor domain. The idea's final
+     * semantic domain may legitimately differ after multi-domain ranking. PostgreSQL RETURNING gives the small run snapshot
+     * required by the stage without opening another round trip.
+     */
+    const rows = await transaction.$queryRaw<Array<{
+      id: string;
+      status: IdeaGenerationRunStatus;
+      progressPercent: number;
+    }>>(Prisma.sql`
+      UPDATE "idea_generation_runs" AS run
+      SET
+        "idea_id" = ${ideaId},
+        "collection_job_id" = ${input.collectionJobId},
+        "last_heartbeat_at" = NOW(),
+        "updated_at" = NOW()
+      WHERE run."id" = ${input.runId}
+        AND run."status"::text = ${IdeaGenerationRunStatus.RUNNING}
+        AND run."idea_id" IS NULL
+        AND run."cancel_requested_at" IS NULL
+        AND run."generation_type"::text = ${input.generationType}
+        AND run."user_id" IS NOT DISTINCT FROM ${input.userId ?? null}
+        AND run."guest_session_id" IS NOT DISTINCT FROM ${input.guestSessionId ?? null}
+        AND (
+          run."collection_job_id" IS NULL
+          OR run."collection_job_id" = ${input.collectionJobId}
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM "prompt_histories" AS prompt
+          WHERE prompt."id" = ${input.promptHistoryId}
+            AND prompt."generation_run_id" = run."id"
+            AND prompt."collection_job_id" = ${input.collectionJobId}
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM "collection_jobs" AS collection
+          WHERE collection."id" = ${input.collectionJobId}
+            AND collection."domain_id" = ${input.collectionDomainId}
+            AND (
+              collection."created_by_id" IS NULL
+              OR collection."created_by_id" IS NOT DISTINCT FROM ${input.userId ?? null}
+            )
+        )
+      RETURNING
+        run."id",
+        run."status",
+        run."progress_percent" AS "progressPercent"
+    `);
 
-        status: IdeaGenerationRunStatus.RUNNING,
-
-        ideaId: null,
-
-        cancelRequestedAt: null,
-      },
-
-      data: {
-        ideaId,
-
-        collectionJobId,
-
-        lastHeartbeatAt: new Date(),
-      },
-    });
-
-    if (updated.count !== 1) {
-      throw new BadRequestException(
-        'The generated idea could not be attached because the generation-run state changed.',
-      );
+    const attached = rows[0];
+    if (attached) {
+      return attached;
     }
+
+    /*
+     * Failure-path diagnostics are deliberately outside the normal success
+     * path. They preserve the previous precise exceptions while keeping healthy
+     * persistence to one fewer remote database read.
+     */
+    await this.validateGenerationRun(transaction, input);
+    await this.validateCollectionJob(transaction, input);
+
+    throw new BadRequestException(
+      'The generated idea could not be attached because the generation-run state changed.',
+    );
   }
 
   /**

@@ -5426,3 +5426,295 @@ html {
         transition: none !important;
     }
 }
+/* ========================================================================== 
+ * Arabic + dark-mode hardening for the public Home page only
+ * ========================================================================== */
+html.vox-user-dark .vox-home-page {
+    --vox-home-dark-bg: #18231f;
+    --vox-home-dark-bg-2: #1d2a25;
+    --vox-home-dark-surface: #22312b;
+    --vox-home-dark-surface-2: #283a33;
+    --vox-home-dark-text: #f1f8f5;
+    --vox-home-dark-muted: #b4c6c0;
+    --vox-home-dark-subtle: #8fa49e;
+    --vox-home-dark-line: rgba(112, 205, 198, .20);
+    --vox-home-dark-line-strong: rgba(112, 205, 198, .34);
+    --vox-home-dark-green: #78d1ca;
+    --vox-home-dark-green-strong: #56bbb5;
+    --vox-home-dark-rose: #e3a8b5;
+
+    color: var(--vox-home-dark-text) !important;
+    background: var(--vox-home-dark-bg) !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-home-background {
+    background:
+        radial-gradient(circle at 8% 4%, rgba(227, 168, 181, .10), transparent 30rem),
+        radial-gradient(circle at 93% 8%, rgba(120, 209, 202, .12), transparent 34rem),
+        radial-gradient(circle at 18% 48%, rgba(87, 163, 151, .09), transparent 30rem),
+        radial-gradient(circle at 88% 64%, rgba(227, 168, 181, .065), transparent 31rem),
+        linear-gradient(145deg, #18231f 0%, #1b2823 48%, #18231f 100%) !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-home-background::after {
+    opacity: .13;
+    background-image: radial-gradient(rgba(120, 209, 202, .24) .6px, transparent .6px);
+}
+
+html.vox-user-dark .vox-home-page :is(
+    .vox-hero-stage,
+    .vox-how-section,
+    .vox-about-section,
+    .vox-domains-section,
+    .vox-discoveries-section,
+    .vox-contact-section,
+    .vox-home-sections
+) {
+    color: var(--vox-home-dark-text) !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark .vox-home-page :is(
+    .vox-stage-showcase,
+    .vox-stage-showcase-frame,
+    .vox-how-panel,
+    .vox-how-card,
+    .vox-how-summary,
+    .vox-about-panel,
+    .vox-about-story-card,
+    .vox-about-feature,
+    .vox-about-story-points > div,
+    .vox-about-mission-strip,
+    .vox-domain-card,
+    .vox-domains-more,
+    .vox-domains-empty,
+    .vox-discovery-card,
+    .vox-discoveries-state,
+    .vox-contact-copy,
+    .vox-contact-form-card,
+    .vox-contact-note,
+    .vox-contact-values > div
+) {
+    color: var(--vox-home-dark-text) !important;
+    border-color: var(--vox-home-dark-line) !important;
+    background-color: var(--vox-home-dark-surface) !important;
+    background-image: linear-gradient(145deg, rgba(36, 53, 46, .97), rgba(29, 43, 37, .97)) !important;
+    box-shadow: 0 20px 52px rgba(4, 12, 10, .20) !important;
+}
+
+html.vox-user-dark .vox-home-page :is(
+    .vox-how-card,
+    .vox-about-feature,
+    .vox-domain-card,
+    .vox-discovery-card
+):hover {
+    border-color: var(--vox-home-dark-line-strong) !important;
+    background-image: linear-gradient(145deg, #293d35, #21332c) !important;
+}
+
+html.vox-user-dark .vox-home-page :is(
+    .vox-hero-heading,
+    .vox-how-header h2,
+    .vox-how-card h3,
+    .vox-about-refined__heading h2,
+    .vox-about-story-card h3,
+    .vox-about-feature h3,
+    .vox-domains-title,
+    .vox-domain-card__title,
+    .vox-discoveries-heading h2,
+    .vox-discovery-card h3,
+    .vox-contact-header h2,
+    .vox-contact-copy h3,
+    .vox-contact-form-card__header h3,
+    .vox-discoveries-state h3
+) {
+    color: var(--vox-home-dark-text) !important;
+    text-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page :is(
+    .vox-hero-lead,
+    .vox-hero-trust,
+    .vox-how-header > p,
+    .vox-how-card p,
+    .vox-about-story-lead,
+    .vox-about-feature p,
+    .vox-domains-intro,
+    .vox-domain-card__description,
+    .vox-discoveries-heading > p,
+    .vox-discovery-card__summary,
+    .vox-discovery-card__meta,
+    .vox-discovery-card__direction p,
+    .vox-contact-header > p,
+    .vox-contact-copy__description,
+    .vox-contact-note span,
+    .vox-contact-reply-note,
+    .vox-discoveries-state p
+) {
+    color: var(--vox-home-dark-muted) !important;
+}
+
+html.vox-user-dark .vox-home-page :is(
+    .vox-hero-badge,
+    .vox-how-eyebrow,
+    .vox-about-refined__eyebrow,
+    .vox-about-story-kicker,
+    .vox-domains-eyebrow,
+    .vox-discoveries-eyebrow,
+    .vox-contact-eyebrow,
+    .vox-contact-copy__label,
+    .vox-contact-form-card__header p,
+    .vox-domain-card__action,
+    .vox-discovery-card__link,
+    .vox-discoveries-retry
+) {
+    color: #9be0da !important;
+}
+
+/* Keep intentional gradient copy clipped to the glyphs instead of painting a box. */
+html.vox-user-dark .vox-home-page :is(
+    .vox-hero-heading span,
+    .vox-hero-gradient-text,
+    .vox-about-refined__heading h2 span,
+    .vox-contact-header h2 span
+) {
+    background: linear-gradient(100deg, #78d1ca 0%, #9ddbd5 55%, #e3a8b5 100%) !important;
+    background-clip: text !important;
+    -webkit-background-clip: text !important;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page :is(
+    .vox-hero-button-secondary,
+    .vox-domains-collapse,
+    .vox-discoveries-retry
+) {
+    color: #dff3ef !important;
+    border-color: var(--vox-home-dark-line) !important;
+    background: rgba(40, 58, 51, .88) !important;
+    box-shadow: 0 10px 26px rgba(5, 14, 12, .16) !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-hero-button-primary,
+html.vox-user-dark .vox-home-page .vox-contact-submit {
+    color: #fff !important;
+    border-color: rgba(120, 209, 202, .38) !important;
+    background: linear-gradient(135deg, #69c5be 0%, #4aa39d 100%) !important;
+}
+
+html.vox-user-dark .vox-home-page :is(
+    .vox-domain-card__icon,
+    .vox-about-feature-icon,
+    .vox-how-icon,
+    .vox-contact-copy__icon
+) {
+    color: #8bd9d2 !important;
+    border-color: rgba(120, 209, 202, .18) !important;
+    background: linear-gradient(145deg, rgba(61, 91, 80, .88), rgba(55, 69, 64, .88)) !important;
+}
+
+html.vox-user-dark .vox-home-page :is(input, textarea, select) {
+    color: var(--vox-home-dark-text) !important;
+    border-color: var(--vox-home-dark-line) !important;
+    background: #21302a !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page :is(input, textarea)::placeholder {
+    color: #829891 !important;
+    opacity: 1 !important;
+}
+
+html.vox-user-dark .vox-home-page :is(input, textarea, select):focus {
+    border-color: rgba(120, 209, 202, .54) !important;
+    box-shadow: 0 0 0 3px rgba(120, 209, 202, .09) !important;
+}
+
+html.vox-user-dark .vox-home-page :is(.vox-domain-card--skeleton, .vox-discovery-card--skeleton) > div {
+    background: #2a3b34 !important;
+}
+
+html.vox-user-rtl .vox-home-page {
+    direction: rtl;
+}
+
+html.vox-user-rtl .vox-home-page :is(
+    .vox-hero-copy,
+    .vox-how-header,
+    .vox-how-card-copy,
+    .vox-about-refined__heading,
+    .vox-about-story-card,
+    .vox-about-feature-copy,
+    .vox-domains-heading,
+    .vox-domain-card__copy,
+    .vox-discoveries-heading,
+    .vox-discovery-card,
+    .vox-contact-header,
+    .vox-contact-copy,
+    .vox-contact-form-card
+) {
+    text-align: right;
+}
+
+html.vox-user-rtl .vox-home-page .vox-domain-card--more {
+    text-align: right;
+}
+
+html.vox-user-rtl .vox-home-page :is(
+    .vox-how-connector svg,
+    .vox-discovery-card__link svg,
+    .vox-hero-button-secondary svg,
+    .vox-contact-submit svg:last-child,
+    .vox-domain-card__action svg
+) {
+    transform: rotate(180deg);
+}
+
+html.vox-user-rtl .vox-home-page :is(input, textarea) {
+    direction: rtl;
+    text-align: right;
+}
+
+
+
+/* VOXIDENCE_HOME_DARK_RTL_FIX */
+html.vox-user-dark .vox-home-page :is(
+  .vox-domains-container,
+  .vox-domains-header,
+  .vox-domains-content,
+  .vox-domains-grid,
+  .vox-discoveries-container,
+  .vox-discoveries-header,
+  .vox-discoveries-grid
+) {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page :is(.vox-domains-count, .vox-discoveries-eyebrow, .vox-discoveries-live) {
+  color: #a9e7e1 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #263b33 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase-frame {
+  background: #172820 !important;
+  box-shadow: 0 24px 58px rgba(0, 0, 0, .26), inset 0 0 0 999px rgba(10, 27, 21, .14) !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase-image {
+  filter: brightness(.62) saturate(.74) contrast(1.04) !important;
+}
+
+html.vox-user-rtl .vox-home-page .vox-hero-lead {
+  unicode-bidi: plaintext;
+}
+
+.vox-hero-brand-name,
+.vox-navbar-brand__name {
+  unicode-bidi: isolate;
+}
