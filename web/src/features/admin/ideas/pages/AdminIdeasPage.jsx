@@ -38,9 +38,182 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-ideas.css';
 import '../styles/admin-publication-insights.css';
+
+
+const ADMIN_IDEAS_AR = Object.freeze({
+  'All ideas': 'كل الأفكار',
+  'Published': 'منشورة',
+  'Locked': 'مقفلة',
+  'Unlocked': 'مفتوحة',
+  'Created date': 'تاريخ الإنشاء',
+  'Idea title': 'عنوان الفكرة',
+  'Owner': 'المالك',
+  'Domain': 'المجال',
+  'Generation type': 'نوع التوليد',
+  'Access': 'الوصول',
+  'Publication': 'النشر',
+  'Sort ideas': 'ترتيب الأفكار',
+  'Idea intelligence': 'ذكاء الأفكار',
+  'Ideas, without the spreadsheet feeling.': 'أفكار، بلا تعقيد جداول البيانات.',
+  'Filter access states, find published work, inspect ownership and open any idea in a focused admin view.': 'صفِّ حالات الوصول، واعثر على الأفكار المنشورة، وافحص الملكية، وافتح أي فكرة ضمن عرض إداري مركّز.',
+  'Live directory': 'دليل مباشر',
+  'Directory': 'الدليل',
+  'records': 'سجل',
+  'published': 'منشورة',
+  'ideas': 'فكرة',
+  'platform total': 'إجمالي المنصة',
+  'visible to community': 'ظاهرة للمجتمع',
+  'advanced access closed': 'الوصول المتقدم مغلق',
+  'advanced access available': 'الوصول المتقدم متاح',
+  'IDEA DIRECTORY': 'دليل الأفكار',
+  'Explore platform ideas': 'استكشاف أفكار المنصة',
+  'Live administrative records': 'سجلات إدارية مباشرة',
+  'Refresh': 'تحديث',
+  'Export CSV': 'تصدير CSV',
+  'Idea filters': 'عوامل تصفية الأفكار',
+  'Search title or problem…': 'ابحث في العنوان أو المشكلة…',
+  'Search ideas': 'البحث في الأفكار',
+  'Clear search': 'مسح البحث',
+  'Idea': 'الفكرة',
+  'Generation': 'التوليد',
+  'Created': 'الإنشاء',
+  'Actions': 'الإجراءات',
+  'Updating ideas…': 'جارٍ تحديث الأفكار…',
+  'No ideas match this view': 'لا توجد أفكار تطابق هذا العرض',
+  'Try another filter or search phrase.': 'جرّب عامل تصفية أو عبارة بحث أخرى.',
+  'Try again': 'إعادة المحاولة',
+  'Page': 'الصفحة',
+  'of': 'من',
+  'Previous': 'السابق',
+  'Next': 'التالي',
+  'Publication insights and reports': 'إحصاءات النشر والبلاغات',
+  'Close publication insights': 'إغلاق إحصاءات النشر',
+  'PUBLISHED IDEA': 'فكرة منشورة',
+  'Publication insights': 'إحصاءات النشر',
+  'Loading publication activity…': 'جارٍ تحميل نشاط النشر…',
+  'ratings': 'تقييمات',
+  'upvotes': 'أصوات مؤيدة',
+  'downvotes': 'أصوات معارضة',
+  'feedback': 'ملاحظات',
+  'reports': 'بلاغات',
+  'Publication snapshot': 'لقطة النشر',
+  'Public copy and current community settings.': 'النسخة العامة وإعدادات المجتمع الحالية.',
+  'Status': 'الحالة',
+  'Visibility': 'الظهور',
+  'Voting': 'التصويت',
+  'Ratings': 'التقييمات',
+  'Feedback': 'الملاحظات',
+  'Enabled': 'مفعّل',
+  'Disabled': 'معطّل',
+  'Recent community feedback': 'أحدث ملاحظات المجتمع',
+  'Latest written feedback visible on this publication.': 'أحدث الملاحظات المكتوبة الظاهرة على هذا المنشور.',
+  'Community member': 'عضو في المجتمع',
+  'No written feedback yet.': 'لا توجد ملاحظات مكتوبة بعد.',
+  'Reports on this publication': 'البلاغات على هذا المنشور',
+  'Review every report without leaving the idea directory.': 'راجع كل بلاغ دون مغادرة دليل الأفكار.',
+  'Reporter': 'المبلّغ',
+  'Response to reporter': 'الرد على المبلّغ',
+  'Write the moderation response that the reporter should receive…': 'اكتب رد الإشراف الذي يجب أن يصل إلى المبلّغ…',
+  'Dismiss': 'تجاهل',
+  'Resolve & reply': 'حلّ ورد',
+  'Reviewed by administration.': 'تمت مراجعته من الإدارة.',
+  'No reports were submitted for this publication.': 'لم تُقدَّم بلاغات على هذا المنشور.',
+  'Publication moderation': 'إشراف النشر',
+  'Unpublishing stays out of the table and is available only after reviewing context.': 'إلغاء النشر متاح فقط بعد مراجعة السياق، وليس من الجدول مباشرة.',
+  'Unpublish': 'إلغاء النشر',
+  'IDEA INSPECTOR': 'فاحص الفكرة',
+  'Idea details': 'تفاصيل الفكرة',
+  'Close idea details': 'إغلاق تفاصيل الفكرة',
+  'Untitled idea': 'فكرة بلا عنوان',
+  'Not published': 'غير منشورة',
+  'Loading idea details…': 'جارٍ تحميل تفاصيل الفكرة…',
+  'Pipeline': 'خط المعالجة',
+  'Unknown': 'غير معروف',
+  'Unlock method': 'طريقة الفتح',
+  'None': 'لا يوجد',
+  'Region': 'المنطقة',
+  'Any region': 'أي منطقة',
+  'Problem statement': 'بيان المشكلة',
+  'No problem statement is available for this record.': 'لا يتوفر بيان مشكلة لهذا السجل.',
+  'Abstract': 'الملخص',
+  'No abstract is available for this record.': 'لا يتوفر ملخص لهذا السجل.',
+  'Objectives': 'الأهداف',
+  'No objectives available.': 'لا تتوفر أهداف.',
+  'Target users': 'المستخدمون المستهدفون',
+  'No target-user information available.': 'لا تتوفر معلومات عن المستخدمين المستهدفين.',
+  'Generation status': 'حالة التوليد',
+  'Stage': 'المرحلة',
+  'Progress': 'التقدم',
+  'Started': 'بدأت',
+  'Record': 'السجل',
+  'Idea ID': 'معرّف الفكرة',
+  'Outputs': 'المخرجات',
+  'Payments': 'المدفوعات',
+  'Remove this idea from community discovery and automatically notify its publisher.': 'أزل هذه الفكرة من استكشاف المجتمع وأبلغ ناشرها تلقائيًا.',
+  'Unpublish idea': 'إلغاء نشر الفكرة',
+  'PUBLICATION MODERATION': 'إشراف النشر',
+  'Unpublish this idea?': 'إلغاء نشر هذه الفكرة؟',
+  'will disappear from community discovery. The publication record and its history will stay preserved.': 'ستختفي من استكشاف المجتمع، مع الاحتفاظ بسجل النشر وتاريخه.',
+  'Publisher notification is automatic': 'إشعار الناشر يتم تلقائيًا',
+  'will receive an in-app admin alert containing the reason below.': 'سيتلقى تنبيهًا إداريًا داخل التطبيق يتضمن السبب أدناه.',
+  'Reason for unpublishing': 'سبب إلغاء النشر',
+  'Example: The publication contains information that should be corrected before it is visible to the community.': 'مثال: يحتوي المنشور على معلومات يجب تصحيحها قبل أن تظهر للمجتمع.',
+  'This reason is included in the publisher alert.': 'سيتم تضمين هذا السبب في تنبيه الناشر.',
+  'Keep published': 'إبقاؤها منشورة',
+  'Unpublishing…': 'جارٍ إلغاء النشر…',
+  'Unpublish & notify': 'إلغاء النشر والإشعار',
+  'Guest session': 'جلسة ضيف',
+  'Unknown owner': 'مالك غير معروف',
+  'Guest idea': 'فكرة ضيف',
+  'No email': 'لا يوجد بريد إلكتروني',
+  'Unassigned': 'غير معيّن',
+  'Idea record': 'سجل فكرة',
+  'Open idea details': 'فتح تفاصيل الفكرة',
+  'Completed': 'مكتمل',
+  'Active': 'نشط',
+  'Succeeded': 'ناجح',
+  'Failed': 'فشل',
+  'Cancelled': 'ملغى',
+  'Rejected': 'مرفوض',
+  'Running': 'قيد التشغيل',
+  'Preparing': 'قيد التحضير',
+  'Pending': 'قيد الانتظار',
+  'Queued': 'في قائمة الانتظار',
+  'Reviewing': 'قيد المراجعة',
+  'Resolved': 'تم الحل',
+  'Dismissed': 'تم التجاهل',
+  'Public': 'عام',
+  'Private': 'خاص',
+  'Text Only': 'نص فقط',
+  'Domains Only': 'مجالات فقط',
+  'Text And Domains': 'نص ومجالات',
+  'Free': 'مجاني',
+  'Premium': 'بريميوم',
+  'Credit': 'رصيد',
+  'Please enter a clear reason of at least 3 characters.': 'يرجى إدخال سبب واضح من 3 أحرف على الأقل.',
+  'Write a short response before resolving or dismissing the report.': 'اكتب ردًا قصيرًا قبل حل البلاغ أو تجاهله.',
+  'Publication removed from community discovery. The publisher was notified.': 'تمت إزالة المنشور من استكشاف المجتمع وإشعار الناشر.',
+  'Report resolved and reporter notified.': 'تم حل البلاغ وإشعار المبلّغ.',
+  'Report dismissed and reporter notified.': 'تم تجاهل البلاغ وإشعار المبلّغ.',
+  'The publication snapshot could not be refreshed. Reports are still available.': 'تعذر تحديث لقطة النشر، لكن البلاغات ما زالت متاحة.',
+  'Reports could not be refreshed. Publication insights are still available.': 'تعذر تحديث البلاغات، لكن إحصاءات النشر ما زالت متاحة.',
+  'Could not load ideas.': 'تعذر تحميل الأفكار.',
+  'Could not load the idea details.': 'تعذر تحميل تفاصيل الفكرة.',
+  'Publication insights could not be loaded.': 'تعذر تحميل إحصاءات النشر.',
+  'Could not review this report.': 'تعذر مراجعة هذا البلاغ.',
+  'Could not unpublish this idea.': 'تعذر إلغاء نشر هذه الفكرة.',
+  'CSV export failed.': 'فشل تصدير CSV.',
+  'Close': 'إغلاق',
+});
+
+function translateAdminIdeas(text, isArabic) {
+  if (!isArabic || text == null) return text;
+  return ADMIN_IDEAS_AR[String(text)] || text;
+}
 
 const PAGE_SIZE = 20;
 
@@ -62,7 +235,7 @@ const SORT_OPTIONS = [
   { key: 'publication', label: 'Publication' },
 ];
 
-function IdeaSortPicker({ value, order, onChange, onToggleOrder }) {
+function IdeaSortPicker({ value, order, onChange, onToggleOrder, tr }) {
   const [open, setOpen] = useState(false);
   const current = SORT_OPTIONS.find((option) => option.key === value) || SORT_OPTIONS[0];
 
@@ -70,7 +243,7 @@ function IdeaSortPicker({ value, order, onChange, onToggleOrder }) {
     <div className={`admin-ideas-sort-picker ${open ? 'is-open' : ''}`}>
       <button type="button" className="admin-ideas-sort-picker__trigger" onClick={() => setOpen((v) => !v)}>
         <SlidersHorizontal size={14} />
-        <span><small>Sort ideas</small><strong>{current.label}</strong></span>
+        <span><small>{tr('Sort ideas')}</small><strong>{tr(current.label)}</strong></span>
         <ChevronDown size={14} />
       </button>
       {open ? (
@@ -82,7 +255,7 @@ function IdeaSortPicker({ value, order, onChange, onToggleOrder }) {
               className={option.key === value ? 'is-active' : ''}
               onClick={() => { onChange(option.key); setOpen(false); }}
             >
-              <span>{option.label}</span>
+              <span>{tr(option.label)}</span>
               {option.key === value ? <CheckCircle2 size={13} /> : null}
             </button>
           ))}
@@ -120,13 +293,14 @@ function getMeta(payload, count) {
   };
 }
 
-function formatDate(value, withTime = false) {
+function formatDate(value, withTime = false, isArabic = false) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
+  const locale = isArabic ? 'ar-JO' : 'en-US';
   return withTime
-    ? date.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    ? date.toLocaleString(locale, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function titleCase(value) {
@@ -146,6 +320,10 @@ function getOwnerMeta(idea) {
 
 function getDomain(idea) {
   return idea?.domain?.name || idea?.domain || 'Unassigned';
+}
+
+function firstWords(value, count = 2) {
+  return String(value || '').trim().split(/\s+/).slice(0, count).join(' ');
 }
 
 function isPublished(idea) {
@@ -203,6 +381,8 @@ function getIdeaCardTone(index) {
 }
 
 export default function AdminIdeasPage() {
+  const { isArabic } = useUserExperience();
+  const tr = useCallback((text) => translateAdminIdeas(text, isArabic), [isArabic]);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
@@ -560,13 +740,13 @@ export default function AdminIdeasPage() {
     <div className="admin-page admin-ideas-page">
       <section className="admin-ideas-hero">
         <div className="admin-ideas-hero__copy">
-          <div className="admin-hero__eyebrow"><Sparkles size={14} /> Idea intelligence</div>
-          <h2>Ideas, without the spreadsheet feeling.</h2>
-          <p>Filter access states, find published work, inspect ownership and open any idea in a focused admin view.</p>
+          <div className="admin-hero__eyebrow"><Sparkles size={14} /> {tr('Idea intelligence')}</div>
+          <h2>{tr('Ideas, without the spreadsheet feeling.')}</h2>
+          <p>{tr('Filter access states, find published work, inspect ownership and open any idea in a focused admin view.')}</p>
           <div className="admin-ideas-hero__chips">
-            <span><i /> Live directory</span>
-            <span><Lightbulb size={13} /> {fmt(meta.total)} records</span>
-            <span><Globe2 size={13} /> {summaryLoading ? '…' : `${fmt(publishedIdeas)} published`}</span>
+            <span><i /> {tr('Live directory')}</span>
+            <span><Lightbulb size={13} /> {fmt(meta.total)} {tr('records')}</span>
+            <span><Globe2 size={13} /> {summaryLoading ? '…' : `${fmt(publishedIdeas)} ${tr('published')}`}</span>
           </div>
         </div>
         <div className="admin-ideas-hero__visual" aria-hidden="true">
@@ -577,22 +757,22 @@ export default function AdminIdeasPage() {
 
             <div className="admin-ideas-float-card admin-ideas-float-card--records">
               <span><FileText size={15} /></span>
-              <div><small>Directory</small><strong>{fmt(meta.total)} records</strong></div>
+              <div><small>{tr('Directory')}</small><strong>{fmt(meta.total)} {tr('records')}</strong></div>
             </div>
 
             <div className="admin-ideas-float-card admin-ideas-float-card--published">
               <span><Globe2 size={15} /></span>
-              <div><small>Published</small><strong>{fmt(publishedIdeas)}</strong></div>
+              <div><small>{tr('Published')}</small><strong>{fmt(publishedIdeas)}</strong></div>
             </div>
 
             <div className="admin-ideas-float-card admin-ideas-float-card--locked">
               <span><LockKeyhole size={15} /></span>
-              <div><small>Locked</small><strong>{fmt(lockedIdeas)}</strong></div>
+              <div><small>{tr('Locked')}</small><strong>{fmt(lockedIdeas)}</strong></div>
             </div>
 
             <div className="admin-ideas-float-card admin-ideas-float-card--unlocked">
               <span><Unlock size={15} /></span>
-              <div><small>Unlocked</small><strong>{fmt(unlockedIdeas)}</strong></div>
+              <div><small>{tr('Unlocked')}</small><strong>{fmt(unlockedIdeas)}</strong></div>
             </div>
 
             <div className="admin-ideas-orbit">
@@ -602,7 +782,7 @@ export default function AdminIdeasPage() {
               <div className="admin-ideas-orbit__core">
                 <span className="admin-ideas-orbit__bulb"><Lightbulb size={25} /></span>
                 <strong>{fmt(totalIdeas)}</strong>
-                <small>ideas</small>
+                <small>{tr('ideas')}</small>
               </div>
               <span className="admin-ideas-orbit__track admin-ideas-orbit__track--one"><i className="admin-ideas-orbit__node" /></span>
               <span className="admin-ideas-orbit__track admin-ideas-orbit__track--two"><i className="admin-ideas-orbit__node" /></span>
@@ -617,35 +797,35 @@ export default function AdminIdeasPage() {
       </section>
 
       <section className="admin-ideas-metrics">
-        <MetricCard icon={Sparkles} label="All ideas" value={totalIdeas} hint="platform total" tone="mint" delay={0} />
-        <MetricCard icon={Globe2} label="Published" value={publishedIdeas} hint="visible to community" tone="aqua" delay={45} />
-        <MetricCard icon={LockKeyhole} label="Locked" value={lockedIdeas} hint="advanced access closed" tone="rose" delay={90} />
-        <MetricCard icon={Unlock} label="Unlocked" value={unlockedIdeas} hint="advanced access available" tone="sage" delay={135} />
+        <MetricCard icon={Sparkles} label={tr('All ideas')} value={totalIdeas} hint={tr('platform total')} tone="mint" delay={0} />
+        <MetricCard icon={Globe2} label={tr('Published')} value={publishedIdeas} hint={tr('visible to community')} tone="aqua" delay={45} />
+        <MetricCard icon={LockKeyhole} label={tr('Locked')} value={lockedIdeas} hint={tr('advanced access closed')} tone="rose" delay={90} />
+        <MetricCard icon={Unlock} label={tr('Unlocked')} value={unlockedIdeas} hint={tr('advanced access available')} tone="sage" delay={135} />
       </section>
 
       <section className="admin-ideas-workspace">
         <header className="admin-ideas-workspace__head">
           <div>
-            <span className="admin-ideas-workspace__kicker">IDEA DIRECTORY</span>
-            <h3>Explore platform ideas</h3>
-            <p>{meta.total ? `${fmt(meta.total)} matching ideas` : 'Live administrative records'}</p>
+            <span className="admin-ideas-workspace__kicker">{tr('IDEA DIRECTORY')}</span>
+            <h3>{tr('Explore platform ideas')}</h3>
+            <p>{meta.total ? (isArabic ? `${fmt(meta.total)} فكرة مطابقة` : `${fmt(meta.total)} matching ideas`) : tr('Live administrative records')}</p>
           </div>
           <div className="admin-toolbar">
             <button className="admin-btn" type="button" onClick={() => load({ quiet: true, force: true })} disabled={refreshing}>
-              <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} /> Refresh
+              <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} /> {tr('Refresh')}
             </button>
             <button className="admin-btn" type="button" onClick={handleExport} disabled={refreshing}>
-              <Download size={14} /> Export CSV
+              <Download size={14} /> {tr('Export CSV')}
             </button>
           </div>
         </header>
 
         {notice ? (
-          <div className="admin-ideas-notice"><BadgeCheck size={17} /><span>{notice}</span></div>
+          <div className="admin-ideas-notice"><BadgeCheck size={17} /><span>{tr(notice)}</span></div>
         ) : null}
 
         <div className="admin-ideas-controls">
-          <div className="admin-ideas-filters" role="tablist" aria-label="Idea filters">
+          <div className="admin-ideas-filters" role="tablist" aria-label={tr('Idea filters')}>
             {FILTERS.map(({ key, label, icon: FilterIcon }) => (
               <button
                 key={key}
@@ -656,7 +836,7 @@ export default function AdminIdeasPage() {
                 onClick={() => chooseFilter(key)}
               >
                 <FilterIcon size={14} />
-                <span>{label}</span>
+                <span>{tr(label)}</span>
               </button>
             ))}
           </div>
@@ -670,6 +850,7 @@ export default function AdminIdeasPage() {
                 setSortOrder(field === 'createdAt' ? 'desc' : 'asc');
                 setPage(1);
               }}
+              tr={tr}
               onToggleOrder={() => {
                 setSortOrder((value) => (value === 'asc' ? 'desc' : 'asc'));
                 setPage(1);
@@ -682,23 +863,23 @@ export default function AdminIdeasPage() {
                 type="search"
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Search title or problem…"
-                aria-label="Search ideas"
+                placeholder={tr('Search title or problem…')}
+                aria-label={tr('Search ideas')}
               />
-              {searchInput ? <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"><X size={14} /></button> : null}
+              {searchInput ? <button type="button" onClick={() => setSearchInput('')} aria-label={tr('Clear search')}><X size={14} /></button> : null}
             </label>
           </div>
         </div>
 
         {error ? (
-          <div className="admin-ideas-error"><AlertCircle size={18} /><span>{error}</span><button type="button" onClick={() => load()}>Try again</button></div>
+          <div className="admin-ideas-error"><AlertCircle size={18} /><span>{tr(error)}</span><button type="button" onClick={() => load()}>{tr('Try again')}</button></div>
         ) : null}
 
         {loading && rows.length === 0 && !error ? <IdeasSkeleton /> : rows.length ? (
           <div className={`admin-ideas-card-section ${loading ? 'is-updating' : ''}`}>
-            {loading ? <div className="admin-ideas-inline-loader"><LoaderCircle size={15} className="admin-spin" /> Updating ideas…</div> : null}
+            {loading ? <div className="admin-ideas-inline-loader"><LoaderCircle size={15} className="admin-spin" /> {tr('Updating ideas…')}</div> : null}
 
-            <div className="admin-ideas-column-bar" role="group" aria-label="Sortable idea columns">
+            <div className="admin-ideas-column-bar" role="group" aria-label={isArabic ? 'أعمدة الأفكار القابلة للترتيب' : 'Sortable idea columns'}>
               {[
                 ['title', 'Idea'],
                 ['owner', 'Owner'],
@@ -717,12 +898,12 @@ export default function AdminIdeasPage() {
                     className={`admin-ideas-column-bar__item ${active ? 'is-active' : ''}`}
                     onClick={() => applySort(field)}
                   >
-                    <span>{label}</span>
+                    <span>{tr(label)}</span>
                     <Icon size={12} />
                   </button>
                 );
               })}
-              <div className="admin-ideas-column-bar__item is-static"><span>Actions</span></div>
+              <div className="admin-ideas-column-bar__item is-static"><span>{tr('Actions')}</span></div>
             </div>
 
             <div className="admin-ideas-card-grid">
@@ -741,52 +922,52 @@ export default function AdminIdeasPage() {
                       <div className="admin-idea-card__lead">
                         <span className="admin-idea-card__mark"><Lightbulb size={18} /></span>
                         <div className="admin-idea-card__title-wrap">
-                          <h4>{idea.title || 'Untitled idea'}</h4>
-                          <small><i className={`admin-idea-status-dot ${statusTone(runStatus)}`} />{runStatus ? titleCase(runStatus) : 'Idea record'}</small>
+                          <h4 data-idea-content="true" dir="auto">{idea.title || tr('Untitled idea')}</h4>
+                          <small><i className={`admin-idea-status-dot ${statusTone(runStatus)}`} />{tr(runStatus ? titleCase(runStatus) : 'Idea record')}</small>
                         </div>
                       </div>
 
                       <div className="admin-idea-card__owner">
                         <span className="admin-idea-card__owner-avatar">{String(getOwner(idea)).charAt(0).toUpperCase()}</span>
                         <div>
-                          <label>Owner</label>
-                          <strong>{getOwner(idea)}</strong>
-                          <small>{getOwnerMeta(idea)}</small>
+                          <label>{tr('Owner')}</label>
+                          <strong data-idea-content="true" dir="auto">{tr(getOwner(idea))}</strong>
+                          <small data-idea-content="true" dir="auto">{tr(getOwnerMeta(idea))}</small>
                         </div>
                       </div>
                     </div>
 
                     <div className="admin-idea-card__meta-grid">
                       <div>
-                        <span>Domain</span>
-                        <strong className="admin-idea-chip admin-idea-chip--soft">{getDomain(idea)}</strong>
+                        <span>{tr('Domain')}</span>
+                        <strong className="admin-idea-chip admin-idea-chip--soft" data-idea-content="true" dir="auto">{firstWords(tr(getDomain(idea)), 2)}</strong>
                       </div>
                       <div>
-                        <span>Generation</span>
-                        <strong className="admin-idea-chip admin-idea-chip--soft">{titleCase(idea.generationType)}</strong>
+                        <span>{tr('Generation')}</span>
+                        <strong className="admin-idea-chip admin-idea-chip--soft">{tr(titleCase(idea.generationType))}</strong>
                       </div>
                       <div>
-                        <span>Access</span>
+                        <span>{tr('Access')}</span>
                         <strong className={`admin-idea-chip ${idea.isUnlocked ? 'admin-idea-chip--success' : 'admin-idea-chip--danger'}`}>
                           {idea.isUnlocked ? <Unlock size={12} /> : <LockKeyhole size={12} />}
-                          {idea.isUnlocked ? 'Unlocked' : 'Locked'}
+                          {tr(idea.isUnlocked ? 'Unlocked' : 'Locked')}
                         </strong>
                       </div>
                       <div>
-                        <span>Publication</span>
+                        <span>{tr('Publication')}</span>
                         <strong className={`admin-idea-chip ${isPublished(idea) ? 'admin-idea-chip--success' : 'admin-idea-chip--soft'}`}>
                           {isPublished(idea) ? <Globe2 size={12} /> : <FileText size={12} />}
-                          {isPublished(idea) ? 'Published' : 'Not published'}
+                          {tr(isPublished(idea) ? 'Published' : 'Not published')}
                         </strong>
                       </div>
                       <div>
-                        <span>Created</span>
-                        <strong className="admin-idea-card__date"><CalendarDays size={13} /> {formatDate(idea.createdAt)}</strong>
+                        <span>{tr('Created')}</span>
+                        <strong className="admin-idea-card__date"><CalendarDays size={13} /> {formatDate(idea.createdAt, false, isArabic)}</strong>
                       </div>
                     </div>
 
                     <div className="admin-idea-card__footer">
-                      <span>Actions</span>
+                      <span>{tr('Actions')}</span>
                       <div className="admin-idea-card__actions">
                         {isPublished(idea) ? (
                           <button
@@ -796,8 +977,8 @@ export default function AdminIdeasPage() {
                               event.stopPropagation();
                               openPublicationInsights(idea);
                             }}
-                            title="Publication insights and reports"
-                            aria-label="Publication insights"
+                            title={tr('Publication insights and reports')}
+                            aria-label={tr('Publication insights')}
                           >
                             <Sparkles size={15} />
                           </button>
@@ -806,8 +987,8 @@ export default function AdminIdeasPage() {
                           type="button"
                           className="admin-idea-open-btn admin-idea-open-btn--modern"
                           onClick={(event) => { event.stopPropagation(); openIdea(idea); }}
-                          title="Open idea details"
-                          aria-label={`Open ${idea.title || 'idea'} details`}
+                          title={tr('Open idea details')}
+                          aria-label={isArabic ? `فتح تفاصيل ${idea.title || 'الفكرة'}` : `Open ${idea.title || 'idea'} details`}
                         >
                           <Eye size={15} />
                         </button>
@@ -819,15 +1000,15 @@ export default function AdminIdeasPage() {
             </div>
           </div>
         ) : !error ? (
-          <div className="admin-ideas-empty"><Search size={24} /><strong>No ideas match this view</strong><span>Try another filter or search phrase.</span></div>
+          <div className="admin-ideas-empty"><Search size={24} /><strong>{tr('No ideas match this view')}</strong><span>{tr('Try another filter or search phrase.')}</span></div>
         ) : null}
 
         {!loading && meta.totalPages > 1 ? (
           <footer className="admin-ideas-pagination">
-            <span>Page {meta.page} of {meta.totalPages} · {fmt(meta.total)} records</span>
+            <span>{tr('Page')} {meta.page} {tr('of')} {meta.totalPages} · {fmt(meta.total)} {tr('records')}</span>
             <div>
-              <button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={15} /> Previous</button>
-              <button type="button" disabled={page >= meta.totalPages} onClick={() => setPage((value) => Math.min(meta.totalPages, value + 1))}>Next <ChevronRight size={15} /></button>
+              <button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={15} /> {tr('Previous')}</button>
+              <button type="button" disabled={page >= meta.totalPages} onClick={() => setPage((value) => Math.min(meta.totalPages, value + 1))}>{tr('Next')} <ChevronRight size={15} /></button>
             </div>
           </footer>
         ) : null}
@@ -843,16 +1024,16 @@ export default function AdminIdeasPage() {
             className="admin-publication-insights-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="Publication insights and reports"
+            aria-label={tr('Publication insights and reports')}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <header className="admin-publication-insights-drawer__header">
               <div>
-                <span><Globe2 size={14} /> PUBLISHED IDEA</span>
-                <h3>{insightTarget?.publication?.publicTitle || insightTarget?.title || 'Publication insights'}</h3>
-                <p>{getOwner(insightTarget)} · {getDomain(insightTarget)}</p>
+                <span><Globe2 size={14} /> {tr('PUBLISHED IDEA')}</span>
+                <h3 data-idea-content="true" dir="auto">{insightTarget?.publication?.publicTitle || insightTarget?.title || tr('Publication insights')}</h3>
+                <p data-idea-content="true" dir="auto">{tr(getOwner(insightTarget))} · {tr(getDomain(insightTarget))}</p>
               </div>
-              <button type="button" onClick={closePublicationInsights} aria-label="Close publication insights">
+              <button type="button" onClick={closePublicationInsights} aria-label={tr('Close publication insights')}>
                 <X size={18} />
               </button>
             </header>
@@ -860,14 +1041,14 @@ export default function AdminIdeasPage() {
             {insightLoading ? (
               <div className="admin-publication-insights-loading">
                 <LoaderCircle className="admin-spin" size={20} />
-                Loading publication activity…
+                {tr('Loading publication activity…')}
               </div>
             ) : null}
 
             {insightError ? (
               <div className="admin-publication-insights-error">
                 <AlertCircle size={16} />
-                <span>{insightError}</span>
+                <span>{tr(insightError)}</span>
               </div>
             ) : null}
 
@@ -877,27 +1058,27 @@ export default function AdminIdeasPage() {
                   <div>
                     <Star size={16} />
                     <strong>{Number(insightTarget?.publication?.averageRating || 0).toFixed(1)}</strong>
-                    <span>{fmt(insightTarget?.publication?.ratingsCount)} ratings</span>
+                    <span>{fmt(insightTarget?.publication?.ratingsCount)} {tr('ratings')}</span>
                   </div>
                   <div>
                     <ThumbsUp size={16} />
                     <strong>{fmt(insightTarget?.publication?.upvotesCount)}</strong>
-                    <span>upvotes</span>
+                    <span>{tr('upvotes')}</span>
                   </div>
                   <div>
                     <ThumbsDown size={16} />
                     <strong>{fmt(insightTarget?.publication?.downvotesCount)}</strong>
-                    <span>downvotes</span>
+                    <span>{tr('downvotes')}</span>
                   </div>
                   <div>
                     <MessageSquareText size={16} />
                     <strong>{fmt(insightTarget?.publication?.feedbackCount)}</strong>
-                    <span>feedback</span>
+                    <span>{tr('feedback')}</span>
                   </div>
                   <div>
                     <Flag size={16} />
                     <strong>{fmt(insightReports.length)}</strong>
-                    <span>reports</span>
+                    <span>{tr('reports')}</span>
                   </div>
                 </section>
 
@@ -906,23 +1087,23 @@ export default function AdminIdeasPage() {
                     <div>
                       <span><FileText size={15} /></span>
                       <div>
-                        <h4>Publication snapshot</h4>
-                        <p>Public copy and current community settings.</p>
+                        <h4>{tr('Publication snapshot')}</h4>
+                        <p>{tr('Public copy and current community settings.')}</p>
                       </div>
                     </div>
                   </header>
 
                   <dl className="admin-publication-snapshot">
-                    <div><dt>Status</dt><dd>{titleCase(insightTarget?.publication?.status)}</dd></div>
-                    <div><dt>Visibility</dt><dd>{titleCase(insightTarget?.publication?.visibility)}</dd></div>
-                    <div><dt>Published</dt><dd>{formatDate(insightTarget?.publication?.publishedAt, true)}</dd></div>
-                    <div><dt>Voting</dt><dd>{insightTarget?.publication?.allowVoting ? 'Enabled' : 'Disabled'}</dd></div>
-                    <div><dt>Ratings</dt><dd>{insightTarget?.publication?.allowRatings ? 'Enabled' : 'Disabled'}</dd></div>
-                    <div><dt>Feedback</dt><dd>{insightTarget?.publication?.allowFeedback ? 'Enabled' : 'Disabled'}</dd></div>
+                    <div><dt>{tr('Status')}</dt><dd>{tr(titleCase(insightTarget?.publication?.status))}</dd></div>
+                    <div><dt>{tr('Visibility')}</dt><dd>{tr(titleCase(insightTarget?.publication?.visibility))}</dd></div>
+                    <div><dt>{tr('Published')}</dt><dd>{formatDate(insightTarget?.publication?.publishedAt, true, isArabic)}</dd></div>
+                    <div><dt>{tr('Voting')}</dt><dd>{tr(insightTarget?.publication?.allowVoting ? 'Enabled' : 'Disabled')}</dd></div>
+                    <div><dt>{tr('Ratings')}</dt><dd>{tr(insightTarget?.publication?.allowRatings ? 'Enabled' : 'Disabled')}</dd></div>
+                    <div><dt>{tr('Feedback')}</dt><dd>{tr(insightTarget?.publication?.allowFeedback ? 'Enabled' : 'Disabled')}</dd></div>
                   </dl>
 
                   {insightTarget?.publication?.publicAbstract ? (
-                    <p className="admin-publication-public-copy">
+                    <p className="admin-publication-public-copy" data-idea-content="true" dir="auto">
                       {insightTarget.publication.publicAbstract}
                     </p>
                   ) : null}
@@ -933,8 +1114,8 @@ export default function AdminIdeasPage() {
                     <div>
                       <span><MessageSquareText size={15} /></span>
                       <div>
-                        <h4>Recent community feedback</h4>
-                        <p>Latest written feedback visible on this publication.</p>
+                        <h4>{tr('Recent community feedback')}</h4>
+                        <p>{tr('Latest written feedback visible on this publication.')}</p>
                       </div>
                     </div>
                     <strong>{fmt(insightTarget?.publication?.feedback?.length)}</strong>
@@ -945,14 +1126,14 @@ export default function AdminIdeasPage() {
                       insightTarget.publication.feedback.slice(0, 6).map((item) => (
                         <article key={item.id}>
                           <div>
-                            <strong>{item?.user?.fullName || 'Community member'}</strong>
-                            <time>{formatDate(item.updatedAt || item.createdAt, true)}</time>
+                            <strong data-idea-content="true" dir="auto">{item?.user?.fullName || tr('Community member')}</strong>
+                            <time>{formatDate(item.updatedAt || item.createdAt, true, isArabic)}</time>
                           </div>
-                          <p>{item.comment}</p>
+                          <p data-idea-content="true" dir="auto">{item.comment}</p>
                         </article>
                       ))
                     ) : (
-                      <p className="admin-publication-insights-empty">No written feedback yet.</p>
+                      <p className="admin-publication-insights-empty">{tr('No written feedback yet.')}</p>
                     )}
                   </div>
                 </section>
@@ -962,8 +1143,8 @@ export default function AdminIdeasPage() {
                     <div>
                       <span><Flag size={15} /></span>
                       <div>
-                        <h4>Reports on this publication</h4>
-                        <p>Review every report without leaving the idea directory.</p>
+                        <h4>{tr('Reports on this publication')}</h4>
+                        <p>{tr('Review every report without leaving the idea directory.')}</p>
                       </div>
                     </div>
                     <strong>{fmt(insightReports.length)}</strong>
@@ -974,18 +1155,18 @@ export default function AdminIdeasPage() {
                       <article key={report.id} className={`admin-publication-report is-${String(report.status || '').toLowerCase()}`}>
                         <div className="admin-publication-report__top">
                           <div>
-                            <span className="admin-publication-report__status">{titleCase(report.status)}</span>
-                            <strong>{titleCase(report.reason)}</strong>
-                            <small>{report?.reporter?.fullName || report?.reporter?.email || 'Reporter'} · {formatDate(report.createdAt, true)}</small>
+                            <span className="admin-publication-report__status">{tr(titleCase(report.status))}</span>
+                            <strong>{tr(titleCase(report.reason))}</strong>
+                            <small><bdi data-idea-content="true" dir="auto">{report?.reporter?.fullName || report?.reporter?.email || tr('Reporter')}</bdi> · {formatDate(report.createdAt, true, isArabic)}</small>
                           </div>
                         </div>
 
-                        {report.details ? <p className="admin-publication-report__details">{report.details}</p> : null}
+                        {report.details ? <p className="admin-publication-report__details" data-idea-content="true" dir="auto">{report.details}</p> : null}
 
                         {['PENDING', 'REVIEWING'].includes(String(report.status || '').toUpperCase()) ? (
                           <div className="admin-publication-report__reply">
                             <label>
-                              <span>Response to reporter</span>
+                              <span>{tr('Response to reporter')}</span>
                               <textarea
                                 value={reportReplies[report.id] || ''}
                                 onChange={(event) =>
@@ -994,7 +1175,7 @@ export default function AdminIdeasPage() {
                                     [report.id]: event.target.value,
                                   }))
                                 }
-                                placeholder="Write the moderation response that the reporter should receive…"
+                                placeholder={tr('Write the moderation response that the reporter should receive…')}
                                 maxLength={1000}
                               />
                             </label>
@@ -1006,7 +1187,7 @@ export default function AdminIdeasPage() {
                                 disabled={reportBusyId === report.id}
                                 onClick={() => reviewInsightReport(report, 'DISMISSED')}
                               >
-                                Dismiss
+                                {tr('Dismiss')}
                               </button>
                               <button
                                 type="button"
@@ -1015,19 +1196,19 @@ export default function AdminIdeasPage() {
                                 onClick={() => reviewInsightReport(report, 'RESOLVED')}
                               >
                                 {reportBusyId === report.id ? <LoaderCircle size={14} className="admin-spin" /> : <Send size={14} />}
-                                Resolve & reply
+                                {tr('Resolve & reply')}
                               </button>
                             </div>
                           </div>
                         ) : (
                           <div className="admin-publication-report__reviewed">
                             <BadgeCheck size={14} />
-                            <span>{report.adminNote || 'Reviewed by administration.'}</span>
+                            <span data-idea-content={Boolean(report.adminNote)} dir="auto">{report.adminNote || tr('Reviewed by administration.')}</span>
                           </div>
                         )}
                       </article>
                     )) : (
-                      <p className="admin-publication-insights-empty">No reports were submitted for this publication.</p>
+                      <p className="admin-publication-insights-empty">{tr('No reports were submitted for this publication.')}</p>
                     )}
                   </div>
                 </section>
@@ -1037,13 +1218,13 @@ export default function AdminIdeasPage() {
                     <div>
                       <ShieldAlert size={17} />
                       <div>
-                        <strong>Publication moderation</strong>
-                        <span>Unpublishing stays out of the table and is available only after reviewing context.</span>
+                        <strong>{tr('Publication moderation')}</strong>
+                        <span>{tr('Unpublishing stays out of the table and is available only after reviewing context.')}</span>
                       </div>
                     </div>
                     <button type="button" onClick={() => requestUnpublish(insightTarget)}>
                       <ShieldAlert size={14} />
-                      Unpublish
+                      {tr('Unpublish')}
                     </button>
                   </section>
                 ) : null}
@@ -1059,76 +1240,76 @@ export default function AdminIdeasPage() {
           <aside className="admin-idea-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="admin-idea-modal-title" onMouseDown={(event) => event.stopPropagation()}>
             <header className="admin-idea-modal__topbar">
               <div>
-                <span><Sparkles size={13} /> IDEA INSPECTOR</span>
-                <h3 id="admin-idea-modal-title">{selected.title || 'Idea details'}</h3>
+                <span><Sparkles size={13} /> {tr('IDEA INSPECTOR')}</span>
+                <h3 id="admin-idea-modal-title" data-idea-content="true" dir="auto">{selected.title || tr('Idea details')}</h3>
               </div>
-              <button type="button" onClick={closeIdea} aria-label="Close idea details"><X size={18} /></button>
+              <button type="button" onClick={closeIdea} aria-label={tr('Close idea details')}><X size={18} /></button>
             </header>
 
             <div className="admin-idea-modal__body">
               <section className="admin-idea-modal__hero">
                 <div className="admin-idea-modal__mark"><Lightbulb size={24} /></div>
                 <div className="admin-idea-modal__hero-copy">
-                  <small>{getDomain(selected)}</small>
-                  <h4>{selected.title || 'Untitled idea'}</h4>
+                  <small data-idea-content="true" dir="auto">{tr(getDomain(selected))}</small>
+                  <h4 data-idea-content="true" dir="auto">{selected.title || tr('Untitled idea')}</h4>
                   <div className="admin-idea-modal__chips">
-                    <span className={selected.isUnlocked ? 'is-success' : 'is-danger'}>{selected.isUnlocked ? <Unlock size={12} /> : <LockKeyhole size={12} />}{selected.isUnlocked ? 'Unlocked' : 'Locked'}</span>
-                    <span className={isPublished(selected) ? 'is-success' : ''}><Globe2 size={12} />{isPublished(selected) ? 'Published' : 'Not published'}</span>
-                    <span><Sparkles size={12} />{titleCase(selected.generationType)}</span>
+                    <span className={selected.isUnlocked ? 'is-success' : 'is-danger'}>{selected.isUnlocked ? <Unlock size={12} /> : <LockKeyhole size={12} />}{tr(selected.isUnlocked ? 'Unlocked' : 'Locked')}</span>
+                    <span className={isPublished(selected) ? 'is-success' : ''}><Globe2 size={12} />{tr(isPublished(selected) ? 'Published' : 'Not published')}</span>
+                    <span><Sparkles size={12} />{tr(titleCase(selected.generationType))}</span>
                   </div>
                 </div>
-                <div className="admin-idea-modal__owner"><span><UserRound size={15} /></span><div><small>Owner</small><strong>{getOwner(selected)}</strong><p>{getOwnerMeta(selected)}</p></div></div>
+                <div className="admin-idea-modal__owner"><span><UserRound size={15} /></span><div><small>{tr('Owner')}</small><strong data-idea-content="true" dir="auto">{tr(getOwner(selected))}</strong><p data-idea-content="true" dir="auto">{tr(getOwnerMeta(selected))}</p></div></div>
               </section>
 
               {detailLoading ? (
-                <div className="admin-idea-detail-loading"><LoaderCircle size={22} className="admin-spin" /><span>Loading idea details…</span></div>
+                <div className="admin-idea-detail-loading"><LoaderCircle size={22} className="admin-spin" /><span>{tr('Loading idea details…')}</span></div>
               ) : null}
-              {detailError ? <div className="admin-ideas-error"><AlertCircle size={17} /><span>{detailError}</span></div> : null}
+              {detailError ? <div className="admin-ideas-error"><AlertCircle size={17} /><span>{tr(detailError)}</span></div> : null}
 
               <div className="admin-idea-modal__quick-grid">
-                <article><span><BadgeCheck size={16} /></span><div><small>Pipeline</small><strong className={statusTone(selected?.generationRun?.status)}>{titleCase(selected?.generationRun?.status || 'Unknown')}</strong></div></article>
-                <article><span><Clock3 size={16} /></span><div><small>Created</small><strong>{formatDate(selected.createdAt, true)}</strong></div></article>
-                <article><span><CircleDollarSign size={16} /></span><div><small>Unlock method</small><strong>{titleCase(selected.unlockMethod || 'None')}</strong></div></article>
-                <article><span><Globe2 size={16} /></span><div><small>Region</small><strong>{selected.selectedRegion || selected?.collectionJob?.region || 'Any region'}</strong></div></article>
+                <article><span><BadgeCheck size={16} /></span><div><small>{tr('Pipeline')}</small><strong className={statusTone(selected?.generationRun?.status)}>{tr(titleCase(selected?.generationRun?.status || 'Unknown'))}</strong></div></article>
+                <article><span><Clock3 size={16} /></span><div><small>{tr('Created')}</small><strong>{formatDate(selected.createdAt, true, isArabic)}</strong></div></article>
+                <article><span><CircleDollarSign size={16} /></span><div><small>{tr('Unlock method')}</small><strong>{tr(titleCase(selected.unlockMethod || 'None'))}</strong></div></article>
+                <article><span><Globe2 size={16} /></span><div><small>{tr('Region')}</small><strong data-idea-content="true" dir="auto">{selected.selectedRegion || selected?.collectionJob?.region || tr('Any region')}</strong></div></article>
               </div>
 
               <div className="admin-idea-modal__content-grid">
                 <div className="admin-idea-modal__main">
-                  <DetailBlock icon={FileText} label="Problem statement">
-                    <p>{selected.problemStatement || 'No problem statement is available for this record.'}</p>
+                  <DetailBlock icon={FileText} label={tr('Problem statement')}>
+                    <p data-idea-content={Boolean(selected.problemStatement)} dir="auto">{selected.problemStatement || tr('No problem statement is available for this record.')}</p>
                   </DetailBlock>
-                  <DetailBlock icon={Sparkles} label="Abstract">
-                    <p>{selected.fullAbstract || selected.partialAbstract || selected.limitedAbstract || 'No abstract is available for this record.'}</p>
+                  <DetailBlock icon={Sparkles} label={tr('Abstract')}>
+                    <p data-idea-content={Boolean(selected.fullAbstract || selected.partialAbstract || selected.limitedAbstract)} dir="auto">{selected.fullAbstract || selected.partialAbstract || selected.limitedAbstract || tr('No abstract is available for this record.')}</p>
                   </DetailBlock>
-                  <DetailBlock icon={BadgeCheck} label="Objectives">
-                    {Array.isArray(selected.objectives) ? <ul>{selected.objectives.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p>{selected.objectives || 'No objectives available.'}</p>}
+                  <DetailBlock icon={BadgeCheck} label={tr('Objectives')}>
+                    {Array.isArray(selected.objectives) ? <ul data-idea-content="true" dir="auto">{selected.objectives.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p data-idea-content={Boolean(selected.objectives)} dir="auto">{selected.objectives || tr('No objectives available.')}</p>}
                   </DetailBlock>
-                  <DetailBlock icon={UserRound} label="Target users">
-                    {Array.isArray(selected.targetUsers) ? <div className="admin-idea-tags">{selected.targetUsers.map((item) => <span key={item}>{item}</span>)}</div> : <p>{selected.targetUsers || 'No target-user information available.'}</p>}
+                  <DetailBlock icon={UserRound} label={tr('Target users')}>
+                    {Array.isArray(selected.targetUsers) ? <div className="admin-idea-tags" data-idea-content="true" dir="auto">{selected.targetUsers.map((item) => <span key={item}>{item}</span>)}</div> : <p data-idea-content={Boolean(selected.targetUsers)} dir="auto">{selected.targetUsers || tr('No target-user information available.')}</p>}
                   </DetailBlock>
                 </div>
 
                 <aside className="admin-idea-modal__aside">
-                  <DetailBlock icon={Sparkles} label="Generation status" className="is-compact">
+                  <DetailBlock icon={Sparkles} label={tr('Generation status')} className="is-compact">
                     <dl>
-                      <div><dt>Stage</dt><dd>{titleCase(selected?.generationRun?.currentStageKey || '—')}</dd></div>
-                      <div><dt>Progress</dt><dd>{Number(selected?.generationRun?.progressPercent || 0)}%</dd></div>
-                      <div><dt>Started</dt><dd>{formatDate(selected?.generationRun?.startedAt, true)}</dd></div>
-                      <div><dt>Completed</dt><dd>{formatDate(selected?.generationRun?.completedAt, true)}</dd></div>
+                      <div><dt>{tr('Stage')}</dt><dd>{tr(titleCase(selected?.generationRun?.currentStageKey || '—'))}</dd></div>
+                      <div><dt>{tr('Progress')}</dt><dd>{Number(selected?.generationRun?.progressPercent || 0)}%</dd></div>
+                      <div><dt>{tr('Started')}</dt><dd>{formatDate(selected?.generationRun?.startedAt, true, isArabic)}</dd></div>
+                      <div><dt>{tr('Completed')}</dt><dd>{formatDate(selected?.generationRun?.completedAt, true, isArabic)}</dd></div>
                     </dl>
                   </DetailBlock>
-                  <DetailBlock icon={Globe2} label="Publication" className="is-compact">
+                  <DetailBlock icon={Globe2} label={tr('Publication')} className="is-compact">
                     <dl>
-                      <div><dt>Status</dt><dd>{titleCase(selected?.publication?.status || 'Not published')}</dd></div>
-                      <div><dt>Visibility</dt><dd>{titleCase(selected?.publication?.visibility || '—')}</dd></div>
-                      <div><dt>Published</dt><dd>{formatDate(selected?.publication?.publishedAt, true)}</dd></div>
+                      <div><dt>{tr('Status')}</dt><dd>{tr(titleCase(selected?.publication?.status || 'Not published'))}</dd></div>
+                      <div><dt>{tr('Visibility')}</dt><dd>{tr(titleCase(selected?.publication?.visibility || '—'))}</dd></div>
+                      <div><dt>{tr('Published')}</dt><dd>{formatDate(selected?.publication?.publishedAt, true, isArabic)}</dd></div>
                     </dl>
                   </DetailBlock>
-                  <DetailBlock icon={FileText} label="Record" className="is-compact">
+                  <DetailBlock icon={FileText} label={tr('Record')} className="is-compact">
                     <dl>
-                      <div><dt>Idea ID</dt><dd className="is-code">{selected.id || '—'}</dd></div>
-                      <div><dt>Outputs</dt><dd>{fmt(selected?._count?.generatedOutputs)}</dd></div>
-                      <div><dt>Payments</dt><dd>{fmt(selected?._count?.payments)}</dd></div>
+                      <div><dt>{tr('Idea ID')}</dt><dd className="is-code" data-idea-content="true" dir="ltr">{selected.id || '—'}</dd></div>
+                      <div><dt>{tr('Outputs')}</dt><dd>{fmt(selected?._count?.generatedOutputs)}</dd></div>
+                      <div><dt>{tr('Payments')}</dt><dd>{fmt(selected?._count?.payments)}</dd></div>
                     </dl>
                   </DetailBlock>
                 </aside>
@@ -1138,9 +1319,9 @@ export default function AdminIdeasPage() {
                 <section className="admin-idea-moderation-strip">
                   <div>
                     <span><ShieldAlert size={16} /></span>
-                    <div><strong>Publication moderation</strong><p>Remove this idea from community discovery and automatically notify its publisher.</p></div>
+                    <div><strong>{tr('Publication moderation')}</strong><p>{tr('Remove this idea from community discovery and automatically notify its publisher.')}</p></div>
                   </div>
-                  <button type="button" onClick={() => requestUnpublish(selected)}><ShieldAlert size={15} /> Unpublish idea</button>
+                  <button type="button" onClick={() => requestUnpublish(selected)}><ShieldAlert size={15} /> {tr('Unpublish idea')}</button>
                 </section>
               ) : null}
             </div>
@@ -1153,37 +1334,37 @@ export default function AdminIdeasPage() {
         <div className="admin-idea-confirm-layer" role="presentation" onMouseDown={closeModeration}>
           <section className="admin-idea-confirm" role="dialog" aria-modal="true" aria-labelledby="unpublish-title" onMouseDown={(event) => event.stopPropagation()}>
             <div className="admin-idea-confirm__icon"><ShieldAlert size={22} /></div>
-            <button className="admin-idea-confirm__close" type="button" onClick={closeModeration} aria-label="Close"><X size={17} /></button>
-            <span className="admin-idea-confirm__eyebrow">PUBLICATION MODERATION</span>
-            <h3 id="unpublish-title">Unpublish this idea?</h3>
+            <button className="admin-idea-confirm__close" type="button" onClick={closeModeration} aria-label={tr('Close')}><X size={17} /></button>
+            <span className="admin-idea-confirm__eyebrow">{tr('PUBLICATION MODERATION')}</span>
+            <h3 id="unpublish-title">{tr('Unpublish this idea?')}</h3>
             <p className="admin-idea-confirm__lead">
-              <strong>{moderationTarget.title || 'Untitled idea'}</strong> will disappear from community discovery. The publication record and its history will stay preserved.
+              <strong data-idea-content="true" dir="auto">{moderationTarget.title || tr('Untitled idea')}</strong> {tr('will disappear from community discovery. The publication record and its history will stay preserved.')}
             </p>
 
             <div className="admin-idea-confirm__notify">
               <BellRing size={17} />
-              <div><strong>Publisher notification is automatic</strong><span>{getOwnerMeta(moderationTarget)} will receive an in-app admin alert containing the reason below.</span></div>
+              <div><strong>{tr('Publisher notification is automatic')}</strong><span><bdi data-idea-content="true" dir="auto">{tr(getOwnerMeta(moderationTarget))}</bdi> {tr('will receive an in-app admin alert containing the reason below.')}</span></div>
             </div>
 
             <label className="admin-idea-confirm__field">
-              <span>Reason for unpublishing</span>
+              <span>{tr('Reason for unpublishing')}</span>
               <textarea
                 value={moderationReason}
                 onChange={(event) => { setModerationReason(event.target.value); if (moderationError) setModerationError(''); }}
-                placeholder="Example: The publication contains information that should be corrected before it is visible to the community."
+                placeholder={tr('Example: The publication contains information that should be corrected before it is visible to the community.')}
                 maxLength={1000}
                 autoFocus
               />
-              <small>{moderationReason.trim().length}/1000 · This reason is included in the publisher alert.</small>
+              <small>{moderationReason.trim().length}/1000 · {tr('This reason is included in the publisher alert.')}</small>
             </label>
 
-            {moderationError ? <div className="admin-idea-confirm__error"><AlertCircle size={15} /> {moderationError}</div> : null}
+            {moderationError ? <div className="admin-idea-confirm__error"><AlertCircle size={15} /> {tr(moderationError)}</div> : null}
 
             <footer className="admin-idea-confirm__actions">
-              <button type="button" className="is-secondary" onClick={closeModeration} disabled={moderationLoading}>Keep published</button>
+              <button type="button" className="is-secondary" onClick={closeModeration} disabled={moderationLoading}>{tr('Keep published')}</button>
               <button type="button" className="is-danger" onClick={confirmUnpublish} disabled={moderationLoading || moderationReason.trim().length < 3}>
                 {moderationLoading ? <LoaderCircle size={15} className="admin-spin" /> : <ShieldAlert size={15} />}
-                {moderationLoading ? 'Unpublishing…' : 'Unpublish & notify'}
+                {tr(moderationLoading ? 'Unpublishing…' : 'Unpublish & notify')}
               </button>
             </footer>
           </section>

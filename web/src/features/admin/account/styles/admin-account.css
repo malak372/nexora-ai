@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-account-host {
   --account-green: #4fa9a4;
   --account-green-deep: #2f7774;
@@ -11,15 +13,6 @@
   max-width: 100%;
 }
 
-/* --------------------------------------------------------------------------
-   Admin-specific profile sizing
-   --------------------------------------------------------------------------
-   The shared profile page is also used by normal users. In the admin shell we
-   let it follow the available workspace width instead of keeping the old
-   fixed 1180px canvas. This is especially important after the sidebar is
-   collapsed because the workspace becomes substantially wider.
-   -------------------------------------------------------------------------- */
-
 .admin-account-host .profile-settings-page {
   width: 100%;
   max-width: 1440px;
@@ -32,15 +25,9 @@
     padding .22s ease;
 }
 
-/* When the admin navigation is collapsed, use the newly available width
-   instead of leaving a large empty strip on the right side. */
 .admin-shell.is-collapsed .admin-account-host .profile-settings-page {
   max-width: none;
 }
-
-/* --------------------------------------------------------------------------
-   Hero
-   -------------------------------------------------------------------------- */
 
 .admin-account-host .profile-settings-page__header {
   min-height: clamp(205px, 24vh, 250px);
@@ -73,8 +60,6 @@
   letter-spacing: -0.055em;
 }
 
-/* Do not let the title become oversized simply because the sidebar is
-   collapsed and the content viewport is wider. */
 .admin-shell.is-collapsed .admin-account-host .profile-settings-page__header h1 {
   font-size: clamp(2.6rem, 3.7vw, 4rem);
 }
@@ -128,10 +113,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.96);
 }
 
-/* --------------------------------------------------------------------------
-   Identity card
-   -------------------------------------------------------------------------- */
-
 .admin-account-host .profile-settings-card {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: clamp(18px, 2vw, 28px);
@@ -164,10 +145,6 @@
   color: var(--account-muted);
 }
 
-/* --------------------------------------------------------------------------
-   Settings panels
-   -------------------------------------------------------------------------- */
-
 .admin-account-host .profile-settings-grid {
   grid-template-columns:
     repeat(2, minmax(0, 1fr));
@@ -175,8 +152,6 @@
   margin-top: 20px;
 }
 
-/* Keep panels readable when the content region grows after collapse.
-   We do not stretch field lines to extreme widths. */
 .admin-shell.is-collapsed .admin-account-host .profile-settings-grid {
   grid-template-columns:
     repeat(2, minmax(340px, 1fr));
@@ -227,12 +202,6 @@
     0 10px 24px rgba(47, 119, 116, 0.18);
 }
 
-/* --------------------------------------------------------------------------
-   Collapsed-sidebar refinements
-   -------------------------------------------------------------------------- */
-
-/* The profile page should fill the content region smoothly, but keep a
-   comfortable reading width inside the hero and cards. */
 .admin-shell.is-collapsed .admin-account-host {
   width: 100%;
 }
@@ -244,10 +213,6 @@
   width: 100%;
   max-width: 100%;
 }
-
-/* --------------------------------------------------------------------------
-   Viewport responsiveness
-   -------------------------------------------------------------------------- */
 
 @media (max-width: 1200px) {
   .admin-account-host .profile-settings-page {
@@ -321,17 +286,59 @@
   }
 }
 
-/* --------------------------------------------------------------------------
-   Shared dialogs
-   --------------------------------------------------------------------------
-   These dialogs are mounted outside the page flow. Keeping them fixed makes
-   them viewport-centered regardless of admin scroll or sidebar state.
-   -------------------------------------------------------------------------- */
-
 .email-verification-dialog,
 .avatar-crop-dialog,
 .delete-account-dialog {
   position: fixed !important;
   inset: 0 !important;
   z-index: 10000 !important;
+}
+
+html.vox-user-dark .admin-account-host {
+  color: #e7f0ed;
+}
+
+html.vox-user-dark .admin-account-host .avatar-crop-dialog,
+html.vox-user-dark .admin-account-host .delete-account-dialog,
+html.vox-user-dark .admin-account-host .email-verification-dialog,
+html.vox-user-dark .admin-account-host .profile-settings-avatar-card,
+html.vox-user-dark .admin-account-host .profile-settings-card,
+html.vox-user-dark .admin-account-host .profile-settings-panel {
+  border-color: rgba(145, 198, 190, .16) !important;
+  background-color: #111d1b !important;
+  color: #e7f0ed !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .20);
+}
+
+html.vox-user-dark .admin-account-host :is(h1, h2, h3, h4, h5, strong, label, th) {
+  color: #eaf3f0 !important;
+}
+
+html.vox-user-dark .admin-account-host :is(p, small, td) {
+  color: #a5b7b1;
+}
+
+html.vox-user-dark .admin-account-host :is(input, select, textarea) {
+  border-color: rgba(145, 198, 190, .18) !important;
+  background: #0e1917 !important;
+  color: #e8f1ee !important;
+  caret-color: #8fd2c9;
+}
+
+html.vox-user-dark .admin-account-host :is(input, textarea)::placeholder {
+  color: #7f928b !important;
+}
+
+html.vox-user-dark .admin-account-host :is(table, thead, tbody, tr) {
+  border-color: rgba(145, 198, 190, .12);
+}
+
+html.vox-user-rtl .admin-account-host {
+  direction: rtl;
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-account-host :is(input, select, textarea, table) {
+  direction: rtl;
+  text-align: right;
 }

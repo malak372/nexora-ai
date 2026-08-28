@@ -33,11 +33,139 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-ai-monitoring.css';
 
 const PAGE_SIZE = 20;
+
+const AI_MONITORING_DARK_ARABIC_COPY = {
+  'All requests': 'كل الطلبات',
+  'Successful': 'ناجح',
+  'Failed': 'فشل',
+  'All execution paths': 'كل مسارات التنفيذ',
+  'Retryable failures': 'حالات فشل قابلة لإعادة المحاولة',
+  'Fallback attempts': 'محاولات المسار البديل',
+  'Request date': 'تاريخ الطلب',
+  'Latency': 'زمن الاستجابة',
+  'Estimated cost': 'التكلفة التقديرية',
+  'Attempt number': 'رقم المحاولة',
+  'Provider': 'المزود',
+  'Request type': 'نوع الطلب',
+  'Data collection': 'جمع البيانات',
+  'Comment analysis': 'تحليل التعليقات',
+  'Idea generation': 'توليد الأفكار',
+  'AI chat': 'محادثة الذكاء الاصطناعي',
+  'Payment': 'الدفع',
+  'Other': 'أخرى',
+  'NLP enhancement': 'تحسين معالجة اللغة الطبيعية',
+  'Retryable': 'قابل لإعادة المحاولة',
+  'Sort requests': 'ترتيب الطلبات',
+  'Ascending order': 'ترتيب تصاعدي',
+  'Descending order': 'ترتيب تنازلي',
+  'From': 'من',
+  'To': 'إلى',
+  'Clear AI monitoring date range': 'مسح نطاق التاريخ لمراقبة الذكاء الاصطناعي',
+  'No operation timeline is available for this legacy request.': 'لا يتوفر مخطط زمني للعملية لهذا الطلب القديم.',
+  'AI model': 'نموذج ذكاء اصطناعي',
+  'Unknown provider': 'مزود غير معروف',
+  'Unmapped API model': 'نموذج API غير مربوط',
+  'tokens': 'رمزًا',
+  'Fallback': 'مسار بديل',
+  'Provider error': 'خطأ من المزود',
+  'AI REQUEST DIAGNOSTICS': 'تشخيص طلب الذكاء الاصطناعي',
+  'Close diagnostics': 'إغلاق التشخيص',
+  'Provider response time': 'زمن استجابة المزود',
+  'API model': 'نموذج API',
+  'Tokens': 'الرموز',
+  'Status code': 'رمز الحالة',
+  'Created': 'تاريخ الإنشاء',
+  'Attempt': 'المحاولة',
+  'REQUEST CONTEXT': 'سياق الطلب',
+  'Platform user': 'مستخدم المنصة',
+  'Related idea': 'الفكرة المرتبطة',
+  'REQUEST FAILURE': 'فشل الطلب',
+  'The provider request failed without a stored message.': 'فشل طلب المزود من دون رسالة خطأ محفوظة.',
+  'OPERATION TIMELINE': 'المخطط الزمني للعملية',
+  'Retries and fallback path': 'إعادات المحاولة ومسار البديل',
+  'Every provider attempt belonging to this logical AI operation.': 'كل محاولة مزود مرتبطة بعملية الذكاء الاصطناعي المنطقية هذه.',
+  'TECHNICAL REFERENCES': 'المراجع التقنية',
+  'Log ID': 'معرّف السجل',
+  'Operation ID': 'معرّف العملية',
+  'Provider request ID': 'معرّف طلب المزود',
+  'Endpoint': 'نقطة النهاية',
+  'Legacy / unavailable': 'قديم / غير متاح',
+  'AI observability': 'مراقبة أداء الذكاء الاصطناعي',
+  'Live diagnostics': 'تشخيص حي',
+  'AI monitoring': 'مراقبة الذكاء الاصطناعي',
+  'AI': 'الذكاء الاصطناعي',
+  'monitoring': 'مراقبة',
+  'Trace provider attempts, retries, fallback decisions, latency and operational failures without exposing raw provider payloads.': 'تتبّع محاولات المزود وإعادات المحاولة وقرارات المسار البديل وزمن الاستجابة وأعطال التشغيل من دون كشف بيانات المزود الخام.',
+  'Refresh monitoring': 'تحديث المراقبة',
+  'Export CSV': 'تصدير CSV',
+  'Total requests': 'إجمالي الطلبات',
+  'Matching provider attempts': 'محاولات المزود المطابقة',
+  'Success rate': 'معدل النجاح',
+  'successful': 'ناجح',
+  'Failed requests': 'الطلبات الفاشلة',
+  'retryable': 'قابل لإعادة المحاولة',
+  'Average latency': 'متوسط زمن الاستجابة',
+  'estimated cost': 'تكلفة تقديرية',
+  'AI execution ledger': 'سجل تنفيذ الذكاء الاصطناعي',
+  'Provider request operations': 'عمليات طلبات المزود',
+  'matching request attempts': 'محاولات طلب مطابقة',
+  'attempts in scope': 'محاولات ضمن النطاق',
+  'retryable failures': 'حالات فشل قابلة لإعادة المحاولة',
+  'fallback attempts': 'محاولات المسار البديل',
+  'error rate': 'معدل الخطأ',
+  'Execution path': 'مسار التنفيذ',
+  'Search model, provider request ID, operation, user, idea or error...': 'ابحث عن نموذج أو معرّف طلب المزود أو عملية أو مستخدم أو فكرة أو خطأ...',
+  'Clear search': 'مسح البحث',
+  'Loading AI request diagnostics…': 'جارٍ تحميل تشخيصات طلبات الذكاء الاصطناعي…',
+  'Unmapped model': 'نموذج غير مربوط',
+  'Unknown': 'غير معروف',
+  'Inspect': 'فحص',
+  'Fallback path': 'مسار بديل',
+  'Performance': 'الأداء',
+  'response time': 'وقت الاستجابة',
+  'total tokens': 'إجمالي الرموز',
+  'Cost': 'التكلفة',
+  'Context': 'السياق',
+  'System operation': 'عملية نظام',
+  'No idea context': 'لا يوجد سياق لفكرة',
+  'No request attempts match these filters': 'لا توجد محاولات طلب تطابق هذه الفلاتر',
+  'Adjust the provider, status, date range or search phrase.': 'عدّل المزود أو الحالة أو نطاق التاريخ أو عبارة البحث.',
+  'Previous': 'السابق',
+  'Page': 'الصفحة',
+  'of': 'من',
+  'Next': 'التالي',
+  'All providers': 'كل المزودين',
+  'All request types': 'كل أنواع الطلبات',
+  'All': 'الكل',
+  'Op': 'عملية',
+  'ms': 'مللي ثانية',
+  'Loading operation attempts…': 'جارٍ تحميل محاولات العملية…',
+  'Loading operation diagnostics…': 'جارٍ تحميل تشخيصات العملية…',
+  'attempts': 'محاولات',
+};
+
+function useAiMonitoringCopy() {
+  const { isArabic, t } = useUserExperience();
+  const tr = useCallback(
+    (value) => {
+      if (!isArabic || typeof value !== 'string') return value;
+      return AI_MONITORING_DARK_ARABIC_COPY[value] ?? t(value);
+    },
+    [isArabic, t],
+  );
+
+  return {
+    isArabic,
+    locale: isArabic ? 'ar' : undefined,
+    tr,
+  };
+}
 
 const STATUS_OPTIONS = [
   { key: 'all', label: 'All requests' },
@@ -104,14 +232,14 @@ function unwrapObject(payload) {
   return isObject(payload.data) ? payload.data : payload;
 }
 
-function formatDate(value, compact = false) {
+function formatDate(value, compact = false, locale) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   if (compact) {
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
   }
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -166,14 +294,15 @@ function dateBoundaryIso(value, endOfDay = false) {
 }
 
 function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
+  const { tr } = useAiMonitoringCopy();
   return (
     <article className={`admin-ai-monitor-metric ${tone}`}>
       <i aria-hidden="true" />
       <span className="admin-ai-monitor-metric__icon"><Icon size={20} /></span>
       <div className="admin-ai-monitor-metric__copy">
-        <small>{label}</small>
+        <small>{tr(label)}</small>
         <strong>{value}</strong>
-        <span>{hint}</span>
+        <span>{tr(hint)}</span>
       </div>
       <span className="admin-ai-monitor-metric__spark" aria-hidden="true">
         <i /><i /><i /><i /><i /><i />
@@ -183,22 +312,24 @@ function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
 }
 
 function OutcomeBadge({ success, retryable = false }) {
+  const { tr } = useAiMonitoringCopy();
   if (success) {
     return (
       <span className="admin-ai-monitor-outcome is-success">
-        <CheckCircle2 size={12} /> Successful
+        <CheckCircle2 size={12} /> {tr('Successful')}
       </span>
     );
   }
   return (
     <span className={`admin-ai-monitor-outcome ${retryable ? 'is-retryable' : 'is-failed'}`}>
       {retryable ? <RefreshCw size={12} /> : <XCircle size={12} />}
-      {retryable ? 'Retryable' : 'Failed'}
+      {tr(retryable ? 'Retryable' : 'Failed')}
     </span>
   );
 }
 
 function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHorizontal }) {
+  const { tr } = useAiMonitoringCopy();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const current = options.find((option) => option.key === value) || options[0];
@@ -223,8 +354,8 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHoriz
       >
         <Icon size={15} />
         <span className="admin-ai-monitor-picker__copy">
-          <small>{label}</small>
-          <strong>{current?.label || 'All'}</strong>
+          <small>{tr(label)}</small>
+          <strong>{tr(current?.label || 'All')}</strong>
         </span>
         <ChevronDown size={14} />
       </button>
@@ -242,7 +373,7 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHoriz
                 setOpen(false);
               }}
             >
-              <span>{option.label}</span>
+              <span>{tr(option.label)}</span>
               {option.key === value && <Check size={13} />}
             </button>
           ))}
@@ -253,6 +384,7 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHoriz
 }
 
 function SortControl({ sortBy, sortOrder, onSortBy, onToggle }) {
+  const { tr } = useAiMonitoringCopy();
   const options = SORT_OPTIONS;
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -272,7 +404,7 @@ function SortControl({ sortBy, sortOrder, onSortBy, onToggle }) {
       <div className={`admin-ai-monitor-picker ${open ? 'is-open' : ''}`}>
         <button type="button" className="admin-ai-monitor-picker__trigger" onClick={() => setOpen((state) => !state)}>
           <SlidersHorizontal size={15} />
-          <span className="admin-ai-monitor-picker__copy"><small>Sort requests</small><strong>{current.label}</strong></span>
+          <span className="admin-ai-monitor-picker__copy"><small>{tr('Sort requests')}</small><strong>{tr(current.label)}</strong></span>
           <ChevronDown size={14} />
         </button>
         {open && (
@@ -287,14 +419,14 @@ function SortControl({ sortBy, sortOrder, onSortBy, onToggle }) {
                   setOpen(false);
                 }}
               >
-                <span>{option.label}</span>
+                <span>{tr(option.label)}</span>
                 {option.key === sortBy && <Check size={13} />}
               </button>
             ))}
           </div>
         )}
       </div>
-      <button type="button" className="admin-ai-monitor-sort__direction" onClick={onToggle} title={sortOrder === 'asc' ? 'Ascending order' : 'Descending order'}>
+      <button type="button" className="admin-ai-monitor-sort__direction" onClick={onToggle} title={tr(sortOrder === 'asc' ? 'Ascending order' : 'Descending order')}>
         {sortOrder === 'asc' ? <ArrowUp size={15} /> : <ArrowDown size={15} />}
       </button>
     </div>
@@ -302,32 +434,34 @@ function SortControl({ sortBy, sortOrder, onSortBy, onToggle }) {
 }
 
 function DateRangeFilter({ fromDate, toDate, onFromChange, onToChange, onClear }) {
+  const { tr } = useAiMonitoringCopy();
   const active = Boolean(fromDate || toDate);
   return (
     <div className={`admin-ai-monitor-date ${active ? 'is-active' : ''}`}>
       <span className="admin-ai-monitor-date__icon"><CalendarRange size={16} /></span>
       <label>
-        <small>From</small>
+        <small>{tr('From')}</small>
         <input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => onFromChange(event.target.value)} />
       </label>
       <span className="admin-ai-monitor-date__divider" />
       <label>
-        <small>To</small>
+        <small>{tr('To')}</small>
         <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => onToChange(event.target.value)} />
       </label>
       {active && (
-        <button type="button" onClick={onClear} aria-label="Clear AI monitoring date range"><X size={13} /></button>
+        <button type="button" onClick={onClear} aria-label={tr('Clear AI monitoring date range')}><X size={13} /></button>
       )}
     </div>
   );
 }
 
 function DetailItem({ icon: Icon, label, value, mono = false, wide = false }) {
+  const { tr } = useAiMonitoringCopy();
   return (
     <div className={`admin-ai-monitor-detail ${wide ? 'is-wide' : ''}`}>
       {Icon && <span className="admin-ai-monitor-detail__icon"><Icon size={14} /></span>}
       <div className="admin-ai-monitor-detail__copy">
-        <small>{label}</small>
+        <small>{tr(label)}</small>
         <strong className={mono ? 'is-mono' : ''}>{value ?? '—'}</strong>
       </div>
     </div>
@@ -335,12 +469,13 @@ function DetailItem({ icon: Icon, label, value, mono = false, wide = false }) {
 }
 
 function AttemptTimeline({ operation }) {
+  const { tr } = useAiMonitoringCopy();
   const attempts = Array.isArray(operation?.attempts) ? operation.attempts : [];
   if (!attempts.length) {
     return (
       <div className="admin-ai-monitor-timeline-empty">
         <GitBranch size={20} />
-        <span>No operation timeline is available for this legacy request.</span>
+        <span>{tr('No operation timeline is available for this legacy request.')}</span>
       </div>
     );
   }
@@ -355,21 +490,21 @@ function AttemptTimeline({ operation }) {
           <div className="admin-ai-monitor-attempt__body">
             <div className="admin-ai-monitor-attempt__top">
               <div>
-                <strong>{attempt.aiModel?.displayName || attempt.aiModel?.modelName || attempt.apiModelId || 'AI model'}</strong>
-                <span>{titleCase(attempt.providerKey || 'Unknown provider')} · {attempt.apiModelId || 'Unmapped API model'}</span>
+                <strong>{attempt.aiModel?.displayName || attempt.aiModel?.modelName || attempt.apiModelId || tr('AI model')}</strong>
+                <span>{attempt.providerKey ? titleCase(attempt.providerKey) : tr('Unknown provider')} · {attempt.apiModelId || tr('Unmapped API model')}</span>
               </div>
               <OutcomeBadge success={attempt.isSuccess} retryable={attempt.isRetryable} />
             </div>
             <div className="admin-ai-monitor-attempt__facts">
-              <span><Timer size={12} /> {number(attempt.responseTimeMs)} ms</span>
-              <span><Zap size={12} /> {number(Number(attempt.inputTokens || 0) + Number(attempt.outputTokens || 0))} tokens</span>
+              <span><Timer size={12} /> {number(attempt.responseTimeMs)} {tr('ms')}</span>
+              <span><Zap size={12} /> {number(Number(attempt.inputTokens || 0) + Number(attempt.outputTokens || 0))} {tr('tokens')}</span>
               <span><span className="admin-ai-monitor-attempt__money">$</span> {money(attempt.costEstimate)}</span>
-              {attempt.fallbackUsed && <span className="is-fallback"><GitBranch size={12} /> Fallback</span>}
+              {attempt.fallbackUsed && <span className="is-fallback"><GitBranch size={12} /> {tr('Fallback')}</span>}
             </div>
             {!attempt.isSuccess && (attempt.errorCode || attempt.errorMessage) && (
               <div className="admin-ai-monitor-attempt__error">
                 <TriangleAlert size={13} />
-                <span><strong>{attempt.errorCode || 'Provider error'}</strong>{attempt.errorMessage ? ` — ${attempt.errorMessage}` : ''}</span>
+                <span><strong>{attempt.errorCode || tr('Provider error')}</strong>{attempt.errorMessage ? ` — ${tr(attempt.errorMessage)}` : ''}</span>
               </div>
             )}
           </div>
@@ -380,6 +515,7 @@ function AttemptTimeline({ operation }) {
 }
 
 function MonitoringModal({ log, loading, operation, onClose }) {
+  const { locale, tr } = useAiMonitoringCopy();
   useEffect(() => {
     if (!log) return undefined;
     const previousOverflow = document.body.style.overflow;
@@ -396,25 +532,25 @@ function MonitoringModal({ log, loading, operation, onClose }) {
 
   if (!log) return null;
 
-  const modelName = log.aiModel?.displayName || log.aiModel?.modelName || log.apiModelId || 'AI model';
-  const provider = titleCase(log.providerKey || 'Unknown provider');
+  const modelName = log.aiModel?.displayName || log.aiModel?.modelName || log.apiModelId || tr('AI model');
+  const provider = log.providerKey ? titleCase(log.providerKey) : tr('Unknown provider');
   const totalTokens = Number(log.inputTokens || 0) + Number(log.outputTokens || 0);
 
   return createPortal(
     <div className="admin-ai-monitor-modal-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section className="admin-ai-monitor-modal" role="dialog" aria-modal="true" aria-label="AI request diagnostics">
+      <section className="admin-ai-monitor-modal" role="dialog" aria-modal="true" aria-label={tr('AI request diagnostics')}>
         <header className="admin-ai-monitor-modal__head">
           <div className="admin-ai-monitor-modal__identity">
             <span className={`admin-ai-monitor-modal__mark ${log.isSuccess ? 'is-success' : 'is-failed'}`}><Bot size={21} /></span>
             <div>
-              <small>AI REQUEST DIAGNOSTICS</small>
-              <h3>{requestTypeLabel(log.requestType)}</h3>
+              <small>{tr('AI REQUEST DIAGNOSTICS')}</small>
+              <h3>{tr(requestTypeLabel(log.requestType))}</h3>
               <p>{provider} · {modelName}</p>
             </div>
           </div>
-          <button type="button" className="admin-ai-monitor-modal__close" onClick={onClose} aria-label="Close diagnostics"><X size={18} /></button>
+          <button type="button" className="admin-ai-monitor-modal__close" onClick={onClose} aria-label={tr('Close diagnostics')}><X size={18} /></button>
         </header>
 
         <div className="admin-ai-monitor-modal__body">
@@ -422,10 +558,10 @@ function MonitoringModal({ log, loading, operation, onClose }) {
             <div className="admin-ai-monitor-modal__outcome-card">
               <div className="admin-ai-monitor-modal__outcome-head">
                 <OutcomeBadge success={log.isSuccess} retryable={log.isRetryable} />
-                {log.fallbackUsed && <span className="admin-ai-monitor-fallback"><GitBranch size={12} /> Fallback</span>}
+                {log.fallbackUsed && <span className="admin-ai-monitor-fallback"><GitBranch size={12} /> {tr('Fallback')}</span>}
               </div>
-              <strong>{number(log.responseTimeMs)} ms</strong>
-              <span>Provider response time</span>
+              <strong>{number(log.responseTimeMs)} {tr('ms')}</strong>
+              <span>{tr('Provider response time')}</span>
             </div>
 
             <div className="admin-ai-monitor-modal__detail-grid">
@@ -433,19 +569,19 @@ function MonitoringModal({ log, loading, operation, onClose }) {
               <DetailItem icon={Cpu} label="API model" value={log.apiModelId || '—'} />
               <DetailItem icon={Zap} label="Tokens" value={number(totalTokens)} />
               <DetailItem icon={Gauge} label="Status code" value={log.statusCode ?? '—'} />
-              <DetailItem icon={Clock3} label="Created" value={formatDate(log.createdAt)} wide />
+              <DetailItem icon={Clock3} label="Created" value={formatDate(log.createdAt, false, locale)} wide />
               <DetailItem icon={Activity} label="Attempt" value={`#${log.attemptNumber || 1}`} />
               <DetailItem icon={Sparkles} label="Estimated cost" value={money(log.costEstimate)} />
             </div>
 
             {(log.user || log.idea) && (
               <div className="admin-ai-monitor-modal__context-card">
-                <small>REQUEST CONTEXT</small>
+                <small>{tr('REQUEST CONTEXT')}</small>
                 {log.user && (
-                  <div><UserRound size={14} /><span><strong>{log.user.fullName || 'Platform user'}</strong><small>{log.user.email || '—'}</small></span></div>
+                  <div><UserRound size={14} /><span><strong>{log.user.fullName || tr('Platform user')}</strong><small>{log.user.email || '—'}</small></span></div>
                 )}
                 {log.idea && (
-                  <div><Sparkles size={14} /><span><strong>{log.idea.title || 'Related idea'}</strong><small>{shortId(log.idea.id, 13)}</small></span></div>
+                  <div><Sparkles size={14} /><span><strong>{log.idea.title || tr('Related idea')}</strong><small>{shortId(log.idea.id, 13)}</small></span></div>
                 )}
               </div>
             )}
@@ -453,7 +589,7 @@ function MonitoringModal({ log, loading, operation, onClose }) {
             {(!log.isSuccess && (log.errorCode || log.errorMessage)) && (
               <div className="admin-ai-monitor-modal__error-card">
                 <TriangleAlert size={16} />
-                <div><small>{log.errorCode || 'REQUEST FAILURE'}</small><p>{log.errorMessage || 'The provider request failed without a stored message.'}</p></div>
+                <div><small>{log.errorCode || tr('REQUEST FAILURE')}</small><p>{log.errorMessage ? tr(log.errorMessage) : tr('The provider request failed without a stored message.')}</p></div>
               </div>
             )}
           </aside>
@@ -461,26 +597,26 @@ function MonitoringModal({ log, loading, operation, onClose }) {
           <main className="admin-ai-monitor-modal__timeline-pane">
             <div className="admin-ai-monitor-modal__section-head">
               <div>
-                <small>OPERATION TIMELINE</small>
-                <h4>Retries and fallback path</h4>
-                <p>Every provider attempt belonging to this logical AI operation.</p>
+                <small>{tr('OPERATION TIMELINE')}</small>
+                <h4>{tr('Retries and fallback path')}</h4>
+                <p>{tr('Every provider attempt belonging to this logical AI operation.')}</p>
               </div>
               {operation?.totalAttempts ? (
-                <span className="admin-ai-monitor-modal__attempt-count">{operation.totalAttempts} attempts</span>
+                <span className="admin-ai-monitor-modal__attempt-count">{operation.totalAttempts} {tr('attempts')}</span>
               ) : null}
             </div>
 
             {loading ? (
-              <div className="admin-ai-monitor-modal__loading"><LoaderCircle size={22} className="is-spinning" /><span>Loading operation diagnostics…</span></div>
+              <div className="admin-ai-monitor-modal__loading"><LoaderCircle size={22} className="is-spinning" /><span>{tr('Loading operation diagnostics…')}</span></div>
             ) : (
               <AttemptTimeline operation={operation} />
             )}
 
             <div className="admin-ai-monitor-modal__technical">
-              <small>TECHNICAL REFERENCES</small>
+              <small>{tr('TECHNICAL REFERENCES')}</small>
               <div className="admin-ai-monitor-modal__technical-grid">
                 <DetailItem label="Log ID" value={log.id} mono wide />
-                <DetailItem label="Operation ID" value={log.operationId || 'Legacy / unavailable'} mono wide />
+                <DetailItem label="Operation ID" value={log.operationId || tr('Legacy / unavailable')} mono wide />
                 <DetailItem label="Provider request ID" value={log.requestId || '—'} mono wide />
                 <DetailItem label="Endpoint" value={log.endpoint || '—'} mono wide />
               </div>
@@ -494,6 +630,7 @@ function MonitoringModal({ log, loading, operation, onClose }) {
 }
 
 export default function AdminAiMonitoringPage() {
+  const { isArabic, locale, tr } = useAiMonitoringCopy();
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
   const [summary, setSummary] = useState({});
@@ -588,14 +725,14 @@ export default function AdminAiMonitoringPage() {
     } catch (loadError) {
       if (requestId !== requestIdRef.current) return;
       setRows([]);
-      setError(getApiErrorMessage(loadError, 'Could not load AI monitoring requests.'));
+      setError(tr(getApiErrorMessage(loadError, 'Could not load AI monitoring requests.')));
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
         setRefreshing(false);
       }
     }
-  }, [activeParams, commonParams, fromDate, page, sortBy, sortOrder, toDate]);
+  }, [activeParams, commonParams, fromDate, page, sortBy, sortOrder, toDate, tr]);
 
   useEffect(() => {
     loadData();
@@ -644,11 +781,11 @@ export default function AdminAiMonitoringPage() {
         }
       }
     } catch (detailError) {
-      setError(getApiErrorMessage(detailError, 'Could not load AI request diagnostics.'));
+      setError(tr(getApiErrorMessage(detailError, 'Could not load AI request diagnostics.')));
     } finally {
       setModalLoading(false);
     }
-  }, []);
+  }, [tr]);
 
   const handleExport = async () => {
     setRefreshing(true);
@@ -656,7 +793,7 @@ export default function AdminAiMonitoringPage() {
     try {
       await adminApi.aiMonitoring.exportCsv({ sortBy, sortOrder, ...activeParams });
     } catch (exportError) {
-      setError(getApiErrorMessage(exportError, 'AI monitoring CSV export failed.'));
+      setError(tr(getApiErrorMessage(exportError, 'AI monitoring CSV export failed.')));
     } finally {
       setRefreshing(false);
     }
@@ -688,11 +825,11 @@ export default function AdminAiMonitoringPage() {
       <section className="admin-ai-monitor-overview-hero">
         <div className="admin-ai-monitor-overview-hero__content">
           <div className="admin-ai-monitor-overview-topline">
-            <div className="admin-ai-monitor-overview-eyebrow"><Activity size={14} /> AI observability</div>
-            <span className="admin-ai-monitor-overview-live"><i /> Live diagnostics</span>
+            <div className="admin-ai-monitor-overview-eyebrow"><Activity size={14} /> {tr('AI observability')}</div>
+            <span className="admin-ai-monitor-overview-live"><i /> {tr('Live diagnostics')}</span>
           </div>
-          <h1>AI <span>monitoring</span></h1>
-          <p>Trace provider attempts, retries, fallback decisions, latency and operational failures without exposing raw provider payloads.</p>
+          <h1>{isArabic ? <><span>{tr('monitoring')}</span> {tr('AI')}</> : <>{tr('AI')} <span>{tr('monitoring')}</span></>}</h1>
+          <p>{tr('Trace provider attempts, retries, fallback decisions, latency and operational failures without exposing raw provider payloads.')}</p>
 
           <div className="admin-ai-monitor-overview-hero__actions">
             <button
@@ -702,7 +839,7 @@ export default function AdminAiMonitoringPage() {
               disabled={refreshing}
             >
               <RefreshCw size={14} className={refreshing ? 'is-spinning' : ''} />
-              Refresh monitoring
+              {tr('Refresh monitoring')}
             </button>
             <button
               type="button"
@@ -710,13 +847,12 @@ export default function AdminAiMonitoringPage() {
               onClick={handleExport}
               disabled={refreshing}
             >
-              <Download size={14} /> Export CSV
+              <Download size={14} /> {tr('Export CSV')}
             </button>
           </div>
         </div>
 
         <div className="admin-ai-monitor-overview-scene" aria-hidden="true">
-          <span className="admin-ai-monitor-scene-grid" />
           <span className="admin-ai-monitor-scene-orbit admin-ai-monitor-scene-orbit--outer" />
           <span className="admin-ai-monitor-scene-orbit admin-ai-monitor-scene-orbit--middle" />
           <span className="admin-ai-monitor-scene-orbit admin-ai-monitor-scene-orbit--inner" />
@@ -749,9 +885,9 @@ export default function AdminAiMonitoringPage() {
 
       <div className="admin-ai-monitor-metrics admin-ai-monitor-metrics--overview">
         <MetricCard icon={Activity} label="Total requests" value={number(summary?.totalRequests)} hint="Matching provider attempts" tone="is-primary" />
-        <MetricCard icon={CheckCircle2} label="Success rate" value={`${successRate.toFixed(1)}%`} hint={`${number(summary?.successfulRequests)} successful`} tone="is-success" />
-        <MetricCard icon={CircleAlert} label="Failed requests" value={number(summary?.failedRequests)} hint={`${number(summary?.retryableFailures)} retryable`} tone="is-failed" />
-        <MetricCard icon={Timer} label="Average latency" value={`${number(avgLatency)} ms`} hint={`${money(summary?.totalCost)} estimated cost`} tone="is-latency" />
+        <MetricCard icon={CheckCircle2} label="Success rate" value={`${successRate.toFixed(1)}%`} hint={`${number(summary?.successfulRequests)} ${tr('successful')}`} tone="is-success" />
+        <MetricCard icon={CircleAlert} label="Failed requests" value={number(summary?.failedRequests)} hint={`${number(summary?.retryableFailures)} ${tr('retryable')}`} tone="is-failed" />
+        <MetricCard icon={Timer} label="Average latency" value={`${number(avgLatency)} ${tr('ms')}`} hint={`${money(summary?.totalCost)} ${tr('estimated cost')}`} tone="is-latency" />
       </div>
 
       {error && <div className="admin-error">{error}</div>}
@@ -759,24 +895,24 @@ export default function AdminAiMonitoringPage() {
       <section className="admin-ai-monitor-panel">
         <header className="admin-ai-monitor-panel__head">
           <div>
-            <span className="admin-ai-monitor-panel__kicker"><ShieldCheck size={13} /> AI execution ledger</span>
-            <h3>Provider request operations</h3>
-            <p>{number(meta.total)} matching request attempts</p>
+            <span className="admin-ai-monitor-panel__kicker"><ShieldCheck size={13} /> {tr('AI execution ledger')}</span>
+            <h3>{tr('Provider request operations')}</h3>
+            <p>{number(meta.total)} {tr('matching request attempts')}</p>
           </div>
           <div className="admin-ai-monitor-panel__actions">
-            <span className="admin-ai-monitor-panel__scope"><Activity size={13} /> {number(meta.total)} attempts in scope</span>
+            <span className="admin-ai-monitor-panel__scope"><Activity size={13} /> {number(meta.total)} {tr('attempts in scope')}</span>
           </div>
         </header>
 
 
         <div className="admin-ai-monitor-signal-strip">
-          <span><RefreshCw size={13} /><strong>{number(summary?.retryableFailures)}</strong> retryable failures</span>
-          <span><GitBranch size={13} /><strong>{number(summary?.fallbackAttempts)}</strong> fallback attempts</span>
-          <span><TriangleAlert size={13} /><strong>{Number(summary?.errorRate || 0).toFixed(1)}%</strong> error rate</span>
-          <span><Sparkles size={13} /><strong>{money(summary?.totalCost)}</strong> estimated cost</span>
+          <span><RefreshCw size={13} /><strong>{number(summary?.retryableFailures)}</strong> {tr('retryable failures')}</span>
+          <span><GitBranch size={13} /><strong>{number(summary?.fallbackAttempts)}</strong> {tr('fallback attempts')}</span>
+          <span><TriangleAlert size={13} /><strong>{Number(summary?.errorRate || 0).toFixed(1)}%</strong> {tr('error rate')}</span>
+          <span><Sparkles size={13} /><strong>{money(summary?.totalCost)}</strong> {tr('estimated cost')}</span>
         </div>
 
-        <nav className="admin-ai-monitor-status-tabs" aria-label="AI request status">
+        <nav className="admin-ai-monitor-status-tabs" aria-label={tr('AI request status')}>
           {STATUS_OPTIONS.map((option) => (
             <button
               key={option.key}
@@ -788,7 +924,7 @@ export default function AdminAiMonitoringPage() {
                 setPage(1);
               }}
             >
-              {option.label}<em>{number(statusCount(option.key))}</em>
+              {tr(option.label)}<em>{number(statusCount(option.key))}</em>
             </button>
           ))}
         </nav>
@@ -835,21 +971,21 @@ export default function AdminAiMonitoringPage() {
             <Search size={17} />
             <input
               type="search"
-              placeholder="Search model, provider request ID, operation, user, idea or error..."
+              placeholder={tr('Search model, provider request ID, operation, user, idea or error...')}
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
             />
-            {searchInput && <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"><X size={13} /></button>}
+            {searchInput && <button type="button" onClick={() => setSearchInput('')} aria-label={tr('Clear search')}><X size={13} /></button>}
           </label>
         </div>
 
         {loading ? (
-          <div className="admin-ai-monitor-loading"><LoaderCircle size={24} className="is-spinning" /><span>Loading AI request diagnostics…</span></div>
+          <div className="admin-ai-monitor-loading"><LoaderCircle size={24} className="is-spinning" /><span>{tr('Loading AI request diagnostics…')}</span></div>
         ) : rows.length ? (
           <div className="admin-ai-monitor-card-shell">
             <div className="admin-ai-monitor-card-grid">
               {rows.map((row) => {
-                const modelName = row.aiModel?.displayName || row.aiModel?.modelName || row.apiModelId || 'Unmapped model';
+                const modelName = row.aiModel?.displayName || row.aiModel?.modelName || row.apiModelId || tr('Unmapped model');
                 const tokens = Number(row.inputTokens || 0) + Number(row.outputTokens || 0);
                 return (
                   <article
@@ -863,11 +999,11 @@ export default function AdminAiMonitoringPage() {
                         {String(row.providerKey || 'A').trim().charAt(0).toUpperCase() || 'A'}
                       </span>
                       <div className="admin-ai-monitor-run-card__visual-copy">
-                        <small>{titleCase(row.providerKey || 'Unknown')}</small>
+                        <small>{row.providerKey ? titleCase(row.providerKey) : tr('Unknown')}</small>
                         <strong title={modelName}>{modelName}</strong>
                         <span className={`admin-ai-monitor-run-card__state ${row.isSuccess ? 'is-success' : 'is-failed'}`}>
                           {row.isSuccess ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                          {row.isSuccess ? 'Successful' : 'Failed'}
+                          {tr(row.isSuccess ? 'Successful' : 'Failed')}
                         </span>
                       </div>
                     </div>
@@ -875,44 +1011,44 @@ export default function AdminAiMonitoringPage() {
                     <div className="admin-ai-monitor-run-card__body">
                       <div className="admin-ai-monitor-run-card__head">
                         <div>
-                          <strong>{requestTypeLabel(row.requestType)}</strong>
-                          <span>Op {shortId(row.operationId || row.id, 9)} · Attempt {row.attemptNumber || 1}</span>
-                          <small>{formatDate(row.createdAt, true)}</small>
+                          <strong>{tr(requestTypeLabel(row.requestType))}</strong>
+                          <span>{tr('Op')} {shortId(row.operationId || row.id, 9)} · {tr('Attempt')} {row.attemptNumber || 1}</span>
+                          <small>{formatDate(row.createdAt, true, locale)}</small>
                         </div>
                         <button type="button" className="admin-ai-monitor-inspect" onClick={() => openDetails(row)}>
-                          <Eye size={15} /> <span>Inspect</span>
+                          <Eye size={15} /> <span>{tr('Inspect')}</span>
                         </button>
                       </div>
 
                       <div className="admin-ai-monitor-run-card__status">
                         <OutcomeBadge success={row.isSuccess} retryable={row.isRetryable} />
                         <span className="admin-ai-monitor-status-code">HTTP {row.statusCode ?? '—'}</span>
-                        {row.fallbackUsed && <small><GitBranch size={11} /> Fallback path</small>}
+                        {row.fallbackUsed && <small><GitBranch size={11} /> {tr('Fallback path')}</small>}
                       </div>
 
                       <div className="admin-ai-monitor-run-card__metrics">
                         <div>
-                          <small>Performance</small>
-                          <strong>{number(row.responseTimeMs)} ms</strong>
-                          <span><Gauge size={12} /> response time</span>
+                          <small>{tr('Performance')}</small>
+                          <strong>{number(row.responseTimeMs)} {tr('ms')}</strong>
+                          <span><Gauge size={12} /> {tr('response time')}</span>
                         </div>
                         <div>
-                          <small>Tokens</small>
+                          <small>{tr('Tokens')}</small>
                           <strong>{number(tokens)}</strong>
-                          <span><Zap size={12} /> total tokens</span>
+                          <span><Zap size={12} /> {tr('total tokens')}</span>
                         </div>
                         <div>
-                          <small>Cost</small>
+                          <small>{tr('Cost')}</small>
                           <strong>{money(row.costEstimate)}</strong>
-                          <span><Cpu size={12} /> estimated cost</span>
+                          <span><Cpu size={12} /> {tr('estimated cost')}</span>
                         </div>
                         <div>
-                          <small>Context</small>
-                          <strong title={row.user?.fullName || row.user?.email || 'System operation'}>
-                            {row.user?.fullName || row.user?.email || 'System operation'}
+                          <small>{tr('Context')}</small>
+                          <strong title={row.user?.fullName || row.user?.email || tr('System operation')}>
+                            {row.user?.fullName || row.user?.email || tr('System operation')}
                           </strong>
-                          <span title={row.idea?.title || row.endpoint || 'No idea context'}>
-                            {row.idea?.title || row.endpoint || 'No idea context'}
+                          <span title={row.idea?.title || row.endpoint || tr('No idea context')}>
+                            {row.idea?.title || row.endpoint || tr('No idea context')}
                           </span>
                         </div>
                       </div>
@@ -920,7 +1056,7 @@ export default function AdminAiMonitoringPage() {
                       <div className="admin-ai-monitor-run-card__footer">
                         <div>
                           <span className="admin-ai-monitor-run-card__chip"><ServerCog size={12} /> {row.apiModelId || '—'}</span>
-                          {row.fallbackUsed && <span className="admin-ai-monitor-run-card__chip"><GitBranch size={12} /> Fallback</span>}
+                          {row.fallbackUsed && <span className="admin-ai-monitor-run-card__chip"><GitBranch size={12} /> {tr('Fallback')}</span>}
                         </div>
                         {!row.isSuccess && row.errorCode && (
                           <small className="admin-ai-monitor-run-card__error">
@@ -937,17 +1073,17 @@ export default function AdminAiMonitoringPage() {
         ) : (
           <div className="admin-ai-monitor-empty">
             <Activity size={26} />
-            <strong>No request attempts match these filters</strong>
-            <span>Adjust the provider, status, date range or search phrase.</span>
+            <strong>{tr('No request attempts match these filters')}</strong>
+            <span>{tr('Adjust the provider, status, date range or search phrase.')}</span>
           </div>
         )}
 
         <footer className="admin-ai-monitor-pagination">
-          <span>Showing {rows.length ? ((meta.page - 1) * meta.limit) + 1 : 0}–{Math.min(meta.page * meta.limit, meta.total)} of {number(meta.total)}</span>
+          <span>{isArabic ? 'عرض' : 'Showing'} {rows.length ? ((meta.page - 1) * meta.limit) + 1 : 0}–{Math.min(meta.page * meta.limit, meta.total)} {tr('of')} {number(meta.total)}</span>
           <div>
-            <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={meta.page <= 1}><ChevronLeft size={14} /> Previous</button>
-            <em>Page {meta.page} of {meta.totalPages}</em>
-            <button type="button" onClick={() => setPage((value) => Math.min(meta.totalPages, value + 1))} disabled={meta.page >= meta.totalPages}>Next <ChevronRight size={14} /></button>
+            <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={meta.page <= 1}><ChevronLeft size={14} /> {tr('Previous')}</button>
+            <em>{tr('Page')} {meta.page} {tr('of')} {meta.totalPages}</em>
+            <button type="button" onClick={() => setPage((value) => Math.min(meta.totalPages, value + 1))} disabled={meta.page >= meta.totalPages}>{tr('Next')} <ChevronRight size={14} /></button>
           </div>
         </footer>
       </section>

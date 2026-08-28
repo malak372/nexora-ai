@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-cr-page {
   --cr-teal: #2f7774;
   --cr-teal-strong: #286b68;
@@ -1719,14 +1721,6 @@
   }
 }
 
-
-
-/* =========================================================
-   Collection runs — visual hero + card layout
-   The JSX for these elements already exists in the page.
-   These rules intentionally affect presentation only.
-   ========================================================= */
-
 .admin-cr-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(390px, .65fr);
@@ -2685,4 +2679,663 @@
 
 .admin-cr-run-card__section--pipeline {
   background: linear-gradient(145deg, rgba(246, 250, 249, .38), transparent 72%);
+}
+
+/* Dark theme hardening for collection runs. Light theme remains untouched. */
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-page {
+  --cr-teal: #69cfc6;
+  --cr-teal-strong: #8bded6;
+  --cr-teal-2: #5fc7be;
+  --cr-ink: #edf7f3;
+  --cr-ink-2: #c9dbd5;
+  --cr-muted: #9db2ab;
+  --cr-muted-soft: #7f968e;
+  --cr-line: rgba(139, 209, 203, .15);
+  --cr-line-soft: rgba(139, 209, 203, .095);
+  --cr-soft: #1b2c28;
+  --cr-soft-2: #15231f;
+  color: var(--cr-ink);
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero {
+  border-color: rgba(139, 209, 203, .14) !important;
+  background:
+    radial-gradient(circle at 74% -20%, rgba(92, 189, 185, .13), transparent 35%),
+    radial-gradient(circle at 7% 108%, rgba(217, 143, 160, .08), transparent 34%),
+    linear-gradient(118deg, #111c19 0%, #14231f 62%, #21191d 100%) !important;
+  box-shadow: 0 20px 54px rgba(0, 0, 0, .24) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero::before {
+  background: linear-gradient(90deg, rgba(92, 189, 185, .075), rgba(217, 143, 160, .045)) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero::after {
+  border-color: rgba(92, 189, 185, .055) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero .admin-hero__eyebrow {
+  border-color: rgba(139, 209, 203, .17) !important;
+  color: #8bded6 !important;
+  background: rgba(28, 49, 44, .72) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero h2 {
+  color: #f1f8f5 !important;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, .2);
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero p {
+  color: #a7bbb4 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__visual::before {
+  border-color: rgba(139, 209, 203, .10) !important;
+  background:
+    radial-gradient(circle at 36% 42%, rgba(92, 189, 185, .105), transparent 34%),
+    radial-gradient(circle at 78% 62%, rgba(217, 143, 160, .07), transparent 31%),
+    rgba(22, 38, 34, .48) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__orbit {
+  border-color: rgba(123, 205, 197, .14) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__orbit--two {
+  border-color: rgba(217, 143, 160, .12) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__source-card,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__status-card,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__database,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__check,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__chart {
+  border-color: rgba(139, 209, 203, .16) !important;
+  background: linear-gradient(145deg, rgba(31, 54, 49, .96), rgba(21, 37, 33, .95)) !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .24) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__source-card>svg {
+  color: #88ddd4 !important;
+  background: rgba(80, 174, 164, .13) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__source-line {
+  background: linear-gradient(90deg, rgba(126, 218, 209, .34), rgba(126, 218, 209, .08)) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__source-search {
+  color: #e4a4b5 !important;
+  background: rgba(154, 72, 95, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__database {
+  color: #85d9d1 !important;
+  background:
+    radial-gradient(circle at 38% 26%, rgba(104, 205, 195, .10), transparent 36%),
+    linear-gradient(145deg, #223d37 0%, #172a25 72%) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__database>span {
+  border-color: rgba(125, 217, 208, .16) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__status-card span {
+  color: #bdd0ca !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-hero__check {
+  color: #85d9d1 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-panel {
+  border-color: rgba(139, 209, 203, .14) !important;
+  background:
+    radial-gradient(circle at 2% 0%, rgba(92, 189, 185, .07), transparent 22%),
+    radial-gradient(circle at 98% 0%, rgba(217, 143, 160, .055), transparent 20%),
+    linear-gradient(180deg, #131f1c 0%, #101a18 100%) !important;
+  box-shadow: 0 20px 54px rgba(0, 0, 0, .23) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-panel__head {
+  border-color: rgba(139, 209, 203, .10) !important;
+  background: linear-gradient(90deg, rgba(23, 40, 36, .92), rgba(18, 30, 27, .78) 60%, rgba(35, 26, 30, .72)) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-kicker {
+  color: #8bded6 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-panel__head h3 {
+  color: #edf7f3 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-panel__head p {
+  color: #91a7a0 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-live,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-refresh {
+  border-color: rgba(139, 209, 203, .14) !important;
+  color: #c9d9d4 !important;
+  background: rgba(27, 43, 39, .92) !important;
+  box-shadow: none !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-live.is-offline {
+  border-color: rgba(224, 143, 165, .19) !important;
+  color: #e6a9b9 !important;
+  background: rgba(117, 48, 68, .15) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-refresh:hover:not(:disabled) {
+  border-color: rgba(139, 209, 203, .26) !important;
+  color: #9ce5de !important;
+  background: rgba(43, 70, 63, .96) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-metrics {
+  border-color: rgba(139, 209, 203, .09) !important;
+  background: rgba(16, 28, 25, .34) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-metric {
+  --metric-soft: #1b2b27;
+  --metric-ink: #a8e3dd;
+  border-color: color-mix(in srgb, var(--metric-accent) 24%, transparent) !important;
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--metric-accent) 12%, transparent), transparent 32%),
+    linear-gradient(145deg, #182521 0%, #14201e 76%) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-metric.is-primary {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(92, 189, 185, .11), transparent 32%),
+    linear-gradient(145deg, #18302a 0%, #14211e 76%) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-metric__icon {
+  border-color: color-mix(in srgb, var(--metric-accent) 28%, transparent) !important;
+  color: color-mix(in srgb, var(--metric-accent) 72%, #eefaf7) !important;
+  background: color-mix(in srgb, var(--metric-accent) 12%, #172622) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-metric small {
+  color: #afc3bc !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-metric strong {
+  color: #f1f8f5 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-metric div>span {
+  color: #80978f !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-status-tabs,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-tools {
+  border-color: rgba(139, 209, 203, .09) !important;
+  background: #121e1b !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-status-tabs button {
+  color: #8ea49d !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-status-tabs button:hover {
+  color: #9de4dd !important;
+  background: rgba(92, 189, 185, .08) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-status-tabs button.is-active {
+  border-color: rgba(126, 214, 205, .18) !important;
+  color: #9de4dd !important;
+  background: rgba(63, 132, 123, .17) !important;
+  box-shadow: inset 0 -2px 0 rgba(111, 211, 201, .28) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__trigger,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__direction,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__trigger,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-search {
+  border-color: rgba(139, 209, 203, .13) !important;
+  color: #d4e4df !important;
+  background: rgba(25, 39, 35, .96) !important;
+  box-shadow: none !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__trigger small,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__trigger small {
+  color: #819990 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__trigger strong,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__trigger strong,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-search input {
+  color: #e3efeb !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-search input::placeholder {
+  color: #70877f !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__trigger:hover,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__direction:hover,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__trigger:hover {
+  border-color: rgba(139, 209, 203, .25) !important;
+  color: #9de4dd !important;
+  background: #20332e !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__menu,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__menu {
+  border-color: rgba(139, 209, 203, .16) !important;
+  background: #192521 !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .34) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__menu button,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__menu button {
+  color: #b8cbc5 !important;
+  background: transparent !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__menu button em {
+  color: #82988f !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__menu button:hover,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-sort__menu button.is-active,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__menu button:hover,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-picker__menu button.is-active,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-search button:hover {
+  color: #9de4dd !important;
+  background: rgba(92, 189, 185, .10) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-notice {
+  border-color: rgba(92, 189, 185, .20) !important;
+  color: #9bded6 !important;
+  background: rgba(49, 122, 113, .13) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-error {
+  border-color: rgba(224, 143, 165, .20) !important;
+  color: #e6a8b8 !important;
+  background: rgba(130, 52, 75, .15) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-runs-grid {
+  background: linear-gradient(180deg, rgba(15, 25, 22, .72), rgba(18, 30, 27, .42)) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-runs-state {
+  border-color: rgba(139, 209, 203, .14) !important;
+  background: rgba(22, 35, 32, .82) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-empty {
+  color: #8fa59e !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-empty strong {
+  color: #dcebe6 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card {
+  border-color: color-mix(in srgb, var(--run-accent) 23%, transparent) !important;
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--run-accent) 9%, transparent), transparent 31%),
+    linear-gradient(145deg, #182521 0%, #14201e 76%, #171f1d 100%) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card:hover {
+  border-color: color-mix(in srgb, var(--run-accent) 34%, transparent) !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .24) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__head,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__footer,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__section {
+  border-color: rgba(139, 209, 203, .075) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__head .admin-cr-run-cell>div>strong,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-domain-cell strong,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-evidence-cell>strong,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-time-cell strong {
+  color: #e4efeb !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__head .admin-cr-run-cell>div>small,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__head .admin-cr-run-cell>div>span,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-domain-cell span,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-evidence-cell span,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-time-cell span,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__summary,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-muted {
+  color: #8fa59e !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__label {
+  color: #8da39c !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__label>svg {
+  color: #82d7ce !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__section--domain,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__section--pipeline,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__section--evidence,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__section--timing {
+  background: linear-gradient(145deg, rgba(56, 96, 87, .075), transparent 72%) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__section--timing {
+  background: linear-gradient(145deg, rgba(123, 69, 83, .07), transparent 72%) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__footer {
+  background: rgba(18, 31, 27, .82) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-card__summary>i {
+  background: rgba(139, 209, 203, .13) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-mark {
+  border-color: rgba(139, 209, 203, .14) !important;
+  color: #87d9d1 !important;
+  background: linear-gradient(145deg, #23413a, #182923) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-mark.is-running {
+  border-color: rgba(209, 177, 102, .22) !important;
+  color: #d7b970 !important;
+  background: rgba(125, 99, 44, .17) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-mark.is-failed {
+  border-color: rgba(224, 143, 165, .21) !important;
+  color: #e6a5b6 !important;
+  background: rgba(133, 52, 76, .17) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-run-mark.is-stopped {
+  border-color: rgba(170, 157, 161, .17) !important;
+  color: #b9aaae !important;
+  background: rgba(96, 82, 87, .17) !important;
+}
+
+html.vox-user-dark .admin-cr-status.is-running {
+  border-color: rgba(209, 177, 102, .22) !important;
+  color: #dfc27c !important;
+  background: rgba(128, 101, 43, .17) !important;
+}
+
+html.vox-user-dark .admin-cr-status.is-completed {
+  border-color: rgba(92, 189, 185, .21) !important;
+  color: #91ddd5 !important;
+  background: rgba(47, 124, 115, .17) !important;
+}
+
+html.vox-user-dark .admin-cr-status.is-failed {
+  border-color: rgba(224, 143, 165, .22) !important;
+  color: #e8a8b9 !important;
+  background: rgba(139, 57, 81, .18) !important;
+}
+
+html.vox-user-dark .admin-cr-status.is-stopped {
+  border-color: rgba(171, 158, 162, .18) !important;
+  color: #c0b1b5 !important;
+  background: rgba(96, 82, 87, .19) !important;
+}
+
+html.vox-user-dark .admin-cr-status.is-pending {
+  border-color: rgba(139, 209, 203, .15) !important;
+  color: #a3b8b1 !important;
+  background: rgba(74, 101, 94, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-source-chips span {
+  border-color: rgba(139, 209, 203, .12) !important;
+  color: #b7cbc5 !important;
+  background: rgba(37, 61, 55, .72) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-source-chips span.is-more {
+  color: #94ded6 !important;
+  background: rgba(53, 117, 108, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-inspect {
+  border-color: rgba(126, 214, 205, .20) !important;
+  color: #97e0d8 !important;
+  background: rgba(47, 112, 103, .16) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-inspect:hover:not(:disabled) {
+  border-color: rgba(126, 214, 205, .34) !important;
+  color: #f1fbf8 !important;
+  background: #2d746d !important;
+  box-shadow: 0 9px 20px rgba(0, 0, 0, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-pagination {
+  border-top: 1px solid rgba(139, 209, 203, .09) !important;
+  color: #8fa59e !important;
+  background: #121e1b !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-pagination strong {
+  color: #c5d6d0 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-pagination button {
+  border-color: rgba(139, 209, 203, .13) !important;
+  color: #bdd0ca !important;
+  background: #1a2925 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-cr-pagination button:hover:not(:disabled) {
+  border-color: rgba(139, 209, 203, .25) !important;
+  color: #9ee5de !important;
+  background: #20342f !important;
+}
+
+html.vox-user-dark .admin-cr-modal-layer {
+  background: rgba(5, 11, 10, .72) !important;
+  backdrop-filter: blur(12px);
+}
+
+html.vox-user-dark .admin-cr-modal {
+  --cr-teal: #69cfc6;
+  --cr-teal-strong: #8bded6;
+  --cr-line-soft: rgba(139, 209, 203, .095);
+  border-color: rgba(139, 209, 203, .16) !important;
+  color: #eaf5f1 !important;
+  background: #111c19 !important;
+  box-shadow: 0 42px 110px rgba(0, 0, 0, .48) !important;
+}
+
+html.vox-user-dark .admin-cr-modal__head {
+  border-color: rgba(139, 209, 203, .10) !important;
+  background:
+    radial-gradient(circle at 0 0, rgba(92, 189, 185, .09), transparent 31%),
+    radial-gradient(circle at 100% 0, rgba(217, 143, 160, .06), transparent 29%),
+    #15221f !important;
+}
+
+html.vox-user-dark .admin-cr-modal__mark,
+html.vox-user-dark .admin-cr-side-card__icon,
+html.vox-user-dark .admin-cr-source-list__mark {
+  border-color: rgba(139, 209, 203, .14) !important;
+  color: #8bded6 !important;
+  background: rgba(55, 117, 108, .18) !important;
+}
+
+html.vox-user-dark .admin-cr-modal__head>div>span,
+html.vox-user-dark .admin-cr-detail-card__title {
+  color: #8bded6 !important;
+}
+
+html.vox-user-dark .admin-cr-modal__head h3 {
+  color: #edf7f3 !important;
+}
+
+html.vox-user-dark .admin-cr-modal__head small,
+html.vox-user-dark .admin-cr-overview-card>span,
+html.vox-user-dark .admin-cr-overview-card>small,
+html.vox-user-dark .admin-cr-detail-card__title small,
+html.vox-user-dark .admin-cr-facts span,
+html.vox-user-dark .admin-cr-keywords>span,
+html.vox-user-dark .admin-cr-source-list__copy small,
+html.vox-user-dark .admin-cr-source-list__counts span,
+html.vox-user-dark .admin-cr-source-list__time small,
+html.vox-user-dark .admin-cr-side-card small,
+html.vox-user-dark .admin-cr-modal__safety small {
+  color: #8ca29a !important;
+}
+
+html.vox-user-dark .admin-cr-modal__close {
+  border-color: rgba(139, 209, 203, .13) !important;
+  color: #c6d8d2 !important;
+  background: #1b2a26 !important;
+}
+
+html.vox-user-dark .admin-cr-modal__close:hover:not(:disabled) {
+  color: #9de4dd !important;
+  background: #233b35 !important;
+}
+
+html.vox-user-dark .admin-cr-modal__body {
+  background: linear-gradient(180deg, #111c19 0%, #101916 100%) !important;
+}
+
+html.vox-user-dark .admin-cr-overview-card,
+html.vox-user-dark .admin-cr-detail-card,
+html.vox-user-dark .admin-cr-side-card {
+  border-color: rgba(139, 209, 203, .12) !important;
+  background: linear-gradient(145deg, #182521 0%, #14201e 100%) !important;
+}
+
+html.vox-user-dark .admin-cr-overview-card>strong,
+html.vox-user-dark .admin-cr-detail-card__title strong,
+html.vox-user-dark .admin-cr-facts strong,
+html.vox-user-dark .admin-cr-source-list__copy strong,
+html.vox-user-dark .admin-cr-source-list__time strong,
+html.vox-user-dark .admin-cr-side-card strong,
+html.vox-user-dark .admin-cr-modal__safety strong {
+  color: #e3efeb !important;
+}
+
+html.vox-user-dark .admin-cr-facts>div {
+  border-color: rgba(139, 209, 203, .075) !important;
+  background: #16231f !important;
+}
+
+html.vox-user-dark .admin-cr-keywords em {
+  border-color: rgba(139, 209, 203, .11) !important;
+  color: #b8cbc5 !important;
+  background: #1c2e29 !important;
+}
+
+html.vox-user-dark .admin-cr-source-list article {
+  border-color: rgba(139, 209, 203, .10) !important;
+  background: #16231f !important;
+}
+
+html.vox-user-dark .admin-cr-source-empty {
+  border-color: rgba(139, 209, 203, .14) !important;
+  color: #8fa59e !important;
+  background: #15211e !important;
+}
+
+html.vox-user-dark .admin-cr-side-card>div+div {
+  border-color: rgba(139, 209, 203, .075) !important;
+}
+
+html.vox-user-dark .admin-cr-side-card.is-warning {
+  border-color: rgba(224, 143, 165, .20) !important;
+  background: rgba(93, 40, 56, .17) !important;
+}
+
+html.vox-user-dark .admin-cr-side-card.is-warning .admin-cr-side-card__icon {
+  color: #e6a6b7 !important;
+  background: rgba(139, 57, 81, .18) !important;
+}
+
+html.vox-user-dark .admin-cr-modal__error {
+  border-color: rgba(224, 143, 165, .22) !important;
+  color: #e7a7b8 !important;
+  background: rgba(130, 52, 75, .17) !important;
+}
+
+html.vox-user-dark .admin-cr-modal__footer {
+  border-color: rgba(139, 209, 203, .10) !important;
+  background: #14201d !important;
+}
+
+html.vox-user-dark .admin-cr-action {
+  border-color: rgba(139, 209, 203, .14) !important;
+  color: #c5d6d0 !important;
+  background: #1c2b27 !important;
+}
+
+html.vox-user-dark .admin-cr-action.is-retry {
+  border-color: rgba(126, 214, 205, .20) !important;
+  color: #95ded6 !important;
+  background: rgba(47, 112, 103, .17) !important;
+}
+
+html.vox-user-dark .admin-cr-action.is-stop {
+  border-color: rgba(224, 143, 165, .22) !important;
+  color: #e5a6b6 !important;
+  background: rgba(130, 52, 75, .17) !important;
+}
+
+html.vox-user-dark .admin-cr-action.is-stop.is-confirming {
+  border-color: #b96278 !important;
+  color: #fff !important;
+  background: #a9576c !important;
+}
+
+html.vox-user-dark .admin-cr-action:hover:not(:disabled) {
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-cr-page,
+html.vox-user-dark.vox-user-rtl .admin-cr-modal {
+  text-align: right;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-cr-sort__trigger,
+html.vox-user-dark.vox-user-rtl .admin-cr-picker__trigger,
+html.vox-user-dark.vox-user-rtl .admin-cr-sort__menu button,
+html.vox-user-dark.vox-user-rtl .admin-cr-picker__menu button,
+html.vox-user-dark.vox-user-rtl .admin-cr-action>span strong,
+html.vox-user-dark.vox-user-rtl .admin-cr-action>span small,
+html.vox-user-dark.vox-user-rtl .admin-cr-source-list__time {
+  text-align: right !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-cr-run-card::before {
+  left: auto;
+  right: 0;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-cr-run-card__section:nth-child(odd) {
+  border-right: 0 !important;
+  border-left: 1px solid rgba(139, 209, 203, .075) !important;
+}
+
+@media (max-width: 680px) {
+  html.vox-user-dark.vox-user-rtl .admin-cr-run-card__section:nth-child(odd) {
+    border-left: 0 !important;
+  }
 }

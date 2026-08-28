@@ -43,11 +43,13 @@ import {
   disconnectAdminTeamChatSocket,
 } from '../../features/admin/team-chat/api/adminTeamChatApi';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
+import { useUserExperience } from '../../system/user-experience';
 import './admin-layout.css';
 
 const dashboardItem = {
   to: '/admin/dashboard',
   label: 'Overview',
+  navLabelAr: 'نظرة',
   icon: Gauge,
   tone: 'dashboard',
 };
@@ -146,6 +148,7 @@ const navigationGroups = [
   {
     key: 'intelligence',
     navLabel: 'AI',
+    navLabelAr: 'الذكاء',
     label: 'Intelligence',
     icon: BrainCircuit,
     items: [
@@ -288,6 +291,7 @@ function AdminNavLink({
 }) {
   const Icon = item.icon;
   const location = useLocation();
+  const { isArabic, t } = useUserExperience();
   const sensitiveReturnState =
     sensitiveAdminRoutes.has(item.to) &&
       !isRouteActive(location.pathname, item.to)
@@ -308,7 +312,7 @@ function AdminNavLink({
       {children || (
         <>
           <Icon size={16} />
-          <span>{item.label}</span>
+          <span>{isArabic && item.navLabelAr ? item.navLabelAr : t(item.label)}</span>
         </>
       )}
     </NavLink>
@@ -319,6 +323,7 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const headerRef = useRef(null);
+  const { isArabic, isDark, t } = useUserExperience();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState('');
@@ -566,7 +571,7 @@ export default function AdminLayout() {
   const profileOpen = openGroup === 'profile';
 
   return (
-    <div className={`admin-shell admin-theme-${tone}`}>
+    <div className={`admin-shell admin-theme-${tone}${isArabic ? ' admin-shell--rtl' : ''}${isDark ? ' admin-shell--dark' : ''}`} dir={isArabic ? 'rtl' : 'ltr'}>
       <div
         className="admin-shell__backdrop"
         aria-hidden="true"
@@ -582,8 +587,8 @@ export default function AdminLayout() {
             }
             aria-label={
               mobileOpen
-                ? 'Close admin navigation'
-                : 'Open admin navigation'
+                ? t('Close admin navigation')
+                : t('Open admin navigation')
             }
             aria-expanded={mobileOpen}
           >
@@ -600,7 +605,7 @@ export default function AdminLayout() {
             onClick={() =>
               navigate('/admin/dashboard')
             }
-            aria-label="Open admin command center"
+            aria-label={t('Open admin command center')}
           >
             <VoxidenceMark size={46} />
 
@@ -611,7 +616,7 @@ export default function AdminLayout() {
 
           <nav
             className="admin-topnav"
-            aria-label="Admin navigation"
+            aria-label={t('Admin navigation')}
           >
             <AdminNavLink
               item={dashboardItem}
@@ -642,7 +647,7 @@ export default function AdminLayout() {
                     aria-expanded={groupOpen}
                   >
                     <GroupIcon size={16} />
-                    <span>{group.navLabel}</span>
+                    <span>{isArabic && group.navLabelAr ? group.navLabelAr : t(group.navLabel)}</span>
 
                     {group.key === 'people' && teamChatUnread > 0 ? (
                       <b className="admin-topnav__group-badge">
@@ -661,9 +666,9 @@ export default function AdminLayout() {
                     role="menu"
                   >
                     <div className="admin-category-menu__head">
-                      <span>Admin category</span>
-                      <strong>{group.label}</strong>
-                      <small>{group.items.length} workspaces</small>
+                      <span>{t('Admin category')}</span>
+                      <strong>{t(group.label)}</strong>
+                      <small>{group.items.length} {t('workspaces')}</small>
                     </div>
 
                     <div className="admin-category-menu__items">
@@ -682,8 +687,8 @@ export default function AdminLayout() {
                             </span>
 
                             <span className="admin-category-menu__copy">
-                              <strong>{item.label}</strong>
-                              <small>Open workspace</small>
+                              <strong>{t(item.label)}</strong>
+                              <small>{t('Open workspace')}</small>
                             </span>
 
                             {item.to === '/admin/team-chat' &&
@@ -713,7 +718,11 @@ export default function AdminLayout() {
               onChange={(event) =>
                 setSearch(event.target.value)
               }
-              placeholder={`Search ${title.toLowerCase()}…`}
+              placeholder={
+                isArabic
+                  ? `ابحث في ${t(title)}…`
+                  : `Search ${title.toLowerCase()}…`
+              }
             />
 
             <kbd>↵</kbd>
@@ -730,8 +739,8 @@ export default function AdminLayout() {
             onFocus={() =>
               preloadAdminRoute(alertItem.to)
             }
-            aria-label="Open alerts"
-            title="Alerts"
+            aria-label={t('Open alerts')}
+            title={t('Alerts')}
           >
             <BellRing size={18} />
           </NavLink>
@@ -747,7 +756,7 @@ export default function AdminLayout() {
                   current === 'profile' ? '' : 'profile',
                 )
               }
-              title="Administrator menu"
+              title={t('Administrator menu')}
               aria-haspopup="menu"
               aria-expanded={profileOpen}
             >
@@ -763,10 +772,10 @@ export default function AdminLayout() {
                 <strong>
                   {user.fullName ||
                     user.name ||
-                    'Administrator'}
+                    t('Administrator')}
                 </strong>
 
-                <small>Administrator</small>
+                <small>{t('Administrator')}</small>
               </span>
 
               <ChevronDown
@@ -792,10 +801,10 @@ export default function AdminLayout() {
                   <strong>
                     {user.fullName ||
                       user.name ||
-                      'Administrator'}
+                      t('Administrator')}
                   </strong>
                   <small>
-                    {user.email || 'Admin account'}
+                    {user.email || t('Admin account')}
                   </small>
                 </div>
               </div>
@@ -805,7 +814,7 @@ export default function AdminLayout() {
                 className="admin-profile-menu__item"
               >
                 <UserRound size={16} />
-                <span>Profile & security</span>
+                <span>{t('Profile & security')}</span>
               </AdminNavLink>
 
               <button
@@ -814,7 +823,7 @@ export default function AdminLayout() {
                 onClick={signOut}
               >
                 <LogOut size={16} />
-                <span>Sign out</span>
+                <span>{t('Sign out')}</span>
               </button>
             </div>
           </div>
@@ -833,7 +842,7 @@ export default function AdminLayout() {
               onChange={(event) =>
                 setSearch(event.target.value)
               }
-              placeholder="Search this workspace…"
+              placeholder={t('Search this workspace…')}
             />
           </form>
 
@@ -843,7 +852,7 @@ export default function AdminLayout() {
                 key={group.label}
                 className="admin-mobile-group"
               >
-                <h3>{group.label}</h3>
+                <h3>{t(group.label)}</h3>
 
                 <div className="admin-mobile-group__items">
                   {group.items.map((item) => {
@@ -860,7 +869,7 @@ export default function AdminLayout() {
                           <Icon size={17} />
                         </span>
 
-                        <span>{item.label}</span>
+                        <span>{t(item.label)}</span>
 
                         {item.to === '/admin/team-chat' &&
                           teamChatUnread > 0 ? (
@@ -889,7 +898,7 @@ export default function AdminLayout() {
               onClick={signOut}
             >
               <LogOut size={16} />
-              <span>Sign out</span>
+              <span>{t('Sign out')}</span>
             </button>
           </div>
         </div>
@@ -901,7 +910,7 @@ export default function AdminLayout() {
           onClick={() =>
             setMobileOpen(false)
           }
-          aria-label="Close navigation"
+          aria-label={t('Close navigation')}
         />
       )}
 
@@ -924,15 +933,15 @@ export default function AdminLayout() {
             </span>
 
             <span className="admin-team-chat-notice__copy">
-              <strong>New team message</strong>
+              <strong>{t('New team message')}</strong>
               <span>
                 {teamChatNotice.senderName}
                 {teamChatNotice.preview
                   ? `: ${teamChatNotice.preview}`
-                  : ' sent you a message.'}
+                  : ` ${t('sent you a message.')}`}
               </span>
               {teamChatUnread > 1 ? (
-                <small>{teamChatUnread} unread messages</small>
+                <small>{teamChatUnread} {t('unread messages')}</small>
               ) : null}
             </span>
           </button>
@@ -941,7 +950,7 @@ export default function AdminLayout() {
             type="button"
             className="admin-team-chat-notice__close"
             onClick={() => setTeamChatNotice(null)}
-            aria-label="Dismiss team chat notification"
+            aria-label={t('Dismiss team chat notification')}
           >
             <X size={15} />
           </button>

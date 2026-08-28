@@ -423,7 +423,7 @@ function DomainModal({ open, mode, domain, busy, onClose, onSave }) {
               <span className="admin-domain-aside-card__icon"><Tag size={18} /></span>
               <div>
                 <small>Keyword coverage</small>
-                <strong>{form.keywords.length.toLocaleString()} configured keywords</strong>
+                <strong>{`${form.keywords.length.toLocaleString()} configured keywords`}</strong>
                 <p>Keywords help collection and domain matching discover relevant evidence.</p>
               </div>
             </div>
@@ -432,7 +432,7 @@ function DomainModal({ open, mode, domain, busy, onClose, onSave }) {
               <div className="admin-domain-aside-meta">
                 <span><small>Created</small><strong>{formatDate(domain?.createdAt)}</strong></span>
                 <span><small>Updated</small><strong>{formatDate(domain?.updatedAt)}</strong></span>
-                <span><small>Idea usage</small><strong>{Number(domain?._count?.ideas || 0).toLocaleString()} ideas</strong></span>
+                <span><small>Idea usage</small><strong>{`${Number(domain?._count?.ideas || 0).toLocaleString()} ideas`}</strong></span>
               </div>
             )}
           </aside>
@@ -714,7 +714,7 @@ export default function AdminDomainsPage() {
           <div>
             <span className="admin-domain-panel__kicker"><Database size={13} /> DOMAIN DIRECTORY</span>
             <h3>Discovery domains</h3>
-            <p>{meta.total.toLocaleString()} matching domains</p>
+            <p>{`${meta.total.toLocaleString()} matching domains`}</p>
           </div>
           <div className="admin-domain-panel__actions">
             <span className="admin-domain-live"><i /> Live configuration</span>
@@ -815,7 +815,7 @@ export default function AdminDomainsPage() {
                     <div className="admin-domain-card__body">
                       <div className="admin-domain-card__head">
                         <div>
-                          <small>Created {formatShortDate(domain.createdAt)}</small>
+                          <small>{`Created ${formatShortDate(domain.createdAt)}`}</small>
                           <h4>{domain.name || 'Unnamed domain'}</h4>
                         </div>
                         <button type="button" className="admin-domain-manage" onClick={() => openEdit(domain)}>
@@ -835,7 +835,7 @@ export default function AdminDomainsPage() {
                               <small>{keyword.language}</small>
                             </span>
                           ))}
-                          {keywords.length > 4 && <em>+{keywords.length - 4} more</em>}
+                          {keywords.length > 4 && <em>{`+${keywords.length - 4} more`}</em>}
                           {keywords.length === 0 && <em>No keywords configured</em>}
                         </div>
                       </div>
@@ -844,7 +844,7 @@ export default function AdminDomainsPage() {
                         <div>
                           <small>Idea usage</small>
                           <strong>{ideas.toLocaleString()}</strong>
-                          <span>generated idea{ideas === 1 ? '' : 's'}</span>
+                          <span>{ideas === 1 ? 'generated idea' : 'generated ideas'}</span>
                         </div>
                         <div>
                           <small>Last updated</small>
@@ -861,10 +861,10 @@ export default function AdminDomainsPage() {
         </div>
 
         <footer className="admin-domain-pagination">
-          <span>Showing {rows.length ? ((meta.page - 1) * meta.limit) + 1 : 0}–{Math.min(meta.page * meta.limit, meta.total)} of {meta.total.toLocaleString()}</span>
+          <span>{`Showing ${rows.length ? ((meta.page - 1) * meta.limit) + 1 : 0}–${Math.min(meta.page * meta.limit, meta.total)} of ${meta.total.toLocaleString()}`}</span>
           <div>
             <button type="button" disabled={page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button>
-            <span>Page {meta.page} of {meta.totalPages}</span>
+            <span>{`Page ${meta.page} of ${meta.totalPages}`}</span>
             <button type="button" disabled={page >= meta.totalPages || loading} onClick={() => setPage((current) => Math.min(meta.totalPages, current + 1))}>Next</button>
           </div>
         </footer>

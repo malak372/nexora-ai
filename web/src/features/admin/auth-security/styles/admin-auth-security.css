@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-auth-page {
     --auth-ink: #294943;
     --auth-text: #526b65;
@@ -1091,52 +1093,100 @@
     fill: #8fc7bf;
 }
 
-.admin-auth-map__pulse {
+.admin-auth-map__source {
+    cursor: help;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+.admin-auth-map__source-halo {
+    fill: rgba(95, 184, 173, .09);
+    stroke: none;
+    animation: admin-auth-map-pulse 2.8s ease-out infinite;
+    transform-origin: center;
+}
+
+.admin-auth-map__source-ring {
+    fill: rgba(255, 255, 255, .84);
+    stroke: rgba(95, 184, 173, .18);
+    stroke-width: 1;
+}
+
+.admin-auth-map__source-dot {
+    fill: #5fb8ad;
+    stroke: rgba(255, 255, 255, .96);
+    stroke-width: 1.4;
+    filter: drop-shadow(0 2px 5px rgba(52, 139, 129, .24));
+    transition: transform .18s ease, filter .18s ease;
+    transform-origin: center;
+}
+
+.admin-auth-map__source:hover .admin-auth-map__source-dot {
+    transform: scale(1.18);
+    filter: drop-shadow(0 3px 7px rgba(52, 139, 129, .34));
+}
+
+.admin-auth-map__source.is-medium .admin-auth-map__source-halo {
+    fill: rgba(229, 180, 106, .12);
+}
+
+.admin-auth-map__source.is-medium .admin-auth-map__source-ring {
+    stroke: rgba(229, 180, 106, .22);
+}
+
+.admin-auth-map__source.is-medium .admin-auth-map__source-dot {
+    fill: #e3b268;
+    filter: drop-shadow(0 2px 5px rgba(207, 151, 63, .27));
+}
+
+.admin-auth-map__source.is-high .admin-auth-map__source-halo,
+.admin-auth-map__source.is-critical .admin-auth-map__source-halo {
+    fill: rgba(233, 139, 160, .13);
+}
+
+.admin-auth-map__source.is-high .admin-auth-map__source-ring,
+.admin-auth-map__source.is-critical .admin-auth-map__source-ring {
+    stroke: rgba(233, 139, 160, .24);
+}
+
+.admin-auth-map__source.is-high .admin-auth-map__source-dot,
+.admin-auth-map__source.is-critical .admin-auth-map__source-dot {
+    fill: #e98ba0;
+    filter: drop-shadow(0 2px 6px rgba(220, 104, 133, .31));
+}
+
+.admin-auth-map__source.is-critical .admin-auth-map__source-halo {
+    animation-duration: 1.65s;
+}
+
+.admin-auth-map__empty {
     position: absolute;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: rgba(87, 185, 173, .10);
+    inset: 0;
+    z-index: 2;
     display: grid;
-    place-items: center;
-    box-shadow: 0 0 0 7px rgba(87, 185, 173, .04);
+    place-content: center;
+    justify-items: center;
+    gap: 5px;
+    color: #91a5a0;
+    pointer-events: none;
 }
 
-.admin-auth-map__pulse i {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #5fb8ad;
-    box-shadow: 0 0 8px rgba(95, 184, 173, .45);
+.admin-auth-map__empty span {
+    font-size: 7px;
+    font-weight: 800;
 }
 
-.admin-auth-map__pulse.is-one {
-    left: 23%;
-    top: 42%;
-}
+@keyframes admin-auth-map-pulse {
+    0% {
+        opacity: .92;
+        transform: scale(.72);
+    }
 
-.admin-auth-map__pulse.is-two {
-    left: 52%;
-    top: 37%;
-    transform: scale(.78);
-}
-
-.admin-auth-map__pulse.is-three {
-    right: 17%;
-    top: 62%;
-    transform: scale(.88);
-}
-
-.admin-auth-map__pulse.is-alert {
-    left: 68%;
-    top: 49%;
-    background: rgba(233, 139, 160, .11);
-    box-shadow: 0 0 0 8px rgba(233, 139, 160, .04);
-}
-
-.admin-auth-map__pulse.is-alert i {
-    background: #e98ba0;
-    box-shadow: 0 0 8px rgba(233, 139, 160, .42);
+    72%,
+    100% {
+        opacity: 0;
+        transform: scale(1.42);
+    }
 }
 
 .admin-auth-risk-summary {
@@ -1914,4 +1964,427 @@
         background: #f6f9f8 !important;
         opacity: .62 !important;
     }
+}
+
+/* Dark mode refinement for authentication security. Scoped so light English is untouched. */
+.admin-shell--dark .admin-auth-page {
+    --auth-ink: #e7f4f1;
+    --auth-text: #c5d8d3;
+    --auth-muted: #8da8a1;
+    --auth-line: rgba(117, 190, 180, .16);
+    --auth-line-strong: rgba(117, 190, 180, .24);
+    --auth-mint-soft: #17352f;
+    --auth-mint-pale: #10251f;
+    --auth-white: #112720;
+    color: #e7f4f1;
+}
+
+.admin-shell--dark .admin-auth-hero,
+.admin-shell--dark .admin-auth-stat,
+.admin-shell--dark .admin-auth-controls,
+.admin-shell--dark .admin-auth-panel {
+    border-color: rgba(119, 188, 179, .16) !important;
+    background: #11251f !important;
+    box-shadow: 0 14px 36px rgba(2, 12, 10, .22) !important;
+}
+
+.admin-shell--dark .admin-auth-hero {
+    background:
+        radial-gradient(circle at 88% 17%, rgba(91, 184, 173, .16), transparent 27%),
+        radial-gradient(circle at 29% 112%, rgba(91, 184, 173, .08), transparent 38%),
+        linear-gradient(115deg, #10231e 0%, #112820 45%, #10261f 72%, #0d211c 100%) !important;
+}
+
+.admin-shell--dark .admin-auth-hero::before {
+    opacity: .46;
+}
+
+.admin-shell--dark .admin-auth-eyebrow,
+.admin-shell--dark .admin-auth-text-link,
+.admin-shell--dark .admin-auth-panel__header>div,
+.admin-shell--dark .admin-auth-security-link {
+    color: #69c6bb !important;
+}
+
+.admin-shell--dark .admin-auth-hero h1,
+.admin-shell--dark .admin-auth-stat__copy strong,
+.admin-shell--dark .admin-auth-panel__header strong,
+.admin-shell--dark .admin-auth-score-ring strong,
+.admin-shell--dark .admin-auth-score-legend span strong,
+.admin-shell--dark .admin-auth-activity-copy strong,
+.admin-shell--dark .admin-auth-risk-summary strong,
+.admin-shell--dark .admin-auth-quick-actions span {
+    color: #edf7f4 !important;
+}
+
+.admin-shell--dark .admin-auth-hero h1 span {
+    color: #6cc9bf !important;
+}
+
+.admin-shell--dark .admin-auth-hero p,
+.admin-shell--dark .admin-auth-stat__copy small,
+.admin-shell--dark .admin-auth-stat__copy span,
+.admin-shell--dark .admin-auth-score-ring span,
+.admin-shell--dark .admin-auth-score-legend span small,
+.admin-shell--dark .admin-auth-activity-copy small,
+.admin-shell--dark .admin-auth-activity-meta small,
+.admin-shell--dark .admin-auth-activity-meta b,
+.admin-shell--dark .admin-auth-activity-footer span,
+.admin-shell--dark .admin-auth-risk-summary small,
+.admin-shell--dark .admin-auth-state,
+.admin-shell--dark .admin-auth-map__empty {
+    color: #9db6b0 !important;
+}
+
+.admin-shell--dark .admin-auth-primary {
+    background: linear-gradient(135deg, #56b8ae, #4aa69d) !important;
+    color: #f8fffd !important;
+    box-shadow: 0 10px 24px rgba(51, 157, 146, .18) !important;
+}
+
+.admin-shell--dark .admin-auth-refresh,
+.admin-shell--dark .admin-auth-filter-button,
+.admin-shell--dark .admin-auth-controls__topline>button,
+.admin-shell--dark .admin-auth-dropdown__trigger,
+.admin-shell--dark .admin-auth-sort__main,
+.admin-shell--dark .admin-auth-sort__direction,
+.admin-shell--dark .admin-auth-date-range,
+.admin-shell--dark .admin-auth-search,
+.admin-shell--dark .admin-auth-icon-button {
+    border-color: rgba(117, 190, 180, .16) !important;
+    background: #163029 !important;
+    color: #b6ccc6 !important;
+    box-shadow: none !important;
+}
+
+.admin-shell--dark .admin-auth-refresh:hover,
+.admin-shell--dark .admin-auth-filter-button:hover,
+.admin-shell--dark .admin-auth-controls__topline>button:hover,
+.admin-shell--dark .admin-auth-icon-button:hover {
+    background: #1a3a32 !important;
+    color: #eaf6f3 !important;
+}
+
+.admin-shell--dark .admin-auth-feedback {
+    border-color: rgba(224, 119, 145, .24) !important;
+    background: #351d26 !important;
+    color: #f0a7b8 !important;
+}
+
+.admin-shell--dark .admin-auth-stat::after {
+    border-color: rgba(98, 194, 182, .07) !important;
+}
+
+.admin-shell--dark .admin-auth-stat.is-rose::after {
+    border-color: rgba(233, 139, 160, .07) !important;
+}
+
+.admin-shell--dark .admin-auth-stat__icon {
+    background: linear-gradient(145deg, #173a32, #1a433a) !important;
+    color: #6bc7bc !important;
+    box-shadow: inset 0 0 0 1px rgba(106, 199, 188, .08) !important;
+}
+
+.admin-shell--dark .admin-auth-stat.is-rose .admin-auth-stat__icon {
+    background: linear-gradient(145deg, #3b2029, #47242f) !important;
+    color: #ec91a7 !important;
+}
+
+.admin-shell--dark .admin-auth-controls__topline small {
+    color: #ec91a7 !important;
+}
+
+.admin-shell--dark .admin-auth-controls__topline strong,
+.admin-shell--dark .admin-auth-dropdown__trigger strong,
+.admin-shell--dark .admin-auth-sort__main strong,
+.admin-shell--dark .admin-auth-date-range input,
+.admin-shell--dark .admin-auth-search input {
+    color: #d7e7e3 !important;
+}
+
+.admin-shell--dark .admin-auth-dropdown__trigger small,
+.admin-shell--dark .admin-auth-sort__main small,
+.admin-shell--dark .admin-auth-date-range small,
+.admin-shell--dark .admin-auth-search input::placeholder {
+    color: #819d96 !important;
+}
+
+.admin-shell--dark .admin-auth-dropdown__menu,
+.admin-shell--dark .admin-auth-sort__menu {
+    border-color: rgba(117, 190, 180, .18) !important;
+    background: #122b24 !important;
+    box-shadow: 0 18px 40px rgba(0, 8, 7, .36) !important;
+}
+
+.admin-shell--dark .admin-auth-dropdown__menu button,
+.admin-shell--dark .admin-auth-sort__menu button {
+    color: #bad0ca !important;
+}
+
+.admin-shell--dark .admin-auth-dropdown__menu button.is-active,
+.admin-shell--dark .admin-auth-dropdown__menu button:hover,
+.admin-shell--dark .admin-auth-sort__menu button.is-active,
+.admin-shell--dark .admin-auth-sort__menu button:hover {
+    background: #1b4037 !important;
+    color: #7bd1c7 !important;
+}
+
+.admin-shell--dark .admin-auth-date-range label+label {
+    border-color: rgba(117, 190, 180, .12) !important;
+}
+
+.admin-shell--dark .admin-auth-clear {
+    border-color: rgba(226, 123, 148, .22) !important;
+    background: #351d26 !important;
+    color: #ec9caf !important;
+}
+
+.admin-shell--dark .admin-auth-panel__header,
+.admin-shell--dark .admin-auth-activity-row,
+.admin-shell--dark .admin-auth-activity-footer,
+.admin-shell--dark .admin-auth-risk-summary,
+.admin-shell--dark .admin-auth-quick-actions button,
+.admin-shell--dark .admin-auth-security-link {
+    border-color: rgba(117, 190, 180, .10) !important;
+}
+
+.admin-shell--dark .admin-auth-score-ring {
+    background: conic-gradient(#67c2b7 0 var(--score), #243b35 var(--score) 360deg) !important;
+    box-shadow: inset 0 0 0 1px rgba(116, 194, 183, .08), 0 10px 30px rgba(1, 12, 10, .20) !important;
+}
+
+.admin-shell--dark .admin-auth-score-ring::before {
+    background: #122a24 !important;
+    box-shadow: inset 0 0 0 1px rgba(117, 190, 180, .10) !important;
+}
+
+.admin-shell--dark .admin-auth-score-legend b {
+    background: #173b33 !important;
+    color: #74cdc2 !important;
+}
+
+.admin-shell--dark .admin-auth-score-legend>div:last-child b {
+    background: #3a2029 !important;
+    color: #ec91a7 !important;
+}
+
+.admin-shell--dark .admin-auth-activity-row:hover {
+    background: rgba(100, 196, 184, .035) !important;
+}
+
+.admin-shell--dark .admin-auth-activity-row:hover .admin-auth-activity-copy strong,
+.admin-shell--dark .admin-auth-quick-actions button:hover {
+    color: #78d0c5 !important;
+}
+
+.admin-shell--dark .admin-auth-activity-footer button {
+    background: #173931 !important;
+    color: #74cdc2 !important;
+    opacity: 1 !important;
+}
+
+.admin-shell--dark .admin-auth-activity-footer button:not(:disabled):hover {
+    background: #1e493f !important;
+    color: #a2e4dc !important;
+}
+
+.admin-shell--dark .admin-auth-activity-footer button:disabled {
+    background: #172a25 !important;
+    color: #647e77 !important;
+    opacity: .58 !important;
+}
+
+.admin-shell--dark .admin-auth-map {
+    background:
+        radial-gradient(circle at 50% 45%, rgba(91, 184, 173, .08), transparent 52%),
+        linear-gradient(#102720, #0f241e) !important;
+}
+
+.admin-shell--dark .admin-auth-map::before {
+    background-image:
+        linear-gradient(rgba(105, 192, 181, .045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(105, 192, 181, .045) 1px, transparent 1px) !important;
+}
+
+.admin-shell--dark .admin-auth-map svg defs circle {
+    fill: #5f9d94 !important;
+}
+
+.admin-shell--dark .admin-auth-map__land {
+    color: #6aa69d !important;
+    opacity: .58 !important;
+}
+
+.admin-shell--dark .admin-auth-map__outline {
+    stroke: rgba(116, 194, 183, .14) !important;
+}
+
+.admin-shell--dark .admin-auth-map__source-ring {
+    fill: rgba(18, 45, 38, .96) !important;
+}
+
+.admin-shell--dark .admin-auth-risk-summary>div+div {
+    border-color: rgba(117, 190, 180, .10) !important;
+}
+
+.admin-shell--dark .admin-auth-quick-actions button>svg:first-child {
+    background: #173a32 !important;
+    color: #69c6bb !important;
+}
+
+.admin-shell--dark .admin-auth-quick-actions button:first-child>svg:first-child {
+    background: #3a2029 !important;
+    color: #eb90a6 !important;
+}
+
+.admin-shell--dark .admin-auth-action-chevron {
+    color: #78958e !important;
+}
+
+.admin-shell--dark .admin-auth-scene-card {
+    border-color: rgba(123, 201, 191, .16) !important;
+    background: linear-gradient(145deg, rgba(22, 51, 44, .98), rgba(16, 39, 33, .96)) !important;
+    color: #68c5ba !important;
+    box-shadow:
+        5px 7px 0 rgba(0, 0, 0, .08),
+        0 13px 24px rgba(0, 8, 7, .24),
+        inset 1px 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+.admin-shell--dark .admin-auth-scene-card::before {
+    border-color: rgba(119, 198, 187, .08) !important;
+}
+
+.admin-shell--dark .admin-auth-scene-grid {
+    opacity: .18;
+}
+
+/* RTL tuning is deliberately limited to dark Arabic. */
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic {
+    direction: rtl;
+    text-align: right;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-hero__content,
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-dropdown__trigger,
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-sort__main,
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-activity-row,
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-quick-actions button {
+    text-align: right !important;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-refresh {
+    right: auto;
+    left: 14px;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-text-link span {
+    margin-left: 0;
+    margin-right: 4px;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-dropdown__menu,
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-sort__menu {
+    left: auto;
+    right: 0;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-sort__main {
+    border-radius: 0 10px 10px 0;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-sort__direction {
+    border-left: 1px solid rgba(117, 190, 180, .16) !important;
+    border-right: 0 !important;
+    border-radius: 10px 0 0 10px;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-date-range label+label {
+    border-left: 0;
+    border-right: 1px solid rgba(117, 190, 180, .12) !important;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-activity-meta {
+    justify-items: start;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-risk-summary>div+div {
+    border-left: 0;
+    border-right: 1px solid rgba(117, 190, 180, .10) !important;
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-action-chevron {
+    transform: rotate(90deg);
+}
+
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-primary>span:last-child,
+.admin-shell--dark.admin-shell--rtl .admin-auth-page--dark-arabic .admin-auth-security-link>span:last-child {
+    display: inline-block;
+    transform: rotate(180deg);
+}
+
+/* Inspector is rendered through a portal, so dark styling is scoped through the html theme class. */
+html.vox-user-dark .admin-auth-modal-backdrop {
+    background: rgba(2, 10, 8, .62) !important;
+}
+
+html.vox-user-dark .admin-auth-inspector {
+    border-color: rgba(117, 190, 180, .18) !important;
+    background: #10251f !important;
+    box-shadow: 0 30px 90px rgba(0, 6, 5, .50) !important;
+}
+
+html.vox-user-dark .admin-auth-inspector__header {
+    border-color: rgba(117, 190, 180, .12) !important;
+    background: linear-gradient(120deg, #122a24, #10251f 72%, #2b1c22) !important;
+}
+
+html.vox-user-dark .admin-auth-inspector__mark {
+    background: #173a32 !important;
+    color: #69c6bb !important;
+}
+
+html.vox-user-dark .admin-auth-inspector__mark.is-failed {
+    background: #3a2029 !important;
+    color: #ec91a7 !important;
+}
+
+html.vox-user-dark .admin-auth-inspector__header h2,
+html.vox-user-dark .admin-auth-inspector__summary strong,
+html.vox-user-dark .admin-auth-message-card h3,
+html.vox-user-dark .admin-auth-inspector__meta strong {
+    color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-auth-inspector__header p,
+html.vox-user-dark .admin-auth-inspector__summary small,
+html.vox-user-dark .admin-auth-inspector__summary p,
+html.vox-user-dark .admin-auth-message-card p,
+html.vox-user-dark .admin-auth-inspector__meta small {
+    color: #98b2ab !important;
+}
+
+html.vox-user-dark .admin-auth-inspector__header small,
+html.vox-user-dark .admin-auth-message-card small,
+html.vox-user-dark .admin-auth-message-card header>span {
+    color: #6bc7bc !important;
+}
+
+html.vox-user-dark .admin-auth-icon-button,
+html.vox-user-dark .admin-auth-inspector__summary article,
+html.vox-user-dark .admin-auth-message-card,
+html.vox-user-dark .admin-auth-inspector__meta article {
+    border-color: rgba(117, 190, 180, .13) !important;
+    background: #142f28 !important;
+}
+
+html.vox-user-dark .admin-auth-inspector__summary article>span {
+    background: #193b33 !important;
+    color: #6bc7bc !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-auth-inspector,
+html.vox-user-dark.vox-user-rtl .admin-auth-modal-layer {
+    direction: rtl;
+    text-align: right;
 }

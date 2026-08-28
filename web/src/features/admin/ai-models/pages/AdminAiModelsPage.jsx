@@ -28,6 +28,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-ai-models.css';
@@ -715,7 +716,7 @@ function ModelEditor({
             <div>
               {!creating && (
                 <span className="admin-model-modal__updated">
-                  Last updated {formatDate(model?.updatedAt)}
+                  {`Last updated ${formatDate(model?.updatedAt)}`}
                 </span>
               )}
             </div>
@@ -749,7 +750,7 @@ function DeleteDialog({ model, busy, onClose, onConfirm }) {
       <section className="admin-model-confirm" role="alertdialog" aria-modal="true" aria-label="Delete AI model">
         <span className="admin-model-confirm__icon"><TriangleAlert size={23} /></span>
         <small>PERMANENT MODEL REMOVAL</small>
-        <h3>Delete {model.displayName || model.modelName}?</h3>
+        <h3>{`Delete ${model.displayName || model.modelName}?`}</h3>
         <p>
           The configuration will be removed from routing. Historical AI logs and generated candidate records
           stay preserved and are detached from this configuration.
@@ -774,6 +775,7 @@ function DeleteDialog({ model, busy, onClose, onConfirm }) {
 }
 
 export default function AdminAiModelsPage() {
+  const { isArabic } = useUserExperience();
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
   const [summary, setSummary] = useState({});
@@ -975,7 +977,17 @@ export default function AdminAiModelsPage() {
       <section className="admin-model-hero">
         <div className="admin-model-hero__content">
           <span className="admin-model-eyebrow"><BrainCircuit size={15} /> MODEL OPERATIONS</span>
-          <h1>AI model <span>registry</span></h1>
+          <h1 data-no-auto-translate="true">
+            {isArabic ? (
+              <>
+                <span>سجلات</span>{' '}نماذج الذكاء الاصطناعي
+              </>
+            ) : (
+              <>
+                AI model <span>registry</span>
+              </>
+            )}
+          </h1>
           <p>Control provider models, routing priority, runtime capabilities and activation from one operational workspace.</p>
 
           <div className="admin-model-hero__actions">
@@ -991,7 +1003,6 @@ export default function AdminAiModelsPage() {
         </div>
 
         <div className="admin-model-hero__scene" aria-hidden="true">
-          <span className="admin-model-scene-grid" />
           <span className="admin-model-scene-orbit admin-model-scene-orbit--outer" />
           <span className="admin-model-scene-orbit admin-model-scene-orbit--middle" />
           <span className="admin-model-scene-orbit admin-model-scene-orbit--inner" />
@@ -1053,7 +1064,7 @@ export default function AdminAiModelsPage() {
           <div>
             <small>MODEL REGISTRY</small>
             <h2>Configured models</h2>
-            <p>{meta.total.toLocaleString()} matching {meta.total === 1 ? 'model' : 'models'}</p>
+            <p>{`${meta.total.toLocaleString()} matching ${meta.total === 1 ? 'model' : 'models'}`}</p>
           </div>
           <span className="admin-model-live"><i /> Runtime registry</span>
         </header>
@@ -1176,7 +1187,7 @@ export default function AdminAiModelsPage() {
                         <i /> {healthLabel(model.healthStatus)}
                       </span>
                       {model.isDefault && <span className="admin-model-default-badge"><Star size={12} /> Default</span>}
-                      <small>{numberValue(model.consecutiveFailures)} consecutive {numberValue(model.consecutiveFailures) === 1 ? 'failure' : 'failures'}</small>
+                      <small>{`${numberValue(model.consecutiveFailures)} consecutive ${numberValue(model.consecutiveFailures) === 1 ? 'failure' : 'failures'}`}</small>
                     </div>
 
                     <div className="admin-model-registry-card__metrics">
@@ -1198,10 +1209,7 @@ export default function AdminAiModelsPage() {
                         <CapabilityChip active={model.supportsTools} icon={Zap} label="Tools" />
                         <CapabilityChip active={model.supportsVision} icon={Eye} label="Vision" />
                       </div>
-                      <small>
-                        {compactNumber(model.maxOutputTokens)} output
-                        {model.contextWindow ? ` · ${compactNumber(model.contextWindow)} context` : ''}
-                      </small>
+                      <small>{`${compactNumber(model.maxOutputTokens)} output${model.contextWindow ? ` · ${compactNumber(model.contextWindow)} context` : ''}`}</small>
                     </div>
                   </div>
                 </article>
@@ -1211,16 +1219,12 @@ export default function AdminAiModelsPage() {
         </div>
 
         <footer className="admin-model-pagination">
-          <span>
-            Showing {rows.length ? (meta.page - 1) * meta.limit + 1 : 0}
-            {'–'}
-            {Math.min(meta.page * meta.limit, meta.total)} of {meta.total}
-          </span>
+          <span>{`Showing ${rows.length ? (meta.page - 1) * meta.limit + 1 : 0}–${Math.min(meta.page * meta.limit, meta.total)} of ${meta.total}`}</span>
           <div>
             <button type="button" disabled={meta.page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
               Previous
             </button>
-            <span>Page {meta.page} of {meta.totalPages}</span>
+            <span>{`Page ${meta.page} of ${meta.totalPages}`}</span>
             <button type="button" disabled={meta.page >= meta.totalPages} onClick={() => setPage((current) => current + 1)}>
               Next
             </button>

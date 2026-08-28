@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-alert-page {
   --alert-ink: #38504b;
   --alert-muted: #667b76;
@@ -2978,6 +2980,7 @@
   line-height: 1.65;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -4210,4 +4213,447 @@
   font-weight: 700 !important;
   line-height: 1.4 !important;
   opacity: 1 !important;
+}
+
+/* --------------------------------------------------------------------------
+   Dark mode refinements for Alerts & Messaging
+   -------------------------------------------------------------------------- */
+html.vox-user-dark .admin-shell .admin-alert-page {
+  --alert-ink: #edf6f2;
+  --alert-heading: #f4fbf8;
+  --alert-muted: #a9bbb5;
+  --alert-soft-muted: #82958f;
+  --alert-teal: #72c9c1;
+  --alert-teal-strong: #86d8d0;
+  --alert-teal-deep: #b2ebe5;
+  --alert-line: rgba(163, 207, 196, .14);
+  --alert-mint: #1b2c28;
+  --alert-rose: #e4a1b0;
+  color: var(--alert-ink) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-hero,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-directory {
+  border-color: rgba(151, 202, 190, .14) !important;
+  background-color: #14211e !important;
+  background-image:
+    radial-gradient(circle at 92% 0%, rgba(111, 201, 193, .08), transparent 29%),
+    linear-gradient(145deg, #182824 0%, #13211e 58%, #171f1d 100%) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .22) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-directory__header,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-toolbar,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-ledger-tabs,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-status-tabs,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-pagination {
+  border-color: rgba(151, 202, 190, .11) !important;
+  background: #121d1b !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-directory__header small,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-live,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-toolbar small,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-pagination,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-pagination>div>span {
+  color: #94aaa3 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-directory__header h2,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-hero h1,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__visual-copy>strong,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-recipient--card strong,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sent-audience strong,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card .admin-alert-created strong {
+  color: #edf6f2 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-hero p,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-directory__header p,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__message,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-recipient--card small,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sent-audience small,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card .admin-alert-created span,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__sender {
+  color: #9eb1ab !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-metric {
+  border-color: rgba(151, 202, 190, .13) !important;
+  background: linear-gradient(145deg, #1a2a26, #16231f) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-metric__icon {
+  border-color: rgba(127, 208, 198, .16) !important;
+  background: rgba(115, 200, 192, .1) !important;
+  color: #83d5cd !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-metric>div small {
+  color: #cfe0db !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-metric>div strong {
+  color: #f0f8f5 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-metric>div span {
+  color: #91a59e !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-ledger-tabs button,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-status-tabs button {
+  color: #99ada6 !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-ledger-tabs button>span,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-status-tabs button>span {
+  background: #1d2d29 !important;
+  color: #b5c8c2 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-ledger-tabs button.is-active,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-status-tabs button.is-active {
+  border-color: rgba(115, 200, 192, .25) !important;
+  background: #1c322d !important;
+  color: #8edbd3 !important;
+  box-shadow: inset 0 0 0 1px rgba(115, 200, 192, .04) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-ledger-tabs button.is-active>span,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-status-tabs button.is-active>span {
+  background: #243b35 !important;
+  color: #d9eeea !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-dropdown__trigger,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__main,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__direction,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-date-range,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-search {
+  border-color: rgba(151, 202, 190, .14) !important;
+  background: #182522 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-dropdown__trigger:hover,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__main:hover,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__direction:hover,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-date-range:hover,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-search:focus-within {
+  border-color: rgba(115, 200, 192, .32) !important;
+  background: #1b2c28 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-dropdown__trigger small,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__main small,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-date-range label small {
+  color: #8fa39d !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-dropdown__trigger strong,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__main strong,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-date-range label,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-search,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-search input,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-date-range input {
+  color: #dcebe7 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-search input::placeholder {
+  color: #738780 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-search button,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-date-range>button {
+  border-color: rgba(151, 202, 190, .12) !important;
+  background: #20312d !important;
+  color: #9bb3ac !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-date-range input[type='date'] {
+  color-scheme: dark;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-dropdown__menu,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__menu {
+  border-color: rgba(151, 202, 190, .16) !important;
+  background: #17231f !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .34) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-dropdown__menu button,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__menu button {
+  color: #bfd0cb !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-dropdown__menu button:hover,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__menu button:hover,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-dropdown__menu button.is-active,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sort__menu button.is-active {
+  background: #20322d !important;
+  color: #8edbd3 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card {
+  border-color: rgba(151, 202, 190, .12) !important;
+  background: #14211e !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card:hover {
+  border-color: rgba(115, 200, 192, .24) !important;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__visual {
+  border-bottom-color: rgba(151, 202, 190, .11) !important;
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--alert-card-accent) 12%, transparent), transparent 38%),
+    linear-gradient(135deg, #1d2d29 0%, #182622 58%, #17231f 100%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__visual .admin-alert-record__icon {
+  border-color: color-mix(in srgb, var(--alert-card-accent) 24%, #2a3d37) !important;
+  background: #20312d !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__visual-copy>small,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__meta-grid>section>small {
+  color: #8da29b !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__visual-copy>span {
+  border: 1px solid rgba(151, 202, 190, .09) !important;
+  background: #22342f !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__body {
+  background: #14211e !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__meta-grid>section {
+  border-color: rgba(151, 202, 190, .09) !important;
+  background: #1a2824 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-recipient--card>span,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-sent-audience>span {
+  background: #21332e !important;
+  color: #8edbd3 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-type-badge,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-channel-badges span {
+  border-color: rgba(151, 202, 190, .13) !important;
+  background: #20312d !important;
+  color: #c8dad4 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card__footer {
+  border-top-color: rgba(151, 202, 190, .1) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card .admin-alert-inspect-button {
+  border-color: rgba(115, 200, 192, .18) !important;
+  background: #20322d !important;
+  color: #8edbd3 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card .admin-alert-inspect-button:hover {
+  border-color: rgba(115, 200, 192, .34) !important;
+  background: #27423a !important;
+  color: #ecfaf7 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card-state {
+  border-color: rgba(151, 202, 190, .14) !important;
+  background: #17231f !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-table-state strong,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card-state strong {
+  color: #dcebe7 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-table-state span,
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-card-state span {
+  color: #91a59e !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-pagination button {
+  border-color: rgba(151, 202, 190, .13) !important;
+  background: #1b2a26 !important;
+  color: #b7cac4 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-pagination button:hover:not(:disabled) {
+  background: #22352f !important;
+  color: #8edbd3 !important;
+}
+
+/* Portalled alert inspector/composer. */
+html.vox-user-dark body .admin-alert-modal-backdrop {
+  background: rgba(3, 8, 7, .76) !important;
+}
+
+html.vox-user-dark body .admin-alert-inspector,
+html.vox-user-dark body .admin-alert-compose {
+  border-color: rgba(151, 202, 190, .16) !important;
+  background: #14211e !important;
+  color: #e8f2ef !important;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .5) !important;
+}
+
+html.vox-user-dark body .admin-alert-inspector__header,
+html.vox-user-dark body .admin-alert-compose__header,
+html.vox-user-dark body .admin-alert-compose__footer {
+  border-color: rgba(151, 202, 190, .11) !important;
+  background: #172520 !important;
+}
+
+html.vox-user-dark body .admin-alert-inspector__header h2,
+html.vox-user-dark body .admin-alert-compose__header h2,
+html.vox-user-dark body .admin-alert-compose-section h3,
+html.vox-user-dark body .admin-alert-message-card h3,
+html.vox-user-dark body .admin-alert-recipient-history h3 {
+  color: #edf6f2 !important;
+}
+
+html.vox-user-dark body .admin-alert-inspector__header p,
+html.vox-user-dark body .admin-alert-inspector small,
+html.vox-user-dark body .admin-alert-compose small,
+html.vox-user-dark body .admin-alert-compose p {
+  color: #91a59e !important;
+}
+
+html.vox-user-dark body .admin-alert-inspector__summary>article,
+html.vox-user-dark body .admin-alert-inspector__meta>article,
+html.vox-user-dark body .admin-alert-message-card,
+html.vox-user-dark body .admin-alert-compose-section,
+html.vox-user-dark body .admin-alert-selected-summary,
+html.vox-user-dark body .admin-alert-selected-chip,
+html.vox-user-dark body .admin-alert-broadcast-note,
+html.vox-user-dark body .admin-alert-broadcast-confirm,
+html.vox-user-dark body .admin-alert-channel,
+html.vox-user-dark body .admin-alert-recipient-history,
+html.vox-user-dark body .admin-alert-user-results {
+  border-color: rgba(151, 202, 190, .12) !important;
+  background: #192823 !important;
+}
+
+html.vox-user-dark body .admin-alert-inspector__summary strong,
+html.vox-user-dark body .admin-alert-inspector__meta strong,
+html.vox-user-dark body .admin-alert-message-card p,
+html.vox-user-dark body .admin-alert-selected-summary strong,
+html.vox-user-dark body .admin-alert-selected-chip strong,
+html.vox-user-dark body .admin-alert-channel__copy strong,
+html.vox-user-dark body .admin-alert-recipient-history strong {
+  color: #dcebe7 !important;
+}
+
+html.vox-user-dark body .admin-alert-icon-button,
+html.vox-user-dark body .admin-alert-selected-summary button,
+html.vox-user-dark body .admin-alert-selected-chip>button,
+html.vox-user-dark body .admin-alert-user-search,
+html.vox-user-dark body .admin-alert-channel__icon,
+html.vox-user-dark body .admin-alert-channel__check {
+  border-color: rgba(151, 202, 190, .13) !important;
+  background: #20312d !important;
+  color: #a9c0b9 !important;
+}
+
+html.vox-user-dark body .admin-alert-scope button {
+  border-color: rgba(151, 202, 190, .13) !important;
+  background: #182622 !important;
+  color: #9fb2ac !important;
+}
+
+html.vox-user-dark body .admin-alert-scope button.is-active,
+html.vox-user-dark body .admin-alert-channel.is-selected {
+  border-color: rgba(115, 200, 192, .26) !important;
+  background: #20362f !important;
+  color: #8edbd3 !important;
+}
+
+html.vox-user-dark body .admin-alert-compose-fields input,
+html.vox-user-dark body .admin-alert-compose-fields textarea,
+html.vox-user-dark body .admin-alert-user-search input {
+  border-color: rgba(151, 202, 190, .14) !important;
+  background: #111b18 !important;
+  color: #e1eeea !important;
+  caret-color: #82d5cd !important;
+}
+
+html.vox-user-dark body .admin-alert-compose-fields input::placeholder,
+html.vox-user-dark body .admin-alert-compose-fields textarea::placeholder,
+html.vox-user-dark body .admin-alert-user-search input::placeholder {
+  color: #72867f !important;
+}
+
+html.vox-user-dark body .admin-alert-compose-fields label>small {
+  background: #14211e !important;
+  color: #7f938c !important;
+}
+
+/* RTL polish for the two-column notification cards. */
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-card__visual,
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-recipient,
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-card__sender,
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-card__footer,
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-created {
+  direction: rtl;
+}
+
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-card__visual-copy,
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-card__message,
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-card__meta-grid>section,
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-directory__header,
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-toolbar {
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-shell .admin-alert-page .admin-alert-card__pattern {
+  right: auto;
+  left: -42px;
+}
+
+/* Arabic-friendly empty date hint while preserving the native date picker. */
+.admin-alert-date-range label>span {
+  position: relative;
+}
+
+html.vox-user-rtl .admin-alert-date-range input.is-empty-arabic-date {
+  color: transparent !important;
+}
+
+html.vox-user-rtl .admin-alert-date-range input.is-empty-arabic-date::-webkit-datetime-edit,
+html.vox-user-rtl .admin-alert-date-range input.is-empty-arabic-date::-webkit-datetime-edit-text,
+html.vox-user-rtl .admin-alert-date-range input.is-empty-arabic-date::-webkit-datetime-edit-month-field,
+html.vox-user-rtl .admin-alert-date-range input.is-empty-arabic-date::-webkit-datetime-edit-day-field,
+html.vox-user-rtl .admin-alert-date-range input.is-empty-arabic-date::-webkit-datetime-edit-year-field {
+  color: transparent !important;
+}
+
+.admin-alert-date-placeholder {
+  position: absolute;
+  inset-inline-start: 0;
+  bottom: 1px;
+  z-index: 1;
+  pointer-events: none;
+  color: #7c8f89;
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+html.vox-user-dark .admin-shell .admin-alert-page .admin-alert-date-placeholder {
+  color: #9bb0a9 !important;
 }

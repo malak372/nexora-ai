@@ -1,6 +1,10 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from 'react';
 import { Languages, Moon, Sun } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import {
+  ADMIN_AI_MODELS_DARK_ARABIC_PHRASES,
+  ADMIN_ARABIC_PHRASES,
+  ADMIN_PUBLICATION_REPORT_DARK_ARABIC_PHRASES,
+} from '../features/admin/shared/i18n/admin-arabic';
 import './user-dark-generated.css';
 import './user-experience.css';
 import './user-dark-final.css';
@@ -672,6 +676,30 @@ const ARABIC_PHRASES = {
   'Shape': 'شكّل',
   'Create an account': 'إنشاء حساب',
   'Command center': 'مركز القيادة',
+  'People': 'الأشخاص',
+  'Data': 'البيانات',
+  'AI': 'الذكاء الاصطناعي',
+  'System': 'النظام',
+  'Intelligence': 'الذكاء الاصطناعي',
+  'Security & system': 'الأمان والنظام',
+  'Data collection': 'جمع البيانات',
+  'Auth security': 'أمان المصادقة',
+  'Admin category': 'فئة الإدارة',
+  'Admin workspace': 'مساحة الإدارة',
+  'Administrator': 'مدير',
+  'Admin account': 'حساب المدير',
+  'Close admin navigation': 'إغلاق تنقل الإدارة',
+  'Open admin navigation': 'فتح تنقل الإدارة',
+  'Open admin command center': 'فتح مركز تحكم الإدارة',
+  'Admin navigation': 'تنقل الإدارة',
+  'Open alerts': 'فتح التنبيهات',
+  'Administrator menu': 'قائمة المدير',
+  'Search this workspace…': 'ابحث في مساحة العمل هذه…',
+  'Close navigation': 'إغلاق التنقل',
+  'New team message': 'رسالة فريق جديدة',
+  'unread messages': 'رسائل غير مقروءة',
+  'sent you a message.': 'أرسل لك رسالة.',
+  'Dismiss team chat notification': 'إغلاق إشعار محادثة الفريق',
   'People & access': 'الأشخاص والصلاحيات',
   'Administrators': 'المشرفون',
   'Team chat': 'محادثة الفريق',
@@ -2112,10 +2140,18 @@ Object.assign(ARABIC_SUPPLEMENTAL_PHRASES, {
 });
 
 function preserveCaseLookup(value) {
-  const exact = ARABIC_SUPPLEMENTAL_PHRASES[value] || ARABIC_PHRASES[value];
+  const exact =
+    ARABIC_SUPPLEMENTAL_PHRASES[value] ||
+    ARABIC_PHRASES[value] ||
+    ADMIN_ARABIC_PHRASES[value];
   if (exact) return exact;
   const normalized = value.trim();
-  return ARABIC_SUPPLEMENTAL_PHRASES[normalized] || ARABIC_PHRASES[normalized] || null;
+  return (
+    ARABIC_SUPPLEMENTAL_PHRASES[normalized] ||
+    ARABIC_PHRASES[normalized] ||
+    ADMIN_ARABIC_PHRASES[normalized] ||
+    null
+  );
 }
 
 // Fallback vocabulary is intentionally UI-oriented. Exact phrase translations
@@ -2777,6 +2813,29 @@ function applyContentPhraseTranslations(value) {
   return translated;
 }
 
+const ARABIC_ADMIN_DATE_TOKENS = Object.freeze({
+  January: 'يناير', Jan: 'يناير',
+  February: 'فبراير', Feb: 'فبراير',
+  March: 'مارس', Mar: 'مارس',
+  April: 'أبريل', Apr: 'أبريل',
+  May: 'مايو',
+  June: 'يونيو', Jun: 'يونيو',
+  July: 'يوليو', Jul: 'يوليو',
+  August: 'أغسطس', Aug: 'أغسطس',
+  September: 'سبتمبر', Sep: 'سبتمبر', Sept: 'سبتمبر',
+  October: 'أكتوبر', Oct: 'أكتوبر',
+  November: 'نوفمبر', Nov: 'نوفمبر',
+  December: 'ديسمبر', Dec: 'ديسمبر',
+  AM: 'ص', PM: 'م',
+});
+
+function translateAdminDateFragment(value) {
+  return String(value || '').replace(
+    /\b(January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sept|Sep|October|Oct|November|Nov|December|Dec|AM|PM)\b/g,
+    (token) => ARABIC_ADMIN_DATE_TOKENS[token] || token,
+  );
+}
+
 function translateFallback(core) {
   if (/^(https?:\/\/|www\.|[\w.+-]+@[\w.-]+\.|#[0-9a-f]{3,8}$)/i.test(core)) return core;
 
@@ -2810,6 +2869,34 @@ export function translateToArabic(value) {
 
   const isolate = (text) => `\u2066${text}\u2069`;
   const dynamicPatterns = [
+    [/^(January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sept|Sep|October|Oct|November|Nov|December|Dec)\b.*$/i, (m) => translateAdminDateFragment(m[0])],
+    [/^(\d[\d,]*)\s+matching\s+domains$/i, (m) => `${m[1]} مجال مطابق`],
+    [/^(\d[\d,]*)\s+configured\s+keywords$/i, (m) => `${m[1]} كلمة مفتاحية مهيأة`],
+    [/^(\d[\d,]*)\s+ideas$/i, (m) => `${m[1]} فكرة`],
+    [/^(\d[\d,]*)\s+generated\s+ideas?$/i, (m) => `${m[1]} فكرة مولّدة`],
+    [/^\+(\d+)\s+more$/i, (m) => `+${m[1]} إضافية`],
+    [/^(\d[\d,]*)\s+matching\s+(?:record|records)$/i, (m) => `${m[1]} سجل مطابق`],
+    [/^(\d[\d,]*)\s+matching\s+(?:record|records)\s+across\s+the\s+current\s+filters\.$/i, (m) => `${m[1]} سجل مطابق ضمن عوامل التصفية الحالية.`],
+    [/^(\d[\d,]*)\s+admin$/i, (m) => `${m[1]} إجراء مشرف`],
+    [/^(\d[\d,]*)\s+system$/i, (m) => `${m[1]} حدث نظام`],
+    [/^(\d[\d,]*)\s+actors$/i, (m) => `${m[1]} منفذ`],
+    [/^(\d[\d,]*)\s+(?:field|fields)\s+changed$/i, (m) => `تم تغيير ${m[1]} حقل`],
+    [/^(\d[\d,]*)\s+changed\s+fields$/i, (m) => `${m[1]} حقل متغير`],
+    [/^(\d[\d,]*)\s+unsaved\s+changes$/i, (m) => `${m[1]} تغييرات غير محفوظة`],
+    [/^(\d[\d,]*)\s+(?:setting|settings)\s+will\s+change\.$/i, (m) => `سيتم تغيير ${m[1]} إعداد`],
+    [/^Minimum\s+allowed\s+value\s+is\s+(.+)\.$/i, (m) => `الحد الأدنى المسموح به هو ${m[1]}.`],
+    [/^(\d[\d,]*)\s+matching\s+(?:source|sources)$/i, (m) => `${m[1]} مصدر مطابق`],
+    [/^(\d[\d,]*)\s+source\s+state\s+synchronized\.$/i, () => 'تمت مزامنة حالة مصدر واحد'],
+    [/^(\d[\d,]*)\s+source\s+states\s+synchronized\.$/i, (m) => `تمت مزامنة حالات ${m[1]} مصادر`],
+    [/^Manage\s+(.+)$/i, (m) => `إدارة ${isolate(m[1])}`],
+    [/^(\d[\d,]*)\s+alerts already read$/i, (m) => `${m[1]} تنبيهًا تمت قراءته`],
+    [/^(\d[\d,]*)\s+recipients$/i, (m) => `${m[1]} مستلمًا`],
+    [/^(\d[\d,]*)\s+selected\s+(?:user|users)$/i, (m) => `${m[1]} مستخدمًا محددًا`],
+    [/^(\d[\d,]*)\s+selected\s+(?:recipient|recipients)$/i, (m) => `${m[1]} مستلمًا محددًا`],
+    [/^Showing\s+(\d+)–(\d+)\s+of\s+(\d+)$/i, (m) => `عرض ${m[1]}–${m[2]} من ${m[3]}`],
+    [/^Page\s+(\d+)\s+of\s+(\d+)$/i, (m) => `الصفحة ${m[1]} من ${m[2]}`],
+    [/^(\d+)\s+deliveries\s+·\s+(\d+)\s+email failures$/i, (m) => `${m[1]} عمليات تسليم · ${m[2]} حالات فشل للبريد الإلكتروني`],
+    [/^Sent by\s+(.+)$/i, (m) => `أُرسل بواسطة ${isolate(m[1])}`],
     [/^(\d+)\s+additional domains available$/i, (m) => `${m[1]} مجالًا إضافيًا متاحًا`],
     [/^(.+?) Regional Identity Diagnostic and Guidance Portal$/i, (m) => `بوابة ${translateFallback(m[1])} لتشخيص الهوية الإقليمية والإرشاد`],
     [/^(.+?) Regional Login Compatibility and Guidance Assistant$/i, (m) => `مساعد ${translateFallback(m[1])} لتوافق تسجيل الدخول الإقليمي والإرشاد`],
@@ -2892,8 +2979,8 @@ export function translateToArabic(value) {
     [/^(\d+)\s+users?$/i, (m) => `${m[1]} مستخدم`],
     [/^(\d+)\s+configured domains?$/i, (m) => `${m[1]} مجال مهيأ`],
     [/^(\d+)\s+failed · (\d+) stopped$/i, (m) => `${m[1]} فشل · ${m[2]} متوقف`],
-    [/^Created\s+(.+)$/i, (m) => `أُنشئت ${translateFallback(m[1])}`],
-    [/^Last updated\s+(.+)$/i, (m) => `آخر تحديث ${translateFallback(m[1])}`],
+    [/^Created\s+(.+)$/i, (m) => `أُنشئت ${translateAdminDateFragment(m[1])}`],
+    [/^Last updated\s+(.+)$/i, (m) => `آخر تحديث ${translateAdminDateFragment(m[1])}`],
     [/^Updated\s+(.+)$/i, (m) => `حُدّث ${translateFallback(m[1])}`],
   ];
 
@@ -3129,10 +3216,6 @@ function translatePageTitle(language) {
   renderedDocumentTitle = next;
 }
 
-function isAdminPath(pathname) {
-  return pathname === '/admin' || pathname.startsWith('/admin/') || pathname === '/admin-invite' || pathname === '/admin-invitation';
-}
-
 function shouldSkipNode(node) {
   const parent = node.parentElement;
   if (!parent) return true;
@@ -3141,6 +3224,80 @@ function shouldSkipNode(node) {
   if (parent.closest('[contenteditable="true"]')) return true;
   const tag = parent.tagName;
   return tag === 'SCRIPT' || tag === 'STYLE' || tag === 'CODE' || tag === 'PRE' || tag === 'TEXTAREA';
+}
+
+const DARK_ARABIC_PUBLICATION_REPORT_SELECTOR =
+  '.admin-publication-reports-page, .admin-report-review-drawer, .admin-publication-reports-toast';
+
+const DARK_ARABIC_AI_MODELS_SELECTOR =
+  '.admin-model-page, .admin-model-modal, .admin-model-confirm';
+
+function isDarkArabicAiModelsElement(element) {
+  return Boolean(
+    element &&
+    document.documentElement.classList.contains('vox-user-dark') &&
+    element.closest(DARK_ARABIC_AI_MODELS_SELECTOR),
+  );
+}
+
+function translateAiModelsDarkArabic(value, element) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  const prefix = value.match(/^\s*/)?.[0] ?? '';
+  const suffix = value.match(/\s*$/)?.[0] ?? '';
+
+  if (trimmed === 'AI model' && element?.closest('.admin-model-hero h1')) {
+    return `${prefix}نماذج الذكاء الاصطناعي${suffix}`;
+  }
+
+  const exact =
+    ADMIN_AI_MODELS_DARK_ARABIC_PHRASES[value] ||
+    ADMIN_AI_MODELS_DARK_ARABIC_PHRASES[trimmed];
+  if (exact) return value === trimmed ? exact : `${prefix}${exact}${suffix}`;
+
+  const isolate = (text) => `\u2066${text}\u2069`;
+  const patterns = [
+    [/^(\d[\d,]*)\s+matching\s+models?$/i, (m) => `${m[1]} نموذج مطابق`],
+    [/^(\d[\d,]*)\s+consecutive\s+failures?$/i, (m) => `${m[1]} حالة فشل متتالية`],
+    [/^(\d[\d,.]*[KMB]?)\s+output(?:\s+·\s+(\d[\d,.]*[KMB]?)\s+context)?$/i, (m) => m[2] ? `${m[1]} إخراج · ${m[2]} سياق` : `${m[1]} إخراج`],
+    [/^Showing\s+(\d+)[–-](\d+)\s+of\s+(\d+)$/i, (m) => `عرض ${m[1]}–${m[2]} من ${m[3]}`],
+    [/^Page\s+(\d+)\s+of\s+(\d+)$/i, (m) => `الصفحة ${m[1]} من ${m[2]}`],
+    [/^Last updated\s+(.+)$/i, (m) => `آخر تحديث ${translateAdminDateFragment(m[1])}`],
+    [/^Manage\s+(.+)$/i, (m) => `إدارة ${isolate(m[1])}`],
+    [/^Delete\s+(.+)\?$/i, (m) => `حذف ${isolate(m[1])}؟`],
+    [/^(.+?)\s+is now the default model\.$/i, (m) => `تم تعيين ${isolate(m[1])} كنموذج افتراضي.`],
+    [/^(.+?)\s+was removed from the model registry\.$/i, (m) => `تمت إزالة ${isolate(m[1])} من سجل النماذج.`],
+  ];
+
+  for (const [pattern, replacer] of patterns) {
+    const match = trimmed.match(pattern);
+    if (match) return `${prefix}${replacer(match)}${suffix}`;
+  }
+
+  return value;
+}
+
+function isDarkArabicPublicationReportElement(element) {
+  return Boolean(
+    element &&
+    document.documentElement.classList.contains('vox-user-dark') &&
+    element.closest(DARK_ARABIC_PUBLICATION_REPORT_SELECTOR),
+  );
+}
+
+function translatePublicationReportDarkArabic(value) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  const exact =
+    ADMIN_PUBLICATION_REPORT_DARK_ARABIC_PHRASES[value] ||
+    ADMIN_PUBLICATION_REPORT_DARK_ARABIC_PHRASES[trimmed];
+
+  if (!exact) return translateToArabic(value);
+  if (value === trimmed) return exact;
+
+  const prefix = value.match(/^\s*/)?.[0] ?? '';
+  const suffix = value.match(/\s*$/)?.[0] ?? '';
+  return `${prefix}${exact}${suffix}`;
 }
 
 function translateDom(language) {
@@ -3167,11 +3324,22 @@ function translateDom(language) {
     }
 
     const source = originalText.get(node) ?? '';
-    const next = language === 'ar' ? translateToArabic(source) : source;
+    const useAiModelsDarkArabic =
+      language === 'ar' && isDarkArabicAiModelsElement(node.parentElement);
+    const usePublicationReportDarkArabic =
+      language === 'ar' && isDarkArabicPublicationReportElement(node.parentElement);
+    const next =
+      language === 'ar'
+        ? useAiModelsDarkArabic
+          ? translateAiModelsDarkArabic(source, node.parentElement)
+          : usePublicationReportDarkArabic
+            ? translatePublicationReportDarkArabic(source)
+            : translateToArabic(source)
+        : source;
     if (current !== next) node.nodeValue = next;
     renderedText.set(node, next);
 
-    if (language === 'ar' && next === source) {
+    if (language === 'ar' && next === source && !useAiModelsDarkArabic) {
       scheduleNaturalArabicTextTranslation(node, source);
     }
   }
@@ -3199,7 +3367,18 @@ function translateDom(language) {
       }
 
       const source = store[attribute];
-      const next = language === 'ar' ? translateToArabic(source) : source;
+      const useAiModelsDarkArabic =
+        language === 'ar' && isDarkArabicAiModelsElement(element);
+      const usePublicationReportDarkArabic =
+        language === 'ar' && isDarkArabicPublicationReportElement(element);
+      const next =
+        language === 'ar'
+          ? useAiModelsDarkArabic
+            ? translateAiModelsDarkArabic(source, element)
+            : usePublicationReportDarkArabic
+              ? translatePublicationReportDarkArabic(source)
+              : translateToArabic(source)
+          : source;
       if (current !== next) element.setAttribute(attribute, next);
       renderedStore[attribute] = next;
     }
@@ -3207,20 +3386,18 @@ function translateDom(language) {
 }
 
 export function UserExperienceLayer() {
-  const location = useLocation();
-  const { language, theme, toggleLanguage, toggleTheme, isArabic, isDark, t } = useUserExperience();
-  const admin = isAdminPath(location.pathname);
+  const {
+    language,
+    theme,
+    toggleLanguage,
+    toggleTheme,
+    isArabic,
+    isDark,
+    t,
+  } = useUserExperience();
 
   useLayoutEffect(() => {
     const html = document.documentElement;
-    if (admin) {
-      html.classList.remove('vox-user-dark', 'vox-user-rtl');
-      html.removeAttribute('data-vox-user-theme');
-      html.lang = 'en';
-      html.dir = 'ltr';
-      translateDom('en');
-      return undefined;
-    }
 
     html.classList.toggle('vox-user-dark', theme === 'dark');
     html.classList.toggle('vox-user-rtl', language === 'ar');
@@ -3229,17 +3406,26 @@ export function UserExperienceLayer() {
     html.dir = language === 'ar' ? 'rtl' : 'ltr';
 
     let translating = false;
+
     const apply = () => {
       if (translating) return;
+
       translating = true;
-      try { translateDom(language); } finally { translating = false; }
+
+      try {
+        translateDom(language);
+      } finally {
+        translating = false;
+      }
     };
 
     apply();
 
     let frame = 0;
+
     const scheduleApply = () => {
       if (frame) return;
+
       frame = window.requestAnimationFrame(() => {
         frame = 0;
         apply();
@@ -3248,6 +3434,7 @@ export function UserExperienceLayer() {
 
     const observer = new MutationObserver(scheduleApply);
     const root = document.body;
+
     if (root) {
       observer.observe(root, {
         subtree: true,
@@ -3258,42 +3445,73 @@ export function UserExperienceLayer() {
       });
     }
 
-    // Some pages update counters/statuses through libraries that reuse DOM
-    // nodes without emitting a useful child-list mutation. A lightweight
-    // Arabic-only sweep closes those gaps and keeps every route consistent.
-    const sweep = language === 'ar' ? window.setInterval(scheduleApply, 700) : 0;
+    const sweep =
+      language === 'ar'
+        ? window.setInterval(scheduleApply, 700)
+        : 0;
+
     window.addEventListener('focus', scheduleApply);
 
     return () => {
       observer.disconnect();
-      if (frame) window.cancelAnimationFrame(frame);
-      if (sweep) window.clearInterval(sweep);
+
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+
+      if (sweep) {
+        window.clearInterval(sweep);
+      }
+
       window.removeEventListener('focus', scheduleApply);
     };
-  }, [admin, language, location.pathname, theme]);
-
-  if (admin) return null;
+  }, [language, theme]);
 
   return (
-    <div className="vox-experience-controls" data-no-auto-translate="true" dir="ltr">
+    <div
+      className="vox-experience-controls"
+      data-no-auto-translate="true"
+      dir="ltr"
+    >
       <button
         type="button"
         className="vox-experience-button vox-experience-button--language"
         onClick={toggleLanguage}
-        aria-label={isArabic ? 'Switch to English' : 'التبديل إلى العربية'}
-        title={isArabic ? 'Switch to English' : 'التبديل إلى العربية'}
+        aria-label={
+          isArabic
+            ? 'Switch to English'
+            : 'التبديل إلى العربية'
+        }
+        title={
+          isArabic
+            ? 'Switch to English'
+            : 'التبديل إلى العربية'
+        }
       >
         <Languages size={16} aria-hidden="true" />
         <span>{isArabic ? 'EN' : 'AR'}</span>
       </button>
+
       <button
         type="button"
         className="vox-experience-button"
         onClick={toggleTheme}
-        aria-label={isDark ? t('Light mode') : t('Dark mode')}
-        title={isDark ? t('Light mode') : t('Dark mode')}
+        aria-label={
+          isDark
+            ? t('Light mode')
+            : t('Dark mode')
+        }
+        title={
+          isDark
+            ? t('Light mode')
+            : t('Dark mode')
+        }
       >
-        {isDark ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+        {isDark ? (
+          <Sun size={17} aria-hidden="true" />
+        ) : (
+          <Moon size={17} aria-hidden="true" />
+        )}
       </button>
     </div>
   );

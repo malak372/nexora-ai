@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-support-page {
   min-width: 0;
   gap: 16px;

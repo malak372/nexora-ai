@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-users-page {
     min-width: 0;
     gap: 16px;
@@ -4508,4 +4510,434 @@ button.admin-users-card-sortbar__item:hover {
     padding: 4px !important;
     justify-content: flex-start !important;
     background: rgba(248, 252, 250, .94) !important;
+}
+
+/* ========================================================================== */
+/* Users page · dark mode                                                     */
+/* Keeps the light composition intact while giving every users-only surface   */
+/* a real dark treatment instead of allowing light cards/illustrations to     */
+/* sit on top of the global dark admin shell.                                 */
+/* ========================================================================== */
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-page {
+    --users-dark-bg: #101a18;
+    --users-dark-surface: #16211f;
+    --users-dark-surface-2: #1a2724;
+    --users-dark-surface-3: #1d2d29;
+    --users-dark-border: rgba(139, 209, 203, .14);
+    --users-dark-border-strong: rgba(139, 209, 203, .23);
+    --users-dark-text: #edf7f3;
+    --users-dark-muted: #9bb0a9;
+    --users-dark-soft: #718a82;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-page>.admin-hero--users {
+    border-color: var(--users-dark-border) !important;
+    background:
+        radial-gradient(circle at 82% 18%, rgba(93, 196, 187, .13), transparent 28%),
+        radial-gradient(circle at 98% 92%, rgba(222, 139, 161, .08), transparent 24%),
+        linear-gradient(112deg, #111c19 0%, #14231f 48%, #132824 100%) !important;
+    box-shadow: 0 22px 55px rgba(0, 0, 0, .24) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-page>.admin-hero--users::after {
+    border-color: rgba(108, 207, 198, .055) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-page>.admin-hero--users .admin-hero__eyebrow {
+    color: #77d3ca !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-page>.admin-hero--users h2 {
+    color: #f1f8f5 !important;
+    text-shadow: 0 2px 18px rgba(0, 0, 0, .18);
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-page>.admin-hero--users p {
+    color: #a2b7b0 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__visual {
+    background:
+        radial-gradient(circle at 56% 50%, rgba(142, 224, 215, .11), transparent 9%),
+        radial-gradient(circle at 62% 53%, rgba(88, 184, 175, .10), transparent 34%),
+        linear-gradient(90deg, rgba(15, 27, 24, .10), rgba(31, 63, 57, .42)) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__visual::before,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__visual::after,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__orbit {
+    border-color: rgba(111, 205, 196, .13) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__visual::after {
+    border-style: dashed !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__directory-card {
+    border-color: rgba(118, 211, 202, .18) !important;
+    background: linear-gradient(145deg, rgba(41, 79, 71, .90), rgba(27, 50, 45, .86)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 20px 38px rgba(0, 0, 0, .20) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__directory-card::before,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__directory-row>i {
+    background: rgba(116, 212, 202, .28) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__directory-row>span {
+    color: #86d8d0 !important;
+    background: rgba(203, 241, 235, .08) !important;
+    box-shadow: inset 0 0 0 1px rgba(132, 216, 207, .12) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__profile {
+    border-color: rgba(202, 240, 234, .14) !important;
+    color: #80d7cf !important;
+    background: linear-gradient(145deg, #23433d, #172925) !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, .26) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__shield {
+    color: #72c9c0 !important;
+    background: rgba(31, 54, 49, .88) !important;
+    box-shadow: inset 0 0 0 1px rgba(120, 207, 198, .15), 0 15px 30px rgba(0, 0, 0, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__platform {
+    border-color: rgba(118, 205, 196, .12) !important;
+    background: rgba(156, 223, 215, .06) !important;
+    box-shadow: inset 0 10px 26px rgba(95, 190, 181, .06) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__node {
+    border-color: rgba(202, 240, 234, .14) !important;
+    color: #78d0c8 !important;
+    background: #213a35 !important;
+    box-shadow: 0 12px 25px rgba(0, 0, 0, .21) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-hero__node--two {
+    color: #e0a0b2 !important;
+    background: #3a2930 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users {
+    border-color: var(--users-dark-border) !important;
+    background: linear-gradient(180deg, #131f1c 0%, #101a18 100%) !important;
+    box-shadow: 0 20px 54px rgba(0, 0, 0, .23) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users>.admin-panel__head {
+    border-color: rgba(137, 205, 197, .10) !important;
+    background: linear-gradient(90deg, #172824 0%, #14201e 58%, #241b1f 100%) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users>.admin-panel__head h3 {
+    color: #eaf5f1 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users>.admin-panel__head p {
+    color: #8fa59e !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-live-chip {
+    border: 1px solid rgba(114, 210, 199, .15) !important;
+    color: #9addd5 !important;
+    background: rgba(77, 163, 153, .10) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users .admin-btn {
+    border-color: rgba(139, 209, 203, .14) !important;
+    color: #c8d8d3 !important;
+    background: rgba(29, 43, 40, .86) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users .admin-btn:hover:not(:disabled) {
+    border-color: rgba(139, 209, 203, .28) !important;
+    color: #8ed8d0 !important;
+    background: rgba(39, 60, 55, .94) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-stat {
+    --user-stat-soft: #182724;
+    --user-stat-soft-2: #15211f;
+    --user-stat-ink: #a8e3dd;
+    border-color: color-mix(in srgb, var(--user-stat-accent) 24%, transparent) !important;
+    background:
+        radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--user-stat-accent) 14%, transparent), transparent 33%),
+        linear-gradient(135deg, var(--user-stat-soft) 0%, var(--user-stat-soft-2) 58%, #111b19 100%) !important;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-stat::before {
+    border-color: color-mix(in srgb, var(--user-stat-accent) 12%, transparent) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-stat__icon,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-stat--premium .admin-user-stat__icon {
+    border-color: color-mix(in srgb, var(--user-stat-accent) 25%, transparent) !important;
+    color: color-mix(in srgb, var(--user-stat-accent) 72%, #effbf8) !important;
+    background: color-mix(in srgb, var(--user-stat-accent) 12%, #182724) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-stat__copy small {
+    color: #b3c9c2 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-stat__copy strong {
+    color: #f1f8f5 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-stat__copy span {
+    color: #718a82 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-filterbar {
+    border-color: rgba(137, 205, 197, .11) !important;
+    background: linear-gradient(90deg, #15231f 0%, #121d1b 50%, #20191c 100%) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-status-filter__trigger,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-modern-sort__trigger,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-modern-sort__direction,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users .admin-searchbox {
+    border-color: rgba(139, 209, 203, .13) !important;
+    color: #d5e5e0 !important;
+    background: rgba(25, 39, 35, .94) !important;
+    box-shadow: none !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-status-filter__trigger small,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-modern-sort__trigger small {
+    color: #829990 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-status-filter__trigger strong,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-modern-sort__trigger strong,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users .admin-searchbox input {
+    color: #e1eeea !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-panel--users .admin-searchbox input::placeholder {
+    color: #6f867e !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-status-filter__menu,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-modern-sort__menu {
+    border-color: rgba(139, 209, 203, .16) !important;
+    background: #192521 !important;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .34) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-status-filter__menu button,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-modern-sort__menu button {
+    color: #b7c9c3 !important;
+    background: transparent !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-status-filter__menu button:hover,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-status-filter__menu button.is-active,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-modern-sort__menu button:hover,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-modern-sort__menu button.is-active {
+    color: #95ddd5 !important;
+    background: rgba(92, 189, 185, .10) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-cards-shell {
+    border-color: rgba(139, 209, 203, .11) !important;
+    background: linear-gradient(180deg, #111c19 0%, #14201e 100%) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .02), 0 14px 34px rgba(0, 0, 0, .14) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-card-sortbar {
+    border-color: rgba(139, 209, 203, .10) !important;
+    background: rgba(27, 42, 38, .82) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-card-sortbar__item {
+    border-color: rgba(139, 209, 203, .09) !important;
+    color: #8fa59e !important;
+    background: rgba(19, 31, 28, .72) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) button.admin-users-card-sortbar__item:hover,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-card-sortbar__item.is-active {
+    border-color: rgba(139, 209, 203, .20) !important;
+    color: #9cddd6 !important;
+    background: rgba(58, 117, 109, .15) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card {
+    border-color: rgba(139, 209, 203, .13) !important;
+    background:
+        radial-gradient(circle at 96% 4%, rgba(89, 190, 181, .08), transparent 28%),
+        linear-gradient(145deg, #182521 0%, #14201e 74%, #171f1d 100%) !important;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .18) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card:hover,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card:focus-within {
+    border-color: rgba(108, 205, 196, .27) !important;
+    box-shadow: 0 20px 42px rgba(0, 0, 0, .25) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__profile {
+    border-color: rgba(139, 209, 203, .09) !important;
+    background: linear-gradient(135deg, rgba(36, 66, 59, .82) 0%, rgba(24, 38, 35, .94) 72%) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__profile-chip {
+    border-color: rgba(139, 209, 203, .14) !important;
+    color: #8dcfc8 !important;
+    background: rgba(25, 47, 42, .86) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__profile .admin-user-identity-cell__avatar,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-identity-cell__avatar {
+    border-color: rgba(139, 209, 203, .16) !important;
+    color: #91d9d2 !important;
+    background: linear-gradient(145deg, #25463f 0%, #192a26 100%) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 8px 18px rgba(0, 0, 0, .17) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__profile .admin-user-identity-cell strong,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-identity-cell strong {
+    color: #edf6f3 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__profile .admin-user-identity-cell small,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-identity-cell small {
+    color: #91a69f !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__detail {
+    border-color: rgba(139, 209, 203, .075) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__detail:nth-child(odd) {
+    border-right-color: rgba(139, 209, 203, .065) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__label {
+    color: #7f978f !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-plan-badge {
+    border-color: rgba(137, 205, 197, .14) !important;
+    color: #b8d9d3 !important;
+    background: rgba(60, 103, 94, .16) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-plan-badge.is-premium {
+    border-color: rgba(226, 172, 190, .19) !important;
+    color: #efb8c7 !important;
+    background: rgba(153, 74, 96, .15) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-credit-cell,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-free-cell,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-type-cell,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-date-cell,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-health-cell>span {
+    border-color: rgba(139, 209, 203, .10) !important;
+    color: #b9cbc5 !important;
+    background: rgba(28, 43, 39, .90) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-health-cell>span.is-positive {
+    border-color: rgba(97, 203, 180, .16) !important;
+    color: #91ddcd !important;
+    background: rgba(50, 139, 120, .12) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-health-cell>span.is-negative {
+    border-color: rgba(224, 143, 165, .18) !important;
+    color: #e5a7b8 !important;
+    background: rgba(151, 70, 93, .13) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__detail--actions .admin-row-actions--compact,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-users-page .admin-row-actions--compact {
+    border-color: rgba(139, 209, 203, .10) !important;
+    background: rgba(22, 35, 32, .92) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__detail--actions .admin-user-action-btn,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__detail--actions .admin-user-action-icon,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__detail--actions .admin-user-more__trigger {
+    border-color: rgba(139, 209, 203, .11) !important;
+    color: #9db1aa !important;
+    background: #1c2926 !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-user-directory-card__detail--actions .admin-user-action-btn.is-primary-action {
+    border-color: rgba(111, 211, 201, .17) !important;
+    color: #9adfd7 !important;
+    background: rgba(62, 146, 136, .14) !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-resource-pagination {
+    border-top-color: rgba(139, 209, 203, .09) !important;
+    color: #8fa49d !important;
+}
+
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-resource-empty,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-resource-loading,
+:is(.admin-shell--dark, html.vox-user-dark .admin-shell) .admin-resource-error {
+    color: #a8bbb5 !important;
+}
+
+/* Portal menu lives outside the admin shell, so it follows the html theme flag. */
+html.vox-user-dark .admin-user-actions-popover {
+    border-color: rgba(139, 209, 203, .16) !important;
+    color: #dbe8e4 !important;
+    background: #17221f !important;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .38) !important;
+}
+
+html.vox-user-dark .admin-user-actions-popover__head {
+    border-color: rgba(139, 209, 203, .10) !important;
+    background: linear-gradient(120deg, #1b2d28, #19231f) !important;
+}
+
+html.vox-user-dark .admin-user-actions-popover__head small,
+html.vox-user-dark .admin-user-actions-popover__body button small {
+    color: #7f958e !important;
+}
+
+html.vox-user-dark .admin-user-actions-popover__head strong,
+html.vox-user-dark .admin-user-actions-popover__body button strong {
+    color: #e7f1ee !important;
+}
+
+html.vox-user-dark .admin-user-actions-popover__body button {
+    color: #b6c9c2 !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark .admin-user-actions-popover__body button:hover {
+    background: rgba(92, 189, 185, .09) !important;
+}
+
+html.vox-user-dark .admin-user-actions-popover__body button.is-danger:hover {
+    background: rgba(160, 73, 96, .12) !important;
+}
+
+/* RTL polish for the localized users directory. */
+.admin-shell--rtl .admin-users-page .admin-user-stat__copy,
+.admin-shell--rtl .admin-users-page .admin-user-directory-card__detail,
+.admin-shell--rtl .admin-users-page .admin-user-directory-card__profile {
+    text-align: right;
+}
+
+.admin-shell--rtl .admin-users-page .admin-user-directory-card__detail {
+    align-items: flex-start;
+}
+
+.admin-shell--rtl .admin-users-page .admin-user-directory-card__profile-chip {
+    left: auto;
+    right: 18px;
 }

@@ -26,6 +26,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-alerts.css';
@@ -1045,6 +1046,7 @@ function communicationStatus(communication) {
 }
 
 export default function AdminAlertsPage() {
+  const { isArabic } = useUserExperience();
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
   const [summary, setSummary] = useState({});
@@ -1444,8 +1446,10 @@ export default function AdminAlertsPage() {
                 <small>From</small>
                 <input
                   type="date"
+                  className={isArabic && !fromDate ? 'is-empty-arabic-date' : undefined}
                   value={fromDate}
                   max={toDate || undefined}
+                  aria-label={isArabic ? 'من تاريخ' : 'From date'}
                   onChange={(event) => {
                     const value = event.target.value;
                     setFromDate(value);
@@ -1454,6 +1458,9 @@ export default function AdminAlertsPage() {
                     setSentPage(1);
                   }}
                 />
+                {isArabic && !fromDate && (
+                  <em className="admin-alert-date-placeholder" aria-hidden="true">يوم/شهر/سنة</em>
+                )}
               </span>
             </label>
 
@@ -1463,8 +1470,10 @@ export default function AdminAlertsPage() {
                 <small>To</small>
                 <input
                   type="date"
+                  className={isArabic && !toDate ? 'is-empty-arabic-date' : undefined}
                   value={toDate}
                   min={fromDate || undefined}
+                  aria-label={isArabic ? 'إلى تاريخ' : 'To date'}
                   onChange={(event) => {
                     const value = event.target.value;
                     setToDate(value);
@@ -1473,6 +1482,9 @@ export default function AdminAlertsPage() {
                     setSentPage(1);
                   }}
                 />
+                {isArabic && !toDate && (
+                  <em className="admin-alert-date-placeholder" aria-hidden="true">يوم/شهر/سنة</em>
+                )}
               </span>
             </label>
 

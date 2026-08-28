@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-ideas-page {
     gap: 16px
 }
@@ -3460,6 +3462,14 @@
     white-space: nowrap;
 }
 
+.admin-idea-card__meta-grid>div:first-child .admin-idea-chip {
+    width: fit-content;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .admin-idea-chip--soft {
     background: #f2f5f3;
 }
@@ -4292,5 +4302,557 @@
     .admin-ideas-float-card,
     .admin-ideas-visual-stage__glow {
         animation: none !important;
+    }
+}
+
+html.vox-user-dark .admin-main .admin-ideas-page {
+    --ideas-ink: #edf7f4;
+    --ideas-body: #c0d3cd;
+    --ideas-muted: #93aaa3;
+    --ideas-teal: #63c9c0;
+    --ideas-teal-deep: #82d9d1;
+    --ideas-mint: #68d2c8;
+    --ideas-mint-soft: #16332e;
+    --ideas-mint-wash: #10231f;
+    --ideas-rose: #e39bad;
+    --ideas-rose-soft: #3b2028;
+    --ideas-sage: #a2bd94;
+    --ideas-sage-soft: #273323;
+    --ideas-border: rgba(126, 202, 193, .18);
+    color: var(--ideas-body) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-hero {
+    border-color: rgba(126, 202, 193, .18) !important;
+    background:
+        radial-gradient(circle at 78% 43%, rgba(82, 188, 178, .14), transparent 25%),
+        radial-gradient(circle at 94% 0%, rgba(54, 112, 103, .18), transparent 31%),
+        radial-gradient(circle at 4% 96%, rgba(151, 83, 101, .10), transparent 31%),
+        linear-gradient(116deg, #12201d 0%, #101b19 46%, #142723 100%) !important;
+    box-shadow: 0 24px 58px rgba(0, 0, 0, .27), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-hero::before {
+    background:
+        linear-gradient(90deg, transparent 0 48%, rgba(151, 211, 202, .12) 48.2% 48.4%, transparent 48.6%),
+        radial-gradient(circle at 79% 45%, transparent 0 96px, rgba(92, 189, 185, .10) 97px 98px, transparent 99px 143px, rgba(92, 189, 185, .065) 144px 145px, transparent 146px) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-hero::after {
+    border-color: rgba(120, 208, 200, .075) !important;
+    box-shadow: 0 0 0 70px rgba(92, 189, 185, .018), 0 0 0 140px rgba(92, 189, 185, .012) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-hero h2,
+html.vox-user-dark .admin-main .admin-ideas-workspace__head h3,
+html.vox-user-dark .admin-main .admin-ideas-metric strong,
+html.vox-user-dark .admin-main .admin-idea-card__title-wrap h4,
+html.vox-user-dark .admin-main .admin-idea-card__owner strong {
+    color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-hero p,
+html.vox-user-dark .admin-main .admin-ideas-workspace__head p,
+html.vox-user-dark .admin-main .admin-ideas-metric small,
+html.vox-user-dark .admin-main .admin-ideas-metric div>span,
+html.vox-user-dark .admin-main .admin-idea-card__title-wrap small,
+html.vox-user-dark .admin-main .admin-idea-card__owner label,
+html.vox-user-dark .admin-main .admin-idea-card__owner small,
+html.vox-user-dark .admin-main .admin-idea-card__meta-grid>div>span,
+html.vox-user-dark .admin-main .admin-idea-card__footer>span {
+    color: #9fb5ae !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-hero .admin-hero__eyebrow,
+html.vox-user-dark .admin-main .admin-ideas-workspace__kicker {
+    color: #82d9d1 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-hero__chips span {
+    border-color: rgba(126, 202, 193, .20) !important;
+    background: rgba(20, 39, 35, .84) !important;
+    color: #d3e5df !important;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .12), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-float-card {
+    border-color: rgba(126, 202, 193, .18) !important;
+    background: rgba(18, 35, 31, .88) !important;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-float-card>span {
+    color: #83d9d1 !important;
+    background: #193a34 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-float-card--locked>span {
+    color: #f0adbd !important;
+    background: #3b222a !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-float-card--unlocked>span {
+    color: #b8cfaa !important;
+    background: #293725 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-float-card small {
+    color: #8fa8a1 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-float-card strong {
+    color: #e9f5f1 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-orbit__core,
+html.vox-user-dark .admin-main .admin-ideas-orbit>div {
+    border-color: rgba(142, 215, 206, .24) !important;
+    background: linear-gradient(145deg, #1b342f, #10231f) !important;
+    color: #84dbd2 !important;
+    box-shadow: 0 20px 42px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .04) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-orbit__ring,
+html.vox-user-dark .admin-main .admin-ideas-orbit__track {
+    border-color: rgba(126, 202, 193, .15) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-stage-base {
+    border-color: rgba(126, 202, 193, .16) !important;
+    background: radial-gradient(ellipse, rgba(74, 178, 168, .17), rgba(24, 52, 46, .56) 48%, rgba(14, 27, 24, .12) 70%) !important;
+    box-shadow: 0 18px 32px rgba(0, 0, 0, .18), inset 0 0 18px rgba(92, 189, 185, .06) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-stage-base::before,
+html.vox-user-dark .admin-main .admin-ideas-stage-base::after {
+    border-color: rgba(126, 202, 193, .14) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-stage-base::after {
+    background: rgba(31, 67, 59, .36) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-metric {
+    border-color: rgba(126, 202, 193, .17) !important;
+    background: linear-gradient(145deg, rgba(23, 41, 37, .98), rgba(15, 28, 25, .98)) !important;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-metric:hover {
+    border-color: rgba(126, 202, 193, .30) !important;
+    background: linear-gradient(145deg, #1a312c, #12231f) !important;
+    box-shadow: 0 22px 44px rgba(0, 0, 0, .25) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-metric__icon {
+    color: #82d9d1 !important;
+    background: #183a34 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-metric--rose .admin-ideas-metric__icon {
+    color: #efadbd !important;
+    background: #3a222a !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-metric--sage .admin-ideas-metric__icon {
+    color: #b8cea9 !important;
+    background: #293625 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-workspace {
+    border-color: rgba(126, 202, 193, .16) !important;
+    background: #101c19 !important;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-workspace__head,
+html.vox-user-dark .admin-main .admin-ideas-controls,
+html.vox-user-dark .admin-main .admin-idea-card__meta-grid,
+html.vox-user-dark .admin-main .admin-idea-card__footer {
+    border-color: rgba(126, 202, 193, .12) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-controls {
+    background: linear-gradient(90deg, rgba(18, 35, 31, .96), rgba(15, 28, 25, .98)) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-filters button {
+    color: #a7bbb5 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-filters button:hover {
+    background: rgba(92, 189, 185, .10) !important;
+    color: #dff1ec !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-filters button.is-active {
+    border-color: rgba(126, 202, 193, .28) !important;
+    background: linear-gradient(145deg, #1b4039, #17332e) !important;
+    color: #92dfd7 !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025), 0 6px 16px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-search,
+html.vox-user-dark .admin-main .admin-ideas-sort-picker__trigger,
+html.vox-user-dark .admin-main .admin-ideas-sort-picker__direction {
+    border-color: rgba(126, 202, 193, .20) !important;
+    background: #0d1916 !important;
+    color: #c8ddd7 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-search input,
+html.vox-user-dark .admin-main .admin-ideas-sort-picker__trigger strong {
+    color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-search input::placeholder,
+html.vox-user-dark .admin-main .admin-ideas-sort-picker__trigger small {
+    color: #789089 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-search button {
+    background: #172824 !important;
+    color: #9eb6af !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-sort-picker__menu {
+    border-color: rgba(126, 202, 193, .20) !important;
+    background: rgba(16, 29, 26, .985) !important;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .38) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-sort-picker__menu button {
+    color: #a9bdb7 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-sort-picker__menu button:hover,
+html.vox-user-dark .admin-main .admin-ideas-sort-picker__menu button.is-active {
+    background: rgba(92, 189, 185, .12) !important;
+    color: #e8f5f1 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-card-section {
+    background: linear-gradient(180deg, rgba(14, 27, 24, .92), rgba(12, 23, 20, .98)) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-column-bar {
+    border-color: rgba(126, 202, 193, .14) !important;
+    background: rgba(21, 37, 33, .96) !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-column-bar__item {
+    border-color: rgba(126, 202, 193, .10) !important;
+    color: #9eb2ac !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-column-bar__item:hover,
+html.vox-user-dark .admin-main .admin-ideas-column-bar__item.is-active {
+    background: rgba(92, 189, 185, .08) !important;
+    color: #8fddd5 !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card {
+    border-color: rgba(126, 202, 193, .14) !important;
+    background: #13211e !important;
+    color: #c2d6d0 !important;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card:hover,
+html.vox-user-dark .admin-main .admin-idea-card:focus-visible {
+    border-color: rgba(126, 202, 193, .28) !important;
+    box-shadow: 0 20px 42px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card--mint .admin-idea-card__hero {
+    color: #78cfc7 !important;
+    background: linear-gradient(105deg, #17342f 0%, #132723 58%, #183c35 100%) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card--sage .admin-idea-card__hero {
+    color: #a7bd98 !important;
+    background: linear-gradient(105deg, #283526 0%, #1d2920 58%, #303d2b 100%) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card--teal .admin-idea-card__hero {
+    color: #82d2cd !important;
+    background: linear-gradient(105deg, #173333 0%, #132526 58%, #173b39 100%) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card--rose .admin-idea-card__hero {
+    color: #e1a0b0 !important;
+    background: linear-gradient(105deg, #36242a 0%, #291d21 58%, #3b252d 100%) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card__mark,
+html.vox-user-dark .admin-main .admin-idea-card__owner-avatar {
+    border-color: rgba(255, 255, 255, .08) !important;
+    background: rgba(11, 24, 21, .52) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card__owner-avatar {
+    color: #8bdcd4 !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card__meta-grid>div {
+    border-color: rgba(126, 202, 193, .10) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-chip--soft {
+    background: #1a2b27 !important;
+    color: #c2d4cf !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-chip--success {
+    background: #173a33 !important;
+    color: #8ddbd1 !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-chip--danger {
+    background: #3a222a !important;
+    color: #eea9ba !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card__date {
+    color: #b9cec8 !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card__footer {
+    background: linear-gradient(180deg, #13211e, #101c19) !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card .admin-idea-open-btn,
+html.vox-user-dark .admin-main .admin-idea-card .admin-idea-insights-btn {
+    border-color: rgba(126, 202, 193, .18) !important;
+    background: #172b27 !important;
+    color: #89d8d0 !important;
+}
+
+html.vox-user-dark .admin-main .admin-idea-card .admin-idea-open-btn:hover,
+html.vox-user-dark .admin-main .admin-idea-card .admin-idea-insights-btn:hover {
+    border-color: rgba(126, 202, 193, .34) !important;
+    background: #214039 !important;
+    color: #eef9f6 !important;
+}
+
+html.vox-user-dark .admin-main .admin-ideas-pagination,
+html.vox-user-dark .admin-main .admin-ideas-empty,
+html.vox-user-dark .admin-main .admin-ideas-inline-loader {
+    color: #9eb3ac !important;
+}
+
+html.vox-user-dark .admin-idea-drawer-backdrop,
+html.vox-user-dark .admin-idea-confirm-layer {
+    background: rgba(2, 9, 7, .76) !important;
+    backdrop-filter: blur(7px);
+    color-scheme: dark;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer {
+    border-color: rgba(126, 202, 193, .20) !important;
+    background:
+        radial-gradient(circle at 90% 0, rgba(131, 73, 90, .12), transparent 25%),
+        radial-gradient(circle at 5% 5%, rgba(60, 132, 119, .15), transparent 25%),
+        #101d1a !important;
+    color: #edf7f4 !important;
+    box-shadow: -28px 0 76px rgba(0, 0, 0, .48) !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__topbar {
+    border-color: rgba(126, 202, 193, .15) !important;
+    background: rgba(15, 29, 26, .92) !important;
+    color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__topbar h3,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__hero-copy h4,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__owner strong,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-detail-block h4,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__quick-grid strong,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-detail-block dd {
+    color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__topbar span,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__hero-copy>small,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__owner small,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__owner p,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__quick-grid small,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-detail-block p,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-detail-block li,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-detail-block dt {
+    color: #9fb5ae !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__topbar button,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__mark,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__owner>span,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__quick-grid article,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-detail-block {
+    border-color: rgba(126, 202, 193, .15) !important;
+    background: #152622 !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__hero {
+    border-color: rgba(126, 202, 193, .14) !important;
+    background: linear-gradient(130deg, #17332d, #121f1c 72%) !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__chips span,
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-tags span {
+    border-color: rgba(126, 202, 193, .14) !important;
+    background: #1b302b !important;
+    color: #c8ded8 !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__chips span.is-success {
+    background: #173a33 !important;
+    color: #8edbd1 !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-modal__chips span.is-danger {
+    background: #3a222a !important;
+    color: #edacbb !important;
+}
+
+html.vox-user-dark .admin-idea-detail-drawer .admin-idea-moderation-strip {
+    border-color: rgba(227, 160, 177, .22) !important;
+    background: #2d1e23 !important;
+}
+
+html.vox-user-dark .admin-idea-confirm {
+    border-color: rgba(126, 202, 193, .18) !important;
+    background: linear-gradient(155deg, #172824, #101d1a 72%) !important;
+    color: #edf7f4 !important;
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .56) !important;
+}
+
+html.vox-user-dark .admin-idea-confirm h3,
+html.vox-user-dark .admin-idea-confirm strong,
+html.vox-user-dark .admin-idea-confirm__field>span {
+    color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-idea-confirm__lead,
+html.vox-user-dark .admin-idea-confirm__notify span,
+html.vox-user-dark .admin-idea-confirm__field small {
+    color: #9fb5ae !important;
+}
+
+html.vox-user-dark .admin-idea-confirm__notify {
+    border-color: rgba(126, 202, 193, .15) !important;
+    background: #152722 !important;
+}
+
+html.vox-user-dark .admin-idea-confirm__close,
+html.vox-user-dark .admin-idea-confirm__actions .is-secondary {
+    border-color: rgba(126, 202, 193, .16) !important;
+    background: #152722 !important;
+    color: #c5d9d3 !important;
+}
+
+html.vox-user-dark .admin-idea-confirm__field textarea {
+    border-color: rgba(126, 202, 193, .22) !important;
+    background: #0c1714 !important;
+    color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-idea-confirm__field textarea::placeholder {
+    color: #718780 !important;
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-hero__eyebrow,
+html.vox-user-rtl .admin-ideas-page .admin-ideas-workspace__kicker,
+html.vox-user-rtl .admin-ideas-page .admin-ideas-column-bar__item,
+html.vox-user-rtl .admin-ideas-page .admin-idea-card__owner label,
+html.vox-user-rtl .admin-ideas-page .admin-idea-card__meta-grid>div>span,
+html.vox-user-rtl .admin-ideas-page .admin-idea-card__footer>span,
+html.vox-user-rtl .admin-idea-detail-drawer .admin-idea-modal__topbar span,
+html.vox-user-rtl .admin-idea-confirm__eyebrow {
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-ideas-sort-picker__trigger,
+html.vox-user-rtl .admin-ideas-page .admin-ideas-sort-picker__menu button {
+    text-align: right !important;
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-ideas-sort-picker__menu {
+    right: 0;
+    left: auto;
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-idea-card__hero::after {
+    right: auto;
+    left: 16px;
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-idea-card__meta-grid>div {
+    border-right: 0;
+    border-left: 1px solid rgba(47, 119, 116, .065);
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-idea-card__meta-grid>div:last-child {
+    border-left: 0;
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-ideas-column-bar__item {
+    border-right: 0;
+    border-left: 1px solid rgba(47, 119, 116, .065);
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-ideas-column-bar__item:last-child {
+    border-left: 0;
+}
+
+html.vox-user-rtl .admin-ideas-page .admin-ideas-search input {
+    direction: auto !important;
+    text-align: start !important;
+}
+
+html.vox-user-rtl .admin-idea-drawer-backdrop {
+    justify-content: flex-start;
+    direction: rtl;
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-idea-detail-drawer {
+    border-left: 0;
+    border-right: 1px solid rgba(63, 143, 135, .11);
+    box-shadow: 26px 0 70px rgba(35, 66, 58, .16);
+    animation-name: adminIdeaDrawerInRtl;
+}
+
+html.vox-user-rtl .admin-idea-detail-drawer :where(h3, h4, p, small, strong, label, li, dt, dd) {
+    text-align: start;
+    unicode-bidi: plaintext;
+}
+
+html.vox-user-rtl .admin-idea-confirm-layer,
+html.vox-user-rtl .admin-idea-confirm {
+    direction: rtl;
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-idea-confirm :where(h3, p, span, label, small, strong) {
+    text-align: start;
+}
+
+html.vox-user-rtl .admin-idea-confirm textarea {
+    direction: auto;
+    text-align: start;
+}
+
+@keyframes adminIdeaDrawerInRtl {
+    from {
+        transform: translateX(-42px);
+        opacity: .4;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
     }
 }

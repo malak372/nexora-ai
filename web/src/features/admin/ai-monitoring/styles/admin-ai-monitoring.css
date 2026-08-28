@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-ai-monitor-page {
   --aim-teal: #2f7774;
   --aim-teal-2: #5cbdb9;
@@ -5173,4 +5175,621 @@
     width: 252px;
     margin-left: -126px;
   }
+}
+
+html.vox-user-dark .admin-ai-monitor-page,
+.admin-shell--dark .admin-ai-monitor-page {
+  --aim-dark-bg: #0d1513;
+  --aim-dark-surface: #121d1a;
+  --aim-dark-surface-2: #16231f;
+  --aim-dark-surface-3: #1a2925;
+  --aim-dark-line: rgba(133, 205, 194, .14);
+  --aim-dark-line-strong: rgba(133, 205, 194, .22);
+  --aim-dark-text: #edf5f2;
+  --aim-dark-muted: #9cafaa;
+  --aim-dark-soft: #758983;
+  --aim-dark-accent: #71c9c1;
+  --aim-dark-pink: #ee97ab;
+  color: var(--aim-dark-text) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero {
+  border-color: var(--aim-dark-line) !important;
+  background:
+    radial-gradient(circle at 14% 8%, rgba(91, 188, 179, .09), transparent 27%),
+    radial-gradient(circle at 92% 90%, rgba(89, 167, 158, .06), transparent 25%),
+    linear-gradient(135deg, #101b18 0%, #0d1715 56%, #11201c 100%) !important;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-eyebrow,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-eyebrow,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-panel__kicker,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-panel__kicker {
+  color: #79d2ca !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero h1,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero h1,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero h1 span,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero h1 span {
+  color: #f1f8f6 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero h1 span,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero h1 span {
+  color: #61beb6 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero p,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-hero p {
+  color: #a7b8b3 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-live,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-live,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-secondary,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-secondary {
+  color: #c2d2cd !important;
+  border-color: var(--aim-dark-line) !important;
+  background: rgba(21, 34, 30, .88) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-overview-secondary:hover,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-overview-secondary:hover {
+  color: #e9f7f4 !important;
+  border-color: rgba(113, 201, 193, .30) !important;
+  background: #1b2d28 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric {
+  color: var(--aim-dark-text) !important;
+  border-color: var(--aim-dark-line) !important;
+  background: linear-gradient(145deg, #15221f, #111b19) !important;
+  box-shadow: 0 13px 32px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-primary,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-primary {
+  background: linear-gradient(145deg, #162823, #111d1a) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-failed,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-failed {
+  background: linear-gradient(145deg, #241a1d, #171719) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-latency,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-latency {
+  background: linear-gradient(145deg, #211f19, #151a18) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric__icon,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric__icon {
+  color: #73d0c7 !important;
+  border-color: rgba(113, 201, 193, .18) !important;
+  background: #1a302b !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-failed .admin-ai-monitor-metric__icon,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-failed .admin-ai-monitor-metric__icon {
+  color: #f09aad !important;
+  border-color: rgba(240, 154, 173, .19) !important;
+  background: #302026 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-latency .admin-ai-monitor-metric__icon,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric.is-latency .admin-ai-monitor-metric__icon {
+  color: #d1be8b !important;
+  border-color: rgba(209, 190, 139, .18) !important;
+  background: #2a281f !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric__copy small,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric__copy small {
+  color: #a8bbb5 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric__copy strong,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric__copy strong {
+  color: #edf6f3 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric__copy span,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-metrics--overview .admin-ai-monitor-metric__copy span {
+  color: #8ea39d !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-panel,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-panel {
+  border-color: var(--aim-dark-line) !important;
+  background:
+    radial-gradient(circle at 97% 0%, rgba(238, 151, 171, .035), transparent 18%),
+    linear-gradient(180deg, #121d1a, #101916) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .22) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-panel__head,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-panel__head {
+  border-bottom-color: rgba(133, 205, 194, .09) !important;
+  background: rgba(14, 24, 21, .72) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-panel__head h3,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-panel__head h3 {
+  color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-panel__head p,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-panel__head p {
+  color: #91a59f !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-panel__scope,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-panel__scope,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-live,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-live {
+  color: #bfd0cb !important;
+  border-color: var(--aim-dark-line) !important;
+  background: #17231f !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-signal-strip,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-signal-strip {
+  border-color: rgba(133, 205, 194, .10) !important;
+  background: linear-gradient(90deg, #14211e, #171d1c) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-signal-strip>span,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-signal-strip>span {
+  color: #a5b7b1 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-signal-strip strong,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-signal-strip strong {
+  color: #e9f4f1 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button {
+  color: #9fb1ab !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button:hover,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button.is-active,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button:hover,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button.is-active {
+  color: #8bd7d0 !important;
+  border-color: rgba(113, 201, 193, .19) !important;
+  background: #1a2b27 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button em,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button em {
+  color: #aec0ba !important;
+  background: rgba(113, 201, 193, .09) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-picker__trigger,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-date,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-search,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-sort__direction,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-picker__trigger,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-date,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-search,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-sort__direction {
+  color: #dce8e4 !important;
+  border-color: var(--aim-dark-line) !important;
+  background: #151f1d !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-picker__trigger:hover,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-sort__direction:hover,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-picker__trigger:hover,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-sort__direction:hover {
+  border-color: rgba(113, 201, 193, .28) !important;
+  background: #1a2925 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-picker__copy small,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-date label small,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-picker__copy small,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-date label small {
+  color: #879b95 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-picker__copy strong,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-date input,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-search input,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-picker__copy strong,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-date input,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-search input {
+  color: #e4eeeb !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-search input::placeholder,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-search input::placeholder {
+  color: #71847e !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-picker__menu,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-picker__menu {
+  color: #e5efec !important;
+  border-color: var(--aim-dark-line) !important;
+  background: #17221f !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .32) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-picker__menu button,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-picker__menu button {
+  color: #becfc9 !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-picker__menu button:hover,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-picker__menu button.is-active,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-picker__menu button:hover,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-picker__menu button.is-active {
+  color: #8bd8d0 !important;
+  background: #1d302b !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-card-shell,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-card-shell,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-pagination,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-pagination {
+  color: #9eb1ab !important;
+  border-color: rgba(133, 205, 194, .09) !important;
+  background: #0f1816 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card {
+  color: #dfeae7 !important;
+  border-color: var(--aim-dark-line) !important;
+  background: #141f1c !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .19) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card:hover,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card:hover {
+  border-color: rgba(113, 201, 193, .22) !important;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, .25) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__body,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__body {
+  background: #141f1c !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__visual,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__visual {
+  background:
+    radial-gradient(circle at 87% 16%, rgba(113, 201, 193, .08), transparent 24%),
+    linear-gradient(110deg, #18302a, #13241f) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card.is-failed .admin-ai-monitor-run-card__visual,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card.is-failed .admin-ai-monitor-run-card__visual {
+  background:
+    radial-gradient(circle at 87% 16%, rgba(238, 151, 171, .08), transparent 24%),
+    linear-gradient(110deg, #271d20, #1c181a) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__icon,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__icon {
+  color: #78d2c9 !important;
+  border-color: rgba(113, 201, 193, .17) !important;
+  background: #1a332d !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card.is-failed .admin-ai-monitor-run-card__icon,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card.is-failed .admin-ai-monitor-run-card__icon {
+  color: #f09aaf !important;
+  background: #332127 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__visual-copy>small,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__visual-copy>small {
+  color: #72c7bf !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card.is-failed .admin-ai-monitor-run-card__visual-copy>small,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card.is-failed .admin-ai-monitor-run-card__visual-copy>small {
+  color: #e991a5 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__visual-copy>strong,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__head strong,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__metrics strong,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__visual-copy>strong,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__head strong,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__metrics strong {
+  color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__head span,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__head small,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__status>small,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__metrics small,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__metrics span,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__head span,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__head small,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__status>small,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__metrics small,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__metrics span {
+  color: #8fa39d !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__state,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-outcome,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__state,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-outcome {
+  color: #84d8d0 !important;
+  border-color: rgba(113, 201, 193, .18) !important;
+  background: rgba(50, 132, 123, .14) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__state.is-failed,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-outcome.is-failed,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__state.is-failed,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-outcome.is-failed {
+  color: #f0a0b1 !important;
+  border-color: rgba(240, 160, 177, .18) !important;
+  background: rgba(150, 72, 91, .14) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-outcome.is-retryable,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-outcome.is-retryable {
+  color: #d7c38b !important;
+  border-color: rgba(215, 195, 139, .17) !important;
+  background: rgba(129, 105, 50, .14) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-code,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card__chip,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-code,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card__chip {
+  color: #aebfba !important;
+  border-color: rgba(133, 205, 194, .12) !important;
+  background: #192521 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-run-card .admin-ai-monitor-inspect,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-run-card .admin-ai-monitor-inspect {
+  color: #8bd8d0 !important;
+  border-color: rgba(113, 201, 193, .18) !important;
+  background: #1a2c28 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-loading,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-empty,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-loading,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-empty {
+  color: #8fa49e !important;
+  border-color: var(--aim-dark-line) !important;
+  background: #121c19 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-empty strong,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-empty strong {
+  color: #e5efec !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-loading span,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-empty span,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-loading span,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-empty span {
+  color: #8fa39d !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-pagination button,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-pagination button {
+  color: #c0d0cb !important;
+  border-color: var(--aim-dark-line) !important;
+  background: #17221f !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-pagination button:not(:disabled):hover,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-pagination button:not(:disabled):hover {
+  color: #8bd8d0 !important;
+  background: #1d2f2a !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-pagination em,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-pagination em {
+  color: #9fb2ac !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal {
+  color: #edf5f2 !important;
+  border-color: rgba(133, 205, 194, .15) !important;
+  background: #111b18 !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .52) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__head {
+  border-bottom-color: rgba(133, 205, 194, .10) !important;
+  background: #121e1a !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__summary,
+html.vox-user-dark .admin-ai-monitor-modal__timeline-pane {
+  border-color: rgba(133, 205, 194, .09) !important;
+  background: #101917 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__outcome-card,
+html.vox-user-dark .admin-ai-monitor-detail,
+html.vox-user-dark .admin-ai-monitor-modal__context-card,
+html.vox-user-dark .admin-ai-monitor-modal__technical,
+html.vox-user-dark .admin-ai-monitor-attempt,
+html.vox-user-dark .admin-ai-monitor-timeline-empty {
+  color: #dfeae7 !important;
+  border-color: rgba(133, 205, 194, .12) !important;
+  background: #16211e !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__error-card,
+html.vox-user-dark .admin-ai-monitor-attempt__error {
+  color: #f0a8b6 !important;
+  border-color: rgba(240, 160, 177, .16) !important;
+  background: #281b20 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__mark,
+html.vox-user-dark .admin-ai-monitor-detail__icon,
+html.vox-user-dark .admin-ai-monitor-modal__close {
+  color: #7ed3cb !important;
+  border-color: rgba(113, 201, 193, .16) !important;
+  background: #1a302b !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__mark.is-failed {
+  color: #f09caf !important;
+  background: #322128 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__identity small,
+html.vox-user-dark .admin-ai-monitor-modal__section-head small,
+html.vox-user-dark .admin-ai-monitor-modal__technical>small,
+html.vox-user-dark .admin-ai-monitor-modal__context-card>small {
+  color: #76cfc7 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__identity h3,
+html.vox-user-dark .admin-ai-monitor-modal__section-head h4,
+html.vox-user-dark .admin-ai-monitor-detail__copy strong,
+html.vox-user-dark .admin-ai-monitor-modal__context-card strong,
+html.vox-user-dark .admin-ai-monitor-attempt__top strong {
+  color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__identity p,
+html.vox-user-dark .admin-ai-monitor-modal__outcome-card>span,
+html.vox-user-dark .admin-ai-monitor-detail__copy small,
+html.vox-user-dark .admin-ai-monitor-modal__context-card div small,
+html.vox-user-dark .admin-ai-monitor-modal__section-head p,
+html.vox-user-dark .admin-ai-monitor-attempt__top>div>span,
+html.vox-user-dark .admin-ai-monitor-attempt__facts>span,
+html.vox-user-dark .admin-ai-monitor-modal__loading,
+html.vox-user-dark .admin-ai-monitor-timeline-empty {
+  color: #95a8a2 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal__attempt-count,
+html.vox-user-dark .admin-ai-monitor-fallback {
+  color: #c1d3cd !important;
+  border-color: rgba(133, 205, 194, .13) !important;
+  background: #192621 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-modal-backdrop {
+  background: rgba(3, 8, 7, .78) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-overview-hero__content,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-panel__head,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-run-card__body,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-modal {
+  text-align: right;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-overview-topline,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-overview-hero__actions,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-panel__head,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-panel__actions,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-signal-strip,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-controls,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-search-row,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-run-card__head,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-run-card__status,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-page .admin-ai-monitor-run-card__footer,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-modal__head,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-modal__outcome-head,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-modal__section-head,
+html.vox-user-dark.vox-user-rtl .admin-ai-monitor-attempt__top {
+  direction: rtl;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-scene-card,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-scene-card {
+  color: #78cec6 !important;
+  border-color: rgba(113, 201, 193, .16) !important;
+  background: rgba(21, 35, 31, .90) !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-scene-card--signal,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-scene-card--signal {
+  color: #ef97ab !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-core__orbit--inner,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-core__orbit--inner {
+  background: linear-gradient(145deg, rgba(32, 65, 59, .92), rgba(81, 156, 147, .34)) !important;
+  box-shadow: 0 18px 28px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-scene-platform--one,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-scene-platform--one {
+  background: radial-gradient(ellipse, rgba(105, 197, 187, .20), rgba(27, 45, 40, .56) 55%, transparent 72%) !important;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-scene-platform--two,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-scene-platform--two {
+  background: rgba(30, 50, 45, .88) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs {
+  border-top-color: rgba(133, 205, 194, .08) !important;
+  border-bottom-color: rgba(133, 205, 194, .10) !important;
+  background: linear-gradient(90deg, #111d1a, #13211d) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button {
+  color: #afc1bc !important;
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button:hover,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button.is-active,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button:hover,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button.is-active {
+  color: #8fe0d8 !important;
+  border-color: rgba(113, 201, 193, .20) !important;
+  background: #1a2d28 !important;
+  box-shadow: inset 0 0 0 1px rgba(113, 201, 193, .035) !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button em,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button em {
+  color: #b8cac4 !important;
+  background: #1b2925 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button.is-active em,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-status-tabs button.is-active em {
+  color: #95e2da !important;
+  background: #223833 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-controls,
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-search-row,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-controls,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-search-row {
+  background: #111b18 !important;
+}
+
+html.vox-user-dark .admin-ai-monitor-page .admin-ai-monitor-search-row,
+.admin-shell--dark .admin-ai-monitor-page .admin-ai-monitor-search-row {
+  border-bottom-color: rgba(133, 205, 194, .08) !important;
 }

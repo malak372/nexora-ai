@@ -36,11 +36,151 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-payments.css';
 
 const PAGE_SIZE = 20;
+
+const PAYMENT_DARK_ARABIC_COPY = {
+  'All payments': 'كل عمليات الدفع',
+  'Succeeded': 'ناجحة',
+  'Pending': 'قيد الانتظار',
+  'Failed': 'فاشلة',
+  'Refunded': 'مستردة',
+  'All purposes': 'كل الأغراض',
+  'Buy credits': 'شراء أرصدة',
+  'Direct unlock': 'فتح مباشر',
+  'Accept publication': 'قبول النشر',
+  'Publication advanced': 'مخرجات النشر المتقدمة',
+  'Payment date': 'تاريخ الدفع',
+  'Amount': 'المبلغ',
+  'Status': 'الحالة',
+  'Purpose': 'الغرض',
+  'Credits amount': 'كمية الأرصدة',
+  'Payment': 'الدفع',
+  'Unknown': 'غير معروف',
+  'Sort payments': 'ترتيب عمليات الدفع',
+  'Ascending order': 'ترتيب تصاعدي',
+  'Descending order': 'ترتيب تنازلي',
+  'From': 'من',
+  'To': 'إلى',
+  'Payments from date': 'عمليات الدفع من تاريخ',
+  'Payments to date': 'عمليات الدفع حتى تاريخ',
+  'Clear date range': 'مسح نطاق التاريخ',
+  'Payment details': 'تفاصيل الدفع',
+  'PAYMENT RECORD': 'سجل الدفع',
+  'Transaction': 'المعاملة',
+  'Close payment details': 'إغلاق تفاصيل الدفع',
+  'PAYMENT PURPOSE': 'غرض الدفع',
+  'Customer': 'العميل',
+  'Charged amount': 'المبلغ المحصّل',
+  'via': 'عبر',
+  'Card': 'بطاقة',
+  'Wallet': 'محفظة',
+  'Stripe Card': 'بطاقة سترايب',
+  'Read-only financial record': 'سجل مالي للقراءة فقط',
+  'Payment history is preserved for billing integrity and auditability.': 'يُحفظ سجل الدفع لضمان سلامة الفوترة وإمكانية التدقيق.',
+  'TRANSACTION DETAILS': 'تفاصيل المعاملة',
+  'Payment, gateway and entitlement context': 'سياق الدفع والبوابة والاستحقاق',
+  'Payment ID': 'معرّف الدفع',
+  'Transaction reference': 'مرجع المعاملة',
+  'Payment method': 'طريقة الدفع',
+  'Provider': 'المزود',
+  'Created': 'تاريخ الإنشاء',
+  'Updated': 'آخر تحديث',
+  'at': 'في',
+  'Provider payment ID': 'معرّف دفع المزود',
+  'Provider session ID': 'معرّف جلسة المزود',
+  'Entitlement delivered': 'الاستحقاق الممنوح',
+  'Credits purchased': 'الأرصدة المشتراة',
+  'Bonus credits': 'أرصدة إضافية',
+  'Credit unit price': 'سعر وحدة الرصيد',
+  'Premium activation': 'تفعيل المميز',
+  'Included': 'مشمول',
+  'Premium activation fee': 'رسوم تفعيل المميز',
+  'Related content': 'المحتوى المرتبط',
+  'Idea': 'الفكرة',
+  'Publication ID': 'معرّف النشر',
+  'Failure reason': 'سبب الفشل',
+  'Invoice': 'الفاتورة',
+  'Invoice number': 'رقم الفاتورة',
+  'Invoice status': 'حالة الفاتورة',
+  'Paid': 'مدفوعة',
+  'Open': 'مفتوحة',
+  'Voided': 'ملغاة',
+  'Draft': 'مسودة',
+  'Financial activity is view-only from the operations console.': 'النشاط المالي متاح للعرض فقط من وحدة العمليات.',
+  'Close record': 'إغلاق السجل',
+  'BILLING OPERATIONS': 'عمليات الفوترة',
+  'Monitor transaction health, revenue, purchase purpose and gateway activity without exposing financial records to destructive actions.': 'راقب سلامة المعاملات والإيرادات وغرض الشراء ونشاط بوابة الدفع دون إتاحة إجراءات حذف أو تعديل للسجلات المالية.',
+  'Payment workspace capabilities': 'إمكانات مساحة عمليات الدفع',
+  'Audit-safe ledger': 'سجل آمن للتدقيق',
+  'Gateway visibility': 'متابعة بوابة الدفع',
+  'Transaction records': 'سجلات المعاملات',
+  'PAYMENT FLOW': 'مسار الدفع',
+  'Verified': 'موثّق',
+  'TRANSACTION': 'معاملة',
+  'Secure record': 'سجل آمن',
+  'REVENUE': 'الإيرادات',
+  'Tracked': 'متتبعة',
+  'Payment ledger': 'سجل الدفع',
+  'Payment activity': 'نشاط الدفع',
+  'transactions recorded': 'معاملة مسجلة',
+  'Live billing': 'فوترة مباشرة',
+  'Refresh': 'تحديث',
+  'Export CSV': 'تصدير CSV',
+  'Successful revenue': 'الإيرادات المحصّلة',
+  'Captured payment value': 'قيمة المدفوعات المحصّلة',
+  'Successful': 'ناجحة',
+  'success rate': 'نسبة نجاح',
+  'Awaiting final confirmation': 'بانتظار التأكيد النهائي',
+  'refunded': 'مستردة',
+  'Payment status filters': 'عوامل تصفية حالة الدفع',
+  'Payment purpose': 'غرض الدفع',
+  'Search customer name or email...': 'ابحث باسم العميل أو بريده الإلكتروني...',
+  'Clear payment search': 'مسح بحث المدفوعات',
+  'Gateway': 'البوابة',
+  'Actions': 'الإجراءات',
+  'Loading payment activity...': 'جارٍ تحميل نشاط الدفع...',
+  'No payments match these filters.': 'لا توجد عمليات دفع تطابق عوامل التصفية.',
+  'Ref': 'مرجع',
+  'Internal reference': 'مرجع داخلي',
+  'Platform user': 'مستخدم المنصة',
+  'credits': 'رصيد',
+  'Platform billing': 'فوترة المنصة',
+  'Inspect': 'فحص',
+  'Showing': 'عرض',
+  'of': 'من',
+  'No payment records': 'لا توجد سجلات دفع',
+  'Previous': 'السابق',
+  'Page': 'الصفحة',
+  'Next': 'التالي',
+  'Unable to load payment activity.': 'تعذر تحميل نشاط الدفع.',
+  'Unable to export payments.': 'تعذر تصدير عمليات الدفع.',
+};
+
+function usePaymentCopy() {
+  const { isArabic, isDark, t } = useUserExperience();
+  const darkArabic = isArabic && isDark;
+  const tr = useCallback(
+    (value) => {
+      if (!darkArabic || typeof value !== 'string') return value;
+      return PAYMENT_DARK_ARABIC_COPY[value] ?? t(value);
+    },
+    [darkArabic, t],
+  );
+
+  return {
+    darkArabic,
+    isArabic,
+    isDark,
+    locale: darkArabic ? 'ar' : undefined,
+    tr,
+  };
+}
+
 
 const STATUS_OPTIONS = [
   { key: 'all', label: 'All payments' },
@@ -114,14 +254,14 @@ function unwrapObject(payload) {
   return isObject(payload.data) ? payload.data : payload;
 }
 
-function formatDate(value, compact = false) {
+function formatDate(value, compact = false, locale) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   if (compact) {
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
   }
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -130,10 +270,10 @@ function formatDate(value, compact = false) {
   });
 }
 
-function formatMoney(value, currency = 'USD') {
+function formatMoney(value, currency = 'USD', locale) {
   const number = Number(value || 0);
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency: currency || 'USD',
       minimumFractionDigits: 0,
@@ -195,31 +335,34 @@ function statusCount(summary, key) {
 }
 
 function MetricCard({ icon: Icon, label, value, hint, tone = '', money = false, currency = 'USD' }) {
+  const { locale, tr } = usePaymentCopy();
   return (
     <article className={`admin-payment-metric ${tone}`}>
       <i aria-hidden="true" />
       <span className="admin-payment-metric__icon"><Icon size={20} /></span>
       <div>
-        <small>{label}</small>
-        <strong>{money ? formatMoney(value, currency) : Number(value || 0).toLocaleString()}</strong>
-        <span>{hint}</span>
+        <small>{tr(label)}</small>
+        <strong>{money ? formatMoney(value, currency, locale) : Number(value || 0).toLocaleString(locale)}</strong>
+        <span>{tr(hint)}</span>
       </div>
     </article>
   );
 }
 
 function StatusBadge({ status }) {
+  const { tr } = usePaymentCopy();
   const meta = statusInfo(status);
   const Icon = meta.icon;
   return (
     <span className={`admin-payment-status ${meta.className}`}>
       <Icon size={12} />
-      {meta.label}
+      {tr(meta.label)}
     </span>
   );
 }
 
 function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHorizontal, counts = {} }) {
+  const { locale, tr } = usePaymentCopy();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const current = options.find((option) => option.key === value) || options[0];
@@ -243,7 +386,7 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHoriz
         aria-expanded={open}
       >
         <Icon size={15} />
-        <span><small>{label}</small><strong>{current.label}</strong></span>
+        <span><small>{tr(label)}</small><strong>{tr(current.label)}</strong></span>
         <ChevronDown size={14} />
       </button>
 
@@ -261,8 +404,8 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHoriz
                 setOpen(false);
               }}
             >
-              <span>{option.label}</span>
-              {counts[option.key] !== undefined && <em>{Number(counts[option.key] || 0).toLocaleString()}</em>}
+              <span>{tr(option.label)}</span>
+              {counts[option.key] !== undefined && <em>{Number(counts[option.key] || 0).toLocaleString(locale)}</em>}
               {option.key === value && <Check size={14} />}
             </button>
           ))}
@@ -273,6 +416,7 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = SlidersHoriz
 }
 
 function SortControl({ sortBy, sortOrder, onChange, onToggle }) {
+  const { tr } = usePaymentCopy();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const current = SORT_OPTIONS.find((option) => option.key === sortBy) || SORT_OPTIONS[0];
@@ -290,7 +434,7 @@ function SortControl({ sortBy, sortOrder, onChange, onToggle }) {
     <div className={`admin-payment-sort ${open ? 'is-open' : ''}`} ref={ref}>
       <button type="button" className="admin-payment-sort__trigger" onClick={() => setOpen((state) => !state)}>
         <SlidersHorizontal size={15} />
-        <span><small>Sort payments</small><strong>{current.label}</strong></span>
+        <span><small>{tr('Sort payments')}</small><strong>{tr(current.label)}</strong></span>
         <ChevronDown size={14} />
       </button>
 
@@ -308,7 +452,7 @@ function SortControl({ sortBy, sortOrder, onChange, onToggle }) {
                 setOpen(false);
               }}
             >
-              <span>{option.label}</span>
+              <span>{tr(option.label)}</span>
               {option.key === sortBy && <Check size={14} />}
             </button>
           ))}
@@ -319,7 +463,7 @@ function SortControl({ sortBy, sortOrder, onChange, onToggle }) {
         type="button"
         className="admin-payment-sort__direction"
         onClick={onToggle}
-        title={sortOrder === 'asc' ? 'Ascending order' : 'Descending order'}
+        title={tr(sortOrder === 'asc' ? 'Ascending order' : 'Descending order')}
       >
         {sortOrder === 'asc' ? <ArrowUp size={15} /> : <ArrowDown size={15} />}
       </button>
@@ -328,34 +472,35 @@ function SortControl({ sortBy, sortOrder, onChange, onToggle }) {
 }
 
 function DateRangeFilter({ fromDate, toDate, onFromChange, onToChange, onClear }) {
+  const { tr } = usePaymentCopy();
   const active = Boolean(fromDate || toDate);
 
   return (
     <div className={`admin-payment-date-range ${active ? 'is-active' : ''}`}>
       <span className="admin-payment-date-range__icon" aria-hidden="true"><CalendarRange size={16} /></span>
       <label className="admin-payment-date-range__field">
-        <small>From</small>
+        <small>{tr('From')}</small>
         <input
           type="date"
           value={fromDate}
           max={toDate || undefined}
           onChange={(event) => onFromChange(event.target.value)}
-          aria-label="Payments from date"
+          aria-label={tr('Payments from date')}
         />
       </label>
       <span className="admin-payment-date-range__divider" aria-hidden="true" />
       <label className="admin-payment-date-range__field">
-        <small>To</small>
+        <small>{tr('To')}</small>
         <input
           type="date"
           value={toDate}
           min={fromDate || undefined}
           onChange={(event) => onToChange(event.target.value)}
-          aria-label="Payments to date"
+          aria-label={tr('Payments to date')}
         />
       </label>
       {active && (
-        <button type="button" className="admin-payment-date-range__clear" onClick={onClear} aria-label="Clear date range">
+        <button type="button" className="admin-payment-date-range__clear" onClick={onClear} aria-label={tr('Clear date range')}>
           <X size={13} />
         </button>
       )}
@@ -364,18 +509,20 @@ function DateRangeFilter({ fromDate, toDate, onFromChange, onToChange, onClear }
 }
 
 function DetailItem({ label, value, mono = false, wide = false, icon: Icon }) {
+  const { tr } = usePaymentCopy();
   return (
     <div className={`admin-payment-detail-item ${wide ? 'is-wide' : ''}`}>
       {Icon && <span className="admin-payment-detail-item__icon"><Icon size={14} /></span>}
       <div>
-        <small>{label}</small>
-        <strong className={mono ? 'is-mono' : ''}>{value || '—'}</strong>
+        <small>{tr(label)}</small>
+        <strong className={mono ? 'is-mono' : ''}>{typeof value === 'string' ? tr(value) : (value || '—')}</strong>
       </div>
     </div>
   );
 }
 
 function PaymentModal({ payment, onClose }) {
+  const { locale, tr } = usePaymentCopy();
   useEffect(() => {
     if (!payment) return undefined;
     const previous = document.body.style.overflow;
@@ -394,8 +541,8 @@ function PaymentModal({ payment, onClose }) {
 
   const purpose = purposeInfo(payment.paymentPurpose);
   const PurposeIcon = purpose.icon;
-  const amount = formatMoney(payment.amount, payment.currency);
-  const customerName = payment.user?.fullName || 'Platform user';
+  const amount = formatMoney(payment.amount, payment.currency, locale);
+  const customerName = payment.user?.fullName || tr('Platform user');
   const customerEmail = payment.user?.email || '—';
   const status = String(payment.status || '').toUpperCase();
   const eventDate = status === 'SUCCEEDED'
@@ -410,17 +557,17 @@ function PaymentModal({ payment, onClose }) {
     <div className="admin-payment-modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.currentTarget === event.target) onClose();
     }}>
-      <section className="admin-payment-modal" role="dialog" aria-modal="true" aria-label="Payment details">
+      <section className="admin-payment-modal" role="dialog" aria-modal="true" aria-label={tr('Payment details')}>
         <header className="admin-payment-modal__head">
           <div className="admin-payment-modal__identity">
             <span className="admin-payment-modal__mark"><ReceiptText size={21} /></span>
             <div>
-              <small>PAYMENT RECORD</small>
+              <small>{tr('PAYMENT RECORD')}</small>
               <h3>{amount}</h3>
-              <p>Transaction {shortId(payment.transactionReference || payment.id, 12)}</p>
+              <p>{tr('Transaction')} {shortId(payment.transactionReference || payment.id, 12)}</p>
             </div>
           </div>
-          <button type="button" className="admin-payment-modal__close" onClick={onClose} aria-label="Close payment details">
+          <button type="button" className="admin-payment-modal__close" onClick={onClose} aria-label={tr('Close payment details')}>
             <X size={18} />
           </button>
         </header>
@@ -430,8 +577,8 @@ function PaymentModal({ payment, onClose }) {
             <div className="admin-payment-modal__status-card">
               <span className={`admin-payment-modal__status-icon ${purpose.tone}`}><PurposeIcon size={17} /></span>
               <div>
-                <small>PAYMENT PURPOSE</small>
-                <strong>{purpose.label}</strong>
+                <small>{tr('PAYMENT PURPOSE')}</small>
+                <strong>{tr(purpose.label)}</strong>
                 <StatusBadge status={payment.status} />
               </div>
             </div>
@@ -439,23 +586,23 @@ function PaymentModal({ payment, onClose }) {
             <div className="admin-payment-customer-card">
               <span><UserRound size={18} /></span>
               <div>
-                <small>Customer</small>
+                <small>{tr('Customer')}</small>
                 <strong>{customerName}</strong>
                 <p><Mail size={12} /> {customerEmail}</p>
               </div>
             </div>
 
             <div className="admin-payment-amount-card">
-              <small>Charged amount</small>
+              <small>{tr('Charged amount')}</small>
               <strong>{amount}</strong>
-              <p>{payment.currency || 'USD'} via {titleCase(payment.paymentMethodKey || 'card')}</p>
+              <p>{payment.currency || 'USD'} {tr('via')} {tr(titleCase(payment.paymentMethodKey || 'card'))}</p>
             </div>
 
             <div className="admin-payment-readonly-note">
               <ShieldCheck size={16} />
               <div>
-                <strong>Read-only financial record</strong>
-                <span>Payment history is preserved for billing integrity and auditability.</span>
+                <strong>{tr('Read-only financial record')}</strong>
+                <span>{tr('Payment history is preserved for billing integrity and auditability.')}</span>
               </div>
             </div>
           </aside>
@@ -464,21 +611,21 @@ function PaymentModal({ payment, onClose }) {
             <div className="admin-payment-modal__section-head">
               <span><FileText size={17} /></span>
               <div>
-                <small>TRANSACTION DETAILS</small>
-                <h4>Payment, gateway and entitlement context</h4>
+                <small>{tr('TRANSACTION DETAILS')}</small>
+                <h4>{tr('Payment, gateway and entitlement context')}</h4>
               </div>
             </div>
 
             <div className="admin-payment-detail-grid">
               <DetailItem label="Payment ID" value={payment.id} mono wide />
               <DetailItem label="Transaction reference" value={payment.transactionReference} mono wide />
-              <DetailItem label="Status" value={statusInfo(payment.status).label} icon={statusInfo(payment.status).icon} />
-              <DetailItem label="Purpose" value={purpose.label} icon={PurposeIcon} />
-              <DetailItem label="Payment method" value={titleCase(payment.paymentMethodKey)} icon={CreditCard} />
+              <DetailItem label="Status" value={tr(statusInfo(payment.status).label)} icon={statusInfo(payment.status).icon} />
+              <DetailItem label="Purpose" value={tr(purpose.label)} icon={PurposeIcon} />
+              <DetailItem label="Payment method" value={tr(titleCase(payment.paymentMethodKey))} icon={CreditCard} />
               <DetailItem label="Provider" value={titleCase(payment.providerKey)} icon={ExternalLink} />
-              <DetailItem label="Created" value={formatDate(payment.createdAt)} />
-              <DetailItem label="Updated" value={formatDate(payment.updatedAt)} />
-              {eventDate && <DetailItem label={`${statusInfo(status).label} at`} value={formatDate(eventDate)} wide />}
+              <DetailItem label="Created" value={formatDate(payment.createdAt, false, locale)} />
+              <DetailItem label="Updated" value={formatDate(payment.updatedAt, false, locale)} />
+              {eventDate && <DetailItem label={`${tr(statusInfo(status).label)} ${tr('at')}`} value={formatDate(eventDate, false, locale)} wide />}
               {payment.providerPaymentId && <DetailItem label="Provider payment ID" value={payment.providerPaymentId} mono wide />}
               {payment.providerSessionId && <DetailItem label="Provider session ID" value={payment.providerSessionId} mono wide />}
             </div>
@@ -487,23 +634,23 @@ function PaymentModal({ payment, onClose }) {
               <section className="admin-payment-modal__subsection">
                 <div className="admin-payment-modal__subsection-title">
                   <WalletCards size={15} />
-                  <span>Entitlement delivered</span>
+                  <span>{tr('Entitlement delivered')}</span>
                 </div>
                 <div className="admin-payment-mini-grid">
                   {payment.creditsAmount > 0 && (
-                    <DetailItem label="Credits purchased" value={Number(payment.creditsAmount).toLocaleString()} />
+                    <DetailItem label="Credits purchased" value={Number(payment.creditsAmount).toLocaleString(locale)} />
                   )}
                   {payment.bonusCreditsAmount > 0 && (
-                    <DetailItem label="Bonus credits" value={Number(payment.bonusCreditsAmount).toLocaleString()} />
+                    <DetailItem label="Bonus credits" value={Number(payment.bonusCreditsAmount).toLocaleString(locale)} />
                   )}
                   {payment.creditPriceAtPurchase != null && (
-                    <DetailItem label="Credit unit price" value={formatMoney(payment.creditPriceAtPurchase, payment.currency)} />
+                    <DetailItem label="Credit unit price" value={formatMoney(payment.creditPriceAtPurchase, payment.currency, locale)} />
                   )}
                   {payment.activatesPremium && (
                     <DetailItem label="Premium activation" value="Included" />
                   )}
                   {payment.premiumActivationFeeAtPurchase != null && (
-                    <DetailItem label="Premium activation fee" value={formatMoney(payment.premiumActivationFeeAtPurchase, payment.currency)} />
+                    <DetailItem label="Premium activation fee" value={formatMoney(payment.premiumActivationFeeAtPurchase, payment.currency, locale)} />
                   )}
                 </div>
               </section>
@@ -513,7 +660,7 @@ function PaymentModal({ payment, onClose }) {
               <section className="admin-payment-modal__subsection">
                 <div className="admin-payment-modal__subsection-title">
                   <Sparkles size={15} />
-                  <span>Related content</span>
+                  <span>{tr('Related content')}</span>
                 </div>
                 <div className="admin-payment-mini-grid">
                   {payment.idea && <DetailItem label="Idea" value={payment.idea.title || payment.idea.id} wide />}
@@ -526,7 +673,7 @@ function PaymentModal({ payment, onClose }) {
               <section className="admin-payment-failure-box">
                 <XCircle size={17} />
                 <div>
-                  <strong>Failure reason</strong>
+                  <strong>{tr('Failure reason')}</strong>
                   <p>{payment.failureReason}</p>
                 </div>
               </section>
@@ -536,11 +683,11 @@ function PaymentModal({ payment, onClose }) {
               <section className="admin-payment-modal__subsection">
                 <div className="admin-payment-modal__subsection-title">
                   <FileText size={15} />
-                  <span>Invoice</span>
+                  <span>{tr('Invoice')}</span>
                 </div>
                 <div className="admin-payment-mini-grid">
                   <DetailItem label="Invoice number" value={payment.invoice.invoiceNumber} mono />
-                  <DetailItem label="Invoice status" value={titleCase(payment.invoice.status)} />
+                  <DetailItem label="Invoice status" value={tr(titleCase(payment.invoice.status))} />
                 </div>
               </section>
             )}
@@ -548,8 +695,8 @@ function PaymentModal({ payment, onClose }) {
         </div>
 
         <footer className="admin-payment-modal__footer">
-          <span><ShieldCheck size={14} /> Financial activity is view-only from the operations console.</span>
-          <button type="button" onClick={onClose}><X size={14} /> Close record</button>
+          <span><ShieldCheck size={14} /> {tr('Financial activity is view-only from the operations console.')}</span>
+          <button type="button" onClick={onClose}><X size={14} /> {tr('Close record')}</button>
         </footer>
       </section>
     </div>,
@@ -558,6 +705,7 @@ function PaymentModal({ payment, onClose }) {
 }
 
 export default function AdminPaymentsPage() {
+  const { isArabic, isDark, locale, tr } = usePaymentCopy();
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
   const [summary, setSummary] = useState({});
@@ -644,12 +792,12 @@ export default function AdminPaymentsPage() {
         setCharts(unwrapObject(chartsPayload));
       }
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Unable to load payment activity.'));
+      setError(tr(getApiErrorMessage(requestError, 'Unable to load payment activity.')));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dateQuery, query]);
+  }, [dateQuery, query, tr]);
 
   useEffect(() => {
     load();
@@ -686,11 +834,11 @@ export default function AdminPaymentsPage() {
         ...dateQuery,
       });
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Unable to export payments.'));
+      setError(tr(getApiErrorMessage(requestError, 'Unable to export payments.')));
     } finally {
       setExporting(false);
     }
-  }, [dateQuery, purpose, search, sortBy, sortOrder, status]);
+  }, [dateQuery, purpose, search, sortBy, sortOrder, status, tr]);
 
   const startIndex = meta.total === 0 ? 0 : ((meta.page - 1) * meta.limit) + 1;
   const endIndex = Math.min(meta.total, meta.page * meta.limit);
@@ -699,45 +847,47 @@ export default function AdminPaymentsPage() {
     <div className="admin-page admin-payment-page">
       <section className="admin-payment-hero">
         <div className="admin-payment-hero__content">
-          <span className="admin-payment-hero__eyebrow"><CircleDollarSign size={15} /> BILLING OPERATIONS</span>
-          <h1>Payment <span>operations</span></h1>
-          <p>Monitor transaction health, revenue, purchase purpose and gateway activity without exposing financial records to destructive actions.</p>
+          <span className="admin-payment-hero__eyebrow"><CircleDollarSign size={15} /> {tr('BILLING OPERATIONS')}</span>
+          <h1 data-no-auto-translate="true">
+            {isArabic ? <>عمليات <span>الدفع</span></> : <>Payment <span>operations</span></>}
+          </h1>
+          <p>{tr('Monitor transaction health, revenue, purchase purpose and gateway activity without exposing financial records to destructive actions.')}</p>
 
-          <div className="admin-payment-hero__trust" aria-label="Payment workspace capabilities">
-            <span><ShieldCheck size={14} /> Audit-safe ledger</span>
-            <span><CreditCard size={14} /> Gateway visibility</span>
-            <span><ReceiptText size={14} /> Transaction records</span>
+          <div className="admin-payment-hero__trust" aria-label={tr('Payment workspace capabilities')}>
+            <span><ShieldCheck size={14} /> {tr('Audit-safe ledger')}</span>
+            <span><CreditCard size={14} /> {tr('Gateway visibility')}</span>
+            <span><ReceiptText size={14} /> {tr('Transaction records')}</span>
           </div>
         </div>
 
-        <div className="admin-payment-hero__scene" aria-hidden="true">
+        <div className={`admin-payment-hero__scene${isDark ? ' admin-payment-hero__scene--dark' : ''}`} aria-hidden="true">
           <span className="admin-payment-scene-line admin-payment-scene-line--one" />
           <span className="admin-payment-scene-line admin-payment-scene-line--two" />
           <span className="admin-payment-scene-node admin-payment-scene-node--one" />
           <span className="admin-payment-scene-node admin-payment-scene-node--two" />
           <span className="admin-payment-scene-node admin-payment-scene-node--three" />
 
-          <div className="admin-payment-hero-card">
-            <div className="admin-payment-hero-card__top">
-              <span className="admin-payment-hero-card__chip" />
+          <div className="admin-payment-hero-visual">
+            <div className="admin-payment-hero-visual__top">
+              <span className="admin-payment-hero-visual__chip" />
               <WalletCards size={21} />
             </div>
-            <span className="admin-payment-hero-card__number">•••• &nbsp; 2048 &nbsp; •••• &nbsp; 7281</span>
-            <div className="admin-payment-hero-card__bottom">
-              <span><small>PAYMENT FLOW</small><strong>Voxidence</strong></span>
-              <span className="admin-payment-hero-card__badge"><Check size={14} /> Verified</span>
+            <span className="admin-payment-hero-visual__number">•••• &nbsp; 2048 &nbsp; •••• &nbsp; 7281</span>
+            <div className="admin-payment-hero-visual__bottom">
+              <span><small>{tr('PAYMENT FLOW')}</small><strong>Voxidence</strong></span>
+              <span className="admin-payment-hero-visual__badge"><Check size={14} /> {tr('Verified')}</span>
             </div>
           </div>
 
           <div className="admin-payment-hero-receipt">
             <span className="admin-payment-hero-receipt__icon"><ReceiptText size={18} /></span>
-            <div><small>TRANSACTION</small><strong>Secure record</strong></div>
+            <div><small>{tr('TRANSACTION')}</small><strong>{tr('Secure record')}</strong></div>
             <CheckCircle2 size={16} />
           </div>
 
           <div className="admin-payment-hero-coins">
             <span><Coins size={18} /></span>
-            <div><small>REVENUE</small><strong>Tracked</strong></div>
+            <div><small>{tr('REVENUE')}</small><strong>{tr('Tracked')}</strong></div>
           </div>
 
           <span className="admin-payment-scene-platform admin-payment-scene-platform--one" />
@@ -748,17 +898,17 @@ export default function AdminPaymentsPage() {
       <section className="admin-payment-panel">
         <header className="admin-payment-panel__head">
           <div>
-            <span className="admin-payment-panel__kicker"><Banknote size={13} /> Payment ledger</span>
-            <h3>Payment activity</h3>
-            <p>{Number(summary.totalPayments || meta.total || 0).toLocaleString()} transactions recorded</p>
+            <span className="admin-payment-panel__kicker"><Banknote size={13} /> {tr('Payment ledger')}</span>
+            <h3>{tr('Payment activity')}</h3>
+            <p>{Number(summary.totalPayments || meta.total || 0).toLocaleString(locale)} {tr('transactions recorded')}</p>
           </div>
           <div className="admin-payment-panel__actions">
-            <span className="admin-payment-live"><i /> Live billing</span>
+            <span className="admin-payment-live"><i /> {tr('Live billing')}</span>
             <button type="button" className="admin-payment-action" onClick={() => load({ fresh: true })} disabled={refreshing}>
-              <RefreshCw size={15} className={refreshing ? 'is-spinning' : ''} /> Refresh
+              <RefreshCw size={15} className={refreshing ? 'is-spinning' : ''} /> {tr('Refresh')}
             </button>
             <button type="button" className="admin-payment-action" onClick={exportPayments} disabled={exporting}>
-              {exporting ? <LoaderCircle size={15} className="is-spinning" /> : <Download size={15} />} Export CSV
+              {exporting ? <LoaderCircle size={15} className="is-spinning" /> : <Download size={15} />} {tr('Export CSV')}
             </button>
           </div>
         </header>
@@ -776,7 +926,7 @@ export default function AdminPaymentsPage() {
             icon={CheckCircle2}
             label="Successful"
             value={summary.successfulPayments}
-            hint={`${Number(summary.totalPayments || 0) ? Math.round((Number(summary.successfulPayments || 0) / Number(summary.totalPayments || 1)) * 100) : 0}% success rate`}
+            hint={`${Number(summary.totalPayments || 0) ? Math.round((Number(summary.successfulPayments || 0) / Number(summary.totalPayments || 1)) * 100) : 0}% ${tr('success rate')}`}
             tone="is-success"
           />
           <MetricCard
@@ -790,12 +940,12 @@ export default function AdminPaymentsPage() {
             icon={XCircle}
             label="Failed"
             value={summary.failedPayments}
-            hint={`${Number(summary.refundedPayments || 0).toLocaleString()} refunded`}
+            hint={`${Number(summary.refundedPayments || 0).toLocaleString(locale)} ${tr('refunded')}`}
             tone="is-failed"
           />
         </div>
 
-        <div className="admin-payment-status-tabs" role="tablist" aria-label="Payment status filters">
+        <div className="admin-payment-status-tabs" role="tablist" aria-label={tr('Payment status filters')}>
           {STATUS_OPTIONS.map((option) => (
             <button
               key={option.key}
@@ -808,8 +958,8 @@ export default function AdminPaymentsPage() {
                 setPage(1);
               }}
             >
-              <span>{option.label}</span>
-              <em>{Number(statusCounts[option.key] || 0).toLocaleString()}</em>
+              <span>{tr(option.label)}</span>
+              <em>{Number(statusCounts[option.key] || 0).toLocaleString(locale)}</em>
             </button>
           ))}
         </div>
@@ -865,10 +1015,10 @@ export default function AdminPaymentsPage() {
             <input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search customer name or email..."
+              placeholder={tr('Search customer name or email...')}
             />
             {searchInput && (
-              <button type="button" onClick={() => setSearchInput('')} aria-label="Clear payment search"><X size={13} /></button>
+              <button type="button" onClick={() => setSearchInput('')} aria-label={tr('Clear payment search')}><X size={13} /></button>
             )}
           </label>
         </div>
@@ -887,19 +1037,19 @@ export default function AdminPaymentsPage() {
             </colgroup>
             <thead>
               <tr>
-                <th>Transaction</th>
-                <th>Customer</th>
-                <th>Payment</th>
-                <th>Purpose</th>
-                <th>Gateway</th>
-                <th>Actions</th>
+                <th>{tr('Transaction')}</th>
+                <th>{tr('Customer')}</th>
+                <th>{tr('Payment')}</th>
+                <th>{tr('Purpose')}</th>
+                <th>{tr('Gateway')}</th>
+                <th>{tr('Actions')}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr className="admin-payment-table-state"><td colSpan="6"><LoaderCircle size={18} className="is-spinning" /> Loading payment activity...</td></tr>
+                <tr className="admin-payment-table-state"><td colSpan="6"><LoaderCircle size={18} className="is-spinning" /> {tr('Loading payment activity...')}</td></tr>
               ) : rows.length === 0 ? (
-                <tr className="admin-payment-table-state"><td colSpan="6"><CircleDollarSign size={18} /> No payments match these filters.</td></tr>
+                <tr className="admin-payment-table-state"><td colSpan="6"><CircleDollarSign size={18} /> {tr('No payments match these filters.')}</td></tr>
               ) : rows.map((payment) => {
                 const purposeMeta = purposeInfo(payment.paymentPurpose);
                 const PurposeIcon = purposeMeta.icon;
@@ -912,21 +1062,21 @@ export default function AdminPaymentsPage() {
                           <i className={`admin-payment-row-icon__status ${statusInfo(payment.status).className}`} aria-hidden="true" />
                         </span>
                         <div>
-                          <strong>Payment {shortId(payment.id)}</strong>
-                          <small>{payment.transactionReference ? `Ref ${shortId(payment.transactionReference, 11)}` : 'Internal reference'}</small>
-                          <span className="admin-payment-transaction-date">{formatDate(payment.createdAt, true)}</span>
+                          <strong>{tr('Payment')} {shortId(payment.id)}</strong>
+                          <small>{payment.transactionReference ? `${tr('Ref')} ${shortId(payment.transactionReference, 11)}` : tr('Internal reference')}</small>
+                          <span className="admin-payment-transaction-date">{formatDate(payment.createdAt, true, locale)}</span>
                         </div>
                       </div>
                     </td>
                     <td>
                       <div className="admin-payment-customer-cell">
-                        <strong>{payment.user?.fullName || 'Platform user'}</strong>
+                        <strong>{payment.user?.fullName || tr('Platform user')}</strong>
                         <small>{payment.user?.email || '—'}</small>
                       </div>
                     </td>
                     <td>
                       <div className="admin-payment-value-cell">
-                        <strong>{formatMoney(payment.amount, payment.currency)}</strong>
+                        <strong>{formatMoney(payment.amount, payment.currency, locale)}</strong>
                         <StatusBadge status={payment.status} />
                       </div>
                     </td>
@@ -934,20 +1084,20 @@ export default function AdminPaymentsPage() {
                       <div className="admin-payment-purpose-cell">
                         <span className={`admin-payment-purpose-symbol ${purposeMeta.tone}`}><PurposeIcon size={13} /></span>
                         <div>
-                          <strong>{purposeMeta.label}</strong>
-                          <small>{payment.idea?.title || (payment.creditsAmount > 0 ? `${Number(payment.creditsAmount).toLocaleString()} credits` : 'Platform billing')}</small>
+                          <strong>{tr(purposeMeta.label)}</strong>
+                          <small>{payment.idea?.title || (payment.creditsAmount > 0 ? `${Number(payment.creditsAmount).toLocaleString(locale)} ${tr('credits')}` : tr('Platform billing'))}</small>
                         </div>
                       </div>
                     </td>
                     <td>
                       <div className="admin-payment-gateway-cell">
-                        <strong><CreditCard size={13} /> {titleCase(payment.paymentMethodKey)}</strong>
+                        <strong><CreditCard size={13} /> {tr(titleCase(payment.paymentMethodKey))}</strong>
                         <small>{titleCase(payment.providerKey)}</small>
                       </div>
                     </td>
                     <td>
                       <button type="button" className="admin-payment-inspect" onClick={() => setSelected(payment)}>
-                        <Eye size={14} /> Inspect
+                        <Eye size={14} /> {tr('Inspect')}
                       </button>
                     </td>
                   </tr>
@@ -958,14 +1108,14 @@ export default function AdminPaymentsPage() {
         </div>
 
         <footer className="admin-payment-pagination">
-          <span>{meta.total ? `Showing ${startIndex}-${endIndex} of ${meta.total.toLocaleString()}` : 'No payment records'}</span>
+          <span>{meta.total ? `${tr('Showing')} ${startIndex}-${endIndex} ${tr('of')} ${meta.total.toLocaleString(locale)}` : tr('No payment records')}</span>
           <div>
             <button type="button" disabled={meta.page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))}>
-              <ChevronLeft size={14} /> Previous
+              <ChevronLeft size={14} /> {tr('Previous')}
             </button>
-            <em>Page {meta.page} of {meta.totalPages}</em>
+            <em>{tr('Page')} {meta.page} {tr('of')} {meta.totalPages}</em>
             <button type="button" disabled={meta.page >= meta.totalPages || loading} onClick={() => setPage((current) => Math.min(meta.totalPages, current + 1))}>
-              Next <ChevronRight size={14} />
+              {tr('Next')} <ChevronRight size={14} />
             </button>
           </div>
         </footer>

@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-ds-page {
   --ds-teal: #2f7774;
   --ds-teal-strong: #176b69;
@@ -1937,6 +1939,674 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Dark mode is intentionally scoped to the data-sources workspace so the light theme stays untouched. */
+html.vox-user-dark .admin-ds-page {
+  --ds-teal: #72c9c1;
+  --ds-teal-strong: #83d8d0;
+  --ds-teal-bright: #65c7bf;
+  --ds-teal-soft: rgba(74, 169, 161, .14);
+  --ds-teal-soft-2: rgba(74, 169, 161, .08);
+  --ds-pink: #e68da3;
+  --ds-pink-soft: rgba(214, 111, 140, .10);
+  --ds-ink: #eef7f4;
+  --ds-text: #c7d7d2;
+  --ds-muted: #93a9a3;
+  --ds-line: rgba(145, 202, 193, .16);
+  --ds-line-soft: rgba(145, 202, 193, .09);
+  --ds-shadow: 0 20px 54px rgba(0, 0, 0, .24);
+  --ds-shadow-hover: 0 24px 58px rgba(0, 0, 0, .32);
+  color: var(--ds-ink);
+}
+
+html.vox-user-dark .admin-ds-hero {
+  border-color: rgba(143, 204, 194, .16) !important;
+  background:
+    radial-gradient(circle at 76% 28%, rgba(72, 173, 165, .14), transparent 30%),
+    radial-gradient(circle at 94% 92%, rgba(202, 100, 127, .08), transparent 25%),
+    linear-gradient(118deg, #101a18 0%, #121e1b 45%, #14231f 76%, #1a181b 100%) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark .admin-ds-hero::before {
+  border-color: rgba(91, 194, 185, .08);
+}
+
+html.vox-user-dark .admin-ds-hero::after {
+  border-color: rgba(91, 194, 185, .11);
+}
+
+html.vox-user-dark .admin-ds-hero .admin-hero__eyebrow,
+html.vox-user-dark .admin-ds-panel__kicker {
+  color: #8bdad3 !important;
+}
+
+html.vox-user-dark .admin-ds-hero h2,
+html.vox-user-dark .admin-ds-panel__head h3 {
+  color: #f0f8f5 !important;
+}
+
+html.vox-user-dark .admin-ds-hero p,
+html.vox-user-dark .admin-ds-panel__head p {
+  color: #a9bbb5 !important;
+}
+
+html.vox-user-dark .admin-ds-hero__visual {
+  border-color: rgba(124, 195, 186, .15) !important;
+  background:
+    radial-gradient(circle at 52% 54%, rgba(78, 188, 180, .16), transparent 35%),
+    linear-gradient(145deg, rgba(19, 34, 31, .98), rgba(24, 42, 38, .94)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035), 0 16px 42px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-ds-hero__grid {
+  opacity: .18;
+}
+
+html.vox-user-dark .admin-ds-hero__signal-card {
+  border-color: rgba(137, 204, 195, .16) !important;
+  color: #7fd1ca !important;
+  background: rgba(15, 28, 25, .90) !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+html.vox-user-dark .admin-ds-hero__signal-card--chart span {
+  color: #79cec7 !important;
+  background: #172d29 !important;
+}
+
+html.vox-user-dark .admin-ds-hero__signal-card--chart i {
+  background: linear-gradient(180deg, #65bdb6, #388f89) !important;
+}
+
+html.vox-user-dark .admin-ds-hero__database-top {
+  color: #7bd2ca !important;
+  border-color: rgba(152, 215, 205, .16) !important;
+  background: linear-gradient(180deg, #19322e, #142824) !important;
+  box-shadow: inset 0 -8px 16px rgba(67, 165, 157, .08), 0 8px 20px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-ds-hero__database-tier {
+  border-color: rgba(149, 213, 203, .13) !important;
+  background: linear-gradient(180deg, #1b3934 0%, #16302c 100%) !important;
+  box-shadow: inset 0 -10px 18px rgba(58, 154, 146, .08), 0 8px 12px rgba(0, 0, 0, .14) !important;
+}
+
+html.vox-user-dark .admin-ds-hero__link::after {
+  border-color: #67beb7;
+  background: #132622;
+}
+
+html.vox-user-dark .admin-ds-hero__node {
+  border-color: #172925;
+}
+
+html.vox-user-dark .admin-ds-panel {
+  border-color: var(--ds-line) !important;
+  background: #101917 !important;
+  box-shadow: var(--ds-shadow) !important;
+}
+
+html.vox-user-dark .admin-ds-panel__head {
+  border-bottom-color: var(--ds-line-soft) !important;
+  background:
+    radial-gradient(circle at 7% 0%, rgba(79, 180, 172, .07), transparent 27%),
+    radial-gradient(circle at 94% 6%, rgba(203, 99, 127, .05), transparent 25%),
+    linear-gradient(180deg, #151f1d, #121b19) !important;
+}
+
+html.vox-user-dark .admin-ds-btn:not(.admin-ds-btn--primary),
+html.vox-user-dark .admin-ds-refresh {
+  border-color: rgba(142, 200, 191, .16) !important;
+  color: #c8d9d4 !important;
+  background: #17221f !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .14) !important;
+}
+
+html.vox-user-dark .admin-ds-btn:not(.admin-ds-btn--primary):hover,
+html.vox-user-dark .admin-ds-refresh:hover {
+  border-color: rgba(113, 205, 196, .32) !important;
+  color: #8bdad3 !important;
+  background: #1b2b27 !important;
+}
+
+html.vox-user-dark .admin-ds-btn--primary {
+  color: #f7fffd !important;
+  background: linear-gradient(135deg, #4caea8 0%, #327f7a 100%) !important;
+  box-shadow: 0 11px 24px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-ds-btn--primary:hover {
+  background: linear-gradient(135deg, #59bbb5 0%, #368b86 100%) !important;
+}
+
+html.vox-user-dark .admin-ds-metrics,
+html.vox-user-dark .admin-ds-filter-row,
+html.vox-user-dark .admin-ds-tools,
+html.vox-user-dark .admin-ds-card-shell {
+  background: #111a18 !important;
+}
+
+html.vox-user-dark .admin-ds-metric,
+html.vox-user-dark .admin-ds-metric:nth-child(3) {
+  border-color: rgba(140, 201, 192, .14) !important;
+  background: linear-gradient(140deg, #182421 0%, #141f1c 72%) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-ds-metric:nth-child(3) {
+  border-color: rgba(216, 126, 151, .18) !important;
+  background: linear-gradient(140deg, #211b1d 0%, #171d1b 72%) !important;
+}
+
+html.vox-user-dark .admin-ds-metric:hover {
+  border-color: rgba(112, 203, 194, .27) !important;
+  box-shadow: 0 15px 36px rgba(0, 0, 0, .26) !important;
+}
+
+html.vox-user-dark .admin-ds-metric__icon {
+  border-color: rgba(112, 203, 194, .13) !important;
+  color: #77ccc5 !important;
+  background: linear-gradient(145deg, #1d3430, #172824) !important;
+}
+
+html.vox-user-dark .admin-ds-metric:nth-child(3) .admin-ds-metric__icon {
+  border-color: rgba(224, 136, 159, .18) !important;
+  color: #e899ad !important;
+  background: linear-gradient(145deg, #35242a, #251c20) !important;
+}
+
+html.vox-user-dark .admin-ds-metric small {
+  color: #9eb1ab !important;
+}
+
+html.vox-user-dark .admin-ds-metric strong {
+  color: #eef7f4 !important;
+}
+
+html.vox-user-dark .admin-ds-metric div>span {
+  color: #81958f !important;
+}
+
+html.vox-user-dark .admin-ds-filter-tabs {
+  border-color: rgba(140, 201, 192, .14) !important;
+  background: #151f1d !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+html.vox-user-dark .admin-ds-filter-tabs button {
+  color: #9fb2ac !important;
+}
+
+html.vox-user-dark .admin-ds-filter-tabs button:hover {
+  color: #8bdad3 !important;
+  background: #1b2926 !important;
+}
+
+html.vox-user-dark .admin-ds-filter-tabs button.is-active {
+  color: #9ce4de !important;
+  background: #1c3530 !important;
+  box-shadow: inset 0 0 0 1px rgba(115, 200, 192, .13) !important;
+}
+
+html.vox-user-dark .admin-ds-tools {
+  border-bottom-color: var(--ds-line-soft) !important;
+}
+
+html.vox-user-dark .admin-ds-sort__trigger,
+html.vox-user-dark .admin-ds-sort__direction,
+html.vox-user-dark .admin-ds-search {
+  border-color: rgba(142, 201, 192, .15) !important;
+  color: #b9cbc5 !important;
+  background: #151f1d !important;
+}
+
+html.vox-user-dark .admin-ds-sort__trigger:hover,
+html.vox-user-dark .admin-ds-sort__direction:hover,
+html.vox-user-dark .admin-ds-search button:hover {
+  color: #8bdad3 !important;
+  background: #1b2b27 !important;
+}
+
+html.vox-user-dark .admin-ds-sort__trigger small {
+  color: #7f948e !important;
+}
+
+html.vox-user-dark .admin-ds-sort__trigger strong {
+  color: #dce9e5 !important;
+}
+
+html.vox-user-dark .admin-ds-sort__trigger>svg:last-child,
+html.vox-user-dark .admin-ds-search,
+html.vox-user-dark .admin-ds-search button {
+  color: #849a94 !important;
+}
+
+html.vox-user-dark .admin-ds-sort__menu {
+  border-color: rgba(142, 201, 192, .16) !important;
+  background: #17211f !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .34) !important;
+}
+
+html.vox-user-dark .admin-ds-sort__menu button {
+  color: #b2c4be !important;
+}
+
+html.vox-user-dark .admin-ds-sort__menu button:hover,
+html.vox-user-dark .admin-ds-sort__menu button.is-active {
+  color: #8bdad3 !important;
+  background: #1d302c !important;
+}
+
+html.vox-user-dark .admin-ds-search input {
+  color: #edf5f2 !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-ds-search input::placeholder {
+  color: #70857f !important;
+}
+
+html.vox-user-dark .admin-ds-notice {
+  border-color: rgba(103, 189, 176, .22) !important;
+  color: #9fe0d5 !important;
+  background: #173029 !important;
+}
+
+html.vox-user-dark .admin-ds-error {
+  border-color: rgba(226, 126, 151, .22) !important;
+  color: #efafbf !important;
+  background: #321f25 !important;
+}
+
+html.vox-user-dark .admin-ds-source-card {
+  border-color: rgba(140, 201, 192, .14) !important;
+  background: #151f1d !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark .admin-ds-source-card:hover {
+  border-color: rgba(111, 204, 195, .28) !important;
+  box-shadow: var(--ds-shadow-hover) !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__visual,
+html.vox-user-dark .admin-ds-source-card.is-unavailable .admin-ds-source-card__visual {
+  background:
+    radial-gradient(circle at 85% 10%, rgba(95, 193, 184, .06), transparent 25%),
+    linear-gradient(135deg, #192a27 0%, #17231f 52%, #182723 100%) !important;
+}
+
+html.vox-user-dark .admin-ds-source-card.is-unavailable .admin-ds-source-card__visual {
+  background:
+    radial-gradient(circle at 85% 10%, rgba(164, 181, 175, .045), transparent 25%),
+    linear-gradient(135deg, #1b2321 0%, #171e1c 55%, #1a211f 100%) !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__mark {
+  border-color: rgba(139, 204, 194, .15) !important;
+  color: #85d7d0 !important;
+  background: #10201d !important;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .03) !important;
+}
+
+html.vox-user-dark .admin-ds-source-card.is-unavailable .admin-ds-source-card__mark {
+  color: #9aacA6 !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__visual-copy small {
+  color: #82b7af !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__visual-copy strong {
+  color: #edf6f3 !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__availability {
+  border-color: rgba(102, 193, 180, .18) !important;
+  color: #91d8ce !important;
+  background: rgba(15, 29, 26, .82) !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__availability.is-off {
+  border-color: rgba(168, 179, 175, .14) !important;
+  color: #a8b5b1 !important;
+}
+
+html.vox-user-dark .admin-ds-source-key {
+  border-color: rgba(111, 199, 190, .12) !important;
+  color: #83cfc8 !important;
+  background: #1a2c28 !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__head p {
+  color: #9fb1ab !important;
+}
+
+html.vox-user-dark .admin-ds-manage {
+  border-color: rgba(111, 199, 190, .18) !important;
+  color: #91d8d0 !important;
+  background: #1b302c !important;
+}
+
+html.vox-user-dark .admin-ds-manage:hover {
+  border-color: #5ebcb4 !important;
+  color: #f7fffd !important;
+  background: #3d928c !important;
+}
+
+html.vox-user-dark .admin-ds-delete {
+  border-color: rgba(220, 125, 149, .20) !important;
+  color: #eba0b3 !important;
+  background: #2c1d22 !important;
+}
+
+html.vox-user-dark .admin-ds-delete:hover:not(:disabled) {
+  border-color: #d77e96 !important;
+  color: #fff7fa !important;
+  background: #a95169 !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__status-row,
+html.vox-user-dark .admin-ds-source-card__details>section {
+  border-color: rgba(140, 201, 192, .10) !important;
+  background: #121c1a !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__status-row .is-on {
+  color: #8fd6cc !important;
+  background: #19332d !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__status-row .is-off {
+  color: #a1afab !important;
+  background: #242927 !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__details>section>small,
+html.vox-user-dark .admin-ds-source-card__usage small,
+html.vox-user-dark .admin-ds-source-card__footer,
+html.vox-user-dark .admin-ds-capability-chips em {
+  color: #829790 !important;
+}
+
+html.vox-user-dark .admin-ds-capability-chips span,
+html.vox-user-dark .admin-ds-source-card__usage>span {
+  border-color: rgba(133, 198, 189, .10) !important;
+  color: #b8cbc5 !important;
+  background: #192925 !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__usage strong {
+  color: #e0ece8 !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__footer {
+  border-top-color: rgba(140, 201, 192, .09) !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__footer .is-ready {
+  color: #8fd6cc !important;
+}
+
+html.vox-user-dark .admin-ds-source-card__footer .is-review {
+  color: #e7a0b2 !important;
+}
+
+html.vox-user-dark .admin-ds-empty {
+  color: #94a8a2 !important;
+}
+
+html.vox-user-dark .admin-ds-empty strong {
+  color: #dce9e5 !important;
+}
+
+html.vox-user-dark .admin-ds-empty span {
+  color: #879b95 !important;
+}
+
+html.vox-user-dark .admin-ds-pagination {
+  border-top-color: var(--ds-line-soft) !important;
+  color: #93a7a1 !important;
+  background: #121b19 !important;
+}
+
+html.vox-user-dark .admin-ds-pagination button {
+  border-color: rgba(140, 201, 192, .15) !important;
+  color: #b7c9c3 !important;
+  background: #17221f !important;
+}
+
+html.vox-user-dark .admin-ds-pagination button:hover:not(:disabled) {
+  color: #8bdad3 !important;
+  background: #1b2d29 !important;
+}
+
+html.vox-user-dark .admin-ds-pagination strong {
+  color: #d8e6e2 !important;
+}
+
+html.vox-user-dark .admin-ds-modal-backdrop {
+  background: rgba(2, 8, 7, .76) !important;
+}
+
+html.vox-user-dark .admin-ds-modal {
+  border-color: rgba(143, 204, 194, .17) !important;
+  color: #edf6f3 !important;
+  background: #111a18 !important;
+  box-shadow: 0 32px 96px rgba(0, 0, 0, .54) !important;
+  color-scheme: dark;
+}
+
+html.vox-user-dark .admin-ds-modal__head {
+  border-bottom-color: rgba(140, 201, 192, .10) !important;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(76, 184, 177, .09), transparent 29%),
+    linear-gradient(120deg, #172421, #121d1a 72%, #21181c) !important;
+}
+
+html.vox-user-dark .admin-ds-modal__identity>span,
+html.vox-user-dark .admin-ds-form-section__head>span {
+  border-color: rgba(125, 203, 193, .13) !important;
+  color: #7fd2cb !important;
+  background: #1b302c !important;
+}
+
+html.vox-user-dark .admin-ds-modal__identity small,
+html.vox-user-dark .admin-ds-form-section__head small {
+  color: #84aaa3 !important;
+}
+
+html.vox-user-dark .admin-ds-modal__identity h3,
+html.vox-user-dark .admin-ds-form-section__head strong,
+html.vox-user-dark .admin-ds-field>span,
+html.vox-user-dark .admin-ds-switch-card__copy strong,
+html.vox-user-dark .admin-ds-capability div strong,
+html.vox-user-dark .admin-ds-usage-grid strong,
+html.vox-user-dark .admin-ds-modal__footer>div:first-child>span strong {
+  color: #e6f0ed !important;
+}
+
+html.vox-user-dark .admin-ds-modal__identity p,
+html.vox-user-dark .admin-ds-field>small,
+html.vox-user-dark .admin-ds-switch-card__copy small,
+html.vox-user-dark .admin-ds-capability div small,
+html.vox-user-dark .admin-ds-usage-grid small,
+html.vox-user-dark .admin-ds-modal__footer>div:first-child>span small {
+  color: #8fa39d !important;
+}
+
+html.vox-user-dark .admin-ds-modal__close {
+  border-color: rgba(140, 201, 192, .14) !important;
+  color: #9eb1ab !important;
+  background: #17221f !important;
+}
+
+html.vox-user-dark .admin-ds-modal__close:hover {
+  color: #f0a9ba !important;
+  background: #2b1c21 !important;
+}
+
+html.vox-user-dark .admin-ds-modal__column+.admin-ds-modal__column,
+html.vox-user-dark .admin-ds-modal__footer {
+  border-color: rgba(140, 201, 192, .09) !important;
+  background: #101816 !important;
+}
+
+html.vox-user-dark .admin-ds-form-section {
+  border-color: rgba(140, 201, 192, .11) !important;
+  background: #151f1d !important;
+}
+
+html.vox-user-dark .admin-ds-field input,
+html.vox-user-dark .admin-ds-field textarea {
+  border-color: rgba(140, 201, 192, .15) !important;
+  color: #edf6f3 !important;
+  background: #101917 !important;
+}
+
+html.vox-user-dark .admin-ds-field input:disabled {
+  color: #81958f !important;
+  background: #18201e !important;
+}
+
+html.vox-user-dark .admin-ds-runtime-note {
+  border-color: rgba(110, 197, 187, .15) !important;
+  background: #172a26 !important;
+}
+
+html.vox-user-dark .admin-ds-runtime-note>span {
+  color: #82d1c8 !important;
+  background: #1d3933 !important;
+}
+
+html.vox-user-dark .admin-ds-runtime-note strong {
+  color: #dce9e5 !important;
+}
+
+html.vox-user-dark .admin-ds-runtime-note small {
+  color: #8fa39d !important;
+}
+
+html.vox-user-dark .admin-ds-runtime-note.is-missing {
+  border-color: rgba(220, 125, 149, .19) !important;
+  background: #2c1d22 !important;
+}
+
+html.vox-user-dark .admin-ds-runtime-note.is-missing>span {
+  color: #eba0b3 !important;
+  background: #3a232a !important;
+}
+
+html.vox-user-dark .admin-ds-switch-card,
+html.vox-user-dark .admin-ds-capability {
+  border-color: rgba(140, 201, 192, .11) !important;
+  color: #d8e6e2 !important;
+  background: #121c1a !important;
+}
+
+html.vox-user-dark .admin-ds-switch-card:hover:not(:disabled),
+html.vox-user-dark .admin-ds-capability:hover {
+  border-color: rgba(110, 201, 191, .24) !important;
+  background: #182a26 !important;
+}
+
+html.vox-user-dark .admin-ds-switch-card.is-on,
+html.vox-user-dark .admin-ds-capability.is-on {
+  border-color: rgba(106, 198, 188, .24) !important;
+  background: #19322d !important;
+}
+
+html.vox-user-dark .admin-ds-switch-card__icon,
+html.vox-user-dark .admin-ds-capability>span {
+  color: #94aaa4 !important;
+  background: #1c2926 !important;
+}
+
+html.vox-user-dark .admin-ds-switch-card.is-on .admin-ds-switch-card__icon,
+html.vox-user-dark .admin-ds-capability.is-on>span {
+  color: #88d8d0 !important;
+  background: #1d3a34 !important;
+}
+
+html.vox-user-dark .admin-ds-switch-card__control {
+  background: #43534f !important;
+}
+
+html.vox-user-dark .admin-ds-switch-card__control i {
+  background: #dfe9e6 !important;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .32) !important;
+}
+
+html.vox-user-dark .admin-ds-switch-card.is-on .admin-ds-switch-card__control {
+  background: #438f89 !important;
+}
+
+html.vox-user-dark .admin-ds-capability>i {
+  border-color: rgba(140, 201, 192, .12) !important;
+  background: #101816 !important;
+}
+
+html.vox-user-dark .admin-ds-capability.is-on>i {
+  color: #f7fffd !important;
+  background: #438f89 !important;
+}
+
+html.vox-user-dark .admin-ds-usage-grid>div {
+  background: #111c19 !important;
+}
+
+html.vox-user-dark .admin-ds-modal__error {
+  border-color: rgba(226, 126, 151, .22) !important;
+  color: #efafbf !important;
+  background: #321f25 !important;
+}
+
+html.vox-user-dark .admin-ds-modal__footer>div:first-child {
+  color: #8ed8cf !important;
+}
+
+html.vox-user-dark .admin-ds-action--cancel {
+  border-color: rgba(140, 201, 192, .15) !important;
+  color: #b8cac4 !important;
+  background: #17221f !important;
+}
+
+html.vox-user-dark .admin-ds-action--cancel:hover:not(:disabled) {
+  border-color: rgba(220, 125, 149, .20) !important;
+  color: #efa8b9 !important;
+  background: #2b1c21 !important;
+}
+
+html.vox-user-dark .admin-ds-action--save {
+  color: #f7fffd !important;
+  background: linear-gradient(135deg, #4caea8, #327f7a) !important;
+  box-shadow: 0 9px 22px rgba(0, 0, 0, .25) !important;
+}
+
+html.vox-user-dark .admin-ds-action--save:hover:not(:disabled) {
+  background: linear-gradient(135deg, #59bbb5, #368b86) !important;
+}
+
+html.vox-user-rtl .admin-ds-page .admin-ds-sort__trigger,
+html.vox-user-rtl .admin-ds-modal .admin-ds-switch-card,
+html.vox-user-rtl .admin-ds-modal .admin-ds-capability {
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-ds-page .admin-ds-sort__trigger {
+  border-radius: 0 13px 13px 0;
+}
+
+html.vox-user-rtl .admin-ds-page .admin-ds-sort__direction {
+  border-left: 1px solid rgba(47, 119, 116, .14);
+  border-right: 0;
+  border-radius: 13px 0 0 13px;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-ds-page .admin-ds-sort__direction {
+  border-left-color: rgba(142, 201, 192, .15) !important;
 }
 
 @media (max-width: 1250px) {

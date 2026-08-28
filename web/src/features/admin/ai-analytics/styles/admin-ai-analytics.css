@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-ai-analytics-page {
   --aia-teal: #2f7774;
   --aia-teal-strong: #246965;
@@ -38,12 +40,10 @@
   outline-offset: 2px;
 }
 
-/* Keep the AI analytics workspace clean without the global square backdrop. */
 .admin-shell:has(.admin-ai-analytics-page) .admin-shell__backdrop::before {
   display: none;
 }
 
-/* AI-specific hero --------------------------------------------------------- */
 .admin-ai-analytics-hero {
   position: relative;
   isolation: isolate;
@@ -461,7 +461,6 @@
   backdrop-filter: blur(10px);
 }
 
-/* Shared analytics panels -------------------------------------------------- */
 .admin-ai-analytics-panel,
 .admin-ai-analytics-model-panel {
   overflow: visible;
@@ -605,7 +604,6 @@
   }
 }
 
-/* Metric cards ------------------------------------------------------------- */
 .admin-ai-analytics-metrics {
   padding: 19px 22px 15px;
   display: grid;
@@ -726,7 +724,6 @@
   font-weight: 650;
 }
 
-/* Secondary signals -------------------------------------------------------- */
 .admin-ai-analytics-signal-strip {
   margin: 0 22px 15px;
   min-height: 50px;
@@ -761,7 +758,6 @@
   font-weight: 850;
 }
 
-/* Filters ----------------------------------------------------------------- */
 .admin-ai-analytics-filterbar {
   margin-top: 2px;
   padding: 16px 22px 21px;
@@ -920,7 +916,6 @@
   background: #edf8f5;
 }
 
-/* Model intelligence ------------------------------------------------------- */
 .admin-ai-analytics-highlights {
   display: flex;
   align-items: stretch;
@@ -1024,7 +1019,6 @@
   cursor: pointer;
 }
 
-/* Model cards -------------------------------------------------------------- */
 .admin-ai-analytics-model-grid {
   padding: 20px;
   display: grid;
@@ -1444,4 +1438,480 @@
   .admin-ai-analytics-hero-button {
     transition: none;
   }
+}
+
+html.vox-user-dark .admin-ai-analytics-page {
+  color: #e7f0ed;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-controls,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-filterbar,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-float-card,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero-button,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero-visual,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metrics,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-card,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-panel,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-stat,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-panel {
+  border-color: rgba(145, 198, 190, .16) !important;
+  background-color: #111d1b !important;
+  color: #e7f0ed !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .20);
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(h1, h2, h3, h4, h5, strong, label, th) {
+  color: #eaf3f0 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(p, small, td) {
+  color: #a5b7b1;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(input, select, textarea) {
+  border-color: rgba(145, 198, 190, .18) !important;
+  background: #0e1917 !important;
+  color: #e8f1ee !important;
+  caret-color: #8fd2c9;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(input, textarea)::placeholder {
+  color: #7f928b !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(table, thead, tbody, tr) {
+  border-color: rgba(145, 198, 190, .12);
+}
+
+html.vox-user-rtl .admin-ai-analytics-page {
+  direction: rtl;
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-ai-analytics-page :is(input, select, textarea, table) {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Dark-mode completion for AI Analytics only. Light mode is intentionally untouched. */
+html.vox-user-dark .admin-ai-analytics-page {
+  --aia-teal: #72cbc3;
+  --aia-teal-strong: #8adbd2;
+  --aia-teal-soft: #67c7bf;
+  --aia-pink: #e4a0b1;
+  --aia-pink-deep: #efafbf;
+  --aia-ink: #eaf4f1;
+  --aia-ink-soft: #b9cac5;
+  --aia-muted: #9eb2ac;
+  --aia-line: rgba(143, 210, 201, 0.16);
+  --aia-panel: #101b19;
+  --aia-shadow: 0 22px 54px rgba(0, 0, 0, 0.28);
+  color: #eaf4f1;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero {
+  border-color: rgba(142, 211, 202, 0.16) !important;
+  background:
+    radial-gradient(circle at 87% 17%, rgba(62, 157, 149, 0.16), transparent 22rem),
+    radial-gradient(circle at 7% 96%, rgba(187, 104, 128, 0.09), transparent 20rem),
+    linear-gradient(125deg, #101b19, #12211e 61%, #151d1c) !important;
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.28) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero::after {
+  border-color: rgba(101, 198, 189, 0.055);
+  box-shadow: 0 0 0 34px rgba(211, 133, 154, 0.025);
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero-visual {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero h1,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-panel__head h3,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-head h3 {
+  color: #eff8f5 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero p,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-panel__head p,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-head p,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-filterbar__top p {
+  color: #a9bbb5 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(.admin-ai-analytics-eyebrow,
+  .admin-ai-analytics-panel__kicker,
+  .admin-ai-analytics-hero__status span:first-child) {
+  color: #8adbd2 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero__status,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero__status span {
+  color: #a9bbb5;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-orbit {
+  color: #8adbd2 !important;
+  border-color: rgba(122, 207, 198, 0.24) !important;
+  background: rgba(18, 34, 31, 0.94) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28), inset 0 0 0 5px rgba(92, 189, 181, 0.055) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-orbit.is-token {
+  color: #efafbf !important;
+  border-color: rgba(228, 160, 177, 0.24) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28), inset 0 0 0 5px rgba(228, 160, 177, 0.045) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-core__ring {
+  border-color: rgba(111, 203, 194, 0.23);
+  background: rgba(25, 45, 41, 0.32) !important;
+  box-shadow: inset 0 0 28px rgba(79, 169, 164, 0.04);
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-core__ring.is-middle {
+  border-color: rgba(228, 160, 177, 0.2);
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-core__ring.is-inner {
+  background: radial-gradient(circle, rgba(84, 184, 175, 0.16), rgba(17, 31, 28, 0.86)) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-core__chip span {
+  color: #bce9e3 !important;
+  border-color: rgba(136, 219, 210, 0.2) !important;
+  background: #17312d !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-core__node {
+  border-color: #14211f;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-float-card {
+  border-color: rgba(142, 211, 202, 0.16) !important;
+  background: rgba(18, 32, 29, 0.94) !important;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.3) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-float-card>span {
+  color: #a7bbb5 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-float-card>strong {
+  color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-float-card>small {
+  color: #83d2c9 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-float-card.is-health>strong {
+  color: #efafbf !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero-visual__stats span {
+  color: #c8d7d3 !important;
+  border-color: rgba(142, 211, 202, 0.14) !important;
+  background: rgba(18, 32, 29, 0.94) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(.admin-ai-analytics-panel,
+  .admin-ai-analytics-model-panel) {
+  border-color: rgba(142, 211, 202, 0.15) !important;
+  background:
+    radial-gradient(circle at 5% 0%, rgba(92, 189, 185, 0.045), transparent 22%),
+    radial-gradient(circle at 98% 0%, rgba(217, 143, 160, 0.035), transparent 20%),
+    #101b19 !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.22) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(.admin-ai-analytics-panel__head,
+  .admin-ai-analytics-model-head,
+  .admin-ai-analytics-controls,
+  .admin-ai-analytics-filterbar) {
+  border-color: rgba(142, 211, 202, 0.11) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(.admin-ai-analytics-live,
+  .admin-ai-analytics-action,
+  .admin-ai-analytics-clear) {
+  color: #c3d2ce !important;
+  border-color: rgba(142, 211, 202, 0.16) !important;
+  background: #152421 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(.admin-ai-analytics-action:hover:not(:disabled),
+  .admin-ai-analytics-clear:hover:not(:disabled)) {
+  color: #91ded5 !important;
+  border-color: rgba(126, 213, 204, 0.35) !important;
+  background: #19302b !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-apply,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-hero-button {
+  color: #f5fffd !important;
+  border-color: rgba(130, 220, 211, 0.08) !important;
+  background: linear-gradient(135deg, #4faaa4, #347f7a 68%, #286964) !important;
+  box-shadow: 0 10px 24px rgba(22, 92, 87, 0.28) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metrics {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric:nth-child(1),
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric:nth-child(2),
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric:nth-child(4) {
+  border-color: rgba(142, 211, 202, 0.13) !important;
+  background: linear-gradient(135deg, #152522, #111d1b 78%) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric:nth-child(3) {
+  border-color: rgba(228, 160, 177, 0.13) !important;
+  background: linear-gradient(135deg, #221a1d, #131d1b 78%) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric:hover {
+  border-color: rgba(126, 213, 204, 0.26) !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric__icon,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-icon {
+  color: #8adbd2 !important;
+  border-color: rgba(142, 211, 202, 0.15) !important;
+  background: linear-gradient(145deg, #19302b, #13211f) !important;
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.17) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(.admin-ai-analytics-metric.is-warning .admin-ai-analytics-metric__icon,
+  .admin-ai-analytics-metric.is-latency .admin-ai-analytics-metric__icon) {
+  color: #efafbf !important;
+  border-color: rgba(228, 160, 177, 0.18) !important;
+  background: #281d21 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric.is-cost .admin-ai-analytics-metric__icon {
+  color: #9ed9d1 !important;
+  background: #172824 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric__copy small,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric__copy span {
+  color: #9fb2ac !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-metric__copy strong {
+  color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-signal-strip {
+  border-color: rgba(142, 211, 202, 0.12) !important;
+  background: #12201d !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-signal-strip span {
+  color: #a8bbb5 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-signal-strip b,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-signal-strip svg {
+  color: #8adbd2 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-filterbar,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-controls {
+  background: #0f1a18 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(.admin-ai-analytics-date-field,
+  .admin-ai-analytics-picker__trigger,
+  .admin-ai-analytics-sort-direction,
+  .admin-ai-analytics-search) {
+  color: #b9cbc5 !important;
+  border-color: rgba(142, 211, 202, 0.16) !important;
+  background: #14211f !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page :is(.admin-ai-analytics-picker__trigger:hover,
+  .admin-ai-analytics-sort-direction:hover) {
+  border-color: rgba(126, 213, 204, 0.32) !important;
+  background: #19302b !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-date-field small,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-picker__trigger small,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-highlights small {
+  color: #96aaa4 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-date-field input,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-picker__trigger strong,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-highlights strong,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-search input {
+  color: #e7f2ef !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-picker__chevron,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-search {
+  color: #8da49d !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-picker__menu {
+  color: #dfeae7 !important;
+  border-color: rgba(142, 211, 202, 0.16) !important;
+  background: #15211f !important;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.36) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-picker__menu button {
+  color: #bccdc8 !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-picker__menu button:hover,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-picker__menu button.is-active {
+  color: #91ded5 !important;
+  background: #1a302b !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-highlights>span {
+  border-color: rgba(142, 211, 202, 0.12) !important;
+  background: #14211f !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-search input {
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-search input::placeholder {
+  color: #71867f !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-search button {
+  color: #9eb3ad !important;
+  background: #1b302c !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-grid {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(92, 189, 185, 0.035), transparent 24%),
+    radial-gradient(circle at 100% 100%, rgba(217, 143, 160, 0.03), transparent 25%),
+    #0e1816 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-card {
+  border-color: rgba(142, 211, 202, 0.13) !important;
+  background: #13201e !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-card:hover {
+  border-color: rgba(126, 213, 204, 0.25) !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.26) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-card__head {
+  border-color: rgba(142, 211, 202, 0.1) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-cell strong {
+  color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-cell span:not(.admin-ai-analytics-model-icon) {
+  color: #9fb2ac !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-reliability {
+  color: #a9e2db !important;
+  border-color: rgba(111, 203, 194, 0.17) !important;
+  background: #17302b !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-reliability.is-mid {
+  color: #e4c884 !important;
+  border-color: rgba(204, 167, 87, 0.18) !important;
+  background: #29251b !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-reliability.is-low {
+  color: #efafbf !important;
+  border-color: rgba(228, 160, 177, 0.2) !important;
+  background: #2a1d22 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-stat,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-stat.is-cost {
+  border-color: rgba(142, 211, 202, 0.1) !important;
+  background: linear-gradient(145deg, #162522, #111d1b) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-stat.is-latency {
+  border-color: rgba(228, 160, 177, 0.14) !important;
+  background: linear-gradient(145deg, #241b1f, #151c1b) !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-stat>span,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-stat>small,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-card__traffic-copy span {
+  color: #9fb2ac !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-stat>strong,
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-card__traffic-copy strong {
+  color: #eaf5f2 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-stat.is-latency>strong {
+  color: #efafbf !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-model-card__traffic {
+  border-color: rgba(142, 211, 202, 0.1) !important;
+  background: #111d1b !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-share>div {
+  background: #263a36 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-empty {
+  color: #9fb2ac !important;
+  background: #0f1a18 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-empty strong {
+  color: #eaf5f2 !important;
+}
+
+html.vox-user-dark .admin-ai-analytics-page .admin-ai-analytics-empty p {
+  color: #9fb2ac !important;
+}
+
+html.vox-user-rtl .admin-ai-analytics-page .admin-ai-analytics-picker__trigger {
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-ai-analytics-page .admin-ai-analytics-picker__chevron {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+html.vox-user-rtl .admin-ai-analytics-page .admin-ai-analytics-picker__menu {
+  right: 0;
+  left: auto;
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-ai-analytics-page .admin-ai-analytics-picker__menu button {
+  text-align: right;
 }

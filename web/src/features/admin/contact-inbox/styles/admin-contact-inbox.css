@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-support-page--contact {
     --contact-deep: #236f6b;
     --contact-deeper: #173f3c;
@@ -857,6 +859,7 @@
     line-height: 1.55 !important;
     display: -webkit-box !important;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     white-space: normal !important;
 }
@@ -1434,4 +1437,641 @@
     .admin-contact-hero__queue {
         animation: none !important;
     }
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table td:nth-child(1)::before {
+    content: 'الرسالة' !important;
+    left: auto !important;
+    right: 95px !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table td:nth-child(2)::before {
+    content: 'المرسل' !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table td:nth-child(3)::before {
+    content: 'الوجهة' !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table td:nth-child(4)::before {
+    content: 'النوع' !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table td:nth-child(5)::before {
+    content: 'الحالة' !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table td:nth-child(6)::before {
+    content: 'النشاط' !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table td:nth-child(7)::before {
+    content: 'الإجراءات' !important;
+    margin-right: 0 !important;
+    margin-left: auto !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table tbody>tr>td,
+html.vox-user-rtl .admin-support-page--contact .admin-support-sort-picker__trigger,
+html.vox-user-rtl .admin-support-page--contact .admin-support-sort-picker__menu button {
+    text-align: right !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table tbody>tr::after {
+    right: auto !important;
+    left: 18px !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-table td:nth-child(2) {
+    padding: 31px 24px 23px 64px !important;
+}
+
+html.vox-user-rtl .admin-support-page--contact .admin-support-reply-field>small {
+    right: auto;
+    left: 11px;
+}
+
+html.vox-user-dark .admin-support-page--contact {
+    --contact-deep: #74cfc7;
+    --contact-deeper: #dceee9;
+    --contact-teal: #67c8c0;
+    --contact-teal-soft: #172a27;
+    --contact-teal-pale: #121d1b;
+    --contact-sage: #1a2722;
+    --contact-rose: #2a1d22;
+    --contact-rose-deep: #e0a2b2;
+    --contact-text: #edf5f2;
+    --contact-copy: #c4d2cd;
+    --contact-muted: #95a8a2;
+    --contact-line: rgba(151, 205, 194, .15);
+    color: #edf5f2;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-hero--contact {
+    border-color: rgba(117, 202, 193, .18);
+    background:
+        radial-gradient(circle at 78% 35%, rgba(86, 190, 181, .12), transparent 29%),
+        radial-gradient(circle at 96% 7%, rgba(64, 112, 103, .17), transparent 26%),
+        radial-gradient(circle at 9% 100%, rgba(160, 91, 109, .08), transparent 30%),
+        linear-gradient(112deg, #101a18 0%, #111d1a 53%, #14231f 100%) !important;
+    box-shadow: 0 22px 56px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-hero--contact::before {
+    opacity: .28;
+    background-image: radial-gradient(circle, rgba(104, 203, 194, .22) 1px, transparent 1.1px);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-hero--contact::after {
+    border-color: rgba(103, 200, 192, .12);
+    box-shadow:
+        0 0 0 30px rgba(84, 191, 183, .018),
+        0 0 0 62px rgba(84, 191, 183, .012);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__content>span:first-child {
+    color: #72cbc4;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-hero h2 {
+    color: #f1f7f5;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-hero p {
+    color: #aabbb5;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__chips>span {
+    border-color: rgba(131, 210, 201, .16);
+    background: rgba(23, 37, 34, .84);
+    color: #c1d2cd;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__orbit {
+    border-color: rgba(94, 196, 187, .18);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__mailbox-shadow {
+    background: radial-gradient(ellipse, rgba(39, 159, 150, .22), transparent 68%);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__mailbox-back {
+    border-color: rgba(114, 208, 199, .18);
+    background: linear-gradient(145deg, #367f79 0%, #2b6d68 62%, #245b57 100%);
+    box-shadow: 0 20px 34px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__mailbox-paper {
+    border-color: rgba(128, 202, 193, .13);
+    background:
+        linear-gradient(rgba(112, 201, 192, .18), rgba(112, 201, 192, .18)) 16px 20px / 50px 4px no-repeat,
+        linear-gradient(rgba(112, 201, 192, .12), rgba(112, 201, 192, .12)) 16px 30px / 69px 4px no-repeat,
+        #1b2926;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, .18);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__mailbox-front {
+    color: rgba(235, 249, 246, .92);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, .08), transparent 42%),
+        linear-gradient(145deg, #3d8f88, #2d716b);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__stat,
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__queue {
+    border-color: rgba(124, 205, 196, .17);
+    background: rgba(19, 31, 28, .92);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__stat>span,
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__queue>svg {
+    color: #7ed1ca;
+    background: #18312d;
+    box-shadow: inset 0 0 0 1px rgba(122, 206, 197, .08);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__stat--replied>span {
+    color: #a8c99c;
+    background: #213126;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__stat small,
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__queue small {
+    color: #9badA7;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__stat strong,
+html.vox-user-dark .admin-support-page--contact .admin-contact-hero__queue strong {
+    color: #eef6f3;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-metric,
+html.vox-user-dark .admin-support-page--contact .admin-support-metric:nth-child(1),
+html.vox-user-dark .admin-support-page--contact .admin-support-metric:nth-child(2),
+html.vox-user-dark .admin-support-page--contact .admin-support-metric:nth-child(3),
+html.vox-user-dark .admin-support-page--contact .admin-support-metric:nth-child(4) {
+    border-color: rgba(138, 204, 195, .14) !important;
+    background: linear-gradient(135deg, #16231f 0%, #131d1b 100%) !important;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .22) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-metric:nth-child(3) {
+    background: linear-gradient(135deg, #241a1e 0%, #151c1a 100%) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-metric__icon {
+    color: #79d0c8;
+    background: linear-gradient(145deg, #17302b, #1c2825);
+    box-shadow: inset 0 0 0 1px rgba(122, 208, 199, .08);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-metric:nth-child(3) .admin-support-metric__icon {
+    color: #e6a2b4;
+    background: linear-gradient(145deg, #332127, #251c20);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-metric small {
+    color: #9fb1ab;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-metric strong {
+    color: #edf5f2;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-metric div>span {
+    color: #82958f;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-panel {
+    border-color: rgba(135, 203, 194, .14) !important;
+    background: #111a18 !important;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-panel__header {
+    border-bottom-color: rgba(142, 203, 195, .12) !important;
+    background:
+        radial-gradient(circle at 88% 12%, rgba(159, 95, 111, .07), transparent 26%),
+        linear-gradient(90deg, #16231f 0%, #121c1a 58%, #1b1819 100%) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-panel__header>div:first-child>span {
+    color: #72cbc3;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-panel__header h3 {
+    color: #edf5f2;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-panel__header p {
+    color: #91a49e;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-live-chip {
+    border-color: rgba(104, 202, 193, .18);
+    background: #17302b;
+    color: #91d8d1;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-header-actions button {
+    border-color: rgba(135, 201, 193, .14);
+    color: #b7c8c2;
+    background: #17211f;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-header-actions button:hover:not(:disabled) {
+    border-color: rgba(112, 207, 198, .28);
+    color: #d8ebe6;
+    background: #1b2926;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-filters {
+    border-color: rgba(139, 201, 193, .11);
+    background: linear-gradient(180deg, #121c1a, #101816) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-tabs {
+    border-color: rgba(138, 201, 193, .12);
+    background: #17211f;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-tabs button {
+    color: #9badA7;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-tabs button:hover {
+    color: #d2e5df;
+    background: #1b2d29;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-tabs button.is-active {
+    color: #8fd9d2;
+    background: #17312c;
+    box-shadow: inset 0 0 0 1px rgba(112, 205, 196, .14), 0 5px 12px rgba(0, 0, 0, .14);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-sort-picker__trigger,
+html.vox-user-dark .admin-support-page--contact .admin-support-sort-picker__direction,
+html.vox-user-dark .admin-support-page--contact .admin-support-search {
+    border-color: rgba(139, 203, 194, .14) !important;
+    background: #151f1d !important;
+    color: #b8cac4 !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-sort-picker__trigger small {
+    color: #7f928c;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-sort-picker__trigger strong,
+html.vox-user-dark .admin-support-page--contact .admin-support-search input {
+    color: #d8e5e1 !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-search input::placeholder {
+    color: #72857f !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-sort-picker__menu {
+    border-color: rgba(139, 203, 194, .15);
+    background: rgba(21, 31, 29, .99);
+    box-shadow: 0 20px 52px rgba(0, 0, 0, .34);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-sort-picker__menu button {
+    color: #9fb1ab;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-sort-picker__menu button:hover,
+html.vox-user-dark .admin-support-page--contact .admin-support-sort-picker__menu button.is-active {
+    color: #8dd9d1;
+    background: #1a2d29;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr,
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n + 2),
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n + 3),
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n) {
+    --card-accent-deep: #82d0c9;
+    --card-hero: linear-gradient(105deg, #172a26 0%, #16211f 59%, #142520 100%);
+    border-color: rgba(137, 202, 193, .14) !important;
+    background: #121b19 !important;
+    box-shadow: 0 16px 38px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n + 2) {
+    --card-accent-deep: #a4c999;
+    --card-hero: linear-gradient(105deg, #1b2820 0%, #17201b 59%, #1a241d 100%);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n + 3) {
+    --card-accent-deep: #82cec8;
+    --card-hero: linear-gradient(105deg, #172826 0%, #15201e 59%, #142521 100%);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr:nth-child(4n) {
+    --card-accent-deep: #dfa0b1;
+    --card-hero: linear-gradient(105deg, #2a1c21 0%, #1b1819 59%, #261a1e 100%);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr:hover {
+    border-color: rgba(118, 205, 196, .25) !important;
+    box-shadow: 0 21px 44px rgba(0, 0, 0, .32) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr::before {
+    border-bottom-color: rgba(137, 202, 193, .11);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr>td {
+    border-color: rgba(137, 202, 193, .1) !important;
+    color: #b8c8c3 !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table tbody>tr>td::before {
+    color: #8ea39d !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-row-icon {
+    border-color: rgba(125, 207, 198, .13) !important;
+    background: rgba(24, 42, 38, .82) !important;
+    box-shadow: inset 0 0 0 1px rgba(126, 206, 198, .045) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-primary-cell strong,
+html.vox-user-dark .admin-support-page--contact .admin-support-table td:nth-child(2) .admin-support-person strong,
+html.vox-user-dark .admin-support-page--contact .admin-support-person strong,
+html.vox-user-dark .admin-support-page--contact .admin-support-date strong {
+    color: #e4efec !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table td:nth-child(1) .admin-support-primary-cell p,
+html.vox-user-dark .admin-support-page--contact .admin-support-person span,
+html.vox-user-dark .admin-support-page--contact .admin-support-date span {
+    color: #8fa29c !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table td:nth-child(7) {
+    border-top-color: rgba(137, 202, 193, .1) !important;
+    background: linear-gradient(180deg, #131d1b, #101816) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-view-button {
+    border-color: rgba(122, 205, 196, .18) !important;
+    background: #182622 !important;
+    color: var(--card-accent-deep) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-view-button:hover:not(:disabled) {
+    border-color: rgba(125, 211, 202, .34) !important;
+    background: #1d302b !important;
+    color: #dff3ee !important;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-table td[colspan],
+html.vox-user-dark .admin-support-page--contact .admin-support-table tr:has(td[colspan]) {
+    background: #121b19 !important;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-empty strong {
+    color: #dce9e5;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-empty span {
+    color: #82958f;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-pagination {
+    border-top-color: rgba(137, 202, 193, .1);
+    background: #101816;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-pagination>span {
+    color: #91a49e;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-pagination button {
+    border-color: rgba(137, 202, 193, .14);
+    background: #16211f;
+    color: #b7c8c2;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-pagination button:hover:not(:disabled) {
+    background: #1b2a27;
+    color: #e2eeea;
+}
+
+html.vox-user-dark .admin-support-modal-layer {
+    background: rgba(3, 8, 7, .78);
+}
+
+html.vox-user-dark .admin-support-modal--contact {
+    border-color: rgba(136, 204, 195, .16) !important;
+    background: #111a18 !important;
+    box-shadow: 0 36px 96px rgba(0, 0, 0, .55) !important;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-modal__header {
+    border-bottom-color: rgba(139, 203, 194, .12);
+    background:
+        radial-gradient(circle at 92% 0%, rgba(163, 94, 111, .08), transparent 25%),
+        linear-gradient(100deg, #172621, #121b19 62%) !important;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-modal__mark,
+html.vox-user-dark .admin-support-modal--contact .admin-support-sender-card>span,
+html.vox-user-dark .admin-support-modal--contact .admin-support-action-pane__intro>span {
+    color: #7bd1ca;
+    background: #17312c;
+    box-shadow: inset 0 0 0 1px rgba(124, 209, 200, .08);
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-modal__heading small,
+html.vox-user-dark .admin-support-modal--contact .admin-support-message-card>div,
+html.vox-user-dark .admin-support-modal--contact .admin-support-action-pane__intro small,
+html.vox-user-dark .admin-support-modal--contact .admin-support-email-preview>span {
+    color: #79ccc5;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-modal__heading h2,
+html.vox-user-dark .admin-support-modal--contact .admin-support-sender-card strong,
+html.vox-user-dark .admin-support-modal--contact .admin-support-recipient-note strong,
+html.vox-user-dark .admin-support-modal--contact .admin-support-action-pane__intro h3,
+html.vox-user-dark .admin-support-modal--contact .admin-support-email-preview strong {
+    color: #e5f0ed;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-icon-button,
+html.vox-user-dark .admin-support-modal--contact .admin-support-sender-card,
+html.vox-user-dark .admin-support-modal--contact .admin-support-message-card,
+html.vox-user-dark .admin-support-modal--contact .admin-support-previous-reply {
+    border-color: rgba(139, 203, 194, .13);
+    background: #17211f;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-icon-button {
+    color: #aebfba;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-case-pane {
+    border-color: rgba(139, 203, 194, .11);
+    background: linear-gradient(145deg, #121d1a, #101816);
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-action-pane {
+    background: #111a18;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-recipient-note,
+html.vox-user-dark .admin-support-modal--contact .admin-support-email-preview {
+    border-color: rgba(122, 207, 198, .16);
+    background: linear-gradient(135deg, #162b27, #131d1b);
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-sender-card small,
+html.vox-user-dark .admin-support-modal--contact .admin-support-sender-card p,
+html.vox-user-dark .admin-support-modal--contact .admin-support-recipient-note p,
+html.vox-user-dark .admin-support-modal--contact .admin-support-message-card p,
+html.vox-user-dark .admin-support-modal--contact .admin-support-timeline span,
+html.vox-user-dark .admin-support-modal--contact .admin-support-timeline strong,
+html.vox-user-dark .admin-support-modal--contact .admin-support-action-pane__intro p,
+html.vox-user-dark .admin-support-modal--contact .admin-support-email-preview p,
+html.vox-user-dark .admin-support-modal--contact .admin-support-previous-reply span,
+html.vox-user-dark .admin-support-modal--contact .admin-support-previous-reply p {
+    color: #93a69f;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-field>span,
+html.vox-user-dark .admin-support-modal--contact .admin-support-reply-field>span {
+    color: #afc0ba;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__trigger {
+    border-color: rgba(139, 203, 194, .15);
+    background: linear-gradient(180deg, #17221f, #131d1b);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .025);
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__trigger:hover:not(:disabled),
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice.is-open .admin-support-choice__trigger {
+    background: #1a2825;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__label,
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__option-copy strong {
+    color: #d7e5e0;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__chevron,
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__option-copy small {
+    color: #82958f;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__menu {
+    border-color: rgba(139, 203, 194, .16);
+    background: rgba(21, 31, 29, .99);
+    box-shadow: 0 24px 58px rgba(0, 0, 0, .42);
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__option {
+    color: #afc0ba;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__option:hover,
+html.vox-user-dark .admin-support-modal--contact .admin-support-choice__option.is-selected {
+    background: linear-gradient(90deg, #19302b, #211a1d);
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-reply-field textarea {
+    border-color: rgba(139, 203, 194, .15) !important;
+    color: #dce8e4 !important;
+    background: #0f1715 !important;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-reply-field textarea::placeholder {
+    color: #6f827c !important;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-reply-field textarea:focus {
+    border-color: rgba(111, 210, 200, .42) !important;
+    background: #111b18 !important;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-reply-field>small {
+    color: #71847e;
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-modal__actions {
+    border-top-color: rgba(139, 203, 194, .11);
+    background: rgba(16, 24, 22, .96);
+    box-shadow: 0 -12px 28px rgba(0, 0, 0, .2);
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-secondary-button {
+    border-color: rgba(139, 203, 194, .14);
+    color: #aebfba;
+    background: linear-gradient(180deg, #192421, #141e1b);
+    box-shadow: 0 7px 18px rgba(0, 0, 0, .16);
+}
+
+html.vox-user-dark .admin-support-modal--contact .admin-support-secondary-button:hover:not(:disabled) {
+    color: #e0ece8;
+    border-color: rgba(112, 205, 196, .25);
+    background: #1b2926;
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-status.is-open,
+html.vox-user-dark .admin-support-modal--contact .admin-support-status.is-open {
+    color: #8fd4cd;
+    background: #17312c;
+    border-color: rgba(104, 202, 193, .18);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-status.is-progress,
+html.vox-user-dark .admin-support-modal--contact .admin-support-status.is-progress {
+    color: #b4c8c2;
+    background: #1d2926;
+    border-color: rgba(153, 190, 181, .16);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-status.is-success,
+html.vox-user-dark .admin-support-modal--contact .admin-support-status.is-success {
+    color: #9bd8c6;
+    background: #173027;
+    border-color: rgba(112, 198, 170, .18);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-status.is-closed,
+html.vox-user-dark .admin-support-modal--contact .admin-support-status.is-closed {
+    color: #aab8b4;
+    background: #202725;
+    border-color: rgba(165, 184, 178, .14);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-sender-type.is-registered,
+html.vox-user-dark .admin-support-modal--contact .admin-support-sender-type.is-registered {
+    color: #90d6cf;
+    background: #17312c;
+    border-color: rgba(109, 203, 194, .18);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-sender-type.is-guest,
+html.vox-user-dark .admin-support-modal--contact .admin-support-sender-type.is-guest {
+    color: #bac5c1;
+    background: #222826;
+    border-color: rgba(171, 190, 184, .14);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-alert.is-error {
+    color: #efadba;
+    background: #2a1c21;
+    border-color: rgba(230, 145, 164, .2);
+}
+
+html.vox-user-dark .admin-support-page--contact .admin-support-toast {
+    color: #9cddd4;
+    background: #17302b;
+    border-color: rgba(104, 202, 193, .2);
 }

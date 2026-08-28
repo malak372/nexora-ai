@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-page {
   display: grid;
   gap: 18px
@@ -2920,4 +2922,143 @@
 .admin-page select,
 .admin-page textarea {
   font-weight: 600;
+}
+
+html.vox-user-dark .admin-shell .admin-page,
+.admin-shell--dark .admin-page {
+  color: #e8f0ed;
+}
+
+html.vox-user-dark .admin-shell .admin-hero,
+html.vox-user-dark .admin-shell .admin-stat,
+html.vox-user-dark .admin-shell .admin-panel,
+html.vox-user-dark .admin-shell .admin-summary-strip article,
+html.vox-user-dark .admin-shell .admin-record-metrics article,
+html.vox-user-dark .admin-shell .admin-resource-modal,
+html.vox-user-dark .admin-shell .admin-resource-detail,
+html.vox-user-dark .admin-shell .admin-modal,
+.admin-shell--dark .admin-hero,
+.admin-shell--dark .admin-stat,
+.admin-shell--dark .admin-panel,
+.admin-shell--dark .admin-summary-strip article,
+.admin-shell--dark .admin-record-metrics article,
+.admin-shell--dark .admin-resource-modal,
+.admin-shell--dark .admin-resource-detail,
+.admin-shell--dark .admin-modal {
+  color: #e8f0ed !important;
+  border-color: rgba(151, 200, 190, .14) !important;
+  background: rgba(23, 32, 30, .94) !important;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .22) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-hero,
+.admin-shell--dark .admin-hero {
+  background: linear-gradient(125deg, rgba(25, 35, 32, .97), rgba(19, 36, 32, .95) 72%, rgba(36, 27, 31, .93)) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-panel__head,
+html.vox-user-dark .admin-shell .admin-filterbar,
+html.vox-user-dark .admin-shell .admin-resource-modal header,
+.admin-shell--dark .admin-panel__head,
+.admin-shell--dark .admin-filterbar,
+.admin-shell--dark .admin-resource-modal header {
+  border-color: rgba(151, 200, 190, .11) !important;
+  background: rgba(19, 28, 26, .78) !important;
+}
+
+html.vox-user-dark .admin-shell :is(.admin-btn, .admin-mini-btn, .admin-tab, .admin-row-actions button),
+.admin-shell--dark :is(.admin-btn, .admin-mini-btn, .admin-tab, .admin-row-actions button) {
+  color: #c4d2cd !important;
+  border-color: rgba(151, 200, 190, .14) !important;
+  background: #1b2623 !important;
+}
+
+html.vox-user-dark .admin-shell :is(.admin-btn, .admin-mini-btn, .admin-tab, .admin-row-actions button):hover,
+.admin-shell--dark :is(.admin-btn, .admin-mini-btn, .admin-tab, .admin-row-actions button):hover {
+  color: #8bd1cb !important;
+  border-color: rgba(139, 209, 203, .28) !important;
+  background: #21312e !important;
+}
+
+html.vox-user-dark .admin-shell .admin-btn--primary,
+.admin-shell--dark .admin-btn--primary {
+  color: #f8fffd !important;
+  border-color: transparent !important;
+  background: linear-gradient(135deg, #4faaa4, #357f7b) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-btn--danger,
+.admin-shell--dark .admin-btn--danger {
+  color: #efafbc !important;
+  border-color: rgba(217, 143, 160, .24) !important;
+  background: rgba(145, 72, 91, .13) !important;
+}
+
+html.vox-user-dark .admin-shell :is(.admin-searchbox, .admin-select, .admin-field input, .admin-field textarea, .admin-field select),
+.admin-shell--dark :is(.admin-searchbox, .admin-select, .admin-field input, .admin-field textarea, .admin-field select) {
+  color: #e9f2ef !important;
+  border-color: rgba(151, 200, 190, .14) !important;
+  background: #18221f !important;
+}
+
+html.vox-user-dark .admin-shell :is(input, textarea, select),
+.admin-shell--dark :is(input, textarea, select) {
+  color: #e9f2ef;
+}
+
+html.vox-user-dark .admin-shell :is(input, textarea)::placeholder,
+.admin-shell--dark :is(input, textarea)::placeholder {
+  color: #73857f;
+}
+
+html.vox-user-dark .admin-shell .admin-table th,
+.admin-shell--dark .admin-table th {
+  color: #a9bbb5 !important;
+  background: #16201e !important;
+  border-color: rgba(151, 200, 190, .10) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-table td,
+.admin-shell--dark .admin-table td {
+  color: #bdccc7 !important;
+  border-color: rgba(151, 200, 190, .09) !important;
+  background: rgba(23, 32, 30, .76) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-table strong,
+.admin-shell--dark .admin-table strong {
+  color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-table tr:hover td,
+.admin-shell--dark .admin-table tr:hover td {
+  background: rgba(92, 189, 185, .08) !important;
+}
+
+html.vox-user-dark .admin-shell :is(.admin-hero p, .admin-stat small, .admin-panel__head p),
+.admin-shell--dark :is(.admin-hero p, .admin-stat small, .admin-panel__head p) {
+  color: #96a8a2 !important;
+}
+
+.admin-shell--rtl .admin-hero,
+.admin-shell--rtl .admin-panel,
+.admin-shell--rtl .admin-stat,
+.admin-shell--rtl .admin-modal,
+.admin-shell--rtl .admin-resource-modal,
+.admin-shell--rtl .admin-resource-detail {
+  text-align: right;
+}
+
+.admin-shell--rtl .admin-table th,
+.admin-shell--rtl .admin-table td {
+  text-align: right;
+}
+
+.admin-shell--rtl .admin-toolbar,
+.admin-shell--rtl .admin-filterbar,
+.admin-shell--rtl .admin-panel__head,
+.admin-shell--rtl .admin-hero__eyebrow,
+.admin-shell--rtl .admin-searchbox,
+.admin-shell--rtl .admin-row-actions {
+  direction: rtl;
 }

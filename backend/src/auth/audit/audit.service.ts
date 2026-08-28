@@ -45,7 +45,7 @@ export type CreateAuthLogInput = AuthRequestMeta & {
  */
 @Injectable()
 export class AuthAuditService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async createLog(input: CreateAuthLogInput): Promise<AuthenticationLog> {
     return this.prisma.authenticationLog.create({
@@ -129,6 +129,7 @@ export class AuthAuditService {
       accountLockEvents,
       distinctIps,
       distinctUsers,
+      groupedNetworkSources,
     ] = await Promise.all([
       this.prisma.authenticationLog.count({ where }),
       this.prisma.authenticationLog.count({
@@ -183,7 +184,83 @@ export class AuthAuditService {
           userId: true,
         },
       }),
+      this.prisma.authenticationLog.groupBy({
+        by: ['ipAddress', 'isSuccess', 'action'],
+        where: {
+          AND: [
+            where,
+            {
+              ipAddress: {
+                not: null,
+              },
+            },
+          ],
+        },
+        _count: {
+          _all: true,
+        },
+      }),
     ]);
+
+    const networkSourceMap = new Map<
+      string,
+      {
+        ipAddress: string;
+        totalEvents: number;
+        successfulEvents: number;
+        failedEvents: number;
+        lockEvents: number;
+      }
+    >();
+
+    for (const group of groupedNetworkSources) {
+      if (!group.ipAddress) continue;
+
+      const current = networkSourceMap.get(group.ipAddress) ?? {
+        ipAddress: group.ipAddress,
+        totalEvents: 0,
+        successfulEvents: 0,
+        failedEvents: 0,
+        lockEvents: 0,
+      };
+      const count = group._count._all;
+
+      current.totalEvents += count;
+      if (group.isSuccess) current.successfulEvents += count;
+      else current.failedEvents += count;
+      if (group.action === AuthAction.ACCOUNT_LOCKED) current.lockEvents += count;
+
+      networkSourceMap.set(group.ipAddress, current);
+    }
+
+    const riskSources = Array.from(networkSourceMap.values())
+      .map((source) => {
+        const failureRatio = source.totalEvents > 0
+          ? source.failedEvents / source.totalEvents
+          : 0;
+        const riskScore = Math.min(
+          100,
+          Math.round((failureRatio * 72) + (Math.min(source.lockEvents, 3) * 10)),
+        );
+
+        return {
+          ...source,
+          riskScore,
+          riskLevel: source.lockEvents > 0 || riskScore >= 65
+            ? 'critical'
+            : riskScore >= 35
+              ? 'high'
+              : source.failedEvents > 0
+                ? 'medium'
+                : 'low',
+        };
+      })
+      .sort((left, right) =>
+        right.riskScore - left.riskScore
+        || right.failedEvents - left.failedEvents
+        || right.totalEvents - left.totalEvents,
+      )
+      .slice(0, 18);
 
     return {
       totalEvents,
@@ -192,6 +269,7 @@ export class AuthAuditService {
       accountLockEvents,
       uniqueIpAddresses: distinctIps.length,
       uniqueUsers: distinctUsers.length,
+      riskSources,
     };
   }
 
@@ -205,59 +283,59 @@ export class AuthAuditService {
       ...(buildDateFilter(query) ?? {}),
       ...(query.action
         ? {
-            action: query.action,
-          }
+          action: query.action,
+        }
         : {}),
       ...(includeSuccessFilter && query.isSuccess !== undefined
         ? {
-            isSuccess: query.isSuccess,
-          }
+          isSuccess: query.isSuccess,
+        }
         : {}),
       ...(search
         ? {
-            OR: [
-              {
+          OR: [
+            {
+              email: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              message: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              ipAddress: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              userAgent: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              user: {
+                fullName: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              user: {
                 email: {
                   contains: search,
                   mode: 'insensitive',
                 },
               },
-              {
-                message: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
-              },
-              {
-                ipAddress: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
-              },
-              {
-                userAgent: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
-              },
-              {
-                user: {
-                  fullName: {
-                    contains: search,
-                    mode: 'insensitive',
-                  },
-                },
-              },
-              {
-                user: {
-                  email: {
-                    contains: search,
-                    mode: 'insensitive',
-                  },
-                },
-              },
-            ],
-          }
+            },
+          ],
+        }
         : {}),
     };
   }

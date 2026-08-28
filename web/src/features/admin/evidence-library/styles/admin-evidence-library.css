@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-evidence-page {
   --evidence-teal: #2f7774;
   --evidence-teal-2: #5cbdb9;
@@ -4188,4 +4190,392 @@
 
 .admin-evidence-page .admin-evidence-card__footer {
   background: linear-gradient(180deg, rgba(255, 253, 253, .98), rgba(255, 247, 249, .9)) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page {
+  --evidence-teal: #79d2ca;
+  --evidence-teal-strong: #a0e4de;
+  --evidence-teal-2: #63c7bf;
+  --evidence-ink: #e8f2ef;
+  --evidence-heading: #f3f8f6;
+  --evidence-muted: #9fb2ac;
+  --evidence-line: rgba(133, 203, 193, .16);
+  --evidence-soft: #152521;
+  --evidence-pink: #e0a0b0;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-hero {
+  border-color: rgba(133, 203, 193, .15) !important;
+  background:
+    radial-gradient(circle at 84% 4%, rgba(68, 160, 151, .13), transparent 30%),
+    radial-gradient(circle at 8% 100%, rgba(159, 91, 109, .08), transparent 28%),
+    linear-gradient(145deg, #172823 0%, #101c19 68%, #171a19 100%) !important;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-hero h2,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-panel__head h3 {
+  color: #f1f7f5 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-hero p,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-panel__head p {
+  color: #9dafaa !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-panel {
+  border-color: rgba(133, 203, 193, .15) !important;
+  background:
+    radial-gradient(circle at 4% 0%, rgba(74, 173, 163, .08), transparent 22%),
+    radial-gradient(circle at 98% 0%, rgba(180, 100, 122, .055), transparent 20%),
+    linear-gradient(180deg, #111d1a 0%, #0d1715 100%) !important;
+  box-shadow: 0 20px 54px rgba(0, 0, 0, .25) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-panel__head {
+  border-bottom-color: rgba(133, 203, 193, .12) !important;
+  background: rgba(15, 27, 24, .8) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-panel__kicker,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-copy-card__label {
+  color: #79d2ca !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-live-chip,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-panel__actions .admin-btn {
+  color: #d9e8e4 !important;
+  border-color: rgba(133, 203, 193, .18) !important;
+  background: #172622 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-panel__actions .admin-btn:hover {
+  color: #a5e4de !important;
+  border-color: rgba(121, 210, 202, .32) !important;
+  background: #1d302b !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metrics {
+  border-bottom-color: rgba(133, 203, 193, .1) !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric:nth-child(1),
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric:nth-child(2),
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric:nth-child(3),
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric:nth-child(4) {
+  border-color: rgba(133, 203, 193, .15) !important;
+  background: linear-gradient(145deg, #182824 0%, #13211e 72%, #101b18 100%) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric:hover {
+  border-color: rgba(121, 210, 202, .3) !important;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric__icon,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric:nth-child(3) .admin-evidence-metric__icon {
+  color: #8bd9d2 !important;
+  background: #20352f !important;
+  box-shadow: inset 0 0 0 1px rgba(121, 210, 202, .16) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric:nth-child(3) .admin-evidence-metric__icon {
+  color: #e5a4b5 !important;
+  background: #35252a !important;
+  box-shadow: inset 0 0 0 1px rgba(229, 164, 181, .16) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric__copy small,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric>div small {
+  color: #a4b7b1 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric__copy strong,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric>div strong {
+  color: #eef6f3 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric__copy span,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-metric>div span {
+  color: #839992 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-tools {
+  border-top-color: rgba(133, 203, 193, .08) !important;
+  border-bottom-color: rgba(133, 203, 193, .12) !important;
+  background: linear-gradient(180deg, #101c19 0%, #0d1715 100%) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__trigger,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__direction,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__trigger,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-search {
+  color: #cbdad5 !important;
+  border-color: rgba(133, 203, 193, .17) !important;
+  background: #15231f !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__trigger:hover,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__direction:hover,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__trigger:hover,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter.is-open .admin-evidence-source-filter__trigger,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter.has-value .admin-evidence-source-filter__trigger {
+  color: #98ded8 !important;
+  border-color: rgba(121, 210, 202, .3) !important;
+  background: #1b302a !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__trigger small,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__copy small,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-tools__hint {
+  color: #93a8a1 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__trigger strong,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__copy strong,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-search input {
+  color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-search input::placeholder {
+  color: #71867f !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-search button,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__icon,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__option-mark,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-pill i,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-language-pill {
+  color: #83d8d0 !important;
+  border-color: rgba(121, 210, 202, .13) !important;
+  background: #1b302a !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__menu,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__menu {
+  color: #d8e7e2 !important;
+  border-color: rgba(133, 203, 193, .22) !important;
+  background: #13211e !important;
+  box-shadow: 0 24px 54px rgba(0, 0, 0, .42) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__menu button,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__menu button,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__option-copy strong {
+  color: #c9d8d3 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__option-copy small,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__empty {
+  color: #839790 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__menu button:hover,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-sort__menu button.is-active,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__menu button:hover,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__menu button.is-active {
+  color: #9de2dc !important;
+  background: #1c312b !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-filter__divider {
+  background: rgba(133, 203, 193, .12) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card {
+  color: #dce9e5 !important;
+  border-color: rgba(133, 203, 193, .15) !important;
+  background: linear-gradient(145deg, #172622 0%, #111d1a 70%, #171a19 100%) !important;
+  box-shadow: 0 13px 32px rgba(0, 0, 0, .2) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card:hover {
+  border-color: rgba(121, 210, 202, .3) !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__hero {
+  border-bottom-color: rgba(133, 203, 193, .11) !important;
+  background: linear-gradient(120deg, #1a2c27 0%, #14221f 62%, #181c1a 100%) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__icon {
+  color: #88d8d0 !important;
+  background: #20352f !important;
+  box-shadow: inset 0 0 0 1px rgba(121, 210, 202, .14) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__dots {
+  opacity: .24 !important;
+  background-image: radial-gradient(rgba(121, 210, 202, .35) 1.1px, transparent 1.1px) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__meta-grid {
+  background: #111d1a !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__meta-item,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__meta-item--wide:nth-child(5) {
+  border-right-color: rgba(133, 203, 193, .1) !important;
+  border-bottom-color: rgba(133, 203, 193, .1) !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__headline small,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__meta-item small,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__actions-label {
+  color: #91a69f !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__headline strong,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__text,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-source-pill,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-language-pill,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-engagement {
+  color: #e1ece8 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__headline span {
+  color: #93a59f !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-card__footer {
+  border-top-color: rgba(133, 203, 193, .08) !important;
+  background: linear-gradient(180deg, #121f1c 0%, #0e1816 100%) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-inspect-btn {
+  color: #8edbd4 !important;
+  border-color: rgba(133, 203, 193, .19) !important;
+  background: #1a2d28 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-inspect-btn:hover {
+  color: #b2ece7 !important;
+  border-color: rgba(121, 210, 202, .34) !important;
+  background: #213a33 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-pagination {
+  border-top-color: rgba(133, 203, 193, .11) !important;
+  background: #0f1a18 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-pagination strong,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-loading strong,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-empty strong {
+  color: #e7f0ed !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-pagination span,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-loading span,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-empty span {
+  color: #8fa49d !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-pagination button {
+  color: #d2e0dc !important;
+  border-color: rgba(133, 203, 193, .17) !important;
+  background: #172622 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-pagination button:hover:not(:disabled) {
+  color: #9ee2dc !important;
+  border-color: rgba(121, 210, 202, .32) !important;
+  background: #1d322c !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-error {
+  color: #efb2c0 !important;
+  border-color: rgba(224, 143, 163, .24) !important;
+  background: #2d1d22 !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-loading,
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-empty {
+  color: #8fa49d !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-visual-card {
+  border-color: rgba(133, 203, 193, .17) !important;
+  background: rgba(14, 27, 24, .88) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-visual-base--back {
+  background: rgba(72, 143, 135, .24) !important;
+  box-shadow: 0 12px 22px rgba(0, 0, 0, .16), inset 0 5px 0 rgba(130, 218, 208, .08) !important;
+}
+
+html.vox-user-dark .admin-main .admin-evidence-page .admin-evidence-visual-base--front {
+  background: rgba(32, 66, 60, .72) !important;
+  box-shadow: inset 0 5px 0 rgba(152, 231, 222, .09) !important;
+}
+
+html.vox-user-dark .admin-evidence-drawer-backdrop {
+  background: rgba(2, 8, 7, .72) !important;
+}
+
+html.vox-user-dark .admin-evidence-drawer {
+  color: #e2ece9 !important;
+  border-color: rgba(133, 203, 193, .19) !important;
+  background:
+    radial-gradient(circle at 85% 5%, rgba(82, 180, 170, .11), transparent 22%),
+    radial-gradient(circle at 10% 96%, rgba(178, 100, 122, .08), transparent 23%),
+    #101c19 !important;
+  box-shadow: -20px 0 70px rgba(0, 0, 0, .42) !important;
+  color-scheme: dark;
+}
+
+html.vox-user-dark .admin-evidence-drawer__head {
+  border-bottom-color: rgba(133, 203, 193, .13) !important;
+  background: linear-gradient(120deg, #192b26 0%, #121f1c 72%, #1c1919 100%) !important;
+}
+
+html.vox-user-dark .admin-evidence-drawer__head h3,
+html.vox-user-dark .admin-evidence-copy-card p,
+html.vox-user-dark .admin-evidence-detail-grid strong,
+html.vox-user-dark .admin-evidence-readonly-note strong {
+  color: #e9f2ef !important;
+}
+
+html.vox-user-dark .admin-evidence-drawer__head p,
+html.vox-user-dark .admin-evidence-detail-grid small,
+html.vox-user-dark .admin-evidence-readonly-note span {
+  color: #91a69f !important;
+}
+
+html.vox-user-dark .admin-evidence-drawer__head>button,
+html.vox-user-dark .admin-evidence-copy-card,
+html.vox-user-dark .admin-evidence-detail-grid>div,
+html.vox-user-dark .admin-evidence-source-link {
+  border-color: rgba(133, 203, 193, .16) !important;
+  background: #162622 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-evidence-drawer__head>button {
+  color: #c5d6d0 !important;
+}
+
+html.vox-user-dark .admin-evidence-readonly-note {
+  color: #9bded8 !important;
+  border-color: rgba(121, 210, 202, .18) !important;
+  background: #17302a !important;
+}
+
+html.vox-user-dark .admin-evidence-source-link {
+  color: #8edbd4 !important;
+}
+
+html.vox-user-dark .admin-evidence-source-link:hover {
+  color: #b3ece7 !important;
+  background: #203a33 !important;
 }

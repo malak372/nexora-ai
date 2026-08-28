@@ -23,6 +23,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { getStoredUser } from '../../../auth/shared/auth.storage';
 import { resolveMediaUrl } from '../../../../utils/mediaUrl';
+import { useUserExperience } from '../../../../system/user-experience';
 import { getApiErrorMessage } from '../../shared/api/adminApi';
 import AdminSensitiveAccessGate from '../../shared/components/AdminSensitiveAccessGate';
 import '../../shared/styles/admin-pages.css';
@@ -45,7 +46,7 @@ import '../styles/admin-team-chat.css';
  *
  * @author Eman
  */
-function formatConversationTime(value) {
+function formatConversationTime(value, language = 'en') {
     if (!value) return '';
 
     const date = new Date(value);
@@ -55,13 +56,13 @@ function formatConversationTime(value) {
     const now = new Date();
 
     if (date.toDateString() === now.toDateString()) {
-        return date.toLocaleTimeString(undefined, {
+        return date.toLocaleTimeString(language === 'ar' ? 'ar' : undefined, {
             hour: '2-digit',
             minute: '2-digit',
         });
     }
 
-    return date.toLocaleDateString(undefined, {
+    return date.toLocaleDateString(language === 'ar' ? 'ar' : undefined, {
         month: 'short',
         day: 'numeric',
     });
@@ -75,14 +76,14 @@ function formatConversationTime(value) {
  *
  * @author Eman
  */
-function formatMessageTime(value) {
+function formatMessageTime(value, language = 'en') {
     if (!value) return '';
 
     const date = new Date(value);
 
     if (Number.isNaN(date.getTime())) return '';
 
-    return date.toLocaleTimeString(undefined, {
+    return date.toLocaleTimeString(language === 'ar' ? 'ar' : undefined, {
         hour: '2-digit',
         minute: '2-digit',
     });
@@ -252,8 +253,8 @@ function DirectMessageModal({
                                     />
 
                                     <span>
-                                        <strong>{admin.fullName}</strong>
-                                        <small>{admin.email}</small>
+                                        <strong data-no-auto-translate="true" dir="auto">{admin.fullName}</strong>
+                                        <small data-no-auto-translate="true" dir="ltr">{admin.email}</small>
                                     </span>
 
                                     <em>
@@ -426,8 +427,8 @@ function GroupModal({
                                 />
 
                                 <span>
-                                    <strong>{admin.fullName}</strong>
-                                    <small>{admin.email}</small>
+                                    <strong data-no-auto-translate="true" dir="auto">{admin.fullName}</strong>
+                                    <small data-no-auto-translate="true" dir="ltr">{admin.email}</small>
                                 </span>
 
                                 <i>
@@ -500,6 +501,7 @@ function GroupModal({
  * @author Eman
  */
 export default function AdminTeamChatPage() {
+    const { language } = useUserExperience();
     const location = useLocation();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -1348,7 +1350,7 @@ export default function AdminTeamChatPage() {
 
                                             <span className="admin-team-chat-thread__copy">
                                                 <span>
-                                                    <strong>
+                                                    <strong data-no-auto-translate="true" dir="auto">
                                                         {
                                                             conversation.displayName
                                                         }
@@ -1358,12 +1360,16 @@ export default function AdminTeamChatPage() {
                                                         {formatConversationTime(
                                                             conversation.lastMessageAt ||
                                                             conversation.updatedAt,
+                                                            language,
                                                         )}
                                                     </time>
                                                 </span>
 
                                                 <span>
-                                                    <small>
+                                                    <small
+                                                        data-no-auto-translate={conversation.lastMessage?.content ? 'true' : undefined}
+                                                        dir={conversation.lastMessage?.content ? 'auto' : undefined}
+                                                    >
                                                         {conversation
                                                             .lastMessage
                                                             ?.content ||
@@ -1454,7 +1460,7 @@ export default function AdminTeamChatPage() {
                                     />
 
                                     <div>
-                                        <strong>
+                                        <strong data-no-auto-translate="true" dir="auto">
                                             {
                                                 activeConversation.displayName
                                             }
@@ -1641,13 +1647,14 @@ export default function AdminTeamChatPage() {
                                                             </div>
                                                         ) : null}
 
-                                                        <p>
+                                                        <p data-no-auto-translate="true" dir="auto">
                                                             {message.content}
                                                         </p>
 
                                                         <time>
                                                             {formatMessageTime(
                                                                 message.createdAt,
+                                                                language,
                                                             )}
                                                         </time>
                                                     </div>

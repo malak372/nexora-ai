@@ -1,0 +1,295 @@
+html.vox-user-dark .admin-shell,
+.admin-shell--dark {
+    --admin-dark-bg: #0d1413;
+    --admin-dark-surface: #151f1d;
+    --admin-dark-surface-2: #192522;
+    --admin-dark-surface-3: #1d2b28;
+    --admin-dark-border: rgba(164, 205, 195, 0.14);
+    --admin-dark-border-strong: rgba(164, 205, 195, 0.22);
+    --admin-dark-text: #edf5f2;
+    --admin-dark-muted: #9badA7;
+    --admin-dark-soft: #73857f;
+    --admin-dark-accent: #73c8c0;
+    --admin-dark-danger: #ef9eae;
+    color: var(--admin-dark-text);
+    background: var(--admin-dark-bg);
+}
+
+html.vox-user-dark .admin-shell :is([class*="-hero"],
+    [class*="-panel"],
+    [class*="-card"],
+    [class*="-metric"],
+    [class*="-workspace"],
+    [class*="-directory"],
+    [class*="-inspector"],
+    [class*="-drawer"],
+    [class*="-detail"],
+    [class*="-summary"],
+    [class*="-surface"],
+    [class*="-state"],
+    [class*="-empty"],
+    [class*="-record"]),
+.admin-shell--dark :is([class*="-hero"],
+    [class*="-panel"],
+    [class*="-card"],
+    [class*="-metric"],
+    [class*="-workspace"],
+    [class*="-directory"],
+    [class*="-inspector"],
+    [class*="-drawer"],
+    [class*="-detail"],
+    [class*="-summary"],
+    [class*="-surface"],
+    [class*="-state"],
+    [class*="-empty"],
+    [class*="-record"]) {
+    border-color: var(--admin-dark-border) !important;
+}
+
+html.vox-user-dark .admin-shell :is([class$="-hero"],
+    [class$="-panel"],
+    [class$="-card"],
+    [class$="-metric"],
+    [class$="-workspace"],
+    [class$="-directory"],
+    [class$="-inspector"],
+    [class$="-drawer"],
+    [class$="-detail"],
+    [class$="-surface"],
+    [class$="-state"]),
+.admin-shell--dark :is([class$="-hero"],
+    [class$="-panel"],
+    [class$="-card"],
+    [class$="-metric"],
+    [class$="-workspace"],
+    [class$="-directory"],
+    [class$="-inspector"],
+    [class$="-drawer"],
+    [class$="-detail"],
+    [class$="-surface"],
+    [class$="-state"]) {
+    color: var(--admin-dark-text) !important;
+    background-color: var(--admin-dark-surface) !important;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.2) !important;
+}
+
+html.vox-user-dark .admin-shell :is([class*="__head"],
+    [class*="__header"],
+    [class*="-toolbar"],
+    [class*="-controls"],
+    [class*="-filterbar"],
+    [class*="-filters"],
+    [class*="-topbar"],
+    [class*="-footerbar"]),
+.admin-shell--dark :is([class*="__head"],
+    [class*="__header"],
+    [class*="-toolbar"],
+    [class*="-controls"],
+    [class*="-filterbar"],
+    [class*="-filters"],
+    [class*="-topbar"],
+    [class*="-footerbar"]) {
+    border-color: var(--admin-dark-border) !important;
+}
+
+html.vox-user-dark :is([class^="admin-"][class*="-modal"],
+    [class^="admin-"][class*="-inspector"],
+    [class^="admin-"][class*="-drawer"]),
+.admin-shell--dark :is([class^="admin-"][class*="-modal"],
+    [class^="admin-"][class*="-inspector"],
+    [class^="admin-"][class*="-drawer"]) {
+    color: var(--admin-dark-text, #edf5f2) !important;
+    border-color: var(--admin-dark-border, rgba(164, 205, 195, 0.14)) !important;
+}
+
+html.vox-user-dark :is([class$="-modal"],
+    [class$="-inspector"],
+    [class$="-drawer"])[class^="admin-"] {
+    background: #151f1d !important;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48) !important;
+}
+
+html.vox-user-dark :is([class*="-modal-backdrop"],
+    [class*="-modal-layer"],
+    [class*="-backdrop"])[class^="admin-"] {
+    --admin-modal-backdrop: rgba(3, 8, 7, 0.72);
+}
+
+html.vox-user-dark .admin-shell :is([class*="-menu"],
+    [class*="-dropdown"],
+    [class*="-popover"],
+    [class*="-picker__menu"],
+    [class*="-select__menu"],
+    [role="menu"],
+    [role="listbox"]),
+html.vox-user-dark body> :is([class^="admin-"][class*="-menu"],
+    [class^="admin-"][class*="-dropdown"],
+    [class^="admin-"][class*="-popover"]) {
+    color: #e8f1ee !important;
+    border-color: rgba(164, 205, 195, 0.16) !important;
+    background: #17211f !important;
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34) !important;
+}
+
+html.vox-user-dark .admin-shell :is(input, textarea, select, [contenteditable="true"]),
+.admin-shell--dark :is(input, textarea, select, [contenteditable="true"]) {
+    color: #edf5f2 !important;
+    border-color: rgba(164, 205, 195, 0.17) !important;
+    background: #111a18 !important;
+    caret-color: #7bd0c8;
+    color-scheme: dark;
+}
+
+html.vox-user-dark .admin-shell :is(input, textarea)::placeholder,
+.admin-shell--dark :is(input, textarea)::placeholder {
+    color: #71837d !important;
+    opacity: 1;
+}
+
+html.vox-user-dark .admin-shell :is(input, textarea, select):focus,
+.admin-shell--dark :is(input, textarea, select):focus {
+    border-color: rgba(115, 200, 192, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(115, 200, 192, 0.1) !important;
+    outline: none;
+}
+
+html.vox-user-dark .admin-shell :is(table, thead, tbody, tr),
+.admin-shell--dark :is(table, thead, tbody, tr) {
+    border-color: var(--admin-dark-border) !important;
+}
+
+html.vox-user-dark .admin-shell :is(th),
+.admin-shell--dark :is(th) {
+    color: #a9bbb5 !important;
+    border-color: rgba(164, 205, 195, 0.11) !important;
+    background: #111b19 !important;
+}
+
+html.vox-user-dark .admin-shell :is(td),
+.admin-shell--dark :is(td) {
+    color: #c8d5d1 !important;
+    border-color: rgba(164, 205, 195, 0.09) !important;
+}
+
+html.vox-user-dark .admin-shell tbody tr:hover td,
+.admin-shell--dark tbody tr:hover td {
+    background: rgba(115, 200, 192, 0.055) !important;
+}
+
+html.vox-user-dark .admin-shell :is(h1, h2, h3, h4, h5, h6, strong, b, label, legend),
+.admin-shell--dark :is(h1, h2, h3, h4, h5, h6, strong, b, label, legend) {
+    color: #edf5f2;
+}
+
+html.vox-user-dark .admin-shell :is(p, small, figcaption),
+.admin-shell--dark :is(p, small, figcaption) {
+    color: #9badA7;
+}
+
+html.vox-user-dark .admin-shell :is(code, pre, kbd),
+.admin-shell--dark :is(code, pre, kbd) {
+    color: #d7e7e2 !important;
+    border-color: rgba(164, 205, 195, 0.14) !important;
+    background: #0e1715 !important;
+}
+
+html.vox-user-dark .admin-shell :is(button, [role="button"]):not([disabled]),
+.admin-shell--dark :is(button, [role="button"]):not([disabled]) {
+    border-color: rgba(164, 205, 195, 0.15);
+}
+
+html.vox-user-dark .admin-shell :is(a),
+.admin-shell--dark :is(a) {
+    color: #82d5cd;
+}
+
+html.vox-user-dark .admin-shell ::selection,
+.admin-shell--dark ::selection {
+    color: #f7fffd;
+    background: rgba(75, 160, 153, 0.48);
+}
+
+html.vox-user-rtl .admin-shell,
+.admin-shell--rtl {
+    direction: rtl;
+}
+
+html.vox-user-rtl .admin-shell :is(.admin-page,
+    h1, h2, h3, h4, h5, h6,
+    p, label, legend,
+    th, td,
+    [class*="__copy"],
+    [class*="__content"],
+    [class*="__heading"],
+    [class*="__title"],
+    [class*="__subtitle"],
+    [class*="__meta"],
+    [class*="__description"],
+    [class*="__note"]),
+.admin-shell--rtl :is(.admin-page,
+    h1, h2, h3, h4, h5, h6,
+    p, label, legend,
+    th, td,
+    [class*="__copy"],
+    [class*="__content"],
+    [class*="__heading"],
+    [class*="__title"],
+    [class*="__subtitle"],
+    [class*="__meta"],
+    [class*="__description"],
+    [class*="__note"]) {
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-shell :is([class*="-toolbar"],
+    [class*="-controls"],
+    [class*="-filterbar"],
+    [class*="-filters"],
+    [class*="__actions"],
+    [class*="__header"],
+    [class*="__head"],
+    [class*="-search"],
+    [class*="-sort"]),
+.admin-shell--rtl :is([class*="-toolbar"],
+    [class*="-controls"],
+    [class*="-filterbar"],
+    [class*="-filters"],
+    [class*="__actions"],
+    [class*="__header"],
+    [class*="__head"],
+    [class*="-search"],
+    [class*="-sort"]) {
+    direction: rtl;
+}
+
+html.vox-user-rtl .admin-shell :is(input, textarea, select),
+.admin-shell--rtl :is(input, textarea, select) {
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-shell :is(td, .admin-value, [class*="__value"], [class*="__body"]),
+.admin-shell--rtl :is(td, .admin-value, [class*="__value"], [class*="__body"]) {
+    unicode-bidi: plaintext;
+}
+
+html.vox-user-rtl .admin-shell :is(code, pre, [data-ltr="true"], input[type="email"], input[type="url"]),
+.admin-shell--rtl :is(code, pre, [data-ltr="true"], input[type="email"], input[type="url"]) {
+    direction: ltr !important;
+    text-align: left !important;
+}
+
+html.vox-user-rtl .admin-shell :is(.lucide, svg) {
+    flex: 0 0 auto;
+}
+
+html.vox-user-dark .admin-invite-auth,
+html.vox-user-dark .admin-account-host {
+    color: #edf5f2;
+    color-scheme: dark;
+}
+
+html.vox-user-rtl .admin-invite-auth,
+html.vox-user-rtl .admin-account-host {
+    direction: rtl;
+    text-align: right;
+}

@@ -30,6 +30,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-credits.css';
@@ -174,12 +175,12 @@ function signedAmount(value) {
   return `${amount > 0 ? '+' : ''}${amount.toLocaleString()}`;
 }
 
-function contextLabel(transaction) {
+function contextLabel(transaction, isArabic = false) {
   if (transaction.idea?.title) return transaction.idea.title;
   if (transaction.publicationAcceptance?.publication?.publicTitle) {
     return transaction.publicationAcceptance.publication.publicTitle;
   }
-  if (transaction.payment?.id) return `Payment ${shortId(transaction.payment.id, 8)}`;
+  if (transaction.payment?.id) return `${isArabic ? 'دفعة' : 'Payment'} ${shortId(transaction.payment.id, 8)}`;
   if (transaction.description) return transaction.description;
   return typeInfo(transaction.type).detail;
 }
@@ -665,6 +666,7 @@ function AdjustCreditsModal({ open, initialUser, onClose, onSaved }) {
 }
 
 export default function AdminCreditsPage() {
+  const { isArabic } = useUserExperience();
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
   const [summary, setSummary] = useState({});
@@ -813,7 +815,7 @@ export default function AdminCreditsPage() {
       <section className="admin-hero admin-credit-hero">
         <div className="admin-credit-hero__content">
           <div className="admin-hero__eyebrow"><Coins size={15} /> CREDIT OPERATIONS</div>
-          <h2>Credit <span>ledger</span></h2>
+          <h2>{isArabic ? <>سجل <span>الرصيد</span></> : <>Credit <span>ledger</span></>}</h2>
           <p>Review every credit movement, inspect its source, filter the ledger and apply audited administrative balance adjustments.</p>
           <div className="admin-credit-hero__signals" aria-label="Credit ledger capabilities">
             <span><History size={13} /> Traceable movements</span>
@@ -975,12 +977,12 @@ export default function AdminCreditsPage() {
             </colgroup>
             <thead>
               <tr>
-                <th>Transaction</th>
-                <th>User</th>
-                <th>Movement</th>
-                <th>Context</th>
-                <th>Balance after</th>
-                <th>Actions</th>
+                <th>{isArabic ? 'المعاملة' : 'Transaction'}</th>
+                <th>{isArabic ? 'المستخدم' : 'User'}</th>
+                <th>{isArabic ? 'الحركة' : 'Movement'}</th>
+                <th>{isArabic ? 'السياق' : 'Context'}</th>
+                <th>{isArabic ? 'الرصيد بعد الحركة' : 'Balance after'}</th>
+                <th>{isArabic ? 'الإجراءات' : 'Actions'}</th>
               </tr>
             </thead>
             <tbody>
@@ -1023,7 +1025,7 @@ export default function AdminCreditsPage() {
                         <span className={`admin-credit-context-icon ${info.tone}`}><TypeIcon size={15} /></span>
                         <div>
                           <TypeBadge type={transaction.type} />
-                          <small title={contextLabel(transaction)}>{contextLabel(transaction)}</small>
+                          <small title={contextLabel(transaction, isArabic)}>{contextLabel(transaction, isArabic)}</small>
                         </div>
                       </div>
                     </td>
