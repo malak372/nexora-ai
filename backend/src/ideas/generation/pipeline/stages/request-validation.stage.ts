@@ -27,6 +27,7 @@ import {
   normalizeNullableGenerationText,
   normalizeRequiredGenerationText,
 } from '../../utils/idea-generation-normalizer.util';
+import { RequestTextIntegrityUtil } from '../../utils/request-text-integrity.util';
 
 import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
@@ -89,9 +90,9 @@ export class RequestValidationStage implements IdeaGenerationStage {
 
       owner: this.normalizeOwner(context),
 
-      requestDescription: normalizeNullableGenerationText(
-        context.requestDescription,
-      ),
+      requestDescription: RequestTextIntegrityUtil.normalize(
+        normalizeNullableGenerationText(context.requestDescription),
+      ).text,
 
       requestedDomainIds: normalizeGenerationStringArray(
         context.requestedDomainIds ?? [],

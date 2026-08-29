@@ -425,8 +425,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         }`,
       );
     });
+
     const activeSourceKeys = sourceCatalog.map((source) => source.key);
     const domainNames = this.deduplicatePhrases(input.domainNames).slice(0, 3);
+
     const aiDiscoveryPlan =
       await this.runProviderDiverseDomainDiscoveryPlanningRace({
         domainNames,
@@ -437,79 +439,91 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         guestSessionId: input.guestSessionId,
       });
 
-    const fallbackQueries =
-      CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
-        domainNames,
-        Math.min(15, Math.max(9, domainNames.length * 5)),
-      );
-    const aiGroupedQueries = (
-      aiDiscoveryPlan?.domainQueryGroups.flatMap((group) => group.queries) ?? []
-    ).filter((query) => !this.isGenericDomainDiscoveryQuery(query));
-    const aiGlobalQueries = (aiDiscoveryPlan?.searchQueries ?? []).filter(
-      (query) => !this.isGenericDomainDiscoveryQuery(query),
+    /*
+     * Semantic discovery is AI-owned.  When every AI lane is unavailable we do
+     * NOT synthesize failure archetypes such as "approval backlog", "manual
+     * handoff", "capacity scheduling", or any other guessed problem from a
+     * domain label.  The safety fallback is deliberately neutral: each selected
+     * domain is issued as a retrieval seed and Community AI remains the first
+     * component allowed to decide which returned rows describe a real problem.
+     */
+    const aiQueriesByDomain = new Map(
+      (aiDiscoveryPlan?.domainQueryGroups ?? []).map((group) => [
+        this.normalizeDiscoveryIdentity(group.domainName),
+        this.uniqueStrings(group.queries).slice(0, 4),
+      ] as const),
+    );
+    const neutralQueriesByDomain = new Map(
+      domainNames.map((domainName) => [
+        this.normalizeDiscoveryIdentity(domainName),
+        [domainName],
+      ] as const),
     );
 
-    /*
-     * Do not append generic deterministic probes to a healthy AI plan merely
-     * because capacity remains in the query array. That was how concrete
-     * Government/E-commerce queries ended up next to generic
-     * "users/operators recurring problems" Media queries. Fallback queries are
-     * used only for selected domains that the AI failed to cover.
-     */
-    const aiCoveredDomains = new Set(
-      domainNames
-        .filter((domainName) =>
-          [...aiGroupedQueries, ...aiGlobalQueries].some((query) =>
-            this.discoveryQueryMatchesDomain(query, domainName),
-          ),
-        )
-        .map((domainName) => this.normalizeDiscoveryIdentity(domainName)),
-    );
-    const missingDomainFallbackQueries = domainNames.flatMap((domainName) =>
-      aiCoveredDomains.has(this.normalizeDiscoveryIdentity(domainName))
-        ? []
-        : CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
-            [domainName],
-            5,
-          ),
-    );
-    const aiOwnedDiscoveryQueries = this.deduplicateQueries([
-      ...aiGroupedQueries,
-      ...aiGlobalQueries,
-      ...(aiDiscoveryPlan ? missingDomainFallbackQueries : fallbackQueries),
-    ]);
-    const minimumDiscoveryQueryCount = Math.min(
-      12,
-      Math.max(8, domainNames.length * 4),
-    );
-    const breadthEnrichmentQueries = domainNames.flatMap((domainName) =>
-      CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+    const domainPackets = domainNames.map((domainName) => ({
+      domainName,
+      queries:
+        aiQueriesByDomain.get(this.normalizeDiscoveryIdentity(domainName)) ??
+        neutralQueriesByDomain.get(this.normalizeDiscoveryIdentity(domainName)) ??
         [domainName],
-        5,
+    }));
+
+    /*
+     * Preserve domain lanes before any global query budget is applied.  Similar
+     * pain wording across different domains is intentionally NOT semantically
+     * deduplicated here because that previously allowed the first domain to
+     * consume the whole budget.  Exact duplicates inside a lane are still
+     * removed, and remaining capacity is filled round-robin across domains.
+     */
+    const roundRobinDomainQueries: string[] = [];
+    const maxPerDomainDepth = Math.max(
+      1,
+      ...domainPackets.map((packet) => packet.queries.length),
+    );
+    for (
+      let depth = 0;
+      depth < maxPerDomainDepth && roundRobinDomainQueries.length < 15;
+      depth += 1
+    ) {
+      for (const packet of domainPackets) {
+        const query = packet.queries[depth];
+        if (!query) continue;
+        const cleaned = query.replace(/\s+/gu, ' ').trim();
+        if (!cleaned) continue;
+        if (
+          !roundRobinDomainQueries.some(
+            (existing) =>
+              existing.toLocaleLowerCase() === cleaned.toLocaleLowerCase(),
+          )
+        ) {
+          roundRobinDomainQueries.push(cleaned);
+        }
+        if (roundRobinDomainQueries.length >= 15) break;
+      }
+    }
+
+    const aiGlobalQueries = this.uniqueStrings(
+      aiDiscoveryPlan?.searchQueries ?? [],
+    ).filter((query) =>
+      domainNames.some((domainName) =>
+        this.discoveryQueryMatchesDomain(query, domainName),
       ),
     );
-    /*
-     * A fast provider may return only one good query per domain. Preserve every
-     * AI-owned seed first, then fill only the missing breadth with bounded,
-     * domain-grounded structural probes. This keeps DOMAINS_ONLY/NO_INPUT close
-     * to the stronger text paths (8-12 concrete queries) without inventing a
-     * winning problem before collection and without replacing AI planning.
-     */
-    const searchQueries = this.deduplicateQueries([
-      ...aiOwnedDiscoveryQueries,
-      ...(aiOwnedDiscoveryQueries.length < minimumDiscoveryQueryCount
-        ? breadthEnrichmentQueries
-        : []),
-    ])
-      .filter((query) => !this.isGenericDomainDiscoveryQuery(query))
-      .slice(0, 15);
+
+    const searchQueries = this.uniqueStrings([
+      ...roundRobinDomainQueries,
+      ...aiGlobalQueries,
+    ]).slice(0, 15);
 
     const requestedDiscoverySourceKeys = this.deduplicatePhrases([
-      ...(aiDiscoveryPlan?.sourceAssignments.map((assignment) => assignment.sourceKey) ?? []),
+      ...(aiDiscoveryPlan?.sourceAssignments.map(
+        (assignment) => assignment.sourceKey,
+      ) ?? []),
       ...(aiDiscoveryPlan?.selectedSourceKeys?.length
         ? aiDiscoveryPlan.selectedSourceKeys
         : activeSourceKeys),
     ]).filter((key) => activeSourceKeys.includes(key));
+
     const discoveryCapabilityInput = {
       requestDescription: domainNames.join(' '),
       domainName: domainNames[0] ?? null,
@@ -523,15 +537,25 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         discoveryCapabilityInput,
       ),
     );
-    const requestedExecutableSourceKeys = requestedDiscoverySourceKeys.filter((sourceKey) =>
-      executableDiscoverySourceKeys.includes(sourceKey),
-    );
+    const requestedExecutableSourceKeys =
+      requestedDiscoverySourceKeys.filter((sourceKey) =>
+        executableDiscoverySourceKeys.includes(sourceKey),
+      );
     const capabilityRankedDiscoverySources = executableDiscoverySourceKeys
-      .filter((sourceKey) => !requestedExecutableSourceKeys.includes(sourceKey))
-      .sort((left, right) =>
-        this.collectorsFactory.getCollectorRequestFitScore(right, discoveryCapabilityInput) -
-          this.collectorsFactory.getCollectorRequestFitScore(left, discoveryCapabilityInput) ||
-        left.localeCompare(right),
+      .filter(
+        (sourceKey) => !requestedExecutableSourceKeys.includes(sourceKey),
+      )
+      .sort(
+        (left, right) =>
+          this.collectorsFactory.getCollectorRequestFitScore(
+            right,
+            discoveryCapabilityInput,
+          ) -
+            this.collectorsFactory.getCollectorRequestFitScore(
+              left,
+              discoveryCapabilityInput,
+            ) ||
+          left.localeCompare(right),
       );
     const rankedDiscoverySourceKeys = this.deduplicatePhrases([
       ...requestedExecutableSourceKeys,
@@ -549,72 +573,129 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       aiAssignments: aiDiscoveryPlan?.sourceAssignments ?? [],
       sourceCatalog,
     });
-    const aiQueriesByDomain = new Map(
-      (aiDiscoveryPlan?.domainQueryGroups ?? []).map((group) => [
-        this.normalizeDiscoveryIdentity(group.domainName),
-        group.queries,
-      ] as const),
-    );
 
     const assignmentsBySource = new Map<string, string[]>();
     for (const assignment of completedAssignments) {
       const domains = assignmentsBySource.get(assignment.sourceKey) ?? [];
-      if (!domains.some((name) => this.normalizeDiscoveryIdentity(name) === this.normalizeDiscoveryIdentity(assignment.domainName))) {
+      if (
+        !domains.some(
+          (name) =>
+            this.normalizeDiscoveryIdentity(name) ===
+            this.normalizeDiscoveryIdentity(assignment.domainName),
+        )
+      ) {
         domains.push(assignment.domainName);
       }
       assignmentsBySource.set(assignment.sourceKey, domains);
     }
 
-    const sourcePlans: RequestCollectionSourcePlan[] = [...assignmentsBySource.entries()]
-      .map(([sourceKey, assignedDomains]) => {
-        const perDomainBudget = assignedDomains.length >= 3 ? 2 : assignedDomains.length === 2 ? 3 : 4;
-        const queryPackets = assignedDomains.flatMap((domainName) => {
-          const aiDomainQueries = aiQueriesByDomain.get(
-            this.normalizeDiscoveryIdentity(domainName),
-          ) ?? [];
-          const domainBoundGlobalQueries = searchQueries.filter((query) =>
-            this.discoveryQueryMatchesDomain(query, domainName),
-          );
-          const structuralFallbackQueries =
-            CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
-              [domainName],
-              5,
-            );
-          const baseQueries = this.deduplicateQueries([
-            ...aiDomainQueries,
-            ...domainBoundGlobalQueries,
-            ...structuralFallbackQueries,
-          ]).slice(0, 5);
+    /*
+     * Every selected discovery source receives a bounded packet for EVERY
+     * selected domain. AI source assignments still influence packet order, but
+     * they are never allowed to remove another selected-domain lane. This is a
+     * structural execution invariant only: the runtime does not invent any
+     * problem meaning for a domain, and Community AI remains the semantic
+     * authority over the returned evidence.
+     *
+     * Previously only the three structurally assigned sources had sourcePlans;
+     * the remaining selected sources fell back inside DataCollectionService to
+     * the primary domain and silently collapsed multi-domain discovery.
+     */
+    const sourcePlans: RequestCollectionSourcePlan[] = selectedSourceKeys
+      .map((sourceKey) => {
+        const aiAssignedDomains = assignmentsBySource.get(sourceKey) ?? [];
+        const orderedDomains = this.deduplicatePhrases([
+          ...aiAssignedDomains,
+          ...domainNames,
+        ]).filter((domainName) =>
+          domainNames.some(
+            (selectedDomain) =>
+              this.normalizeDiscoveryIdentity(selectedDomain) ===
+              this.normalizeDiscoveryIdentity(domainName),
+          ),
+        );
+        const perDomainBudget =
+          domainNames.length >= 3
+            ? 2
+            : domainNames.length === 2
+              ? 3
+              : 4;
 
-          const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
-            sourceKey,
-            baseQueries,
-            discoveryDomainName: domainName,
-            maxQueries: perDomainBudget,
-            preserveBaseQueries: true,
-          });
-          return this.deduplicateQueries([
-            ...compiledQueries.filter((query) =>
-              this.discoveryQueryMatchesDomain(query, domainName),
-            ),
-            ...baseQueries,
-          ]).slice(0, perDomainBudget);
+        const packets = orderedDomains.map((domainName) => {
+          const baseQueries =
+            aiQueriesByDomain.get(
+              this.normalizeDiscoveryIdentity(domainName),
+            ) ??
+            neutralQueriesByDomain.get(
+              this.normalizeDiscoveryIdentity(domainName),
+            ) ??
+            [domainName];
+
+          const compiledQueries = aiDiscoveryPlan
+            ? SourceSpecificEvidenceQueryUtil.compile({
+                sourceKey,
+                baseQueries,
+                discoveryDomainName: domainName,
+                maxQueries: perDomainBudget,
+                preserveBaseQueries: true,
+              })
+            : [...baseQueries];
+
+          return {
+            domainName,
+            queries: this.uniqueStrings([
+              ...compiledQueries.filter((query) =>
+                this.discoveryQueryMatchesDomain(query, domainName),
+              ),
+              ...baseQueries,
+            ]).slice(0, perDomainBudget),
+          };
         });
-        const maxQueries = Math.min(6, Math.max(4, assignedDomains.length * 2));
-        const queries = this.deduplicateQueries(queryPackets).slice(0, maxQueries);
-        const singleDomain = assignedDomains.length === 1 ? assignedDomains[0]! : null;
 
+        const maxQueries = Math.min(
+          6,
+          Math.max(domainNames.length, domainNames.length * 2),
+        );
+        const queries: string[] = [];
+        const maxDepth = Math.max(
+          1,
+          ...packets.map((packet) => packet.queries.length),
+        );
+        for (
+          let depth = 0;
+          depth < maxDepth && queries.length < maxQueries;
+          depth += 1
+        ) {
+          for (const packet of packets) {
+            const query = packet.queries[depth];
+            if (!query) continue;
+            const cleaned = query.replace(/\s+/gu, ' ').trim();
+            if (!cleaned) continue;
+            if (
+              !queries.some(
+                (existing) =>
+                  existing.toLocaleLowerCase() === cleaned.toLocaleLowerCase(),
+              )
+            ) {
+              queries.push(cleaned);
+            }
+            if (queries.length >= maxQueries) break;
+          }
+        }
+
+        const singleDomain = domainNames.length === 1 ? domainNames[0]! : null;
         return {
           sourceKey,
           queries,
           routingHints: [],
           discoveryDomainName: singleDomain ?? undefined,
-          discoveryDomainNames: [...assignedDomains],
+          discoveryDomainNames: [...domainNames],
           sourceTier: 'PRIMARY' as const,
           problemFacetIds: [],
         };
       })
       .filter((plan) => plan.queries.length > 0);
+
 
     return {
       selectedExistingDomainId: null,
@@ -626,12 +707,11 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       sourceFocus: this.deriveSourceFocusFromKeys(selectedSourceKeys),
       selectedSourceKeys,
       sourcePlans,
-      confidence: aiDiscoveryPlan?.confidence ?? 50,
+      confidence: aiDiscoveryPlan?.confidence ?? 35,
       aiUsed: Boolean(aiDiscoveryPlan),
       fallbackUsed: !aiDiscoveryPlan,
     };
   }
-
 
 
   /**
@@ -724,6 +804,48 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       .trim();
   }
 
+  private resolveSelectedDiscoveryDomainName(
+    value: string,
+    selectedDomainNames: readonly string[],
+  ): string | null {
+    const normalized = this.normalizeDiscoveryIdentity(value);
+    if (!normalized) return null;
+
+    for (const domainName of selectedDomainNames) {
+      const normalizedDomain = this.normalizeDiscoveryIdentity(domainName);
+      if (normalized === normalizedDomain) return domainName;
+
+      const compact = normalized.replace(/\s+/gu, '');
+      const compactDomain = normalizedDomain.replace(/\s+/gu, '');
+      if (compact && compact === compactDomain) return domainName;
+
+      const acronym = normalizedDomain
+        .split(' ')
+        .filter(
+          (token) =>
+            token.length > 1 &&
+            !['and', 'of', 'the', 'for'].includes(token),
+        )
+        .map((token) => token[0])
+        .join('');
+      if (acronym.length >= 2 && acronym.length <= 6 && normalized === acronym) {
+        return domainName;
+      }
+    }
+
+    return null;
+  }
+
+  private anchorDiscoveryQueryToDomain(
+    query: string,
+    domainName: string,
+  ): string {
+    const cleaned = query.replace(/\s+/gu, ' ').trim();
+    if (!cleaned) return '';
+    if (this.discoveryQueryMatchesDomain(cleaned, domainName)) return cleaned;
+    return `${domainName} ${cleaned}`.replace(/\s+/gu, ' ').trim();
+  }
+
   private discoveryQueryMatchesDomain(
     query: string,
     domainName: string,
@@ -788,6 +910,12 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const normalized = this.normalizeDiscoveryIdentity(query);
     if (!normalized) return true;
 
+    /*
+     * This is deliberately a shape/boilerplate check, not a semantic
+     * classifier.  The AI planner owns what constitutes a meaningful problem
+     * search inside a domain; deterministic code only rejects empty or known
+     * placeholder-style output.
+     */
     const explicitBoilerplate = [
       'users operators recurring problems complaints',
       'workflow bottlenecks delays reliability issues',
@@ -800,34 +928,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       return true;
     }
 
-    const words = normalized.split(' ').filter(Boolean);
-    const failureWords = new Set([
-      'delay', 'delays', 'backlog', 'failure', 'failures', 'error', 'errors',
-      'outage', 'outages', 'shortage', 'shortages', 'rework', 'denial',
-      'denials', 'rejection', 'rejections', 'timeout', 'timeouts', 'fraud',
-      'breach', 'breaches', 'conflict', 'conflicts', 'overrun', 'overruns',
-      'missed', 'incorrect', 'duplicate', 'duplicates', 'blocked', 'barrier',
-      'barriers', 'bottleneck', 'bottlenecks', 'downtime', 'unavailable',
-      'fatigue', 'false', 'positive', 'risk', 'risks', 'incident', 'incidents',
-      'drift', 'leak', 'leaks', 'hallucination', 'hallucinations', 'waste',
-    ]);
-    const workflowWords = new Set([
-      'processing', 'approval', 'verification', 'checkout', 'payment',
-      'scheduling', 'inventory', 'dispatch', 'fulfillment', 'delivery',
-      'publishing', 'licensing', 'rights', 'moderation', 'onboarding',
-      'access', 'reporting', 'reconciliation', 'booking', 'claims',
-      'maintenance', 'procurement', 'production', 'capacity', 'queue',
-      'handoff', 'authentication', 'migration', 'patching', 'response',
-      'calculation', 'customs', 'tariff', 'content', 'streaming',
-      'distribution', 'permit', 'identity', 'records', 'record', 'incident',
-      'detection', 'training', 'deployment', 'billing', 'settlement',
-      'allocation', 'review', 'intake', 'workflow', 'order', 'orders',
-    ]);
-    const hasConcreteFailure = words.some((word) => failureWords.has(word));
-    const hasConcreteWorkflow = words.some((word) => workflowWords.has(word));
-
-    // Short domain + generic noun strings are not useful evidence probes.
-    return words.length <= 7 && !(hasConcreteFailure && hasConcreteWorkflow);
+    return normalized.split(' ').filter(Boolean).length < 3;
   }
 
   private async runProviderDiverseDomainDiscoveryPlanningRace(input: {
@@ -857,9 +958,9 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       language: input.language ?? LanguageCode.ANY,
       activeSourceCatalog: sourceCatalogText,
       requiredOutput: {
-        searchQueries: '10-14 short search strings',
+        searchQueries: '6-10 short search strings',
         selectedSourceKeys: 'up to 9 exact active source keys',
-        domainQueryGroups: 'one object per selected domain with 4-5 concrete operational/failure queries',
+        domainQueryGroups: 'exactly one object per selected domain; copy domainName exactly and return 2-3 concrete evidence-search queries (at least 1 is mandatory)',
         sourceAssignments: 'up to 3 unique source assignments per domain, covering community/direct voice, documentary/reporting, and research-or-specialist evidence when executable',
         confidence: '0-100',
       },
@@ -869,10 +970,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       'The user supplied no concrete problem statement. Never invent one.',
       'Return JSON only with keys searchQueries, selectedSourceKeys, domainQueryGroups, sourceAssignments, confidence.',
       'Create broad but problem-first discovery queries that find real complaints, failures, barriers, incidents, unmet needs, rework, delays, cost pressure, or operational friction inside the selected domains.',
-      'Cover every selected domain as an independent discovery lane. Before writing queries, infer 3-5 plausible operational workflow/problem archetypes inside EACH domain, then express concrete failure-mode searches for those archetypes. Do not output the archetypes separately; use them to make the queries specific.',
-      'For every selected domain return 4-5 domainQueryGroups queries. Each query must contain a real workflow/object plus a concrete failure, delay, bottleneck, reliability, access, coordination, cost, rework, compliance, capacity, quality, or unmet-need concept. Never use generic boilerplate such as users operators recurring problems complaints or workflow bottlenecks delays reliability issues by itself.',
+      'Cover every selected domain as an independent discovery lane. Infer concrete evidence-search language for EACH domain, but do not decide which domain has the winning problem before collection.',
+      'Return exactly one domainQueryGroups entry for every selected domain and copy each domainName exactly as supplied. Aim for 2-3 queries per domain; at least one concrete AI-authored query per domain is mandatory. Each query must be specific enough to retrieve real-world problem-bearing material. The runtime may mechanically prefix the selected domain identity when a search engine needs it, so do not waste tokens repeating a long domain label in every query. Avoid generic boilerplate and avoid inventing a final opportunity or solution.',
       'Do not create bridge queries merely to connect selected domains. A cross-domain problem is accepted only if one returned evidence item independently demonstrates that workflow.',
-      'Keep each query short, natural, and source-searchable; include the selected domain identity plus a concrete pain/discovery term.',
+      'Keep each query short, natural, and source-searchable; include concrete pain/discovery wording grounded in that domain lane.',
       'Plan sourceAssignments per domain, not globally. Aim for three unique executable source assignments per domain when the catalog permits: one direct-voice/community-or-review lane, one documentary/reporting lane, and one research-or-specialist lane. Prefer a scholarly source for research when it is semantically useful; otherwise use the best specialist source. Do not give one domain all documentary sources while another domain receives only one source. Use technical developer sources only when a plausible operational archetype is genuinely software/API/infrastructure-related.',
       'selectedSourceKeys is the unique union of sourceAssignments and may contain up to 9 keys. Source diversity is for recall; returned material is still semantically classified later by Community AI.',
       'Do not return a guessed opportunity, solution, actor, market claim, or problem family. Planning only.',
@@ -890,7 +991,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         resolved = true;
         controllers.forEach((controller) => controller.abort());
         this.logger.warn(
-          `[PREPARING] Domain-discovery AI planning deadline ${REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS}ms reached; deterministic discovery planning remains available as the safety fallback.`,
+          `[PREPARING] Domain-discovery AI planning deadline ${REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS}ms reached; neutral domain-only retrieval remains available as the safety fallback.`,
         );
         resolve(null);
       }, REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS);
@@ -922,8 +1023,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               responseFormat: AiResponseFormat.TEXT,
               strategy: AiRoutingStrategy.BALANCED,
               preferredApiModelIds,
-              estimatedOutputTokens: 520,
-              maxOutputTokens: 900,
+              estimatedOutputTokens: 360,
+              maxOutputTokens: 650,
               temperature: 0.1,
               timeoutMs: REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS,
               maxRetriesPerModel: 0,
@@ -972,38 +1073,150 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                   .filter((key) => activeSourceKeys.has(key))
                   .slice(0, 9);
 
-                const selectedDomainByNormalizedName = new Map(
-                  input.domainNames.map((domainName) => [
-                    this.normalizeDiscoveryIdentity(domainName),
-                    domainName,
-                  ] as const),
-                );
                 const rawDomainQueryGroups = Array.isArray(record.domainQueryGroups)
                   ? record.domainQueryGroups
                   : [];
-                const domainQueryGroups = rawDomainQueryGroups
-                  .filter((entry): entry is Record<string, unknown> => this.isRecord(entry))
-                  .map((entry) => {
-                    const rawDomainName = typeof entry.domainName === 'string'
-                      ? entry.domainName
-                      : '';
-                    const domainName = selectedDomainByNormalizedName.get(
-                      this.normalizeDiscoveryIdentity(rawDomainName),
-                    );
-                    const rawGroupQueries = Array.isArray(entry.queries) ? entry.queries : [];
-                    const queries = this.deduplicateQueries(
-                      rawGroupQueries.filter((value): value is string => typeof value === 'string'),
-                    )
-                      .filter(SourceSpecificEvidenceQueryUtil.isSafe.bind(SourceSpecificEvidenceQueryUtil))
-                      .filter((query) => !this.isGenericDomainDiscoveryQuery(query))
-                      .filter((query) => Boolean(domainName) && this.discoveryQueryMatchesDomain(query, domainName!))
-                      .slice(0, 5);
-                    return domainName ? { domainName, queries } : null;
-                  })
-                  .filter((entry): entry is { domainName: string; queries: string[] } => Boolean(entry && entry.queries.length > 0));
+                const groupedQueries = new Map<string, string[]>();
 
-                const effectiveSearchQueries = this.deduplicateQueries([
-                  ...domainQueryGroups.flatMap((group) => group.queries),
+                for (const rawEntry of rawDomainQueryGroups) {
+                  if (!this.isRecord(rawEntry)) continue;
+                  const rawDomainName =
+                    typeof rawEntry.domainName === 'string'
+                      ? rawEntry.domainName
+                      : '';
+                  const domainName = this.resolveSelectedDiscoveryDomainName(
+                    rawDomainName,
+                    input.domainNames,
+                  );
+                  if (!domainName) continue;
+
+                  const rawGroupQueries = Array.isArray(rawEntry.queries)
+                    ? rawEntry.queries
+                    : [];
+                  const queries = this.deduplicateQueries(
+                    rawGroupQueries
+                      .filter(
+                        (value): value is string => typeof value === 'string',
+                      )
+                      .map((query) =>
+                        this.anchorDiscoveryQueryToDomain(query, domainName),
+                      ),
+                  )
+                    .filter(
+                      SourceSpecificEvidenceQueryUtil.isSafe.bind(
+                        SourceSpecificEvidenceQueryUtil,
+                      ),
+                    )
+                    .filter(
+                      (query) => !this.isGenericDomainDiscoveryQuery(query),
+                    )
+                    .slice(0, 5);
+                  if (queries.length === 0) continue;
+
+                  groupedQueries.set(
+                    this.normalizeDiscoveryIdentity(domainName),
+                    this.deduplicateQueries([
+                      ...(groupedQueries.get(
+                        this.normalizeDiscoveryIdentity(domainName),
+                      ) ?? []),
+                      ...queries,
+                    ]).slice(0, 5),
+                  );
+                }
+
+                /*
+                 * Some providers return good domain-grounded top-level queries
+                 * but omit domainQueryGroups. Re-group only queries that already
+                 * carry an explicit selected-domain identity. This is structural
+                 * recovery of AI-authored text, not semantic query synthesis.
+                 */
+                for (const domainName of input.domainNames) {
+                  const key = this.normalizeDiscoveryIdentity(domainName);
+                  const topLevelForDomain = searchQueries
+                    .filter((query) =>
+                      this.discoveryQueryMatchesDomain(query, domainName),
+                    )
+                    .map((query) =>
+                      this.anchorDiscoveryQueryToDomain(query, domainName),
+                    );
+                  if (topLevelForDomain.length === 0) continue;
+                  groupedQueries.set(
+                    key,
+                    this.deduplicateQueries([
+                      ...(groupedQueries.get(key) ?? []),
+                      ...topLevelForDomain,
+                    ]).slice(0, 5),
+                  );
+                }
+
+                const domainQueryGroups = input.domainNames
+                  .map((domainName) => ({
+                    domainName,
+                    queries:
+                      groupedQueries.get(
+                        this.normalizeDiscoveryIdentity(domainName),
+                      ) ?? [],
+                  }))
+                  .filter((entry) => entry.queries.length > 0);
+
+                /*
+                 * One AI-authored semantic seed per selected domain is enough.
+                 * SourceSpecificEvidenceQueryUtil later creates bounded
+                 * source-search variants without inventing a problem meaning.
+                 * Requiring two literal strings per domain caused otherwise
+                 * useful provider plans to fall into neutral domain-only search.
+                 */
+                const coveredDomainIdentities = new Set(
+                  domainQueryGroups.map((group) =>
+                    this.normalizeDiscoveryIdentity(group.domainName),
+                  ),
+                );
+                const missingDomainCoverage = input.domainNames.filter(
+                  (domainName) =>
+                    !coveredDomainIdentities.has(
+                      this.normalizeDiscoveryIdentity(domainName),
+                    ),
+                );
+                if (missingDomainCoverage.length > 0) {
+                  throw new Error(
+                    `Domain-discovery AI omitted required query coverage for: ${missingDomainCoverage.join(', ')}.`,
+                  );
+                }
+
+                /*
+                 * Merge domain groups round-robin so similar wording from the
+                 * first domain cannot erase another selected-domain lane during
+                 * semantic deduplication.
+                 */
+                const groupedRoundRobin: string[] = [];
+                const maxDepth = Math.max(
+                  1,
+                  ...domainQueryGroups.map((group) => group.queries.length),
+                );
+                for (
+                  let depth = 0;
+                  depth < maxDepth && groupedRoundRobin.length < 15;
+                  depth += 1
+                ) {
+                  for (const group of domainQueryGroups) {
+                    const query = group.queries[depth];
+                    if (!query) continue;
+                    const cleaned = query.replace(/\s+/gu, ' ').trim();
+                    if (
+                      cleaned &&
+                      !groupedRoundRobin.some(
+                        (existing) =>
+                          existing.toLocaleLowerCase() ===
+                          cleaned.toLocaleLowerCase(),
+                      )
+                    ) {
+                      groupedRoundRobin.push(cleaned);
+                    }
+                    if (groupedRoundRobin.length >= 15) break;
+                  }
+                }
+                const effectiveSearchQueries = this.uniqueStrings([
+                  ...groupedRoundRobin,
                   ...searchQueries,
                 ]).slice(0, 15);
 
@@ -1020,8 +1233,9 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                     const rawDomainName = typeof entry.domainName === 'string'
                       ? entry.domainName
                       : '';
-                    const domainName = selectedDomainByNormalizedName.get(
-                      this.normalizeDiscoveryIdentity(rawDomainName),
+                    const domainName = this.resolveSelectedDiscoveryDomainName(
+                      rawDomainName,
+                      input.domainNames,
                     );
                     const pairKey = `${sourceKey}::${this.normalizeDiscoveryIdentity(domainName ?? '')}`;
                     if (!sourceKey || !domainName || !activeSourceKeys.has(sourceKey) || seenAssignmentPairs.has(pairKey)) {
@@ -1037,12 +1251,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                   ...selectedSourceKeys,
                 ]).slice(0, 9);
 
-                // A partial AI plan is still an AI plan. One grounded query/source
-                // is enough to prove useful semantic understanding; the caller
-                // deterministically enriches missing queries and source coverage.
-                // This prevents DOMAINS_ONLY/NO_INPUT from flipping aiUsed=false
-                // merely because the fastest provider returned 2 good queries
-                // instead of the requested 8-12 before its bounded deadline.
+                // Semantic planning is accepted only when every selected
+                // domain has an AI-authored lane. Source assignment can still
+                // be completed structurally later, but query meaning is never
+                // synthesized deterministically for a missing domain.
                 if (effectiveSearchQueries.length === 0) {
                   throw new Error('Domain-discovery AI returned no domain-grounded query.');
                 }
@@ -2961,125 +3173,24 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
-  }  private extractConcepts(value: string): string[] {
+  }
+
+  private extractConcepts(value: string): string[] {
     const normalized = value
       .normalize('NFKC')
-      .toLowerCase()
-      .replace(/([\p{L}\p{N}])(?:['’]s)\b/giu, '$1')
-      .replace(/(?:^|\s)['’]s\b/giu, ' ')
-      .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
+      .toLocaleLowerCase()
+      .replace(/([^\p{L}\p{N}\s'-])/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
+    if (!normalized) return [];
 
-    const phrasePatterns = [
-      /\bconnected meters?\b/u,
-      /\bsmart meters?\b/u,
-      /\bremote monitoring devices?\b/u,
-      /\bautomated control systems?\b/u,
-      /\bdevice failures?\b/u,
-      /\bunusual consumption(?: patterns?)?\b/u,
-      /\bnetwork disruptions?\b/u,
-      /\bunauthorized access(?: attempts?)?\b/u,
-      /\bmalicious interference\b/u,
-      /\bconsumption data integrity\b/u,
-      /\bdamage photographs?\b/u,
-      /\bfabric selections?\b/u,
-      /\breplacement parts?\b/u,
-      /\bpaint matching\b/u,
-      /\brestoration notes?\b/u,
-      /\bapproved restoration(?: work)?\b/u,
-      /\bappointment volumes?\b/u,
-      /\bemergency visits?\b/u,
-      /\bregional health reports?\b/u,
-      /\bresource availability\b/u,
-      /\bresource distribution\b/u,
-      /\bcommunity healthcare needs?\b/u,
-      /\bhealthcare demand\b/u,
-      /\bmedical service demand\b/u,
-      /\bhospital capacity\b/u,
-      /\bclinic capacity\b/u,
-      /\bwaiting times?\b/u,
-      /\bstaff shortages?\b/u,
-      /\bdemand forecasting\b/u,
-      /\bfaculty workload\b/u,
-      /\bteaching workload\b/u,
-      /\bteaching assistants?\b/u,
-      /\bcourse staffing\b/u,
-      /\bcourse enrollment\b/u,
-      /\bstudent demand\b/u,
-      /\bstaff availability\b/u,
-      /\bbehavioral problems?\b/u,
-      /\bbehavioural problems?\b/u,
-      /\btraining exercises?\b/u,
-      /\bowner feedback\b/u,
-      /\bbehavioral triggers?\b/u,
-      /\bbehavioural triggers?\b/u,
-      /\btraining progress\b/u,
-      /\bhigh[- ]value shipments?\b/u,
-      /\bchain of custody\b/u,
-      /\blocation updates?\b/u,
-      /\bhandover records?\b/u,
-      /\btemperature readings?\b/u,
-      /\bdelivery confirmations?\b/u,
-      /\bcustoms checkpoints?\b/u,
-      /\bshipment disputes?\b/u,
-      /\bsupply[- ]chain partners?\b/u,
-      /\bartist schedules?\b/u,
-      /\bdesign revisions?\b/u,
-      /\bclient preferences?\b/u,
-      /\bappointment deposits?\b/u,
-      /\bconsent forms?\b/u,
-      /\baftercare instructions?\b/u,
-      /\bclient sessions?\b/u,
-      /\bbooking conflicts?\b/u,
-      /\bdesign feedback\b/u,
-      /\brecipe substitutions?\b/u,
-      /\bcooking results?\b/u,
-      /\bfamily preferences?\b/u,
-      /\btravel prices?\b/u,
-      /\bbooking platforms?\b/u,
-      /\btraveler preferences?\b/u,
-      /\breading progress\b/u,
-      /\bmeeting dates?\b/u,
-      /\bmedical equipment\b/u,
-      /\bmedical devices?\b/u,
-      /\bequipment tracking\b/u,
-      /\basset tracking\b/u,
-      /\bmaintenance status\b/u,
-      /\bdevice availability\b/u,
-      /\bequipment availability\b/u,
-      /\bart restoration\b/u,
-      /\bart conservation\b/u,
-      /\bcondition documentation\b/u,
-      /\btreatment history\b/u,
-      /\bclient instructions?\b/u,
-      /\brestoration stages?\b/u,
-      /\bcommercial kitchens?\b/u,
-      /\benergy consumption\b/u,
-      /\butility bills?\b/u,
-      /\butility costs?\b/u,
-      /\brefrigeration equipment\b/u,
-      /\bcooking equipment\b/u,
-      /\bequipment usage\b/u,
-      /\benergy waste\b/u,
-      /\benvironmental impact\b/u,
-      /\bhome[- ]cleaning businesses?\b/u,
-      /\bresidential cleaning\b/u,
-      /\brecurring appointments?\b/u,
-      /\broom[- ]specific instructions?\b/u,
-      /\bemployee assignments?\b/u,
-      /\bcleaning supplies?\b/u,
-      /\blast[- ]minute schedule changes?\b/u,
-      /\bmissed tasks?\b/u,
-      /\bscheduling conflicts?\b/u,
-      /\bforgotten customer requests?\b/u,
-    ];
-
-    const phrases: string[] = [];
-    for (const pattern of phrasePatterns) {
-      const match = normalized.match(pattern)?.[0];
-      if (match) phrases.push(match);
-    }
+    const requestDerived = [
+      ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(value),
+      ...RequestDynamicQueryUtil.extractWorkflowTerms(value),
+      ...RequestDynamicQueryUtil.extractPainTerms(value),
+    ]
+      .map((item) => item.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean);
 
     const stopWords = new Set([
       'about', 'across', 'after', 'again', 'also', 'although', 'among', 'and',
@@ -3090,17 +3201,18 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       'them', 'they', 'this', 'through', 'usually', 'while', 'with', 'without',
       'lead', 'leads', 'stored', 'spread', 'frequently',
     ]);
-
     const tokens = normalized
       .split(/\s+/u)
       .filter((token) => token.length >= 4 && !stopWords.has(token));
-
-    for (let index = 0; index < tokens.length - 1 && phrases.length < 12; index += 2) {
-      const pair = [tokens[index], tokens[index + 1]].filter(Boolean).join(' ');
-      if (pair) phrases.push(pair);
+    const lexicalPhrases: string[] = [];
+    for (let index = 0; index < tokens.length - 1 && lexicalPhrases.length < 8; index += 2) {
+      lexicalPhrases.push(`${tokens[index]} ${tokens[index + 1]}`);
     }
 
-    return this.deduplicatePhrases(phrases).slice(0, 10);
+    return this.deduplicatePhrases([
+      ...requestDerived,
+      ...lexicalPhrases,
+    ]).slice(0, 12);
   }
 
   private extractActorContext(value: string): string {
@@ -3123,106 +3235,59 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   private professionalizeActor(actor: string): string | null {
     if (!actor) return null;
 
+    const connectorWords = new Set([
+      'and', 'or', 'with', 'for', 'of', 'to', 'from', 'in', 'at',
+    ]);
     const words = actor
       .normalize('NFKC')
-      .toLowerCase()
+      .toLocaleLowerCase()
       .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
       .split(/\s+/u)
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((word) => !['people', 'users', 'members'].includes(word));
 
-    if (words.length === 0 || words.length > 5) return null;
-
-    const connectorWords = new Set([
-      'and',
-      'or',
-      'with',
-      'for',
-      'of',
-      'to',
-      'from',
-      'in',
-      'at',
-    ]);
     while (words.length > 0 && connectorWords.has(words[words.length - 1])) {
       words.pop();
     }
+    if (words.length === 0 || words.length > 5) return null;
 
-    const cleaned = words.filter(
-      (word) => !['people', 'users', 'members', 'travelers', 'travellers'].includes(word),
-    );
-    if (cleaned.length === 0) return null;
-
-    const last = cleaned[cleaned.length - 1];
-    const singularMap: Record<string, string> = {
-      studios: 'studio',
-      companies: 'company',
-      businesses: 'business',
-      clinics: 'clinic',
-      agencies: 'agency',
-      teams: 'team',
-      restaurants: 'restaurant',
-      salons: 'salon',
-      shops: 'shop',
-      centers: 'center',
-      centres: 'centre',
-    };
-    if (singularMap[last]) {
-      cleaned[cleaned.length - 1] = singularMap[last];
+    const lastIndex = words.length - 1;
+    const last = words[lastIndex];
+    if (/ies$/u.test(last) && last.length > 5) {
+      words[lastIndex] = `${last.slice(0, -3)}y`;
+    } else if (/s$/u.test(last) && !/ss$/u.test(last) && last.length > 4) {
+      words[lastIndex] = last.slice(0, -1);
     }
 
-    return this.toTitleCase(cleaned.join(' '));
+    return this.toTitleCase(words.join(' '));
   }
 
   private extractPainSignals(description: string): string[] {
     const normalized = description
       .normalize('NFKC')
-      .toLowerCase()
+      .toLocaleLowerCase()
       .replace(/\s+/gu, ' ');
+    const signals = [
+      ...RequestDynamicQueryUtil.extractPainTerms(description),
+    ];
 
-    const signals: string[] = [];
-    const consequenceMatch = normalized.match(
-      /\b(?:lead to|leads to|result in|results in|causing|cause)\s+([^.!?]{8,260})/u,
+    const consequenceMatches = normalized.matchAll(
+      /\b(?:lead to|leads to|result in|results in|causes?|causing|can cause|can lead to|making it difficult to|difficult to)\s+([^.!?]{5,220})/gu,
     );
-
-    if (consequenceMatch?.[1]) {
-      for (const part of consequenceMatch[1].split(/,|\band\b/gu)) {
+    for (const match of consequenceMatches) {
+      for (const part of (match[1] ?? '').split(/,|\band\b|\bor\b/gu)) {
         const cleaned = part
-          .replace(/\b(?:can|may|often|difficulty|difficult)\b/gu, ' ')
+          .replace(/\b(?:can|may|often|usually|frequently|difficulty|difficult)\b/gu, ' ')
           .replace(/\s+/gu, ' ')
-          .trim();
+          .trim()
+          .split(/\s+/u)
+          .slice(0, 7)
+          .join(' ');
         if (cleaned.length >= 5) signals.push(cleaned);
       }
     }
 
-    const directPatterns = [
-      /\bbooking conflicts?\b/u,
-      /\blost design feedback\b/u,
-      /\bconfusion about requested changes\b/u,
-      /\bmissing records?\b/u,
-      /\bconflicting records?\b/u,
-      /\bshipment disputes?\b/u,
-      /\bdamaged goods?\b/u,
-      /\bdelayed deliveries?\b/u,
-      /\brepeated searching\b/u,
-      /\bwasted ingredients?\b/u,
-      /\bmissed opportunities?\b/u,
-      /\bunnecessary expenses?\b/u,
-      /\bdelayed procedures?\b/u,
-      /\bunderused equipment\b/u,
-      /\bunnecessary purchases?\b/u,
-      /\bmissing equipment\b/u,
-      /\bmissed client requirements?\b/u,
-      /\bincorrect treatment decisions?\b/u,
-      /\bdelivery delays?\b/u,
-      /\bduplicated work\b/u,
-    ];
-
-    for (const pattern of directPatterns) {
-      const match = normalized.match(pattern)?.[0];
-      if (match) signals.push(match);
-    }
-
-    return this.deduplicatePhrases(signals).slice(0, 6);
+    return this.deduplicatePhrases(signals).slice(0, 8);
   }
 
   private composeQuery(...parts: Array<string | undefined>): string {
@@ -3253,9 +3318,9 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const cleaned = value
       ?.replace(/\s+/gu, ' ')
       .replace(/[.!?]+$/gu, '')
-      .replace(/\b(?:custom\s+order\s+management|order\s+management|workflow\s+management|design\s+specification\s+management|specification\s+management|tracking\s+platform|management\s+platform|intelligence\s+workspace|operations\s+workspace)\b.*$/iu, '')
+      .replace(/\b(?:workflow|order|specification|tracking|management|intelligence|operations)\s+(?:management|platform|workspace|system|application|app|dashboard)\b.*$/iu, '')
       .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, '')
-      .replace(/\b(?:maker|makers|painter|painters)\b$/iu, '')
+      .replace(/\b(?:maker|makers|operator|operators|manager|managers|owner|owners|specialist|specialists|designer|designers|technician|technicians)\b$/iu, '')
       // Actor/domain extraction can end on a conjunction when the request
       // continues with another clause (for example "... centers and ...").
       // A dangling connector is syntax noise, never part of a domain label.
@@ -4003,7 +4068,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const cleaned = value
       ?.replace(/\s+/gu, ' ')
       .replace(/[.!?]+$/gu, '')
-      .replace(/\b(?:custom\s+order\s+management|order\s+management|workflow\s+management|design\s+specification\s+management|specification\s+management|tracking\s+platform|management\s+platform|intelligence\s+workspace|operations\s+workspace)\b.*$/iu, '')
+      .replace(/\b(?:workflow|order|specification|tracking|management|intelligence|operations)\s+(?:management|platform|workspace|system|application|app|dashboard)\b.*$/iu, '')
       .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, '')
       .trim();
     const reusableIndustryName = this.inferReusableIndustryDomainName(

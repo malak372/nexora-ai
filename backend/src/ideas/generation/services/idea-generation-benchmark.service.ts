@@ -498,9 +498,10 @@ export class IdeaGenerationBenchmarkService {
         (direction.opportunity.disqualificationReasons.includes(
           'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
         ) ||
-          direction.opportunity.disqualificationReasons.includes(
-            'NO_DIRECT_EVIDENCE',
-          ) ||
+          (!hasRetainedDirectEvidence &&
+            direction.opportunity.disqualificationReasons.includes(
+              'NO_DIRECT_EVIDENCE',
+            )) ||
           !hasRetainedDirectEvidence);
       /*
        * Only a genuinely no-evidence hypothesis is limited to one availability
@@ -849,7 +850,9 @@ export class IdeaGenerationBenchmarkService {
     const comparisonCandidates =
       qualityApprovedCandidates.length >= 2
         ? qualityApprovedCandidates
-        : successfulCandidates;
+        : successfulCandidates.map((candidate) =>
+            this.sanitizeFallbackCandidateForEvidenceLimits(candidate),
+          );
 
     const diversityScores = this.semanticDiversityService.evaluate(
       comparisonCandidates.map((candidate) => ({
@@ -3034,6 +3037,83 @@ export class IdeaGenerationBenchmarkService {
   }
 
   /**
+   * Removes claims that the deterministic quality gate explicitly rejected
+   * when a structurally valid candidate must still be used as the run's
+   * availability fallback.  This is evidence-state driven and domain agnostic:
+   * it never keys off a request topic, domain name, or example phrase.
+   */
+  private sanitizeFallbackCandidateForEvidenceLimits(
+    candidate: IdeaBenchmarkCandidate,
+  ): IdeaBenchmarkCandidate {
+    const issueCodes = new Set(candidate.quality.issues.map((issue) => issue.code));
+    if (
+      !issueCodes.has('UNSUPPORTED_IMPACT_TARGET') &&
+      !issueCodes.has('MALFORMED_MEASURABLE_TARGET')
+    ) {
+      return candidate;
+    }
+
+    const sanitizeText = (value: string): string =>
+      value
+        .replace(
+          /\b(?:achieve|deliver|produce|ensure|target|reach)\s+(?:at\s+least\s+|up\s+to\s+)?\d+(?:\.\d+)?\s*(?:%|percent)\s+(?:reduction|decrease|improvement|increase|gain)\s+in\s+([^.;!?]{2,120}?)(?:\s+(?:during|within|over|for)\s+[^.;!?]{2,80})?(?=[.;!?]|$)/giu,
+          'establish a baseline for $1 during the first pilot phase and measure directional improvement during the remaining pilot period',
+        )
+        .replace(
+          /\b(?:reduce|decrease|improve|increase|lower|raise|cut)\s+([^.;!?]{2,120}?)\s+by\s+(?:at\s+least\s+|up\s+to\s+)?\d+(?:\.\d+)?\s*(?:%|percent)(?:\s+(?:during|within|over|for)\s+[^.;!?]{2,80})?(?=[.;!?]|$)/giu,
+          'establish a baseline for $1 during the first pilot phase and measure directional improvement during the remaining pilot period',
+        )
+        .replace(
+          /\b(?:at\s+least\s+|up\s+to\s+)?\d+(?:\.\d+)?\s*(?:%|percent)\s+(?:faster|lower|higher|better|improvement|reduction|decrease|increase)\b/giu,
+          'a measurable directional improvement',
+        )
+        .replace(/[ 	]{2,}/gu, ' ')
+        .trim();
+
+    const sanitizeJson = (value: unknown): unknown => {
+      if (typeof value === 'string') return sanitizeText(value);
+      if (Array.isArray(value)) return value.map((item) => sanitizeJson(item));
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [key, sanitizeJson(item)]),
+        );
+      }
+      return value;
+    };
+
+    const parsedOutput: ParsedIdeaAiOutput = {
+      coreIdea: {
+        ...candidate.parsedOutput.coreIdea,
+        problemStatement: sanitizeText(candidate.parsedOutput.coreIdea.problemStatement),
+        objectives: candidate.parsedOutput.coreIdea.objectives.map(sanitizeText),
+        ...(candidate.parsedOutput.coreIdea.limitedAbstract !== undefined
+          ? { limitedAbstract: sanitizeText(candidate.parsedOutput.coreIdea.limitedAbstract) }
+          : {}),
+        ...(candidate.parsedOutput.coreIdea.partialAbstract !== undefined
+          ? { partialAbstract: sanitizeText(candidate.parsedOutput.coreIdea.partialAbstract) }
+          : {}),
+        ...(candidate.parsedOutput.coreIdea.fullAbstract !== undefined
+          ? { fullAbstract: sanitizeText(candidate.parsedOutput.coreIdea.fullAbstract) }
+          : {}),
+      },
+      advancedOutputs: candidate.parsedOutput.advancedOutputs.map((output) => ({
+        ...output,
+        content: sanitizeText(output.content),
+        ...(output.structuredContent !== undefined
+          ? {
+              structuredContent: sanitizeJson(output.structuredContent) as typeof output.structuredContent,
+            }
+          : {}),
+      })),
+    };
+
+    this.logger.warn(
+      `Sanitized unsupported numeric impact targets from fallback candidate "${candidate.candidateId}" before final selection.`,
+    );
+    return { ...candidate, parsedOutput };
+  }
+
+  /**
    * Returns the strongest completed candidate that passed the complete
    * deterministic quality gate. Response time is only a tie-breaker.
    */
@@ -3330,14 +3410,19 @@ export class IdeaGenerationBenchmarkService {
         );
       }
 
+      const hasVerifiedProblemEvidence =
+        (direction.opportunity.verifiedProblemMatchedEvidenceCount ??
+          direction.opportunity.verifiedEvidenceCount ??
+          direction.opportunity.evidenceSamples.length) > 0;
       const isUnvalidatedHypothesis =
         !this.resolveCanonicalDiscoveryProblemLock(context, direction.opportunity) &&
         (direction.opportunity.disqualificationReasons.includes(
           'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
         ) ||
-          direction.opportunity.disqualificationReasons.includes(
-            'NO_DIRECT_EVIDENCE',
-          ));
+          (!hasVerifiedProblemEvidence &&
+            direction.opportunity.disqualificationReasons.includes(
+              'NO_DIRECT_EVIDENCE',
+            )));
 
       const shouldCheckPersistedDuplicate =
         !isUnvalidatedHypothesis &&
@@ -6603,6 +6688,20 @@ export class IdeaGenerationBenchmarkService {
       : typeof selectedDirectEvidenceCount === 'number'
         ? Math.max(0, Math.floor(selectedDirectEvidenceCount))
         : 0;
+    const selectedFamilyEvidenceIds = new Set(
+      (context.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    const verifiedCommunitySupportingEvidenceCount =
+      selectedFamilyEvidenceIds.size > 0
+        ? context.communityAiAnalysis?.evidenceClassifications?.filter(
+            (item) =>
+              item.classification === 'SUPPORTING_SIGNAL' &&
+              item.verifiedByDeterministicGuard === true &&
+              selectedFamilyEvidenceIds.has(item.evidenceId),
+          ).length ?? 0
+        : 0;
 
     const winnerDomains =
       context.opportunityRanking?.selected.matchedDomainNames?.filter(Boolean) ?? [];
@@ -6641,20 +6740,23 @@ export class IdeaGenerationBenchmarkService {
       localEvidenceVerified: this.hasVerifiedLocalEvidence(context),
       directEvidenceCount: retainedDirectEvidenceCount,
       externalSupportingEvidenceCount:
-        typeof selectedOpportunity?.verifiedProblemMatchedSecondaryEvidenceCount === 'number'
-          ? Math.max(
-              0,
-              Math.floor(
-                selectedOpportunity.verifiedProblemMatchedSecondaryEvidenceCount,
+        Math.max(
+          verifiedCommunitySupportingEvidenceCount,
+          typeof selectedOpportunity?.verifiedProblemMatchedSecondaryEvidenceCount === 'number'
+            ? Math.max(
+                0,
+                Math.floor(
+                  selectedOpportunity.verifiedProblemMatchedSecondaryEvidenceCount,
+                ),
+              )
+            : Math.max(
+                selectedOpportunity?.qualifiedExternalSupportingEvidenceCount ?? 0,
+                selectedOpportunity?.verifiedSecondaryEvidenceCount ?? 0,
+                selectedOpportunity?.supportingEvidence?.filter(
+                  (item) => item.sourceType === 'SECONDARY_EVIDENCE',
+                ).length ?? 0,
               ),
-            )
-          : Math.max(
-              selectedOpportunity?.qualifiedExternalSupportingEvidenceCount ?? 0,
-              selectedOpportunity?.verifiedSecondaryEvidenceCount ?? 0,
-              selectedOpportunity?.supportingEvidence?.filter(
-                (item) => item.sourceType === 'SECONDARY_EVIDENCE',
-              ).length ?? 0,
-            ),
+        ),
       verifiedIndependentSourceCount:
         typeof selectedOpportunity?.verifiedProblemMatchedEvidenceSourceCount === 'number'
           ? Math.max(
@@ -6770,7 +6872,7 @@ export class IdeaGenerationBenchmarkService {
         context.opportunityRanking?.selected?.verifiedProblemMatchedSecondaryEvidenceCount ?? 0,
         context.opportunityRanking?.selected?.verifiedSecondaryEvidenceCount ?? 0,
       ) > 0
-        ? 'SUPPORTING-ONLY REQUESTER FACET LOCK: retained supporting evidence may qualify, prioritize, or strengthen one facet of the requester-defined problem, but it does not gain authority to redefine the requester actor, object, workflow, failure modes, concrete data inputs, or requested product operations. Keep the requester workflow as the product center. Treat the supporting family as corroborating context only. For example, evidence about broader urban planning latency cannot replace a requester workflow about citizen reports, municipal sensor signals, damaged roads, streetlights, water leaks, incident prioritization, and maintenance response with a satellite-imagery or land-use-planning product unless the requester explicitly asked for that substitution.'
+        ? 'SUPPORTING-ONLY REQUESTER FACET LOCK: retained supporting evidence may qualify, prioritize, or strengthen only the concrete facet that the retained evidence itself describes. It does not gain authority to validate other requester-only facets, causes, inputs, shortages, scheduling failures, costs, delays, or outcomes that are absent from the retained evidence. Keep the full requester workflow as the product center, but distinguish evidence-backed facets from requester-defined hypotheses in the problem statement and abstracts. Never write "collected feedback indicates/shows/suggests" followed by a bundle that mixes an evidenced facet with unevidenced requester facets. Use wording equivalent to: "Retained supporting evidence grounds [evidenced facet]; the remaining requester-described facets remain hypotheses for the pilot to validate." Do not redefine the requester actor, object, workflow, concrete data inputs, or requested product operations.'
         : '';
     const discoveryLockInstruction = discoveryLock
       ? `CANONICAL DISCOVERY LOCK: the problem has already been selected from verified collected evidence as "${discoveryLock.family}". Core AI does not choose a new problem. Build only the software response to this exact family and its retained evidence. Do not broaden the product to other discovery domains merely because they were searched during collection; a searched domain is not part of the final problem unless it is in selected.matchedDomainNames and supported by the selected-family evidence.`

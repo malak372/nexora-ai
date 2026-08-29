@@ -14,11 +14,9 @@ import { CollectorInput, CollectorPost } from '../base/collector.types';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
 import { CollectorAbortContextUtil } from '../base/collector-abort-context.util';
-import { RequestWorkflowIntentProfileUtil } from '../../ideas/generation/utils/request-workflow-intent-profile.util';
-import { RequestNicheCustomCraftUtil } from '../../ideas/generation/utils/request-niche-custom-craft.util';
-import { RequestOnlinePharmacyFraudUtil } from '../../ideas/generation/utils/request-online-pharmacy-fraud.util';
 import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
 import { RequestEvidenceAlignmentUtil } from '../../ideas/generation/utils/request-evidence-alignment.util';
+import { RequestDynamicQueryUtil } from '../../ideas/generation/utils/request-dynamic-query.util';
 
 import { ForumAdapter } from './adapters/forum-adapter.interface';
 import { DiscourseForumAdapter } from './adapters/discourse-forum.adapter';
@@ -343,72 +341,11 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       if (!domains.includes(normalized)) domains.push(normalized);
     };
 
-    const aiOwnedGenerationPlan = (input.plannedQueries ?? []).some((query) => query.trim().length > 0);
-    if (aiOwnedGenerationPlan) {
-      for (const hint of input.sourceHints ?? []) {
-        const urlMatch = hint.match(/https?:\/\/([^/\s]+)/iu);
-        const domainMatch = hint.match(/\b(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)\b/iu);
-        if (urlMatch?.[1]) add(urlMatch[1]);
-        else if (domainMatch?.[1]) add(domainMatch[1]);
-      }
-      return domains.slice(0, 4);
-    }
-
-    const knownLabels: ReadonlyArray<readonly [RegExp, string]> = [
-      [/\bfountain pen network\b/iu, 'fountainpennetwork.com'],
-      [/\bfpgeeks?\b/iu, 'fpgeeks.com'],
-      [/\bphoto\.net\b/iu, 'photo.net'],
-      [/\bwatchuseek\b/iu, 'watchuseek.com'],
-      [/\bthe fedora lounge\b/iu, 'thefedoralounge.com'],
-      [/\b(?:ganoksin orchid|orchid jewelry forum|orchid forum|ganoksin)\b/iu, 'orchid.ganoksin.com'],
-      [/\b(?:leatherworker\.net|leatherworker forum|leather worker forum)\b/iu, 'leatherworker.net'],
-      [/\b(?:new ag talk|newagtalk|ag talk)\b/iu, 'talk.newagtalk.com'],
-      [/\b(?:den of angels|denofangels)\b/iu, 'denofangels.com'],
-    ];
-
     for (const hint of input.sourceHints ?? []) {
       const urlMatch = hint.match(/https?:\/\/([^/\s]+)/iu);
       const domainMatch = hint.match(/\b(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)\b/iu);
       if (urlMatch?.[1]) add(urlMatch[1]);
       else if (domainMatch?.[1]) add(domainMatch[1]);
-      for (const [pattern, domain] of knownLabels) {
-        if (pattern.test(hint)) add(domain);
-      }
-    }
-
-    const request = this.cleanNormalizedText(input.requestDescription ?? '');
-    if (/\b(?:fountain pen|fountain pens|nib repair|pen restoration|pen repair)\b/u.test(request)) {
-      add('fountainpennetwork.com');
-    }
-    if (
-      /\b(?:antique|vintage|historic|heirloom)\s+(?:jewelry|jewellery|ring|rings|pendant|bracelet|necklace|brooch)|\b(?:jewelry|jewellery)\s+(?:restoration|repair)|\bbench jeweler\b/u.test(
-        request,
-      )
-    ) {
-      add('orchid.ganoksin.com');
-    }
-    if (
-      /\b(?:shoe restoration|shoe repair|shoe repairer|shoe repairers|cobbler|cobblers|footwear repair|boot repair|sneaker restoration|leather shoe repair|resoling|re-?soling)\b/u.test(
-        request,
-      )
-    ) {
-      add('leatherworker.net');
-    }
-    if (
-      /\b(?:eyeglass frame repair|eyeglass repair|eyewear repair|optical frame repair|spectacle frame repair|glasses repair)\b/u.test(request)
-    ) {
-      add('optiboard.com');
-    }
-    if (
-      /\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request) &&
-      /\b(?:storage|warehouse|transport|delivery|spoilage|market price|profitability|margin|route)\w*\b/u.test(request)
-    ) {
-      add('talk.newagtalk.com');
-    }
-    for (const domain of RequestNicheCustomCraftUtil.preferredForumDomains(
-      input.requestDescription,
-    )) {
-      add(domain);
     }
 
     return domains.slice(0, 4);
@@ -420,64 +357,15 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     const request = this.cleanNormalizedText(input.requestDescription ?? '');
     if (!request || this.isTechnicalRequest(input)) return false;
 
-    // In AI-owned generation, selecting the forum collector means the planner
-    // believes practitioner/community discussion is useful. Discover a
-    // specialist forum generically from the planned queries instead of
-    // requiring another hard-coded vertical/archetype match. Final admission
-    // still goes through the canonical evidence verifier.
-    if ((input.plannedQueries ?? []).some((query) => query.trim().length > 0)) {
-      return true;
-    }
-
-    const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
-      input.requestDescription,
+    return (
+      (input.plannedQueries ?? []).some((query) => query.trim().length > 0) ||
+      (input.sourceHints ?? []).some((hint) => hint.trim().length > 0)
     );
-    if (workflowProfile.restorationIntent) return true;
-    if (RequestNicheCustomCraftUtil.resolve(input.requestDescription)) return true;
-    if (RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)) return true;
-    if (
-      /\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request) &&
-      /\b(?:storage|warehouse|transport|delivery|spoilage|market price|profitability|margin|route|crop|produce)\w*\b/u.test(request)
-    ) {
-      return true;
-    }
-    if (
-      /\b(?:travel compan(?:y|ies)|travel agenc(?:y|ies)|tour operators?|tour compan(?:y|ies)|tour packages?)\b/u.test(request) &&
-      /\b(?:profitability|margin|pricing|supplier fees?|partner invoices?|cancellations?|refunds?|booking changes?|seasonal demand|transportation costs?)\w*\b/u.test(request)
-    ) {
-      return true;
-    }
-    if (
-      /\b(?:sports rehabilitation centers?|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|athletic trainers?)\b/u.test(
-        request,
-      ) &&
-      /\b(?:athletes?|recovery|rehabilitation|wearable|pain reports?|mobility|remote monitoring|return to play|reinjury)\b/u.test(
-        request,
-      )
-    ) {
-      return true;
-    }
-
-    if (
-      /\b(?:urban healthcare networks?|healthcare networks?|hospital networks?|emergency departments?|ambulance services?|clinics?)\b/u.test(request) &&
-      /\b(?:patient demand|hospital capacity|ambulance availability|overcrowd(?:ed|ing)?|response times?|resource allocation|delayed patient care|care gaps?)\b/u.test(request)
-    ) {
-      return true;
-    }
-
-    const text = this.cleanNormalizedText([
-      input.domainName ?? '',
-      ...(input.sourceHints ?? []),
-    ].join(' '));
-    return /\b(?:specialist|specialists|restoration|conservation|repair|collector community|professional forum|industry forum|practitioner forum)\b/u.test(text);
   }
 
   private buildSpecialistForumDiscoveryQueries(
     input: CollectorInput,
   ): string[] {
-    const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
-      input.requestDescription,
-    );
     const queries: string[] = [];
     const add = (value: string) => {
       const cleaned = value.replace(/\s+/gu, ' ').trim();
@@ -488,98 +376,31 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       }
     };
 
-    if ((input.plannedQueries ?? []).some((query) => query.trim().length > 0)) {
-      for (const hint of input.sourceHints ?? []) {
-        if (/https?:\/\//iu.test(hint) || /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/iu.test(hint)) continue;
-        add(`${hint.split(/\s+/u).slice(0, 8).join(' ')} forum discussion`);
-      }
-      for (const query of input.plannedQueries ?? []) {
-        const compact = query.split(/\s+/u).filter(Boolean).slice(0, 9).join(' ');
-        add(`${compact} forum discussion`);
-        add(`${compact} practitioner community`);
-        if (queries.length >= 5) break;
-      }
-      return queries.slice(0, 5);
-    }
-
-    if (workflowProfile.restorationIntent && workflowProfile.restorationSubject) {
-      const subject = workflowProfile.restorationSubject;
-      add(`${subject} restoration forum discussion repair`);
-      add(`${subject} conservation community restoration`);
-      add(`${subject} restoration condition treatment documentation repair history`);
-      add(`${subject} restoration condition assessment specifications forum`);
-      add(`${subject} conservation previous intervention replacement material discussion`);
-      if (/\b(?:porcelain|ceramic|china)\b/iu.test(subject)) {
-        add('porcelain restoration ceramic conservation forum glaze crack repair history');
-        add('china repair ceramics conservation community treatment documentation');
-        add('museum ceramics conservation porcelain condition restoration records');
-      }
-      if (/\b(?:shoe|footwear|boot|sneaker|leather shoe)\b/iu.test(subject)) {
-        add('cobbler shoe repair forum material matching color restoration records');
-        add('shoe repair workshop restoration history customer notes leather sole stitching');
-        add('footwear restoration rework wrong materials color matching customer request');
-      }
-    }
-
-    const request = this.cleanNormalizedText(input.requestDescription ?? '');
-    if (
-      /\b(?:eyeglass frame repair|eyeglass repair|eyewear repair|optical frame repair|spectacle frame repair|glasses repair)\b/u.test(request)
-    ) {
-      add('eyeglass frame repair forum hinge replacement repeated adjustment repair history');
-      add('optician optical frame repair workshop replacement parts customer fit notes');
-      add('spectacle frame repair technician repair history wrong parts color matching');
-      add('eyewear repair shop customer adjustment records delayed repair');
-    }
-    if (
-      /\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request) &&
-      /\b(?:storage|warehouse|transport|delivery|spoilage|market price|profitability|margin|route|crop|produce)\w*\b/u.test(request)
-    ) {
-      add('agricultural distributor crop profitability storage transport cost forum discussion');
-      add('produce distributor spoilage warehouse delivery cost margin forum discussion');
-      add('fresh produce distribution market price route profitability forum discussion');
-      add('agriculture supply chain storage loss transport pricing distributor forum');
-    }
-    if (
-      /\b(?:travel compan(?:y|ies)|travel agenc(?:y|ies)|tour operators?|tour compan(?:y|ies)|tour packages?)\b/u.test(request) &&
-      /\b(?:profitability|margin|pricing|supplier fees?|partner invoices?|cancellations?|refunds?|booking changes?|seasonal demand|transportation costs?)\w*\b/u.test(request)
-    ) {
-      add('tour operator forum package profitability supplier fees cancellations');
-      add('travel agency forum tour pricing booking changes margins');
-      add('tour operator community transportation supplier cost package profit');
-      add('travel business forum refunds seasonal demand package profitability');
-    }
-    for (const query of RequestOnlinePharmacyFraudUtil.buildSourceQueries('forum')) {
-      if (RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)) {
-        add(`${query} forum discussion`);
-      }
-    }
-    for (const query of RequestNicheCustomCraftUtil.buildSourceQueries(
-      input.requestDescription,
-      'forum',
-    )) {
-      add(`${query} forum discussion`);
-    }
-    if (
-      /\b(?:sports rehabilitation centers?|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|athletic trainers?)\b/u.test(
-        request,
-      )
-    ) {
-      add('sports medicine rehabilitation forum athlete recovery monitoring');
-      add('physical therapy forum remote rehabilitation athlete pain mobility');
-      add('athletic trainer forum return to play rehabilitation monitoring');
-      add('sports injury rehabilitation practitioner forum wearable sensor recovery');
-      add('physiotherapy community outpatient athlete recovery tracking');
-    }
-
     for (const hint of input.sourceHints ?? []) {
-      if (/https?:\/\//iu.test(hint) || /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/iu.test(hint)) continue;
-      add(`${hint.split(/\s+/u).slice(0, 7).join(' ')} forum discussion`);
-      if (queries.length >= 5) break;
+      if (/https?:\/\//iu.test(hint) || /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/iu.test(hint)) {
+        continue;
+      }
+      add(`${hint.split(/\s+/u).slice(0, 8).join(' ')} forum discussion`);
     }
 
     for (const query of input.plannedQueries ?? []) {
-      add(`${query.split(/\s+/u).slice(0, 7).join(' ')} forum discussion`);
+      const compact = query.split(/\s+/u).filter(Boolean).slice(0, 9).join(' ');
+      add(`${compact} forum discussion`);
+      add(`${compact} practitioner community`);
       if (queries.length >= 5) break;
+    }
+
+    if (queries.length < 5 && input.requestDescription?.trim()) {
+      const generic = RequestDynamicQueryUtil.buildProfessionalEvidenceQueries({
+        requestDescription: input.requestDescription,
+        plannedQueries: input.plannedQueries,
+        evidenceTargets: [],
+        maxQueries: 5,
+      });
+      for (const query of generic) {
+        add(`${query} forum discussion`);
+        if (queries.length >= 5) break;
+      }
     }
 
     return queries.slice(0, 5);
@@ -769,20 +590,6 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     const evidence = this.cleanNormalizedText(candidateText);
     if (!evidence) return false;
 
-    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
-      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(
-        request,
-        evidence,
-      );
-    }
-
-    if (RequestNicheCustomCraftUtil.resolve(request)) {
-      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(
-        request,
-        evidence,
-      );
-    }
-
     const constraint = RequestVerticalConstraintUtil.resolve({
       requestDescription: request,
       domainName: input.domainName,
@@ -804,448 +611,33 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     return true;
   }
 
-  private isWatchStrapCraftRequest(value: string): boolean {
-    const request = this.cleanNormalizedText(value);
-    return (
-      /\b(?:watch straps?|watch bands?|leather watch straps?|leather watch bands?|watch strap makers?|watch band makers?|bespoke straps?)\b/u.test(request) &&
-      /\b(?:wrist measurements?|wrist sizes?|strap lengths?|strap widths?|lug widths?|leather|materials?|stitching|buckles?|design revisions?|customer approvals?|approved specifications?|wrong sizes?|sizing errors?|remakes?|rework|wasted leather|delayed orders?)\b/u.test(request)
-    );
-  }
-
   private resolveStackExchangeSites(input: CollectorRequestSupportInput): string[] {
-    const requestText = this.cleanNormalizedText(input.requestDescription ?? '');
-    const routingIdentityText = this.cleanNormalizedText([
-      input.requestDescription ?? '',
-      input.domainName ?? '',
-    ].join(' '));
-    const text = this.cleanNormalizedText([
-      input.requestDescription ?? '',
-      input.domainName ?? '',
-      ...(input.domainKeywords ?? []),
-      ...(input.keywords ?? []),
-      ...(input.plannedQueries ?? []),
-      ...(input.sourceHints ?? []),
-    ].join(' '));
-
-    const nicheCustomCraft = RequestNicheCustomCraftUtil.resolve(input.requestDescription);
-    const requestWorkflowProfile = RequestWorkflowIntentProfileUtil.resolve(
-      input.requestDescription,
-    );
-
     const sites: string[] = [];
     const add = (site: string) => {
-      if (!sites.includes(site)) sites.push(site);
+      const normalized = site
+        .trim()
+        .toLocaleLowerCase()
+        .replace(/^https?:\/\//u, '')
+        .replace(/^www\./u, '')
+        .split('/')[0] ?? '';
+      if (!normalized) return;
+      if (/^(?:[a-z0-9-]+\.)?stackexchange\.com$/u.test(normalized)) {
+        if (!sites.includes(normalized)) sites.push(normalized);
+        return;
+      }
+      if (['stackoverflow.com', 'serverfault.com', 'superuser.com', 'askubuntu.com'].includes(normalized)) {
+        if (!sites.includes(normalized)) sites.push(normalized);
+      }
     };
 
-    if ((input.plannedQueries ?? []).some((query) => query.trim().length > 0)) {
-      for (const hint of input.sourceHints ?? []) {
-        const normalized = hint
-          .trim()
-          .toLocaleLowerCase()
-          .replace(/^https?:\/\//u, '')
-          .replace(/^www\./u, '')
-          .split('/')[0] ?? '';
-        if (/^(?:[a-z0-9-]+\.)?stackexchange\.com$/u.test(normalized)) add(normalized);
-        else if (['stackoverflow.com', 'serverfault.com', 'superuser.com', 'askubuntu.com'].includes(normalized)) add(normalized);
-      }
-      return sites.slice(0, 2);
+    for (const hint of input.sourceHints ?? []) {
+      const urlMatch = hint.match(/https?:\/\/([^/\s]+)/iu);
+      const domainMatch = hint.match(/\b(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)\b/iu);
+      if (urlMatch?.[1]) add(urlMatch[1]);
+      else if (domainMatch?.[1]) add(domainMatch[1]);
     }
 
-    if (nicheCustomCraft && !this.isTechnicalRequest(input)) {
-      add('crafts.stackexchange.com');
-    }
-
-    if (RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)) {
-      for (const site of RequestOnlinePharmacyFraudUtil.preferredStackExchangeSites()) {
-        add(site);
-      }
-    }
-
-    if (
-      /\b(?:universities|university|higher education|online learning systems?|learning platforms?|learning management systems?|lms|online exams?|online assessments?)\b/u.test(requestText) &&
-      /\b(?:login activity|login records?|authentication|account permissions?|device information|device fingerprints?|security alerts?|compromised accounts?|suspicious activity|unauthorized access|cybersecurity|academic integrity|exam integrity)\b/u.test(requestText)
-    ) {
-      add('security.stackexchange.com');
-      add('academia.stackexchange.com');
-    }
-    if (
-      /\b(?:restaurant delivery platforms?|food delivery platforms?|food delivery apps?|restaurant delivery apps?|online food ordering services?|meal delivery platforms?|restaurant courier platforms?)\b/u.test(requestText) &&
-      /\b(?:suspicious orders?|account takeovers?|account takeover|refund abuse|fraudulent refunds?|promotional abuse|promo(?:tional)? fraud|promo code abuse|payment behavior|device information|device signals?|customer complaints?|security alerts?|false positives?|blocked legitimate (?:users?|customers?)|coordinated abuse)\b/u.test(requestText)
-    ) {
-      // Platform fraud is a security/operations workflow. Money.SE is aimed at
-      // personal finance and creates bank/consumer noise for professional
-      // restaurant/delivery fraud investigations.
-      add('security.stackexchange.com');
-    }
-    if (
-      /\b(?:sports rehabilitation centers?|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|athletic trainers?)\b/u.test(requestText) &&
-      /\b(?:athletes?|recovery|rehabilitation|wearable|pain reports?|mobility|remote monitoring|return to play|reinjury|training load)\b/u.test(requestText)
-    ) {
-      add('fitness.stackexchange.com');
-      add('medicalsciences.stackexchange.com');
-    }
-
-    if (
-      /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|regulatory agencies?|licensing authorities?)\b/u.test(requestText) &&
-      /\b(?:licenses?|licences?|certificates?|permits?|official records?|official documents?|approval records?|security logs?)\b/u.test(requestText) &&
-      /\b(?:altered|tamper(?:ed|ing)?|unauthorized access|unauthorised access|fraud(?:ulent)?|forged|verification|integrity|audit trail|access logs?)\b/u.test(requestText)
-    ) {
-      add('security.stackexchange.com');
-      add('law.stackexchange.com');
-    }
-
-    if (
-      /\b(?:urban healthcare networks?|healthcare networks?|hospital networks?|emergency departments?|ambulance services?|clinics?)\b/u.test(requestText) &&
-      /\b(?:patient demand|hospital capacity|ambulance availability|overcrowd(?:ed|ing)?|response times?|resource allocation|delayed patient care|care gaps?)\b/u.test(requestText)
-    ) {
-      add('medicalsciences.stackexchange.com');
-    }
-
-    if (
-      /\b(?:frame gilding specialists?|frame gilders?|gilders?|gilding workshops?|frame restoration specialists?|frame restorers?)\b/u.test(requestText) &&
-      /\b(?:gold[- ]leaf|gold leaf|damaged decorative|surface preparation|finish preferences?|approved treatment|previous restoration|restoration work|color matching|colour matching|repeated work|wasted materials?)\b/u.test(requestText)
-    ) {
-      add('crafts.stackexchange.com');
-      add('diy.stackexchange.com');
-    }
-
-    if (
-      /\b(?:agricultural exporters?|fresh produce exporters?|produce exporters?|fruit exporters?|vegetable exporters?|agricultural export(?:ers?| companies?| businesses?))\b/u.test(requestText) &&
-      /\b(?:transportation delays?|storage costs?|warehouse expenses?|market prices?|product spoilage|shipment profitability|profit margins?|profit estimates?|supplier payments?|sales revenues?|financial losses?)\b/u.test(requestText)
-    ) {
-      add('economics.stackexchange.com');
-      add('sustainability.stackexchange.com');
-    }
-    if (
-      /\b(?:eyeglass frame repair specialists?|eyeglass repair specialists?|eyewear repair specialists?|optical frame repair specialists?|spectacle frame repair specialists?|glasses repair specialists?)\b/u.test(requestText) &&
-      /\b(?:frame damage|previous repairs?|replacement hinges?|replacement parts?|color matching|colour matching|fit preferences?|adjustment notes?|pickup dates?|repair history)\b/u.test(requestText)
-    ) {
-      add('crafts.stackexchange.com');
-      add('diy.stackexchange.com');
-    }
-
-    if (
-      /\b(?:large farms?|farms?|farm operators?|farm managers?|agricultural enterprises?|agriculture)\b/u.test(requestText) &&
-      /\b(?:electricity|energy consumption|energy usage|irrigation pumps?|cold[- ]storage|greenhouses?|processing equipment|energy waste|energy efficiency|operating costs?)\b/u.test(requestText)
-    ) {
-      add('sustainability.stackexchange.com');
-      add('engineering.stackexchange.com');
-    }
-    if (
-      /\b(?:agricultural cooperatives?|farm cooperatives?|farmers?|farms?|farm operators?|farm managers?|agricultural enterprises?|crop producers?)\b/u.test(requestText) &&
-      /\b(?:water consumption|water use|irrigation|fertilizer|fertiliser|crop losses?|yield losses?|resource use|resource usage|environmental conditions?|weather impacts?|market prices?|input costs?|expenses?|profitability|profit margins?)\b/u.test(requestText)
-    ) {
-      add('economics.stackexchange.com');
-      add('sustainability.stackexchange.com');
-    }
-
-    if (
-      /\b(?:music box makers?|musical box makers?|custom music box makers?|music box artisans?|mechanical music box makers?)\b/u.test(requestText) &&
-      /\b(?:melody|tune|mechanism|wood|engraving|decorative details?|dimensions?|design revisions?|approved specifications?|completion deadlines?|commissions?)\b/u.test(requestText) &&
-      !this.isTechnicalRequest(input)
-    ) {
-      add('crafts.stackexchange.com');
-      add('woodworking.stackexchange.com');
-    }
-    if (
-      /\b(?:violin bow restoration|violin restoration|violin varnish|luthier|string instrument restoration)\b/u.test(requestText) &&
-      /\b(?:restoration|conservation|repair|varnish|coating|surface condition|condition assessment|treatment history|restoration history|previous repairs?|replacement materials?|warped sticks?|worn hair|damaged frogs?|loose fittings?|preservation|documentation|records?|notes?)\b/u.test(requestText)
-    ) {
-      // Route by the requester workflow before the musical object. Restoration
-      // and conservation records belong to craft/physical-treatment forums;
-      // Music.SE is appropriate only when the requester is actually asking
-      // about performance, setup, playing technique, or musical practice.
-      add('crafts.stackexchange.com');
-      add('diy.stackexchange.com');
-      if (
-        !requestWorkflowProfile.restorationIntent &&
-        /\b(?:playing technique|performance|setup|tone|intonation|bow hold|bowing|repertoire|music theory)\b/u.test(requestText)
-      ) {
-        add('music.stackexchange.com');
-      }
-    }
-
-    if (
-      /\b(?:violin case restoration specialists?|violin case restorers?|instrument case restoration specialists?|instrument case restorers?|violin case restoration)\b/u.test(requestText) &&
-      /\b(?:damaged hinges?|interior padding|fabric condition|handle repairs?|replacement hardware|previous restoration|restoration history|repeated repairs?|incorrect materials?|overlooked damage)\b/u.test(requestText)
-    ) {
-      add('crafts.stackexchange.com');
-      add('diy.stackexchange.com');
-    }
-
-    if (
-      /\b(?:vintage camera restoration specialists?|antique camera restoration specialists?|camera restoration specialists?|vintage camera repair specialists?|camera repair technicians?|film camera repair technicians?)\b/u.test(requestText) &&
-      /\b(?:mechanical faults?|lens condition|previous repairs?|missing components?|replacement parts?|cosmetic damage|restoration history|repair history|repeated diagnostics?|customer restoration preferences?)\b/u.test(requestText)
-    ) {
-      add('photo.stackexchange.com');
-      add('diy.stackexchange.com');
-    }
-
-    if (
-      /\b(?:typewriter restoration specialists?|typewriter restorers?|typewriter repair specialists?|typewriter repairers?|typewriter restoration workshops?|typewriter repair shops?)\b/u.test(requestText) &&
-      /\b(?:mechanical condition|missing keys?|ribbon mechanism|damaged components?|previous repairs?|repair history|replacement parts?|spare parts?|repeated diagnostics?|overlooked defects?)\b/u.test(requestText)
-    ) {
-      add('retrocomputing.stackexchange.com');
-      add('crafts.stackexchange.com');
-    }
-    if (
-      /\b(?:public grant programs?|government grant programs?|public funding programs?|grant-making agencies?|grantmaking agencies?|public agencies?)\b/u.test(requestText) &&
-      /\b(?:grant applications?|eligibility checks?|previous funding|funding history|project outcomes?|financial records?|duplicate(?:d)? requests?|unrealistic budgets?|underperformance risk|funding allocation|program impact)\b/u.test(requestText)
-    ) {
-      add('civicrm.stackexchange.com');
-      add('opendata.stackexchange.com');
-    }
-
-    if (
-      /\b(?:decorative fountains?|ornamental fountains?|historic fountains?|fountain restoration specialists?|fountain restorers?|fountain maintenance contractors?|water features?)\b/u.test(requestText) &&
-      /\b(?:pump condition|fountain pumps?|water[- ]?flow|stone damage|metal damage|metal corrosion|replacement components?|replacement parts?|finish preferences?|previous repairs?|repair history|customer requests?|restoration history)\b/u.test(requestText)
-    ) {
-      add('diy.stackexchange.com');
-      add('crafts.stackexchange.com');
-    }
-
-    const explicitPersonalOrInvestmentFinance =
-      /\b(?:personal finance|credit cards?|mortgages?|loans?|bank accounts?|consumer banking|salary|income tax|tax return|retirement|debt|investment portfolio|stock investing|property investment|real estate investment|rental property cash flow|landlord mortgage)\b/u.test(requestText);
-    if (explicitPersonalOrInvestmentFinance) {
-      add('money.stackexchange.com');
-    }
-    if (/\b(?:cake decorator|custom cake|home baker|cake artist|bakery|food|restaurant|cooking|allergy|ingredient)\b/u.test(text)) {
-      add('cooking.stackexchange.com');
-    }
-    if (/\b(?:calligraphy|lettering|craft|handmade|custom stationery|art commission|frame restoration|picture frame restoration|frame restorer|gilded frame|frame conservation|picture framer|custom framing)\b/u.test(text)) {
-      add('crafts.stackexchange.com');
-    }
-    if (/\b(?:musical score restoration|music score restoration|music manuscript|musical manuscript|manuscript conservation|paper conservation|manuscript conservator|paper conservator|document conservator)\b/u.test(text)) {
-      /*
-       * "paper conservation" is broader than music. Do not let an AI routing
-       * hint send antique maps, books, documents, or prints to Music.SE unless
-       * the requester itself is actually about music/manuscripts/scores.
-       */
-      if (
-        /\b(?:music|musical|score|sheet music|music manuscript|musical manuscript|instrument)\w*\b/u.test(
-          requestText,
-        )
-      ) {
-        add('music.stackexchange.com');
-      }
-      add('crafts.stackexchange.com');
-    }
-    if (
-      !requestWorkflowProfile.restorationIntent &&
-      /\b(?:guitar repair|guitar technician|guitar technicians|luthier|luthiers|instrument repair|instrument repairs|musical instrument repair|fret wear|neck adjustment|neck adjustments|setup preferences?|repair history|service history)\b/u.test(text)
-    ) {
-      add('music.stackexchange.com');
-    }
-    if (/\b(?:sneaker cleaning|shoe cleaning|sneaker cleaner|shoe cleaner|sneaker restoration|shoe restoration|footwear cleaning|footwear restoration)\b/u.test(text)) {
-      add('lifehacks.stackexchange.com');
-      add('crafts.stackexchange.com');
-    }
-    if (/\b(?:restaurant chains?|restaurant managers?|restaurant operators?|commercial kitchens?|restaurant refrigeration|commercial kitchen equipment|restaurant energy|utility costs?)\b/u.test(text)) {
-      add('cooking.stackexchange.com');
-      add('diy.stackexchange.com');
-    }
-    if (/\b(?:upholstery|furniture repair|woodworking|home repair|home improvement|frame restoration|picture frame restoration|frame restorer|gilded frame restoration)\b/u.test(text)) {
-      add('diy.stackexchange.com');
-    }
-    // Generic forum routing is identity-bound. Query/keyword text may mention
-    // legal, education, or finance terms incidentally; those retrieval hints
-    // must not reroute an AI/Cybersecurity discovery lane to Law.SE.
-    if (/\b(?:artificial intelligence|machine learning|\bai\b|large language model|\bllm\b)\b/u.test(routingIdentityText)) {
-      add('ai.stackexchange.com');
-      add('datascience.stackexchange.com');
-    }
-    if (/\b(?:cybersecurity|information security|security operations|soc)\b/u.test(routingIdentityText)) {
-      add('security.stackexchange.com');
-    }
-    if (/\b(?:legal|law|contract|compliance)\b/u.test(routingIdentityText)) {
-      add('law.stackexchange.com');
-    }
-    if (/\b(?:education|academic|university|student|research)\b/u.test(routingIdentityText)) {
-      add('academia.stackexchange.com');
-    }
-    if (/\b(?:workplace|human resources|hr policy|employee|employment|faculty workload|teaching workload|course staffing)\b/u.test(routingIdentityText)) {
-      add('workplace.stackexchange.com');
-    }
-    if (/\b(?:sign language interpretation agenc(?:y|ies)|sign language interpreting agenc(?:y|ies)|asl interpreting agenc(?:y|ies)|interpreter agenc(?:y|ies)|language service providers?|interpreter availability|assignment matching|interpreter scheduling)\b/u.test(text)) {
-      add('workplace.stackexchange.com');
-    }
-    if (/\b(?:pet trainer|dog trainer|animal trainer|pet behavior|pet behaviour|dog training|animal behavior|animal behaviour|training exercises?|behavioral triggers?|behavioural triggers?)\b/u.test(text)) {
-      add('pets.stackexchange.com');
-    }
-    if (
-      !requestWorkflowProfile.restorationIntent &&
-      /\b(?:music|musical|musician|orchestra|band|guitar|violin|piano|instrument)\w*\b/u.test(requestText) &&
-      /\b(?:rental|rentals|hire|booking|availability|return dates?|deposit|accessories|maintenance|condition|damage)\w*\b/u.test(requestText) &&
-      !this.isTechnicalRequest(input)
-    ) {
-      add('music.stackexchange.com');
-    }
-
-    const rentalInventoryRequest =
-      /\b(?:rental|rentals|hire)\w*\b/u.test(requestText) &&
-      /\b(?:availability|booking|bookings|reservation|reservations|return dates?|expected returns?|deposits?|charges?|accessories|condition|damage|maintenance|servicing)\w*\b/u.test(requestText);
-    if (rentalInventoryRequest && !this.isTechnicalRequest(input)) {
-      if (/\b(?:deposit|deposits|charge|charges|refund|payment|fee|fees)\w*\b/u.test(requestText)) {
-        add('money.stackexchange.com');
-      }
-      if (/\b(?:condition|damage|maintenance|servicing|inspection|repair)\w*\b/u.test(requestText)) {
-        add('diy.stackexchange.com');
-      }
-    }
-
-    const energyAssetOperationsRequest =
-      /\b(?:energy|electricity|power|grid|utility|utilities)\w*\b/u.test(requestText) &&
-      /\b(?:infrastructure|assets?|equipment|maintenance|outages?|reliability|condition|repair|investment|upgrades?|operational risk)\w*\b/u.test(requestText);
-    if (energyAssetOperationsRequest && !this.isTechnicalRequest(input)) {
-      add('sustainability.stackexchange.com');
-      add('engineering.stackexchange.com');
-    }
-
-    /*
-     * Generic fallback routing for previously unseen request domains. The
-     * decision is based on workflow/pain vocabulary instead of a domain name,
-     * so new requests still reach a relevant community without another
-     * hard-coded vertical.
-     */
-    if (sites.length === 0 && requestText) {
-      if (/\b(?:security|fraud|scam|unauthorized|account|authentication|breach|threat|attack|compromise|suspicious)\w*\b/u.test(requestText)) {
-        add('security.stackexchange.com');
-      }
-      const businessOperationalFinance =
-        /\b(?:companies?|businesses?|operators?|agencies|cooperatives?|farms?|farmers?|growers?|agricultural enterprises?|tour packages?|routes?|services?|facilities|departments|suppliers?|bookings?|reservations?)\b/u.test(requestText) &&
-        /\b(?:profitability|margin|pricing|budget|operating costs?|supplier fees?|cost drivers?|cost attribution|forecast)\w*\b/u.test(requestText);
-      const personalOrTransactionFinance =
-        /\b(?:personal finance|credit card|mortgage|loan|bank account|investment|salary|tax|consumer payment|refund dispute|chargeback|payment fraud)\w*\b/u.test(requestText);
-      const professionalPlatformAbuse =
-        /\b(?:platforms?|streaming|gaming|digital entertainment|restaurant|food delivery|university|healthcare|government|businesses?|companies?)\b/u.test(requestText) &&
-        /\b(?:account takeover|account theft|fraudulent subscriptions?|refund abuse|unauthorized refunds?|payment abuse|security alerts?|coordinated fraud|fraud detection)\b/u.test(requestText);
-      if (
-        /\b(?:cost|revenue|profit|margin|pricing|payment|budget|financial|finance|investment)\w*\b/u.test(requestText) &&
-        (!businessOperationalFinance || personalOrTransactionFinance) &&
-        !professionalPlatformAbuse
-      ) {
-        add('money.stackexchange.com');
-      }
-      const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
-        input.requestDescription,
-      );
-      const explicitCraftWorkflow =
-        /\b(?:restoration|restore|conservation|conservator|repair specialist|repair shop|craft|artisan|workshop|gilding|woodworking|upholstery|custom framing|frame restoration|shoe repair|cobbler)\w*\b/u.test(
-          requestText,
-        );
-      if (workflowProfile.restorationIntent && explicitCraftWorkflow) {
-        /*
-         * Restoration requests previously skipped the generic craft fallback,
-         * which left valid specialist discovery with no StackExchange lane.
-         * Crafts carries treatment/material discussions; DIY is a secondary
-         * physical-repair lane. Final evidence still passes request identity
-         * and Community semantic verification.
-         */
-        add('crafts.stackexchange.com');
-        add('diy.stackexchange.com');
-      } else if (explicitCraftWorkflow) {
-        add('crafts.stackexchange.com');
-        add('diy.stackexchange.com');
-      }
-      const environmentalSustainabilityWorkflow =
-        /\b(?:energy|environment|environmental|sustainability|agriculture|farm|emissions?|resource efficiency|waste management|industrial waste|food waste|municipal waste|material waste reduction)\b/iu.test(
-          requestText,
-        );
-      if (!nicheCustomCraft && environmentalSustainabilityWorkflow) {
-        add('sustainability.stackexchange.com');
-      }
-      if (/\b(?:staff|employee|workload|assignment|scheduling|workplace|team coordination|availability)\w*\b/u.test(requestText)) {
-        add('workplace.stackexchange.com');
-      }
-      if (
-        /\b(?:rental|rentals|hire)\w*\b/u.test(requestText) &&
-        /\b(?:deposit|charge|charges|charging|refund|payment|fee|fees)\w*\b/u.test(requestText)
-      ) {
-        add('money.stackexchange.com');
-      }
-      if (this.isTechnicalRequest(input)) {
-        add('softwareengineering.stackexchange.com');
-      }
-    }
-
-    return sites
-      .filter((site) => this.isStackExchangeSiteCompatible(site, routingIdentityText))
-      .slice(0, 2);
-  }
-
-  private isStackExchangeSiteCompatible(site: string, requestText: string): boolean {
-    const normalizedSite = site.toLocaleLowerCase();
-
-    if (/^money\./u.test(normalizedSite)) {
-      const professionalPlatformAbuse =
-        /\b(?:platforms?|streaming|gaming|digital entertainment|subscription services?|restaurant|food delivery|marketplace|universit(?:y|ies)|healthcare|government|businesses?|companies?|organizations?)\b/u.test(requestText) &&
-        /\b(?:account takeover|account theft|fraudulent subscriptions?|refund abuse|unauthorized refunds?|unauthorised refunds?|payment abuse|security alerts?|coordinated fraud|fraud detection|suspicious activity)\b/u.test(requestText);
-      const businessOperationalFinance =
-        /\b(?:companies?|businesses?|operators?|agencies|cooperatives?|farms?|farmers?|growers?|agricultural enterprises?|platforms?|services?|packages?|routes?|suppliers?|bookings?|reservations?)\b/u.test(requestText) &&
-        /\b(?:profitability|margin|pricing|budget|operating costs?|supplier fees?|cost drivers?|cost attribution|financial forecasts?|revenue leakage)\b/u.test(requestText);
-      const explicitPersonalFinance =
-        /\b(?:personal finance|credit cards?|mortgages?|loans?|bank accounts?|consumer banking|salary|income tax|tax return|retirement|debt|investment portfolio|stock investing|property investment|real estate investment|rental property cash flow|landlord mortgage)\b/u.test(requestText);
-      if ((professionalPlatformAbuse || businessOperationalFinance) && !explicitPersonalFinance) {
-        return false;
-      }
-    }
-    if (/^music\./u.test(normalizedSite)) {
-      const restorationArtifactRequest = /\b(?:restor\w*|conserv\w*|repair history|previous repairs?|replacement materials?|missing components?|damaged mechanisms?)\b/u.test(requestText);
-      const mechanicalMusicBoxRequest = /\b(?:music box|musical box|cylinder music box|disc music box|tune[- ]?cylinder|comb mechanism|governor mechanism|spring mechanism)\b/u.test(requestText);
-      const musicBoxCommissionRequest =
-        mechanicalMusicBoxRequest &&
-        /\b(?:makers?|artisan|custom|commission|melody|mechanism|wood|engraving|dimensions?|design revisions?|customer|client|approved specifications?)\b/u.test(requestText);
-      const explicitInstrumentRepairRequest = /\b(?:guitar|violin|piano|flute|woodwind|brass instrument|musical instrument repair|instrument repair|luthier)\b/u.test(requestText);
-      if (
-        mechanicalMusicBoxRequest &&
-        !explicitInstrumentRepairRequest &&
-        (restorationArtifactRequest || musicBoxCommissionRequest)
-      ) {
-        return false;
-      }
-    }
-    const requirements: ReadonlyArray<readonly [RegExp, RegExp]> = [
-      [/^music\./u, /\b(?:music|musical|instrument|guitar|violin|piano|orchestra|band|luthier|score|sheet music)\w*\b/u],
-      [/^photo\./u, /\b(?:photo|photograph|camera|lens|shutter|image capture)\w*\b/u],
-      [/^academia\./u, /\b(?:academic|university|college|research|student|faculty|course|exam)\w*\b/u],
-      [/^money\./u, /\b(?:money|finance|financial|payment|transaction|refund|budget|profit|revenue|investment|fraud)\w*\b/u],
-      [/^security\./u, /\b(?:security|cyber|fraud|unauthorized|authentication|account takeover|breach|attack|threat|compromise)\w*\b/u],
-      [/^cooking\./u, /\b(?:food|cooking|kitchen|restaurant|ingredient|recipe|allergy|refrigeration)\w*\b/u],
-      [/^workplace\./u, /\b(?:workplace|employee|staff|workload|assignment|human resources|hr|scheduling)\w*\b/u],
-      [/^sustainability\./u, /\b(?:sustainability|environment|energy|water|waste|emission|resource|agriculture|farm)\w*\b/u],
-    ];
-    for (const [sitePattern, requestPattern] of requirements) {
-      if (sitePattern.test(normalizedSite)) return requestPattern.test(requestText);
-    }
-    return true;
-  }
-
-  private isProfessionalProblemRequest(input: CollectorInput): boolean {
-    const text = this.cleanNormalizedText([
-      input.requestDescription ?? '',
-      input.domainName ?? '',
-      ...(input.plannedQueries ?? []),
-      ...(input.sourceHints ?? []),
-    ].join(' '));
-
-    if (!text) return false;
-
-    const professionalActor = /\b(?:restoration specialists?|restorers?|conservators?|manuscript conservators?|paper conservators?|document conservators?|craftsmen?|artisans?|bookbinders?|seamstresses?|dressmakers?|tailors?|shoemakers?|cobblers?|sneaker cleaners?|shoe cleaners?|sneaker cleaning specialists?|shoe cleaning specialists?|sneaker restoration specialists?|shoe restoration specialists?|frame gilding specialists?|frame gilders?|gilders?|gilding workshops?|restaurant delivery platforms?|food delivery platforms?|food delivery apps?|restaurant delivery apps?|restaurant managers?|restaurant operators?|restaurant chains?|commercial kitchens?|framers?|picture framing|custom framing|workshops?|logistics companies?|logistics providers?|freight operators?|3pl providers?|transportation companies?|fleet operators?|sign language interpretation agenc(?:y|ies)|sign language interpreting agenc(?:y|ies)|asl interpreting agenc(?:y|ies)|interpreter agenc(?:y|ies)|language service providers?)\b/u.test(text);
-    const operationalWorkflow = /\b(?:customer approvals?|approved specifications?|repair notes?|restoration notes?|material selections?|material types?|gold[- ]leaf|gold leaf|surface preparation|damaged decorative|color matching|colour matching|stain conditions?|cleaning preferences?|previous treatments?|service history|handwritten tags?|paper tags?|pickup deadlines?|misplaced items?|forgotten requests?|repeated treatments?|repeated work|finish preferences?|measurements?|revision requests?|completion dates?|damaged manuscripts?|missing pages?|handwritten annotations?|marginalia|previous repairs?|paper types?|condition reports?|treatment records?|approved treatment|client instructions?|customer instructions?|restoration progress|conservation treatment|suspicious orders?|account takeover|refund abuse|promotional abuse|promo code abuse|device signals?|payment behavior|security alerts?|false positives?|operating costs?|energy costs?|utility costs?|utility bills?|refrigeration|cooking equipment|kitchen equipment|equipment failures?|maintenance records?|food waste|ingredient waste|fuel expenses?|warehouse costs?|failed deliveries?|vehicle maintenance|route performance|profit margins?|pricing decisions?|financial forecasts?|interpreter availability|interpreter scheduling|assignment details?|assignment matching|client communication preferences?|specialized vocabulary|session notes?|last[- ]minute schedule changes?|scheduling conflicts?|missed assignments?|client requirements?)\b/u.test(text);
-    const genericPhysicalServiceActor =
-      /\b(?:repair|restoration|conservation|refinishing|alteration|custom fabrication|leatherwork|woodwork|metalwork|craft|artisan|workshop|specialists?|technicians?)\w*\b/u.test(text);
-    const genericPhysicalServiceWorkflow =
-      /\b(?:condition|damage|stitching|fitting|adjustment|replacement|hardware|parts?|materials?|finish|previous repairs?|repair history|service history|customer preferences?|client preferences?|customer requests?|client requests?|notes?|photographs?|photos?|samples?|completion dates?|pickup dates?|delayed pickups?|rework|repeated adjustments?)\w*\b/u.test(text);
-    const rentalInventoryActor =
-      /\b(?:rental|rentals|hire)\s+(?:shops?|stores?|businesses?|services?|companies?)\b|\b(?:shops?|stores?|businesses?|services?|companies?)\b[^.!?]{0,60}\b(?:rental|rentals|hire)\b/u.test(text);
-    const rentalInventoryWorkflow =
-      /\b(?:rental periods?|availability|available|return dates?|expected returns?|deposits?|accessories|condition|damage|maintenance history|servicing|service history|double bookings?|reservation|reservations|booking|bookings|incorrect charges?|late returns?)\w*\b/u.test(text);
-
-    return (
-      (professionalActor && operationalWorkflow) ||
-      (genericPhysicalServiceActor && genericPhysicalServiceWorkflow) ||
-      (rentalInventoryActor && rentalInventoryWorkflow)
-    );
+    return sites.slice(0, 2);
   }
 
   private normalizeStackExchangeApiSite(site: string): string {

@@ -124,10 +124,11 @@ type AdminTeamChatSendAck = (payload: {
     namespace: '/admin-chat',
     transports: ['websocket', 'polling'],
     cors: {
-        origin: [
-            /^http:\/\/localhost:\d+$/,
-            /^http:\/\/127\.0\.0\.1:\d+$/,
-        ],
+        // Socket authentication is still enforced by AdminTeamChatSocketAuthService.
+        // Accept the same browser origins that can reach the HTTP API, including
+        // configured production/LAN frontends, instead of silently limiting
+        // realtime delivery to localhost only.
+        origin: true,
         credentials: true,
         methods: ['GET', 'POST'],
     },
@@ -237,10 +238,25 @@ export class AdminTeamChatGateway implements OnGatewayConnection<Socket> {
      * @param payload The created message and the conversation member IDs.
      */
     @OnEvent('admin-chat.message.created')
-    onMessageCreated(payload: { message: unknown; memberIds: string[] }) {
+    onMessageCreated(payload: {
+        message: unknown;
+        senderId: string;
+        memberIds: string[];
+    }) {
+        const memberRooms = payload.memberIds.map((id) => `admin-user:${id}`);
+        const recipientRooms = payload.memberIds
+            .filter((id) => id !== payload.senderId)
+            .map((id) => `admin-user:${id}`);
+
         this.server
-            .to(payload.memberIds.map((id) => `admin-user:${id}`))
+            .to(memberRooms)
             .emit('admin-chat:message', payload.message);
+
+        if (recipientRooms.length > 0) {
+            this.server
+                .to(recipientRooms)
+                .emit('admin-chat:notification', payload.message);
+        }
     }
 
     @OnEvent('admin-chat.message.deleted')

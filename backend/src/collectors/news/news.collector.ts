@@ -16,7 +16,6 @@ import { RelevanceScoreUtil } from '../base/relevance-score.util';
 import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
 import { CollectorAbortContextUtil } from '../base/collector-abort-context.util';
 import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
-import { RequestNicheCustomCraftUtil } from '../../ideas/generation/utils/request-niche-custom-craft.util';
 import { RequestOperationalCostAttributionUtil } from '../../ideas/generation/utils/request-operational-cost-attribution.util';
 
 type NewsApiSource = {
@@ -681,10 +680,6 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
       return healthcare && supply && impact;
     }
 
-    const niche = RequestNicheCustomCraftUtil.resolve(request);
-    if (niche) {
-      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(request, evidence);
-    }
     return true;
   }
 

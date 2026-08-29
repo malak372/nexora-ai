@@ -459,12 +459,9 @@ export class DataCollectionService {
                   : 1
               : 1;
             const sourceSpecificAiQueries = this.unique(
-              (sourcePlan?.queries?.length
-                ? sourcePlan.queries
-                : 'plannedQueries' in dto
-                  ? dto.plannedQueries ?? []
-                  : []
-              ).map((query) => query.trim()).filter(Boolean),
+              (sourcePlan?.queries?.length ? sourcePlan.queries : [])
+                .map((query) => query.trim())
+                .filter(Boolean),
             ).slice(0, sourceQueryBudget);
             const authoritativeRuntimeQueries =
               isTrustedInternalGeneration &&
@@ -472,20 +469,30 @@ export class DataCollectionService {
             const queriesGeneratedByAi =
               authoritativeRuntimeQueries && hasAiOwnedPlan;
 
+            const domainDiscoveryWithoutRequest = Boolean(
+              isTrustedInternalGeneration &&
+                !requestDescription.trim() &&
+                'sourcePlans' in dto &&
+                (dto.sourcePlans ?? []).some(
+                  (plan) => (plan.discoveryDomainNames?.length ?? 0) > 1,
+                ),
+            );
             const sourcePlannedQueries = authoritativeRuntimeQueries
               ? sourceSpecificAiQueries
-              : isTrustedInternalGeneration && 'plannedQueries' in dto
-                ? ProblemFirstCollectorQueryUtil.build({
-                    sourceKey: dataSource.key,
-                    domainName: isGeneralDomain ? 'All Domains' : domain.name,
-                    requestDescription:
-                      'userDescription' in dto ? dto.userDescription : undefined,
-                    plannedQueries: this.unique(dto.plannedQueries ?? []),
-                    keywords: userKeywords,
-                  })
-                : 'plannedQueries' in dto
-                  ? this.unique(dto.plannedQueries ?? [])
-                  : undefined;
+              : domainDiscoveryWithoutRequest && 'plannedQueries' in dto
+                ? this.unique(dto.plannedQueries ?? []).slice(0, 6)
+                : isTrustedInternalGeneration && 'plannedQueries' in dto
+                  ? ProblemFirstCollectorQueryUtil.build({
+                      sourceKey: dataSource.key,
+                      domainName: isGeneralDomain ? 'All Domains' : domain.name,
+                      requestDescription:
+                        'userDescription' in dto ? dto.userDescription : undefined,
+                      plannedQueries: this.unique(dto.plannedQueries ?? []),
+                      keywords: userKeywords,
+                    })
+                  : 'plannedQueries' in dto
+                    ? this.unique(dto.plannedQueries ?? [])
+                    : undefined;
 
             const guaranteedSourceQueries =
               sourcePlannedQueries && sourcePlannedQueries.length > 0
