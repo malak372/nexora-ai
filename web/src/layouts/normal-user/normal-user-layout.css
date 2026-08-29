@@ -77,12 +77,10 @@
   border: 1px solid rgba(255, 255, 255, 0.9);
   border-radius: 28px;
   background:
-    linear-gradient(
-      115deg,
+    linear-gradient(115deg,
       rgba(255, 255, 255, 0.93),
       rgba(255, 248, 250, 0.88) 52%,
-      rgba(244, 251, 249, 0.9)
-    );
+      rgba(244, 251, 249, 0.9));
   box-shadow:
     0 22px 62px rgba(47, 119, 116, 0.11),
     inset 0 1px 0 rgba(255, 255, 255, 0.96);
@@ -133,7 +131,7 @@
   animation-delay: -3s;
 }
 
-.normal-header--professional > *:not(.normal-header__ambient) {
+.normal-header--professional>*:not(.normal-header__ambient) {
   position: relative;
   z-index: 1;
 }
@@ -165,7 +163,7 @@
 }
 
 .normal-header__brand-mark::after,
-.normal-header__brand-mark > i {
+.normal-header__brand-mark>i {
   display: none;
 }
 
@@ -440,7 +438,7 @@
   box-shadow: 0 10px 22px rgba(47, 119, 116, 0.1);
 }
 
-.normal-header__icon > i {
+.normal-header__icon>i {
   position: absolute;
   top: 8px;
   right: 9px;
@@ -473,12 +471,10 @@
   border-radius: 15px;
   color: #2f7774;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, 0.92),
       rgba(255, 246, 248, 0.8) 50%,
-      rgba(235, 246, 245, 0.86)
-    );
+      rgba(235, 246, 245, 0.86));
   box-shadow:
     0 8px 20px rgba(47, 119, 116, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
@@ -492,12 +488,10 @@
 .normal-header__profile[aria-expanded='true'] {
   border-color: rgba(92, 189, 185, 0.34);
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, 0.98),
       rgba(243, 201, 211, 0.2) 48%,
-      rgba(183, 221, 216, 0.28)
-    );
+      rgba(183, 221, 216, 0.28));
   box-shadow:
     0 14px 30px rgba(47, 119, 116, 0.12),
     0 0 0 4px rgba(243, 201, 211, 0.12);
@@ -591,13 +585,13 @@
   font-size: 9.5px;
 }
 
-.normal-header__profile > svg {
+.normal-header__profile>svg {
   flex: 0 0 auto;
   color: #2f7774;
   transition: transform 180ms ease;
 }
 
-.normal-header__profile > svg.is-rotated {
+.normal-header__profile>svg.is-rotated {
   transform: rotate(180deg);
 }
 
@@ -611,12 +605,10 @@
   border: 1px solid rgba(217, 143, 160, 0.18);
   border-radius: 19px;
   background:
-    linear-gradient(
-      155deg,
+    linear-gradient(155deg,
       rgba(255, 255, 255, 0.98),
       rgba(255, 248, 250, 0.96) 54%,
-      rgba(247, 252, 250, 0.96)
-    );
+      rgba(247, 252, 250, 0.96));
   box-shadow:
     0 26px 72px rgba(52, 65, 63, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.94);
@@ -652,7 +644,7 @@
   height: 12px;
 }
 
-.normal-header__profile-menu-head > div,
+.normal-header__profile-menu-head>div,
 .normal-header__profile-menu button span {
   min-width: 0;
   flex: 1;
@@ -794,12 +786,10 @@
   flex-direction: column;
   overflow: hidden;
   background:
-    linear-gradient(
-      165deg,
+    linear-gradient(165deg,
       rgba(255, 255, 255, 0.99),
       rgba(255, 248, 250, 0.985) 56%,
-      rgba(245, 251, 249, 0.985)
-    );
+      rgba(245, 251, 249, 0.985));
   box-shadow: -24px 0 70px rgba(52, 65, 63, 0.2);
   transform: translateX(105%);
   visibility: hidden;
@@ -822,7 +812,7 @@
   border-bottom: 1px solid rgba(47, 119, 116, 0.1);
 }
 
-.normal-drawer__head > div {
+.normal-drawer__head>div {
   min-width: 0;
   display: grid;
   gap: 2px;
@@ -933,7 +923,7 @@
   box-shadow: 0 8px 18px rgba(47, 119, 116, 0.16);
 }
 
-.normal-drawer__user > div {
+.normal-drawer__user>div {
   min-width: 0;
 }
 
@@ -997,7 +987,7 @@
   }
 
   .normal-header__profile-copy,
-  .normal-header__profile > svg {
+  .normal-header__profile>svg {
     display: none;
   }
 }
@@ -1227,6 +1217,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .normal-header__ambient i,
   .normal-header__online-dot::after {
     animation: none;
@@ -1242,6 +1233,7 @@
     transition: none;
   }
 }
+
 /* Dashboard-only shell dark polish. Uses :has so other normal-user pages are not restyled here. */
 html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) {
   color: #f1f8f5 !important;
@@ -1333,7 +1325,7 @@ html.vox-user-rtl .normal-header__profile-menu button {
   direction: rtl;
 }
 
-html.vox-user-rtl .normal-header__profile-menu-head > div,
+html.vox-user-rtl .normal-header__profile-menu-head>div,
 html.vox-user-rtl .normal-header__profile-menu button span {
   text-align: right;
 }
@@ -1371,7 +1363,7 @@ html.vox-user-dark .normal-header__profile-menu button {
 
 html.vox-user-dark .normal-header__profile-menu {
   background: linear-gradient(155deg, #1a2a24 0%, #17251f 55%, #14211d 100%) !important;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255,255,255,.025) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .025) !important;
 }
 
 html.vox-user-dark .normal-header__profile-menu button {
@@ -1412,33 +1404,48 @@ html.vox-user-dark .normal-header__profile-menu button small {
 /* FINAL_NORMAL_HEADER_DARK_POLISH */
 html.vox-user-dark .normal-header.normal-header--professional {
   color: #edf7f4 !important;
-  border-color: rgba(112,205,198,.20) !important;
-  background: linear-gradient(120deg, rgba(25,44,38,.98), rgba(17,31,26,.97)) !important;
-  box-shadow: 0 20px 60px rgba(0,0,0,.26) !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: linear-gradient(120deg, rgba(25, 44, 38, .98), rgba(17, 31, 26, .97)) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .26) !important;
 }
-html.vox-user-dark .normal-header__nav a { color: #cbdad5 !important; }
-html.vox-user-dark .normal-header__nav a:is(:hover,.is-active) {
+
+html.vox-user-dark .normal-header__nav a {
+  color: #cbdad5 !important;
+}
+
+html.vox-user-dark .normal-header__nav a:is(:hover, .is-active) {
   color: #92ddd6 !important;
   background: #213a32 !important;
 }
-html.vox-user-dark :is(.normal-header__search,.normal-header__profile,.normal-header__icon,.normal-header__menu,.normal-header__profile-menu) {
+
+html.vox-user-dark :is(.normal-header__search, .normal-header__profile, .normal-header__icon, .normal-header__menu, .normal-header__profile-menu) {
   color: #dbe9e5 !important;
-  border-color: rgba(112,205,198,.18) !important;
+  border-color: rgba(112, 205, 198, .18) !important;
   background: #15271f !important;
   background-image: none !important;
 }
-html.vox-user-dark .normal-header__search input { background: transparent !important; }
-html.vox-user-dark .normal-header__search kbd { color:#9adfd9 !important; background:#20382f !important; }
+
+html.vox-user-dark .normal-header__search input {
+  background: transparent !important;
+}
+
+html.vox-user-dark .normal-header__search kbd {
+  color: #9adfd9 !important;
+  background: #20382f !important;
+}
 
 /* Profile image stays correctly cropped in both LTR and RTL menus. */
 .normal-header__avatar img,
 .normal-header__menu-avatar img,
 .normal-drawer__avatar img {
-  object-fit:cover !important;
-  object-position:center !important;
-  transform:none !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  transform: none !important;
 }
-html.vox-user-rtl .normal-header__profile-menu { text-align:right; }
+
+html.vox-user-rtl .normal-header__profile-menu {
+  text-align: right;
+}
 
 /* FINAL_20260828_NORMAL_BRAND_HOVER_NO_RECTANGLE */
 .normal-header__brand,
@@ -1457,14 +1464,16 @@ html.vox-user-dark .normal-header__brand:focus-visible {
   box-shadow: none !important;
   text-decoration: none !important;
 }
+
 .normal-header__brand::before,
 .normal-header__brand::after {
   content: none !important;
   display: none !important;
 }
+
 .normal-header__brand-mark,
 .normal-header__brand-copy,
-.normal-header__brand-copy > * {
+.normal-header__brand-copy>* {
   background-color: transparent !important;
   background-image: none !important;
   box-shadow: none !important;
@@ -1477,8 +1486,7 @@ html.vox-user-dark .normal-header__brand:focus-visible {
    forcing page roots to sit directly on the shared workspace canvas.
    Dashboard is intentionally excluded.
    ========================================================================== */
-.normal-app-shell__main > :is(
-  .preferences-page,
+.normal-app-shell__main> :is(.preferences-page,
   .profile-settings-page,
   .discover-page,
   .publication-detail-page,
@@ -1490,8 +1498,7 @@ html.vox-user-dark .normal-header__brand:focus-visible {
   .billing-page,
   .bm-page,
   .accepted-workspace-page,
-  .unlock-page
-) {
+  .unlock-page) {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
@@ -1506,8 +1513,8 @@ html.vox-user-dark .normal-header__brand:focus-visible {
    Generate / generation-progress pages are intentionally not included.
    ========================================================================== */
 @media (min-width: 901px) {
-  .normal-app-shell__main > :is(
-    .preferences-page,
+
+  .normal-app-shell__main> :is(.preferences-page,
     .profile-settings-page,
     .discover-page,
     .publication-detail-page,
@@ -1521,8 +1528,7 @@ html.vox-user-dark .normal-header__brand:focus-visible {
     .publish-page,
     .idea-workspace,
     .unlock-page,
-    .accepted-workspace-page
-  ) {
+    .accepted-workspace-page) {
     box-sizing: border-box !important;
     width: 100% !important;
     max-width: none !important;
@@ -1530,7 +1536,7 @@ html.vox-user-dark .normal-header__brand:focus-visible {
     padding-inline: 0 !important;
   }
 
-  .normal-app-shell__main > .notifications-page > .notifications-shell {
+  .normal-app-shell__main>.notifications-page>.notifications-shell {
     width: 100% !important;
     max-width: none !important;
     margin-inline: 0 !important;
@@ -1546,8 +1552,8 @@ html.vox-user-dark .normal-header__brand:focus-visible {
    Generation progress is intentionally excluded.
    ========================================================================== */
 @media (min-width: 901px) {
-  .normal-app-shell__main > :is(
-    .preferences-page,
+
+  .normal-app-shell__main> :is(.preferences-page,
     .profile-settings-page,
     .discover-page,
     .publication-detail-page,
@@ -1561,8 +1567,7 @@ html.vox-user-dark .normal-header__brand:focus-visible {
     .publish-page,
     .idea-workspace,
     .unlock-page,
-    .accepted-workspace-page
-  ) {
+    .accepted-workspace-page) {
     padding-top: 0 !important;
   }
 
@@ -1570,5 +1575,18 @@ html.vox-user-dark .normal-header__brand:focus-visible {
      wizard the same comfortable header gap as Home/Billing. */
   .normal-app-shell__main:has(> .nx-generation-page) {
     padding-top: 30px !important;
+  }
+}
+
+/* ========================================================================== */
+/* Generate page — full-width canvas only                                     */
+/* ========================================================================== */
+
+@media (min-width: 901px) {
+  .normal-app-shell__main:has(> .nx-generation-page) {
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    padding: 22px clamp(18px, 1.65vw, 32px) 30px !important;
   }
 }

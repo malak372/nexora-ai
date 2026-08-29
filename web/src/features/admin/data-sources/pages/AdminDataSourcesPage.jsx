@@ -33,6 +33,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-data-sources.css';
@@ -613,6 +614,7 @@ function DataSourceModal({ mode, source, onClose, onSaved }) {
 }
 
 export default function AdminDataSourcesPage() {
+  const { isArabic, t } = useUserExperience();
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({});
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
@@ -761,7 +763,7 @@ export default function AdminDataSourcesPage() {
           <div className="admin-hero__eyebrow"><Database size={14} /> Collection infrastructure</div>
           <h2>Data sources</h2>
           <p>
-            Configure the external evidence sources used by the collection pipeline, control availability, and keep runtime collector state visible to administrators.
+            {t('Configure the external evidence sources used by the collection pipeline, control availability, and keep runtime collector state visible to administrators.')}
           </p>
         </div>
 
@@ -802,7 +804,11 @@ export default function AdminDataSourcesPage() {
           <div>
             <span className="admin-ds-panel__kicker"><Database size={13} /> Source registry</span>
             <h3>Data sources directory</h3>
-            <p>{meta.total.toLocaleString()} matching source{meta.total === 1 ? '' : 's'}</p>
+            <p>
+              {isArabic
+                ? `${meta.total.toLocaleString('ar-JO')} مصدر مطابق`
+                : `${meta.total.toLocaleString()} matching source${meta.total === 1 ? '' : 's'}`}
+            </p>
           </div>
 
           <div className="admin-ds-panel__actions">

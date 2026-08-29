@@ -1519,3 +1519,19 @@ html.vox-user-rtl .admin-team-chat-back svg,
         border-left: 0;
     }
 }
+
+html.vox-user-rtl .admin-team-chat-messages,
+.admin-shell--rtl .admin-team-chat-messages {
+    direction: ltr;
+}
+
+html.vox-user-rtl .admin-team-chat-composer,
+.admin-shell--rtl .admin-team-chat-composer {
+    direction: ltr;
+}
+
+html.vox-user-rtl .admin-team-chat-composer textarea,
+.admin-shell--rtl .admin-team-chat-composer textarea {
+    direction: rtl;
+    text-align: right;
+}

@@ -2784,3 +2784,14 @@ html.vox-user-rtl .admin-profile-pill {
         display: none;
     }
 }
+/* ===== RTL profile dropdown viewport safety =====
+ * In Arabic the flex direction places the profile control on the left edge.
+ * Anchor the dropdown from that same left edge so it opens inward instead of
+ * extending outside the viewport and getting clipped by the app shell.
+ */
+html.vox-user-rtl .admin-profile-menu__dropdown {
+    right: auto;
+    left: 0;
+    width: min(255px, calc(100vw - 48px));
+    transform-origin: top left;
+}

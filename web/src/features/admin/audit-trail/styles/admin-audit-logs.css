@@ -2212,9 +2212,10 @@ html.vox-user-dark .admin-audit-ledger-stack__layer.is-front {
 }
 
 html.vox-user-dark .admin-audit-ledger-stack__shield>span {
-  color: #9ee3dc;
-  border-color: rgba(167, 229, 220, 0.22);
-  background: rgba(17, 35, 31, 0.93);
+  color: var(--audit-teal-deep) !important;
+  border-color: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: 0 10px 20px rgba(25, 91, 86, 0.18) !important;
 }
 
 html.vox-user-dark .admin-audit-float-card>span,

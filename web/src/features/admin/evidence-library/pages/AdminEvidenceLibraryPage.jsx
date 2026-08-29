@@ -98,19 +98,19 @@ function firstNestedValue(row, paths, fallback = '') {
   return fallback;
 }
 
-function evidenceContent(row) {
+function evidenceContent(row, fallback = 'No evidence text available.') {
   return firstValue(
     row,
     ['content', 'text', 'body', 'comment', 'message', 'description'],
-    'No evidence text available.',
+    fallback,
   );
 }
 
-function evidenceAuthor(row) {
+function evidenceAuthor(row, fallback = 'Unknown author') {
   return firstValue(
     row,
     ['author', 'authorName', 'username', 'userName', 'channelTitle', 'creator'],
-    'Unknown author',
+    fallback,
   );
 }
 
@@ -118,7 +118,7 @@ function evidenceLanguage(row) {
   return firstValue(row, ['languageCode', 'language', 'lang', 'locale'], '—');
 }
 
-function evidenceSource(row) {
+function evidenceSource(row, fallback = 'External source') {
   const value = firstNestedValue(
     row,
     [
@@ -139,10 +139,10 @@ function evidenceSource(row) {
   );
 
   if (isObject(value)) {
-    return firstValue(value, ['displayName', 'name', 'label', 'key', 'type'], 'External source');
+    return firstValue(value, ['displayName', 'name', 'label', 'key', 'type'], fallback);
   }
 
-  return String(value || 'External source');
+  return String(value || fallback);
 }
 
 function evidenceEngagement(row) {
@@ -428,8 +428,8 @@ function EvidenceDrawer({ item, onClose }) {
 
   if (!item) return null;
 
-  const source = evidenceSource(item);
-  const content = evidenceContent(item);
+  const source = evidenceSource(item, t('External source'));
+  const content = evidenceContent(item, t('No evidence text available.'));
   const sentiment = evidenceSentiment(item);
   const externalId = firstValue(item, ['externalId', 'sourceId', 'commentId', 'id'], '—');
   const url = sourceUrl(item);
@@ -471,10 +471,10 @@ function EvidenceDrawer({ item, onClose }) {
 
           <div className="admin-evidence-detail-grid">
             <div><small>{t('Source')}</small><strong>{source}</strong></div>
-            <div><small>{t('Author')}</small><strong>{evidenceAuthor(item)}</strong></div>
+            <div><small>{t('Author')}</small><strong>{evidenceAuthor(item, t('Unknown author'))}</strong></div>
             <div><small>{t('Language')}</small><strong>{evidenceLanguage(item)}</strong></div>
             <div><small>{t('Engagement')}</small><strong>{evidenceEngagement(item).toLocaleString()}</strong></div>
-            <div><small>{t('Sentiment')}</small><strong>{sentiment || t('Not analyzed')}</strong></div>
+            <div><small>{t('Sentiment')}</small><strong>{sentiment ? t(sentiment) : t('Not analyzed')}</strong></div>
             <div><small>{t('Published')}</small><strong>{formatDate(publishedAt(item), false, dateLocale)}</strong></div>
             <div><small>{t('Collected')}</small><strong>{formatDate(collectedAt(item), false, dateLocale)}</strong></div>
             <div className="is-wide"><small>{t('External ID')}</small><strong className="is-code">{String(externalId)}</strong></div>
@@ -827,7 +827,7 @@ export default function AdminEvidenceLibraryPage() {
             <div className="admin-evidence-grid">
               {rows.map((item, index) => {
                 const id = firstValue(item, ['id', 'externalId', 'commentId'], `${page}-${index}`);
-                const source = evidenceSource(item);
+                const source = evidenceSource(item, t('External source'));
                 const sentiment = evidenceSentiment(item);
 
                 return (
@@ -849,8 +849,8 @@ export default function AdminEvidenceLibraryPage() {
                         <span className="admin-evidence-card__icon"><FileText size={18} /></span>
                         <div className="admin-evidence-card__headline">
                           <small>{t('Evidence')}</small>
-                          <strong>{evidenceContent(item)}</strong>
-                          <span>{sentiment ? `${t('Sentiment')}: ${sentiment}` : t('Pipeline evidence record')}</span>
+                          <strong>{evidenceContent(item, t('No evidence text available.'))}</strong>
+                          <span>{sentiment ? `${t('Sentiment')}: ${t(sentiment)}` : t('Pipeline evidence record')}</span>
                         </div>
                       </div>
                       <i className="admin-evidence-card__dots" aria-hidden="true" />
@@ -864,7 +864,7 @@ export default function AdminEvidenceLibraryPage() {
 
                       <div className="admin-evidence-card__meta-item">
                         <small>{t('Author')}</small>
-                        <strong className="admin-evidence-card__text">{evidenceAuthor(item)}</strong>
+                        <strong className="admin-evidence-card__text">{evidenceAuthor(item, t('Unknown author'))}</strong>
                       </div>
 
                       <div className="admin-evidence-card__meta-item">
