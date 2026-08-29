@@ -161,8 +161,8 @@ const COLLECTION_DARK_ARABIC_COPY = {
 };
 
 function useCollectionRunsCopy() {
-  const { isArabic, isDark, t } = useUserExperience();
-  const enabled = isArabic && isDark;
+  const { isArabic, t } = useUserExperience();
+  const enabled = isArabic;
   const tr = useCallback(
     (value) => {
       if (!enabled || typeof value !== 'string') return value;

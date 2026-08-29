@@ -3691,7 +3691,7 @@
   text-align: left;
   background:
     radial-gradient(circle at 94% 12%, rgba(92, 189, 185, .11), transparent 34%),
-    rgba(255,255,255,.9);
+    rgba(255, 255, 255, .9);
   box-shadow: 0 12px 30px rgba(52, 65, 63, .055);
   cursor: pointer;
   transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
@@ -3719,7 +3719,7 @@
   box-shadow: 0 0 0 4px rgba(92, 189, 185, .07), 0 16px 38px rgba(47, 119, 116, .1);
 }
 
-.nx-personalized-discovery button > svg {
+.nx-personalized-discovery button>svg {
   width: 42px;
   height: 42px;
   padding: 10px;
@@ -3785,7 +3785,7 @@
   letter-spacing: .04em;
 }
 
-.nx-generation-progress__hero-copy > p {
+.nx-generation-progress__hero-copy>p {
   max-width: 760px;
   margin: 0 0 24px;
   color: #78827f;
@@ -3819,7 +3819,7 @@
 }
 
 .nx-generation-progress--horizontal .nx-kicker .nx-spin,
-.nx-generation-loading > .nx-spin,
+.nx-generation-loading>.nx-spin,
 .nx-horizontal-stage--active .nx-spin {
   color: #2f8f89 !important;
   filter: drop-shadow(0 0 7px rgba(47, 143, 137, .34)) !important;
@@ -3855,13 +3855,13 @@
   max-height: calc(100dvh - 40px);
   padding: clamp(32px, 4.5vw, 50px);
   overflow: auto;
-  border: 1px solid rgba(255,255,255,.86);
+  border: 1px solid rgba(255, 255, 255, .86);
   border-radius: 30px;
   color: #34413f;
   background:
     radial-gradient(circle at 100% 0, rgba(92, 189, 185, .14), transparent 30%),
     radial-gradient(circle at 0 100%, rgba(230, 174, 185, .08), transparent 27%),
-    rgba(255,255,255,.99);
+    rgba(255, 255, 255, .99);
   box-shadow: 0 36px 100px rgba(23, 34, 32, .27);
 }
 
@@ -3890,7 +3890,7 @@
   overflow-wrap: anywhere;
 }
 
-.nx-celebration--premium .nx-celebration__result > p {
+.nx-celebration--premium .nx-celebration__result>p {
   max-width: 525px;
   margin: 0 auto 18px;
   color: #74807b;
@@ -3944,6 +3944,7 @@
     width: 100%;
   }
 }
+
 /* ========================================================================== */
 /* V10 — refined live-generation opening + real completion celebration         */
 /* ========================================================================== */
@@ -3978,7 +3979,7 @@
   background:
     radial-gradient(circle at 91% 18%, rgba(92, 189, 185, .14), transparent 32%),
     radial-gradient(circle at 8% 88%, rgba(231, 179, 190, .07), transparent 28%),
-    linear-gradient(135deg, rgba(255,255,255,.93), rgba(247,252,250,.89));
+    linear-gradient(135deg, rgba(255, 255, 255, .93), rgba(247, 252, 250, .89));
   box-shadow: 0 18px 55px rgba(52, 65, 63, .065);
 }
 
@@ -4032,7 +4033,7 @@
   text-wrap: balance;
 }
 
-.nx-generation-progress__hero-copy > p {
+.nx-generation-progress__hero-copy>p {
   max-width: 700px;
   margin: 16px 0 0;
   color: #73817d;
@@ -4047,7 +4048,7 @@
   box-shadow: 0 8px 24px rgba(52, 65, 63, .055);
 }
 
-.nx-generation-progress__current > span {
+.nx-generation-progress__current>span {
   width: 38px;
   height: 38px;
   flex-basis: 38px;
@@ -4071,7 +4072,7 @@
   gap: 14px;
   border: 1px solid rgba(92, 189, 185, .16);
   border-radius: 23px;
-  background: rgba(255,255,255,.76);
+  background: rgba(255, 255, 255, .76);
   box-shadow: 0 14px 38px rgba(47, 96, 90, .075);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -4105,7 +4106,7 @@
   }
 }
 
-.nx-progress-live-panel > div {
+.nx-progress-live-panel>div {
   min-width: 0;
 }
 
@@ -4163,23 +4164,20 @@
 
 .nx-horizontal-stage--active .nx-spin,
 .nx-generation-progress--horizontal .nx-spin,
-.nx-generation-loading > .nx-spin {
+.nx-generation-loading>.nx-spin {
   color: #268f88 !important;
   filter:
-    drop-shadow(0 0 4px rgba(38, 143, 136, .32))
-    drop-shadow(0 0 8px rgba(38, 143, 136, .13)) !important;
+    drop-shadow(0 0 4px rgba(38, 143, 136, .32)) drop-shadow(0 0 8px rgba(38, 143, 136, .13)) !important;
 }
 
 .nx-horizontal-stage--active .nx-horizontal-stage__active-glow {
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 226deg,
-    rgba(47, 143, 137, .05) 252deg,
-    rgba(47, 143, 137, .6) 304deg,
-    rgba(136, 209, 203, .28) 334deg,
-    transparent 360deg
-  ) !important;
+  background: conic-gradient(from 0deg,
+      transparent 0deg,
+      transparent 226deg,
+      rgba(47, 143, 137, .05) 252deg,
+      rgba(47, 143, 137, .6) 304deg,
+      rgba(136, 209, 203, .28) 334deg,
+      transparent 360deg) !important;
   filter: blur(7px) drop-shadow(0 0 8px rgba(47, 143, 137, .18)) !important;
 }
 
@@ -4223,7 +4221,7 @@
   margin: -170px 0 0 -170px;
   border: 1px solid rgba(131, 215, 208, .34);
   box-shadow: 0 0 80px rgba(92, 189, 185, .11);
-  animation: nxCelebrationRing 1.45s cubic-bezier(.2,.9,.2,1) both;
+  animation: nxCelebrationRing 1.45s cubic-bezier(.2, .9, .2, 1) both;
 }
 
 .nx-celebration-burst__ring--two {
@@ -4240,15 +4238,35 @@
 }
 
 @keyframes nxCelebrationRing {
-  0% { opacity: 0; transform: scale(.25); }
-  35% { opacity: 1; }
-  100% { opacity: 0; transform: scale(2.55); }
+  0% {
+    opacity: 0;
+    transform: scale(.25);
+  }
+
+  35% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(2.55);
+  }
 }
 
 @keyframes nxCelebrationShine {
-  0% { opacity: 0; transform: scale(.45); }
-  40% { opacity: 1; }
-  100% { opacity: .18; transform: scale(3); }
+  0% {
+    opacity: 0;
+    transform: scale(.45);
+  }
+
+  40% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: .18;
+    transform: scale(3);
+  }
 }
 
 .nx-celebration-confetti {
@@ -4263,7 +4281,7 @@
   background: var(--piece);
   box-shadow: 0 0 10px rgba(92, 189, 185, .14);
   transform: translate3d(0, 0, 0) rotate(var(--rotate));
-  animation: nxCelebrationConfetti var(--duration) cubic-bezier(.2,.72,.28,1) var(--delay) both;
+  animation: nxCelebrationConfetti var(--duration) cubic-bezier(.2, .72, .28, 1) var(--delay) both;
 }
 
 .nx-celebration-confetti:nth-child(3n) {
@@ -4288,7 +4306,11 @@
     opacity: 0;
     transform: translate3d(0, 30px, 0) scale(.55) rotate(var(--rotate));
   }
-  16% { opacity: 1; }
+
+  16% {
+    opacity: 1;
+  }
+
   100% {
     opacity: 0;
     transform: translate3d(var(--drift), -310px, 0) scale(1) rotate(calc(var(--rotate) + 250deg));
@@ -4302,15 +4324,15 @@
   max-height: none !important;
   padding: clamp(34px, 4.8vw, 52px) clamp(30px, 5vw, 58px) 40px;
   overflow: visible !important;
-  border: 1px solid rgba(255,255,255,.88);
+  border: 1px solid rgba(255, 255, 255, .88);
   border-radius: 32px;
   background:
     radial-gradient(circle at 88% 4%, rgba(92, 189, 185, .16), transparent 27%),
     radial-gradient(circle at 8% 96%, rgba(232, 181, 192, .08), transparent 25%),
-    rgba(255,255,255,.985);
+    rgba(255, 255, 255, .985);
   box-shadow:
     0 42px 120px rgba(19, 31, 28, .3),
-    0 0 0 8px rgba(255,255,255,.035);
+    0 0 0 8px rgba(255, 255, 255, .035);
 }
 
 .nx-celebration--premium .nx-celebration__result::after {
@@ -4366,7 +4388,7 @@
   letter-spacing: -.045em;
 }
 
-.nx-celebration--premium .nx-celebration__result > p {
+.nx-celebration--premium .nx-celebration__result>p {
   max-width: 560px;
   margin-bottom: 17px;
   font-size: 14px;
@@ -4446,6 +4468,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .nx-progress-live-panel__signal svg,
   .nx-celebration-burst__ring,
   .nx-celebration-burst__shine,
@@ -4453,6 +4476,7 @@
     animation: none !important;
   }
 }
+
 /* V11 — countdown reveal + distinct normal/premium celebration intensity. */
 .nx-celebration.is-counting {
   background:
@@ -4533,8 +4557,7 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   filter:
-    drop-shadow(0 17px 32px rgba(31, 105, 100, .22))
-    drop-shadow(0 0 18px rgba(105, 174, 162, .13));
+    drop-shadow(0 17px 32px rgba(31, 105, 100, .22)) drop-shadow(0 0 18px rgba(105, 174, 162, .13));
 }
 
 .nx-celebration-countdown__track {
@@ -4611,6 +4634,7 @@
 }
 
 @media (max-width: 640px) {
+
   .nx-celebration-countdown,
   .nx-celebration-countdown--premium {
     width: 100%;
@@ -4623,6 +4647,7 @@
     font-size: clamp(92px, 30vw, 126px);
   }
 }
+
 /* V12 — cinematic 3→2→1 reveal + compact generation-progress header. */
 .nx-celebration.is-counting {
   padding: 0 !important;
@@ -4703,9 +4728,25 @@
   animation: nxCountdownSpark 2s ease-in-out infinite;
 }
 
-.nx-celebration-countdown__spark--one { left: 20%; top: 27%; animation-delay: -.4s; }
-.nx-celebration-countdown__spark--two { right: 22%; top: 31%; width: 3px; height: 3px; animation-delay: -1.15s; }
-.nx-celebration-countdown__spark--three { right: 31%; bottom: 24%; animation-delay: -.78s; }
+.nx-celebration-countdown__spark--one {
+  left: 20%;
+  top: 27%;
+  animation-delay: -.4s;
+}
+
+.nx-celebration-countdown__spark--two {
+  right: 22%;
+  top: 31%;
+  width: 3px;
+  height: 3px;
+  animation-delay: -1.15s;
+}
+
+.nx-celebration-countdown__spark--three {
+  right: 31%;
+  bottom: 24%;
+  animation-delay: -.78s;
+}
 
 .nx-celebration-countdown__eyebrow {
   position: relative;
@@ -4715,7 +4756,7 @@
   border: 1px solid rgba(177, 230, 224, .18) !important;
   color: #d9f2ee !important;
   background: rgba(255, 255, 255, .055) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   font-size: 11px;
@@ -4755,8 +4796,17 @@
   box-shadow: 0 0 18px rgba(114, 203, 196, .58);
 }
 
-.nx-celebration-countdown__ring--outer::before { top: 7%; left: 25%; }
-.nx-celebration-countdown__ring--outer::after { right: 11%; bottom: 21%; width: 5px; height: 5px; }
+.nx-celebration-countdown__ring--outer::before {
+  top: 7%;
+  left: 25%;
+}
+
+.nx-celebration-countdown__ring--outer::after {
+  right: 11%;
+  bottom: 21%;
+  width: 5px;
+  height: 5px;
+}
 
 .nx-celebration-countdown__ring--middle {
   inset: 15%;
@@ -4766,7 +4816,7 @@
 
 .nx-celebration-countdown__ring--inner {
   inset: 28%;
-  border: 1px solid rgba(255,255,255,.08);
+  border: 1px solid rgba(255, 255, 255, .08);
   background: radial-gradient(circle, rgba(102, 201, 193, .08), transparent 67%);
   box-shadow: inset 0 0 45px rgba(92, 189, 181, .06);
 }
@@ -4790,7 +4840,7 @@
   color: #f7fffd !important;
   text-shadow:
     0 0 26px rgba(119, 218, 209, .25),
-    0 25px 78px rgba(0,0,0,.21) !important;
+    0 25px 78px rgba(0, 0, 0, .21) !important;
 }
 
 .nx-celebration-countdown__message {
@@ -4813,7 +4863,7 @@
 
 .nx-celebration-countdown__track i {
   height: 4px !important;
-  background: rgba(255,255,255,.11) !important;
+  background: rgba(255, 255, 255, .11) !important;
 }
 
 .nx-celebration-countdown__track i.is-active {
@@ -4832,17 +4882,37 @@
 }
 
 @keyframes nxCountdownBreath {
-  0%, 100% { opacity: .65; transform: translate(-50%, -50%) scale(.94); }
-  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+
+  0%,
+  100% {
+    opacity: .65;
+    transform: translate(-50%, -50%) scale(.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
 }
 
 @keyframes nxCountdownRingSpin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes nxCountdownSpark {
-  0%, 100% { opacity: .22; transform: scale(.7); }
-  50% { opacity: 1; transform: scale(1.4); }
+
+  0%,
+  100% {
+    opacity: .22;
+    transform: scale(.7);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.4);
+  }
 }
 
 /* Compact progress opening: one clean strip, no oversized status card. */
@@ -4859,7 +4929,7 @@
   border-radius: 24px !important;
   background:
     radial-gradient(circle at 92% 12%, rgba(92, 189, 185, .08), transparent 26%),
-    rgba(255,255,255,.82) !important;
+    rgba(255, 255, 255, .82) !important;
   box-shadow: 0 14px 38px rgba(52, 65, 63, .055) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -4892,7 +4962,7 @@
   letter-spacing: -.04em !important;
 }
 
-.nx-generation-progress__hero--compact .nx-progress-compact-main > p {
+.nx-generation-progress__hero--compact .nx-progress-compact-main>p {
   max-width: 710px;
   margin: 0 !important;
   color: #798783 !important;
@@ -4909,7 +4979,7 @@
   padding: 10px 11px;
   border: 1px solid rgba(92, 189, 185, .13);
   border-radius: 17px;
-  background: linear-gradient(145deg, rgba(246,252,250,.96), rgba(255,255,255,.94));
+  background: linear-gradient(145deg, rgba(246, 252, 250, .96), rgba(255, 255, 255, .94));
 }
 
 .nx-progress-compact-spinner {
@@ -4921,7 +4991,7 @@
   border-radius: 14px;
   color: #4db3ac;
   background:
-    radial-gradient(circle at 35% 25%, rgba(255,255,255,.96), transparent 34%),
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, .96), transparent 34%),
     linear-gradient(145deg, #ddf3ef, #effaf8);
   box-shadow:
     0 8px 18px rgba(47, 119, 116, .10),
@@ -4930,7 +5000,7 @@
 
 .nx-progress-compact-spinner .nx-spin {
   color: #43aaa3 !important;
-  filter: drop-shadow(0 0 6px rgba(67,170,163,.28)) !important;
+  filter: drop-shadow(0 0 6px rgba(67, 170, 163, .28)) !important;
   animation-duration: 1.05s !important;
 }
 
@@ -4981,7 +5051,7 @@
   height: 6px;
   border-radius: 50%;
   background: #55b7b0;
-  box-shadow: 0 0 0 4px rgba(85,183,176,.10);
+  box-shadow: 0 0 0 4px rgba(85, 183, 176, .10);
 }
 
 .nx-progress-compact-live.is-reconnecting {
@@ -4991,7 +5061,7 @@
 
 .nx-progress-compact-live.is-reconnecting i {
   background: #d1a477;
-  box-shadow: 0 0 0 4px rgba(209,164,119,.11);
+  box-shadow: 0 0 0 4px rgba(209, 164, 119, .11);
 }
 
 @media (max-width: 880px) {
@@ -5044,6 +5114,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .nx-celebration-countdown__glow--one,
   .nx-celebration-countdown__ring,
   .nx-celebration-countdown__spark {
@@ -5104,8 +5175,7 @@
   -webkit-text-fill-color: transparent !important;
   text-shadow: none !important;
   filter:
-    drop-shadow(0 18px 34px rgba(47, 119, 116, .14))
-    drop-shadow(0 0 24px rgba(92, 189, 185, .10)) !important;
+    drop-shadow(0 18px 34px rgba(47, 119, 116, .14)) drop-shadow(0 0 24px rgba(92, 189, 185, .10)) !important;
 }
 
 .nx-celebration-countdown--premium .nx-celebration-countdown__number {
@@ -5153,12 +5223,10 @@
 }
 
 .nx-celebration-countdown__glow--one {
-  background: radial-gradient(
-    circle,
-    rgba(92, 189, 185, .18),
-    rgba(92, 189, 185, .045) 44%,
-    transparent 70%
-  ) !important;
+  background: radial-gradient(circle,
+      rgba(92, 189, 185, .18),
+      rgba(92, 189, 185, .045) 44%,
+      transparent 70%) !important;
 }
 
 .nx-celebration-countdown__glow--two {
@@ -5252,8 +5320,7 @@
 }
 
 /* Normal stays intentionally a little calmer. */
-.nx-celebration-countdown:not(.nx-celebration-countdown--premium)
-  .nx-celebration-countdown__number {
+.nx-celebration-countdown:not(.nx-celebration-countdown--premium) .nx-celebration-countdown__number {
   font-size: clamp(102px, 17vw, 176px) !important;
 }
 
@@ -5284,8 +5351,7 @@
     font-size: clamp(92px, 30vw, 140px) !important;
   }
 
-  .nx-celebration-countdown:not(.nx-celebration-countdown--premium)
-    .nx-celebration-countdown__number {
+  .nx-celebration-countdown:not(.nx-celebration-countdown--premium) .nx-celebration-countdown__number {
     font-size: clamp(88px, 28vw, 132px) !important;
   }
 }
@@ -5346,7 +5412,7 @@
   border: 1px solid rgba(255, 255, 255, .88);
   border-radius: 28px;
   background:
-    linear-gradient(145deg, rgba(255,255,255,.96), rgba(249,252,250,.95) 52%, rgba(255,247,249,.94));
+    linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(249, 252, 250, .95) 52%, rgba(255, 247, 249, .94));
   box-shadow:
     0 34px 90px rgba(35, 57, 52, .24),
     0 8px 28px rgba(35, 57, 52, .08),
@@ -5375,14 +5441,14 @@
 .nx-generation-blocker__glow--mint {
   top: -125px;
   right: -80px;
-  background: radial-gradient(circle, rgba(92,189,185,.26), transparent 68%);
+  background: radial-gradient(circle, rgba(92, 189, 185, .26), transparent 68%);
 }
 
 .nx-generation-blocker__glow--rose {
   bottom: -185px;
   left: -115px;
   opacity: .26;
-  background: radial-gradient(circle, rgba(217,143,160,.14), transparent 70%);
+  background: radial-gradient(circle, rgba(217, 143, 160, .14), transparent 70%);
 }
 
 .nx-generation-blocker__header {
@@ -5402,7 +5468,7 @@
   border: 1px solid rgba(92, 189, 185, .16);
   border-radius: 17px;
   background:
-    linear-gradient(145deg, rgba(235,249,246,.96), rgba(255,255,255,.92));
+    linear-gradient(145deg, rgba(235, 249, 246, .96), rgba(255, 255, 255, .92));
   box-shadow:
     0 12px 28px rgba(67, 132, 124, .11),
     inset 0 1px 0 #fff;
@@ -5445,7 +5511,7 @@
   height: 7px;
   border-radius: 50%;
   background: #d98fa0;
-  box-shadow: 0 0 0 4px rgba(217,143,160,.10);
+  box-shadow: 0 0 0 4px rgba(217, 143, 160, .10);
 }
 
 .nx-generation-blocker__content {
@@ -5463,7 +5529,7 @@
   letter-spacing: -.045em;
 }
 
-.nx-generation-blocker__content > p {
+.nx-generation-blocker__content>p {
   max-width: 550px;
   margin: 13px 0 0;
   color: #778982;
@@ -5493,7 +5559,7 @@
 
 .nx-generation-blocker__metrics article.is-accent {
   background:
-    linear-gradient(145deg, rgba(238,249,245,.93), rgba(255,248,250,.9));
+    linear-gradient(145deg, rgba(238, 249, 245, .93), rgba(255, 248, 250, .9));
 }
 
 .nx-generation-blocker__metric-icon {
@@ -5513,7 +5579,7 @@
 
 .nx-generation-blocker__metrics small,
 .nx-generation-blocker__metrics strong,
-.nx-generation-blocker__metrics article div > span {
+.nx-generation-blocker__metrics article div>span {
   display: block;
 }
 
@@ -5530,7 +5596,7 @@
   line-height: 1;
 }
 
-.nx-generation-blocker__metrics article div > span {
+.nx-generation-blocker__metrics article div>span {
   margin-top: 4px;
   color: #879791;
   font-size: 9px;
@@ -5550,7 +5616,7 @@
   background: rgba(238, 249, 246, .72);
 }
 
-.nx-generation-blocker__note > svg {
+.nx-generation-blocker__note>svg {
   justify-self: center;
 }
 
@@ -5584,7 +5650,7 @@
   background: rgba(255, 255, 255, .76);
   box-shadow:
     0 10px 28px rgba(45, 78, 70, .045),
-    inset 0 1px 0 rgba(255,255,255,.94);
+    inset 0 1px 0 rgba(255, 255, 255, .94);
   backdrop-filter: blur(10px);
 }
 
@@ -5642,7 +5708,7 @@
   background: linear-gradient(135deg, #61beb8 0%, #4aa79f 48%, #3f9189 100%);
   box-shadow:
     0 10px 22px rgba(60, 143, 136, .20),
-    inset 0 1px 0 rgba(255,255,255,.20);
+    inset 0 1px 0 rgba(255, 255, 255, .20);
 }
 
 .nx-generation-blocker__actions .is-primary svg {
@@ -5653,7 +5719,7 @@
   background: linear-gradient(135deg, #5ab8b2 0%, #449f97 48%, #39877f 100%);
   box-shadow:
     0 14px 28px rgba(60, 143, 136, .24),
-    inset 0 1px 0 rgba(255,255,255,.20);
+    inset 0 1px 0 rgba(255, 255, 255, .20);
 }
 
 .nx-generation-blocker__actions .is-primary:hover svg {
@@ -5694,8 +5760,13 @@
 }
 
 @keyframes nxGenerationBlockerBackdrop {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @media (max-width: 640px) {
@@ -5732,6 +5803,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .nx-generation-blocker,
   .nx-generation-blocker__card,
   .nx-generation-page.is-generation-blocked .nx-generation-shell {
@@ -5938,6 +6010,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .nx-active-run-conflict__dialog,
   .nx-active-run-conflict__dialog button {
     animation: none !important;
@@ -6001,7 +6074,7 @@
   border-color: rgba(82, 185, 181, .20);
   background:
     radial-gradient(circle at 15% 0%, rgba(104, 200, 195, .15), transparent 52%),
-    linear-gradient(135deg, rgba(255,255,255,.96), rgba(255,248,250,.90));
+    linear-gradient(135deg, rgba(255, 255, 255, .96), rgba(255, 248, 250, .90));
   box-shadow: 0 12px 30px rgba(51, 143, 139, .10);
 }
 
@@ -6010,8 +6083,8 @@
   overflow: visible;
   border-color: rgba(82, 185, 181, .20) !important;
   color: #53716d !important;
-  background: rgba(255,255,255,.92) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+  background: rgba(255, 255, 255, .92) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
 }
 
 .nx-step.is-current>span {
@@ -6041,11 +6114,11 @@
 .nx-step>i {
   top: 50% !important;
   height: 1px !important;
-  background: linear-gradient(90deg, rgba(82,185,181,.28), rgba(239,189,201,.25)) !important;
+  background: linear-gradient(90deg, rgba(82, 185, 181, .28), rgba(239, 189, 201, .25)) !important;
 }
 
 .nx-step.is-complete>i {
-  background: linear-gradient(90deg, var(--nx-aqua-2), rgba(104,200,195,.28)) !important;
+  background: linear-gradient(90deg, var(--nx-aqua-2), rgba(104, 200, 195, .28)) !important;
 }
 
 .nx-generation-card {
@@ -6055,10 +6128,10 @@
   background:
     radial-gradient(circle at 94% 2%, rgba(104, 200, 195, .08), transparent 25%),
     radial-gradient(circle at 4% 98%, rgba(239, 189, 201, .075), transparent 26%),
-    rgba(255,255,255,.97) !important;
+    rgba(255, 255, 255, .97) !important;
   box-shadow:
     0 26px 70px rgba(53, 77, 73, .09),
-    inset 0 1px 0 rgba(255,255,255,.94) !important;
+    inset 0 1px 0 rgba(255, 255, 255, .94) !important;
 }
 
 .nx-generation-card::before {
@@ -6092,7 +6165,7 @@
   height: 230px;
   right: -105px;
   top: -105px;
-  background: radial-gradient(circle, rgba(104,200,195,.12), transparent 67%);
+  background: radial-gradient(circle, rgba(104, 200, 195, .12), transparent 67%);
 }
 
 .nx-panel::after {
@@ -6100,31 +6173,31 @@
   height: 210px;
   left: -120px;
   bottom: -120px;
-  background: radial-gradient(circle, rgba(239,189,201,.10), transparent 68%);
+  background: radial-gradient(circle, rgba(239, 189, 201, .10), transparent 68%);
 }
 
-.nx-panel--signal .nx-panel__head > div:first-child,
-.nx-panel--domains > .nx-kicker,
-.nx-panel--domains > h2,
-.nx-panel--domains > p,
-.nx-panel--ground > .nx-kicker,
-.nx-panel--ground > h2,
-.nx-panel--ground > p,
-.nx-panel--launch > .nx-kicker,
-.nx-panel--launch > h2 {
+.nx-panel--signal .nx-panel__head>div:first-child,
+.nx-panel--domains>.nx-kicker,
+.nx-panel--domains>h2,
+.nx-panel--domains>p,
+.nx-panel--ground>.nx-kicker,
+.nx-panel--ground>h2,
+.nx-panel--ground>p,
+.nx-panel--launch>.nx-kicker,
+.nx-panel--launch>h2 {
   position: relative;
   z-index: 2;
 }
 
-.nx-panel--signal .nx-panel__head > div:first-child {
+.nx-panel--signal .nx-panel__head>div:first-child {
   max-width: calc(100% - 330px);
 }
 
-.nx-panel--domains > h2,
-.nx-panel--domains > p,
-.nx-panel--ground > h2,
-.nx-panel--ground > p,
-.nx-panel--launch > h2 {
+.nx-panel--domains>h2,
+.nx-panel--domains>p,
+.nx-panel--ground>h2,
+.nx-panel--ground>p,
+.nx-panel--launch>h2 {
   max-width: calc(100% - 325px);
 }
 
@@ -6134,7 +6207,7 @@
   right: 30px;
   z-index: 5;
   border: 1px solid rgba(234, 180, 194, .17);
-  background: rgba(255,249,250,.88) !important;
+  background: rgba(255, 249, 250, .88) !important;
   backdrop-filter: blur(10px);
 }
 
@@ -6181,31 +6254,40 @@
 .nx-step-art__spark {
   position: absolute;
   z-index: 3;
-  color: rgba(51,143,139,.48);
+  color: rgba(51, 143, 139, .48);
   font-size: 13px;
-  text-shadow: 0 0 18px rgba(82,185,181,.32);
+  text-shadow: 0 0 18px rgba(82, 185, 181, .32);
   animation: nxArtTwinkle 2.8s ease-in-out infinite;
 }
 
-.nx-step-art__spark--one { top: -7px; right: 24px; }
-.nx-step-art__spark--two { bottom: 7px; left: -4px; color: rgba(220,139,159,.48); animation-delay: .8s; }
+.nx-step-art__spark--one {
+  top: -7px;
+  right: 24px;
+}
+
+.nx-step-art__spark--two {
+  bottom: 7px;
+  left: -4px;
+  color: rgba(220, 139, 159, .48);
+  animation-delay: .8s;
+}
 
 .nx-step-art__canvas {
   position: absolute;
   inset: 8px 8px 14px 14px;
   overflow: hidden;
-  border: 1px solid rgba(82,185,181,.17);
+  border: 1px solid rgba(82, 185, 181, .17);
   border-radius: 24px;
   background:
-    linear-gradient(rgba(104,200,195,.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(104,200,195,.055) 1px, transparent 1px),
-    radial-gradient(circle at 82% 15%, rgba(104,200,195,.13), transparent 37%),
-    radial-gradient(circle at 12% 90%, rgba(239,189,201,.10), transparent 35%),
-    rgba(255,255,255,.84);
+    linear-gradient(rgba(104, 200, 195, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(104, 200, 195, .055) 1px, transparent 1px),
+    radial-gradient(circle at 82% 15%, rgba(104, 200, 195, .13), transparent 37%),
+    radial-gradient(circle at 12% 90%, rgba(239, 189, 201, .10), transparent 35%),
+    rgba(255, 255, 255, .84);
   background-size: 22px 22px, 22px 22px, auto, auto, auto;
   box-shadow:
-    0 16px 34px rgba(51,143,139,.09),
-    inset 0 1px 0 rgba(255,255,255,.9);
+    0 16px 34px rgba(51, 143, 139, .09),
+    inset 0 1px 0 rgba(255, 255, 255, .9);
   backdrop-filter: blur(13px);
   transform: rotate(1.2deg);
 }
@@ -6230,7 +6312,7 @@
   background: linear-gradient(145deg, var(--nx-aqua-1), var(--nx-aqua-3));
   font-size: 9px;
   font-weight: 900;
-  box-shadow: 0 8px 18px rgba(51,143,139,.20);
+  box-shadow: 0 8px 18px rgba(51, 143, 139, .20);
 }
 
 .nx-step-art__meta small {
@@ -6259,11 +6341,11 @@
   width: 52px;
   height: 52px;
   transform: translate(-50%, -50%);
-  border: 1px solid rgba(255,255,255,.94);
+  border: 1px solid rgba(255, 255, 255, .94);
   border-radius: 18px;
   color: #fff;
   background: linear-gradient(145deg, var(--nx-aqua-1), var(--nx-aqua-3));
-  box-shadow: 0 11px 26px rgba(51,143,139,.25), 0 0 0 7px rgba(104,200,195,.08);
+  box-shadow: 0 11px 26px rgba(51, 143, 139, .25), 0 0 0 7px rgba(104, 200, 195, .08);
 }
 
 .nx-step-art__node {
@@ -6274,24 +6356,54 @@
   border: 3px solid #fff;
   border-radius: 50%;
   background: #77c9c4;
-  box-shadow: 0 5px 13px rgba(51,143,139,.18);
+  box-shadow: 0 5px 13px rgba(51, 143, 139, .18);
 }
 
-.nx-step-art__node--a { left: 4px; top: 12px; }
-.nx-step-art__node--b { right: 3px; top: 14px; background: #eab3c1; }
-.nx-step-art__node--c { right: 21px; bottom: 1px; background: #9dc7be; }
+.nx-step-art__node--a {
+  left: 4px;
+  top: 12px;
+}
+
+.nx-step-art__node--b {
+  right: 3px;
+  top: 14px;
+  background: #eab3c1;
+}
+
+.nx-step-art__node--c {
+  right: 21px;
+  bottom: 1px;
+  background: #9dc7be;
+}
 
 .nx-step-art__connector {
   position: absolute;
   z-index: 1;
   height: 1px;
   transform-origin: left center;
-  background: linear-gradient(90deg, rgba(82,185,181,.12), rgba(51,143,139,.52));
+  background: linear-gradient(90deg, rgba(82, 185, 181, .12), rgba(51, 143, 139, .52));
 }
 
-.nx-step-art__connector--a { width: 54px; left: 13px; top: 18px; transform: rotate(19deg); }
-.nx-step-art__connector--b { width: 53px; left: 75px; top: 33px; transform: rotate(-21deg); }
-.nx-step-art__connector--c { width: 47px; left: 76px; top: 48px; transform: rotate(22deg); }
+.nx-step-art__connector--a {
+  width: 54px;
+  left: 13px;
+  top: 18px;
+  transform: rotate(19deg);
+}
+
+.nx-step-art__connector--b {
+  width: 53px;
+  left: 75px;
+  top: 33px;
+  transform: rotate(-21deg);
+}
+
+.nx-step-art__connector--c {
+  width: 47px;
+  left: 76px;
+  top: 48px;
+  transform: rotate(22deg);
+}
 
 .nx-step-art__footer {
   position: absolute;
@@ -6335,7 +6447,7 @@
   height: 5px;
   border-radius: 50%;
   background: var(--nx-aqua-2);
-  box-shadow: 0 0 0 3px rgba(82,185,181,.11);
+  box-shadow: 0 0 0 3px rgba(82, 185, 181, .11);
 }
 
 .nx-step-art__chips {
@@ -6350,11 +6462,11 @@
   align-items: center;
   gap: 5px;
   padding: 5px 8px;
-  border: 1px solid rgba(82,185,181,.14);
+  border: 1px solid rgba(82, 185, 181, .14);
   border-radius: 999px;
   color: #667c77;
-  background: rgba(255,255,255,.93);
-  box-shadow: 0 8px 20px rgba(53,77,73,.07);
+  background: rgba(255, 255, 255, .93);
+  box-shadow: 0 8px 20px rgba(53, 77, 73, .07);
   font-size: 6.8px;
   font-weight: 800;
 }
@@ -6366,16 +6478,30 @@
   background: var(--nx-aqua-2);
 }
 
-.nx-step-art__chip--1 { left: -3px; top: 42px; transform: rotate(-4deg); }
-.nx-step-art__chip--2 { right: -5px; top: 61px; transform: rotate(3deg); }
-.nx-step-art__chip--3 { right: 26px; bottom: -1px; transform: rotate(-2deg); }
+.nx-step-art__chip--1 {
+  left: -3px;
+  top: 42px;
+  transform: rotate(-4deg);
+}
+
+.nx-step-art__chip--2 {
+  right: -5px;
+  top: 61px;
+  transform: rotate(3deg);
+}
+
+.nx-step-art__chip--3 {
+  right: 26px;
+  bottom: -1px;
+  transform: rotate(-2deg);
+}
 
 /* Each step gets a slightly different drawing language. */
 .nx-step-art--signal .nx-step-art__scene::after {
   content: '';
   position: absolute;
   inset: 8px 34px;
-  border: 1px solid rgba(82,185,181,.18);
+  border: 1px solid rgba(82, 185, 181, .18);
   border-radius: 50%;
   animation: nxSignalPulse 2.6s ease-out infinite;
 }
@@ -6392,10 +6518,10 @@
 
 .nx-step-art--ground .nx-step-art__canvas {
   background:
-    linear-gradient(35deg, transparent 48%, rgba(104,200,195,.07) 49%, rgba(104,200,195,.07) 51%, transparent 52%),
-    linear-gradient(145deg, transparent 48%, rgba(239,189,201,.065) 49%, rgba(239,189,201,.065) 51%, transparent 52%),
-    radial-gradient(circle at 82% 15%, rgba(104,200,195,.13), transparent 37%),
-    rgba(255,255,255,.85);
+    linear-gradient(35deg, transparent 48%, rgba(104, 200, 195, .07) 49%, rgba(104, 200, 195, .07) 51%, transparent 52%),
+    linear-gradient(145deg, transparent 48%, rgba(239, 189, 201, .065) 49%, rgba(239, 189, 201, .065) 51%, transparent 52%),
+    radial-gradient(circle at 82% 15%, rgba(104, 200, 195, .13), transparent 37%),
+    rgba(255, 255, 255, .85);
   background-size: 34px 34px, 34px 34px, auto, auto;
 }
 
@@ -6414,13 +6540,22 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  border: 1px solid rgba(82,185,181,.17);
+  border: 1px solid rgba(82, 185, 181, .17);
   border-radius: 50%;
   transform: translate(-50%, -50%);
 }
 
-.nx-step-art--launch .nx-step-art__scene::before { width: 92px; height: 92px; }
-.nx-step-art--launch .nx-step-art__scene::after { width: 118px; height: 118px; border-style: dashed; animation: nxOrbitSpin 9s linear infinite; }
+.nx-step-art--launch .nx-step-art__scene::before {
+  width: 92px;
+  height: 92px;
+}
+
+.nx-step-art--launch .nx-step-art__scene::after {
+  width: 118px;
+  height: 118px;
+  border-style: dashed;
+  animation: nxOrbitSpin 9s linear infinite;
+}
 
 /* Let each panel breathe around the floating artwork. */
 .nx-panel--signal .nx-speech-field {
@@ -6434,11 +6569,11 @@
 }
 
 .nx-speech-field {
-  border-color: rgba(82,185,181,.17) !important;
+  border-color: rgba(82, 185, 181, .17) !important;
   background:
-    radial-gradient(circle at 96% 8%, rgba(104,200,195,.055), transparent 29%),
-    linear-gradient(145deg, rgba(255,250,251,.98), rgba(255,255,255,.98)) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.94), 0 12px 30px rgba(53,77,73,.035);
+    radial-gradient(circle at 96% 8%, rgba(104, 200, 195, .055), transparent 29%),
+    linear-gradient(145deg, rgba(255, 250, 251, .98), rgba(255, 255, 255, .98)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .94), 0 12px 30px rgba(53, 77, 73, .035);
 }
 
 .nx-personalized-discovery button,
@@ -6446,13 +6581,13 @@
 .nx-source-note,
 .nx-review-problem,
 .nx-review-facts article {
-  border-color: rgba(82,185,181,.17) !important;
+  border-color: rgba(82, 185, 181, .17) !important;
 }
 
 .nx-personalized-discovery button:hover,
 .nx-auto-domain button:hover:not(:disabled) {
-  border-color: rgba(51,143,139,.36) !important;
-  box-shadow: 0 16px 36px rgba(51,143,139,.10) !important;
+  border-color: rgba(51, 143, 139, .36) !important;
+  box-shadow: 0 16px 36px rgba(51, 143, 139, .10) !important;
 }
 
 .nx-location-grid label {
@@ -6461,55 +6596,87 @@
 
 .nx-location-grid input,
 .nx-language-select__trigger {
-  border-color: rgba(82,185,181,.18) !important;
-  background: linear-gradient(145deg, #fff, rgba(245,252,250,.86)) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.94);
+  border-color: rgba(82, 185, 181, .18) !important;
+  background: linear-gradient(145deg, #fff, rgba(245, 252, 250, .86)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .94);
 }
 
 .nx-location-grid input:focus,
 .nx-language-select.is-open .nx-language-select__trigger {
-  border-color: rgba(51,143,139,.48) !important;
-  box-shadow: 0 0 0 4px rgba(104,200,195,.09) !important;
+  border-color: rgba(51, 143, 139, .48) !important;
+  box-shadow: 0 0 0 4px rgba(104, 200, 195, .09) !important;
 }
 
 .nx-next-button {
   border-color: transparent !important;
   background: linear-gradient(100deg, var(--nx-aqua-1), var(--nx-aqua-2) 56%, #d9b8c1 125%) !important;
-  box-shadow: 0 11px 28px rgba(51,143,139,.18) !important;
+  box-shadow: 0 11px 28px rgba(51, 143, 139, .18) !important;
 }
 
 .nx-next-button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 15px 34px rgba(51,143,139,.25) !important;
+  box-shadow: 0 15px 34px rgba(51, 143, 139, .25) !important;
 }
 
 @keyframes nxStepHalo {
-  0%, 100% { opacity: .55; transform: scale(.96); }
-  50% { opacity: 1; transform: scale(1.05); }
+
+  0%,
+  100% {
+    opacity: .55;
+    transform: scale(.96);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
 }
 
 @keyframes nxArtTwinkle {
-  0%, 100% { opacity: .38; transform: scale(.86) rotate(0deg); }
-  50% { opacity: 1; transform: scale(1.08) rotate(16deg); }
+
+  0%,
+  100% {
+    opacity: .38;
+    transform: scale(.86) rotate(0deg);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.08) rotate(16deg);
+  }
 }
 
 @keyframes nxSignalPulse {
-  0% { opacity: .55; transform: scale(.72); }
-  80%, 100% { opacity: 0; transform: scale(1.42); }
+  0% {
+    opacity: .55;
+    transform: scale(.72);
+  }
+
+  80%,
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
 }
 
 @keyframes nxOrbitSpin {
-  from { transform: translate(-50%, -50%) rotate(0deg); }
-  to { transform: translate(-50%, -50%) rotate(360deg); }
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
 }
 
 @media (max-width: 980px) {
-  .nx-panel--signal .nx-panel__head > div:first-child,
-  .nx-panel--domains > h2,
-  .nx-panel--domains > p,
-  .nx-panel--ground > h2,
-  .nx-panel--ground > p,
-  .nx-panel--launch > h2 {
+
+  .nx-panel--signal .nx-panel__head>div:first-child,
+  .nx-panel--domains>h2,
+  .nx-panel--domains>p,
+  .nx-panel--ground>h2,
+  .nx-panel--ground>p,
+  .nx-panel--launch>h2 {
     max-width: calc(100% - 250px);
   }
 
@@ -6529,21 +6696,25 @@
     scrollbar-width: none;
   }
 
-  .nx-step-rail::-webkit-scrollbar { display: none; }
+  .nx-step-rail::-webkit-scrollbar {
+    display: none;
+  }
 
   .nx-step {
     min-width: 136px;
     padding: 7px;
   }
 
-  .nx-step>i { display: none !important; }
+  .nx-step>i {
+    display: none !important;
+  }
 
-  .nx-panel--signal .nx-panel__head > div:first-child,
-  .nx-panel--domains > h2,
-  .nx-panel--domains > p,
-  .nx-panel--ground > h2,
-  .nx-panel--ground > p,
-  .nx-panel--launch > h2 {
+  .nx-panel--signal .nx-panel__head>div:first-child,
+  .nx-panel--domains>h2,
+  .nx-panel--domains>p,
+  .nx-panel--ground>h2,
+  .nx-panel--ground>p,
+  .nx-panel--launch>h2 {
     max-width: none;
   }
 
@@ -6579,6 +6750,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .nx-step.is-current>span::after,
   .nx-step-art__spark,
   .nx-step-art--signal .nx-step-art__scene::after,
@@ -6609,10 +6781,10 @@
   border: 1px solid rgba(82, 185, 181, .20) !important;
   border-radius: 20px !important;
   background:
-    linear-gradient(145deg, rgba(255,255,255,.99), rgba(247,252,251,.94) 58%, rgba(255,248,250,.92)) !important;
+    linear-gradient(145deg, rgba(255, 255, 255, .99), rgba(247, 252, 251, .94) 58%, rgba(255, 248, 250, .92)) !important;
   box-shadow:
     0 8px 22px rgba(47, 92, 87, .055),
-    inset 0 1px 0 rgba(255,255,255,.96) !important;
+    inset 0 1px 0 rgba(255, 255, 255, .96) !important;
   transition: transform .24s ease, border-color .24s ease, box-shadow .24s ease, background .24s ease !important;
 }
 
@@ -6636,7 +6808,7 @@
   top: -60px;
   right: -42px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(104,200,195,.12), rgba(104,200,195,0) 70%);
+  background: radial-gradient(circle, rgba(104, 200, 195, .12), rgba(104, 200, 195, 0) 70%);
   opacity: 1;
   transform: none;
 }
@@ -6649,7 +6821,7 @@
   left: -48px;
   bottom: -54px;
   border-radius: 50% !important;
-  background: radial-gradient(circle, rgba(239,189,201,.13), transparent 70%) !important;
+  background: radial-gradient(circle, rgba(239, 189, 201, .13), transparent 70%) !important;
   box-shadow: none !important;
 }
 
@@ -6668,15 +6840,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(82,185,181,.16);
+  border: 1px solid rgba(82, 185, 181, .16);
   border-radius: 12px !important;
   color: var(--nx-aqua-3) !important;
   font-size: 14px !important;
   line-height: 1;
   background:
-    linear-gradient(145deg, rgba(235,249,247,.98), rgba(255,255,255,.95)) !important;
+    linear-gradient(145deg, rgba(235, 249, 247, .98), rgba(255, 255, 255, .95)) !important;
   box-shadow:
-    0 7px 16px rgba(51,143,139,.08),
+    0 7px 16px rgba(51, 143, 139, .08),
     inset 0 1px 0 #fff !important;
 }
 
@@ -6761,13 +6933,24 @@
   height: 5px !important;
   border: 0 !important;
   border-radius: 50% !important;
-  background: rgba(82,185,181,.66) !important;
-  box-shadow: 0 0 0 4px rgba(104,200,195,.075) !important;
+  background: rgba(82, 185, 181, .66) !important;
+  box-shadow: 0 0 0 4px rgba(104, 200, 195, .075) !important;
 }
 
-.nx-domain-card__constellation i:nth-child(1) { left: 2px; top: 19px; }
-.nx-domain-card__constellation i:nth-child(2) { left: 23px; top: 4px; }
-.nx-domain-card__constellation i:nth-child(3) { right: 2px; bottom: 2px; }
+.nx-domain-card__constellation i:nth-child(1) {
+  left: 2px;
+  top: 19px;
+}
+
+.nx-domain-card__constellation i:nth-child(2) {
+  left: 23px;
+  top: 4px;
+}
+
+.nx-domain-card__constellation i:nth-child(3) {
+  right: 2px;
+  bottom: 2px;
+}
 
 .nx-domain-card__constellation em {
   position: absolute;
@@ -6776,16 +6959,16 @@
   width: 39px;
   height: 1px;
   border-radius: 99px;
-  background: linear-gradient(90deg, rgba(82,185,181,.50), rgba(239,189,201,.40));
+  background: linear-gradient(90deg, rgba(82, 185, 181, .50), rgba(239, 189, 201, .40));
   transform: rotate(-15deg);
   transform-origin: left center;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card:hover:not(:disabled) {
   transform: translateY(-4px) !important;
-  border-color: rgba(51,143,139,.40) !important;
+  border-color: rgba(51, 143, 139, .40) !important;
   background:
-    linear-gradient(145deg, #fff, rgba(241,251,249,.98) 60%, rgba(255,247,249,.96)) !important;
+    linear-gradient(145deg, #fff, rgba(241, 251, 249, .98) 60%, rgba(255, 247, 249, .96)) !important;
   box-shadow:
     0 16px 34px rgba(47, 92, 87, .105),
     inset 0 1px 0 #fff !important;
@@ -6797,12 +6980,12 @@
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card.is-selected {
-  border-color: rgba(51,143,139,.62) !important;
+  border-color: rgba(51, 143, 139, .62) !important;
   background:
-    radial-gradient(circle at 92% 5%, rgba(104,200,195,.18), transparent 31%),
-    linear-gradient(145deg, rgba(239,250,248,.99), rgba(255,255,255,.98) 52%, rgba(255,245,248,.96)) !important;
+    radial-gradient(circle at 92% 5%, rgba(104, 200, 195, .18), transparent 31%),
+    linear-gradient(145deg, rgba(239, 250, 248, .99), rgba(255, 255, 255, .98) 52%, rgba(255, 245, 248, .96)) !important;
   box-shadow:
-    0 13px 30px rgba(51,143,139,.13),
+    0 13px 30px rgba(51, 143, 139, .13),
     inset 0 1px 0 #fff !important;
 }
 
@@ -6814,7 +6997,7 @@
   color: #fff !important;
   border-color: transparent !important;
   background: linear-gradient(145deg, var(--nx-aqua-1), var(--nx-aqua-3)) !important;
-  box-shadow: 0 8px 18px rgba(51,143,139,.20) !important;
+  box-shadow: 0 8px 18px rgba(51, 143, 139, .20) !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card.is-selected .nx-domain-card__status {
@@ -6851,11 +7034,11 @@
   border-radius: 15px !important;
   border-color: rgba(82, 185, 181, .18) !important;
   background:
-    radial-gradient(circle at 96% 4%, rgba(104,200,195,.07), transparent 30%),
-    linear-gradient(145deg, rgba(255,255,255,.995), rgba(249,253,252,.96)) !important;
+    radial-gradient(circle at 96% 4%, rgba(104, 200, 195, .07), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, .995), rgba(249, 253, 252, .96)) !important;
   box-shadow:
-    0 5px 14px rgba(47,92,87,.038),
-    inset 0 1px 0 rgba(255,255,255,.98) !important;
+    0 5px 14px rgba(47, 92, 87, .038),
+    inset 0 1px 0 rgba(255, 255, 255, .98) !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card::before {
@@ -6867,7 +7050,7 @@
   height: 76px !important;
   top: -46px !important;
   right: -30px !important;
-  background: radial-gradient(circle, rgba(104,200,195,.095), rgba(104,200,195,0) 70%) !important;
+  background: radial-gradient(circle, rgba(104, 200, 195, .095), rgba(104, 200, 195, 0) 70%) !important;
 }
 
 .nx-domain-card__wash {
@@ -6875,7 +7058,7 @@
   height: 58px !important;
   left: -34px !important;
   bottom: -39px !important;
-  background: radial-gradient(circle, rgba(104,200,195,.06), transparent 72%) !important;
+  background: radial-gradient(circle, rgba(104, 200, 195, .06), transparent 72%) !important;
 }
 
 .nx-domain-card__top {
@@ -6924,12 +7107,12 @@
   margin: 0 !important;
   padding: 0 !important;
   justify-content: center !important;
-  border: 1px solid rgba(82,185,181,.17) !important;
+  border: 1px solid rgba(82, 185, 181, .17) !important;
   border-radius: 50% !important;
   color: var(--nx-aqua-3) !important;
   font-size: 0 !important;
-  background: rgba(255,255,255,.82) !important;
-  box-shadow: 0 4px 10px rgba(51,143,139,.05) !important;
+  background: rgba(255, 255, 255, .82) !important;
+  box-shadow: 0 4px 10px rgba(51, 143, 139, .05) !important;
   opacity: 0;
   transform: scale(.82);
   transition: opacity .18s ease, transform .18s ease, background .18s ease !important;
@@ -6946,7 +7129,7 @@
   color: #fff !important;
   border-color: transparent !important;
   background: linear-gradient(145deg, var(--nx-aqua-1), var(--nx-aqua-3)) !important;
-  box-shadow: 0 5px 12px rgba(51,143,139,.18) !important;
+  box-shadow: 0 5px 12px rgba(51, 143, 139, .18) !important;
 }
 
 .nx-domain-card__constellation {
@@ -6960,25 +7143,36 @@
 .nx-domain-card__constellation i {
   width: 3px !important;
   height: 3px !important;
-  box-shadow: 0 0 0 3px rgba(104,200,195,.055) !important;
+  box-shadow: 0 0 0 3px rgba(104, 200, 195, .055) !important;
 }
 
-.nx-domain-card__constellation i:nth-child(1) { left: 1px !important; top: 13px !important; }
-.nx-domain-card__constellation i:nth-child(2) { left: 16px !important; top: 2px !important; }
-.nx-domain-card__constellation i:nth-child(3) { right: 1px !important; bottom: 1px !important; }
+.nx-domain-card__constellation i:nth-child(1) {
+  left: 1px !important;
+  top: 13px !important;
+}
+
+.nx-domain-card__constellation i:nth-child(2) {
+  left: 16px !important;
+  top: 2px !important;
+}
+
+.nx-domain-card__constellation i:nth-child(3) {
+  right: 1px !important;
+  bottom: 1px !important;
+}
 
 .nx-domain-card__constellation em {
   left: 3px !important;
   top: 11px !important;
   width: 28px !important;
-  background: linear-gradient(90deg, rgba(82,185,181,.38), rgba(104,200,195,.12)) !important;
+  background: linear-gradient(90deg, rgba(82, 185, 181, .38), rgba(104, 200, 195, .12)) !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card:hover:not(:disabled) {
   transform: translateY(-2px) !important;
-  border-color: rgba(51,143,139,.34) !important;
+  border-color: rgba(51, 143, 139, .34) !important;
   box-shadow:
-    0 10px 22px rgba(47,92,87,.075),
+    0 10px 22px rgba(47, 92, 87, .075),
     inset 0 1px 0 #fff !important;
 }
 
@@ -6988,44 +7182,44 @@
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card.is-selected {
-  border-color: rgba(51,143,139,.55) !important;
+  border-color: rgba(51, 143, 139, .55) !important;
   background:
-    radial-gradient(circle at 95% 4%, rgba(104,200,195,.16), transparent 31%),
-    linear-gradient(145deg, rgba(239,250,248,.98), rgba(255,255,255,.995)) !important;
+    radial-gradient(circle at 95% 4%, rgba(104, 200, 195, .16), transparent 31%),
+    linear-gradient(145deg, rgba(239, 250, 248, .98), rgba(255, 255, 255, .995)) !important;
   box-shadow:
-    0 9px 22px rgba(51,143,139,.10),
+    0 9px 22px rgba(51, 143, 139, .10),
     inset 0 1px 0 #fff !important;
 }
 
 /* Replace the old rose selection surfaces with Voxidence aqua tones. */
 .nx-panel--domains .nx-auto-domain button,
 .nx-panel--domains .nx-auto-domain button.is-selected {
-  border-color: rgba(82,185,181,.20) !important;
+  border-color: rgba(82, 185, 181, .20) !important;
   background:
-    radial-gradient(circle at 96% 0%, rgba(104,200,195,.10), transparent 30%),
-    linear-gradient(145deg, rgba(247,253,252,.99), rgba(255,255,255,.98)) !important;
-  box-shadow: 0 8px 22px rgba(51,143,139,.055) !important;
+    radial-gradient(circle at 96% 0%, rgba(104, 200, 195, .10), transparent 30%),
+    linear-gradient(145deg, rgba(247, 253, 252, .99), rgba(255, 255, 255, .98)) !important;
+  box-shadow: 0 8px 22px rgba(51, 143, 139, .055) !important;
 }
 
 .nx-panel--domains .nx-auto-domain button.is-selected {
-  border-color: rgba(51,143,139,.42) !important;
+  border-color: rgba(51, 143, 139, .42) !important;
   background:
-    radial-gradient(circle at 96% 0%, rgba(104,200,195,.16), transparent 32%),
-    linear-gradient(145deg, rgba(236,249,247,.98), rgba(255,255,255,.99)) !important;
+    radial-gradient(circle at 96% 0%, rgba(104, 200, 195, .16), transparent 32%),
+    linear-gradient(145deg, rgba(236, 249, 247, .98), rgba(255, 255, 255, .99)) !important;
 }
 
-.nx-panel--domains .nx-auto-domain button.is-selected > svg:first-child {
+.nx-panel--domains .nx-auto-domain button.is-selected>svg:first-child {
   color: var(--nx-aqua-3) !important;
 }
 
 .nx-source-note {
   position: relative;
   overflow: hidden;
-  border-color: rgba(82,185,181,.20) !important;
+  border-color: rgba(82, 185, 181, .20) !important;
   background:
-    radial-gradient(circle at 98% 0%, rgba(104,200,195,.10), transparent 34%),
-    linear-gradient(145deg, rgba(245,252,251,.99), rgba(255,255,255,.99)) !important;
-  box-shadow: 0 8px 22px rgba(51,143,139,.045) !important;
+    radial-gradient(circle at 98% 0%, rgba(104, 200, 195, .10), transparent 34%),
+    linear-gradient(145deg, rgba(245, 252, 251, .99), rgba(255, 255, 255, .99)) !important;
+  box-shadow: 0 8px 22px rgba(51, 143, 139, .045) !important;
 }
 
 .nx-source-note::before {
@@ -7038,7 +7232,7 @@
   opacity: .78;
 }
 
-.nx-source-note > svg {
+.nx-source-note>svg {
   color: var(--nx-aqua-3) !important;
 }
 
@@ -7090,10 +7284,10 @@
   border: 1px solid rgba(82, 185, 181, .20) !important;
   border-radius: 17px !important;
   background:
-    linear-gradient(145deg, rgba(255,255,255,.995), rgba(248,253,252,.98)) !important;
+    linear-gradient(145deg, rgba(255, 255, 255, .995), rgba(248, 253, 252, .98)) !important;
   box-shadow:
     0 5px 15px rgba(47, 92, 87, .04),
-    inset 0 1px 0 rgba(255,255,255,.98) !important;
+    inset 0 1px 0 rgba(255, 255, 255, .98) !important;
   transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease, background .2s ease !important;
 }
 
@@ -7142,10 +7336,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(82,185,181,.14) !important;
+  border: 1px solid rgba(82, 185, 181, .14) !important;
   border-radius: 12px !important;
   color: var(--nx-aqua-3) !important;
-  background: linear-gradient(145deg, rgba(235,249,247,.98), rgba(246,252,251,.98)) !important;
+  background: linear-gradient(145deg, rgba(235, 249, 247, .98), rgba(246, 252, 251, .98)) !important;
   box-shadow: inset 0 1px 0 #fff !important;
 }
 
@@ -7215,7 +7409,7 @@
   color: #fff !important;
   border-color: transparent !important;
   background: linear-gradient(145deg, var(--nx-aqua-1), var(--nx-aqua-3)) !important;
-  box-shadow: 0 5px 12px rgba(51,143,139,.18) !important;
+  box-shadow: 0 5px 12px rgba(51, 143, 139, .18) !important;
 }
 
 .nx-domain-card__status svg {
@@ -7231,21 +7425,21 @@
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card:hover:not(:disabled) {
   transform: translateY(-2px) !important;
-  border-color: rgba(51,143,139,.34) !important;
+  border-color: rgba(51, 143, 139, .34) !important;
   background:
-    linear-gradient(145deg, rgba(255,255,255,1), rgba(243,251,250,.99)) !important;
+    linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(243, 251, 250, .99)) !important;
   box-shadow:
-    0 10px 22px rgba(47,92,87,.075),
+    0 10px 22px rgba(47, 92, 87, .075),
     inset 0 1px 0 #fff !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card.is-selected {
-  border-color: rgba(51,143,139,.58) !important;
+  border-color: rgba(51, 143, 139, .58) !important;
   background:
-    radial-gradient(circle at 100% 0%, rgba(104,200,195,.12), transparent 31%),
-    linear-gradient(145deg, rgba(241,251,249,.99), rgba(255,255,255,.995)) !important;
+    radial-gradient(circle at 100% 0%, rgba(104, 200, 195, .12), transparent 31%),
+    linear-gradient(145deg, rgba(241, 251, 249, .99), rgba(255, 255, 255, .995)) !important;
   box-shadow:
-    0 8px 20px rgba(51,143,139,.085),
+    0 8px 20px rgba(51, 143, 139, .085),
     inset 0 1px 0 #fff !important;
 }
 
@@ -7257,7 +7451,7 @@
   color: #fff !important;
   border-color: transparent !important;
   background: linear-gradient(145deg, var(--nx-aqua-1), var(--nx-aqua-3)) !important;
-  box-shadow: 0 7px 16px rgba(51,143,139,.16) !important;
+  box-shadow: 0 7px 16px rgba(51, 143, 139, .16) !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card.is-blocked {
@@ -7320,11 +7514,9 @@
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card::before {
   width: 3px !important;
-  background: linear-gradient(
-    180deg,
-    var(--nx-eucalyptus-600, #5cbdb9),
-    var(--nx-rose-500, #d98fa0)
-  ) !important;
+  background: linear-gradient(180deg,
+      var(--nx-eucalyptus-600, #5cbdb9),
+      var(--nx-rose-500, #d98fa0)) !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card::after {
@@ -7352,8 +7544,8 @@
   background:
     linear-gradient(145deg, var(--nx-rose-100, #fff6f8), var(--nx-eucalyptus-100, #eaf5f2)) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.96),
-    0 4px 10px rgba(73,83,79,.035) !important;
+    inset 0 1px 0 rgba(255, 255, 255, .96),
+    0 4px 10px rgba(73, 83, 79, .035) !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card .nx-domain-card__copy {
@@ -7385,6 +7577,7 @@
   text-overflow: clip !important;
   white-space: normal !important;
   -webkit-line-clamp: 2;
+  line-clamp: 2 !important;
   -webkit-box-orient: vertical;
 }
 
@@ -7398,11 +7591,9 @@
 
 .nx-domain-card.is-selected .nx-domain-card__status {
   color: #fff !important;
-  background: linear-gradient(
-    145deg,
-    var(--nx-eucalyptus-500, #69b7b1),
-    var(--nx-eucalyptus-700, #4fa9a4)
-  ) !important;
+  background: linear-gradient(145deg,
+      var(--nx-eucalyptus-500, #69b7b1),
+      var(--nx-eucalyptus-700, #4fa9a4)) !important;
   box-shadow: 0 5px 12px rgba(79, 169, 164, .20) !important;
 }
 
@@ -7415,7 +7606,7 @@
     linear-gradient(145deg, #fffdfc, #fbfaf8) !important;
   box-shadow:
     0 11px 26px rgba(73, 83, 79, .075),
-    inset 0 1px 0 rgba(255,255,255,.98) !important;
+    inset 0 1px 0 rgba(255, 255, 255, .98) !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card.is-selected {
@@ -7426,17 +7617,15 @@
     linear-gradient(145deg, #fffdfc 0%, #f6fbf9 62%, #fff8fa 100%) !important;
   box-shadow:
     0 9px 22px rgba(79, 169, 164, .10),
-    inset 0 1px 0 rgba(255,255,255,.98) !important;
+    inset 0 1px 0 rgba(255, 255, 255, .98) !important;
 }
 
 .nx-panel--domains .nx-domain-grid .nx-domain-card.is-selected .nx-domain-card__icon {
   color: #fff !important;
   border-color: transparent !important;
-  background: linear-gradient(
-    145deg,
-    var(--nx-eucalyptus-500, #69b7b1),
-    var(--nx-eucalyptus-700, #4fa9a4)
-  ) !important;
+  background: linear-gradient(145deg,
+      var(--nx-eucalyptus-500, #69b7b1),
+      var(--nx-eucalyptus-700, #4fa9a4)) !important;
   box-shadow: 0 7px 16px rgba(79, 169, 164, .18) !important;
 }
 
@@ -7460,8 +7649,8 @@
     linear-gradient(145deg, #fffdfc, #f7fbfa) !important;
 }
 
-.nx-panel--domains .nx-auto-domain button > svg:first-child,
-.nx-panel--domains .nx-auto-domain button.is-selected > svg:first-child {
+.nx-panel--domains .nx-auto-domain button>svg:first-child,
+.nx-panel--domains .nx-auto-domain button.is-selected>svg:first-child {
   color: var(--nx-eucalyptus-800, #2f7774) !important;
 }
 
@@ -7524,7 +7713,7 @@
   gap: 10px !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button {
+.nx-panel--domains .nx-domain-grid>button {
   position: relative !important;
   min-height: 76px !important;
   padding: 10px 11px !important;
@@ -7543,11 +7732,11 @@
   transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease, background .2s ease !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button::before {
+.nx-panel--domains .nx-domain-grid>button::before {
   content: none !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button::after {
+.nx-panel--domains .nx-domain-grid>button::after {
   content: '' !important;
   position: absolute !important;
   top: -44px !important;
@@ -7562,18 +7751,18 @@
   pointer-events: none !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button:hover:not(:disabled) {
+.nx-panel--domains .nx-domain-grid>button:hover:not(:disabled) {
   transform: translateY(-2px) !important;
   border-color: rgba(82, 185, 181, .52) !important;
   background: #ffffff !important;
   box-shadow: 0 10px 22px rgba(51, 143, 139, .09) !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button:hover:not(:disabled)::after {
+.nx-panel--domains .nx-domain-grid>button:hover:not(:disabled)::after {
   transform: scale(1.18) !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button > span {
+.nx-panel--domains .nx-domain-grid>button>span {
   position: relative !important;
   inset: auto !important;
   z-index: 1 !important;
@@ -7591,13 +7780,13 @@
   transform: none !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button > span svg {
+.nx-panel--domains .nx-domain-grid>button>span svg {
   width: 16px !important;
   height: 16px !important;
   color: currentColor !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button > div {
+.nx-panel--domains .nx-domain-grid>button>div {
   position: relative !important;
   z-index: 1 !important;
   min-width: 0 !important;
@@ -7605,7 +7794,7 @@
   padding: 0 !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button b {
+.nx-panel--domains .nx-domain-grid>button b {
   display: block !important;
   margin: 0 !important;
   overflow: visible !important;
@@ -7618,7 +7807,7 @@
   text-overflow: clip !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button small {
+.nx-panel--domains .nx-domain-grid>button small {
   display: -webkit-box !important;
   margin-top: 3px !important;
   overflow: hidden !important;
@@ -7633,7 +7822,7 @@
   text-overflow: clip !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button > i {
+.nx-panel--domains .nx-domain-grid>button>i {
   position: relative !important;
   inset: auto !important;
   z-index: 2 !important;
@@ -7651,27 +7840,27 @@
   transform: none !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button.is-selected {
+.nx-panel--domains .nx-domain-grid>button.is-selected {
   border-color: #52b9b5 !important;
   background: linear-gradient(145deg, rgba(92, 189, 185, .11), rgba(255, 255, 255, .98) 58%, rgba(230, 174, 185, .10)) !important;
   box-shadow: 0 8px 20px rgba(51, 143, 139, .11) !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button.is-selected > span {
+.nx-panel--domains .nx-domain-grid>button.is-selected>span {
   color: #fff !important;
   background: linear-gradient(145deg, #68c8c3, #52b9b5 58%, #338f8b) !important;
   box-shadow: 0 7px 15px rgba(51, 143, 139, .16) !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button.is-selected > i {
+.nx-panel--domains .nx-domain-grid>button.is-selected>i {
   background: #338f8b !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button.is-selected::after {
+.nx-panel--domains .nx-domain-grid>button.is-selected::after {
   background: rgba(230, 174, 185, .10) !important;
 }
 
-.nx-panel--domains .nx-domain-grid > button.is-blocked {
+.nx-panel--domains .nx-domain-grid>button.is-blocked {
   opacity: .48 !important;
   cursor: not-allowed !important;
 }
@@ -7694,8 +7883,8 @@
   background: linear-gradient(105deg, rgba(92, 189, 185, .09), rgba(255, 255, 255, .98) 58%, rgba(230, 174, 185, .075)) !important;
 }
 
-.nx-panel--domains .nx-auto-domain button > svg:first-child,
-.nx-panel--domains .nx-auto-domain button.is-selected > svg:first-child {
+.nx-panel--domains .nx-auto-domain button>svg:first-child,
+.nx-panel--domains .nx-auto-domain button.is-selected>svg:first-child {
   color: #338f8b !important;
 }
 
@@ -7710,7 +7899,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .nx-panel--domains .nx-domain-grid > button {
+  .nx-panel--domains .nx-domain-grid>button {
     min-height: 72px !important;
     padding: 9px !important;
   }
@@ -7746,9 +7935,23 @@ html.vox-user-rtl .nx-step-art__chip {
   direction: rtl;
 }
 
-html.vox-user-rtl .nx-step-art__chip--1 { left: auto; right: -3px; transform: rotate(4deg); }
-html.vox-user-rtl .nx-step-art__chip--2 { right: auto; left: -5px; transform: rotate(-3deg); }
-html.vox-user-rtl .nx-step-art__chip--3 { right: auto; left: 26px; transform: rotate(2deg); }
+html.vox-user-rtl .nx-step-art__chip--1 {
+  left: auto;
+  right: -3px;
+  transform: rotate(4deg);
+}
+
+html.vox-user-rtl .nx-step-art__chip--2 {
+  right: auto;
+  left: -5px;
+  transform: rotate(-3deg);
+}
+
+html.vox-user-rtl .nx-step-art__chip--3 {
+  right: auto;
+  left: 26px;
+  transform: rotate(2deg);
+}
 
 html.vox-user-rtl .nx-speech-field textarea,
 html.vox-user-rtl .nx-location-grid input,
@@ -7796,6 +7999,7 @@ html.vox-user-rtl .nx-personalized-discovery button {
 }
 
 @media (max-width: 760px) {
+
   html.vox-user-rtl .nx-step-art,
   html.vox-user-rtl .nx-panel--domains .nx-step-art,
   html.vox-user-rtl .nx-panel--ground .nx-step-art,
@@ -7921,30 +8125,30 @@ html.vox-user-dark .nx-domain-shortcut:hover {
 /* ========================================================================== */
 /* Dark-mode selection hardening — no light selected/hover domain cards        */
 /* ========================================================================== */
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button,
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button:hover:not(:disabled),
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button:focus-visible,
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button.is-selected {
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button,
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button:hover:not(:disabled),
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button:focus-visible,
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button.is-selected {
   color: #eef8f5 !important;
   border-color: rgba(104, 200, 195, .22) !important;
   background: linear-gradient(145deg, #182923 0%, #14231e 100%) !important;
   box-shadow: none !important;
 }
 
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button:hover:not(:disabled),
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button.is-selected {
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button:hover:not(:disabled),
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button.is-selected {
   border-color: rgba(104, 200, 195, .48) !important;
   background: linear-gradient(145deg, #20362f 0%, #172a24 100%) !important;
   box-shadow: 0 0 0 3px rgba(104, 200, 195, .07), 0 12px 26px rgba(0, 0, 0, .18) !important;
 }
 
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button b,
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button.is-selected b {
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button b,
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button.is-selected b {
   color: #f1f8f6 !important;
 }
 
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button small,
-html.vox-user-dark .nx-panel--domains .nx-domain-grid > button.is-selected small {
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button small,
+html.vox-user-dark .nx-panel--domains .nx-domain-grid>button.is-selected small {
   color: #aec1bb !important;
 }
 
@@ -8019,44 +8223,70 @@ html.vox-user-dark .nx-language-select__menu button[aria-selected='true'] {
 
 
 /* FINAL_GENERATION_DARK_RTL_POLISH */
-html.vox-user-dark :is(
-  .nx-generation-card,.nx-generation-hero,.nx-wizard-actions,
-  .nx-generation-progress__toolbar,.nx-generation-progress__hero,
-  .nx-progress-summary-card,.nx-horizontal-pipeline-card,
-  .nx-horizontal-pipeline-card__head,.nx-horizontal-stage,
-  .nx-generation-progress__current,.nx-generation-loading,
-  .nx-active-run-conflict__dialog,.nx-generation-blocker__card,
-  .nx-cancel-success__dialog
-) {
-  color:#edf7f4 !important;
-  border-color:rgba(112,205,198,.18) !important;
-  background:#162821 !important;
-  background-image:linear-gradient(145deg,#1b3129,#12231d) !important;
-  box-shadow:none !important;
+html.vox-user-dark :is(.nx-generation-card, .nx-generation-hero, .nx-wizard-actions,
+  .nx-generation-progress__toolbar, .nx-generation-progress__hero,
+  .nx-progress-summary-card, .nx-horizontal-pipeline-card,
+  .nx-horizontal-pipeline-card__head, .nx-horizontal-stage,
+  .nx-generation-progress__current, .nx-generation-loading,
+  .nx-active-run-conflict__dialog, .nx-generation-blocker__card,
+  .nx-cancel-success__dialog) {
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+  background: #162821 !important;
+  background-image: linear-gradient(145deg, #1b3129, #12231d) !important;
+  box-shadow: none !important;
 }
+
 html.vox-user-dark .nx-horizontal-stage--active {
-  border-color:rgba(112,205,198,.46) !important;
-  background:linear-gradient(145deg,#25443a,#193129) !important;
+  border-color: rgba(112, 205, 198, .46) !important;
+  background: linear-gradient(145deg, #25443a, #193129) !important;
 }
-html.vox-user-dark .nx-horizontal-stage--completed { background:linear-gradient(145deg,#1c342c,#152820) !important; }
-html.vox-user-dark :is(.nx-generation-progress__hero h1,.nx-horizontal-stage h3,.nx-generation-progress__current strong) { color:#f1f9f6 !important; }
-html.vox-user-dark :is(.nx-generation-progress__hero p,.nx-horizontal-stage p,.nx-generation-progress__current small) { color:#adc0ba !important; }
-html.vox-user-dark :is(.nx-progress-compact-spinner,.nx-horizontal-stage--active .nx-spin,.nx-generation-loading>.nx-spin) {
-  color:#79d0ca !important;
-  filter:drop-shadow(0 0 10px rgba(121,208,202,.22));
+
+html.vox-user-dark .nx-horizontal-stage--completed {
+  background: linear-gradient(145deg, #1c342c, #152820) !important;
 }
-html.vox-user-dark .nx-progress-compact-spinner { background:#203a31 !important; border-color:rgba(121,208,202,.28) !important; }
-html.vox-user-dark .nx-progress-ring::before { background:#162821 !important; }
-html.vox-user-dark .nx-cancel-run { color:#dcebe7 !important; background:#20372f !important; border-color:rgba(112,205,198,.18) !important; }
-html.vox-user-rtl .nx-generation-progress { direction:rtl; }
+
+html.vox-user-dark :is(.nx-generation-progress__hero h1, .nx-horizontal-stage h3, .nx-generation-progress__current strong) {
+  color: #f1f9f6 !important;
+}
+
+html.vox-user-dark :is(.nx-generation-progress__hero p, .nx-horizontal-stage p, .nx-generation-progress__current small) {
+  color: #adc0ba !important;
+}
+
+html.vox-user-dark :is(.nx-progress-compact-spinner, .nx-horizontal-stage--active .nx-spin, .nx-generation-loading>.nx-spin) {
+  color: #79d0ca !important;
+  filter: drop-shadow(0 0 10px rgba(121, 208, 202, .22));
+}
+
+html.vox-user-dark .nx-progress-compact-spinner {
+  background: #203a31 !important;
+  border-color: rgba(121, 208, 202, .28) !important;
+}
+
+html.vox-user-dark .nx-progress-ring::before {
+  background: #162821 !important;
+}
+
+html.vox-user-dark .nx-cancel-run {
+  color: #dcebe7 !important;
+  background: #20372f !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+}
+
+html.vox-user-rtl .nx-generation-progress {
+  direction: rtl;
+}
+
 html.vox-user-rtl .nx-generation-progress__toolbar,
 html.vox-user-rtl .nx-generation-progress__hero,
-html.vox-user-rtl .nx-horizontal-pipeline-card__head { text-align:right; }
+html.vox-user-rtl .nx-horizontal-pipeline-card__head {
+  text-align: right;
+}
 
 
 /* FINAL_GENERATION_WHITE_SURFACE_ERADICATION */
-html.vox-user-dark :is(
-  .nx-generation-shell,
+html.vox-user-dark :is(.nx-generation-shell,
   .nx-generation-progress,
   .nx-generation-progress__hero,
   .nx-generation-progress__toolbar,
@@ -8076,36 +8306,35 @@ html.vox-user-dark :is(
   .nx-celebration-burst,
   .nx-celebration-countdown,
   .nx-celebration-countdown__number-stage,
-  .nx-celebration-countdown__message
-) {
+  .nx-celebration-countdown__message) {
   color: #edf7f4 !important;
-  border-color: rgba(112,205,198,.18) !important;
+  border-color: rgba(112, 205, 198, .18) !important;
   background-color: #12231e !important;
-  background-image: linear-gradient(145deg,#1b3129,#10201b) !important;
+  background-image: linear-gradient(145deg, #1b3129, #10201b) !important;
   box-shadow: none !important;
 }
-html.vox-user-dark :is(
-  .nx-generation-progress__hero::before,
+
+html.vox-user-dark :is(.nx-generation-progress__hero::before,
   .nx-generation-progress__toolbar::before,
-  .nx-progress-compact-main::before
-) {
+  .nx-progress-compact-main::before) {
   background: transparent !important;
 }
-html.vox-user-dark :is(
-  .nx-progress-compact-spinner,
+
+html.vox-user-dark :is(.nx-progress-compact-spinner,
   .nx-horizontal-stage--active .nx-spin,
   .nx-generation-loading > .nx-spin,
-  .nx-spin
-) {
+  .nx-spin) {
   color: #8bded8 !important;
-  border-color: rgba(139,222,216,.30) !important;
-  filter: drop-shadow(0 0 12px rgba(139,222,216,.24));
+  border-color: rgba(139, 222, 216, .30) !important;
+  filter: drop-shadow(0 0 12px rgba(139, 222, 216, .24));
 }
+
 html.vox-user-dark .nx-celebration-countdown__ring {
-  border-color: rgba(139,222,216,.24) !important;
+  border-color: rgba(139, 222, 216, .24) !important;
 }
+
 html.vox-user-dark .nx-celebration-countdown__ring--middle {
-  border-color: rgba(230,174,185,.18) !important;
+  border-color: rgba(230, 174, 185, .18) !important;
 }
 
 
@@ -8113,26 +8342,34 @@ html.vox-user-dark .nx-celebration-countdown__ring--middle {
 html.vox-user-dark .nx-celebration,
 html.vox-user-dark .nx-celebration.is-counting,
 html.vox-user-dark .nx-celebration.is-revealed {
-  color:#edf7f4 !important;
-  background:rgba(5,15,12,.90) !important;
-  background-image:radial-gradient(circle at 20% 10%,rgba(112,205,198,.08),transparent 28%),radial-gradient(circle at 82% 88%,rgba(230,174,185,.06),transparent 30%) !important;
+  color: #edf7f4 !important;
+  background: rgba(5, 15, 12, .90) !important;
+  background-image: radial-gradient(circle at 20% 10%, rgba(112, 205, 198, .08), transparent 28%), radial-gradient(circle at 82% 88%, rgba(230, 174, 185, .06), transparent 30%) !important;
 }
+
 html.vox-user-dark .nx-celebration__result,
 html.vox-user-dark .nx-celebration--normal .nx-celebration__result,
 html.vox-user-dark .nx-celebration--premium .nx-celebration__result {
-  color:#edf7f4 !important;
-  border-color:rgba(112,205,198,.22) !important;
-  background:linear-gradient(145deg,#1d342c,#12231d) !important;
-  box-shadow:0 30px 90px rgba(0,0,0,.42) !important;
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .22) !important;
+  background: linear-gradient(145deg, #1d342c, #12231d) !important;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .42) !important;
 }
-html.vox-user-dark .nx-celebration__result h2 { color:#f3faf8 !important; }
-html.vox-user-dark .nx-celebration__result > p,
-html.vox-user-dark .nx-celebration-countdown > small { color:#b4c7c1 !important; }
+
+html.vox-user-dark .nx-celebration__result h2 {
+  color: #f3faf8 !important;
+}
+
+html.vox-user-dark .nx-celebration__result>p,
+html.vox-user-dark .nx-celebration-countdown>small {
+  color: #b4c7c1 !important;
+}
+
 html.vox-user-dark .nx-celebration__icon,
 html.vox-user-dark .nx-celebration__eyebrow {
-  color:#9ee2dc !important;
-  border-color:rgba(112,205,198,.20) !important;
-  background:#20382f !important;
+  color: #9ee2dc !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: #20382f !important;
 }
 
 /* Final dark review + bilingual voice controls */
@@ -8150,28 +8387,46 @@ html.vox-user-dark .nx-celebration__eyebrow {
   font-weight: 900;
   cursor: pointer;
 }
-.nx-voice-language-toggle:disabled { opacity: .55; cursor: not-allowed; }
+
+.nx-voice-language-toggle:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
 html.vox-user-dark .nx-refresh-toggle,
 html.vox-user-dark .nx-normal-generation-note,
 html.vox-user-dark .nx-normal-generation-note.is-premium {
   color: #edf7f4 !important;
-  border-color: rgba(112,205,198,.20) !important;
-  background: linear-gradient(145deg,#1c322a,#14251f) !important;
-  background-image: linear-gradient(145deg,#1c322a,#14251f) !important;
-  box-shadow: 0 14px 34px rgba(0,0,0,.16) !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: linear-gradient(145deg, #1c322a, #14251f) !important;
+  background-image: linear-gradient(145deg, #1c322a, #14251f) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .16) !important;
 }
+
 html.vox-user-dark .nx-refresh-toggle b,
-html.vox-user-dark .nx-normal-generation-note b { color: #f0f8f6 !important; }
+html.vox-user-dark .nx-normal-generation-note b {
+  color: #f0f8f6 !important;
+}
+
 html.vox-user-dark .nx-refresh-toggle small,
-html.vox-user-dark .nx-normal-generation-note small { color: #aec1bb !important; }
+html.vox-user-dark .nx-normal-generation-note small {
+  color: #aec1bb !important;
+}
+
 html.vox-user-dark .nx-voice-language-toggle {
   color: #a7e6e0 !important;
-  border-color: rgba(112,205,198,.22) !important;
+  border-color: rgba(112, 205, 198, .22) !important;
   background: #20382f !important;
   box-shadow: none !important;
 }
-html.vox-user-dark .nx-voice-language-toggle:hover:not(:disabled) { background: #29463b !important; }
-html.vox-user-rtl .nx-voice-language-toggle { direction:ltr; }
+
+html.vox-user-dark .nx-voice-language-toggle:hover:not(:disabled) {
+  background: #29463b !important;
+}
+
+html.vox-user-rtl .nx-voice-language-toggle {
+  direction: ltr;
+}
 
 /* ========================================================================== */
 /* FINAL_20260827_GENERATION_DARK_RTL_VOICE                                   */
@@ -8182,24 +8437,28 @@ html.vox-user-dark .nx-panel--launch .nx-normal-generation-note.is-premium,
 html[data-vox-user-theme="dark"] .nx-panel--launch .nx-refresh-toggle,
 html[data-vox-user-theme="dark"] .nx-panel--launch .nx-normal-generation-note {
   color: #edf7f4 !important;
-  border: 1px solid rgba(112,205,198,.18) !important;
+  border: 1px solid rgba(112, 205, 198, .18) !important;
   background: #152a22 !important;
-  background-image: linear-gradient(145deg,#183027,#12241e) !important;
+  background-image: linear-gradient(145deg, #183027, #12241e) !important;
   box-shadow: none !important;
 }
+
 html.vox-user-dark .nx-panel--launch .nx-refresh-toggle::before,
 html.vox-user-dark .nx-panel--launch .nx-normal-generation-note::before,
 html.vox-user-dark .nx-panel--launch .nx-refresh-toggle::after,
 html.vox-user-dark .nx-panel--launch .nx-normal-generation-note::after {
   display: none !important;
 }
+
 html.vox-user-dark .nx-panel--launch .nx-refresh-toggle input {
   background: transparent !important;
 }
+
 html.vox-user-dark .nx-panel--launch .nx-refresh-toggle b,
 html.vox-user-dark .nx-panel--launch .nx-normal-generation-note b {
   color: #f0f8f6 !important;
 }
+
 html.vox-user-dark .nx-panel--launch .nx-refresh-toggle small,
 html.vox-user-dark .nx-panel--launch .nx-normal-generation-note small {
   color: #abc0b9 !important;
@@ -8212,6 +8471,7 @@ html.vox-user-dark .nx-panel--launch .nx-normal-generation-note small {
   unicode-bidi: plaintext;
   padding-inline: 24px !important;
 }
+
 html.vox-user-rtl .nx-speech-field textarea[dir="auto"] {
   text-align: start !important;
 }
@@ -8224,14 +8484,19 @@ html.vox-user-rtl .nx-speech-field__actions {
   right: auto !important;
   justify-content: flex-start !important;
 }
-html.vox-user-rtl .nx-speech-field__actions > button {
+
+html.vox-user-rtl .nx-speech-field__actions>button {
   direction: rtl !important;
   flex-direction: row !important;
 }
+
 html.vox-user-rtl .nx-domain-shortcut svg:last-child {
   transform: none !important;
 }
-.nx-voice-language-toggle { display: none !important; }
+
+.nx-voice-language-toggle {
+  display: none !important;
+}
 
 @media (max-width: 760px) {
   html.vox-user-rtl .nx-speech-field__actions {
@@ -8247,23 +8512,28 @@ html.vox-user-rtl .nx-domain-shortcut svg:last-child {
   unicode-bidi: plaintext !important;
   text-align: start !important;
 }
+
 html.vox-user-rtl .nx-speech-field textarea[dir="auto"]::placeholder {
   direction: rtl !important;
   text-align: right !important;
 }
+
 html.vox-user-rtl .nx-speech-field__actions {
   direction: ltr !important;
   left: 20px !important;
   right: 112px !important;
   justify-content: flex-start !important;
 }
-html.vox-user-rtl .nx-speech-field__actions :is(.nx-voice-button,.nx-domain-shortcut) {
+
+html.vox-user-rtl .nx-speech-field__actions :is(.nx-voice-button, .nx-domain-shortcut) {
   direction: rtl !important;
   flex-direction: row !important;
 }
+
 html.vox-user-rtl .nx-domain-shortcut svg:last-child {
   transform: rotate(180deg) !important;
 }
+
 @media (max-width:760px) {
   html.vox-user-rtl .nx-speech-field__actions {
     left: 16px !important;
@@ -8276,7 +8546,7 @@ html.vox-user-dark .nx-step-rail {
   padding-inline: 24px !important;
 }
 
-.nx-step > i {
+.nx-step>i {
   left: calc(50% + 54px) !important;
   right: calc(-50% + 54px) !important;
   width: auto !important;
@@ -8284,7 +8554,7 @@ html.vox-user-dark .nx-step-rail {
   background: rgba(92, 189, 185, .22) !important;
 }
 
-html.vox-user-rtl .nx-step > i {
+html.vox-user-rtl .nx-step>i {
   left: calc(-50% + 54px) !important;
   right: calc(50% + 54px) !important;
 }
@@ -8295,20 +8565,20 @@ html.vox-user-dark .nx-step {
   box-shadow: none !important;
 }
 
-html.vox-user-dark .nx-step > span {
+html.vox-user-dark .nx-step>span {
   color: #b7ccc6 !important;
   border-color: rgba(112, 205, 198, .18) !important;
   background: #173028 !important;
   box-shadow: none !important;
 }
 
-html.vox-user-dark .nx-step.is-complete > span {
+html.vox-user-dark .nx-step.is-complete>span {
   color: #8bded8 !important;
   border-color: rgba(112, 205, 198, .28) !important;
   background: #1d3a31 !important;
 }
 
-html.vox-user-dark .nx-step.is-current > span {
+html.vox-user-dark .nx-step.is-current>span {
   color: #f5fbf9 !important;
   border-color: rgba(139, 222, 216, .42) !important;
   background: linear-gradient(145deg, #4da8a2, #377f7b) !important;
@@ -8322,7 +8592,7 @@ html.vox-user-dark .nx-step.is-complete {
   box-shadow: none !important;
 }
 
-html.vox-user-dark .nx-step.is-complete > i {
+html.vox-user-dark .nx-step.is-complete>i {
   background: #4da8a2 !important;
 }
 
@@ -8377,7 +8647,7 @@ html.vox-user-rtl .nx-speech-field textarea[dir="auto"]::placeholder {
 }
 
 @media (max-width: 760px) {
-  .nx-step > i {
+  .nx-step>i {
     display: none !important;
   }
 }
@@ -8401,13 +8671,13 @@ html.vox-user-rtl .nx-speech-field textarea[dir="auto"]::placeholder {
   text-align: left;
   background:
     radial-gradient(circle at 92% 12%, rgba(92, 189, 185, .10), transparent 34%),
-    linear-gradient(145deg, rgba(251,255,254,.96), rgba(246,251,249,.92));
+    linear-gradient(145deg, rgba(251, 255, 254, .96), rgba(246, 251, 249, .92));
   box-shadow: 0 12px 30px rgba(52, 65, 63, .05);
   cursor: pointer;
   transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease, opacity .2s ease;
 }
 
-.nx-auto-detect-skip button > svg {
+.nx-auto-detect-skip button>svg {
   width: 42px;
   height: 42px;
   padding: 10px;
@@ -8416,7 +8686,7 @@ html.vox-user-rtl .nx-speech-field textarea[dir="auto"]::placeholder {
   background: #e9f6f3;
 }
 
-.nx-auto-detect-skip button > div {
+.nx-auto-detect-skip button>div {
   min-width: 0;
 }
 
@@ -8440,7 +8710,7 @@ html.vox-user-rtl .nx-speech-field textarea[dir="auto"]::placeholder {
   border-color: rgba(63, 171, 163, .34);
   background:
     radial-gradient(circle at 94% 12%, rgba(92, 189, 185, .15), transparent 35%),
-    linear-gradient(145deg, rgba(242,251,248,.98), rgba(255,249,251,.96));
+    linear-gradient(145deg, rgba(242, 251, 248, .98), rgba(255, 249, 251, .96));
   box-shadow: 0 14px 34px rgba(47, 119, 116, .075);
 }
 
@@ -8482,7 +8752,7 @@ html.vox-user-dark .nx-auto-detect-skip.is-ready button {
     linear-gradient(145deg, rgba(23, 43, 38, .98), rgba(19, 35, 31, .96)) !important;
 }
 
-html.vox-user-dark .nx-auto-detect-skip button > svg {
+html.vox-user-dark .nx-auto-detect-skip button>svg {
   color: #8edbd4 !important;
   background: rgba(39, 76, 65, .82) !important;
 }
@@ -8503,9 +8773,9 @@ html.vox-user-rtl .nx-cancel-success__dialog button {
 }
 
 html.vox-user-rtl .nx-stage-flow__arrow,
-html.vox-user-rtl .nx-dashboard-return > svg:first-child,
-html.vox-user-rtl .nx-generation-error-actions button > svg:first-child,
-html.vox-user-rtl .nx-cancel-success__dialog button > svg:last-child,
+html.vox-user-rtl .nx-dashboard-return>svg:first-child,
+html.vox-user-rtl .nx-generation-error-actions button>svg:first-child,
+html.vox-user-rtl .nx-cancel-success__dialog button>svg:last-child,
 html.vox-user-rtl .nx-horizontal-stage__state,
 html.vox-user-rtl .nx-pipeline-meta p,
 html.vox-user-rtl .nx-progress-compact-stage,
@@ -8514,8 +8784,8 @@ html.vox-user-rtl .nx-progress-compact-kicker {
 }
 
 html.vox-user-rtl .nx-stage-flow__arrow,
-html.vox-user-rtl .nx-dashboard-return > svg:first-child,
-html.vox-user-rtl .nx-generation-error-actions button > svg:first-child {
+html.vox-user-rtl .nx-dashboard-return>svg:first-child,
+html.vox-user-rtl .nx-generation-error-actions button>svg:first-child {
   transform: rotate(180deg);
 }
 
@@ -8523,10 +8793,11 @@ html.vox-user-dark .nx-horizontal-stage__icon {
   background: transparent !important;
   box-shadow: none !important;
 }
-html.vox-user-dark .nx-personalized-discovery button > svg,
-html.vox-user-dark .nx-auto-detect-skip button > svg,
-html.vox-user-dark .nx-voice-button > svg,
-html.vox-user-dark .nx-domain-shortcut > svg {
+
+html.vox-user-dark .nx-personalized-discovery button>svg,
+html.vox-user-dark .nx-auto-detect-skip button>svg,
+html.vox-user-dark .nx-voice-button>svg,
+html.vox-user-dark .nx-domain-shortcut>svg {
   background: transparent !important;
   box-shadow: none !important;
 }
@@ -8541,15 +8812,19 @@ html.vox-user-dark .nx-progress-compact-spinner {
 .nx-horizontal-pipeline[dir="rtl"] {
   direction: rtl;
 }
+
 .nx-horizontal-pipeline[dir="ltr"] {
   direction: ltr;
 }
+
 html.vox-user-rtl .nx-pipeline-stage-wrap {
   direction: rtl;
 }
+
 html.vox-user-rtl .nx-stage-flow {
   direction: ltr;
 }
+
 html.vox-user-rtl .nx-stage-flow__arrow {
   left: -1px !important;
   right: auto !important;
@@ -8559,11 +8834,11 @@ html.vox-user-rtl .nx-stage-flow__arrow {
 
 /* SVGs should never inherit dark surface fills; only their intended parent
    tiles can own a background. This removes the black/rectangular slab under icons. */
-html.vox-user-dark .nx-horizontal-stage__icon > svg,
-html.vox-user-dark .nx-personalized-discovery button > svg,
-html.vox-user-dark .nx-auto-detect-skip button > svg,
-html.vox-user-dark .nx-voice-button > svg,
-html.vox-user-dark .nx-domain-shortcut > svg {
+html.vox-user-dark .nx-horizontal-stage__icon>svg,
+html.vox-user-dark .nx-personalized-discovery button>svg,
+html.vox-user-dark .nx-auto-detect-skip button>svg,
+html.vox-user-dark .nx-voice-button>svg,
+html.vox-user-dark .nx-domain-shortcut>svg {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
@@ -8585,11 +8860,33 @@ html.vox-user-dark .nx-domain-shortcut > svg {
   background: rgba(255, 249, 250, .92);
   box-shadow: none;
 }
-.nx-run-error--friendly > svg { color: #c66f82; }
-.nx-run-error__copy { min-width: 0; }
-.nx-run-error__copy strong { display: block; color: #61454d; }
-.nx-run-error__copy p { margin: 4px 0 0; color: #846b72; line-height: 1.55; }
-.nx-run-error__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.nx-run-error--friendly>svg {
+  color: #c66f82;
+}
+
+.nx-run-error__copy {
+  min-width: 0;
+}
+
+.nx-run-error__copy strong {
+  display: block;
+  color: #61454d;
+}
+
+.nx-run-error__copy p {
+  margin: 4px 0 0;
+  color: #846b72;
+  line-height: 1.55;
+}
+
+.nx-run-error__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .nx-run-error--friendly .nx-run-error__actions button {
   min-height: 38px;
   padding: 8px 12px;
@@ -8601,9 +8898,21 @@ html.vox-user-dark .nx-domain-shortcut > svg {
   border-radius: 11px;
   cursor: pointer;
 }
-.nx-run-error--friendly .nx-run-error__retry { color: #fff; background: #4da9a3; }
-.nx-run-error--friendly .nx-run-error__dashboard { color: #49625d; background: #edf5f2; }
-html.vox-user-rtl .nx-run-error--friendly { direction: rtl; }
+
+.nx-run-error--friendly .nx-run-error__retry {
+  color: #fff;
+  background: #4da9a3;
+}
+
+.nx-run-error--friendly .nx-run-error__dashboard {
+  color: #49625d;
+  background: #edf5f2;
+}
+
+html.vox-user-rtl .nx-run-error--friendly {
+  direction: rtl;
+}
+
 html.vox-user-dark .nx-run-error--friendly {
   color: #e9d6dc !important;
   border-color: rgba(225, 151, 169, .18) !important;
@@ -8611,15 +8920,28 @@ html.vox-user-dark .nx-run-error--friendly {
   background-image: none !important;
   box-shadow: none !important;
 }
-html.vox-user-dark .nx-run-error__copy strong { color: #f4e8eb !important; }
-html.vox-user-dark .nx-run-error__copy p { color: #c9b5ba !important; }
+
+html.vox-user-dark .nx-run-error__copy strong {
+  color: #f4e8eb !important;
+}
+
+html.vox-user-dark .nx-run-error__copy p {
+  color: #c9b5ba !important;
+}
+
 html.vox-user-dark .nx-run-error--friendly .nx-run-error__dashboard {
   color: #d7e8e3 !important;
   background: rgba(107, 178, 168, .10) !important;
 }
+
 @media (max-width: 760px) {
-  .nx-run-error--friendly { grid-template-columns: auto minmax(0, 1fr); }
-  .nx-run-error__actions { grid-column: 1 / -1; }
+  .nx-run-error--friendly {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .nx-run-error__actions {
+    grid-column: 1 / -1;
+  }
 }
 
 /* FINAL_20260828_PROGRESS_DIRECTION
@@ -8627,14 +8949,3082 @@ html.vox-user-dark .nx-run-error--friendly .nx-run-error__dashboard {
 html.vox-user-rtl .nx-progress-track {
   direction: rtl;
 }
+
 html.vox-user-rtl .nx-progress-track span {
   margin-inline-start: auto;
   margin-inline-end: 0;
 }
+
 html.vox-user-ltr .nx-progress-track {
   direction: ltr;
 }
+
 html.vox-user-ltr .nx-progress-track span {
   margin-inline-start: 0;
   margin-inline-end: auto;
+}
+
+
+/* ========================================================================== */
+/* MERGED CREATIVE SIGNAL EXPERIENCE — kept in generation.css on purpose      */
+/* ========================================================================== */
+
+/* ========================================================================== */
+/* Voxidence Generate — Creative Signal Experience                            */
+/* Presentation-only override. No generation logic is changed.                */
+/* ========================================================================== */
+
+.nx-generation-page {
+  --nx-signal-aqua: #5cbdb9;
+  --nx-signal-aqua-bright: #72d4ce;
+  --nx-signal-aqua-deep: #2f8f89;
+  --nx-signal-rose: #e6aeb9;
+  --nx-signal-rose-soft: #f8e7eb;
+  --nx-signal-ink: #304945;
+  --nx-signal-muted: #758681;
+  --nx-signal-line: rgba(92, 189, 185, .2);
+  position: relative;
+  isolation: isolate;
+}
+
+.nx-generation-page::before,
+.nx-generation-page::after {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 999px;
+  filter: blur(14px);
+}
+
+.nx-generation-page::before {
+  width: 460px;
+  height: 460px;
+  left: -190px;
+  top: 190px;
+  background: radial-gradient(circle, rgba(230, 174, 185, .18), rgba(230, 174, 185, .05) 44%, transparent 70%);
+}
+
+.nx-generation-page::after {
+  width: 540px;
+  height: 540px;
+  right: -220px;
+  top: 90px;
+  background: radial-gradient(circle, rgba(92, 189, 185, .18), rgba(92, 189, 185, .05) 45%, transparent 72%);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Step rail                                                                   */
+/* -------------------------------------------------------------------------- */
+
+.nx-generation-page .nx-step-rail {
+  width: min(1220px, calc(100% - 38px));
+  margin: 18px auto 20px;
+  padding: 10px 8px !important;
+  gap: 10px !important;
+  border: 1px solid rgba(92, 189, 185, .08);
+  border-radius: 26px;
+  background: rgba(255, 255, 255, .38);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .92);
+  backdrop-filter: blur(14px);
+}
+
+.nx-generation-page .nx-step {
+  min-height: 68px;
+  padding: 8px 14px 8px 10px !important;
+  justify-content: flex-start !important;
+  border-radius: 20px !important;
+}
+
+.nx-generation-page .nx-step>span {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 14px !important;
+  transition: transform .25s ease, box-shadow .25s ease, background .25s ease;
+}
+
+.nx-generation-page .nx-step>div {
+  min-width: 0;
+}
+
+.nx-generation-page .nx-step b {
+  color: #415a56;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: -.01em;
+}
+
+.nx-generation-page .nx-step small {
+  margin-top: 3px;
+  color: #8a9b97;
+  line-height: 1.3;
+}
+
+.nx-generation-page .nx-step.is-current {
+  border-color: rgba(92, 189, 185, .19) !important;
+  background:
+    radial-gradient(circle at 8% 40%, rgba(92, 189, 185, .14), transparent 48%),
+    linear-gradient(135deg, rgba(255, 255, 255, .96), rgba(255, 247, 249, .88)) !important;
+  box-shadow: 0 15px 34px rgba(47, 119, 116, .09) !important;
+}
+
+.nx-generation-page .nx-step.is-current>span {
+  transform: scale(1.04);
+  background: linear-gradient(145deg, var(--nx-signal-aqua-bright), var(--nx-signal-aqua-deep)) !important;
+  box-shadow:
+    0 10px 24px rgba(47, 143, 137, .28),
+    0 0 0 7px rgba(92, 189, 185, .09),
+    0 0 34px rgba(92, 189, 185, .18) !important;
+}
+
+.nx-generation-page .nx-step.is-current>span::before {
+  content: '';
+  position: absolute;
+  width: 62px;
+  height: 62px;
+  border: 1px solid rgba(92, 189, 185, .2);
+  border-radius: 50%;
+  animation: nxSignalStepPulse 2.8s ease-in-out infinite;
+}
+
+.nx-generation-page .nx-step.is-current>span::after {
+  inset: -13px !important;
+  border-radius: 50% !important;
+  opacity: .58;
+}
+
+.nx-generation-page .nx-step>i {
+  left: calc(50% + 84px) !important;
+  width: calc(100% - 164px) !important;
+  background: linear-gradient(90deg, rgba(92, 189, 185, .28), rgba(230, 174, 185, .2)) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Main Signal card                                                            */
+/* -------------------------------------------------------------------------- */
+
+.nx-generation-page .nx-generation-card {
+  width: min(1280px, calc(100% - 26px));
+  margin: 0 auto;
+  border: 1px solid rgba(92, 189, 185, .14) !important;
+  border-radius: 34px !important;
+  background:
+    radial-gradient(circle at 94% 2%, rgba(92, 189, 185, .105), transparent 28%),
+    radial-gradient(circle at 3% 98%, rgba(230, 174, 185, .11), transparent 26%),
+    linear-gradient(145deg, rgba(255, 255, 255, .99), rgba(255, 252, 252, .965)) !important;
+  box-shadow:
+    0 30px 80px rgba(48, 73, 69, .095),
+    0 8px 26px rgba(92, 189, 185, .04),
+    inset 0 1px 0 rgba(255, 255, 255, .98) !important;
+}
+
+.nx-generation-page .nx-generation-card::before {
+  height: 2px !important;
+  background: linear-gradient(90deg, transparent, rgba(92, 189, 185, .8) 32%, rgba(230, 174, 185, .74) 69%, transparent) !important;
+}
+
+.nx-generation-page .nx-panel--signal {
+  min-height: 650px !important;
+  padding: 42px 44px 30px !important;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr);
+  grid-template-areas:
+    'head visual'
+    'speech visual'
+    'auto visual'
+    'personal visual'
+    'tips visual';
+  grid-template-rows: auto auto auto auto 1fr;
+  column-gap: clamp(30px, 4vw, 64px);
+  row-gap: 13px;
+  overflow: visible !important;
+}
+
+.nx-generation-page .nx-panel--signal::before {
+  width: 400px !important;
+  height: 400px !important;
+  right: -125px !important;
+  top: -115px !important;
+  background: radial-gradient(circle, rgba(92, 189, 185, .11), rgba(92, 189, 185, .035) 49%, transparent 72%) !important;
+}
+
+.nx-generation-page .nx-panel--signal::after {
+  width: 330px !important;
+  height: 330px !important;
+  left: -145px !important;
+  bottom: -145px !important;
+  background: radial-gradient(circle, rgba(230, 174, 185, .105), rgba(230, 174, 185, .025) 52%, transparent 73%) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head {
+  grid-area: head;
+  min-width: 0;
+  display: block !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head>div:first-child {
+  max-width: 100% !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-kicker {
+  padding: 8px 13px;
+  border-color: rgba(92, 189, 185, .18);
+  color: #2e817b;
+  background: linear-gradient(145deg, rgba(239, 250, 248, .95), rgba(255, 248, 250, .9));
+  box-shadow: 0 8px 20px rgba(47, 119, 116, .055);
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head h2 {
+  max-width: 720px;
+  margin: 19px 0 12px !important;
+  color: var(--nx-signal-ink);
+  font-size: clamp(35px, 3.25vw, 51px) !important;
+  line-height: 1.01 !important;
+  letter-spacing: -.048em !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head h2::after {
+  content: '';
+  display: inline-block;
+  width: .2em;
+  height: .2em;
+  margin-inline-start: .13em;
+  border-radius: 50%;
+  vertical-align: .18em;
+  background: var(--nx-signal-aqua);
+  box-shadow: 0 0 18px rgba(92, 189, 185, .42);
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head p {
+  max-width: 690px;
+  margin: 0 !important;
+  color: var(--nx-signal-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.nx-generation-page .nx-private-note {
+  top: 28px !important;
+  right: 28px !important;
+  z-index: 12;
+  padding: 8px 13px !important;
+  border: 1px solid rgba(230, 174, 185, .26) !important;
+  color: #77626a !important;
+  background: rgba(255, 248, 250, .9) !important;
+  box-shadow: 0 9px 24px rgba(148, 94, 108, .065) !important;
+}
+
+.nx-generation-page .nx-private-note::before {
+  content: '◌';
+  display: inline-block;
+  margin-inline-end: 6px;
+  color: #d992a4;
+  font-size: 12px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Holographic discovery artwork                                               */
+/* -------------------------------------------------------------------------- */
+
+.nx-generation-page .nx-panel--signal>.nx-step-art {
+  grid-area: visual;
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 540px;
+  align-self: stretch;
+  transform: none !important;
+}
+
+.nx-generation-page .nx-panel--signal>.nx-step-art::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  width: min(94%, 470px);
+  height: 92px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(92, 189, 185, .17);
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at center, rgba(92, 189, 185, .18), rgba(92, 189, 185, .05) 40%, transparent 71%);
+  box-shadow:
+    0 0 0 14px rgba(92, 189, 185, .025),
+    inset 0 0 32px rgba(92, 189, 185, .08);
+}
+
+.nx-generation-page .nx-panel--signal>.nx-step-art::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 79px;
+  width: min(68%, 330px);
+  height: 24px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(92, 189, 185, .4), rgba(92, 189, 185, .10) 45%, transparent 74%);
+  filter: blur(4px);
+  animation: nxSignalPlatformGlow 3.4s ease-in-out infinite;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__wash--one {
+  width: 270px;
+  height: 270px;
+  right: -45px;
+  top: 42px;
+  background: rgba(92, 189, 185, .13);
+  filter: blur(38px);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__wash--two {
+  width: 235px;
+  height: 235px;
+  left: -40px;
+  bottom: 75px;
+  background: rgba(230, 174, 185, .115);
+  filter: blur(42px);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__spark {
+  z-index: 8;
+  font-size: 18px;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__spark--one {
+  top: 46px;
+  right: 40px;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__spark--two {
+  left: 10px;
+  bottom: 112px;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__canvas {
+  inset: 18px 0 16px !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 38px !important;
+  background:
+    linear-gradient(rgba(92, 189, 185, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 189, 185, .045) 1px, transparent 1px),
+    radial-gradient(circle at 50% 48%, rgba(92, 189, 185, .09), transparent 40%),
+    radial-gradient(circle at 82% 17%, rgba(230, 174, 185, .09), transparent 26%),
+    rgba(255, 255, 255, .20) !important;
+  background-size: 22px 22px, 22px 22px, auto, auto, auto !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  transform: none !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__canvas::before,
+.nx-generation-page .nx-panel--signal .nx-step-art__canvas::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__canvas::before {
+  width: 360px;
+  height: 360px;
+  border: 1px solid rgba(92, 189, 185, .105);
+  box-shadow:
+    0 0 0 32px rgba(92, 189, 185, .025),
+    0 0 0 68px rgba(230, 174, 185, .018);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__canvas::after {
+  width: 410px;
+  height: 235px;
+  border: 1px dashed rgba(92, 189, 185, .18);
+  transform: translate(-50%, -50%) rotate(-12deg);
+  animation: nxSignalOrbitWide 15s linear infinite;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__meta {
+  top: 24px;
+  left: 24px;
+  right: 24px;
+  z-index: 8;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__meta>span {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, var(--nx-signal-aqua-bright), var(--nx-signal-aqua-deep));
+  box-shadow: 0 12px 26px rgba(47, 143, 137, .22);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__meta small {
+  color: #6d8a85;
+  font-size: 8px;
+  letter-spacing: .15em;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__scene {
+  left: 50% !important;
+  top: 47% !important;
+  width: 390px !important;
+  height: 340px !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__scene::before,
+.nx-generation-page .nx-panel--signal .nx-step-art__scene::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__scene::before {
+  width: 245px;
+  height: 245px;
+  border: 1px solid rgba(92, 189, 185, .2);
+  transform: translate(-50%, -50%) rotate(18deg) skewX(-8deg);
+  box-shadow: 0 0 38px rgba(92, 189, 185, .035);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__scene::after {
+  width: 305px;
+  height: 175px;
+  border: 1px solid rgba(230, 174, 185, .22);
+  transform: translate(-50%, -50%) rotate(-17deg);
+  animation: nxSignalOrbitSoft 12s ease-in-out infinite;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__core {
+  left: 50% !important;
+  top: 50% !important;
+  width: 116px !important;
+  height: 116px !important;
+  border: 1px solid rgba(255, 255, 255, .95) !important;
+  border-radius: 50% !important;
+  color: #fff !important;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, .94), transparent 12%),
+    radial-gradient(circle at 45% 36%, #7ad8d2 0%, #54bbb6 46%, #2f8f89 100%) !important;
+  box-shadow:
+    0 18px 45px rgba(47, 143, 137, .25),
+    0 0 0 10px rgba(92, 189, 185, .08),
+    0 0 0 23px rgba(92, 189, 185, .035),
+    inset 0 0 26px rgba(255, 255, 255, .24) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__core::before,
+.nx-generation-page .nx-panel--signal .nx-step-art__core::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__core::before {
+  width: 146px;
+  height: 146px;
+  border: 1px solid rgba(92, 189, 185, .26);
+  animation: nxSignalCoreRing 3.2s ease-in-out infinite;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__core::after {
+  width: 175px;
+  height: 88px;
+  border: 1px solid rgba(92, 189, 185, .28);
+  transform: translate(-50%, -50%) rotate(-13deg);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__core svg {
+  width: 48px;
+  height: 48px;
+  filter: drop-shadow(0 4px 10px rgba(22, 102, 97, .18));
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__connector {
+  z-index: 1;
+  height: 1px !important;
+  border-radius: 999px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(92, 189, 185, .22), rgba(92, 189, 185, .62), rgba(230, 174, 185, .5)) !important;
+  box-shadow: 0 0 12px rgba(92, 189, 185, .12);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__connector--a {
+  width: 120px !important;
+  left: 34px !important;
+  top: 91px !important;
+  transform: rotate(18deg) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__connector--b {
+  width: 132px !important;
+  left: 236px !important;
+  top: 122px !important;
+  transform: rotate(-17deg) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__connector--c {
+  width: 118px !important;
+  left: 225px !important;
+  top: 232px !important;
+  transform: rotate(18deg) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__node {
+  z-index: 5;
+  width: 12px !important;
+  height: 12px !important;
+  border: 3px solid rgba(255, 255, 255, .95) !important;
+  border-radius: 50% !important;
+  background: var(--nx-signal-aqua) !important;
+  box-shadow: 0 0 0 5px rgba(92, 189, 185, .08), 0 0 18px rgba(92, 189, 185, .2) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__node--a {
+  left: 27px !important;
+  top: 78px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__node--b {
+  right: 20px !important;
+  top: 74px !important;
+  background: var(--nx-signal-rose) !important;
+  box-shadow: 0 0 0 5px rgba(230, 174, 185, .08), 0 0 18px rgba(230, 174, 185, .2) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__node--c {
+  right: 36px !important;
+  bottom: 72px !important;
+  background: #88c8bd !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__chip {
+  z-index: 10;
+  min-height: 40px;
+  padding: 0 12px !important;
+  gap: 7px;
+  border: 1px solid rgba(92, 189, 185, .18) !important;
+  border-radius: 14px !important;
+  color: #526b66 !important;
+  background: rgba(255, 255, 255, .93) !important;
+  box-shadow:
+    0 12px 30px rgba(51, 88, 83, .085),
+    inset 0 1px 0 rgba(255, 255, 255, .96) !important;
+  backdrop-filter: blur(12px);
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  animation: nxSignalChipFloat 4.8s ease-in-out infinite;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__chip i {
+  width: 7px;
+  height: 7px;
+  background: var(--nx-signal-aqua) !important;
+  box-shadow: 0 0 0 4px rgba(92, 189, 185, .08);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__chip--1 {
+  left: 8px !important;
+  top: 165px !important;
+  transform: rotate(-2deg) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__chip--2 {
+  right: 2px !important;
+  top: 178px !important;
+  transform: rotate(2deg) !important;
+  animation-delay: .7s;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__chip--3 {
+  right: 36px !important;
+  bottom: 91px !important;
+  transform: rotate(-1deg) !important;
+  animation-delay: 1.35s;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__footer {
+  left: 28px !important;
+  right: 28px !important;
+  bottom: 18px !important;
+  z-index: 9;
+  padding-top: 11px;
+  border-top: 1px solid rgba(92, 189, 185, .09);
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__footer strong {
+  color: #3e5b56 !important;
+  font-size: 11px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__footer small {
+  color: #8da09b !important;
+  font-size: 8px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__status {
+  color: #4e827c !important;
+  font-size: 8px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-step-art__status i {
+  background: var(--nx-signal-aqua) !important;
+  box-shadow: 0 0 0 4px rgba(92, 189, 185, .1);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Signal input                                                                */
+/* -------------------------------------------------------------------------- */
+
+.nx-generation-page .nx-panel--signal .nx-speech-field {
+  grid-area: speech;
+  margin-top: 4px !important;
+  padding: 0 !important;
+  overflow: hidden;
+  border: 1px solid rgba(92, 189, 185, .21) !important;
+  border-radius: 23px !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(92, 189, 185, .045), transparent 33%),
+    linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(255, 249, 250, .93)) !important;
+  box-shadow:
+    0 14px 34px rgba(47, 87, 82, .055),
+    inset 0 1px 0 rgba(255, 255, 255, .96) !important;
+  transition: border-color .22s ease, box-shadow .22s ease, transform .22s ease;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field:focus-within {
+  border-color: rgba(92, 189, 185, .55) !important;
+  box-shadow:
+    0 18px 40px rgba(47, 143, 137, .09),
+    0 0 0 4px rgba(92, 189, 185, .06) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field textarea {
+  min-height: 190px !important;
+  padding: 19px 20px 76px !important;
+  color: #405753;
+  font-size: 14px;
+  line-height: 1.67;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field textarea::placeholder {
+  color: #9aa8b6;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field__actions {
+  left: 16px !important;
+  right: 86px !important;
+  bottom: 15px !important;
+  gap: 9px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-voice-button,
+.nx-generation-page .nx-panel--signal .nx-domain-shortcut {
+  min-height: 42px !important;
+  padding: 0 14px !important;
+  border: 1px solid rgba(92, 189, 185, .16) !important;
+  border-radius: 13px !important;
+  color: #2d6f69 !important;
+  background: rgba(255, 255, 255, .92) !important;
+  box-shadow: 0 7px 18px rgba(47, 87, 82, .045) !important;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-voice-button:hover:not(:disabled),
+.nx-generation-page .nx-panel--signal .nx-domain-shortcut:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(92, 189, 185, .38) !important;
+  box-shadow: 0 10px 22px rgba(47, 143, 137, .08) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-domain-shortcut {
+  background: linear-gradient(145deg, rgba(238, 249, 247, .96), rgba(255, 249, 250, .94)) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-voice-button.is-listening {
+  color: #fff !important;
+  background: linear-gradient(145deg, var(--nx-signal-rose), var(--nx-signal-aqua-deep)) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field>small {
+  right: 18px !important;
+  bottom: 27px !important;
+  color: #8d9d99 !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Secondary discovery choices                                                 */
+/* -------------------------------------------------------------------------- */
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip {
+  grid-area: auto;
+  margin-top: 0 !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal {
+  grid-area: personal;
+  margin-top: 0 !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip button,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button {
+  min-height: 68px !important;
+  padding: 12px 14px !important;
+  border: 1px solid rgba(92, 189, 185, .14) !important;
+  border-radius: 17px !important;
+  background: rgba(255, 255, 255, .72) !important;
+  box-shadow: none !important;
+  transition: transform .2s ease, border-color .2s ease, background .2s ease, box-shadow .2s ease !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip button:hover:not(:disabled),
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(92, 189, 185, .34) !important;
+  background: linear-gradient(145deg, rgba(239, 249, 247, .86), rgba(255, 248, 250, .9)) !important;
+  box-shadow: 0 10px 22px rgba(47, 119, 116, .055) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip.is-ready button {
+  border-color: rgba(92, 189, 185, .27) !important;
+  background: linear-gradient(145deg, rgba(236, 249, 247, .92), rgba(255, 251, 251, .93)) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip button>svg,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button>svg {
+  width: 38px !important;
+  height: 38px !important;
+  padding: 9px;
+  border-radius: 12px;
+  color: #2f8f89 !important;
+  background: rgba(92, 189, 185, .1) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button>svg {
+  color: #bd7082 !important;
+  background: rgba(230, 174, 185, .13) !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip b,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal b {
+  color: #42605b !important;
+  font-size: 12px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip small,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal small {
+  margin-top: 3px;
+  color: #879893 !important;
+  font-size: 10px !important;
+  line-height: 1.45 !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip button>span,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button>span {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #3c8e88;
+  background: rgba(92, 189, 185, .08);
+}
+
+.nx-generation-page .nx-panel--signal .nx-signal-tips {
+  grid-area: tips;
+  align-self: end;
+  margin-top: 1px !important;
+  gap: 7px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-signal-tips span {
+  position: relative;
+  padding: 8px 10px 8px 25px !important;
+  border: 1px solid rgba(92, 189, 185, .1);
+  color: #6e817d !important;
+  background: rgba(247, 251, 250, .74) !important;
+  font-size: 9.5px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-signal-tips span::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--nx-signal-aqua);
+  box-shadow: 0 0 0 4px rgba(92, 189, 185, .07);
+}
+
+.nx-generation-page .nx-panel--signal .nx-signal-tips span:nth-child(2)::before {
+  background: var(--nx-signal-rose);
+  box-shadow: 0 0 0 4px rgba(230, 174, 185, .075);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Footer actions                                                              */
+/* -------------------------------------------------------------------------- */
+
+.nx-generation-page .nx-wizard-actions {
+  padding: 18px 30px !important;
+  border-top: 1px solid rgba(92, 189, 185, .1) !important;
+  background: linear-gradient(90deg, rgba(255, 255, 255, .91), rgba(252, 249, 250, .82), rgba(247, 252, 251, .88)) !important;
+  backdrop-filter: blur(14px);
+}
+
+.nx-generation-page .nx-back-button,
+.nx-generation-page .nx-next-button {
+  border-radius: 14px !important;
+}
+
+.nx-generation-page .nx-next-button {
+  background: linear-gradient(135deg, #61c6c1, #3ea49f 57%, #dca2b2 128%) !important;
+  box-shadow: 0 13px 28px rgba(47, 143, 137, .2) !important;
+}
+
+.nx-generation-page .nx-next-button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 17px 32px rgba(47, 143, 137, .25) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* RTL                                                                         */
+/* -------------------------------------------------------------------------- */
+
+html.vox-user-rtl .nx-generation-page .nx-panel--signal {
+  grid-template-columns: minmax(390px, .92fr) minmax(0, 1.08fr);
+  grid-template-areas:
+    'visual head'
+    'visual speech'
+    'visual auto'
+    'visual personal'
+    'visual tips';
+}
+
+html.vox-user-rtl .nx-generation-page .nx-private-note {
+  right: auto !important;
+  left: 28px !important;
+}
+
+html.vox-user-rtl .nx-generation-page .nx-panel--signal .nx-speech-field__actions {
+  right: 16px !important;
+  left: 86px !important;
+  justify-content: flex-start !important;
+}
+
+html.vox-user-rtl .nx-generation-page .nx-panel--signal .nx-speech-field>small {
+  right: auto !important;
+  left: 18px !important;
+}
+
+html.vox-user-rtl .nx-generation-page .nx-panel--signal .nx-signal-tips span {
+  padding: 8px 25px 8px 10px !important;
+}
+
+html.vox-user-rtl .nx-generation-page .nx-panel--signal .nx-signal-tips span::before {
+  left: auto;
+  right: 10px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Dark mode — same Voxidence aqua / rose identity                             */
+/* -------------------------------------------------------------------------- */
+
+html.vox-user-dark .nx-generation-page .nx-generation-card {
+  border-color: rgba(104, 200, 195, .17) !important;
+  background:
+    radial-gradient(circle at 95% 0%, rgba(92, 189, 185, .10), transparent 29%),
+    radial-gradient(circle at 3% 100%, rgba(230, 174, 185, .075), transparent 28%),
+    linear-gradient(145deg, #111d1a, #14231f 56%, #111d1a) !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-step-rail {
+  border-color: rgba(104, 200, 195, .12);
+  background: rgba(16, 29, 26, .64);
+}
+
+html.vox-user-dark .nx-generation-page .nx-step.is-current {
+  background: linear-gradient(145deg, rgba(27, 46, 41, .96), rgba(22, 39, 35, .95)) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-panel__head h2,
+html.vox-user-dark .nx-generation-page .nx-step b {
+  color: #edf8f5 !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-panel__head p,
+html.vox-user-dark .nx-generation-page .nx-step small {
+  color: #a6b9b4 !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-step-art__canvas {
+  background:
+    linear-gradient(rgba(104, 200, 195, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(104, 200, 195, .055) 1px, transparent 1px),
+    radial-gradient(circle at 50% 48%, rgba(92, 189, 185, .09), transparent 40%),
+    radial-gradient(circle at 82% 17%, rgba(230, 174, 185, .075), transparent 26%),
+    rgba(15, 28, 25, .22) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-step-art__chip,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-speech-field,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-auto-detect-skip button,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button {
+  border-color: rgba(104, 200, 195, .18) !important;
+  background: linear-gradient(145deg, rgba(24, 42, 37, .95), rgba(18, 33, 29, .96)) !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-step-art__chip,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-step-art__footer strong,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-auto-detect-skip b,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal b {
+  color: #e7f3f0 !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-speech-field textarea {
+  color: #eef7f4 !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-speech-field textarea::placeholder {
+  color: #829792 !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-voice-button,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-domain-shortcut {
+  color: #dcefeb !important;
+  border-color: rgba(104, 200, 195, .18) !important;
+  background: rgba(25, 43, 38, .92) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-private-note {
+  color: #e8d5dc !important;
+  border-color: rgba(230, 174, 185, .19) !important;
+  background: rgba(54, 34, 41, .82) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-signal-tips span {
+  color: #afc1bd !important;
+  border-color: rgba(104, 200, 195, .12) !important;
+  background: rgba(21, 38, 33, .74) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-wizard-actions {
+  background: linear-gradient(90deg, rgba(16, 29, 26, .96), rgba(20, 35, 31, .94)) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Responsive                                                                  */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 1120px) {
+  .nx-generation-page .nx-panel--signal {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    column-gap: 26px;
+    padding-inline: 30px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal>.nx-step-art {
+    min-height: 510px;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__scene {
+    transform: translate(-50%, -50%) scale(.88) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .nx-generation-page .nx-step-rail {
+    width: calc(100% - 22px);
+    overflow-x: auto;
+    grid-template-columns: repeat(4, minmax(190px, 1fr));
+    scrollbar-width: none;
+  }
+
+  .nx-generation-page .nx-step-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nx-generation-page .nx-panel--signal,
+  html.vox-user-rtl .nx-generation-page .nx-panel--signal {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'head'
+      'visual'
+      'speech'
+      'auto'
+      'personal'
+      'tips';
+    padding: 32px 26px 24px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal>.nx-step-art {
+    min-height: 390px;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__canvas::before {
+    width: 310px;
+    height: 310px;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__canvas::after {
+    width: 350px;
+    height: 210px;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__scene {
+    top: 48% !important;
+    transform: translate(-50%, -50%) scale(.82) !important;
+  }
+
+  .nx-generation-page .nx-private-note,
+  html.vox-user-rtl .nx-generation-page .nx-private-note {
+    top: 24px !important;
+    right: 24px !important;
+    left: auto !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .nx-generation-page .nx-generation-card {
+    width: calc(100% - 12px);
+    border-radius: 26px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal,
+  html.vox-user-rtl .nx-generation-page .nx-panel--signal {
+    padding: 24px 18px 18px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-panel__head h2 {
+    padding-top: 36px;
+    font-size: clamp(30px, 9vw, 39px) !important;
+  }
+
+  .nx-generation-page .nx-private-note,
+  html.vox-user-rtl .nx-generation-page .nx-private-note {
+    top: 18px !important;
+    right: 18px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal>.nx-step-art {
+    min-height: 330px;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__canvas {
+    inset: 10px -16px 8px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__scene {
+    transform: translate(-50%, -50%) scale(.68) !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__canvas::before {
+    width: 250px;
+    height: 250px;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__canvas::after {
+    width: 290px;
+    height: 170px;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__chip {
+    transform: scale(.9) !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__chip--1 {
+    left: 0 !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__chip--2 {
+    right: -4px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-step-art__footer {
+    left: 12px !important;
+    right: 12px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-speech-field textarea {
+    min-height: 230px !important;
+    padding-bottom: 124px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-speech-field__actions,
+  html.vox-user-rtl .nx-generation-page .nx-panel--signal .nx-speech-field__actions {
+    left: 13px !important;
+    right: 13px !important;
+    bottom: 48px !important;
+    display: grid !important;
+    grid-template-columns: 1fr;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-voice-button,
+  .nx-generation-page .nx-panel--signal .nx-domain-shortcut {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-speech-field>small,
+  html.vox-user-rtl .nx-generation-page .nx-panel--signal .nx-speech-field>small {
+    right: 16px !important;
+    left: auto !important;
+    bottom: 18px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-signal-tips {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .nx-generation-page .nx-wizard-actions {
+    padding: 14px 16px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .nx-generation-page .nx-step.is-current>span::before,
+  .nx-generation-page .nx-panel--signal>.nx-step-art::after,
+  .nx-generation-page .nx-panel--signal .nx-step-art__canvas::after,
+  .nx-generation-page .nx-panel--signal .nx-step-art__scene::after,
+  .nx-generation-page .nx-panel--signal .nx-step-art__core::before,
+  .nx-generation-page .nx-panel--signal .nx-step-art__chip {
+    animation: none !important;
+  }
+}
+
+@keyframes nxSignalStepPulse {
+
+  0%,
+  100% {
+    transform: scale(.9);
+    opacity: .45;
+  }
+
+  50% {
+    transform: scale(1.08);
+    opacity: .9;
+  }
+}
+
+@keyframes nxSignalPlatformGlow {
+
+  0%,
+  100% {
+    opacity: .7;
+    transform: translateX(-50%) scaleX(.92);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1.06);
+  }
+}
+
+@keyframes nxSignalOrbitWide {
+  from {
+    transform: translate(-50%, -50%) rotate(-12deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(348deg);
+  }
+}
+
+@keyframes nxSignalOrbitSoft {
+
+  0%,
+  100% {
+    transform: translate(-50%, -50%) rotate(-17deg) scaleX(1);
+  }
+
+  50% {
+    transform: translate(-50%, -50%) rotate(8deg) scaleX(.94);
+  }
+}
+
+@keyframes nxSignalCoreRing {
+
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(.94);
+    opacity: .55;
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: .9;
+  }
+}
+
+@keyframes nxSignalChipFloat {
+
+  0%,
+  100% {
+    translate: 0 0;
+  }
+
+  50% {
+    translate: 0 -5px;
+  }
+}
+
+/* ========================================================================== */
+/* Generate / Signal — evidence-library-inspired discovery canvas              */
+/* Visual-only enhancement. Existing wizard logic and actions remain intact.  */
+/* ========================================================================== */
+
+.nx-generation-page .nx-step-rail {
+  width: min(1380px, calc(100% - 42px));
+  margin: 22px auto 24px;
+  padding: 0 30px !important;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  overflow: visible;
+}
+
+.nx-generation-page .nx-step {
+  position: relative;
+  min-height: 72px;
+  padding: 10px 16px 10px 11px !important;
+  border: 1px solid rgba(92, 189, 185, .13) !important;
+  border-radius: 20px !important;
+  background: rgba(255, 255, 255, .58) !important;
+  box-shadow: 0 10px 30px rgba(48, 73, 69, .035);
+  backdrop-filter: blur(12px);
+}
+
+.nx-generation-page .nx-step.is-current::before {
+  content: '✦';
+  position: absolute;
+  left: -43px;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 1px solid rgba(255, 255, 255, .92);
+  border-radius: 17px;
+  color: #fff;
+  background: linear-gradient(145deg, #73d6d0, #3fa8a3);
+  box-shadow:
+    0 13px 29px rgba(47, 143, 137, .24),
+    0 0 0 8px rgba(92, 189, 185, .075),
+    0 0 36px rgba(92, 189, 185, .18);
+  font-size: 21px;
+  line-height: 1;
+  z-index: 4;
+}
+
+html.vox-user-rtl .nx-generation-page .nx-step.is-current::before {
+  left: auto;
+  right: -43px;
+}
+
+.nx-generation-page .nx-step.is-current {
+  border-color: rgba(92, 189, 185, .27) !important;
+  background:
+    radial-gradient(circle at 9% 50%, rgba(92, 189, 185, .15), transparent 43%),
+    linear-gradient(135deg, rgba(255, 255, 255, .97), rgba(251, 248, 249, .92)) !important;
+  box-shadow:
+    0 18px 42px rgba(47, 119, 116, .09),
+    inset 0 1px 0 rgba(255, 255, 255, .98) !important;
+}
+
+.nx-generation-page .nx-generation-card {
+  width: min(1460px, calc(100% - 38px));
+  border-radius: 30px !important;
+  box-shadow:
+    0 36px 90px rgba(48, 73, 69, .10),
+    0 10px 32px rgba(92, 189, 185, .05),
+    inset 0 1px 0 rgba(255, 255, 255, .98) !important;
+}
+
+.nx-generation-page .nx-panel--signal {
+  min-height: 680px !important;
+  padding: 40px 50px 28px !important;
+  display: grid;
+  grid-template-columns: minmax(0, .5fr) minmax(0, .5fr) minmax(455px, 1.02fr);
+  grid-template-areas:
+    'head head visual'
+    'speech speech visual'
+    'auto personal visual'
+    'tips tips visual';
+  grid-template-rows: auto auto auto 1fr;
+  column-gap: 14px;
+  row-gap: 14px;
+  overflow: visible !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head {
+  grid-area: head;
+  padding-inline-end: 8px;
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head h2 {
+  max-width: 690px;
+  margin-top: 18px !important;
+  font-size: clamp(38px, 3vw, 50px) !important;
+  line-height: 1.02 !important;
+  letter-spacing: -.047em !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head p {
+  max-width: 690px;
+  font-size: 14.5px;
+  line-height: 1.64;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field {
+  grid-area: speech;
+  min-height: 222px;
+  margin-top: 5px !important;
+  border-radius: 21px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field textarea {
+  min-height: 220px !important;
+  padding: 20px 20px 76px !important;
+  font-size: 14px;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip {
+  grid-area: auto;
+}
+
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal {
+  grid-area: personal;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip button,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button {
+  height: 100%;
+  min-height: 84px !important;
+  padding: 12px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip b,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal b {
+  font-size: 11.5px !important;
+  line-height: 1.35;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip small,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal small {
+  font-size: 9.5px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-signal-tips {
+  grid-area: tips;
+  align-self: start;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-signal-tips span {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  line-height: 1.35;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Signal discovery illustration                                               */
+/* -------------------------------------------------------------------------- */
+
+.nx-signal-visual {
+  grid-area: visual;
+  position: relative;
+  min-width: 0;
+  min-height: 575px;
+  margin-inline-start: 34px;
+  align-self: stretch;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.nx-signal-visual__glow {
+  position: absolute;
+  z-index: -2;
+  border-radius: 50%;
+  filter: blur(30px);
+  pointer-events: none;
+}
+
+.nx-signal-visual__glow--aqua {
+  width: 360px;
+  height: 360px;
+  right: -30px;
+  top: 36px;
+  background: rgba(92, 189, 185, .15);
+}
+
+.nx-signal-visual__glow--rose {
+  width: 260px;
+  height: 260px;
+  left: -32px;
+  bottom: 42px;
+  background: rgba(230, 174, 185, .11);
+}
+
+.nx-signal-visual__surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid rgba(92, 189, 185, .08);
+  border-radius: 38px;
+  background:
+    linear-gradient(rgba(92, 189, 185, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 189, 185, .045) 1px, transparent 1px),
+    radial-gradient(circle at 54% 50%, rgba(92, 189, 185, .13), transparent 26%),
+    radial-gradient(circle at 85% 12%, rgba(230, 174, 185, .10), transparent 25%),
+    linear-gradient(145deg, rgba(255, 255, 255, .32), rgba(244, 253, 251, .22));
+  background-size: 24px 24px, 24px 24px, auto, auto, auto;
+}
+
+.nx-signal-visual__surface::before {
+  content: '';
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  left: 50%;
+  top: 49%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(92, 189, 185, .07);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 34px rgba(92, 189, 185, .018),
+    0 0 0 78px rgba(230, 174, 185, .014);
+}
+
+.nx-signal-orbit {
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.nx-signal-orbit--one {
+  width: 430px;
+  height: 230px;
+  border: 1px solid rgba(92, 189, 185, .18);
+  transform: translate(-50%, -50%) rotate(-14deg);
+  animation: nxSignalOrbitOne 18s linear infinite;
+}
+
+.nx-signal-orbit--two {
+  width: 370px;
+  height: 310px;
+  border: 1px solid rgba(92, 189, 185, .12);
+  transform: translate(-50%, -50%) rotate(24deg);
+  animation: nxSignalOrbitTwo 16s linear infinite reverse;
+}
+
+.nx-signal-orbit--three {
+  width: 300px;
+  height: 300px;
+  border: 1px dashed rgba(230, 174, 185, .23);
+  animation: nxSignalOrbitThree 13s linear infinite;
+}
+
+.nx-signal-dot {
+  position: absolute;
+  z-index: 2;
+  width: 9px;
+  height: 9px;
+  border: 3px solid rgba(255, 255, 255, .94);
+  border-radius: 50%;
+  background: #61c6c1;
+  box-shadow: 0 0 0 5px rgba(92, 189, 185, .08), 0 0 18px rgba(92, 189, 185, .2);
+}
+
+.nx-signal-dot--1 {
+  left: 11%;
+  top: 28%;
+}
+
+.nx-signal-dot--2 {
+  right: 10%;
+  top: 21%;
+}
+
+.nx-signal-dot--3 {
+  right: 17%;
+  top: 51%;
+  background: #e6aeb9;
+  box-shadow: 0 0 0 5px rgba(230, 174, 185, .08), 0 0 18px rgba(230, 174, 185, .2);
+}
+
+.nx-signal-dot--4 {
+  left: 18%;
+  bottom: 19%;
+}
+
+.nx-signal-dot--5 {
+  right: 28%;
+  bottom: 13%;
+}
+
+.nx-signal-dot--6 {
+  left: 47%;
+  top: 11%;
+  width: 7px;
+  height: 7px;
+}
+
+.nx-signal-float-card,
+.nx-signal-chip {
+  position: absolute;
+  z-index: 8;
+  border: 1px solid rgba(92, 189, 185, .15);
+  background: rgba(255, 255, 255, .89);
+  box-shadow:
+    0 16px 38px rgba(48, 73, 69, .085),
+    inset 0 1px 0 rgba(255, 255, 255, .95);
+  backdrop-filter: blur(14px);
+}
+
+.nx-signal-float-card {
+  border-radius: 18px;
+  color: #506d68;
+}
+
+.nx-signal-float-card strong,
+.nx-signal-float-card small {
+  display: block;
+}
+
+.nx-signal-float-card strong {
+  color: #315e59;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.nx-signal-float-card small {
+  margin-top: 3px;
+  color: #91a19d;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.nx-signal-float-card--human {
+  left: 8%;
+  top: 10%;
+  width: 188px;
+  padding: 14px 16px 11px;
+}
+
+.nx-signal-float-card--human svg {
+  width: 100%;
+  height: 46px;
+  margin-top: 8px;
+  overflow: visible;
+}
+
+.nx-signal-float-card--human svg path {
+  fill: none;
+  stroke: #64c9c3;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 3px 5px rgba(92, 189, 185, .12));
+}
+
+.nx-signal-float-card--who {
+  right: 6%;
+  top: 8%;
+  width: 150px;
+  padding: 15px 16px;
+}
+
+.nx-signal-who-row {
+  display: grid;
+  grid-template-columns: 10px 1fr .7fr;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.nx-signal-who-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #61c6c1;
+}
+
+.nx-signal-who-row:nth-of-type(2) i {
+  background: #e6aeb9;
+}
+
+.nx-signal-who-row b {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(92, 189, 185, .13);
+}
+
+.nx-signal-who-row b:last-child {
+  background: rgba(230, 174, 185, .14);
+}
+
+.nx-signal-chip {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: #4d6f69;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.nx-signal-chip--context {
+  left: 2%;
+  top: 40%;
+}
+
+.nx-signal-chip--context svg {
+  color: #47aba5;
+}
+
+.nx-signal-chip--friction {
+  right: 1%;
+  top: 37%;
+}
+
+.nx-signal-chip--friction svg {
+  color: #d8899b;
+}
+
+.nx-signal-chip--live {
+  right: 7%;
+  bottom: 30%;
+  min-width: 72px;
+  justify-content: center;
+  letter-spacing: .06em;
+}
+
+.nx-signal-chip--live i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #49b8b2;
+  box-shadow: 0 0 0 5px rgba(73, 184, 178, .08);
+}
+
+.nx-signal-reactor {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 48%;
+  width: 270px;
+  height: 270px;
+  transform: translate(-50%, -50%);
+}
+
+.nx-signal-reactor__beam {
+  position: absolute;
+  left: 50%;
+  top: 49%;
+  width: 170px;
+  height: 170px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(92, 189, 185, .22), rgba(92, 189, 185, .05) 42%, transparent 70%);
+  filter: blur(5px);
+  animation: nxSignalBeam 3.6s ease-in-out infinite;
+}
+
+.nx-signal-reactor__core {
+  position: absolute;
+  z-index: 6;
+  left: calc(50% - 52.5px);
+  top: calc(32% - 52.5px);
+  width: 105px;
+  height: 105px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .95);
+  border-radius: 50%;
+  color: #fff;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, .92), transparent 12%),
+    linear-gradient(145deg, #78d9d3, #55bdb7 52%, #2f8f89);
+  box-shadow:
+    0 22px 48px rgba(47, 143, 137, .25),
+    0 0 0 10px rgba(92, 189, 185, .08),
+    0 0 0 23px rgba(92, 189, 185, .035),
+    inset 0 0 28px rgba(255, 255, 255, .22);
+}
+
+.nx-signal-reactor__ring {
+  position: absolute;
+  left: 50%;
+  border: 1px solid rgba(92, 189, 185, .3);
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .76), rgba(92, 189, 185, .16));
+  box-shadow: 0 10px 24px rgba(47, 143, 137, .09), inset 0 0 20px rgba(255, 255, 255, .5);
+}
+
+.nx-signal-reactor__ring--back {
+  bottom: 49px;
+  width: 178px;
+  height: 45px;
+}
+
+.nx-signal-reactor__ring--mid {
+  bottom: 33px;
+  width: 210px;
+  height: 50px;
+}
+
+.nx-signal-reactor__ring--front {
+  bottom: 14px;
+  width: 238px;
+  height: 56px;
+  border-color: rgba(92, 189, 185, .22);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .82), rgba(92, 189, 185, .11));
+}
+
+.nx-signal-float-card--map {
+  left: calc(50% - 102.5px);
+  bottom: 5%;
+  width: 205px;
+  min-height: 116px;
+  padding: 14px 16px 12px;
+}
+
+.nx-signal-map-graph {
+  position: relative;
+  height: 55px;
+  margin-top: 8px;
+}
+
+.nx-signal-map-node {
+  position: absolute;
+  z-index: 3;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #61c6c1;
+  box-shadow: 0 0 0 3px rgba(92, 189, 185, .08);
+}
+
+.nx-signal-map-node--1 {
+  left: 10%;
+  bottom: 7%;
+}
+
+.nx-signal-map-node--2 {
+  left: 38%;
+  top: 13%;
+}
+
+.nx-signal-map-node--3 {
+  right: 31%;
+  bottom: 6%;
+}
+
+.nx-signal-map-node--4 {
+  right: 7%;
+  top: 4%;
+}
+
+.nx-signal-map-line {
+  position: absolute;
+  z-index: 1;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(92, 189, 185, .18), rgba(92, 189, 185, .5));
+}
+
+.nx-signal-map-line--1 {
+  left: 14%;
+  bottom: 17%;
+  width: 62px;
+  transform: rotate(-30deg);
+}
+
+.nx-signal-map-line--2 {
+  left: 42%;
+  top: 23%;
+  width: 54px;
+  transform: rotate(39deg);
+}
+
+.nx-signal-map-line--3 {
+  right: 9%;
+  top: 16%;
+  width: 54px;
+  transform-origin: right center;
+  transform: rotate(-31deg);
+}
+
+/* -------------------------------------------------------------------------- */
+/* RTL + dark                                                                  */
+/* -------------------------------------------------------------------------- */
+
+html.vox-user-rtl .nx-generation-page .nx-panel--signal {
+  grid-template-columns: minmax(455px, 1.02fr) minmax(0, .5fr) minmax(0, .5fr);
+  grid-template-areas:
+    'visual head head'
+    'visual speech speech'
+    'visual personal auto'
+    'visual tips tips';
+}
+
+html.vox-user-rtl .nx-signal-visual {
+  margin-inline-start: 0;
+  margin-inline-end: 34px;
+}
+
+html.vox-user-dark .nx-signal-visual__surface {
+  border-color: rgba(104, 200, 195, .11);
+  background:
+    linear-gradient(rgba(104, 200, 195, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(104, 200, 195, .055) 1px, transparent 1px),
+    radial-gradient(circle at 54% 50%, rgba(92, 189, 185, .11), transparent 26%),
+    radial-gradient(circle at 85% 12%, rgba(230, 174, 185, .07), transparent 25%),
+    linear-gradient(145deg, rgba(18, 34, 30, .50), rgba(16, 30, 27, .22));
+  background-size: 24px 24px, 24px 24px, auto, auto, auto;
+}
+
+html.vox-user-dark .nx-signal-float-card,
+html.vox-user-dark .nx-signal-chip {
+  border-color: rgba(104, 200, 195, .18);
+  background: rgba(23, 41, 36, .88);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+html.vox-user-dark .nx-signal-float-card strong,
+html.vox-user-dark .nx-signal-chip {
+  color: #e7f5f1;
+}
+
+html.vox-user-dark .nx-signal-float-card small {
+  color: #9db3ad;
+}
+
+html.vox-user-dark .nx-signal-who-row b {
+  background: rgba(104, 200, 195, .14);
+}
+
+html.vox-user-dark .nx-signal-who-row b:last-child {
+  background: rgba(230, 174, 185, .12);
+}
+
+html.vox-user-dark .nx-generation-page .nx-step {
+  border-color: rgba(104, 200, 195, .10) !important;
+  background: rgba(17, 31, 27, .50) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-step.is-current {
+  border-color: rgba(104, 200, 195, .22) !important;
+  background: linear-gradient(145deg, rgba(27, 46, 41, .96), rgba(22, 39, 35, .95)) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Responsive                                                                  */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 1220px) {
+  .nx-generation-page .nx-panel--signal {
+    grid-template-columns: minmax(0, .5fr) minmax(0, .5fr) minmax(395px, .9fr);
+    padding-inline: 34px !important;
+  }
+
+  html.vox-user-rtl .nx-generation-page .nx-panel--signal {
+    grid-template-columns: minmax(395px, .9fr) minmax(0, .5fr) minmax(0, .5fr);
+  }
+
+  .nx-signal-visual {
+    margin-inline-start: 22px;
+  }
+
+  html.vox-user-rtl .nx-signal-visual {
+    margin-inline-start: 0;
+    margin-inline-end: 22px;
+  }
+
+  .nx-signal-visual__surface {
+    transform: scale(.92);
+    transform-origin: center;
+  }
+}
+
+@media (max-width: 900px) {
+  .nx-generation-page .nx-step-rail {
+    width: calc(100% - 22px);
+    padding: 0 10px !important;
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+
+  .nx-generation-page .nx-step.is-current::before {
+    display: none;
+  }
+
+  .nx-generation-page .nx-panel--signal,
+  html.vox-user-rtl .nx-generation-page .nx-panel--signal {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'head'
+      'visual'
+      'speech'
+      'auto'
+      'personal'
+      'tips';
+    padding: 32px 26px 24px !important;
+  }
+
+  .nx-signal-visual,
+  html.vox-user-rtl .nx-signal-visual {
+    min-height: 430px;
+    margin: 0;
+  }
+
+  .nx-signal-visual__surface {
+    transform: scale(.86);
+    transform-origin: center;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-signal-tips {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .nx-generation-page .nx-panel--signal .nx-panel__head h2 {
+    font-size: clamp(31px, 9vw, 39px) !important;
+  }
+
+  .nx-signal-visual {
+    min-height: 350px;
+  }
+
+  .nx-signal-visual__surface {
+    inset: 0 -38px;
+    transform: scale(.71);
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-signal-tips {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .nx-signal-orbit,
+  .nx-signal-reactor__beam {
+    animation: none !important;
+  }
+}
+
+@keyframes nxSignalOrbitOne {
+  from {
+    transform: translate(-50%, -50%) rotate(-14deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(346deg);
+  }
+}
+
+@keyframes nxSignalOrbitTwo {
+  from {
+    transform: translate(-50%, -50%) rotate(24deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(384deg);
+  }
+}
+
+@keyframes nxSignalOrbitThree {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes nxSignalBeam {
+
+  0%,
+  100% {
+    opacity: .68;
+    transform: translate(-50%, -50%) scale(.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+}
+
+/* ========================================================================== */
+/* Generate / Signal — unified open canvas                                    */
+/* Final presentation override: one composition, no card-inside-card shell.   */
+/* Generation behavior and actions remain unchanged.                          */
+/* ========================================================================== */
+
+/* Remove the decorative sparkle tile that used to sit before the active step. */
+.nx-generation-page .nx-step.is-current::before {
+  display: none !important;
+  content: none !important;
+}
+
+/* The first step is one continuous page composition instead of a framed card. */
+.nx-generation-page .nx-generation-card.is-signal-step {
+  width: min(1460px, calc(100% - 38px));
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step::before {
+  display: none !important;
+  content: none !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+  position: relative;
+  min-height: 680px !important;
+  padding: 38px 46px 26px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background:
+    radial-gradient(circle at 6% 38%, rgba(230, 174, 185, .075), transparent 32%),
+    radial-gradient(circle at 86% 38%, rgba(92, 189, 185, .09), transparent 35%),
+    linear-gradient(90deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, .02) 48%, rgba(255, 255, 255, .16));
+  box-shadow: none !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal::before,
+.nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal::after {
+  opacity: .78;
+  pointer-events: none;
+}
+
+/* The mockup is intentionally cleaner without an extra privacy pill floating
+   inside the composition. Privacy behavior itself is not changed. */
+.nx-generation-page .nx-generation-card.is-signal-step .nx-private-note {
+  display: none !important;
+}
+
+/* Keep the right-side discovery illustration integrated into the page canvas,
+   rather than putting another rounded rectangle inside the main section. */
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+  min-height: 590px;
+  margin-inline-start: 18px;
+}
+
+html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+  margin-inline-start: 0;
+  margin-inline-end: 18px;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual__surface {
+  inset: -18px -24px -8px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(rgba(92, 189, 185, .042) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 189, 185, .042) 1px, transparent 1px),
+    radial-gradient(circle at 52% 50%, rgba(92, 189, 185, .145), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(230, 174, 185, .095), transparent 25%),
+    radial-gradient(circle at 17% 80%, rgba(92, 189, 185, .055), transparent 30%);
+  background-size: 25px 25px, 25px 25px, auto, auto, auto;
+  box-shadow: none;
+  -webkit-mask-image: radial-gradient(ellipse 76% 72% at 54% 49%, #000 54%, rgba(0, 0, 0, .82) 70%, transparent 100%);
+  mask-image: radial-gradient(ellipse 76% 72% at 54% 49%, #000 54%, rgba(0, 0, 0, .82) 70%, transparent 100%);
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual__surface::before {
+  width: 530px;
+  height: 530px;
+  border-color: rgba(92, 189, 185, .065);
+  box-shadow:
+    0 0 0 42px rgba(92, 189, 185, .016),
+    0 0 0 92px rgba(230, 174, 185, .012);
+}
+
+/* Match the simplified approved artwork: Human signal, WHO/PAIN/WHY,
+   Context, Friction and the central reactor only. */
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--live,
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-float-card--map {
+  display: none !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-float-card--human {
+  left: 8%;
+  top: 11%;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-float-card--who {
+  right: 7%;
+  top: 11%;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--context {
+  left: 1%;
+  top: 57%;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--friction {
+  right: 0;
+  top: 62%;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-reactor {
+  top: 53%;
+}
+
+/* Let the input remain the only intentionally card-like surface in the hero. */
+.nx-generation-page .nx-generation-card.is-signal-step .nx-speech-field {
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(92, 189, 185, .04), transparent 34%),
+    rgba(255, 255, 255, .72) !important;
+  box-shadow:
+    0 14px 34px rgba(47, 87, 82, .045),
+    inset 0 1px 0 rgba(255, 255, 255, .92) !important;
+  backdrop-filter: blur(10px);
+}
+
+/* Footer actions belong to the same open canvas, not to a second framed bar. */
+.nx-generation-page .nx-generation-card.is-signal-step .nx-wizard-actions {
+  margin-top: 12px;
+  padding: 16px 46px 22px !important;
+  border-top: 0 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+/* Dark mode keeps the same single-canvas structure. */
+html.vox-user-dark .nx-generation-page .nx-generation-card.is-signal-step {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+  background:
+    radial-gradient(circle at 8% 34%, rgba(230, 174, 185, .05), transparent 33%),
+    radial-gradient(circle at 84% 38%, rgba(92, 189, 185, .075), transparent 36%),
+    linear-gradient(90deg, rgba(18, 32, 28, .16), transparent 48%, rgba(18, 32, 28, .12));
+}
+
+html.vox-user-dark .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual__surface {
+  background:
+    linear-gradient(rgba(104, 200, 195, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(104, 200, 195, .05) 1px, transparent 1px),
+    radial-gradient(circle at 52% 50%, rgba(92, 189, 185, .11), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(230, 174, 185, .065), transparent 25%);
+  background-size: 25px 25px, 25px 25px, auto, auto;
+}
+
+html.vox-user-dark .nx-generation-page .nx-generation-card.is-signal-step .nx-speech-field {
+  background: rgba(21, 38, 33, .76) !important;
+}
+
+@media (max-width: 1220px) {
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+    padding-inline: 30px !important;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+    margin-inline-start: 8px;
+  }
+
+  html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+    margin-inline-start: 0;
+    margin-inline-end: 8px;
+  }
+}
+
+@media (max-width: 900px) {
+  .nx-generation-page .nx-generation-card.is-signal-step {
+    width: calc(100% - 20px);
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal,
+  html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+    padding: 28px 18px 22px !important;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual,
+  html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+    min-height: 430px;
+    margin: 0;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual__surface {
+    inset: -12px -24px;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-wizard-actions {
+    padding-inline: 18px !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .nx-generation-page .nx-generation-card.is-signal-step {
+    width: calc(100% - 10px);
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual__surface {
+    inset: -24px -62px;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--context {
+    left: 5%;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--friction {
+    right: 5%;
+  }
+}
+
+/* ========================================================================== */
+/* Generate page — edge-to-edge discovery experience                         */
+/* Keeps all generation logic intact; presentation only.                      */
+/* ========================================================================== */
+
+.nx-generation-page {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  min-height: calc(100vh - 145px);
+  margin: 0;
+  padding: 0;
+  overflow: clip;
+  isolation: isolate;
+}
+
+.nx-generation-page::before,
+.nx-generation-page::after {
+  content: '';
+  position: absolute;
+  z-index: -3;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(10px);
+}
+
+.nx-generation-page::before {
+  width: min(760px, 54vw);
+  height: min(760px, 54vw);
+  right: -15vw;
+  top: 120px;
+  background: radial-gradient(circle, rgba(92, 189, 185, .16), rgba(92, 189, 185, .04) 48%, transparent 72%);
+}
+
+.nx-generation-page::after {
+  width: min(620px, 46vw);
+  height: min(620px, 46vw);
+  left: -18vw;
+  top: 260px;
+  background: radial-gradient(circle, rgba(230, 174, 185, .15), rgba(230, 174, 185, .04) 48%, transparent 72%);
+}
+
+.nx-generation-page .nx-generation-shell {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+.nx-generation-page .nx-step-rail {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 4px 0 24px !important;
+  padding: 0 !important;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(10px, 1vw, 18px);
+}
+
+.nx-generation-page .nx-step {
+  min-height: 84px;
+  justify-content: flex-start;
+  padding: 12px 18px !important;
+  border: 1px solid rgba(89, 182, 176, .13) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 0 0, rgba(92, 189, 185, .055), transparent 42%),
+    rgba(255, 255, 255, .64) !important;
+  box-shadow:
+    0 15px 36px rgba(47, 82, 78, .055),
+    inset 0 1px 0 rgba(255, 255, 255, .92) !important;
+  backdrop-filter: blur(18px) saturate(128%);
+  -webkit-backdrop-filter: blur(18px) saturate(128%);
+}
+
+.nx-generation-page .nx-step>span {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border-radius: 15px;
+  background: rgba(248, 253, 252, .9);
+  box-shadow: inset 0 0 0 1px rgba(92, 189, 185, .06);
+}
+
+.nx-generation-page .nx-step b {
+  color: #315b56;
+  font-size: 14px;
+  letter-spacing: -.015em;
+}
+
+.nx-generation-page .nx-step small {
+  max-width: 180px;
+  color: #7b8d88;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.nx-generation-page .nx-step>i {
+  left: calc(100% + 6px);
+  width: clamp(12px, 1vw, 22px);
+  background: linear-gradient(90deg, rgba(92, 189, 185, .35), rgba(92, 189, 185, .08));
+}
+
+.nx-generation-page .nx-step.is-current {
+  transform: translateY(-2px);
+  border-color: rgba(74, 185, 177, .3) !important;
+  background:
+    radial-gradient(circle at 0 0, rgba(102, 217, 208, .2), transparent 48%),
+    linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(244, 251, 249, .9)) !important;
+  box-shadow:
+    0 20px 48px rgba(39, 130, 123, .13),
+    0 0 0 1px rgba(255, 255, 255, .62) inset !important;
+}
+
+.nx-generation-page .nx-step.is-current>span,
+.nx-generation-page .nx-step.is-complete>span {
+  color: #fff;
+  background: linear-gradient(145deg, #72d6cf, #39aaa3);
+  box-shadow:
+    0 11px 23px rgba(48, 164, 156, .26),
+    0 0 0 8px rgba(92, 189, 185, .08);
+}
+
+.nx-generation-page .nx-step.is-current::before {
+  display: none !important;
+  content: none !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step {
+  position: relative;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+  position: relative;
+  min-height: clamp(690px, calc(100vh - 270px), 850px) !important;
+  padding: clamp(26px, 2.25vw, 42px) clamp(14px, 2vw, 34px) 28px !important;
+  display: grid !important;
+  grid-template-columns: minmax(480px, .92fr) minmax(560px, 1.08fr) !important;
+  grid-template-areas:
+    'head visual'
+    'speech visual'
+    'auto visual'
+    'personal visual'
+    'tips visual' !important;
+  grid-template-rows: auto auto auto auto 1fr !important;
+  column-gap: clamp(30px, 4vw, 74px) !important;
+  row-gap: 13px !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 34px !important;
+  background:
+    linear-gradient(rgba(92, 189, 185, .032) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 189, 185, .032) 1px, transparent 1px),
+    radial-gradient(circle at 88% 48%, rgba(93, 197, 189, .13), transparent 32%),
+    radial-gradient(circle at 8% 36%, rgba(230, 174, 185, .09), transparent 31%),
+    linear-gradient(115deg, rgba(255, 255, 255, .57), rgba(255, 255, 255, .16)) !important;
+  background-size: 34px 34px, 34px 34px, auto, auto, auto !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal::before {
+  content: '';
+  position: absolute;
+  inset: auto -7% -170px 40%;
+  height: 260px;
+  opacity: .42;
+  pointer-events: none;
+  background: repeating-radial-gradient(ellipse at center, transparent 0 10px, rgba(91, 197, 189, .14) 11px 12px, transparent 13px 25px);
+  transform: rotate(-6deg) scaleX(1.8);
+  filter: blur(.3px);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 25%, #000 75%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 25%, #000 75%, transparent);
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  right: 8%;
+  top: 18%;
+  border: 4px solid rgba(255, 255, 255, .85);
+  border-radius: 50%;
+  background: #62cbc4;
+  box-shadow:
+    -230px 95px 0 -3px rgba(92, 189, 185, .52),
+    -56px 338px 0 -4px rgba(230, 174, 185, .68),
+    118px 225px 0 -4px rgba(92, 189, 185, .5),
+    0 0 25px rgba(92, 189, 185, .45);
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head {
+  grid-area: head;
+  align-self: end;
+  padding-inline-end: 0 !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head>div {
+  width: min(100%, 760px);
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head h2 {
+  max-width: 760px !important;
+  margin: 22px 0 14px !important;
+  color: #28554f;
+  font-size: clamp(46px, 4.1vw, 72px) !important;
+  line-height: .98 !important;
+  letter-spacing: -.058em !important;
+  text-wrap: balance;
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head h2::after {
+  content: '';
+  display: inline-block;
+  width: .16em;
+  height: .16em;
+  margin-inline-start: .06em;
+  border-radius: 50%;
+  vertical-align: .12em;
+  background: linear-gradient(145deg, #64cec7, #42aaa4);
+  box-shadow: 0 0 18px rgba(92, 189, 185, .42);
+}
+
+.nx-generation-page .nx-panel--signal .nx-panel__head p {
+  max-width: 690px !important;
+  margin: 0 !important;
+  color: #6d827d;
+  font-size: clamp(14px, 1.05vw, 17px) !important;
+  line-height: 1.6 !important;
+}
+
+.nx-generation-page .nx-kicker {
+  padding: 8px 13px;
+  border-color: rgba(92, 189, 185, .18);
+  color: #2f7974;
+  background: rgba(255, 255, 255, .84);
+  box-shadow: 0 10px 24px rgba(59, 105, 98, .06);
+  backdrop-filter: blur(12px);
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-private-note {
+  display: none !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field {
+  grid-area: speech;
+  min-height: 230px;
+  margin-top: 9px !important;
+  padding: 10px !important;
+  border: 1px solid rgba(73, 176, 169, .22) !important;
+  border-radius: 24px !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(92, 189, 185, .07), transparent 32%),
+    rgba(255, 255, 255, .79) !important;
+  box-shadow:
+    0 18px 46px rgba(46, 104, 98, .075),
+    inset 0 1px 0 rgba(255, 255, 255, .98) !important;
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field textarea {
+  min-height: 212px !important;
+  padding: 20px 20px 76px !important;
+  color: #315853;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field textarea::placeholder {
+  color: #94a8b9;
+  opacity: 1;
+}
+
+.nx-generation-page .nx-panel--signal .nx-speech-field__actions {
+  gap: 8px;
+}
+
+.nx-generation-page .nx-panel--signal .nx-voice-button,
+.nx-generation-page .nx-panel--signal .nx-domain-shortcut {
+  border-color: rgba(92, 189, 185, .15);
+  background: rgba(255, 255, 255, .8);
+  box-shadow: 0 8px 18px rgba(50, 96, 91, .045);
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip {
+  grid-area: auto;
+}
+
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal {
+  grid-area: personal;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip button,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button {
+  min-height: 72px !important;
+  padding: 11px 14px !important;
+  border-radius: 18px !important;
+  border-color: rgba(92, 189, 185, .12) !important;
+  background: rgba(255, 255, 255, .58) !important;
+  box-shadow: 0 10px 25px rgba(47, 81, 77, .035);
+  backdrop-filter: blur(12px);
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip.is-ready button {
+  background: linear-gradient(145deg, rgba(235, 251, 248, .92), rgba(255, 255, 255, .72)) !important;
+  box-shadow: 0 13px 30px rgba(50, 144, 137, .075);
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip b,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal b {
+  font-size: 12px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-auto-detect-skip small,
+.nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal small {
+  font-size: 10px !important;
+}
+
+.nx-generation-page .nx-panel--signal .nx-signal-tips {
+  grid-area: tips;
+  align-self: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.nx-generation-page .nx-panel--signal .nx-signal-tips span {
+  min-height: 42px;
+  border: 1px solid rgba(92, 189, 185, .09);
+  color: #718580;
+  background: rgba(255, 255, 255, .52);
+  backdrop-filter: blur(10px);
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+  grid-area: visual;
+  min-width: 0;
+  min-height: 650px;
+  margin: 0 !important;
+  align-self: stretch;
+}
+
+html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+  margin: 0 !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual__surface {
+  inset: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 30px !important;
+  background:
+    linear-gradient(rgba(92, 189, 185, .048) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 189, 185, .048) 1px, transparent 1px),
+    radial-gradient(circle at 50% 48%, rgba(98, 204, 196, .18), transparent 27%),
+    radial-gradient(circle at 76% 14%, rgba(230, 174, 185, .11), transparent 23%),
+    radial-gradient(circle at 18% 82%, rgba(92, 189, 185, .08), transparent 29%),
+    linear-gradient(145deg, rgba(243, 252, 250, .46), rgba(255, 255, 255, .08)) !important;
+  background-size: 27px 27px, 27px 27px, auto, auto, auto, auto !important;
+  box-shadow: none !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+.nx-generation-page .nx-signal-visual__surface::after {
+  content: '';
+  position: absolute;
+  inset: 6% -10% -10% 6%;
+  z-index: -1;
+  opacity: .35;
+  pointer-events: none;
+  background:
+    repeating-radial-gradient(ellipse at 56% 55%, transparent 0 38px, rgba(92, 189, 185, .16) 39px 40px, transparent 41px 76px);
+  transform: rotate(-7deg) scaleX(1.18);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 0 62%, transparent 81%);
+  mask-image: radial-gradient(ellipse at center, #000 0 62%, transparent 81%);
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual__surface::before {
+  width: 560px !important;
+  height: 560px !important;
+  border-color: rgba(92, 189, 185, .09) !important;
+  box-shadow:
+    0 0 0 54px rgba(92, 189, 185, .026),
+    0 0 0 112px rgba(230, 174, 185, .018),
+    0 0 75px rgba(92, 189, 185, .10) !important;
+}
+
+.nx-generation-page .nx-signal-reactor {
+  top: 49% !important;
+  transform: translate(-50%, -50%) scale(1.09);
+}
+
+.nx-generation-page .nx-signal-reactor__core {
+  width: 104px;
+  height: 104px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 36% 24%, rgba(255, 255, 255, .92) 0 5%, transparent 11%),
+    linear-gradient(145deg, #70d8d0, #2da59e);
+  box-shadow:
+    0 0 0 12px rgba(255, 255, 255, .34),
+    0 0 0 22px rgba(92, 189, 185, .12),
+    0 25px 56px rgba(35, 147, 139, .28),
+    0 0 72px rgba(92, 189, 185, .32);
+}
+
+.nx-generation-page .nx-signal-float-card {
+  border: 1px solid rgba(255, 255, 255, .82);
+  background: rgba(255, 255, 255, .76);
+  box-shadow:
+    0 16px 42px rgba(49, 91, 86, .09),
+    inset 0 1px 0 rgba(255, 255, 255, .95);
+  backdrop-filter: blur(17px) saturate(135%);
+  -webkit-backdrop-filter: blur(17px) saturate(135%);
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-float-card--human {
+  left: 6% !important;
+  top: 8% !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-float-card--who {
+  right: 4% !important;
+  top: 9% !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-float-card--map {
+  display: block !important;
+  left: 4% !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: 13% !important;
+}
+
+.nx-generation-page .nx-signal-float-card--insight {
+  position: absolute;
+  right: 3.5%;
+  bottom: 12%;
+  width: 168px;
+  min-height: 116px;
+  padding: 13px 14px;
+  border-radius: 20px;
+  z-index: 8;
+}
+
+.nx-generation-page .nx-signal-float-card--insight strong,
+.nx-generation-page .nx-signal-float-card--insight small {
+  display: block;
+}
+
+.nx-generation-page .nx-signal-float-card--insight strong {
+  color: #315d57;
+  font-size: 11px;
+}
+
+.nx-generation-page .nx-signal-float-card--insight small {
+  margin-top: 2px;
+  color: #8ba09b;
+  font-size: 7.5px;
+  letter-spacing: .08em;
+}
+
+.nx-signal-insight-map {
+  position: relative;
+  height: 62px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 11px;
+  background:
+    radial-gradient(circle at 20% 40%, rgba(92, 189, 185, .18) 0 2px, transparent 3px),
+    linear-gradient(rgba(92, 189, 185, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 189, 185, .045) 1px, transparent 1px),
+    rgba(245, 252, 250, .72);
+  background-size: auto, 10px 10px, 10px 10px, auto;
+}
+
+.nx-signal-insight-map__land {
+  position: absolute;
+  display: block;
+  border-radius: 50% 45% 55% 40%;
+  background: rgba(101, 190, 183, .16);
+  transform: rotate(-12deg);
+}
+
+.nx-signal-insight-map__land--1 {
+  width: 56px;
+  height: 24px;
+  left: 11px;
+  top: 18px;
+}
+
+.nx-signal-insight-map__land--2 {
+  width: 42px;
+  height: 20px;
+  left: 62px;
+  top: 12px;
+  transform: rotate(10deg);
+}
+
+.nx-signal-insight-map__land--3 {
+  width: 33px;
+  height: 17px;
+  right: 10px;
+  bottom: 11px;
+  transform: rotate(-4deg);
+}
+
+.nx-signal-insight-map__pin {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 2px solid rgba(255, 255, 255, .9);
+  border-radius: 50%;
+  background: #49c0b8;
+  box-shadow: 0 0 12px rgba(73, 192, 184, .75);
+}
+
+.nx-signal-insight-map__pin--1 {
+  left: 24px;
+  top: 25px;
+}
+
+.nx-signal-insight-map__pin--2 {
+  left: 75px;
+  top: 20px;
+}
+
+.nx-signal-insight-map__pin--3 {
+  right: 30px;
+  top: 30px;
+}
+
+.nx-signal-insight-map__pin--4 {
+  right: 61px;
+  bottom: 10px;
+}
+
+.nx-generation-page .nx-signal-ai-status {
+  position: absolute;
+  left: 21%;
+  right: 20%;
+  bottom: 2.4%;
+  z-index: 12;
+  min-height: 58px;
+  padding: 9px 12px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, .84);
+  border-radius: 18px;
+  color: #315c57;
+  background: rgba(255, 255, 255, .72);
+  box-shadow: 0 16px 36px rgba(46, 92, 86, .08);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+
+.nx-signal-ai-status__icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(145deg, #8de4cb, #58c6a6);
+  box-shadow: 0 0 0 7px rgba(99, 207, 180, .09), 0 9px 18px rgba(64, 180, 150, .2);
+}
+
+.nx-signal-ai-status__copy {
+  min-width: 0;
+  display: grid;
+}
+
+.nx-signal-ai-status__copy strong {
+  overflow: hidden;
+  color: #315d57;
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nx-signal-ai-status__copy small {
+  margin-top: 1px;
+  color: #819690;
+  font-size: 8.5px;
+}
+
+.nx-signal-ai-status__dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.nx-signal-ai-status__dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9db9b5;
+  opacity: .72;
+  animation: nxSignalStatusDot 1.4s ease-in-out infinite;
+}
+
+.nx-signal-ai-status__dots i:nth-child(2) {
+  animation-delay: .18s;
+}
+
+.nx-signal-ai-status__dots i:nth-child(3) {
+  animation-delay: .36s;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--context,
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--friction,
+.nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--live {
+  display: none !important;
+}
+
+.nx-generation-page .nx-generation-card.is-signal-step .nx-wizard-actions {
+  margin: 6px 0 0 !important;
+  padding: 16px clamp(14px, 2vw, 34px) 4px !important;
+  border: 0 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.nx-generation-page .nx-wizard-actions .nx-back-button,
+.nx-generation-page .nx-wizard-actions .nx-next-button {
+  min-height: 48px;
+  border-radius: 15px;
+}
+
+.nx-generation-page .nx-wizard-actions .nx-next-button {
+  box-shadow: 0 14px 28px rgba(49, 157, 149, .18);
+}
+
+html.vox-user-dark .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+  background:
+    linear-gradient(rgba(104, 200, 195, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(104, 200, 195, .035) 1px, transparent 1px),
+    radial-gradient(circle at 88% 48%, rgba(72, 176, 167, .11), transparent 32%),
+    radial-gradient(circle at 8% 36%, rgba(193, 114, 135, .07), transparent 31%),
+    linear-gradient(115deg, rgba(18, 33, 29, .58), rgba(18, 33, 29, .16)) !important;
+  background-size: 34px 34px, 34px 34px, auto, auto, auto !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-panel__head h2 {
+  color: #eef8f5;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-panel__head p,
+html.vox-user-dark .nx-generation-page .nx-step small {
+  color: #a8bbb5;
+}
+
+html.vox-user-dark .nx-generation-page .nx-step {
+  border-color: rgba(105, 195, 189, .11) !important;
+  background: rgba(25, 43, 38, .66) !important;
+  box-shadow: 0 15px 34px rgba(0, 0, 0, .12) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-step b {
+  color: #dcece8;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-speech-field,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-auto-detect-skip button,
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-personalized-discovery--signal button {
+  border-color: rgba(102, 195, 188, .12) !important;
+  background: rgba(22, 40, 35, .76) !important;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-speech-field textarea {
+  color: #e6f3ef;
+}
+
+html.vox-user-dark .nx-generation-page .nx-panel--signal .nx-signal-tips span {
+  border-color: rgba(101, 192, 185, .09);
+  color: #aabcb7;
+  background: rgba(24, 43, 37, .58);
+}
+
+html.vox-user-dark .nx-generation-page .nx-signal-float-card,
+html.vox-user-dark .nx-generation-page .nx-signal-ai-status {
+  border-color: rgba(106, 200, 193, .11);
+  background: rgba(22, 41, 35, .78);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .16);
+}
+
+html.vox-user-dark .nx-generation-page .nx-signal-float-card--insight strong,
+html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy strong {
+  color: #dcece8;
+}
+
+html.vox-user-dark .nx-generation-page .nx-signal-float-card--insight small,
+html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
+  color: #9fb4ae;
+}
+
+@media (max-width: 1320px) {
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+    grid-template-columns: minmax(430px, .95fr) minmax(500px, 1.05fr) !important;
+    column-gap: 28px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-panel__head h2 {
+    font-size: clamp(42px, 4.5vw, 60px) !important;
+  }
+
+  .nx-generation-page .nx-signal-float-card--insight {
+    right: 1%;
+  }
+}
+
+@media (max-width: 1080px) {
+  .nx-generation-page .nx-step-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nx-generation-page .nx-step>i {
+    display: none;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal,
+  html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      'head'
+      'visual'
+      'speech'
+      'auto'
+      'personal'
+      'tips' !important;
+    grid-template-rows: auto !important;
+    gap: 15px !important;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual,
+  html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 760px) {
+  .nx-generation-page {
+    overflow: visible;
+  }
+
+  .nx-generation-page .nx-step-rail {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .nx-generation-page .nx-step {
+    min-height: 66px;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal,
+  html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-panel--signal {
+    padding: 24px 12px 20px !important;
+    border-radius: 24px !important;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-panel__head h2 {
+    font-size: clamp(34px, 10vw, 46px) !important;
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual,
+  html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+    min-height: 460px;
+  }
+
+  .nx-generation-page .nx-signal-visual__surface {
+    transform: scale(.86);
+    transform-origin: center;
+  }
+
+  .nx-generation-page .nx-panel--signal .nx-signal-tips {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .nx-generation-page .nx-signal-visual__surface {
+    transform: scale(.72);
+  }
+
+  .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual,
+  html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
+    min-height: 390px;
+  }
+}
+
+@keyframes nxSignalStatusDot {
+
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: .38;
+  }
+
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
 }

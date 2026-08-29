@@ -34,10 +34,11 @@ import '../styles/admin-complaints.css';
 
 const PAGE_SIZE = 20;
 
-const COMPLAINT_DARK_ARABIC_COPY = {
+const COMPLAINT_ARABIC_COPY = {
   'All cases': 'كل الحالات',
   'Open': 'مفتوحة',
   'In progress': 'قيد المعالجة',
+  'In Progress': 'قيد المعالجة',
   'Resolved': 'تم الحل',
   'Rejected': 'مرفوضة',
   'Submitted date': 'تاريخ الإرسال',
@@ -117,11 +118,10 @@ const COMPLAINT_DARK_ARABIC_COPY = {
   'Unable to export complaints.': 'تعذر تصدير الشكاوى.',
 };
 
-function useComplaintDarkArabicCopy() {
-  const { isArabic, isDark, t } = useUserExperience();
-  const enabled = isArabic && isDark;
-  const tr = (value) => (enabled ? (COMPLAINT_DARK_ARABIC_COPY[value] ?? t(value)) : value);
-  return { enabled, tr };
+function useComplaintArabicCopy() {
+  const { isArabic, t } = useUserExperience();
+  const tr = (value) => (isArabic ? (COMPLAINT_ARABIC_COPY[value] ?? t(value)) : value);
+  return { enabled: isArabic, tr };
 }
 
 const STATUS_OPTIONS = [
@@ -175,11 +175,11 @@ function summaryFrom(payload) {
   return payload?.data && !Array.isArray(payload.data) ? payload.data : payload ?? {};
 }
 
-function formatDate(value, darkArabic = false) {
+function formatDate(value, arabicUi = false) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(darkArabic ? 'ar-u-nu-latn' : undefined, {
+  return date.toLocaleString(arabicUi ? 'ar-u-nu-latn' : undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -219,7 +219,7 @@ function priorityTone(priority) {
 }
 
 function Metric({ icon: Icon, label, value, hint, tone = '' }) {
-  const { tr } = useComplaintDarkArabicCopy();
+  const { tr } = useComplaintArabicCopy();
 
   return (
     <article className={`admin-support-metric ${tone}`}>
@@ -241,17 +241,17 @@ function Metric({ icon: Icon, label, value, hint, tone = '' }) {
 }
 
 function StatusPill({ value }) {
-  const { tr } = useComplaintDarkArabicCopy();
+  const { tr } = useComplaintArabicCopy();
   return <span className={`admin-support-status ${statusTone(value)}`}>{tr(readable(value || 'OPEN'))}</span>;
 }
 
 function PriorityPill({ value }) {
-  const { tr } = useComplaintDarkArabicCopy();
+  const { tr } = useComplaintArabicCopy();
   return <span className={`admin-support-priority ${priorityTone(value)}`}><Flag size={11} />{tr(readable(value || 'MEDIUM'))}</span>;
 }
 
 function ComplaintModal({ complaint, saving, onClose, onSave }) {
-  const { enabled: darkArabic, tr } = useComplaintDarkArabicCopy();
+  const { enabled: arabicUi, tr } = useComplaintArabicCopy();
   const [status, setStatus] = useState(complaint.status || 'OPEN');
   const [priority, setPriority] = useState(complaint.priority || 'MEDIUM');
   const [reply, setReply] = useState(complaint.adminReply || '');
@@ -324,9 +324,9 @@ function ComplaintModal({ complaint, saving, onClose, onSave }) {
             </article>
 
             <div className="admin-support-timeline">
-              <div><CircleDot size={14} /><span>{tr('Submitted')}</span><strong>{formatDate(complaint.createdAt, darkArabic)}</strong></div>
-              <div><Clock3 size={14} /><span>{tr('Last activity')}</span><strong>{formatDate(complaint.updatedAt, darkArabic)}</strong></div>
-              {complaint.resolvedAt ? <div><CheckCircle2 size={14} /><span>{tr('Resolved')}</span><strong>{formatDate(complaint.resolvedAt, darkArabic)}</strong></div> : null}
+              <div><CircleDot size={14} /><span>{tr('Submitted')}</span><strong>{formatDate(complaint.createdAt, arabicUi)}</strong></div>
+              <div><Clock3 size={14} /><span>{tr('Last activity')}</span><strong>{formatDate(complaint.updatedAt, arabicUi)}</strong></div>
+              {complaint.resolvedAt ? <div><CheckCircle2 size={14} /><span>{tr('Resolved')}</span><strong>{formatDate(complaint.resolvedAt, arabicUi)}</strong></div> : null}
             </div>
           </div>
 
@@ -406,7 +406,7 @@ function ComplaintModal({ complaint, saving, onClose, onSave }) {
 }
 
 export default function AdminComplaintsPage() {
-  const { enabled: darkArabic, tr } = useComplaintDarkArabicCopy();
+  const { enabled: arabicUi, tr } = useComplaintArabicCopy();
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState({});
   const [meta, setMeta] = useState({ page: 1, total: 0, totalPages: 1, limit: PAGE_SIZE });
@@ -598,7 +598,7 @@ export default function AdminComplaintsPage() {
                   <td>{complaint.idea ? <div className="admin-support-person"><strong>{compact(complaint.idea.title, 44)}</strong><span>{tr('Linked idea')}</span></div> : <span className="admin-support-muted">{tr('General')}</span>}</td>
                   <td><PriorityPill value={complaint.priority} /></td>
                   <td><StatusPill value={complaint.status} /></td>
-                  <td><div className="admin-support-date"><strong>{formatDate(complaint.updatedAt || complaint.createdAt, darkArabic)}</strong><span>{tr('Created')} {formatDate(complaint.createdAt, darkArabic)}</span></div></td>
+                  <td><div className="admin-support-date"><strong>{formatDate(complaint.updatedAt || complaint.createdAt, arabicUi)}</strong><span>{tr('Created')} {formatDate(complaint.createdAt, arabicUi)}</span></div></td>
                   <td><button type="button" className="admin-support-view-button" onClick={() => setSelected(complaint)}><Eye size={15} /> {tr('Review')}</button></td>
                 </tr>
               ))}
@@ -607,7 +607,7 @@ export default function AdminComplaintsPage() {
         </div>
 
         <footer className="admin-support-pagination">
-          <span>{darkArabic ? `الصفحة ${meta.page} من ${meta.totalPages}` : `Page ${meta.page} of ${meta.totalPages}`}</span>
+          <span>{arabicUi ? `الصفحة ${meta.page} من ${meta.totalPages}` : `Page ${meta.page} of ${meta.totalPages}`}</span>
           <div><button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1 || loading}><ChevronLeft size={16} /> {tr('Previous')}</button><button type="button" onClick={() => setPage((value) => Math.min(meta.totalPages, value + 1))} disabled={page >= meta.totalPages || loading}>{tr('Next')} <ChevronRight size={16} /></button></div>
         </footer>
       </section>

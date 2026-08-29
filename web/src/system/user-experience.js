@@ -2281,7 +2281,6 @@ const ARABIC_PHRASES = {
   "Account and security notices": "تنبيهات الحساب والأمان",
   "Admin": "الإدارة",
   "Administrator and moderation notices": "رسائل الإدارة والمراجعة",
-  "System": "النظام",
   "General system updates": "تحديثات عامة من النظام",
   "General Voxidence activity": "نشاط عام في فوكسيدنس",
   "All status": "كل الحالات",
@@ -3385,6 +3384,8 @@ const ARABIC_WORDS = {
 
 
 const ARABIC_CONTENT_PHRASES = [
+  ['Logistics Status Synchronization and Exception Triage Hub', 'مركز مزامنة حالة الخدمات اللوجستية وفرز الاستثناءات'],
+  ['Veritas Semantic Grounding Engine', 'محرك فيريتاس للارتكاز الدلالي'],
   ['Artificial Intelligence', 'الذكاء الاصطناعي'],
   ['Internet of Things', 'إنترنت الأشياء'],
   ['Machine Learning', 'تعلّم الآلة'],
@@ -3885,7 +3886,7 @@ function shouldSkipNode(node) {
   return tag === 'SCRIPT' || tag === 'STYLE' || tag === 'CODE' || tag === 'PRE' || tag === 'TEXTAREA';
 }
 
-const DARK_ARABIC_PUBLICATION_REPORT_SELECTOR =
+const ARABIC_PUBLICATION_REPORT_SELECTOR =
   '.admin-publication-reports-page, .admin-report-review-drawer, .admin-publication-reports-toast';
 
 const DARK_ARABIC_AI_MODELS_SELECTOR =
@@ -3936,27 +3937,57 @@ function translateAiModelsDarkArabic(value, element) {
   return value;
 }
 
-function isDarkArabicPublicationReportElement(element) {
-  return Boolean(
-    element &&
-    document.documentElement.classList.contains('vox-user-dark') &&
-    element.closest(DARK_ARABIC_PUBLICATION_REPORT_SELECTOR),
-  );
+function isArabicPublicationReportElement(element) {
+  return Boolean(element && element.closest(ARABIC_PUBLICATION_REPORT_SELECTOR));
 }
 
-function translatePublicationReportDarkArabic(value) {
+function translatePublicationReportArabic(value) {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
   const exact =
     ADMIN_PUBLICATION_REPORT_DARK_ARABIC_PHRASES[value] ||
     ADMIN_PUBLICATION_REPORT_DARK_ARABIC_PHRASES[trimmed];
 
-  if (!exact) return translateToArabic(value);
-  if (value === trimmed) return exact;
-
   const prefix = value.match(/^\s*/)?.[0] ?? '';
   const suffix = value.match(/\s*$/)?.[0] ?? '';
-  return `${prefix}${exact}${suffix}`;
+  if (exact) return value === trimmed ? exact : `${prefix}${exact}${suffix}`;
+
+  const isolate = (text) => `\u2066${text}\u2069`;
+  const patterns = [
+    [/^(\d[\d,]*)\s+matching\s+reports?$/i, (m) => `${m[1]} بلاغات مطابقة`],
+    [/^Page\s+(\d+)\s+of\s+(\d+)$/i, (m) => `الصفحة ${m[1]} من ${m[2]}`],
+    [/^Reviewed\s+(.+)$/i, (m) => `تمت المراجعة ${translateAdminDateFragment(m[1])}`],
+    [/^Published by\s+(.+)$/i, (m) => `نشر بواسطة ${isolate(m[1])}`],
+    [/^(.+?)\s+·\s+submitted\s+(.+)$/i, (m) => {
+      const translatedReason = translateToArabic(m[1]);
+      return `${translatedReason} · أُرسل ${translateAdminDateFragment(m[2])}`;
+    }],
+    [/^Could not load idea\s+(details|insights)\.$/i, (m) =>
+      m[1].toLowerCase() === 'details'
+        ? 'تعذر تحميل تفاصيل الفكرة.'
+        : 'تعذر تحميل إحصاءات الفكرة.'
+    ],
+  ];
+
+  for (const [pattern, replacer] of patterns) {
+    const match = trimmed.match(pattern);
+    if (match) return `${prefix}${replacer(match)}${suffix}`;
+  }
+
+  if (trimmed.includes(' · ')) {
+    const sourceParts = trimmed.split(' · ');
+    const translatedParts = sourceParts.map((part) => {
+      const special =
+        ADMIN_PUBLICATION_REPORT_DARK_ARABIC_PHRASES[part] ||
+        ADMIN_PUBLICATION_REPORT_DARK_ARABIC_PHRASES[part.trim()];
+      return special || translateToArabic(part);
+    });
+    if (translatedParts.some((part, index) => part !== sourceParts[index])) {
+      return `${prefix}${translatedParts.join(' · ')}${suffix}`;
+    }
+  }
+
+  return translateToArabic(value);
 }
 
 function translateDom(language) {
@@ -3985,14 +4016,14 @@ function translateDom(language) {
     const source = originalText.get(node) ?? '';
     const useAiModelsDarkArabic =
       language === 'ar' && isDarkArabicAiModelsElement(node.parentElement);
-    const usePublicationReportDarkArabic =
-      language === 'ar' && isDarkArabicPublicationReportElement(node.parentElement);
+    const usePublicationReportArabic =
+      language === 'ar' && isArabicPublicationReportElement(node.parentElement);
     const next =
       language === 'ar'
         ? useAiModelsDarkArabic
           ? translateAiModelsDarkArabic(source, node.parentElement)
-          : usePublicationReportDarkArabic
-            ? translatePublicationReportDarkArabic(source)
+          : usePublicationReportArabic
+            ? translatePublicationReportArabic(source)
             : translateToArabic(source)
         : source;
     if (current !== next) node.nodeValue = next;
@@ -4028,14 +4059,14 @@ function translateDom(language) {
       const source = store[attribute];
       const useAiModelsDarkArabic =
         language === 'ar' && isDarkArabicAiModelsElement(element);
-      const usePublicationReportDarkArabic =
-        language === 'ar' && isDarkArabicPublicationReportElement(element);
+      const usePublicationReportArabic =
+        language === 'ar' && isArabicPublicationReportElement(element);
       const next =
         language === 'ar'
           ? useAiModelsDarkArabic
             ? translateAiModelsDarkArabic(source, element)
-            : usePublicationReportDarkArabic
-              ? translatePublicationReportDarkArabic(source)
+            : usePublicationReportArabic
+              ? translatePublicationReportArabic(source)
               : translateToArabic(source)
           : source;
       if (current !== next) element.setAttribute(attribute, next);

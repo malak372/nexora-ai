@@ -198,13 +198,16 @@ const normalizeDashboardDynamicTextKey = (value) =>
   String(value || '')
     .normalize('NFKC')
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
-    .replace(/[.,:;!?\"'`()[\]{}\-_–—]+/g, ' ')
+    .replace(/[.,:;!?"'`()[\]{}\-_–—]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 
 const DASHBOARD_DYNAMIC_ARABIC = {
   'smart transit synapse': 'ترابط النقل الذكي',
+  'veritas semantic grounding engine': 'محرك فيريتاس للارتكاز الدلالي',
+  'logistics status synchronization and exception triage hub':
+    'مركز مزامنة حالة الخدمات اللوجستية وفرز الاستثناءات',
 };
 
 const localizeDashboardDynamicText = (value, { isArabic, t, fallback }) => {

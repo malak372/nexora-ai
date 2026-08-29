@@ -166,17 +166,17 @@ function usePaymentCopy() {
   const darkArabic = isArabic && isDark;
   const tr = useCallback(
     (value) => {
-      if (!darkArabic || typeof value !== 'string') return value;
+      if (!isArabic || typeof value !== 'string') return value;
       return PAYMENT_DARK_ARABIC_COPY[value] ?? t(value);
     },
-    [darkArabic, t],
+    [isArabic, t],
   );
 
   return {
     darkArabic,
     isArabic,
     isDark,
-    locale: darkArabic ? 'ar' : undefined,
+    locale: isArabic ? 'ar' : undefined,
     tr,
   };
 }
