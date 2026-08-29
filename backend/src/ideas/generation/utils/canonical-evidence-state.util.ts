@@ -1,5 +1,6 @@
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
 import type { IdeaGenerationEvidenceState } from '../types/canonical-problem-spec.type';
+import { EvidenceSourceIdentityUtil } from './evidence-source-identity.util';
 
 export type CanonicalEvidenceStateSnapshot = {
   readonly state: IdeaGenerationEvidenceState;
@@ -59,9 +60,7 @@ export class CanonicalEvidenceStateUtil {
       supportingCount,
       unadjudicatedCount,
       adjudicatedCount,
-      sourceCount: new Set(
-        trusted.map((item) => item.sourceKey.toLocaleLowerCase()),
-      ).size,
+      sourceCount: EvidenceSourceIdentityUtil.count(trusted),
       verifiedFacetIds: [
         ...new Set(trusted.flatMap((item) => item.matchedFacetIds ?? [])),
       ],

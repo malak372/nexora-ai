@@ -21,6 +21,7 @@ import { SelectedDomainEvidenceAlignmentUtil } from '../utils/selected-domain-ev
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
 import { RequestQueryProvenanceUtil } from '../utils/request-query-provenance.util';
 import { SourceSpecificEvidenceQueryUtil } from '../utils/source-specific-evidence-query.util';
+import { EvidenceSourceIdentityUtil } from '../utils/evidence-source-identity.util';
 import { CollectionJobResolverService } from './collection-job-resolver.service';
 import { CommunityAiAnalysisService } from './community-ai-analysis.service';
 import { RequestCollectionPlanningService } from './request-collection-planning.service';
@@ -127,8 +128,8 @@ export class IdeaEvidenceRecoveryService {
    */
   private readonly maximumRecoveryKeywords = 8;
   /*
-   * Keep recovery to one wall-clock wave, but allow three healthy lanes in
-   * parallel.  Very sparse crafts frequently lose Reddit to rate limiting and
+   * Keep each recovery wave bounded to three healthy lanes in parallel.  Very
+   * sparse workflows frequently lose a preferred source to rate limiting and
    * have no dedicated forum result; a third professional/secondary lane gives
    * the same bounded wave a realistic chance to find supporting evidence
    * without adding a second serial recovery cycle.
@@ -159,22 +160,43 @@ export class IdeaEvidenceRecoveryService {
     parentSignal?: AbortSignal,
   ): Promise<IdeaEvidenceRecoveryResult> {
     const recoveryStartedAt = Date.now();
+    const preflightSelectedFamilyIds = new Set(
+      (context.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    const preflightSelectedTrusted = (context.canonicalEvidenceLedger ?? []).filter(
+      (item) =>
+        item.verified &&
+        preflightSelectedFamilyIds.has(item.id) &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    );
+    const preflightSelectedSourceCount = EvidenceSourceIdentityUtil.count(
+      preflightSelectedTrusted,
+    );
+    const corroborationOnlyRecovery = Boolean(
+      !context.requestDescription?.trim() &&
+        preflightSelectedTrusted.length > 0 &&
+        preflightSelectedSourceCount < 2,
+    );
     /*
      * Recovery previously used one 5.8s wall-clock for source-health reads,
-     * AI re-planning, collection, persistence, and recovery triage.  A healthy
+     * AI re-planning, collection, persistence, and recovery triage. A healthy
      * planner could consume ~2.2-2.6s by itself, leaving too little time for a
      * collector to finish and causing "Collector operation cancelled" exactly
-     * when recovery was most needed.  Keep the path bounded, but give the one
-     * recovery wave a realistic end-to-end budget.  The value remains
-     * operator-configurable and is still far below an unbounded second crawl.
+     * when recovery was most needed. Keep planning/collection bounded here;
+     * once new raw rows have actually returned, semantic admission receives a
+     * separate small bounded grace window below so useful evidence is never
+     * discarded merely because collection consumed the envelope.
      */
-    const recoveryBudgetMs = Math.max(
-      8_000,
-      Math.min(
-        20_000,
-        this.readPositiveConfig('IDEA_EVIDENCE_RECOVERY_TIMEOUT_MS', 14_000),
-      ),
+    const configuredRecoveryBudgetMs = this.readPositiveConfig(
+      'IDEA_EVIDENCE_RECOVERY_TIMEOUT_MS',
+      16_000,
     );
+    const recoveryBudgetMs = corroborationOnlyRecovery
+      ? Math.max(7_000, Math.min(10_000, configuredRecoveryBudgetMs))
+      : Math.max(8_000, Math.min(20_000, configuredRecoveryBudgetMs));
     const recoveryDeadlineAt = recoveryStartedAt + recoveryBudgetMs;
     const recoveryController = new AbortController();
     const abortRecovery = () => {
@@ -227,6 +249,28 @@ export class IdeaEvidenceRecoveryService {
       ...lowYieldSourceKeys,
       ...additionalExcludedSourceKeys,
     ]);
+
+    /*
+     * Source routing must follow the concrete requester/canonical family, not
+     * only the broad selected domain. This prevents a healthy but structurally
+     * irrelevant developer corpus (for example GitHub for moving-company
+     * scheduling, or Stack Overflow for municipal permit delays) from winning
+     * a recovery slot just because an AI planner named it.
+     */
+    const recoveryRoutingDescription =
+      context.requestDescription?.trim() ||
+      context.communityAiAnalysis?.canonicalProblemFamilyLabel?.trim() ||
+      context.communityAiAnalysis?.selectedProblemFamily?.trim() ||
+      selectedOpportunity?.problem?.trim() ||
+      selectedOpportunity?.title?.trim() ||
+      '';
+    const lockedProblemFamily =
+      context.communityAiAnalysis?.canonicalProblemFamilyLabel?.trim() ||
+      context.communityAiAnalysis?.selectedProblemFamily?.trim() ||
+      selectedOpportunity?.problem?.trim() ||
+      selectedOpportunity?.title?.trim() ||
+      '';
+
     const selectedRecoverySources = recoveryCandidateSources
       .filter((source) => {
         const key = source.key.trim().toLocaleLowerCase();
@@ -239,21 +283,88 @@ export class IdeaEvidenceRecoveryService {
         if (!this.collectorSourceHealth.isHealthy(source.key)) {
           return false;
         }
-        return this.collectorsFactory.isCollectorRouteExecutable(source.key, {
-          requestDescription: context.requestDescription,
+
+        const capabilityInput = {
+          requestDescription:
+            recoveryRoutingDescription || context.requestDescription,
           domainName: context.domainName,
           keywords: context.keywords,
           plannedQueries: context.collectionPlan?.searchQueries ?? [],
-          collectionMode: 'TARGETED_RECOVERY',
-        });
+          collectionMode: 'TARGETED_RECOVERY' as const,
+        };
+        if (
+          recoveryRoutingDescription &&
+          this.collectorsFactory.getCollectorRequestFitScore(
+            key,
+            capabilityInput,
+          ) < 0.42
+        ) {
+          return false;
+        }
+
+        return this.collectorsFactory.isCollectorRouteExecutable(
+          source.key,
+          capabilityInput,
+        );
       })
       .sort(
         (left, right) =>
-          this.scoreRecoverySource(context, right) -
-            this.scoreRecoverySource(context, left) ||
+          this.scoreRecoverySource(context, right, null, recoveryRoutingDescription) -
+            this.scoreRecoverySource(context, left, null, recoveryRoutingDescription) ||
           left.key.localeCompare(right.key),
       )
       .slice(0, this.maximumRecoverySourcesPerWave);
+
+    /*
+     * Source health/executability is a hard precondition for AI recovery
+     * planning. Do this BEFORE spending 2-3 seconds on a provider race. The
+     * previous order planned first and only later discovered that every lane
+     * was rate-limited, unavailable, or exhausted, which created pure latency
+     * on sparse Text Only runs. A later generation can retry when the health
+     * registry exposes an executable lane again.
+     */
+    if (selectedRecoverySources.length === 0) {
+      const preflightRecoveryKeywords = [
+        lockedProblemFamily,
+        context.requestDescription?.trim() ?? '',
+        ...(context.collectionPlan?.retrievalVocabulary ?? []),
+        ...(context.collectionPlan?.searchQueries ?? []),
+      ]
+        .map((query) => this.sanitizeRecoveryQuery(query))
+        .filter(Boolean)
+        .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+        .filter(
+          (query, index, values) =>
+            values.findIndex(
+              (candidate) => candidate.toLocaleLowerCase() === query.toLocaleLowerCase(),
+            ) === index,
+        )
+        .slice(0, this.maximumRecoveryKeywords);
+      this.logger.debug(
+        'Skipping targeted recovery before AI re-planning because no healthy, unexhausted, request-compatible source lane is executable.',
+      );
+      return {
+        collectionJobId: context.collection?.collectionJobId ?? 'recovery-skipped',
+        selectedDataSourceKeys: [],
+        recoveryKeywords: preflightRecoveryKeywords,
+        evidenceFamilies,
+        totalPosts: 0,
+        totalComments: 0,
+        usefulCleanTextCount: 0,
+        complaintEvidenceCount: 0,
+        newCorpusEvidenceSampleCount: 0,
+        newEvidenceSampleCount: 0,
+        novelEvidenceSamples: [],
+        supportingExternalSamples: [],
+        supportingExternalEvidence: [],
+        rawEvidenceCorpus: [],
+        recoveryOutcome: 'RECOVERY_RETURNED_NO_USABLE_EVIDENCE',
+        communityAiRecoveryExecuted: false,
+        nlp: context.nlp!,
+        communityAiAnalysis: null,
+      };
+    }
+
     const compactDomainsOnlySecondaryRecovery =
       !context.requestDescription?.trim() &&
       context.domainResolution?.source === 'USER_SELECTED' &&
@@ -266,55 +377,80 @@ export class IdeaEvidenceRecoveryService {
     const requestSpecificRecovery = Boolean(
       context.requestDescription?.trim(),
     );
-    const qualifiedCommunityEvidenceCount =
-      context.communityAiAnalysis?.evidenceClassifications?.filter(
-        (item) =>
-          item.classification === 'DIRECT_PROBLEM' ||
-          item.classification === 'SUPPORTING_SIGNAL',
-      ).length ?? 0;
-    const needsExpandedRequestRecovery =
-      requestSpecificRecovery && qualifiedCommunityEvidenceCount === 0;
-
     const corroborationSelectedFamilyIds = new Set(
       (context.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
         .map((id) => id.trim())
         .filter(Boolean),
     );
-    const canonicalTrustedForCorroboration = (
-      context.canonicalEvidenceLedger ?? []
-    ).filter(
-      (item) =>
-        item.verified &&
-        (item.classification === 'DIRECT_PROBLEM' ||
-          item.classification === 'SUPPORTING_SIGNAL') &&
-        (corroborationSelectedFamilyIds.size === 0 ||
-          corroborationSelectedFamilyIds.has(item.id)),
+    const selectedCanonicalFamilyLabel =
+      context.communityAiAnalysis?.canonicalProblemFamilyLabel?.trim() ||
+      context.communityAiAnalysis?.selectedProblemFamily?.trim() ||
+      '';
+    const hasSelectedCanonicalFamily = Boolean(
+      selectedCanonicalFamilyLabel && corroborationSelectedFamilyIds.size > 0,
     );
+
+    /*
+     * For an explicit requester problem, only the currently accepted canonical
+     * family counts as existing semantic coverage. A broad single-source row
+     * that was released by the request-intent gate must not suppress fresh AI
+     * recovery planning merely because its old classification is still kept in
+     * the audit ledger. Discovery paths can still use the global trusted pool.
+     */
+    const qualifiedCommunityEvidenceCount = requestSpecificRecovery
+      ? hasSelectedCanonicalFamily
+        ? context.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ??
+          corroborationSelectedFamilyIds.size
+        : 0
+      : context.communityAiAnalysis?.evidenceClassifications?.filter(
+          (item) =>
+            item.classification === 'DIRECT_PROBLEM' ||
+            item.classification === 'SUPPORTING_SIGNAL',
+        ).length ?? 0;
+    const needsExpandedRequestRecovery =
+      requestSpecificRecovery && qualifiedCommunityEvidenceCount === 0;
+
+    const canonicalTrustedForCorroboration = hasSelectedCanonicalFamily
+      ? (context.canonicalEvidenceLedger ?? []).filter(
+          (item) =>
+            item.verified &&
+            (item.classification === 'DIRECT_PROBLEM' ||
+              item.classification === 'SUPPORTING_SIGNAL') &&
+            corroborationSelectedFamilyIds.has(item.id),
+        )
+      : [];
     const trustedCorroborationSourceKeys = new Set(
       canonicalTrustedForCorroboration.map((item) =>
-        item.sourceKey.trim().toLocaleLowerCase(),
+        EvidenceSourceIdentityUtil.resolve(item),
       ),
     );
     const singleSourceFamilyCorroboration =
       canonicalTrustedForCorroboration.length > 0 &&
       trustedCorroborationSourceKeys.size < 2;
     /*
-     * Use provider-diverse AI re-planning only on the first recovery wave.
-     * Request-scoped paths expand the requester problem; discovery paths ask
-     * the domain-discovery planner for a fresh semantic search plan. If the
-     * online planner misses its bounded deadline, expandEvidenceSearch returns
-     * the recovery-specific canonical deterministic plan instead of replaying
-     * first-pass vocabulary.
+     * Use provider-diverse AI re-planning only while the run still needs a new
+     * semantic evidence direction. Once a canonical family already exists and
+     * recovery is merely seeking an independent corroborating source, another
+     * AI planning call adds latency without changing the semantic target. In
+     * that case we reuse the existing AI-owned vocabulary/family and rotate it
+     * through new healthy source-specific lanes below. Zero-evidence recovery
+     * still receives fresh AI semantic re-planning.
      */
     const rawEvidenceCount = context.rawEvidenceCorpus?.length ?? 0;
     const rawEvidenceSourceCount = new Set(
       (context.rawEvidenceCorpus ?? []).map((item) => item.sourceKey),
     ).size;
     const shouldUseAiRecoveryPlan =
-      context.evidenceRecoveryAttempts === 0 &&
+      context.evidenceRecoveryAttempts < MAX_EVIDENCE_RECOVERY_ATTEMPTS &&
+      !singleSourceFamilyCorroboration &&
       (needsExpandedRequestRecovery ||
-        singleSourceFamilyCorroboration ||
         (!requestSpecificRecovery && context.selectedDomains.length > 0));
+    if (singleSourceFamilyCorroboration) {
+      this.logger.debug(
+        `Recovery corroboration reuses the canonical AI-owned family/vocabulary and skips redundant AI re-planning. family="${lockedProblemFamily || 'unknown'}" existingSources=${trustedCorroborationSourceKeys.size}.`,
+      );
+    }
+
     const recoveryPlannerRemainingMs = Math.max(
       0,
       recoveryDeadlineAt - Date.now() - 9_000,
@@ -322,11 +458,7 @@ export class IdeaEvidenceRecoveryService {
     const recoveryPlannerBudgetMs = Math.min(3_200, recoveryPlannerRemainingMs);
     let recoveryQueryPlan: RequestCollectionPlan | null = null;
     if (shouldUseAiRecoveryPlan && recoveryPlannerBudgetMs >= 900) {
-      const corroborationDescription =
-        selectedOpportunity?.problem?.trim() ||
-        selectedOpportunity?.title?.trim() ||
-        context.communityAiAnalysis?.selectedProblemFamily?.trim() ||
-        '';
+      const corroborationDescription = lockedProblemFamily;
       const planned = (
         requestSpecificRecovery ||
         (singleSourceFamilyCorroboration && Boolean(corroborationDescription))
@@ -336,18 +468,22 @@ export class IdeaEvidenceRecoveryService {
               ? context.requestDescription ?? ''
               : corroborationDescription,
             keywords: [
+              ...(lockedProblemFamily ? [lockedProblemFamily] : []),
               ...(context.collectionPlan?.inferredSecondaryScopes ?? []),
               ...context.keywords,
             ].slice(0, 16),
             previousQueries: context.collectionPlan?.searchQueries ?? [],
             evidenceTargets: [
+              ...(lockedProblemFamily ? [lockedProblemFamily] : []),
               ...(selectedOpportunity?.problem
                 ? [selectedOpportunity.problem]
                 : []),
               ...(selectedOpportunity?.title
                 ? [selectedOpportunity.title]
                 : []),
-              ...(context.collectionPlan?.evidenceTargets ?? []),
+              ...(singleSourceFamilyCorroboration
+                ? []
+                : context.collectionPlan?.evidenceTargets ?? []),
             ].slice(0, 10),
             sourceOutcomes: this.buildRecoverySourceOutcomes(context),
             generationType: context.generationType,
@@ -393,6 +529,51 @@ export class IdeaEvidenceRecoveryService {
       }
     }
 
+    /*
+     * Once a canonical family exists, recovery is a corroboration operation,
+     * not a second domain-discovery pass. Feed that immutable family back into
+     * source capability checks and query compilation even on DOMAINS_ONLY /
+     * NO_INPUT paths where requestDescription is empty. This prevents a locked
+     * family such as "LLM context drift" from drifting back to generic AI
+     * hallucination/debugging queries during recovery.
+     */
+    const recoverySemanticDescription =
+      requestSpecificRecovery
+        ? context.requestDescription?.trim() ?? ''
+        : singleSourceFamilyCorroboration
+          ? lockedProblemFamily
+          : '';
+
+    /*
+     * Corroboration queries must come from the CURRENT canonical family and
+     * its accepted observed-problem rows. Never replay an older discovery
+     * vocabulary merely because it is still present in collectionPlan. This
+     * keeps a family such as "AI System Failure Modes" from drifting back to
+     * a stale training-data/compliance query after the canonical winner has
+     * already changed.
+     */
+    const canonicalFamilyRecoveryQueries = singleSourceFamilyCorroboration
+      ? [
+          selectedCanonicalFamilyLabel,
+          ...canonicalTrustedForCorroboration.flatMap((item) => [
+            item.problemFamily ?? '',
+            item.observedProblem ?? '',
+          ]),
+        ]
+          .map((query) => this.sanitizeRecoveryQuery(query))
+          .filter(Boolean)
+          .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+          .filter(
+            (query, index, values) =>
+              values.findIndex(
+                (candidate) =>
+                  candidate.trim().toLocaleLowerCase() ===
+                  query.trim().toLocaleLowerCase(),
+              ) === index,
+          )
+          .slice(0, this.maximumRecoveryKeywords)
+      : [];
+
     const aiRecoverySourceKeys = new Set(
       recoveryQueryPlan?.aiUsed && !recoveryQueryPlan.fallbackUsed
         ? (recoveryQueryPlan.selectedSourceKeys ?? []).map((key) =>
@@ -409,14 +590,38 @@ export class IdeaEvidenceRecoveryService {
           const sourcePlan = recoveryQueryPlan?.sourcePlans?.find(
             (plan) => plan.sourceKey.toLocaleLowerCase() === key,
           );
-          return this.collectorsFactory.isCollectorRouteExecutable(key, {
-            requestDescription: context.requestDescription,
+          const capabilityInput = {
+            requestDescription: recoverySemanticDescription || context.requestDescription,
             domainName: context.domainName,
             keywords: context.keywords,
-            plannedQueries: sourcePlan?.queries ?? recoveryQueryPlan?.searchQueries ?? [],
+            plannedQueries:
+              sourcePlan?.queries ?? recoveryQueryPlan?.searchQueries ?? [],
             sourceHints: sourcePlan?.routingHints ?? [],
-            collectionMode: 'TARGETED_RECOVERY',
-          });
+            collectionMode: 'TARGETED_RECOVERY' as const,
+          };
+
+          /*
+           * AI owns the semantic recovery plan, but an accidental source choice
+           * must not route a physical/professional workflow into a clearly
+           * incompatible developer-only corpus. The generic capability score is
+           * domain-agnostic and therefore acts only as a route-quality floor,
+           * not as a semantic evidence verdict. Technical requests still score
+           * GitHub/StackOverflow highly and remain eligible.
+           */
+          if (
+            (requestSpecificRecovery || Boolean(recoverySemanticDescription)) &&
+            this.collectorsFactory.getCollectorRequestFitScore(
+              key,
+              capabilityInput,
+            ) < 0.42
+          ) {
+            return false;
+          }
+
+          return this.collectorsFactory.isCollectorRouteExecutable(
+            key,
+            capabilityInput,
+          );
         })
           .sort((left, right) => {
             const leftPlan = recoveryQueryPlan?.sourcePlans?.find(
@@ -426,15 +631,42 @@ export class IdeaEvidenceRecoveryService {
               (plan) => plan.sourceKey.toLocaleLowerCase() === right.key.toLocaleLowerCase(),
             );
             return (
-              this.scoreRecoverySource(context, right, rightPlan) -
-                this.scoreRecoverySource(context, left, leftPlan) ||
+              this.scoreRecoverySource(
+                context,
+                right,
+                rightPlan,
+                recoverySemanticDescription || recoveryRoutingDescription,
+              ) -
+                this.scoreRecoverySource(
+                  context,
+                  left,
+                  leftPlan,
+                  recoverySemanticDescription || recoveryRoutingDescription,
+                ) ||
               left.key.localeCompare(right.key)
             );
           })
       : [];
-    const preferredRecoverySources = aiSelectedRecoverySources.length > 0
-      ? aiSelectedRecoverySources
-      : selectedRecoverySources;
+    /*
+     * AI-selected sources keep first priority, but one surviving AI lane must
+     * not collapse the whole recovery wave to a single source after capability
+     * filtering. Fill the remaining bounded slots from the same generic
+     * request-fit/health ranking. This is especially important when the planner
+     * proposes one incompatible developer/app source plus one valid source: the
+     * invalid lane is removed, while community/documentary/research coverage is
+     * still completed without launching another serial recovery wave.
+     */
+    const preferredRecoverySources = [
+      ...aiSelectedRecoverySources,
+      ...selectedRecoverySources,
+    ].filter(
+      (source, index, all) =>
+        all.findIndex(
+          (candidate) =>
+            candidate.key.trim().toLocaleLowerCase() ===
+            source.key.trim().toLocaleLowerCase(),
+        ) === index,
+    );
     const requesterRecoverySourceLimit =
       requestSpecificRecovery &&
       qualifiedCommunityEvidenceCount > 0 &&
@@ -493,7 +725,9 @@ export class IdeaEvidenceRecoveryService {
     const recoveryKeywords = (
       plannedRecoveryKeywords.length > 0
         ? plannedRecoveryKeywords
-        : aiOwnedFallbackQueries
+        : canonicalFamilyRecoveryQueries.length > 0
+          ? canonicalFamilyRecoveryQueries
+          : aiOwnedFallbackQueries
     )
       .map((query) => this.sanitizeRecoveryQuery(query))
       .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
@@ -532,9 +766,11 @@ export class IdeaEvidenceRecoveryService {
       recoveryQueryPlan.fallbackUsed !== true &&
       (recoveryQueryPlan.searchQueries?.length ?? 0) > 0;
     const authoritativeRecoveryQueries =
-      (recoveryQueryPlan?.searchQueries?.length ?? 0) > 0
-        ? [...(recoveryQueryPlan?.searchQueries ?? [])]
-        : recoveryKeywords;
+      canonicalFamilyRecoveryQueries.length > 0
+        ? canonicalFamilyRecoveryQueries
+        : (recoveryQueryPlan?.searchQueries?.length ?? 0) > 0
+          ? [...(recoveryQueryPlan?.searchQueries ?? [])]
+          : recoveryKeywords;
     const aiSourcePlans = usingAiRecoveryPlan
       ? recoveryQueryPlan?.sourcePlans ?? []
       : [];
@@ -552,7 +788,7 @@ export class IdeaEvidenceRecoveryService {
         context.selectedDomains.find((domain) => domain.id === context.domainId) ??
         context.selectedDomains[0] ??
         null;
-      const domainRecoveryQueries = recoveryDomain
+      const domainRecoveryQueries = recoveryDomain && !singleSourceFamilyCorroboration
         ? (context.collectionPlan?.sourcePlans ?? [])
             .filter((plan) =>
               (plan.discoveryDomainIds ?? []).includes(recoveryDomain.id) ||
@@ -577,7 +813,8 @@ export class IdeaEvidenceRecoveryService {
             ].filter((query): query is string => Boolean(query?.trim()))
           : [];
       const rawQueries: string[] = [...new Set<string>(
-        (planned?.queries?.length && context.requestDescription?.trim()
+        (planned?.queries?.length &&
+          (requestSpecificRecovery || singleSourceFamilyCorroboration)
           ? planned.queries
           : fallbackQueries)
           .map((query) => this.sanitizeRecoveryQuery(query))
@@ -586,11 +823,14 @@ export class IdeaEvidenceRecoveryService {
       const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
         sourceKey: source.key,
         baseQueries: rawQueries,
-        requestDescription: context.requestDescription,
+        requestDescription:
+          recoverySemanticDescription || context.requestDescription,
         problemProfile: context.collectionPlan?.problemProfile,
         discoveryDomainName: recoveryDomain?.name ?? context.domainName,
         maxQueries: 2,
-        preserveBaseQueries: Boolean(context.requestDescription?.trim()),
+        preserveBaseQueries: Boolean(
+          recoverySemanticDescription || context.requestDescription?.trim(),
+        ),
       });
       return {
         sourceKey: source.key,
@@ -757,7 +997,7 @@ export class IdeaEvidenceRecoveryService {
       (context.canonicalEvidenceLedger ?? []).map((item) => item.id),
     );
 
-    const rawEvidenceCorpus: IdeaGenerationRawEvidenceItem[] =
+    const rawEvidenceCorpusAll: IdeaGenerationRawEvidenceItem[] =
       novelRawRecoveryEvidence.map((evidence) => ({
         id: this.buildRecoveryEvidenceId(evidence),
         sourceKey: evidence.sourceKey,
@@ -776,17 +1016,43 @@ export class IdeaEvidenceRecoveryService {
         sourceTier: evidence.sourceTier ?? 'PRIMARY',
       }));
 
-    const recoveryCanonicalIds = new Set(
-      rawEvidenceCorpus.map((item) => item.id),
-    );
+    const rawEvidenceById = new Map<string, IdeaGenerationRawEvidenceItem>();
+    for (const item of rawEvidenceCorpusAll) {
+      if (!rawEvidenceById.has(item.id)) {
+        rawEvidenceById.set(item.id, item);
+      }
+    }
+    const recoveryCanonicalIds = new Set(rawEvidenceById.keys());
     const duplicateCanonicalIdCount = [...recoveryCanonicalIds].filter((id) =>
       existingCanonicalIds.has(id),
     ).length;
-    const canonicalNewIdCount =
-      recoveryCanonicalIds.size - duplicateCanonicalIdCount;
+
+    /*
+     * A recovery row that resolves to an already-canonical provenance id is not
+     * new evidence and must not be allowed to overwrite the original verdict.
+     * More importantly, semantic triage must receive every genuinely NEW
+     * canonical provenance row, even when two rows have equivalent text. The
+     * previous text-level collapse classified only one representative and left
+     * the other new provenance row as AI_UNAVAILABLE during final reconciliation.
+     */
+    const rawEvidenceCorpus = [...rawEvidenceById.values()].filter(
+      (item) => !existingCanonicalIds.has(item.id),
+    );
+    const canonicalNewIdCount = rawEvidenceCorpus.length;
 
     this.logger.debug(
-      `Targeted recovery retention accounting | rawInputs=${rawRecoveryInputCount} | mapped=${mappedRecoveryEvidenceCount} | provenanceDeduplicated=${provenanceDeduplicatedCount} | duplicateAgainstPrimary=${duplicateAgainstPrimaryCount} | uniqueProvenance=${novelRawRecoveryEvidence.length} | uniqueTextForCommunity=${novelRawRecoverySamples.length} | textEquivalentCollapsed=${textEquivalentCollapseCount} | duplicateCanonicalId=${duplicateCanonicalIdCount} | canonicalNewIds=${canonicalNewIdCount}.`,
+      `Targeted recovery retention accounting | rawInputs=${rawRecoveryInputCount} | mapped=${mappedRecoveryEvidenceCount} | provenanceDeduplicated=${provenanceDeduplicatedCount} | duplicateAgainstPrimary=${duplicateAgainstPrimaryCount} | uniqueProvenance=${novelRawRecoveryEvidence.length} | uniqueTextForDiagnostics=${novelRawRecoverySamples.length} | textEquivalentCollapsed=${textEquivalentCollapseCount} | duplicateCanonicalId=${duplicateCanonicalIdCount} | canonicalNewIds=${canonicalNewIdCount} | semanticRows=${rawEvidenceCorpus.length}.`,
+    );
+
+    const canonicalNewRecoveryIds = new Set(
+      rawEvidenceCorpus.map((item) => item.id),
+    );
+    const canonicalNovelRawRecoveryEvidence = novelRawRecoveryEvidence.filter(
+      (evidence) =>
+        canonicalNewRecoveryIds.has(this.buildRecoveryEvidenceId(evidence)),
+    );
+    const canonicalNovelRecoverySamples = this.deduplicateEvidenceSamples(
+      rawEvidenceCorpus.map((item) => item.text),
     );
 
     /*
@@ -794,7 +1060,7 @@ export class IdeaEvidenceRecoveryService {
      * the provider returns semantic classifications, those classifications are
      * authoritative subject to deterministic request/workflow verification.
      */
-    const deterministicRequestAlignedEvidence = novelRawRecoveryEvidence.filter(
+    const deterministicRequestAlignedEvidence = canonicalNovelRawRecoveryEvidence.filter(
       (evidence) =>
         this.looksLikeUsableProblemEvidence(evidence.text) &&
         this.isEvidenceAcceptableForRecovery(
@@ -804,7 +1070,7 @@ export class IdeaEvidenceRecoveryService {
         ),
     );
     const deterministicWorkflowAdjacentEvidence =
-      novelRawRecoveryEvidence.filter(
+      canonicalNovelRawRecoveryEvidence.filter(
         (evidence) =>
           this.looksLikeUsableProblemEvidence(evidence.text) &&
           !deterministicRequestAlignedEvidence.some((accepted) =>
@@ -815,17 +1081,45 @@ export class IdeaEvidenceRecoveryService {
 
     const rawRecoveryNlp = this.filterNlpContextToNovelEvidence(
       nlp,
-      novelRawRecoverySamples,
+      canonicalNovelRecoverySamples,
     );
-    const shouldRunCommunityAiRecovery = novelRawRecoverySamples.length > 0;
+    const shouldRunCommunityAiRecovery = rawEvidenceCorpus.length > 0;
+    /*
+     * Once a recovery collector has already returned new provenance rows, do
+     * not let the collection/planning wall-clock abort semantic admission of
+     * those rows. That was the exact failure mode where recovery had useful
+     * raw evidence but the run ended as EVIDENCE_ADJUDICATION_UNAVAILABLE.
+     *
+     * Give Community AI one separate bounded post-collection adjudication
+     * grace window. It is still linked to the pipeline/user cancellation
+     * signal, so an explicit cancel remains immediate. The SAME complete
+     * recovered corpus is raced; no semantic mini-batches are introduced.
+     */
+    /*
+     * This is a SAFETY ceiling, not a fixed wait. The race still returns as
+     * soon as the first complete valid full-corpus verdict arrives. Small
+     * recovery corpora usually finish in ~5-7s, but the ceiling scales enough
+     * to avoid turning a transient 8-12s provider slowdown into false
+     * AI_UNAVAILABLE / EVIDENCE_ADJUDICATION_UNAVAILABLE.
+     */
+    const recoveryAdjudicationBudgetMs = corroborationOnlyRecovery
+      ? Math.min(
+          9_000,
+          Math.max(6_500, 6_500 + rawEvidenceCorpus.length * 350),
+        )
+      : Math.min(
+          16_000,
+          Math.max(10_000, 10_000 + rawEvidenceCorpus.length * 450),
+        );
+    const recoveryAdjudicationDeadlineAt =
+      Date.now() + recoveryAdjudicationBudgetMs;
     const rawCommunityAiAnalysis = shouldRunCommunityAiRecovery
       ? await this.analyzeRecoveredEvidenceWithCommunityAi(
           context,
           rawRecoveryNlp,
-          novelRawRecoveryEvidence,
-          novelRawRecoverySamples,
-          recoveryController.signal,
-          recoveryDeadlineAt,
+          rawEvidenceCorpus,
+          parentSignal,
+          recoveryAdjudicationDeadlineAt,
         )
       : null;
 
@@ -836,7 +1130,7 @@ export class IdeaEvidenceRecoveryService {
       ] as const),
     );
     const evidenceByTriageId = new Map(
-      novelRawRecoveryEvidence.map((evidence) => [
+      canonicalNovelRawRecoveryEvidence.map((evidence) => [
         this.buildRecoveryEvidenceId(evidence),
         evidence,
       ] as const),
@@ -897,7 +1191,8 @@ export class IdeaEvidenceRecoveryService {
 
     const compositeEvidenceSamples = requestSpecificRecovery
       ? RequestEvidenceAlignmentUtil.selectCompositeAlignedEvidence({
-          requestDescription: context.requestDescription,
+          requestDescription:
+            recoverySemanticDescription || context.requestDescription,
           evidenceTexts: [
             ...directEvidenceSamples,
             ...supportingEvidenceSamples,
@@ -928,7 +1223,7 @@ export class IdeaEvidenceRecoveryService {
       );
     } else {
       this.logger.debug(
-        `Targeted recovery produced no provisional ${requestSpecificRecovery ? 'request-aligned' : 'selected-domain-aligned'} DIRECT/SUPPORTING candidate after semantic classification. Raw provenance rows=${novelRawRecoveryEvidence.length}, unique Community-AI texts=${novelRawRecoverySamples.length}. The run-level canonical ledger remains authoritative.`,
+        `Targeted recovery produced no provisional ${requestSpecificRecovery ? 'request-aligned' : 'selected-domain-aligned'} DIRECT/SUPPORTING candidate after semantic classification. New canonical provenance rows=${rawEvidenceCorpus.length}, diagnostic unique texts=${canonicalNovelRecoverySamples.length}. The run-level canonical ledger remains authoritative.`,
       );
     }
 
@@ -966,12 +1261,22 @@ export class IdeaEvidenceRecoveryService {
           novelCorpusEvidenceSamples,
         )
       : null;
-    const deterministicEmergencyFallback =
-      this.buildDeterministicRecoveryAnalysis(
-        context,
-        selectedOpportunity,
-        novelCorpusEvidenceSamples,
-      );
+
+    /*
+     * Do not run a second deterministic semantic admission path after Community
+     * AI has already returned a usable DIRECT/SUPPORTING verdict for the new
+     * corpus. The canonical ledger still performs provenance/structural
+     * verification below; this simply removes the redundant heuristic fallback
+     * that could emit a misleading "nothing survived alignment" diagnostic
+     * even while the accepted AI verdict was being retained.
+     */
+    const deterministicEmergencyFallback = acceptedCommunityAiRecovery
+      ? null
+      : this.buildDeterministicRecoveryAnalysis(
+          context,
+          selectedOpportunity,
+          novelCorpusEvidenceSamples,
+        );
     const communityAiAnalysis =
       acceptedCommunityAiRecovery ??
       this.mergeCommunityAiAttemptIntoRecoveryFallback(
@@ -1388,11 +1693,13 @@ export class IdeaEvidenceRecoveryService {
       readonly queries?: readonly string[];
       readonly routingHints?: readonly string[];
     } | null,
+    semanticDescription?: string,
   ): number {
     const semanticFit = this.collectorsFactory.getCollectorRequestFitScore(
       source.key,
       {
-        requestDescription: context.requestDescription,
+        requestDescription:
+          semanticDescription?.trim() || context.requestDescription,
         domainName: context.domainName,
         keywords: context.keywords,
         plannedQueries:
@@ -1702,52 +2009,31 @@ export class IdeaEvidenceRecoveryService {
   private async analyzeRecoveredEvidenceWithCommunityAi(
     context: IdeaGenerationContext,
     nlp: IdeaGenerationNlpContext,
-    provenanceEvidence: readonly RecoveredExternalEvidence[],
-    novelEvidenceSamples: readonly string[],
+    recoveryRawCorpus: readonly IdeaGenerationRawEvidenceItem[],
     signal?: AbortSignal,
     deadlineAt?: number,
   ): Promise<CommunityAiAnalysis | null> {
-    if (novelEvidenceSamples.length === 0) return null;
+    if (recoveryRawCorpus.length === 0) return null;
 
-    const evidenceEntries = novelEvidenceSamples.map((text, index) => {
-      const provenance = provenanceEvidence.find((item) =>
-        this.areEquivalentEvidenceSamples(item.text, text),
-      );
-      const sourceType = provenance?.sourceType ?? 'POST';
-      const sourceKey = provenance?.sourceKey ?? 'recovery';
-      const fallbackExternalId =
-        provenance?.commentExternalId ??
-        provenance?.postExternalId ??
-        `${index + 1}`;
-      const evidenceId = provenance
-        ? this.buildRecoveryEvidenceId(provenance)
-        : `${sourceKey}:${sourceType.toLocaleLowerCase()}:${fallbackExternalId}`;
-
-      return {
-        text,
-        sourceType,
-        sourceKey,
-        evidenceId,
-        provenance,
-        sample: {
-          id: evidenceId,
-          text,
-          sentiment: 'NEUTRAL',
-        },
-      };
-    });
-
-    const samplePosts = evidenceEntries
+    const samplePosts = recoveryRawCorpus
       .filter((entry) => entry.sourceType === 'POST')
-      .map((entry) => entry.sample);
-    const sampleComments = evidenceEntries
+      .map((entry) => ({
+        id: entry.id,
+        text: entry.text,
+        sentiment: 'NEUTRAL',
+      }));
+    const sampleComments = recoveryRawCorpus
       .filter((entry) => entry.sourceType === 'COMMENT')
-      .map((entry) => entry.sample);
+      .map((entry) => ({
+        id: entry.id,
+        text: entry.text,
+        sentiment: 'NEUTRAL',
+      }));
     const recoveryContext: IdeaGenerationContext = {
       ...context,
       nlp: {
         ...nlp,
-        totalTextsAnalyzed: novelEvidenceSamples.length,
+        totalTextsAnalyzed: recoveryRawCorpus.length,
         totalPostsAnalyzed: samplePosts.length,
         totalCommentsAnalyzed: sampleComments.length,
         /*
@@ -1764,18 +2050,9 @@ export class IdeaEvidenceRecoveryService {
         sampleComments: [],
       },
       domainEvidence: [],
-      rawEvidenceCorpus: evidenceEntries.map((entry) => ({
-        id: entry.evidenceId,
-        sourceKey: entry.sourceKey,
-        sourceType: entry.sourceType,
-        text: entry.text,
-        discoveryDomainId: entry.provenance?.discoveryDomainId ?? context.domainId,
-        discoveryDomainName: entry.provenance?.discoveryDomainName ?? context.domainName,
-        queryIntentId: entry.provenance?.queryIntentId ?? null,
-        queryText: entry.provenance?.queryText ?? null,
-        problemFacetIds: entry.provenance?.problemFacetIds ?? context.canonicalProblemSpec?.facets.map((facet) => facet.id) ?? [],
+      rawEvidenceCorpus: recoveryRawCorpus.map((entry) => ({
+        ...entry,
         collectionPhase: 'RECOVERY',
-        sourceTier: entry.provenance?.sourceTier ?? 'PRIMARY',
       })),
       communityAiAnalysis: null,
     };
@@ -1784,13 +2061,29 @@ export class IdeaEvidenceRecoveryService {
       if (signal?.aborted) return null;
       const remainingMs = deadlineAt
         ? Math.max(0, deadlineAt - Date.now())
-        : 4_800;
-      if (remainingMs < 700) return null;
-      const boundedTotalMs = Math.max(700, Math.min(4_800, remainingMs));
+        : Math.min(16_000, Math.max(10_000, 10_000 + recoveryRawCorpus.length * 450));
+      if (remainingMs < 1_000) return null;
+
+      /*
+       * Recovery triage is independent from the collection wall-clock once raw
+       * provenance rows exist. Keep the SAME complete recovery corpus as one
+       * semantic unit, and use an adaptive safety ceiling. This ceiling is not
+       * latency paid on every run: the parallel race still early-stops on the
+       * first complete valid answer.
+       */
+      const adaptiveTotalMs = Math.min(
+        16_000,
+        Math.max(10_000, 10_000 + recoveryRawCorpus.length * 450),
+      );
+      const boundedTotalMs = Math.max(1_000, Math.min(adaptiveTotalMs, remainingMs));
+      const requestTimeoutMs = Math.max(
+        850,
+        Math.min(boundedTotalMs - 350, 15_000),
+      );
       return await this.communityAiAnalysisService.analyze(recoveryContext, {
         classificationOnly: true,
-        maxAttempts: 1,
-        requestTimeoutMs: Math.max(600, Math.min(4_200, boundedTotalMs - 150)),
+        maxAttempts: 3,
+        requestTimeoutMs,
         totalTimeoutMs: boundedTotalMs,
         signal,
       });

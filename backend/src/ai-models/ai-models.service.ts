@@ -868,9 +868,6 @@ export class AiModelsService {
           in: [...ROUTABLE_HEALTH_STATUSES],
         },
 
-        consecutiveFailures: {
-          lt: 3,
-        },
       },
     });
 
@@ -884,12 +881,12 @@ export class AiModelsService {
   }
 
   /**
-   * Returns all active and routable AI models.
+   * Returns all active models in a routable persisted health state.
    *
    * Models are ordered by descending priority and ascending creation
    * time.
    *
-   * @returns Ordered routable AI-model records.
+   * @returns Ordered active AI-model records in a persisted routable health state.
    */
   async getRoutableModels(): Promise<AiModel[]> {
     return this.prisma.aiModel.findMany({
@@ -904,9 +901,6 @@ export class AiModelsService {
           in: [...ROUTABLE_HEALTH_STATUSES],
         },
 
-        consecutiveFailures: {
-          lt: 3,
-        },
       },
 
       orderBy: AI_MODEL_FALLBACK_ORDER,
@@ -951,10 +945,10 @@ export class AiModelsService {
   }
 
   /**
-   * Returns active structured-output models for one bounded mandatory
-   * enrichment attempt. This deliberately bypasses only the normal
-   * consecutive-failure routing threshold; inactive, unsupported-provider,
-   * non-JSON, and UNAVAILABLE models remain excluded.
+   * Returns active structured-output models in a persisted routable health
+   * state for one bounded mandatory enrichment attempt. Live provider/model
+   * cooldown still belongs to AiModelRoutingService; inactive, unsupported-
+   * provider, non-JSON, and UNAVAILABLE models remain excluded.
    */
   async getEmergencyJsonModels(): Promise<AiModel[]> {
     return this.prisma.aiModel.findMany({

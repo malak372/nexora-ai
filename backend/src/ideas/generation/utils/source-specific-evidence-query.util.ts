@@ -42,8 +42,14 @@ export class SourceSpecificEvidenceQueryUtil {
               ? this.buildTechnicalPainQueries(input, base)
               : base;
 
+    const preferProblemNativeProbe = Boolean(input.problemProfile) &&
+      ['news', 'gdelt', 'blog', 'reddit', 'forum', 'youtube', 'hacker-news', 'app-store', 'google-play'].includes(sourceKey);
     const prioritizedCandidates = input.preserveBaseQueries
-      ? this.interleavePreservingBase(candidates, base)
+      ? this.interleavePreservingBase(
+          candidates,
+          base,
+          preferProblemNativeProbe,
+        )
       : candidates;
 
     return this.unique(prioritizedCandidates)
@@ -106,14 +112,15 @@ export class SourceSpecificEvidenceQueryUtil {
     ]
       .map((value) => this.compact(value, 4))
       .filter(Boolean);
-    const domain = this.compact(input.discoveryDomainName ?? '', 2);
-
+    const compactObject = this.compact(profile.object, 4);
+    const compactFailure = failures[0] ?? this.compact(profile.coreProblem, 4);
     const profileQueries = [
+      this.join(compactObject, workflow, 'study'),
+      this.join(compactObject, compactFailure, 'operational bottleneck research'),
+      this.join(this.compact(profile.actor, 3), compactFailure, 'workflow challenge'),
+      this.join(alternateIdentity, failures[1] ?? compactFailure, 'study'),
+      this.join(compactObject, this.compact(profile.consequences[0] ?? '', 3), 'service delay'),
       this.join(identity, workflow, 'challenges'),
-      this.join(identity, failures[0], 'study'),
-      this.join(alternateIdentity, workflow, failures[0]),
-      this.join(profile.object, failures[1] ?? failures[0], domain),
-      this.join(profile.object, profile.consequences[0], 'intervention'),
     ];
 
     // Crossref lexical search is especially sensitive to ambiguous isolated
@@ -163,11 +170,17 @@ export class SourceSpecificEvidenceQueryUtil {
       profile.friction ?? profile.failureModes[0] ?? profile.coreProblem,
       4,
     );
+    const consequence = this.compact(profile.consequences[0] ?? '', 4);
+    const object = this.compact(profile.object, 4);
+    const shortWorkflow = this.compact(profile.workflow, 4);
     return [
-      this.join(identity, failure, 'reported'),
-      this.join(profile.object, profile.workflow, 'challenge'),
-      this.join(profile.actor, failure, 'case'),
-      ...baseQueries.map((query) => this.join(identity, this.compact(query, 6))),
+      this.join(object, failure, 'reported problem'),
+      this.join(shortWorkflow, failure, 'delay bottleneck'),
+      this.join(object, consequence, 'service delay'),
+      this.join(this.compact(profile.actor, 3), failure, 'case report'),
+      this.join(identity, failure, 'reported incident'),
+      this.join(object, shortWorkflow, 'operational challenge'),
+      ...baseQueries.map((query) => this.join(object, this.compact(query, 6))),
       ...baseQueries,
     ];
   }
@@ -222,11 +235,16 @@ export class SourceSpecificEvidenceQueryUtil {
       ...profile.consequences,
     ].map((value) => this.compact(value, 4)).filter(Boolean);
 
+    const primaryFailure = failures[0] ?? this.compact(profile.coreProblem, 4);
+    const secondaryFailure = failures[1] ?? primaryFailure;
+    const consequence = this.compact(profile.consequences[0] ?? '', 3);
     return [
-      this.join(actor, object, failures[0], 'problem'),
-      this.join(actor, workflow, failures[0], 'struggle'),
-      this.join(alternateActor, object, failures[1] ?? failures[0], 'difficulty'),
-      this.join(object, workflow, failures[0], 'help'),
+      this.join(object, primaryFailure, 'problem'),
+      this.join(actor, primaryFailure, 'complaint'),
+      this.join(workflow, secondaryFailure, 'frustrating delay'),
+      this.join(object, consequence, 'real experience'),
+      this.join(alternateActor, secondaryFailure, 'workflow issue'),
+      this.join(actor, object, primaryFailure, 'struggle'),
       ...baseQueries,
     ];
   }
@@ -290,6 +308,7 @@ export class SourceSpecificEvidenceQueryUtil {
   private static interleavePreservingBase(
     candidates: readonly string[],
     baseQueries: readonly string[],
+    preferAdaptedFirst = false,
   ): string[] {
     const safeBase = this.unique(baseQueries);
     const adapted = this.unique(candidates).filter(
@@ -313,8 +332,9 @@ export class SourceSpecificEvidenceQueryUtil {
     const interleaved: string[] = [];
     const width = Math.max(safeBase.length, adapted.length);
     for (let index = 0; index < width; index += 1) {
+      if (preferAdaptedFirst && adapted[index]) interleaved.push(adapted[index]!);
       if (safeBase[index]) interleaved.push(safeBase[index]!);
-      if (adapted[index]) interleaved.push(adapted[index]!);
+      if (!preferAdaptedFirst && adapted[index]) interleaved.push(adapted[index]!);
     }
     return interleaved;
   }
@@ -327,6 +347,8 @@ export class SourceSpecificEvidenceQueryUtil {
       'smarter', 'smart', 'platform', 'system', 'solution', 'could',
     ]);
     return this.sanitize(value)
+      .replace(/[,:;()\[\]{}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
       .split(/\s+/u)
       .filter((word) => word.length >= 2 && !stop.has(word.toLocaleLowerCase()))
       .slice(0, maxWords)

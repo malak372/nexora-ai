@@ -315,18 +315,20 @@ export class IdeaPersistenceService {
     const persistedIdea = transactionResult.persistedIdea;
 
     /*
-     * The idea and entitlement are already committed. Cache invalidation and
-     * notification are post-commit side effects and must not hold the user on
-     * the generation screen. Execute them concurrently in the background while
-     * preserving failure logging inside their dedicated services.
+     * The idea and entitlement are already committed. A low/exhausted-credit
+     * in-app alert is user-visible state, so make its persistence a guaranteed
+     * post-commit step before returning. The notification service keeps email
+     * and push delivery best-effort so they do not extend generation latency.
      */
+    await this.notifyPremiumCreditBalance(
+      normalizedInput,
+      transactionResult.creditAdjustment,
+    );
+
+    /* Cache invalidation is recoverable and may safely finish off the response path. */
     void Promise.allSettled([
       this.invalidatePremiumCreditCaches(normalizedInput),
       summaryInvalidation,
-      this.notifyPremiumCreditBalance(
-        normalizedInput,
-        transactionResult.creditAdjustment,
-      ),
     ]).then((results) => {
       for (const result of results) {
         if (result.status === 'rejected') {
@@ -627,8 +629,16 @@ export class IdeaPersistenceService {
           '$1 describe',
         )
         .replace(
+          /\b((?:Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|\d+) retained (?:secondary reports?|supporting reports?|community reports?|supporting signals?)(?: across (?:two|three|four|five|six|seven|eight|nine|ten|\d+) (?:retained |independent )?sources?)?)\s+describes\b/giu,
+          '$1 describe',
+        )
+        .replace(
           /\b((?:Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|\d+) verified supporting signals) was retained\b/giu,
           '$1 were retained',
+        )
+        .replace(
+          /\b(help|helps|helped|ensure|ensures|the|to|and|or|of|for|with|that|this|these|those)\s+\1\b/giu,
+          '$1',
         )
         .trim();
 
@@ -1674,6 +1684,7 @@ export class IdeaPersistenceService {
         userId: input.userId,
         previousBalance: creditAdjustment.previousBalance,
         balanceAfter: creditAdjustment.balanceAfter,
+        referencePremiumIdeaCreditCost: input.creditsToConsume,
       },
     );
   }

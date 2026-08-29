@@ -106,6 +106,13 @@ type HistoricalDomainScore = {
   score: number;
 };
 
+type PersonalizationSnapshotRow = {
+  readonly preferredDomains: Prisma.JsonValue | null;
+  readonly structuredPreferences: Prisma.JsonValue | null;
+  readonly favoriteDomainIds: Prisma.JsonValue | null;
+  readonly generatedDomainIds: Prisma.JsonValue | null;
+};
+
 /**
  * Resolves exactly one active, concrete domain for an idea-generation request.
  *
@@ -309,6 +316,16 @@ export class DomainResolutionService {
       };
     }
 
+    /*
+     * NO_INPUT fast path: the domain catalog and personalization snapshot are
+     * independent database reads. Start them together instead of paying a cold
+     * catalog round-trip followed by a second serial personalization round-trip.
+     * This removes the 7s+ primaryResolution tail seen when Supabase latency is
+     * higher than the AI discovery planner itself.
+     */
+    const personalizationSnapshotPromise = !hasCurrentRequest
+      ? this.loadPersonalizationSnapshot(input.userId)
+      : Promise.resolve<PersonalizationSnapshotRow | null | undefined>(null);
     const domains =
       currentRequestDomains ??
       (await this.loadConcreteDomains(input.language, false));
@@ -416,10 +433,14 @@ export class DomainResolutionService {
      * back to the existing Prisma path; `null` means it succeeded but found no
      * usable personalization signal.
      */
-    const fastPersonalization = await this.resolvePersonalizationSnapshot(
-      input.userId,
-      domains,
-    );
+    const personalizationSnapshot = await personalizationSnapshotPromise;
+    const fastPersonalization =
+      personalizationSnapshot === undefined
+        ? undefined
+        : this.buildPersonalizationResolutionFromSnapshot(
+            personalizationSnapshot,
+            domains,
+          );
     if (fastPersonalization !== undefined) {
       if (fastPersonalization) return fastPersonalization;
       return this.resolveSystemFallback(domains);
@@ -745,19 +766,13 @@ export class DomainResolutionService {
     };
   }
 
-  private async resolvePersonalizationSnapshot(
+  private async loadPersonalizationSnapshot(
     userId: string | undefined,
-    domains: readonly DomainCandidate[],
-  ): Promise<DomainResolutionResult | null | undefined> {
+  ): Promise<PersonalizationSnapshotRow | null | undefined> {
     if (!userId) return null;
 
     try {
-      const rows = await this.prisma.$queryRaw<Array<{
-        preferredDomains: Prisma.JsonValue | null;
-        structuredPreferences: Prisma.JsonValue | null;
-        favoriteDomainIds: Prisma.JsonValue | null;
-        generatedDomainIds: Prisma.JsonValue | null;
-      }>>(Prisma.sql`
+      const rows = await this.prisma.$queryRaw<PersonalizationSnapshotRow[]>(Prisma.sql`
         SELECT
           (
             SELECT preference."preferred_domains"
@@ -801,65 +816,7 @@ export class DomainResolutionService {
             ) AS recent
           ), '[]'::jsonb) AS "generatedDomainIds"
       `);
-
-      const snapshot = rows[0];
-      if (!snapshot) return null;
-      const structuredValues = Array.isArray(snapshot.structuredPreferences)
-        ? snapshot.structuredPreferences.flatMap((item) => {
-            if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
-            const record = item as Record<string, Prisma.JsonValue>;
-            return [record.key, record.name].filter(
-              (value): value is string =>
-                typeof value === 'string' && value.trim().length > 0,
-            );
-          })
-        : [];
-      const preferredValues = [
-        ...this.readStringArray(snapshot.preferredDomains),
-        ...structuredValues,
-      ];
-      const preference = this.buildPreferenceResolution(domains, preferredValues);
-      if (preference) {
-        return this.withPersonalizationFallbackTrace(preference, 'saved preference');
-      }
-
-      const buildScores = (value: Prisma.JsonValue | null, weight: number) => {
-        const scores = new Map<string, HistoricalDomainScore>();
-        for (const domainId of this.readStringArray(value)) {
-          this.addHistoricalScore(scores, domainId, weight);
-        }
-        return scores;
-      };
-      const favorite = this.buildHistoryResolution(
-        domains,
-        buildScores(
-          snapshot.favoriteDomainIds,
-          DomainResolutionService.FAVORITE_IDEA_WEIGHT,
-        ),
-        0.84,
-        'The user did not provide a current problem/domain, so favorite-idea history selected the most explicitly preferred domain.',
-        'Favorite idea history',
-      );
-      if (favorite) {
-        return this.withPersonalizationFallbackTrace(favorite, 'favorite ideas');
-      }
-
-      const historical = this.buildHistoryResolution(
-        domains,
-        buildScores(
-          snapshot.generatedDomainIds,
-          DomainResolutionService.GENERATED_IDEA_WEIGHT,
-        ),
-        0.72,
-        "No current request, saved preference, or favorite-domain signal was available, so the most frequently generated domain in the user's recent idea history was selected.",
-        'Most frequently generated domain in recent history',
-      );
-      return historical
-        ? this.withPersonalizationFallbackTrace(
-            historical,
-            'most frequently generated domains from recent history',
-          )
-        : null;
+      return rows[0] ?? null;
     } catch (error: unknown) {
       this.logger.debug(
         `Combined personalization snapshot failed non-fatally; falling back to the existing Prisma reads. error=${
@@ -868,6 +825,70 @@ export class DomainResolutionService {
       );
       return undefined;
     }
+  }
+
+  private buildPersonalizationResolutionFromSnapshot(
+    snapshot: PersonalizationSnapshotRow | null,
+    domains: readonly DomainCandidate[],
+  ): DomainResolutionResult | null {
+    if (!snapshot) return null;
+
+    const structuredValues = Array.isArray(snapshot.structuredPreferences)
+      ? snapshot.structuredPreferences.flatMap((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+          const record = item as Record<string, Prisma.JsonValue>;
+          return [record.key, record.name].filter(
+            (value): value is string =>
+              typeof value === 'string' && value.trim().length > 0,
+          );
+        })
+      : [];
+    const preferredValues = [
+      ...this.readStringArray(snapshot.preferredDomains),
+      ...structuredValues,
+    ];
+    const preference = this.buildPreferenceResolution(domains, preferredValues);
+    if (preference) {
+      return this.withPersonalizationFallbackTrace(preference, 'saved preference');
+    }
+
+    const buildScores = (value: Prisma.JsonValue | null, weight: number) => {
+      const scores = new Map<string, HistoricalDomainScore>();
+      for (const domainId of this.readStringArray(value)) {
+        this.addHistoricalScore(scores, domainId, weight);
+      }
+      return scores;
+    };
+    const favorite = this.buildHistoryResolution(
+      domains,
+      buildScores(
+        snapshot.favoriteDomainIds,
+        DomainResolutionService.FAVORITE_IDEA_WEIGHT,
+      ),
+      0.84,
+      'The user did not provide a current problem/domain, so favorite-idea history selected the most explicitly preferred domain.',
+      'Favorite idea history',
+    );
+    if (favorite) {
+      return this.withPersonalizationFallbackTrace(favorite, 'favorite ideas');
+    }
+
+    const historical = this.buildHistoryResolution(
+      domains,
+      buildScores(
+        snapshot.generatedDomainIds,
+        DomainResolutionService.GENERATED_IDEA_WEIGHT,
+      ),
+      0.72,
+      "No current request, saved preference, or favorite-domain signal was available, so the most frequently generated domain in the user's recent idea history was selected.",
+      'Most frequently generated domain in recent history',
+    );
+    return historical
+      ? this.withPersonalizationFallbackTrace(
+          historical,
+          'most frequently generated domains from recent history',
+        )
+      : null;
   }
 
   /**

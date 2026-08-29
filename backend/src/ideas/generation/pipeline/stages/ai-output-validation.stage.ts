@@ -48,6 +48,7 @@ import { resolvePrimaryProblemFamily } from '../../../../nlp/common/utils/proble
 import { RequestProductBlueprintUtil } from '../../utils/request-product-blueprint.util';
 import { CanonicalRequestProductBlueprintUtil } from '../../utils/canonical-request-product-blueprint.util';
 import { TargetUserDeduplicationUtil } from '../../utils/target-user-deduplication.util';
+import { EvidenceSourceIdentityUtil } from '../../utils/evidence-source-identity.util';
 
 /**
  * Performs final business-level validation and normalization of
@@ -991,8 +992,56 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         ]);
       }
 
+      if (name.includes('smart cities') || name === 'smart city') {
+        return !containsAny([
+          'smart city',
+          'smart cities',
+          'municipal',
+          'municipality',
+          'municipalities',
+          'city infrastructure',
+          'urban infrastructure',
+          'urban operations',
+          'city services',
+          'city-scale',
+          'city scale',
+          'sanitation operations',
+          'municipal waste',
+        ]);
+      }
+
+      if (name.includes('logistics')) {
+        return !containsAny([
+          'logistics',
+          'route optimization',
+          'route optimisation',
+          'vehicle routing',
+          'fleet routing',
+          'fleet dispatch',
+          'dispatch',
+          'collection route',
+          'delivery route',
+          'transport routing',
+        ]);
+      }
+
       const aliases = name === 'energy' || name.includes('energy')
         ? ['energy', 'electricity', 'power', 'utility', 'consumption']
+        : name.includes('manufactur')
+          ? [
+              'manufacturing',
+              'manufacturer',
+              'factory',
+              'factories',
+              'industrial plant',
+              'industrial plants',
+              'production line',
+              'production lines',
+              'plant floor',
+              'shop floor',
+              'industrial operations',
+              'production operations',
+            ]
         : name.includes('finance')
           ? ['finance', 'financial', 'budget', 'procurement', 'invoice', 'payment', 'reconciliation', 'expenditure']
           : name.includes('government') || name.includes('public sector')
@@ -1757,8 +1806,8 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   }
 
   /**
-   * Repairs unsupported primary-role expansion when only one retained evidence
-   * item exists. Providers sometimes turn a narrow evidence signal into a new
+   * Repairs unsupported primary-role expansion when the canonical retained
+   * evidence set is small (up to three problem-matched signals). Providers sometimes turn a narrow evidence signal into a new
    * clinical-triage, administrative-review, or developer workflow. That is a
    * repairable wording/scope defect, not a reason to fail an otherwise valid
    * evidence-backed run. The repair keeps the product workflow intact while
@@ -1770,14 +1819,25 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     parsedOutput: ParsedIdeaAiOutput,
   ): ParsedIdeaAiOutput {
-    const independentEvidence =
-      context.opportunityRanking?.selected.independentEvidence ?? [];
-    if (independentEvidence.length !== 1) return parsedOutput;
+    const selected = context.opportunityRanking?.selected;
+    const independentEvidence = selected?.independentEvidence ?? [];
+    const authoritativeEvidenceCount =
+      selected?.verifiedProblemMatchedEvidenceCount ??
+      selected?.verifiedEvidenceCount ??
+      selected?.evidenceSamples.length ??
+      independentEvidence.length;
+    if (authoritativeEvidenceCount <= 0 || authoritativeEvidenceCount > 3) {
+      return parsedOutput;
+    }
 
     const allowedRoleScope = this.normalizeComparableText(
       [
-        independentEvidence[0]?.text ?? '',
+        ...(selected?.evidenceSamples ?? []),
+        ...independentEvidence.map((item) => item.text),
+        ...(selected?.supportingEvidence ?? []).map((item) => item.text),
         context.requestDescription ?? '',
+        context.collectionPlan?.problemProfile?.actor ?? '',
+        context.collectionPlan?.problemProfile?.workflow ?? '',
       ].join(' '),
     );
 
@@ -1837,37 +1897,37 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       let repaired = value;
       if (unsupportedClinical) {
         repaired = repaired
-          .replace(/\bclinical operations managers?\b/giu, 'healthcare operations managers')
-          .replace(/\bclinical supervisors?\b/giu, 'authorized workflow reviewers')
-          .replace(/\bclinical review\b/giu, 'expert workflow review')
-          .replace(/\bcare coordinators?\b/giu, 'workflow coordinators')
-          .replace(/\bcare managers?\b/giu, 'operations managers')
-          .replace(/\bclinicians?\b/giu, 'authorized domain practitioners')
-          .replace(/\btherapists?\b/giu, 'authorized domain practitioners')
-          .replace(/\bpsychiatrists?\b/giu, 'authorized domain practitioners')
+          .replace(/\bclinical operations managers?\b/giu, 'affected workflow users')
+          .replace(/\bclinical supervisors?\b/giu, 'affected workflow users')
+          .replace(/\bclinical review\b/giu, 'domain workflow review')
+          .replace(/\bcare coordinators?\b/giu, 'affected workflow users')
+          .replace(/\bcare managers?\b/giu, 'affected workflow users')
+          .replace(/\bclinicians?\b/giu, 'affected workflow users')
+          .replace(/\btherapists?\b/giu, 'affected workflow users')
+          .replace(/\bpsychiatrists?\b/giu, 'affected workflow users')
           .replace(/\bhuman triage\b/giu, 'human-reviewed prioritization')
           .replace(/\bdistress triage\b/giu, 'human-reviewed prioritization');
       }
       if (unsupportedAdmin) {
         repaired = repaired
-          .replace(/\badmin(?:istrator)? review\b/giu, 'authorized review')
+          .replace(/\badmin(?:istrator)? review\b/giu, 'verification workflow')
           .replace(/\bhuman review queue\b/giu, 'verification workflow')
           .replace(/\breview queue\b/giu, 'verification workflow')
-          .replace(/\bsupervisor review\b/giu, 'peer review')
+          .replace(/\bsupervisor review\b/giu, 'verification workflow')
           .replace(/\bescalation workflow\b/giu, 'exception-handling workflow')
-          .replace(/\bcase reviewers?\b/giu, 'workflow reviewers')
-          .replace(/\bincident response team\b/giu, 'response operators')
+          .replace(/\bcase reviewers?\b/giu, 'affected workflow users')
+          .replace(/\bincident response team\b/giu, 'incident-response workflow')
           .replace(/\bservice desk\b/giu, 'support workflow')
           .replace(/\bhelp desk\b/giu, 'support workflow');
       }
       if (unsupportedDeveloper) {
         repaired = repaired
-          .replace(/\bdevelopment[-\s]+teams?\b/giu, 'implementation teams')
-          .replace(/\bdevelopers?\b/giu, 'implementation specialists')
-          .replace(/\bqa[-\s]+teams?\b/giu, 'validation teams')
+          .replace(/\bdevelopment[-\s]+teams?\b/giu, 'affected workflow users')
+          .replace(/\bdevelopers?\b/giu, 'affected workflow users')
+          .replace(/\bqa[-\s]+teams?\b/giu, 'validation workflow')
           .replace(/\bquality[-\s]+assurance\b/giu, 'output validation')
-          .replace(/\bdevops\b/giu, 'platform operations')
-          .replace(/\bsdk[-\s]+operators?\b/giu, 'system operators')
+          .replace(/\bdevops\b/giu, 'deployment workflow')
+          .replace(/\bsdk[-\s]+operators?\b/giu, 'supported integration workflow')
           .replace(/\bci[-\/\s]*cd\b/giu, 'deployment workflow');
       }
       if (unsupportedCaregiving) {
@@ -1901,6 +1961,32 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return value;
     };
 
+    const unsupportedTargetUser = (value: string): boolean => {
+      const normalized = this.normalizeComparableText(value);
+      return (
+        (unsupportedClinical &&
+          /\b(?:clinician|clinical supervisor|care coordinator|care manager|therapist|psychiatrist)\b/iu.test(normalized)) ||
+        (unsupportedAdmin &&
+          /\b(?:administrator|admin reviewer|supervisor|case reviewer|incident response|service desk|help desk)\b/iu.test(normalized)) ||
+        (unsupportedDeveloper &&
+          /\b(?:developer|development team|engineer|qa|quality assurance|devops|sdk operator)\b/iu.test(normalized)) ||
+        (unsupportedCaregiving &&
+          /\b(?:family caregiver|caregiver|caregiving)\b/iu.test(normalized))
+      );
+    };
+    const retainedTargetUsers = parsedOutput.coreIdea.targetUsers
+      .filter((value) => !unsupportedTargetUser(value))
+      .map(repairText)
+      .filter(Boolean);
+    const fallbackActor =
+      context.collectionPlan?.problemProfile?.actor?.trim() ||
+      context.domainName?.trim() ||
+      'Affected workflow users';
+    const repairedTargetUsers =
+      retainedTargetUsers.length > 0
+        ? Array.from(new Set(retainedTargetUsers))
+        : [fallbackActor];
+
     this.logger.warn(
       `Repaired unsupported sparse-evidence role expansion before strict validation. clinical=${unsupportedClinical} admin=${unsupportedAdmin} developer=${unsupportedDeveloper} caregiving=${unsupportedCaregiving}.`,
     );
@@ -1911,7 +1997,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         title: repairText(parsedOutput.coreIdea.title),
         problemStatement: repairText(parsedOutput.coreIdea.problemStatement),
         objectives: parsedOutput.coreIdea.objectives.map(repairText),
-        targetUsers: parsedOutput.coreIdea.targetUsers.map(repairText),
+        targetUsers: repairedTargetUsers,
         ...(parsedOutput.coreIdea.limitedAbstract !== undefined
           ? { limitedAbstract: repairText(parsedOutput.coreIdea.limitedAbstract) }
           : {}),
@@ -3179,23 +3265,32 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       : null;
 
     if (strictZeroEvidenceValidation) {
+      const adjudicationUnavailable =
+        context.evidenceState === 'EVIDENCE_ADJUDICATION_UNAVAILABLE';
+
       if (output.outputKey === 'market-potential') {
         return {
           ...output,
-          content: `Market potential for ${validationDomainLabel} remains unproven because no problem-matched external evidence survived the bounded collection and recovery window. The pilot must first collect direct evidence for one concrete problem, measure repeated occurrence and operational impact, and validate willingness to adopt before making prevalence, demand, or market-size claims.`,
+          content: adjudicationUnavailable
+            ? `Market potential for ${validationDomainLabel} remains unproven because collected external material has not yet received a complete online semantic verdict. The raw corpus is preserved as UNADJUDICATED rather than rejected; the same corpus must be re-adjudicated before prevalence, demand, or market-size claims are made.`
+            : `Market potential for ${validationDomainLabel} remains unproven because semantic adjudication completed and no problem-matched external evidence survived the bounded collection and recovery window. The pilot must first collect direct evidence for one concrete problem, measure repeated occurrence and operational impact, and validate willingness to adopt before making prevalence, demand, or market-size claims.`,
         };
       }
 
       if (output.outputKey === 'nlp-executive-summary') {
         return {
           ...output,
-          content: `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). No problem-matched external evidence survived final verification for the selected ${validationDomainLabel} validation hypothesis. Unrelated or rejected corpus items were excluded from product justification.`,
+          content: adjudicationUnavailable
+            ? `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). Raw external evidence was collected, but complete semantic adjudication is still unavailable; those rows remain UNADJUDICATED and must not be described as rejected, unrelated, or absent.`
+            : `Trusted NLP processed ${nlp?.totalTextsAnalyzed ?? 0} text(s), ${nlp?.totalPostsAnalyzed ?? 0} post(s), and ${nlp?.totalCommentsAnalyzed ?? 0} comment(s). Semantic adjudication completed and no problem-matched external evidence survived final verification for the selected ${validationDomainLabel} validation hypothesis. CONTEXT_ONLY and UNRELATED corpus items were excluded from product justification.`,
         };
       }
 
       return {
         ...output,
-        content: `No qualifying problem-matched community feedback was retained for the selected ${validationDomainLabel} validation hypothesis. DIRECT_PROBLEM + SUPPORTING_SIGNAL trusted evidence count is zero. CONTEXT_ONLY and UNRELATED corpus items are excluded from community feedback, demand, recurrence, and operational-failure claims.`,
+        content: adjudicationUnavailable
+          ? `No trusted community-feedback claim is promoted yet for the selected ${validationDomainLabel} validation hypothesis because one or more collected rows are still UNADJUDICATED. The preserved raw corpus must receive an online semantic verdict before it can count as DIRECT_PROBLEM, SUPPORTING_SIGNAL, CONTEXT_ONLY, or UNRELATED evidence.`
+          : `No qualifying problem-matched community feedback was retained for the selected ${validationDomainLabel} validation hypothesis after completed semantic adjudication. DIRECT_PROBLEM + SUPPORTING_SIGNAL trusted evidence count is zero; CONTEXT_ONLY and UNRELATED rows are excluded from demand, recurrence, and operational-failure claims.`,
       };
     }
 
@@ -6444,7 +6539,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   ): number {
     const canonicalItems = this.resolveSelectedCanonicalEvidence(context);
     if (canonicalItems.length > 0) {
-      return new Set(canonicalItems.map((item) => item.sourceKey)).size;
+      return EvidenceSourceIdentityUtil.count(canonicalItems);
     }
 
     const selected = context.opportunityRanking?.selected;
@@ -6471,7 +6566,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       const directSourceKeys = new Set(
         (selected?.independentEvidence ?? [])
           .filter((item) => directKinds.has(item.evidenceKind))
-          .map((item) => item.sourceKey?.trim().toLocaleLowerCase() ?? '')
+          .map((item) =>
+            EvidenceSourceIdentityUtil.resolve({
+              sourceKey: item.sourceKey,
+              text: item.text,
+              id: item.postExternalId ?? item.identityKey,
+            }),
+          )
           .filter(Boolean),
       );
       if (directSourceKeys.size > 0) {
@@ -6496,7 +6597,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
 
     const sourceKeys = new Set(
       (selected?.independentEvidence ?? [])
-        .map((item) => item.sourceKey?.trim().toLocaleLowerCase() ?? '')
+        .map((item) =>
+          EvidenceSourceIdentityUtil.resolve({
+            sourceKey: item.sourceKey,
+            text: item.text,
+            id: item.postExternalId ?? item.identityKey,
+          }),
+        )
         .filter(Boolean),
     );
 
@@ -6986,8 +7093,8 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       ? []
       : [
           `${primaryDomain} operations professionals`,
-          `${primaryDomain} engineering and process-improvement teams`,
-          `${primaryDomain} pilot coordinators`,
+          `${primaryDomain} workflow coordinators`,
+          `${primaryDomain} pilot reviewers`,
         ];
 
     return TargetUserDeduplicationUtil.deduplicate(

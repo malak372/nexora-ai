@@ -990,6 +990,26 @@ export class RequestDynamicQueryUtil {
     }
 
     if (
+      /\b(?:industrial energy facilit(?:y|ies)|industrial facilities?|manufacturing facilities?|manufacturing plants?|factories?|production plants?|industrial plants?)\b/u.test(normalized) &&
+      /\b(?:machine|machines|machinery|equipment|motors?|production lines?)\b/u.test(normalized) &&
+      /\b(?:energy|electricity|power|consumption|sensor readings?|telemetry)\b/u.test(normalized) &&
+      /\b(?:abnormal|unusual|anomal|inefficien|waste|maintenance|damage|fault|operating costs?|equipment health)\w*\b/u.test(normalized)
+    ) {
+      return this.deduplicate([
+        'industrial machinery abnormal power consumption maintenance',
+        'manufacturing equipment energy anomaly fault detection',
+        'machine sensor energy consumption predictive maintenance',
+        'industrial equipment inefficient energy use maintenance',
+        'production activity energy anomaly machinery condition monitoring',
+        'motor equipment power signature fault predictive maintenance',
+        'industrial energy management machine anomaly operating cost',
+        'condition based maintenance energy consumption machine sensors',
+        'energy efficiency machinery load production activity anomaly',
+        'industrial equipment power consumption anomaly equipment damage',
+      ]).slice(0, maxQueries);
+    }
+
+    if (
       /\b(?:industrial manufacturers?|manufacturing plants?|manufacturers?|factories?|production plants?|plant managers?|production lines?)\b/u.test(normalized) &&
       /\b(?:machine efficiency|equipment efficiency|electricity consumption|energy consumption|machine runtime|maintenance expenses?|repair records?|production output|production volumes?|production line|unit cost|cost per unit|profitability)\b/u.test(normalized) &&
       /\b(?:cost|costs|expense|expenses|financial|profitability|investment|maintenance|energy|electricity|inefficien)\w*\b/u.test(normalized)
@@ -2103,13 +2123,21 @@ export class RequestDynamicQueryUtil {
       /\brepeated [\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,2}\b/gu,
       /\b(?:equipment|service|system|process|workflow|maintenance) failures?\b/gu,
       /\b(?:scheduling|booking|record|data|service) conflicts?\b/gu,
-      /\b(?:unhealthy|unsafe|incorrect|inconsistent|delayed|slow|slower|unexpected|fragmented|separate|lost|missing) [\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,2}\b/gu,
-      /\b(?:fraud|fraudulent|fake|suspicious|misleading|restricted|restriction|false positive|reinjury|re-injury|spoilage|waste|delay|error|failure|risk|conflict|outage|breakdown|loss|losses|damage|damaged)\w*\b/gu,
+      /\b(?:unhealthy|unsafe|incorrect|inconsistent|delayed|slow|slower|unexpected|abnormal|unusual|inefficient|excessive|fragmented|separate|lost|missing) [\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,2}\b/gu,
+      /\b(?:fraud|fraudulent|fake|suspicious|misleading|restricted|restriction|false positive|reinjury|re-injury|spoilage|waste|delay|error|failure|risk|conflict|outage|breakdown|loss|losses|damage|damaged|anomaly|anomalies|inefficiency|inefficiencies)\w*\b/gu,
+      /\b(?:abnormal|unusual|excessive|high)\s+(?:power|energy|electricity)\s+consumption\b/gu,
+      /\b(?:increase|increases|increasing|raise|raises|raising)\s+(?:operating|energy|maintenance)\s+costs?\b/gu,
+      /\b(?:equipment|machine|machinery)\s+(?:damage|failure|fault|breakdown|inefficiency)\b/gu,
     ];
 
     for (const pattern of painPatterns) {
       for (const match of lower.matchAll(pattern)) {
-        const compact = this.compactPhrase(match[0], 6);
+        const compact = this.compactPhrase(match[0], 6)
+          .replace(
+            /\s+(?:abnormal|unusual|inefficient|excessive|unexpected)$/iu,
+            '',
+          )
+          .trim();
         if (compact) outputs.push(compact);
       }
     }
@@ -2132,7 +2160,7 @@ export class RequestDynamicQueryUtil {
 
   private static isUsefulFailurePhrase(value: string): boolean {
     const normalized = value.toLocaleLowerCase();
-    return /\b(?:fraud|fake|suspicious|misleading|restrict|false positive|miss|forgot|repeat|failure|fail|error|risk|conflict|delay|slow|unsafe|unhealthy|incorrect|inconsistent|lost|missing|waste|spoil|breakdown|overload|reinjury|re-injury|warning|problem|issue|difficult|unable|cannot|can't|poor|fragmented|separate|loss|damage)\w*\b/iu.test(
+    return /\b(?:fraud|fake|suspicious|misleading|restrict|false positive|miss|forgot|repeat|failure|fail|error|risk|conflict|delay|slow|unsafe|unhealthy|incorrect|inconsistent|abnormal|unusual|inefficient|inefficiency|anomal|lost|missing|waste|spoil|breakdown|overload|reinjury|re-injury|warning|problem|issue|difficult|unable|cannot|can't|poor|fragmented|separate|loss|damage|cost)\w*\b/iu.test(
       normalized,
     );
   }

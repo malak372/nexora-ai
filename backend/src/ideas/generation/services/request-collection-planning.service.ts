@@ -32,7 +32,13 @@ const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 5_200;
 const REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS = 5_600;
 const REQUEST_COLLECTION_PLAN_PROVIDER_LANES = [
   ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
-  ['anthropic/claude-haiku-4.5'],
+  /*
+   * Keep PREPARING provider-diverse, but do not pin the race to the stale
+   * Claude OpenRouter route that currently resolves MODEL_NOT_FOUND. This
+   * Mistral route is already exercised successfully by the live Community/Core
+   * pools and therefore provides a real second-provider hedge.
+   */
+  ['mistralai/mistral-small-3.2-24b-instruct'],
 ] as const;
 const REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS = 4_700;
 const REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS = 5_100;
@@ -147,6 +153,32 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     if (!id) return null;
     const catalog = this.readFreshDomainIdentityCatalog();
     const match = catalog?.find((entry) => entry.id === id);
+    return match ? { id: match.id, name: match.name } : null;
+  }
+
+  /**
+   * Reuses an exact active domain identity already present in the warmed
+   * PREPARING catalog. This is an identity lookup only: it does not infer a
+   * semantic domain from text and it never creates or mutates a domain.
+   *
+   * The path is useful when an AI/fallback plan labels a domain as NEW even
+   * though the exact hidden auto-generated domain already exists from an
+   * earlier run. Reusing that row avoids an unnecessary remote resolve/create
+   * round trip while preserving the same authoritative domain identity.
+   */
+  resolveActiveDomainByNameImmediate(
+    domainName: string | null | undefined,
+  ): { readonly id: string; readonly name: string } | null {
+    const requestedName = domainName
+      ?.normalize('NFKC')
+      .trim()
+      .toLocaleLowerCase();
+    if (!requestedName) return null;
+    const catalog = this.readFreshDomainIdentityCatalog();
+    const match = catalog?.find(
+      (entry) =>
+        entry.name.normalize('NFKC').trim().toLocaleLowerCase() === requestedName,
+    );
     return match ? { id: match.id, name: match.name } : null;
   }
 
@@ -441,11 +473,36 @@ export class RequestCollectionPlanningService implements OnModuleInit {
             5,
           ),
     );
-    const searchQueries = this.deduplicateQueries([
+    const aiOwnedDiscoveryQueries = this.deduplicateQueries([
       ...aiGroupedQueries,
       ...aiGlobalQueries,
       ...(aiDiscoveryPlan ? missingDomainFallbackQueries : fallbackQueries),
-    ]).slice(0, 15);
+    ]);
+    const minimumDiscoveryQueryCount = Math.min(
+      12,
+      Math.max(8, domainNames.length * 4),
+    );
+    const breadthEnrichmentQueries = domainNames.flatMap((domainName) =>
+      CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+        [domainName],
+        5,
+      ),
+    );
+    /*
+     * A fast provider may return only one good query per domain. Preserve every
+     * AI-owned seed first, then fill only the missing breadth with bounded,
+     * domain-grounded structural probes. This keeps DOMAINS_ONLY/NO_INPUT close
+     * to the stronger text paths (8-12 concrete queries) without inventing a
+     * winning problem before collection and without replacing AI planning.
+     */
+    const searchQueries = this.deduplicateQueries([
+      ...aiOwnedDiscoveryQueries,
+      ...(aiOwnedDiscoveryQueries.length < minimumDiscoveryQueryCount
+        ? breadthEnrichmentQueries
+        : []),
+    ])
+      .filter((query) => !this.isGenericDomainDiscoveryQuery(query))
+      .slice(0, 15);
 
     const requestedDiscoverySourceKeys = this.deduplicatePhrases([
       ...(aiDiscoveryPlan?.sourceAssignments.map((assignment) => assignment.sourceKey) ?? []),
@@ -592,6 +649,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         readonly id: string;
         readonly name: string;
       }[];
+      readonly resolvedPrimaryDomain?: {
+        readonly id: string;
+        readonly name: string;
+      } | null;
       readonly requestKeywords?: readonly string[];
       readonly preferenceTerms?: readonly string[];
     },
@@ -629,8 +690,25 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           )
         : plan.sourcePlans;
 
+    const resolvedPrimary =
+      input.resolvedPrimaryDomain ?? input.selectedDomains[0] ?? null;
+
     return {
       ...plan,
+      /*
+       * After PREPARING resolves the real active domain row, that resolved row
+       * becomes authoritative plan metadata. Never persist a stale/free-form AI
+       * suggestion (for example an unrelated persona phrase) beside a different
+       * actual domain, because downstream recovery/debug snapshots may reuse it
+       * as semantic context.
+       */
+      ...(resolvedPrimary
+        ? {
+            domainSelectionMode: 'EXISTING' as const,
+            selectedExistingDomainId: resolvedPrimary.id,
+            suggestedDomainName: resolvedPrimary.name,
+          }
+        : {}),
       searchQueries,
       sourcePlans,
     };
@@ -1252,7 +1330,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       "QUERIES: target 8 ordered evidence-search seed queries (a partial response is still useful; never exceed 10). Also return 6-12 retrievalVocabulary phrases: terminology/synonyms that practitioners, operators, researchers, or incident reports use for this SAME workflow and failure. These terms may be semantically equivalent to requester wording rather than literal copies, but must stay anchored to the same actor/object/workflow/problem and must not invent a different problem. When requestIntent.mode=EXPLICIT_PROBLEM, search to validate that problem and its strongest facets. When mode=DISCOVERY_INTENT, search for real complaints, failures, delays, rework, cost pressure, access barriers, unmet needs, incidents, or operational friction that occur inside the requester's actor/object/workflow/desired-outcome scope. Do not invent the winning problem during planning; collection + Community AI choose it from evidence. Write human-searchable 4-9 word queries and avoid proposed-solution terms unless the request itself concerns software/API/system failures or a review-store lane. Treat implementation-oriented selected domains such as Artificial Intelligence as scope constraints, not mandatory query words; do not inject them into every evidence query unless the problem statement itself makes that technology part of the failing workflow.",
       'SOURCES: select 6-8 complementary exact sourceKey values from ACTIVE SOURCE CATALOG when they can execute this retrieval plan. Treat source-fit as a ranking decision, not a reason to omit a complementary research/documentary lane solely because requester wording is niche. First-pass evidence should normally include at least two direct-voice/community lanes and at least two documentary/research lanes; for consumer or service workflows include at least one app-review lane when relevant. Do not pad with unrelated sources. Prefer community/practitioner sources for niche/local-service workflows and research/news/institutional sources for public-sector or documented operational workflows. IMPORTANT: when a comparable mobile app or workflow tool plausibly exists, include app-store or google-play because USER REVIEWS are valuable problem evidence. Store listing descriptions are discovery metadata only; reviews/comments are the evidence. Use technical developer sources only for genuine software/API/infrastructure problems, not merely because AI is part of the proposed solution.',
       'When requester-selected domains are present, choose the best-matching one of those exact existing domains as the primary collection anchor. Do not create an additional NEW domain from the actor phrase. The selected domains are authoritative search scope. If requestIntent.mode=EXPLICIT_PROBLEM, preserve the requester problem and collect evidence that validates or tightly supports it inside that scope. If mode=DISCOVERY_INTENT, use the description only to constrain actor/object/workflow/outcome search intent and let collected verified evidence determine the final problem after collection.',
-      'If this is recovery, materially change wording/source mix while preserving the requester intent and any truly explicit problem.',
+      'If this is recovery, materially change wording/source mix while preserving the requester intent and any truly explicit problem. CURRENT EVIDENCE TARGETS are authoritative corroboration targets: when they contain a concrete locked problem family, search for independent evidence of that SAME family only. Do not broaden back to generic domain failures, adjacent problem families, or a new opportunity.',
       'Be compact: short identity phrases, about 8 strong ordered queries, source keys only, and confidence. The runtime preserves safe AI seeds, enriches partial responses, and builds the full source-aware plan locally.',
     ].join(' ');
   }
@@ -1331,7 +1409,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               .map((outcome) => `${outcome.sourceKey} | ${outcome.status} | raw=${outcome.rawCount} | trusted=${outcome.trustedCount} | context=${outcome.contextCount} | unrelated=${outcome.unrelatedCount}`)
               .join('\n') || 'none',
             '',
-            'This is a recovery search. Rotate away from EMPTY, DEGRADED, or UNRELATED_ONLY lanes unless there is a materially new retrieval strategy for that source. Prefer complementary source archetypes that were missing or only weakly represented. Generate substantially different queries using practitioner terminology, research terminology, incident/report language, and adjacent same-workflow evidence. Do not merely append problem/issue/complaint/not working to old queries.',
+            'This is a recovery search. Rotate away from EMPTY, DEGRADED, or UNRELATED_ONLY lanes unless there is a materially new retrieval strategy for that source. Prefer complementary source archetypes that were missing or only weakly represented. When CURRENT EVIDENCE TARGETS name a concrete problem family, every query must seek independent corroboration of that same family; do not revert to domain-wide discovery or adjacent problems. Generate materially different practitioner/research/incident wording for the locked family, not generic problem/issue/complaint suffixes.',
           ]
         : []),
       '',
@@ -1417,6 +1495,24 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         if (Array.isArray(value) && value.length > 0) return value;
       }
       return null;
+    };
+    const readUniqueStringArray = (...values: unknown[]): string[] | null => {
+      const raw = readArray(...values);
+      if (!raw) return null;
+
+      const seen = new Set<string>();
+      const normalized: string[] = [];
+      for (const value of raw) {
+        if (typeof value !== 'string') continue;
+        const item = value.replace(/\s+/gu, ' ').trim();
+        if (!item) continue;
+        const identity = item.toLocaleLowerCase();
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        normalized.push(item);
+      }
+
+      return normalized.length > 0 ? normalized : null;
     };
     const readNumber = (...values: unknown[]): number | null => {
       for (const value of values) {
@@ -1530,7 +1626,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       parsed.search_queries,
       parsed.queries,
     );
-    const selectedSourceKeys = readArray(
+    const selectedSourceKeys = readUniqueStringArray(
       parsed.selectedSourceKeys,
       parsed.selected_source_keys,
       parsed.sourceKeys,
@@ -1901,9 +1997,44 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       aiQueries,
       description,
     );
-    const output = this.deduplicateQueries(acceptedAi).slice(0, 14);
+    const aiOwned = this.deduplicateQueries(acceptedAi).slice(0, 14);
+    const requestDerivedPrecisionQueries = RequestDynamicQueryUtil.build({
+      requestDescription: description,
+      intentConcepts: problemProfile
+        ? [
+            problemProfile.actor,
+            problemProfile.object,
+            problemProfile.workflow,
+          ]
+        : [],
+      evidenceTargets: problemProfile
+        ? [
+            ...problemProfile.failureModes,
+            ...problemProfile.consequences,
+          ]
+        : [],
+      plannedQueries: aiOwned,
+      maxQueries: 6,
+    });
 
-    if (output.length >= 8) {
+    /*
+     * Keep the fastest provider's best seeds first, but reserve a bounded
+     * middle section for request-derived actor/workflow/failure queries even
+     * when the provider already returned eight or more strings. Previously a
+     * syntactically valid but awkward AI plan could monopolize all 14 slots,
+     * so collectors repeatedly searched prose-like phrases such as
+     * "facilities struggle reported" while concrete observable failures from
+     * the requester text never reached the first pass. These precision lanes
+     * are derived only from the request; they do not create evidence or change
+     * the semantic problem identity.
+     */
+    const output = this.deduplicateQueries([
+      ...aiOwned.slice(0, 4),
+      ...requestDerivedPrecisionQueries.slice(0, 4),
+      ...aiOwned.slice(4),
+    ]).slice(0, 14);
+
+    if (output.length >= 10) {
       return output;
     }
 
@@ -1955,6 +2086,19 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         'separate',
         'waste',
         'wrong',
+        'abnormal',
+        'unusual',
+        'anomaly',
+        'anomalies',
+        'inefficient',
+        'inefficiency',
+        'inefficiencies',
+        'damage',
+        'damaged',
+        'maintenance',
+        'machinery',
+        'equipment',
+        'consumption',
         'slow',
         'slower',
         'failure',
@@ -2988,7 +3132,27 @@ export class RequestCollectionPlanningService implements OnModuleInit {
 
     if (words.length === 0 || words.length > 5) return null;
 
-    const last = words[words.length - 1];
+    const connectorWords = new Set([
+      'and',
+      'or',
+      'with',
+      'for',
+      'of',
+      'to',
+      'from',
+      'in',
+      'at',
+    ]);
+    while (words.length > 0 && connectorWords.has(words[words.length - 1])) {
+      words.pop();
+    }
+
+    const cleaned = words.filter(
+      (word) => !['people', 'users', 'members', 'travelers', 'travellers'].includes(word),
+    );
+    if (cleaned.length === 0) return null;
+
+    const last = cleaned[cleaned.length - 1];
     const singularMap: Record<string, string> = {
       studios: 'studio',
       companies: 'company',
@@ -3003,14 +3167,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       centres: 'centre',
     };
     if (singularMap[last]) {
-      words[words.length - 1] = singularMap[last];
+      cleaned[cleaned.length - 1] = singularMap[last];
     }
 
-    const cleaned = words.filter(
-      (word) => !['people', 'users', 'members', 'travelers', 'travellers'].includes(word),
-    );
-
-    return cleaned.length > 0 ? this.toTitleCase(cleaned.join(' ')) : null;
+    return this.toTitleCase(cleaned.join(' '));
   }
 
   private extractPainSignals(description: string): string[] {
@@ -3096,6 +3256,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       .replace(/\b(?:custom\s+order\s+management|order\s+management|workflow\s+management|design\s+specification\s+management|specification\s+management|tracking\s+platform|management\s+platform|intelligence\s+workspace|operations\s+workspace)\b.*$/iu, '')
       .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, '')
       .replace(/\b(?:maker|makers|painter|painters)\b$/iu, '')
+      // Actor/domain extraction can end on a conjunction when the request
+      // continues with another clause (for example "... centers and ...").
+      // A dangling connector is syntax noise, never part of a domain label.
+      .replace(/\b(?:and|or|with|for|of|to|from|in|at)\s*$/iu, '')
       .replace(/\s+/gu, ' ')
       .trim();
 

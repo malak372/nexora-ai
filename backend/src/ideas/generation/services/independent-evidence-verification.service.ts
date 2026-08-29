@@ -23,6 +23,7 @@ import type {
   RankedIdeaOpportunity,
 } from '../types/idea-opportunity-ranking.type';
 import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
+import { EvidenceSourceIdentityUtil } from '../utils/evidence-source-identity.util';
 
 const MIN_VERIFIED_RECURRENCE_COUNT = 3;
 const MIN_VERIFIED_SOURCE_COUNT = 2;
@@ -483,22 +484,16 @@ export class IndependentEvidenceVerificationService {
     );
 
     const verifiedProblemMatchedDirectCount = directEvidence.length;
-    const verifiedProblemMatchedDirectSourceCount = new Set(
-      directEvidence.map((evidence) => evidence.sourceKey),
-    ).size;
+    const verifiedProblemMatchedDirectSourceCount = this.countIndependentSourceIdentities(directEvidence);
     const verifiedProblemMatchedComplaintCount = complaintEvidence.length;
     const verifiedProblemMatchedFeatureRequestCount = featureRequestEvidence.length;
-    const verifiedProblemMatchedComplaintSourceCount = new Set(
-      recurrenceEvidence.map((evidence) => evidence.sourceKey),
-    ).size;
+    const verifiedProblemMatchedComplaintSourceCount = this.countIndependentSourceIdentities(recurrenceEvidence);
     const verifiedProblemMatchedSecondaryCount = secondaryEvidence.length;
     const verifiedProblemMatchedTechnicalCount = technicalEvidence.length;
     const verifiedProblemMatchedQuestionCount = questionEvidence.length;
     const verifiedProblemMatchedObservationCount = observationEvidence.length;
     const verifiedProblemMatchedEvidenceCount = retainedEvidence.length;
-    const verifiedProblemMatchedEvidenceSourceCount = new Set(
-      retainedEvidence.map((evidence) => evidence.sourceKey),
-    ).size;
+    const verifiedProblemMatchedEvidenceSourceCount = this.countIndependentSourceIdentities(retainedEvidence);
 
     /*
      * Preserve candidate-level diagnostic totals separately. They answer
@@ -511,23 +506,17 @@ export class IndependentEvidenceVerificationService {
       this.isComplaintEvidence(evidence.evidenceKind),
     );
     const verifiedComplaintCount = allComplaintEvidence.length;
-    const verifiedComplaintSourceCount = new Set(
-      allComplaintEvidence.map((evidence) => evidence.sourceKey),
-    ).size;
+    const verifiedComplaintSourceCount = this.countIndependentSourceIdentities(allComplaintEvidence);
     const verifiedFeatureRequestCount = allDirectEvidence.filter(
       (evidence) => evidence.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST,
     ).length;
-    const verifiedDirectSourceCount = new Set(
-      allDirectEvidence.map((evidence) => evidence.sourceKey),
-    ).size;
+    const verifiedDirectSourceCount = this.countIndependentSourceIdentities(allDirectEvidence);
     const verifiedSecondaryCount = allSecondaryEvidence.length;
     const verifiedTechnicalCount = allTechnicalEvidence.length;
     const verifiedQuestionCount = allQuestionEvidence.length;
     const verifiedObservationCount = allObservationEvidence.length;
     const verifiedEvidenceCount = classifiedEvidence.length;
-    const verifiedEvidenceSourceCount = new Set(
-      classifiedEvidence.map((evidence) => evidence.sourceKey),
-    ).size;
+    const verifiedEvidenceSourceCount = this.countIndependentSourceIdentities(classifiedEvidence);
     const synchronizedSupportingEvidence =
       this.synchronizeSupportingEvidenceMetadata(
         retainedEvidence,
@@ -969,8 +958,8 @@ export class IndependentEvidenceVerificationService {
         (item) =>
           item.evidenceKind === INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET,
       );
-      const directSources = new Set(direct.map((item) => item.sourceKey)).size;
-      const allSources = new Set(items.map((item) => item.sourceKey)).size;
+      const directSources = this.countIndependentSourceIdentities(direct);
+      const allSources = this.countIndependentSourceIdentities(items);
       const descriptorMatch = matchEvidenceToProblemFamily(
         problemDescriptor,
         cluster.label,
@@ -1421,6 +1410,20 @@ export class IndependentEvidenceVerificationService {
     return result;
   }
 
+  private countIndependentSourceIdentities(
+    evidence: readonly IndependentEvidence[],
+  ): number {
+    return new Set(
+      evidence.map((item) =>
+        EvidenceSourceIdentityUtil.resolve({
+          sourceKey: item.sourceKey,
+          text: item.text,
+          id: item.postExternalId,
+        }),
+      ),
+    ).size;
+  }
+
   private buildIdentityKey(record: {
     readonly sourceKey: string;
     readonly postExternalId: string;
@@ -1527,9 +1530,7 @@ export class IndependentEvidenceVerificationService {
     const totalSourceCount =
       selected.verifiedProblemMatchedEvidenceSourceCount ??
       selected.verifiedEvidenceSourceCount ??
-      new Set(
-        (selected.independentEvidence ?? []).map((evidence) => evidence.sourceKey),
-      ).size;
+      this.countIndependentSourceIdentities(selected.independentEvidence ?? []);
     const diagnosticTotal = selected.verifiedEvidenceCount ?? totalCount;
 
     if (selected.selectionEligible) {

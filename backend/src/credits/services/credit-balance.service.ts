@@ -344,6 +344,9 @@ export class CreditBalanceService {
       userId: input.userId,
       previousBalance: result.previousBalance,
       balanceAfter: result.balanceAfter,
+      ...(input.type === CreditTransactionType.DEDUCTION_GENERATION && {
+        referencePremiumIdeaCreditCost: Math.abs(input.amount),
+      }),
     });
 
     return result;
