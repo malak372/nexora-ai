@@ -51,8 +51,8 @@ function relativeStartedAt(value, t) {
   const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
   if (seconds < 60) return t('Just now');
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${t('ago')}`;
-  return `${Math.floor(minutes / 60)}h ${t('ago')}`;
+  if (minutes < 60) return t(`${minutes}m ago`);
+  return t(`${Math.floor(minutes / 60)}h ago`);
 }
 
 export default function GenerationProgressPage() {
@@ -60,7 +60,7 @@ export default function GenerationProgressPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const initialRun = location.state?.initialRun ?? null;
-  const { run, connectionState, error, errorStatus, refresh } = useIdeaGenerationSocket(runId, initialRun);
+  const { run, connectionState, error, errorStatus} = useIdeaGenerationSocket(runId, initialRun);
   const { t } = useUserExperience();
   const resetDraft = useGenerationDraftStore((state) => state.resetDraft);
   const syncedPremiumRunRef = useRef(null);
