@@ -582,7 +582,11 @@ export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 900;
 export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
 
 /** Skip expensive self-revision when the first pass is already usable. */
-export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 69;
+// A structurally valid 60s candidate is close enough to benefit from one bounded
+// repair pass. The acceptance gate remains unchanged; this only broadens the
+// repair window so coherent 62-68 candidates are improved instead of persisted
+// immediately as preliminary availability fallbacks.
+export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 45;
 
 /**
  * Number of AI models launched in the first provider-diverse wave.

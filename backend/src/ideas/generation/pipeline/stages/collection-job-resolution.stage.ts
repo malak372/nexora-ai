@@ -244,10 +244,20 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       effectiveTotalPostsAnalyzed + effectiveTotalCommentsAnalyzed,
     );
 
+    /*
+     * The collection job owns provenance/anchor identity only. It must never
+     * overwrite the semantic primary domain chosen in PREPARING. A reused or
+     * historically anchored multi-domain collection may legitimately be stored
+     * under a different selected domain, but that is collection provenance, not
+     * permission to change the idea's problem/market domain.
+     */
+    const semanticPrimaryDomain =
+      domains.find((domain) => domain.id === context.domainId) ?? primaryDomain;
+
     const updatedContext: IdeaGenerationContext = {
       ...context,
-      domainId: result.job.domain.id,
-      domainName: result.job.domain.name,
+      domainId: semanticPrimaryDomain.id,
+      domainName: semanticPrimaryDomain.name,
       collection: {
         collectionJobId: result.job.id,
         anchorDomainId: result.job.domain.id,

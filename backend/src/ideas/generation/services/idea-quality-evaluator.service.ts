@@ -248,7 +248,7 @@ export class IdeaQualityEvaluatorService {
       pipelineScaffoldTitle ||
       this.GENERIC_TITLE_PATTERNS.some((pattern) => pattern.test(title));
     const actionableObjectives = objectives.filter((objective) =>
-      this.containsAny(objective, this.ACTIONABILITY_TERMS),
+      this.isConcreteActionableObjective(objective),
     ).length;
     const differentiatorHits = this.countTerms(
       completeText,
@@ -393,6 +393,15 @@ export class IdeaQualityEvaluatorService {
         'leads to',
         'lack',
         'limited',
+        // Qualified pilot language is intentionally accepted here. The
+        // generator is required to avoid inventing a confirmed root cause, so
+        // strong problem statements often say "potential contributing
+        // factors" while still naming the observed bottleneck/friction.
+        'potential contributing factors',
+        'workflow friction',
+        'operational friction',
+        'bottleneck',
+        'bottlenecks',
       ])
     ) {
       issues.push({
@@ -645,36 +654,57 @@ export class IdeaQualityEvaluatorService {
     }
 
     /*
-     * Keep product quality and evidence strength as separate axes. Requester-
-     * defined problems can earn full product-market-fit quality when the
-     * solution is exceptionally specific even if bounded external retrieval is
-     * sparse; evidenceStrengthScore still records that uncertainty. Discovery
-     * candidates with supporting-only evidence retain a material market-fit cap
-     * until direct/independently corroborated demand exists, but the previous 55
-     * cap no longer makes a strong evidence-grounded pilot mathematically unable
-     * to reach the high-quality range.
+     * Product design and evidence density remain separate axes, but the
+     * dimension named MARKET FIT must not report 92-100 when the canonical
+     * ledger contains zero trusted problem signals. A requester-written problem
+     * can still score highly for specificity, technical quality, completeness,
+     * and originality; its market-fit dimension stays explicitly provisional
+     * until external demand is retained. This fixes the misleading
+     * `marketFitScore=100` + `verifiedEvidenceCount=0` snapshots without
+     * lowering the global quality gate.
      */
+    const independentSourceCount = Math.max(
+      0,
+      context.verifiedIndependentSourceCount ?? 0,
+    );
+    const marketFitEvidenceCap = hasNoDirectEvidence
+      ? externalSupportingEvidenceCount > 0
+        ? requesterProblemProvided
+          ? 80
+          : 74
+        : requesterProblemProvided
+          ? 64
+          : 35
+      : directEvidenceCount === 1
+        ? independentSourceCount >= 2
+          ? 92
+          : 86
+        : independentSourceCount >= 2
+          ? 100
+          : 94;
+
+    const productMarketFitScore = this.clamp(
+      35 +
+        Math.min(problem.length / 8, 30) +
+        concreteTargets * 8 +
+        Math.min(adoptionHits, 4) * 3 +
+        (isNarrowIntermediaryProduct ? -12 : 0),
+    );
+
     const dimensions: IdeaQualityDimensions = {
       innovation: this.clamp(
         45 + differentiatorHits * 9 + (genericTitle ? -12 : 8),
       ),
+      /*
+       * The public market-fit dimension is evidence-aware: it must never look
+       * validated when the canonical ledger is empty. Product design quality,
+       * however, is scored against the requester-owned job using the uncapped
+       * productMarketFitScore below. This keeps external validation honest
+       * without turning a well-designed Text Only/Text+Domains product into a
+       * 50-point candidate merely because bounded collection found no evidence.
+       */
       marketFit: this.clamp(
-        Math.min(
-          requesterProblemProvided
-            ? 100
-            : hasNoDirectEvidence
-              ? externalSupportingEvidenceCount > 0
-                ? 78
-                : 35
-              : directEvidenceCount === 1
-                ? 92
-                : 100,
-          35 +
-            Math.min(problem.length / 8, 30) +
-            concreteTargets * 8 +
-            Math.min(adoptionHits, 4) * 3 +
-            (isNarrowIntermediaryProduct ? -12 : 0),
-        ),
+        Math.min(marketFitEvidenceCap, productMarketFitScore),
       ),
       technicalQuality: this.clamp(
         40 +
@@ -696,9 +726,15 @@ export class IdeaQualityEvaluatorService {
       ),
     };
 
-    const weightedScore =
+    const evidenceAwareWeightedScore =
       dimensions.innovation * 0.25 +
       dimensions.marketFit * 0.25 +
+      dimensions.technicalQuality * 0.2 +
+      dimensions.completeness * 0.15 +
+      dimensions.originality * 0.15;
+    const productWeightedScore =
+      dimensions.innovation * 0.25 +
+      productMarketFitScore * 0.25 +
       dimensions.technicalQuality * 0.2 +
       dimensions.completeness * 0.15 +
       dimensions.originality * 0.15;
@@ -717,8 +753,12 @@ export class IdeaQualityEvaluatorService {
       (issue) => issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT',
     );
     const productQualityScore = hasCatastrophicRequestDrift
-      ? Math.min(19, this.clamp(weightedScore - productIssuePenalty * 0.18))
-      : this.clamp(weightedScore - productIssuePenalty * 0.18);
+      ? Math.min(19, this.clamp(productWeightedScore - productIssuePenalty * 0.18))
+      : this.clamp(productWeightedScore - productIssuePenalty * 0.18);
+    // Kept explicit for diagnostics/debugging: this is the evidence-aware
+    // weighted view represented by the published dimensions, not the product
+    // acceptance score.
+    void evidenceAwareWeightedScore;
     const evidenceGateSatisfied =
       evidenceValidated ||
       (requesterProblemProvided &&
@@ -839,12 +879,17 @@ export class IdeaQualityEvaluatorService {
       innovation: 90,
       marketFit:
         directEvidenceCount > 0
-          ? 94
+          ? Math.min(
+              94,
+              (context.verifiedIndependentSourceCount ?? 0) >= 2 ? 94 : 88,
+            )
           : supportingEvidenceCount > 0
-            ? 88
+            ? requesterProblemProvided
+              ? 80
+              : 74
             : requesterProblemProvided
-              ? 92
-              : 58,
+              ? 64
+              : 35,
       technicalQuality: advancedComplete ? 92 : 68,
       completeness:
         problemLength >= 120 && objectives.length >= 4 && targetUsers.length >= 2
@@ -1370,6 +1415,30 @@ export class IdeaQualityEvaluatorService {
   }
 
   /**
+   * Counts an objective as actionable when it either contains an existing
+   * outcome/action term or pairs a concrete implementation verb with a real
+   * software/operational capability. This avoids penalizing objectives such as
+   * "Develop a telemetry ingestion engine" or "Establish RBAC and an audit
+   * trail" while still rejecting empty prose like "develop the system".
+   */
+  private isConcreteActionableObjective(objective: string): boolean {
+    if (this.containsAny(objective, this.ACTIONABILITY_TERMS)) return true;
+
+    const hasImplementationVerb =
+      /\b(?:build|develop|implement|establish|configure|ingest|aggregate|synchronize|coordinate|enforce|secure|route|orchestrate|deploy|create)\b/iu.test(
+        objective,
+      );
+    if (!hasImplementationVerb) return false;
+
+    const hasConcreteCapability =
+      /\b(?:engine|model|module|workflow|pipeline|service|integration|api|database|data store|alert|notification|audit trail|access control|rbac|scheduler|tracker|queue|dashboard|prediction|forecast|anomaly detection|risk score|telemetry|sensor feed|data feed|decision support|rule engine)\b/iu.test(
+        objective,
+      );
+
+    return hasConcreteCapability;
+  }
+
+  /**
    * Ensures TEXT_AND_DOMAINS candidates materially express every explicitly
    * selected implementation domain before the candidate can win the benchmark.
    * Domain-specific aliases are deliberately small and capability-oriented so
@@ -1445,23 +1514,104 @@ export class IdeaQualityEvaluatorService {
           'smart city',
           'smart cities',
           'municipal',
+          'municipality',
+          'municipalities',
           'city infrastructure',
           'urban infrastructure',
           'urban operations',
           'city services',
+          'city-scale',
+          'city scale',
+          'sanitation operations',
+          'municipal waste',
+        ]);
+      }
+
+      if (normalized.includes('logistics')) {
+        return !containsAny([
+          'logistics',
+          'route optimization',
+          'route optimisation',
+          'vehicle routing',
+          'fleet routing',
+          'fleet dispatch',
+          'dispatch',
+          'collection route',
+          'delivery route',
+          'transport routing',
         ]);
       }
 
       if (normalized.includes('cybersecurity')) {
-        return !containsAny([
+        const hasExplicitSecurityCapability = containsAny([
           'cybersecurity',
           'security monitoring',
           'access anomaly',
           'suspicious access',
           'threat detection',
           'security incident',
-          'audit log',
           'authentication risk',
+        ]);
+        if (hasExplicitSecurityCapability) return false;
+
+        /*
+         * Cybersecurity can be materially implemented without repeating the
+         * domain label. A single generic HTTPS/RBAC mention is not enough;
+         * require at least two independent control families so physical
+         * "security operations" or incidental auth boilerplate cannot satisfy
+         * an explicitly selected Cybersecurity domain by accident.
+         */
+        const cybersecurityControlFamilies = [
+          containsAny([
+            'role based access control',
+            'role-based access control',
+            'rbac',
+            'least privilege',
+            'access control',
+            'authorization policy',
+          ]),
+          containsAny([
+            'encryption',
+            'encrypted transport',
+            'transport layer security',
+            'tls',
+            'data integrity',
+            'integrity check',
+          ]),
+          containsAny([
+            'audit trail',
+            'audit log',
+            'tamper evident',
+            'tamper-evident',
+            'signed provenance',
+            'data provenance',
+          ]),
+          containsAny([
+            'security anomaly',
+            'access anomaly',
+            'suspicious access',
+            'unauthorized access',
+            'security alert',
+          ]),
+        ].filter(Boolean).length;
+
+        return cybersecurityControlFamilies < 2;
+      }
+
+      if (normalized.includes('manufactur')) {
+        return !containsAny([
+          'manufacturing',
+          'manufacturer',
+          'factory',
+          'factories',
+          'industrial plant',
+          'industrial plants',
+          'production line',
+          'production lines',
+          'plant floor',
+          'shop floor',
+          'industrial operations',
+          'production operations',
         ]);
       }
 

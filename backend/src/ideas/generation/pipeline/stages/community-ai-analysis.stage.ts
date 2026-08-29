@@ -38,6 +38,7 @@ import {
 import { RequestEvidenceAlignmentUtil } from '../../utils/request-evidence-alignment.util';
 import { CanonicalEvidenceVerificationUtil } from '../../utils/canonical-evidence-verification.util';
 import { CanonicalEvidenceStateUtil } from '../../utils/canonical-evidence-state.util';
+import { EvidenceSourceIdentityUtil } from '../../utils/evidence-source-identity.util';
 
 /**
  * Enriches cleaned NLP output with evidence-grounded opportunities extracted
@@ -285,11 +286,11 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         ]
       : [];
     const canonicalDistinctSourceCount = canonicalFamilyLock
-      ? new Set(
-          canonicalEvidenceLedger
-            .filter((item) => canonicalFamilyLock.evidenceIds.includes(item.id))
-            .map((item) => item.sourceKey),
-        ).size
+      ? EvidenceSourceIdentityUtil.count(
+          canonicalEvidenceLedger.filter((item) =>
+            canonicalFamilyLock.evidenceIds.includes(item.id),
+          ),
+        )
       : 0;
     const canonicalTruthWarnings = this.buildCanonicalTruthWarnings(
       authoritativeAnalysis.qualityWarnings,
@@ -748,9 +749,8 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     const evidenceSamples = orderedFamilyItems
       .slice(0, 8)
       .map((item) => item.text);
-    const distinctSourceCount = new Set(
-      orderedFamilyItems.map((item) => item.sourceKey),
-    ).size;
+    const distinctSourceCount =
+      EvidenceSourceIdentityUtil.count(orderedFamilyItems);
     const averageConfidence =
       orderedFamilyItems.reduce((sum, item) => sum + item.confidence, 0) /
       Math.max(1, orderedFamilyItems.length);
@@ -968,9 +968,8 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       opportunities,
       selectedProblemFamily: selectedFamily,
       selectedProblemFamilyTrustedEvidenceCount: familyItems.length,
-      selectedProblemFamilyDistinctSourceCount: new Set(
-        familyItems.map((item) => item.sourceKey),
-      ).size,
+      selectedProblemFamilyDistinctSourceCount:
+        EvidenceSourceIdentityUtil.count(familyItems),
       selectedProblemFamilyEvidenceIds: familyItems.map((item) => item.id),
     };
   }
@@ -1059,7 +1058,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       const directCount = items.filter(
         (item) => item.classification === 'DIRECT_PROBLEM',
       ).length;
-      const sourceCount = new Set(items.map((item) => item.sourceKey)).size;
+      const sourceCount = EvidenceSourceIdentityUtil.count(items);
       const averageConfidence =
         items.reduce((sum, item) => sum + item.confidence, 0) /
         Math.max(1, items.length);
@@ -1215,29 +1214,61 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         item,
       ]),
     );
-    const missingEvidenceDomains: string[] = [];
+    const missingDirectEvidenceDomains: string[] = [];
     const hypotheses: CommunityAiDomainHypothesis[] = [
       ...analysis.unvalidatedDomainHypotheses,
     ];
+    const canonicalClassifications = analysis.evidenceClassifications ?? [];
+    const canonicalTrustedDomainNames = new Set(
+      canonicalClassifications
+        .filter(
+          (item) =>
+            item.adjudicationStatus === 'ADJUDICATED' &&
+            item.verifiedByDeterministicGuard === true &&
+            (item.classification === 'DIRECT_PROBLEM' ||
+              item.classification === 'SUPPORTING_SIGNAL'),
+        )
+        .flatMap((item) => item.matchedDomainNames ?? [])
+        .map((name) => name.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+    const canonicalDirectDomainNames = new Set(
+      canonicalClassifications
+        .filter(
+          (item) =>
+            item.adjudicationStatus === 'ADJUDICATED' &&
+            item.verifiedByDeterministicGuard === true &&
+            item.classification === 'DIRECT_PROBLEM',
+        )
+        .flatMap((item) => item.matchedDomainNames ?? [])
+        .map((name) => name.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
 
     for (const domain of context.selectedDomains) {
       const key = domain.name.trim().toLocaleLowerCase();
-      if (represented.has(key)) continue;
+      const hasCanonicalTrustedEvidence = canonicalTrustedDomainNames.has(key);
+      const hasCanonicalDirectEvidence = canonicalDirectDomainNames.has(key);
+      const hasRetainedEvidence =
+        hasCanonicalTrustedEvidence ||
+        this.hasRetainedDomainEvidence(context, domain.id);
+      const hasRetainedDirectEvidence =
+        hasCanonicalDirectEvidence ||
+        this.hasRetainedDirectDomainEvidence(context, domain.id);
 
-      const hasRetainedEvidence = this.hasRetainedDomainEvidence(
-        context,
-        domain.id,
-      );
-      const hasRetainedDirectEvidence = this.hasRetainedDirectDomainEvidence(
-        context,
-        domain.id,
-      );
-
-      if (hasRetainedEvidence || hasRetainedDirectEvidence) {
-        continue;
+      if (!hasRetainedDirectEvidence) {
+        missingDirectEvidenceDomains.push(domain.name);
       }
 
-      missingEvidenceDomains.push(domain.name);
+      /*
+       * A selected domain needs a validation-first hypothesis only when no
+       * canonical DIRECT/SUPPORTING row and no legacy grounded retained sample
+       * represents it. A domain can be absent from opportunities while still
+       * being directly represented by the canonical evidence ledger.
+       */
+      if (represented.has(key) || hasRetainedEvidence) {
+        continue;
+      }
 
       if (!existingHypotheses.has(key)) {
         hypotheses.push({
@@ -1265,13 +1296,13 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       unvalidatedDomainHypotheses: hypotheses,
       qualityWarnings: [
         ...qualityWarnings,
-        ...(missingEvidenceDomains.length > 0 &&
+        ...(missingDirectEvidenceDomains.length > 0 &&
         context.domainResolution?.source === 'USER_SELECTED'
           ? [
               analysis.evidenceVerdictState ===
               'EVIDENCE_ADJUDICATION_UNAVAILABLE'
-                ? `No adjudicated direct evidence is currently available for selected domain(s): ${missingEvidenceDomains.join(', ')}; collected raw rows may still be pending semantic verdict.`
-                : `No direct retained evidence was available for selected domain(s): ${missingEvidenceDomains.join(', ')}.`,
+                ? `No adjudicated direct evidence is currently available for selected domain(s): ${missingDirectEvidenceDomains.join(', ')}; collected raw rows may still be pending semantic verdict.`
+                : `No direct retained evidence was available for selected domain(s): ${missingDirectEvidenceDomains.join(', ')}.`,
             ]
           : []),
       ],
@@ -1600,7 +1631,14 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       .replace(/\s+/gu, ' ')
       .trim();
 
-    return label.length >= 8 ? label.slice(0, 120) : null;
+    if (label.length < 8) return null;
+    if (label.length <= 120) return label;
+
+    const prefix = label.slice(0, 121);
+    const wordBoundary = prefix.lastIndexOf(' ');
+    return (wordBoundary > 0 ? prefix.slice(0, wordBoundary) : label)
+      .replace(/[\s,;:.-]+$/gu, '')
+      .trim() || null;
   }
 
   private isCanonicalMissingEvidenceWarning(warning: string): boolean {

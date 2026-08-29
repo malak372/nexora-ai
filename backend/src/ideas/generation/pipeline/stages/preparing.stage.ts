@@ -57,7 +57,7 @@ export class PreparingStage implements IdeaGenerationStage {
     this.throwIfAborted(signal);
 
     const description = context.requestDescription?.replace(/\s+/gu, ' ').trim() ?? '';
-    const requestedDomainIds = this.normalizeIds(context.requestedDomainIds);
+    const submittedRequestedDomainIds = this.normalizeIds(context.requestedDomainIds);
     const requestedDomainNames = this.normalizeStrings(
       context.requestedDomainNames ?? [],
     );
@@ -66,7 +66,7 @@ export class PreparingStage implements IdeaGenerationStage {
       ? this.filterKeywordsForCurrentRequest(submittedKeywords, description)
       : submittedKeywords;
 
-    if (description && requestedDomainIds.length === 0) {
+    if (description && submittedRequestedDomainIds.length === 0) {
       this.domainResolutionService.primeDomainCatalog(
         context.location.language,
         true,
@@ -88,7 +88,7 @@ export class PreparingStage implements IdeaGenerationStage {
             keywords: rawKeywords,
             generationType: context.generationType,
             language: context.location.language,
-            requestedDomainIds,
+            requestedDomainIds: submittedRequestedDomainIds,
             ...(context.owner.type === IDEA_OWNER_TYPES.USER
               ? { userId: context.owner.userId }
               : { guestSessionId: context.owner.guestSessionId }),
@@ -100,37 +100,43 @@ export class PreparingStage implements IdeaGenerationStage {
 
     const explicitDomainsStartedAt = Date.now();
     let explicitPrefetchMs = 0;
-    const explicitDomainsPromise = requestedDomainIds.length > 0
-      ? this.loadExplicitDomains(requestedDomainIds, context.location.language).finally(
+    const explicitDomainsPromise = submittedRequestedDomainIds.length > 0
+      ? this.loadExplicitDomains(submittedRequestedDomainIds, context.location.language).finally(
           () => {
             explicitPrefetchMs = Date.now() - explicitDomainsStartedAt;
           },
         )
       : Promise.resolve<PreparedExplicitDomain[]>([]);
 
-    const [rawCollectionPlan, explicitDomains] = await Promise.all([
+    const [rawCollectionPlan, rawExplicitDomains] = await Promise.all([
       planPromise,
       explicitDomainsPromise,
     ]);
     const planningAndExplicitMs = Date.now() - planStartedAt;
     this.throwIfAborted(signal);
 
-    if (requestedDomainIds.length > 0 && explicitDomains.length !== requestedDomainIds.length) {
+    if (
+      submittedRequestedDomainIds.length > 0 &&
+      rawExplicitDomains.length !== submittedRequestedDomainIds.length
+    ) {
       throw new BadRequestException(
         'One or more explicitly selected generation domains are unavailable or inactive.',
       );
     }
 
-    this.assertExplicitDomainNameAssertions(
-      requestedDomainIds,
+    const explicitBoundary = this.reconcileExplicitDomainBoundary(
+      submittedRequestedDomainIds,
       requestedDomainNames,
-      explicitDomains,
+      rawExplicitDomains,
     );
+    let requestedDomainIds = explicitBoundary.requestedDomainIds;
+    let explicitDomains = explicitBoundary.explicitDomains;
+
     if (requestedDomainIds.length > 0) {
       this.logger.log(
         `[PREPARING] Explicit domain boundary resolved | ${explicitDomains
           .map((domain, index) => `${index + 1}:${requestedDomainIds[index]}=>${domain.name}`)
-          .join(' | ')} | uiAssertions=${requestedDomainNames.length > 0 ? requestedDomainNames.join(' | ') : 'legacy-single-domain/no-name-assertion'}.`,
+          .join(' | ')} | uiAssertions=${requestedDomainNames.length > 0 ? requestedDomainNames.join(' | ') : 'legacy-single-domain/no-name-assertion'} | reconciledOrder=${explicitBoundary.orderReconciled}.`,
       );
     }
 
@@ -139,6 +145,35 @@ export class PreparingStage implements IdeaGenerationStage {
       requestedDomainIds,
       explicitDomains,
     );
+
+    /*
+     * TEXT_AND_DOMAINS has two different input generations in the wild:
+     *
+     * 1. Current clients send ordered domainNames together with domainIds. That
+     *    order is an explicit requester assertion and is already reconciled by
+     *    reconcileExplicitDomainBoundary(). Never let the PREPARING AI reorder
+     *    it: a workflow/enabling word inside the description (for example
+     *    "transportation" inside an Agriculture problem) must not steal the
+     *    primary market lane from the requester-selected first domain.
+     *
+     * 2. Legacy id-only clients have no ordering assertion. Only for that legacy
+     *    shape may the semantic plan promote one selected domain to position 1.
+     *
+     * DOMAINS_ONLY remains requester-order preserving in both cases.
+     */
+    if (
+      description &&
+      requestedDomainIds.length > 1 &&
+      requestedDomainNames.length === 0
+    ) {
+      const promoted = this.promoteExplicitPrimaryDomain(
+        requestedDomainIds,
+        explicitDomains,
+        collectionPlan?.selectedExistingDomainId ?? null,
+      );
+      requestedDomainIds = promoted.requestedDomainIds;
+      explicitDomains = promoted.explicitDomains;
+    }
 
     /*
      * DOMAINS_ONLY already has the exact active domain names after the explicit
@@ -199,6 +234,7 @@ export class PreparingStage implements IdeaGenerationStage {
           collectionPlan,
           requestedDomainIds,
           explicitDomains,
+          requestedDomainNames.length > 0,
         )
       : warmPlannedPrimary ??
         await this.domainResolutionService.resolve({
@@ -274,6 +310,10 @@ export class PreparingStage implements IdeaGenerationStage {
       {
         description,
         selectedDomains,
+        resolvedPrimaryDomain: {
+          id: primary.domainId,
+          name: primary.domainName,
+        },
         requestKeywords: rawKeywords,
         preferenceTerms: primary.trace.matchedInterests,
       },
@@ -304,6 +344,11 @@ export class PreparingStage implements IdeaGenerationStage {
       ...context,
       domainId: primary.domainId,
       domainName: primary.domainName,
+      requestedDomainIds: [...requestedDomainIds],
+      requestedDomainNames:
+        requestedDomainIds.length > 0
+          ? explicitDomains.map((domain) => domain.name)
+          : requestedDomainNames,
       selectedDomains,
       domainResolution: {
         source: String(primary.source),
@@ -364,33 +409,51 @@ export class PreparingStage implements IdeaGenerationStage {
   private resolveWarmPlannedExistingPrimary(
     collectionPlan: RequestCollectionPlan | null,
   ): Awaited<ReturnType<DomainResolutionService['resolve']>> | null {
-    if (
-      collectionPlan?.domainSelectionMode !== 'EXISTING' ||
-      !collectionPlan.selectedExistingDomainId?.trim() ||
-      collectionPlan.confidence < 85
-    ) {
-      return null;
-    }
-
-    const cached =
-      this.requestCollectionPlanningService.resolveActiveDomainByIdImmediate(
-        collectionPlan.selectedExistingDomainId,
-      );
-    if (!cached) return null;
+    if (!collectionPlan) return null;
 
     const normalizedConfidence =
       collectionPlan.confidence > 1
         ? collectionPlan.confidence / 100
         : collectionPlan.confidence;
 
+    const exactExisting =
+      collectionPlan.domainSelectionMode === 'EXISTING' &&
+      collectionPlan.selectedExistingDomainId?.trim()
+        ? this.requestCollectionPlanningService.resolveActiveDomainByIdImmediate(
+            collectionPlan.selectedExistingDomainId,
+          )
+        : null;
+
+    /*
+     * A deterministic/AI plan can occasionally call an exact hidden
+     * auto-generated domain "NEW" even though that same domain was created by
+     * an earlier run and is already present in the warmed active-domain
+     * catalog. Reusing an exact name is an identity lookup, not a semantic
+     * guess, and removes the extra remote resolve/create round trip that made
+     * Text Only PREPARING wait once for planning and then again for the DB.
+     */
+    const exactNamed =
+      !exactExisting && collectionPlan.suggestedDomainName?.trim()
+        ? this.requestCollectionPlanningService.resolveActiveDomainByNameImmediate(
+            collectionPlan.suggestedDomainName,
+          )
+        : null;
+    const cached = exactExisting ?? exactNamed;
+    if (!cached) return null;
+
+    const confidenceFloor = exactExisting ? 0.85 : 0.72;
+    if (normalizedConfidence < confidenceFloor) return null;
+
     return {
       domainId: cached.id,
       domainName: cached.name,
       source: DomainResolutionSource.KEYWORD_MATCH,
-      confidence: Math.max(0.85, Math.min(1, normalizedConfidence)),
+      confidence: Math.max(confidenceFloor, Math.min(1, normalizedConfidence)),
       trace: {
         reasons: [
-          'Reused the exact active existing domain selected by the PREPARING AI plan from the warm active-domain catalog; no duplicate database lookup was required.',
+          exactExisting
+            ? 'Reused the exact active existing domain selected by the PREPARING plan from the warm active-domain catalog; no duplicate database lookup was required.'
+            : 'Reused the exact active domain name already present in the warm PREPARING catalog; the plan did not trigger a duplicate remote resolve/create round trip.',
         ],
         matchedInterests: [],
         candidates: [
@@ -398,7 +461,11 @@ export class PreparingStage implements IdeaGenerationStage {
             domainId: cached.id,
             domainName: cached.name,
             score: 1,
-            reasons: ['Exact warm-catalog AI domain selection'],
+            reasons: [
+              exactExisting
+                ? 'Exact warm-catalog domain-id selection'
+                : 'Exact warm-catalog domain-name identity match',
+            ],
           },
         ],
       },
@@ -413,22 +480,27 @@ export class PreparingStage implements IdeaGenerationStage {
       readonly name: string;
       readonly domainKeywords: readonly { readonly keyword: string }[];
     }[],
+    preserveRequesterOrder: boolean,
   ): Awaited<ReturnType<DomainResolutionService['resolve']>> {
     const byId = new Map(explicitDomains.map((domain) => [domain.id, domain] as const));
     /*
-     * Text + Domains must use the semantic problem anchor selected by the
-     * PREPARING plan when that id belongs to the immutable requester-selected
-     * set. Falling back to requestedDomainIds[0] made implementation/enabling
-     * domains (for example AI) become the primary market lane merely because
-     * the UI listed them first.
+     * When the current client supplied ordered domainNames, requestedDomainIds
+     * already carries the reconciled requester order and position 1 is the
+     * authoritative primary lane. The AI plan may still describe a secondary
+     * workflow/enabling domain, but it cannot reorder the explicit boundary.
+     * Legacy id-only requests retain the semantic-plan preference because they
+     * do not carry an independent ordering assertion.
      */
     const plannedPreferredId =
+      !preserveRequesterOrder &&
       plan?.domainSelectionMode === 'EXISTING' &&
       plan.selectedExistingDomainId &&
       requestedDomainIds.includes(plan.selectedExistingDomainId)
         ? plan.selectedExistingDomainId
         : null;
-    const preferredId = plannedPreferredId ?? requestedDomainIds[0];
+    const preferredId = preserveRequesterOrder
+      ? requestedDomainIds[0]
+      : plannedPreferredId ?? requestedDomainIds[0];
     const primary =
       (preferredId ? byId.get(preferredId) : undefined) ?? explicitDomains[0];
 
@@ -592,59 +664,73 @@ export class PreparingStage implements IdeaGenerationStage {
         .trim();
 
     const problemProfile = plan.problemProfile;
-    const explicitProblemText = [
-      plan.requestIntent?.explicitProblem ?? '',
+    const workflowIdentityText = normalize([
       problemProfile?.actor ?? '',
       problemProfile?.object ?? '',
-      problemProfile?.coreProblem ?? '',
       problemProfile?.workflow ?? '',
-      problemProfile?.friction ?? '',
-      ...(problemProfile?.failureModes ?? []),
-      ...(problemProfile?.consequences ?? []),
       plan.domainIdentity?.actor ?? '',
       plan.domainIdentity?.object ?? '',
       plan.domainIdentity?.workflow ?? '',
+    ].join(' '));
+    const failureText = normalize([
+      plan.requestIntent?.explicitProblem ?? '',
+      problemProfile?.coreProblem ?? '',
+      problemProfile?.friction ?? '',
+      ...(problemProfile?.failureModes ?? []),
+      ...(problemProfile?.consequences ?? []),
       plan.domainIdentity?.failure ?? '',
-    ]
-      .join(' ');
+    ].join(' '));
+    const explicitProblemText = normalize(
+      [workflowIdentityText, failureText].join(' '),
+    );
     const hasExplicitProblemAnchor =
       plan.requestIntent?.mode === 'EXPLICIT_PROBLEM' &&
-      normalize(explicitProblemText).length > 0;
+      explicitProblemText.length > 0;
+    const discoverySemanticText = normalize([
+      explicitProblemText,
+      plan.suggestedDomainName ?? '',
+      plan.requestIntent?.summary ?? '',
+      plan.requestIntent?.desiredOutcome ?? '',
+    ].join(' '));
 
     /*
-     * In EXPLICIT_PROBLEM mode the problem statement, actor, object, and
-     * workflow choose the primary lane. suggestedDomainName is intentionally
-     * excluded from that score because it can describe an enabling technology
-     * rather than the market/problem domain. In DISCOVERY_INTENT mode the
-     * planner's suggested domain remains useful semantic context.
+     * Primary-domain identity is anchored first by WHO performs WHICH workflow
+     * over WHICH object. Failure/solution vocabulary is deliberately weaker:
+     * words such as security, AI, automation, prediction, or devices often
+     * describe enabling technologies rather than the market in which the pain
+     * occurs. This keeps e.g. a university assessment workflow anchored to the
+     * education lane while Cybersecurity/AI remain mandatory selected-domain
+     * constraints. A truly cybersecurity-native request still wins because its
+     * actor/object/workflow and configured domain keywords match that lane.
      */
-    const semanticText = normalize(
-      hasExplicitProblemAnchor
-        ? explicitProblemText
-        : [
-            explicitProblemText,
-            plan.suggestedDomainName ?? '',
-            plan.requestIntent?.summary ?? '',
-            plan.requestIntent?.desiredOutcome ?? '',
-          ].join(' '),
-    );
-
     const scoreDomain = (
       domain: (typeof requested)[number],
     ): number => {
       const normalizedName = normalize(domain.name);
-      let score = normalizedName && semanticText.includes(normalizedName) ? 12 : 0;
+      const semanticText = hasExplicitProblemAnchor
+        ? explicitProblemText
+        : discoverySemanticText;
+      let score = 0;
+
+      if (normalizedName) {
+        if (workflowIdentityText.includes(normalizedName)) score += 24;
+        else if (semanticText.includes(normalizedName)) score += 9;
+      }
 
       const nameTokens = normalizedName
         .split(' ')
         .filter((token) => token.length >= 4);
-      score +=
-        nameTokens.filter((token) => semanticText.includes(token)).length * 3;
+      score += nameTokens.filter((token) => workflowIdentityText.includes(token)).length * 7;
+      score += nameTokens.filter((token) => failureText.includes(token)).length * 2;
 
       for (const entry of domain.domainKeywords) {
         const keyword = normalize(entry.keyword);
-        if (!keyword || keyword.length < 4) continue;
-        if (semanticText.includes(keyword)) {
+        if (!keyword || keyword.length < 3) continue;
+        if (workflowIdentityText.includes(keyword)) {
+          score += keyword.includes(' ') ? 10 : 5;
+        } else if (failureText.includes(keyword)) {
+          score += keyword.includes(' ') ? 3 : 1;
+        } else if (!hasExplicitProblemAnchor && discoverySemanticText.includes(keyword)) {
           score += keyword.includes(' ') ? 4 : 2;
         }
       }
@@ -803,12 +889,68 @@ export class PreparingStage implements IdeaGenerationStage {
       });
   }
 
-  private assertExplicitDomainNameAssertions(
+  private promoteExplicitPrimaryDomain(
+    requestedDomainIds: readonly string[],
+    explicitDomains: readonly PreparedExplicitDomain[],
+    primaryDomainId: string | null,
+  ): {
+    readonly requestedDomainIds: string[];
+    readonly explicitDomains: PreparedExplicitDomain[];
+  } {
+    const normalizedPrimaryId = primaryDomainId?.trim() ?? '';
+    if (!normalizedPrimaryId || !requestedDomainIds.includes(normalizedPrimaryId)) {
+      return {
+        requestedDomainIds: [...requestedDomainIds],
+        explicitDomains: [...explicitDomains],
+      };
+    }
+
+    const orderedIds = [
+      normalizedPrimaryId,
+      ...requestedDomainIds.filter((id) => id !== normalizedPrimaryId),
+    ];
+    const byId = new Map(explicitDomains.map((domain) => [domain.id, domain] as const));
+    const orderedDomains = orderedIds
+      .map((id) => byId.get(id))
+      .filter((domain): domain is PreparedExplicitDomain => Boolean(domain));
+
+    if (orderedIds.some((id, index) => requestedDomainIds[index] !== id)) {
+      this.logger.log(
+        `[PREPARING] Promoted semantic problem-domain to the primary TEXT_AND_DOMAINS lane. canonicalOrder=${orderedDomains.map((domain) => domain.name).join(' | ')}.`,
+      );
+    }
+
+    return {
+      requestedDomainIds: orderedIds,
+      explicitDomains: orderedDomains,
+    };
+  }
+
+  /**
+   * Treats the client-provided ordered domain names as an ordering assertion,
+   * not as a reason to fail a semantically valid request when the parallel id
+   * array was serialized in a different order. When both arrays describe the
+   * exact same active domain set, rebuild the canonical id/domain order from
+   * the UI names before any primary-domain or collection decision is made.
+   *
+   * A true id/name set mismatch still fails closed before collection.
+   */
+  private reconcileExplicitDomainBoundary(
     requestedDomainIds: readonly string[],
     requestedDomainNames: readonly string[],
     explicitDomains: readonly PreparedExplicitDomain[],
-  ): void {
-    if (requestedDomainNames.length === 0) return;
+  ): {
+    readonly requestedDomainIds: string[];
+    readonly explicitDomains: PreparedExplicitDomain[];
+    readonly orderReconciled: boolean;
+  } {
+    if (requestedDomainNames.length === 0) {
+      return {
+        requestedDomainIds: [...requestedDomainIds],
+        explicitDomains: [...explicitDomains],
+        orderReconciled: false,
+      };
+    }
 
     if (requestedDomainNames.length !== requestedDomainIds.length) {
       throw new BadRequestException({
@@ -826,31 +968,69 @@ export class PreparingStage implements IdeaGenerationStage {
         .toLocaleLowerCase()
         .replace(/\s+/gu, ' ')
         .trim();
-    const mismatches = explicitDomains.flatMap((domain, index) => {
-      const assertedName = requestedDomainNames[index] ?? '';
-      return normalize(domain.name) === normalize(assertedName)
-        ? []
-        : [{
-            index,
-            domainId: requestedDomainIds[index] ?? domain.id,
-            assertedName,
-            resolvedName: domain.name,
-          }];
-    });
+    const byNormalizedName = new Map<string, PreparedExplicitDomain>();
+    for (const domain of explicitDomains) {
+      byNormalizedName.set(normalize(domain.name), domain);
+    }
 
-    if (mismatches.length > 0) {
+    const orderedDomains = requestedDomainNames.map((name) =>
+      byNormalizedName.get(normalize(name)),
+    );
+    const missingAssertions = requestedDomainNames.flatMap((name, index) =>
+      orderedDomains[index]
+        ? []
+        : [{ index, assertedName: name }],
+    );
+    const resolvedIdSet = new Set(explicitDomains.map((domain) => domain.id));
+    const assertedIdSet = new Set(
+      orderedDomains
+        .filter((domain): domain is PreparedExplicitDomain => Boolean(domain))
+        .map((domain) => domain.id),
+    );
+    const exactSetMatch =
+      missingAssertions.length === 0 &&
+      assertedIdSet.size === resolvedIdSet.size &&
+      [...resolvedIdSet].every((id) => assertedIdSet.has(id));
+
+    if (!exactSetMatch) {
+      const mismatches = requestedDomainNames.map((assertedName, index) => ({
+        index,
+        domainId: requestedDomainIds[index] ?? null,
+        assertedName,
+        resolvedName: explicitDomains[index]?.name ?? null,
+      }));
       this.logger.error(
         `[PREPARING] DOMAIN PAYLOAD MISMATCH | ${mismatches
-          .map((item) => `${item.domainId}: ui="${item.assertedName}" db="${item.resolvedName}"`)
+          .map((item) => `${item.domainId ?? 'missing-id'}: ui="${item.assertedName}" db="${item.resolvedName ?? 'unresolved'}"`)
           .join(' | ')}.`,
       );
       throw new BadRequestException({
         code: 'DOMAIN_SELECTION_MAPPING_MISMATCH',
         message:
-          'The submitted domain UUIDs do not resolve to the same ordered domain names selected by the client. Generation was stopped before collection.',
+          'The submitted domain UUIDs and domain names do not resolve to the same active domain set. Generation was stopped before collection.',
         mismatches,
       });
     }
+
+    const canonicalDomains = orderedDomains.filter(
+      (domain): domain is PreparedExplicitDomain => Boolean(domain),
+    );
+    const canonicalIds = canonicalDomains.map((domain) => domain.id);
+    const orderReconciled = canonicalIds.some(
+      (id, index) => requestedDomainIds[index] !== id,
+    );
+
+    if (orderReconciled) {
+      this.logger.warn(
+        `[PREPARING] Reconciled explicit-domain id order from the authoritative UI name order before planning handoff. submittedIds=${requestedDomainIds.join(' | ')} canonicalIds=${canonicalIds.join(' | ')}.`,
+      );
+    }
+
+    return {
+      requestedDomainIds: canonicalIds,
+      explicitDomains: canonicalDomains,
+      orderReconciled,
+    };
   }
 
   private assertExplicitDomainInvariant(

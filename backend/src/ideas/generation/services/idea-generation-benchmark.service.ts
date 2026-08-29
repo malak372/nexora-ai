@@ -59,6 +59,7 @@ import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
 import type { RankedIdeaOpportunity } from '../types/idea-opportunity-ranking.type';
 import { RequestProductBlueprintUtil } from '../utils/request-product-blueprint.util';
+import { EvidenceSourceIdentityUtil } from '../utils/evidence-source-identity.util';
 import {
   matchEvidenceToAtomicProblem,
   matchEvidenceToProblemFamily,
@@ -184,14 +185,15 @@ type AcceptedModelAttempt = {
 /**
  * Number of online core models allowed in the first latency-hedged wave.
  *
- * This does not lower the quality gate or increase the number of candidates
- * required for selection. Three provider-diverse requests are allowed to start for evidence-backed runs.
- * Sparse/no-evidence hypotheses start up to three provider-diverse requests in
- * parallel so one timeout plus one malformed response cannot force an emergency
- * deterministic fallback while a healthy model is still idle.
+ * The model selector already returns a health-aware, provider-interleaved order
+ * whose documented fast path is two models. Starting six models made a healthy
+ * two-candidate comparison wait behind unrelated slower peers until the full
+ * run wall-clock budget. Keep the first wave at the two strongest provider-
+ * diverse routes; if both fail to produce a usable candidate, the existing
+ * bounded rescue loop can still start additional models.
  */
-const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 6;
-const IDEA_BENCHMARK_PRELIMINARY_HEDGE_WIDTH = 6;
+const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 2;
+const IDEA_BENCHMARK_PRELIMINARY_HEDGE_WIDTH = 2;
 const IDEA_BENCHMARK_CORPUS_WARMUP_BUDGET_MS = 1_200;
 const IDEA_BENCHMARK_DUPLICATE_DB_BUDGET_MS = 1_500;
 const IDEA_BENCHMARK_STRUCTURAL_FALLBACK_SCORE = 40;
@@ -265,7 +267,12 @@ export class IdeaGenerationBenchmarkService {
         context.domainId,
       );
 
-    const [configuredRoutableModels, fallbackModels, , duplicateCorpus] = await Promise.all([
+    const [
+      configuredRoutableModels,
+      fallbackModels,
+      ,
+      duplicateCorpus,
+    ] = await Promise.all([
       this.aiModelsService.getRoutableModels(),
       this.aiModelsService.getFallbackModels(),
       this.prisma.ideaGenerationCandidate.deleteMany({
@@ -297,9 +304,28 @@ export class IdeaGenerationBenchmarkService {
         this.isOnlineCoreRescueEligible(model),
     );
 
+    /*
+     * HARD ROUTABILITY INVARIANT:
+     * the benchmark may execute only rows returned by getRoutableModels() that
+     * also survive the live provider/model cooldown filter. Do not append
+     * any broader emergency/fallback rows to improve apparent provider
+     * diversity after the live filter has produced the executable set. Provider
+     * diversity is therefore best-effort among models
+     * that are genuinely executable at this moment.
+     */
+    const coreProviderCount = new Set(
+      routableModels.map((model) => model.providerKey.trim().toLocaleLowerCase()),
+    ).size;
+    if (routableModels.length > 0) {
+      this.logger.debug(
+        `Core routable model pool prepared | eligible=${routableModels.length} | providers=${coreProviderCount}.`,
+      );
+    }
+
     if (
       configuredRoutableModels.length > 0 &&
-      temporarilyAvailableModels.length === 0
+      temporarilyAvailableModels.length === 0 &&
+      routableModels.length === 0
     ) {
       this.logger.warn(
         'All configured online Core models are temporarily unavailable according to persisted routing health; skipping known-bad online attempts and preserving the run through continuity fallback.',
@@ -508,23 +534,28 @@ export class IdeaGenerationBenchmarkService {
             !attemptedModelIdsForDirection.has(model.id),
         );
         const isInitialWave = attemptedModelIdsForDirection.size === 0;
-        const selectedModels = remainingEligibleModels;
+        /*
+         * Honor the selector's provider-diverse fast-path contract instead of
+         * launching every eligible model in the first wave. Additional models
+         * remain available to the existing rescue loop only when the initial
+         * pair cannot produce a usable candidate.
+         */
+        const selectedModels = isInitialWave
+          ? this.modelSelectorService.getInitialModels(remainingEligibleModels)
+          : remainingEligibleModels;
 
         /*
-         * Latency hedge:
+         * Bounded latency hedge:
          *
-         * The product still needs only the configured target number of
-         * candidates, but the first wave may start one extra eligible model.
-         * The first quality-approved candidate keeps the existing early-stop
-         * semantics and cancels the slower requests.
-         *
-         * This specifically avoids the expensive pattern where:
-         * 1. a fast model returns a structurally valid but blocked fallback;
-         * 2. another provider/model spends its complete timeout window; and
-         * 3. only then is a third model allowed to start.
+         * The first wave starts only the selector's provider-diverse pair.
+         * This keeps the existing quality-first race and early-stop semantics,
+         * but prevents already-good two-model results from waiting behind
+         * unrelated slow peers until the run-level hard budget expires.
+         * Additional eligible models remain available to the rescue loop when
+         * the initial pair cannot produce a usable candidate.
          *
          * Quality, evidence, duplicate detection, and the 70-point gate are
-         * unchanged; only the wait order is changed.
+         * unchanged; only unnecessary first-wave fan-out is removed.
          */
         const parallelWidth = isInitialWave
           ? Math.min(
@@ -1450,28 +1481,38 @@ export class IdeaGenerationBenchmarkService {
     problem: string,
   ): NonNullable<ReturnType<typeof RequestProductBlueprintUtil.build>> {
     const profile = context.collectionPlan?.problemProfile;
-    const actor = profile?.actor?.trim() || this.resolveEmergencyTargetUsers(context, opportunity, domainLabel)[0] || `${domainLabel} practitioners`;
+    const actor =
+      profile?.actorAliases?.map((value) => value.trim()).find(Boolean) ||
+      profile?.actor?.trim() ||
+      this.resolveEmergencyTargetUsers(context, opportunity, domainLabel)[0] ||
+      `${domainLabel} practitioners`;
     const object = profile?.object?.trim() || domainLabel;
     const workflow = profile?.workflow?.trim() || problem;
     const failureModes = (profile?.failureModes ?? []).map((value) => value.trim()).filter(Boolean).slice(0, 5);
     const consequences = (profile?.consequences ?? []).map((value) => value.trim()).filter(Boolean).slice(0, 4);
     const familyTitle = opportunity?.title?.trim();
     const genericFamilyTitle = /^(?:requester-defined workflow opportunity|most-evidenced request problem family)$/iu.test(familyTitle ?? '');
-    const compactDomainLabel = domainLabel
-      .split(/\s+/u)
-      .filter(Boolean)
-      .slice(0, 3)
-      .join(' ');
+    const primaryDomainLabel =
+      context.domainName?.trim() ||
+      context.selectedDomains[0]?.name?.trim() ||
+      domainLabel;
+    const objectTitle = this.toEmergencyTitleCase(
+      this.compactEmergencyObjectLabel(object)
+        .split(/\s+/u)
+        .filter(Boolean)
+        .slice(0, 6)
+        .join(' '),
+    );
     const baseTitle = !genericFamilyTitle && familyTitle
       ? familyTitle
-      : `${compactDomainLabel || domainLabel} ${this.compactEmergencyObjectLabel(object)}`;
+      : objectTitle || this.toEmergencyTitleCase(primaryDomainLabel);
     const cleanedTitleBase = baseTitle
       .replace(/\b(?:problem|pressure|failures?)\b/giu, '')
       .replace(/\s+/gu, ' ')
       .trim();
     const title = this.composeBoundedEmergencyTitle(
       cleanedTitleBase,
-      'Operations Hub',
+      'Risk & Exception Workspace',
       100,
     );
     const primaryFailures = failureModes.length > 0 ? failureModes : [problem];
@@ -1481,7 +1522,14 @@ export class IdeaGenerationBenchmarkService {
       baseLabel: domainLabel,
       title,
       workflowFocus: `${workflow}; preserving the requester-defined relationship between ${object} and the observed operational or financial consequences without substituting a different workflow`,
-      targetUsers: [actor, `${domainLabel} operational reviewers and decision owners`],
+      targetUsers: [
+        actor,
+        `${this.toEmergencyTitleCase(actor)} workflow leads`,
+      ].filter((value, index, values) =>
+        values.findIndex(
+          (candidate) => candidate.toLocaleLowerCase() === value.toLocaleLowerCase(),
+        ) === index,
+      ),
       features: [
         `Unified requester-scope record model for ${object}, with source timestamps, ownership, and traceable changes`,
         `Cross-signal analysis that connects ${primaryFailures.slice(0, 3).join('; ')} to the exact requester-defined workflow instead of a generic same-domain template`,
@@ -1535,14 +1583,45 @@ export class IdeaGenerationBenchmarkService {
     return cleaned.split(/[;,]/u)[0]?.trim().slice(0, 54) || 'Operations';
   }
 
+  private toEmergencyTitleCase(value: string): string {
+    return value
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .split(' ')
+      .filter(Boolean)
+      .map((word) =>
+        word.length > 0
+          ? `${word[0]?.toLocaleUpperCase() ?? ''}${word.slice(1)}`
+          : '',
+      )
+      .join(' ');
+  }
+
   private resolveVerifiedProblemEvidenceCount(
     opportunity: RankedIdeaOpportunity | null,
   ): number {
     if (!opportunity) return 0;
+
+    /*
+     * Post-ranking canonical counters are authoritative. Never inflate the
+     * selected opportunity with a larger pre-reconciliation supporting count
+     * from another family in the same corpus. Legacy fallbacks are used only
+     * when the canonical counters are genuinely absent.
+     */
+    if (typeof opportunity.verifiedProblemMatchedEvidenceCount === 'number') {
+      return Math.max(0, Math.floor(opportunity.verifiedProblemMatchedEvidenceCount));
+    }
+    if (typeof opportunity.verifiedEvidenceCount === 'number') {
+      return Math.max(0, Math.floor(opportunity.verifiedEvidenceCount));
+    }
     return Math.max(
-      opportunity.verifiedProblemMatchedEvidenceCount ?? 0,
       opportunity.qualifiedExternalSupportingEvidenceCount ?? 0,
-      (opportunity.supportingEvidence ?? []).filter((item) => item.sourceType !== 'REQUESTER_STATEMENT' && item.sourceType !== 'REQUESTER_DOMAIN_SELECTION' && item.sourceType !== 'PERSONALIZATION_SIGNAL').length,
+      (opportunity.supportingEvidence ?? []).filter(
+        (item) =>
+          item.sourceType !== 'REQUESTER_STATEMENT' &&
+          item.sourceType !== 'REQUESTER_DOMAIN_SELECTION' &&
+          item.sourceType !== 'PERSONALIZATION_SIGNAL',
+      ).length,
     );
   }
 
@@ -1550,10 +1629,18 @@ export class IdeaGenerationBenchmarkService {
     opportunity: RankedIdeaOpportunity | null,
   ): number {
     if (!opportunity) return 0;
+    if (typeof opportunity.verifiedProblemMatchedEvidenceSourceCount === 'number') {
+      return Math.max(
+        0,
+        Math.floor(opportunity.verifiedProblemMatchedEvidenceSourceCount),
+      );
+    }
+    if (typeof opportunity.verifiedEvidenceSourceCount === 'number') {
+      return Math.max(0, Math.floor(opportunity.verifiedEvidenceSourceCount));
+    }
     return Math.max(
-      opportunity.verifiedProblemMatchedEvidenceSourceCount ?? 0,
       opportunity.qualifiedExternalSupportingSourceCount ?? 0,
-      opportunity.verifiedEvidenceSourceCount ?? 0,
+      opportunity.verifiedIndependentSourceCount ?? 0,
     );
   }
 
@@ -2081,7 +2168,7 @@ export class IdeaGenerationBenchmarkService {
     ).length;
     const sourceCount = Math.max(
       analysis?.selectedProblemFamilyDistinctSourceCount ?? 0,
-      new Set(canonicalItems.map((item) => item.sourceKey.toLocaleLowerCase())).size,
+      EvidenceSourceIdentityUtil.count(canonicalItems),
     );
     const staleReasons = new Set([
       'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
@@ -2328,11 +2415,18 @@ export class IdeaGenerationBenchmarkService {
       ) ?? false;
     const hasAuthoritativeNarrowedValidationScope =
       validationHypothesis && opportunityDomains.length === 1;
+    const explicitRequesterProblem = this.hasExplicitRequesterProblem(context);
     const values =
       (hasVerifiedProblemEvidence || hasAuthoritativeNarrowedValidationScope) &&
       opportunityDomains.length > 0
         ? [...new Set(opportunityDomains)]
-        : [...new Set(selectedDomains)];
+        : explicitRequesterProblem
+          ? [
+              context.domainName?.trim() ||
+                selectedDomains[0] ||
+                'Operational',
+            ]
+          : [...new Set(selectedDomains)];
     return values.slice(0, 3).join(' + ') || context.domainName?.trim() || 'Operational';
   }
 
@@ -2980,48 +3074,6 @@ export class IdeaGenerationBenchmarkService {
     return valid[0] ?? null;
   }
 
-  private canUseSparseEvidenceFirstPass(
-    opportunity: RankedIdeaOpportunity,
-    attempt: AcceptedModelAttempt,
-  ): boolean {
-    const directEvidenceCount =
-      (opportunity.verifiedProblemMatchedDirectUserEvidenceCount ?? 0) +
-      (opportunity.verifiedProblemMatchedFeatureRequestEvidenceCount ?? 0) +
-      (opportunity.verifiedProblemMatchedComplaintEvidenceCount ?? 0);
-    const supportingEvidenceCount = Math.max(
-      opportunity.qualifiedExternalSupportingEvidenceCount ?? 0,
-      opportunity.verifiedProblemMatchedSecondaryEvidenceCount ?? 0,
-      opportunity.supportingEvidence?.filter(
-        (item) => item.sourceType === 'SECONDARY_EVIDENCE',
-      ).length ?? 0,
-    );
-    const sparseEvidenceOpportunity =
-      directEvidenceCount === 0 &&
-      (opportunity.disqualificationReasons.includes(
-        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
-      ) ||
-        opportunity.disqualificationReasons.includes('NO_DIRECT_EVIDENCE') ||
-        supportingEvidenceCount > 0);
-    if (!sparseEvidenceOpportunity) return false;
-
-    const minimumScore =
-      supportingEvidenceCount > 0
-        ? IDEA_BENCHMARK_EVIDENCE_BACKED_FAST_STOP_SCORE
-        : IDEA_BENCHMARK_STRUCTURAL_FALLBACK_SCORE;
-    if (attempt.quality.score < minimumScore) return false;
-
-    const blockingCodes = new Set([
-      'UNSUPPORTED_LOCAL_CLAIM',
-      'UNSUPPORTED_PLATFORM_ACCESS',
-      'MALFORMED_MEASURABLE_TARGET',
-      'UNSUPPORTED_IMPACT_TARGET',
-      'SECONDARY_DOMAIN_LEAKAGE',
-      'COMMON_TITLE_MISSPELLING',
-    ]);
-    return !attempt.quality.issues.some((issue) =>
-      blockingCodes.has(issue.code),
-    );
-  }
 
   private isValidationHypothesisFastStopCandidate(
     candidate: IdeaBenchmarkCandidate,
@@ -3235,23 +3287,15 @@ export class IdeaGenerationBenchmarkService {
         signal,
       );
       /*
-       * Keep complete first-pass candidates for comparison. When a hedged
-       * model is structurally valid but weak, its bounded revision may run in
-       * parallel too; this avoids making quality recovery a serial latency tax.
+       * A structurally valid sparse-evidence candidate is still allowed to
+       * survive as continuity fallback, but it no longer skips the one bounded
+       * quality-revision attempt when it is below the accepted product-quality
+       * gate. This is especially important for Text Only / Text+Domains runs:
+       * sparse external evidence must not freeze an otherwise repairable 50-60
+       * point product into the final output.
        */
-      const skipSparseEvidenceRevision =
-        allowQualityRevision &&
-        !initialAttempt.quality.accepted &&
-        this.canUseSparseEvidenceFirstPass(direction.opportunity, initialAttempt);
-      if (skipSparseEvidenceRevision) {
-        this.logger.log(
-          `Sparse-evidence fast path kept the first structurally valid ${initialAttempt.quality.score}-point candidate from "${model.displayName ?? model.modelName}"; serial self-revision was skipped because it already satisfies the same bounded fallback safety gate used by benchmark early-stop.`,
-        );
-      }
       const qualityApprovedAttempt =
-        initialAttempt.quality.accepted ||
-        !allowQualityRevision ||
-        skipSparseEvidenceRevision
+        initialAttempt.quality.accepted || !allowQualityRevision
           ? initialAttempt
           : await this.reviseWeakCandidate(
               context,
@@ -3932,11 +3976,18 @@ export class IdeaGenerationBenchmarkService {
       secondaryEvidenceCount,
       technicalEvidenceCount,
     );
+    const selectedFamilyEvidenceIds = new Set(
+      (generationContext.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
     const verifiedCommunitySupportingCount = Math.max(
       generationContext.communityAiAnalysis?.evidenceClassifications?.filter(
         (item) =>
           item.classification === 'SUPPORTING_SIGNAL' &&
-          item.verifiedByDeterministicGuard === true,
+          item.verifiedByDeterministicGuard === true &&
+          (selectedFamilyEvidenceIds.size === 0 ||
+            selectedFamilyEvidenceIds.has(item.evidenceId)),
       ).length ?? 0,
       selectedOpportunity?.supportingEvidence?.filter(
         (item) =>
@@ -3986,12 +4037,14 @@ export class IdeaGenerationBenchmarkService {
       .map((value) => value.replace(/\s+/gu, ' ').trim())
       .filter(Boolean);
     const retainedEvidenceText = retainedEvidenceSamples.join(' ');
-    const sparseVerifiedSignalCount = Math.max(
-      directEvidenceCount,
-      selectedVerifiedEvidenceCount,
-      qualifiedExternalSupportingCount,
-      verifiedCommunitySupportingCount,
-    );
+    const sparseVerifiedSignalCount =
+      selectedVerifiedEvidenceCount > 0
+        ? selectedVerifiedEvidenceCount
+        : Math.max(
+            directEvidenceCount,
+            qualifiedExternalSupportingCount,
+            verifiedCommunitySupportingCount,
+          );
     const sparseSupportingLead =
       directEvidenceCount === 0 &&
       sparseVerifiedSignalCount > 0 &&
@@ -4751,11 +4804,15 @@ export class IdeaGenerationBenchmarkService {
       return normalizeSparseNarrative(value)
         .replace(
           /(?:Collected|Community|Available|Observed|Existing|Preliminary) (?:feedback|evidence|samples?|reports?)[^.!?]{0,240}(?:indicates|suggests|shows|highlights|reveals|demonstrates)[^.!?]*[.!?]/giu,
-          'No problem-matched external evidence survived the bounded collection and recovery window; the pilot must validate a concrete problem before making demand or prevalence claims.',
+          adjudicationUnavailable
+            ? 'Raw external material was collected but complete semantic adjudication is still unavailable; the preserved corpus must be re-adjudicated before demand or prevalence claims are made.'
+            : 'No problem-matched external evidence survived the bounded collection and recovery window after completed semantic adjudication; the pilot must validate a concrete problem before making demand or prevalence claims.',
         )
         .replace(
           /(?:The )?(?:observed|retained|available|collected) evidence sample[^.!?]*[.!?]/giu,
-          'No problem-matched external evidence was retained for the selected validation hypothesis.',
+          adjudicationUnavailable
+            ? 'Raw external evidence remains UNADJUDICATED for the selected validation hypothesis.'
+            : 'No problem-matched external evidence was retained for the selected validation hypothesis after completed semantic adjudication.',
         )
         .replace(
           /\b(?:users|operators|organizations|teams|professionals|non-specialist users) (?:encounter|experience|face|struggle with)\b/giu,
@@ -4769,9 +4826,17 @@ export class IdeaGenerationBenchmarkService {
         .trim();
     };
 
-    const zeroEvidenceMarketPotential = `Market potential for ${validationDomainLabel} remains unproven because no problem-matched external evidence survived the bounded collection and recovery window. The pilot must first collect direct evidence for one concrete problem, measure repeated occurrence and operational impact, and validate willingness to adopt before making prevalence, demand, or market-size claims.`;
-    const zeroEvidenceNlpSummary = `Trusted NLP processed ${generationContext.nlp?.totalTextsAnalyzed ?? 0} text(s), ${generationContext.nlp?.totalPostsAnalyzed ?? 0} post(s), and ${generationContext.nlp?.totalCommentsAnalyzed ?? 0} comment(s). No problem-matched external evidence survived final verification for the selected ${validationDomainLabel} validation hypothesis. Unrelated or rejected corpus items are excluded from product justification.`;
-    const zeroEvidenceCommunitySummary = `No qualifying problem-matched community feedback was retained for the selected ${validationDomainLabel} validation hypothesis. The pilot therefore starts with structured evidence intake, provenance preservation, and problem-family validation rather than treating rejected or unrelated collected material as proof of demand.`;
+    const adjudicationUnavailable =
+      generationContext.evidenceState === 'EVIDENCE_ADJUDICATION_UNAVAILABLE';
+    const zeroEvidenceMarketPotential = adjudicationUnavailable
+      ? `Market potential for ${validationDomainLabel} remains unproven because collected external material is still awaiting a complete online semantic verdict. The raw corpus is preserved as UNADJUDICATED rather than rejected; the same corpus must be re-adjudicated before prevalence, demand, or market-size claims are made.`
+      : `Market potential for ${validationDomainLabel} remains unproven because semantic adjudication completed and no problem-matched external evidence survived the bounded collection and recovery window. The pilot must first collect direct evidence for one concrete problem, measure repeated occurrence and operational impact, and validate willingness to adopt before making prevalence, demand, or market-size claims.`;
+    const zeroEvidenceNlpSummary = adjudicationUnavailable
+      ? `Trusted NLP processed ${generationContext.nlp?.totalTextsAnalyzed ?? 0} text(s), ${generationContext.nlp?.totalPostsAnalyzed ?? 0} post(s), and ${generationContext.nlp?.totalCommentsAnalyzed ?? 0} comment(s). Raw external evidence was collected, but complete semantic adjudication is still unavailable; those rows remain UNADJUDICATED and must not be described as rejected, unrelated, or absent.`
+      : `Trusted NLP processed ${generationContext.nlp?.totalTextsAnalyzed ?? 0} text(s), ${generationContext.nlp?.totalPostsAnalyzed ?? 0} post(s), and ${generationContext.nlp?.totalCommentsAnalyzed ?? 0} comment(s). Semantic adjudication completed and no problem-matched external evidence survived final verification for the selected ${validationDomainLabel} validation hypothesis. CONTEXT_ONLY and UNRELATED corpus items are excluded from product justification.`;
+    const zeroEvidenceCommunitySummary = adjudicationUnavailable
+      ? `No trusted community-feedback claim is promoted yet for the selected ${validationDomainLabel} validation hypothesis because one or more collected rows are still UNADJUDICATED. The preserved raw corpus must receive an online semantic verdict before it can count as DIRECT_PROBLEM, SUPPORTING_SIGNAL, CONTEXT_ONLY, or UNRELATED evidence.`
+      : `No qualifying problem-matched community feedback was retained for the selected ${validationDomainLabel} validation hypothesis after completed semantic adjudication. The pilot therefore starts with structured evidence intake, provenance preservation, and problem-family validation rather than treating CONTEXT_ONLY or UNRELATED material as proof of demand.`;
 
     const normalizeAdvancedContent = (
       outputKey: string,
@@ -5852,17 +5917,31 @@ export class IdeaGenerationBenchmarkService {
     const effectiveEvidenceSamples = canonicalDiscoveryLock
       ? [...canonicalDiscoveryLock.evidenceSamples]
       : this.resolveOpportunityEvidenceSamples(opportunity);
-    const evidenceRoleText = effectiveEvidenceSamples
+    const roleScopeText = [
+      ...effectiveEvidenceSamples,
+      context.requestDescription ?? '',
+      context.collectionPlan?.problemProfile?.actor ?? '',
+      context.collectionPlan?.problemProfile?.workflow ?? '',
+    ]
       .join(' ')
       .normalize('NFKC')
       .toLocaleLowerCase();
     const evidenceSupportsDeveloperOperator =
       /\b(?:developer|development team|engineer|qa|quality assurance|sdk|api|repository|codebase|source code|ci\/?cd|devops)\b/u.test(
-        evidenceRoleText,
+        roleScopeText,
       );
+    const evidenceSupportsGenericAdminRole =
+      /\b(?:administrator|admin|supervisor|reviewer)\b/u.test(roleScopeText);
     const evidenceSupportsOperationalOperator =
-      /\b(?:administrator|admin|operator|operations team|support team|service desk|help desk|supervisor|reviewer|triage|incident response|case manager|care coordinator|clinician|clinical)\b/u.test(
-        evidenceRoleText,
+      /\b(?:operator|operations team|operations staff|support team|service desk|help desk|triage|incident response|case manager|care coordinator|clinician|clinical|maintenance|repair|public works|dispatch|dispatcher|production pipeline|production system|service provider|manager|coordinator|planner|scheduler|technician|workflow owner)\b/u.test(
+        roleScopeText,
+      );
+    // Generic workflow words such as "care", "pet care", "aftercare" or
+    // "follow-up care" describe the service, not a caregiver persona. Only
+    // explicit human-role language authorizes caregiver target users.
+    const evidenceSupportsCaregiverRole =
+      /\b(?:family caregiver|family caregivers|caregiver|caregivers|caregiving)\b/u.test(
+        roleScopeText,
       );
     const noveltyExclusions = this.buildNoveltyExclusions(
       opportunity,
@@ -6068,6 +6147,27 @@ export class IdeaGenerationBenchmarkService {
             ]),
         '- All candidates must solve the same supported problem portfolio, but each assigned direction must use a materially different primary user job, core workflow, and dominant capability combination.',
         '- Produce one coherent commercially viable software product, not a feature list or a minor patch.',
+        '- ROLE EVIDENCE BOUNDARY: every targetUsers role and every human-operated primary workflow must be named or semantically entailed by the requester scope or canonical retained evidence. Architecture implementers are not automatically product users.',
+        ...(!evidenceSupportsDeveloperOperator
+          ? [
+              '- ROLE EXCLUSION — DEVELOPER: the authoritative scope does not identify developers, engineers, QA, DevOps, SDK owners, or codebase maintainers as affected users or workflow owners. Do not put these roles in targetUsers and do not make developer remediation, CI/CD, SDK, testing, or code-review tooling the primary product workflow.',
+            ]
+          : []),
+        ...(!evidenceSupportsOperationalOperator
+          ? [
+              '- ROLE EXCLUSION — OPERATIONS: the authoritative scope does not identify an operational workflow owner, incident-response team, service desk, clinician, care coordinator, maintenance role, dispatch role, or similar operator as an affected user. Do not invent one merely to add human review.',
+            ]
+          : []),
+        ...(!evidenceSupportsGenericAdminRole
+          ? [
+              '- ROLE EXCLUSION — GENERIC ADMIN: the authoritative scope does not identify administrators, supervisors, or generic reviewers as affected users. Even when a real operational workflow owner is supported, name that concrete role (for example maintenance staff, dispatcher, service provider, or production operator) instead of inventing an administrator/reviewer persona.',
+            ]
+          : []),
+        ...(!evidenceSupportsCaregiverRole
+          ? [
+              '- ROLE EXCLUSION — CAREGIVER: the authoritative scope does not identify a caregiver/caregiving persona as an affected user. Words such as care, pet care, aftercare, special-care requirements, or follow-up care describe workflow requirements and do NOT authorize family caregivers or generic caregivers as target users. Keep the named service staff/owners as the human workflow roles.',
+            ]
+          : []),
         ...(effectiveEvidenceSamples.length > 0 && effectiveEvidenceSamples.length <= 2
           ? [
               effectiveEvidenceSamples.length === 1
@@ -6076,6 +6176,21 @@ export class IdeaGenerationBenchmarkService {
               '- SPARSE PROBLEM LOCK: the observed failure mechanism in the evidence is immutable. Every primary objective and MVP capability must directly resolve that same failure family; do not infer inventory, finance, staffing, clinical, compliance, analytics, or operational-management problems unless those concepts are present in the retained evidence or requester scope.',
               '- USER-ALIGNMENT RULE: when the evidence is an end-user review or complaint, the default product must directly improve the affected user workflow. Do not redirect the solution to developers, QA teams, platform operators, clinicians, supervisors, reviewers, or care coordinators unless the evidence explicitly identifies them as the affected user, required workflow participant, or direct buyer.',
               '- SPARSE ROLE INVARIANT: one end-user sample cannot justify a new human-triage, clinical-escalation, admin-review, incident-response, or developer-remediation workflow. Keep those roles out of targetUsers, objectives, MVP features, architecture, and abstract unless they are named in the evidence or requester scope.',
+              ...(!evidenceSupportsDeveloperOperator
+                ? [
+                    '- SPARSE ROLE EXCLUSION: the retained evidence does not identify developers, engineers, QA, DevOps, SDK owners, or codebase operators as the affected workflow role. Do not place those roles in targetUsers or make developer remediation the MVP workflow.',
+                  ]
+                : []),
+              ...(!evidenceSupportsOperationalOperator
+                ? [
+                    '- SPARSE OPERATOR EXCLUSION: the retained evidence does not identify administrators, supervisors, support desks, incident-response teams, clinicians, care coordinators, or operational triage staff as the affected workflow role. Do not introduce those roles as target users or primary workflow owners.',
+                  ]
+                : []),
+              ...(!evidenceSupportsCaregiverRole
+                ? [
+                    '- SPARSE CAREGIVER EXCLUSION: retained evidence/request scope does not identify caregivers as the affected role. Do not infer a caregiver persona from generic words such as care, aftercare, special care, pet care, or follow-up care.',
+                  ]
+                : []),
               '- A developer testing library, monitoring tool, SDK, or CI/CD product is not an acceptable default response to a teacher, student, parent, or learner complaint. Prefer a user-facing workflow, configurable feature, support tool, or operator-assisted service that resolves the observed friction.',
               '- Prefer a durable standalone product with its own recurring user workflow and value proposition. Do not default to a companion app whose main value is explaining another app, suggesting that users switch to a web version, or documenting manual workarounds.',
               '- A companion or diagnostic workflow is acceptable only when platform boundaries make direct resolution impossible. In that case, it must still provide an independent core capability such as personal organization, portable data, comparison, planning, or user-owned records; generic navigation advice alone is insufficient.',
@@ -6088,6 +6203,11 @@ export class IdeaGenerationBenchmarkService {
               '- The product may use a host-integrated SDK, vendor backend, or supported companion workflow when platform boundaries require it.',
             ]),
         '- Use only the supplied evidence for problem and local claims.',
+        ...(effectiveEvidenceSamples.length === 0
+          ? [
+              '- ZERO-EVIDENCE LOCALITY LOCK: the requested city/region/country may appear only as a proposed/initial pilot or deployment target. Do not place the location in the same sentence as a claim that users, institutions, cooperatives, businesses, or residents currently face, report, suffer from, or struggle with the problem. Do not invent local regulations, privacy norms, governance requirements, prevalence, or current local operating conditions.',
+            ]
+          : []),
         '- Treat the requested location as the initial pilot target unless direct local evidence explicitly proves local prevalence.',
         '- Every objective must name a concrete user action, product capability, or measurable pilot activity. Avoid generic objectives such as improve experience, increase efficiency, enhance accessibility, or provide insights unless the exact workflow and measurement method are stated.',
         '- Describe a capability set as one unified primary workflow, not as "one primary user workflow" followed by several unrelated actions. Group related actions under a clear end-to-end job, such as finding a service, opening its verified details, and triggering a call, email, or map route.',
@@ -6136,26 +6256,36 @@ export class IdeaGenerationBenchmarkService {
     );
 
     const operationalDirection = buildDirection(
-      'Operational resilience and assisted triage',
+      'Workflow-owner operational resolution',
       [
-        'Make the primary buyer and operator an institutional IT, support, or platform-operations team.',
-        'Center the product on evidence capture, incident triage, prioritization, and coordinated remediation across affected deployments.',
-        'The dominant workflow must be operational diagnosis and response coordination, materially distinct from direct end-user resolution.',
+        'Make the primary buyer/operator only the concrete human role that directly owns the evidenced/requester workflow. Derive that role from the supplied actor/workflow/evidence; never substitute a generic administrator, supervisor, reviewer, IT team, or support desk unless that role is explicitly present.',
+        'Center the product on executing, prioritizing, coordinating, or resolving the exact evidenced workflow. Human review may be a safeguard, but a generic review queue must not become the product merely to create an operator persona.',
+        'Use domain-specific workflow owners such as maintenance staff, dispatchers, service providers, or production operators only when the authoritative scope semantically entails that role.',
       ],
     );
 
-    if (effectiveEvidenceSamples.length === 1) {
-      const sparseDirections: CandidateConceptDirection[] = [endUserDirection];
-      if (evidenceSupportsDeveloperOperator) {
-        sparseDirections.push(developerDirection);
-      }
-      if (evidenceSupportsOperationalOperator) {
-        sparseDirections.push(operationalDirection);
-      }
-      return sparseDirections;
+    /*
+     * Concept directions must never contradict the role-evidence boundary. The
+     * previous >2-evidence branch always returned developer and operational
+     * directions even when the authoritative scope explicitly excluded those
+     * roles; models then followed the direction and the validator had to repair
+     * invented admins/DevOps personas afterward.
+     */
+    const allowedDirections: CandidateConceptDirection[] = [];
+    if (evidenceSupportsDeveloperOperator) {
+      allowedDirections.push(developerDirection);
     }
-
-    return [developerDirection, endUserDirection, operationalDirection];
+    if (evidenceSupportsOperationalOperator) {
+      allowedDirections.push(operationalDirection);
+    }
+    /*
+     * Keep a direct-user interpretation available as a diversity fallback, but
+     * do not force it ahead of an explicitly supported workflow owner. This
+     * preserves staff/operator-first requests such as funeral coordination,
+     * agricultural logistics, maintenance, and AI production operations.
+     */
+    allowedDirections.push(endUserDirection);
+    return allowedDirections;
   }
 
   /**
@@ -6510,19 +6640,33 @@ export class IdeaGenerationBenchmarkService {
       targetRegion: context.location.region,
       localEvidenceVerified: this.hasVerifiedLocalEvidence(context),
       directEvidenceCount: retainedDirectEvidenceCount,
-      externalSupportingEvidenceCount: Math.max(
-        selectedOpportunity?.qualifiedExternalSupportingEvidenceCount ?? 0,
-        selectedOpportunity?.verifiedProblemMatchedSecondaryEvidenceCount ?? 0,
-        selectedOpportunity?.verifiedSecondaryEvidenceCount ?? 0,
-        selectedOpportunity?.supportingEvidence?.filter(
-          (item) => item.sourceType === 'SECONDARY_EVIDENCE',
-        ).length ?? 0,
-      ),
-      verifiedIndependentSourceCount: Math.max(
-        selectedOpportunity?.verifiedIndependentSourceCount ?? 0,
-        selectedOpportunity?.verifiedEvidenceSourceCount ?? 0,
-        selectedOpportunity?.verifiedProblemMatchedEvidenceSourceCount ?? 0,
-      ),
+      externalSupportingEvidenceCount:
+        typeof selectedOpportunity?.verifiedProblemMatchedSecondaryEvidenceCount === 'number'
+          ? Math.max(
+              0,
+              Math.floor(
+                selectedOpportunity.verifiedProblemMatchedSecondaryEvidenceCount,
+              ),
+            )
+          : Math.max(
+              selectedOpportunity?.qualifiedExternalSupportingEvidenceCount ?? 0,
+              selectedOpportunity?.verifiedSecondaryEvidenceCount ?? 0,
+              selectedOpportunity?.supportingEvidence?.filter(
+                (item) => item.sourceType === 'SECONDARY_EVIDENCE',
+              ).length ?? 0,
+            ),
+      verifiedIndependentSourceCount:
+        typeof selectedOpportunity?.verifiedProblemMatchedEvidenceSourceCount === 'number'
+          ? Math.max(
+              0,
+              Math.floor(
+                selectedOpportunity.verifiedProblemMatchedEvidenceSourceCount,
+              ),
+            )
+          : Math.max(
+              selectedOpportunity?.verifiedIndependentSourceCount ?? 0,
+              selectedOpportunity?.verifiedEvidenceSourceCount ?? 0,
+            ),
       requesterDescription:
         context.collectionPlan?.requestIntent?.mode === 'EXPLICIT_PROBLEM'
           ? context.collectionPlan.requestIntent.explicitProblem ?? context.requestDescription
@@ -6578,12 +6722,44 @@ export class IdeaGenerationBenchmarkService {
       .filter((domain) => domain.isExplicitlySelected)
       .map((domain) => domain.name.trim())
       .filter(Boolean);
+    const explicitDomainImplementationRules = explicitlySelectedDomainNames
+      .map((domainName) => {
+        const normalized = domainName.toLocaleLowerCase();
+        if (normalized.includes('artificial intelligence') || normalized === 'ai') {
+          return '- Artificial Intelligence materiality: include a real model-backed step (for example anomaly detection, prediction, risk scoring, forecasting, recommendation, or classification) with named operational inputs, outputs, and human review/override.';
+        }
+        if (normalized.includes('cybersecurity')) {
+          return '- Cybersecurity materiality: protect a concrete object/event in the requester workflow. Use either active security/anomaly monitoring OR a linked bundle of at least two independent controls such as role-based access/least privilege, encryption or integrity protection, auditable/tamper-evident provenance, and suspicious-access/security alerts. Generic HTTPS or a label-only "secure system" is not enough; state what is protected and what staff do when a security condition is detected.';
+        }
+        if (normalized.includes('internet of things') || normalized === 'iot') {
+          return '- Internet of Things materiality: specify the sensors/devices/telemetry source, how events enter the software workflow, and how missing/stale device data is handled.';
+        }
+        if (normalized.includes('blockchain')) {
+          return '- Blockchain materiality: if Blockchain is explicitly requester-selected for this concrete problem, use a bounded provenance/integrity mechanism such as signed records, cryptographic hash anchoring, or a permissioned append-only ledger; a generic database audit log alone is not Blockchain.';
+        }
+        return `- ${domainName} materiality: include at least one concrete workflow, data, decision, integration, or actor responsibility that is technically necessary for the requester-defined problem rather than mentioning the domain label only.`;
+      })
+      .join(' ');
     const explicitDomainCoverageInstruction =
       explicitlySelectedDomainNames.length > 0
         ? explicitRequesterProblem
-          ? `Explicit requester-selected domains: ${explicitlySelectedDomainNames.join(', ')}. The final product must preserve the explicitly stated requester problem as the primary workflow and give every selected domain a concrete, technically meaningful responsibility rather than a label-only mention. For Artificial Intelligence, specify a real model-backed step such as anomaly detection, prediction, risk scoring, forecasting, recommendation, or classification with identifiable inputs, outputs, and human review. For Internet of Things, specify the sensor/device/telemetry layer and how its data enters the workflow. Do not replace the requester problem with an easier same-domain problem merely because it has stronger unrelated evidence.`
+          ? `Explicit requester-selected domains: ${explicitlySelectedDomainNames.join(', ')}. The final product must preserve the explicitly stated requester problem as the primary workflow and give every selected domain a concrete, technically meaningful responsibility rather than a label-only mention. ${explicitDomainImplementationRules} Do not replace the requester problem with an easier same-domain problem merely because it has stronger unrelated evidence.`
           : `Explicit requester-selected domains: ${explicitlySelectedDomainNames.join(', ')}. These domains constrain the evidence-discovery search space. The final product problem must come from the canonical evidence-selected family, not from the domain labels or requester preferences themselves. Use only selected domains that are semantically justified by the winning problem and its product workflow.`
         : '';
+
+    const systemRoleAuthorityText = [
+      context.requestDescription ?? '',
+      context.collectionPlan?.problemProfile?.actor ?? '',
+      context.collectionPlan?.problemProfile?.workflow ?? '',
+      ...(context.opportunityRanking?.selected?.evidenceSamples ?? []),
+    ]
+      .join(' ')
+      .normalize('NFKC')
+      .toLocaleLowerCase();
+    const systemCaregiverRoleAuthorized =
+      /\b(?:family caregiver|family caregivers|caregiver|caregivers|caregiving)\b/u.test(
+        systemRoleAuthorityText,
+      );
     const supportingOnlyRequesterFacetLock =
       explicitRequesterProblem &&
       (context.opportunityRanking?.selected?.verifiedProblemMatchedDirectUserEvidenceCount ??
@@ -6640,6 +6816,16 @@ export class IdeaGenerationBenchmarkService {
       discoveryLockInstruction,
       unlockedDiscoveryInstruction,
       zeroEvidenceHardInstruction,
+      explicitRequesterProblem && this.isUngroundedEvidenceState(context.evidenceState)
+        ? 'ZERO-EVIDENCE PRODUCT QUALITY CONTRACT: lack of retained external evidence limits market-validation claims; it does NOT turn a concrete requester problem into a meta evidence-discovery product. Build the actual requested software workflow. State the evidence limitation once concisely, then spend the remaining problem statement/abstract on the concrete actor workflow, product behavior, data flow, decision logic, safeguards, and pilot measurement. Keep the MVP narrow (normally 2-4 primary capabilities) and move optional infrastructure/enterprise extensions out of the core scope.'
+        : '',
+      explicitRequesterProblem
+        ? 'TARGET-USER CONTRACT: every primary target-user role must be an actor who performs, owns, reviews, or is directly affected by the requester-defined workflow or retained canonical evidence. Do not add generic software engineering, product engineering, QA, compliance, research, or administrator personas unless the requester/evidence explicitly makes that role part of the workflow.'
+        : 'TARGET-USER CONTRACT: every primary target-user role must be directly entailed by the canonical selected problem family/evidence. Do not expand a narrow observed problem into generic engineering, QA, compliance, or product-team personas merely because they could build or administer the software.',
+      !systemCaregiverRoleAuthorized
+        ? 'TARGET-USER CAREGIVER GUARD: no caregiver/caregiving human role is authorized by the requester/evidence. Generic words such as care, pet care, aftercare, special-care requirements, or follow-up care describe workflow content only. Do not introduce caregivers as target users, reviewers, owners, or pilot participants.'
+        : '',
+      'MVP PROPORTIONALITY CONTRACT: prefer one primary product surface and a small coherent capability set that directly resolves the locked workflow. Architecture components such as queues, caches, microservices, SDKs, telemetry platforms, or separate admin consoles are implementation options, not automatic MVP requirements; include them only when the requester/evidence or scale constraint actually needs them.',
       'Do not invent statistics, market sizes, legal conclusions, API availability, institutional counts, failure rates, or local facts.',
       'When evidence is not locally verified, describe the discovered problem generally and say that the initial pilot deployment is planned for the target location. Never write that students, faculty, institutions, or residents in the requested city currently face or report the problem.',
       'Mark estimates and assumptions explicitly. Symptom-only evidence must never be rewritten with causal verbs such as stem from, result from, caused by, or driven by. Use "Potential contributing factors to validate include ..." for inferred mechanisms unless direct evidence proves causation. Never convert a symptom-only report into a confirmed token, database, network, server, release-cycle, schema, or asset-integrity diagnosis. Do not invent percentage impact targets. When no validated baseline is supplied, require the pilot to establish a baseline first and then measure directional change without precommitting to a numeric percentage.',

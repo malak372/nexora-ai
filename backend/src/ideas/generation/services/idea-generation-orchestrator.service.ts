@@ -1156,10 +1156,13 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     return this.hashRequestFingerprint({
       generationType: context.generationType,
       description: context.requestDescription?.trim() ?? '',
+      // Preserve the canonical requester/UI domain order in recovered-run
+      // fingerprints. Sorting here made an ordered TEXT_AND_DOMAINS request
+      // indistinguishable from a differently ordered request and could revive
+      // a stale primary-domain identity during checkpoint recovery.
       domainIds: context.selectedDomains
         .filter((domain) => domain.isExplicitlySelected)
-        .map((domain) => domain.id)
-        .sort(),
+        .map((domain) => domain.id),
       domainNames: context.requestedDomainNames ?? [],
       keywords: this.normalizeStringArray(context.keywords),
       country: context.location.country,

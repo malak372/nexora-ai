@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AlertType, UserRole } from '@prisma/client';
 
+import { PushNotificationService } from '../../alerts/services/push-notification.service';
 import { SystemAlertsService } from '../../alerts/services/system-alerts.service';
 import { MailService } from '../../mail/mail.service';
 import { GLOBAL_SYSTEM_SETTINGS_KEY } from '../../payments/constants/payment.constants';
@@ -13,6 +14,8 @@ export type CreditBalanceNotificationInput = {
   readonly userId: string;
   readonly previousBalance: number;
   readonly balanceAfter: number;
+  /** Actual Premium-idea cost used by the committed generation, when known. */
+  readonly referencePremiumIdeaCreditCost?: number;
 };
 
 type CreditBalanceNotificationKind = 'LOW' | 'EXHAUSTED';
@@ -41,6 +44,7 @@ export class CreditBalanceNotificationService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
     private readonly systemAlertsService: SystemAlertsService,
+    private readonly pushNotificationService: PushNotificationService,
   ) {}
 
   /**
@@ -57,27 +61,17 @@ export class CreditBalanceNotificationService {
     }
 
     try {
-      const [user, premiumIdeaCreditCost] = await Promise.all([
-        this.prisma.user.findFirst({
-          where: {
-            id: input.userId,
-            role: UserRole.USER,
-            isActive: true,
-            deletedAt: null,
-          },
-          select: {
-            email: true,
-          },
-        }),
-        this.getPremiumIdeaCreditCost(),
-      ]);
-
-      if (!user) {
-        this.logger.warn(
-          `Credit-balance notification skipped because active user "${input.userId}" was not found.`,
-        );
-        return;
-      }
+      /*
+       * Premium generation passes the exact committed generation cost so the
+       * low-credit boundary cannot drift if settings are edited between the
+       * entitlement check and this post-commit notification. Other credit
+       * mutation paths continue to resolve the current database-backed cost.
+       */
+      const referencedCost = this.normalizePositiveInteger(
+        input.referencePremiumIdeaCreditCost,
+      );
+      const premiumIdeaCreditCost =
+        referencedCost ?? (await this.getPremiumIdeaCreditCost());
 
       const notificationKind = this.resolveNotificationKind(
         input.balanceAfter,
@@ -95,27 +89,28 @@ export class CreditBalanceNotificationService {
         notificationKind,
       );
 
-      const results = await Promise.allSettled([
-        this.systemAlertsService.create(alert),
-        this.mailService.sendLowCreditBalanceEmail(
-          user.email,
-          input.balanceAfter,
-        ),
-      ]);
+      /*
+       * Persist the in-app alert before returning. This is the user-visible
+       * source of truth and must not be a fire-and-forget side effect after a
+       * successful Premium deduction. Email and push remain best-effort and do
+       * not delay the committed credit operation.
+       */
+      await this.systemAlertsService.create(alert);
 
-      const labels = ['in-app alert', 'email'];
-
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          const message =
-            result.reason instanceof Error
-              ? result.reason.message
-              : String(result.reason);
-
-          this.logger.warn(
-            `Credit balance changed successfully, but the ${labels[index]} could not be sent to user "${input.userId}": ${message}`,
-          );
-        }
+      void this.deliverSecondaryChannels(
+        input.userId,
+        input.balanceAfter,
+        alert.title,
+        alert.message,
+        alert.type,
+      ).catch((secondaryError: unknown) => {
+        const secondaryMessage =
+          secondaryError instanceof Error
+            ? secondaryError.message
+            : String(secondaryError);
+        this.logger.warn(
+          `Credit balance alert was persisted, but secondary notification delivery failed for user "${input.userId}": ${secondaryMessage}`,
+        );
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -124,6 +119,72 @@ export class CreditBalanceNotificationService {
         `Credit balance changed successfully, but balance notifications could not be prepared for user "${input.userId}": ${message}`,
       );
     }
+  }
+
+  /**
+   * Sends non-critical notification channels after the in-app alert has been
+   * durably persisted. Failures are logged and never affect the credit result.
+   */
+  private async deliverSecondaryChannels(
+    userId: string,
+    balanceAfter: number,
+    title: string,
+    message: string,
+    type: AlertType,
+  ): Promise<void> {
+    const userPromise = this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        role: UserRole.USER,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: { email: true },
+    });
+
+    const pushPromise = this.pushNotificationService.sendToUser({
+      userId,
+      title,
+      body: message,
+      data: {
+        type: String(type),
+        balanceAfter: String(balanceAfter),
+      },
+    });
+
+    const emailPromise = userPromise.then((user) => {
+      if (!user) {
+        this.logger.warn(
+          `Credit-balance email skipped because active user "${userId}" was not found.`,
+        );
+        return undefined;
+      }
+
+      return this.mailService.sendLowCreditBalanceEmail(
+        user.email,
+        balanceAfter,
+      );
+    });
+
+    const results = await Promise.allSettled([pushPromise, emailPromise]);
+    const labels = ['push notification', 'email'];
+
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        const failureMessage =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
+
+        this.logger.warn(
+          `Credit balance alert was persisted, but the ${labels[index]} could not be sent to user "${userId}": ${failureMessage}`,
+        );
+      }
+    });
+  }
+
+  private normalizePositiveInteger(value: number | undefined): number | null {
+    return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null;
   }
 
   /**

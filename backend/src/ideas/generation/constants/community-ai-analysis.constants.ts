@@ -156,6 +156,8 @@ export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 3;
  * observed latency, while faster structured extractors handle this stage.
  */
 export const COMMUNITY_AI_ANALYSIS_EXCLUDED_MODEL_API_IDS = new Set<string>([
+  /* The configured OpenRouter route currently resolves to MODEL_NOT_FOUND. */
+  'nvidia/nemotron-nano-9b-v2:free',
   'openai/gpt-5.4-nano',
   'openai/gpt-5-mini',
   'qwen/qwen3.6-35b-a3b',

@@ -91,10 +91,23 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       context,
     );
 
+    /*
+     * Data-source lookup is keyed by the semantic primary domain resolved in
+     * PREPARING, but it must never become another domain-resolution authority.
+     * Preserve that primary identity explicitly so later collection reuse or
+     * source metadata cannot move a Text+Domains request back to the first UI
+     * domain merely because that domain appears first in the selected set.
+     */
+    const semanticPrimaryDomain =
+      selectedDomains.find((domain) => domain.id === context.domainId) ?? null;
+    const semanticPrimaryDomainId = semanticPrimaryDomain?.id ?? context.domainId;
+    const semanticPrimaryDomainName =
+      semanticPrimaryDomain?.name ?? context.domainName ?? selection.domain.name;
+
     const updatedContext: IdeaGenerationContext = {
       ...context,
-      domainId: selection.domain.id,
-      domainName: selection.domain.name,
+      domainId: semanticPrimaryDomainId,
+      domainName: semanticPrimaryDomainName,
       selectedDomains,
       keywords: mergedKeywords,
       selectedDataSources,
@@ -102,10 +115,10 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
 
     return {
       context: updatedContext,
-      resultPreview: `Selected ${selectedDataSources.length} data source(s) for domain "${selection.domain.name}"${context.collectionPlan ? ' using the pre-collection AI plan' : ''}.`,
+      resultPreview: `Selected ${selectedDataSources.length} data source(s) for domain "${semanticPrimaryDomainName}"${context.collectionPlan ? ' using the pre-collection AI plan' : ''}.`,
       metadata: {
-        domainId: selection.domain.id,
-        domainName: selection.domain.name,
+        domainId: semanticPrimaryDomainId,
+        domainName: semanticPrimaryDomainName,
         selectedDataSourceKeys: selectedDataSources.map((dataSource) => dataSource.key),
         selectedDataSourcesCount: selectedDataSources.length,
         collectionPlanSourceFocus: context.collectionPlan?.sourceFocus ?? [],
@@ -155,9 +168,29 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
         collectionMode: 'FAST_GENERATION' as const,
       };
       const plannerOwned = plannerKeys.includes(normalized);
+      const routeExecutable = this.collectorsFactory.isCollectorRouteExecutable(
+        source.key,
+        capabilityInput,
+      );
+      const requestFitScore = this.collectorsFactory.getCollectorRequestFitScore(
+        source.key,
+        capabilityInput,
+      );
+      /*
+       * Planner ownership is a positive semantic signal, not permission to use
+       * a clearly incompatible corpus. Keep a slightly lower floor for an
+       * explicitly AI-selected source so specialist lanes remain possible, but
+       * reject developer/app-review routes whose generic workflow capability is
+       * far below the request anchor. This prevents generated query wording
+       * such as "software scheduling" from turning an operational request into
+       * a GitHub/StackOverflow recovery path.
+       */
       const requestAvailable = plannerOwned
-        ? this.collectorsFactory.isCollectorRouteExecutable(source.key, capabilityInput)
-        : this.collectorsFactory.isCollectorRequestAvailable(source.key, capabilityInput);
+        ? routeExecutable && requestFitScore >= 0.34
+        : this.collectorsFactory.isCollectorRequestAvailable(
+            source.key,
+            capabilityInput,
+          );
       if (!requestAvailable) return;
       selected.push(source);
       selectedKeys.add(normalized);
