@@ -1526,3 +1526,126 @@
     border-color: rgba(88, 189, 185, .42) !important;
     background: #eaf8f6;
 }
+
+/* Final dark chat surfaces + bilingual microphone language */
+.ai-chat-voice-language {
+    flex: 0 0 42px !important;
+    width: 42px !important;
+    height: 44px !important;
+    border: 1px solid rgba(88,189,185,.20) !important;
+    border-radius: 14px !important;
+    color: #2f8582;
+    background: #e8f6f3;
+    font: inherit;
+    font-size: .68rem;
+    font-weight: 900;
+}
+html.vox-user-dark .ai-chat-page :is(
+    .ai-chat-idea-card,
+    .ai-chat-empty__visual > div,
+    .ai-chat-starters button,
+    .ai-chat-message__avatar,
+    .ai-chat-message__content,
+    .ai-chat-composer,
+    .ai-chat-composer__spark,
+    .ai-chat-voice,
+    .ai-chat-voice-language
+) {
+    color: #eaf6f3 !important;
+    border-color: rgba(112,205,198,.18) !important;
+    background: #193029 !important;
+    background-image: linear-gradient(145deg,#1d352d,#142720) !important;
+    box-shadow: none !important;
+}
+html.vox-user-dark .ai-chat-page .ai-chat-starters button:hover,
+html.vox-user-dark .ai-chat-page :is(.ai-chat-voice,.ai-chat-voice-language):hover:not(:disabled) {
+    border-color: rgba(112,205,198,.34) !important;
+    background: #26443a !important;
+}
+html.vox-user-dark .ai-chat-page .ai-chat-composer textarea {
+    color: #eef8f5 !important;
+    background: transparent !important;
+}
+html.vox-user-dark .ai-chat-page .ai-chat-composer textarea::placeholder { color:#82978f !important; }
+html.vox-user-dark .ai-chat-page .ai-chat-empty h2 { color:#f1f8f6 !important; }
+html.vox-user-dark .ai-chat-page .ai-chat-empty > p,
+html.vox-user-dark .ai-chat-page .ai-chat-composer-note { color:#a9bdb6 !important; }
+html.vox-user-dark .ai-chat-page .ai-chat-message:not(.is-user) .ai-chat-message__content { background:#1a3029 !important; }
+html.vox-user-dark .ai-chat-page .ai-chat-message.is-user .ai-chat-message__content {
+    color:#fff !important;
+    background:linear-gradient(145deg,#4fb8b2,#318f8a) !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260827_AI_CHAT_DARK_VOICE                                          */
+/* ========================================================================== */
+.ai-chat-voice-language { display: none !important; }
+html.vox-user-dark .ai-chat-page :is(
+  .ai-chat-composer,
+  .ai-chat-composer form,
+  .ai-chat-composer textarea,
+  .ai-chat-starter,
+  .ai-chat-sidebar,
+  .ai-chat-session-card,
+  .ai-chat-empty,
+  .ai-chat-message
+) {
+  border-color: rgba(112,205,198,.16) !important;
+  background: #13271f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .ai-chat-composer {
+  box-shadow: 0 -12px 34px rgba(0,0,0,.18) !important;
+}
+html.vox-user-dark .ai-chat-composer textarea {
+  color: #eef8f5 !important;
+}
+html.vox-user-dark .ai-chat-composer textarea::placeholder {
+  color: #78958c !important;
+  opacity: 1 !important;
+}
+html.vox-user-dark .ai-chat-voice,
+html.vox-user-dark .ai-chat-send,
+html.vox-user-dark .ai-chat-composer__spark {
+  color: #a3e0da !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #1b382f !important;
+}
+html.vox-user-rtl .ai-chat-composer form {
+  direction: ltr !important;
+}
+html.vox-user-rtl .ai-chat-composer textarea {
+  direction: auto;
+  text-align: start !important;
+  unicode-bidi: plaintext;
+}
+
+/* ========================================================================== */
+/* FINAL_20260828_AI_CHAT_ARABIC_BIDI                                         */
+/* ========================================================================== */
+.ai-chat-message__body[dir='rtl'],
+.ai-chat-message__body [dir='rtl'] {
+    direction: rtl !important;
+    text-align: right !important;
+    unicode-bidi: plaintext;
+}
+
+.ai-chat-message__body[dir='ltr'],
+.ai-chat-message__body [dir='ltr'] {
+    direction: ltr !important;
+    text-align: left !important;
+    unicode-bidi: plaintext;
+}
+
+html.vox-user-rtl .ai-chat-composer textarea[dir='rtl'] {
+    direction: rtl !important;
+    text-align: right !important;
+    unicode-bidi: plaintext;
+}
+
+html.vox-user-rtl .ai-chat-composer textarea[dir='ltr'] {
+    direction: ltr !important;
+    text-align: left !important;
+    unicode-bidi: plaintext;
+}

@@ -121,12 +121,12 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
       ReturnType<IdeaPersistenceService['persistIdea']>
     > | null = null;
 
-    // Zero-evidence discovery titles are intentionally descriptive and may be
+    // Ungrounded discovery titles are intentionally descriptive and may be
     // repeated for the same domain set. Resolve an existing exact title before
     // entering the serializable persistence transaction so the common case
     // does not pay for a failed transaction plus a retry.
     if (
-      context.evidenceState === 'ZERO_VALIDATED_EVIDENCE' &&
+      (context.evidenceState === 'NO_VALID_EVIDENCE_FOUND' || context.evidenceState === 'EVIDENCE_ADJUDICATION_UNAVAILABLE') &&
       !(await this.isExactTitleAvailable(persistenceCoreIdea))
     ) {
       const raceSafe = await this.buildRaceSafeDistinctOutput(
@@ -525,7 +525,7 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     currentTitle: string,
   ): string[] {
-    if (context.evidenceState === 'ZERO_VALIDATED_EVIDENCE') {
+    if ((context.evidenceState === 'NO_VALID_EVIDENCE_FOUND' || context.evidenceState === 'EVIDENCE_ADJUDICATION_UNAVAILABLE')) {
       const domainLabel = [
         ...new Set(
           context.selectedDomains

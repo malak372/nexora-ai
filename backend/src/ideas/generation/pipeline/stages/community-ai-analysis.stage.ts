@@ -1,8 +1,8 @@
+import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import {
-  COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES,
   COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
   COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS,
   COMMUNITY_AI_ANALYSIS_COMPOSITE_REQUEST_TIMEOUT_MS,
@@ -33,7 +33,6 @@ import {
   isStructuredOperationalProblemEvidence,
 } from '../../../../nlp/common/utils/community-evidence.util';
 import {
-  matchEvidenceToProblemFamily,
   resolvePrimaryProblemFamily,
 } from '../../../../nlp/common/utils/problem-family-matching.util';
 import { RequestEvidenceAlignmentUtil } from '../../utils/request-evidence-alignment.util';
@@ -192,11 +191,16 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       classification: item.classification,
       confidence: item.confidence,
       reason:
-        item.origin === 'COMMUNITY_AI'
+        item.classification === 'UNADJUDICATED'
+          ? 'Online semantic adjudication did not complete for this raw evidence row; no relevance verdict was inferred deterministically.'
+          : item.origin === 'COMMUNITY_AI'
           ? 'AI semantic triage accepted this evidence after deterministic verification.'
           : 'Canonical evidence ledger admitted a concrete external problem signal after deterministic verification.',
       problemFamily: item.problemFamily,
       verifiedByDeterministicGuard: item.verified,
+      adjudicationStatus: item.adjudicationStatus,
+      adjudicationFailureReason: item.adjudicationFailureReason,
+      evidenceKind: item.evidenceKind,
     }));
     const canonicalState = CanonicalEvidenceStateUtil.compute(canonicalEvidenceLedger);
     const evidenceAlignedAnalysis =
@@ -207,6 +211,12 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             canonicalEvidenceLedger,
           )
         : analysis;
+    const adjudicationUnavailable =
+      evidenceAlignedAnalysis.evidenceVerdictState ===
+        'EVIDENCE_ADJUDICATION_UNAVAILABLE' ||
+      canonicalEvidenceLedger.some(
+        (item) => item.classification === 'UNADJUDICATED',
+      );
     const authoritativeAnalysis: CommunityAiAnalysis =
       canonicalState.trustedCount > 0
         ? evidenceAlignedAnalysis
@@ -220,7 +230,9 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             fallbackUsed: true,
             fallbackReason:
               analysis.fallbackReason ??
-              'No canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence survived deterministic verification.',
+              (adjudicationUnavailable
+                ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE: raw external evidence exists but online semantic adjudication did not complete.'
+                : 'No canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence survived deterministic verification.'),
             selectedProblemFamily: null,
             selectedProblemFamilyEvidenceIds: [],
             selectedProblemFamilyTrustedEvidenceCount: 0,
@@ -233,12 +245,86 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
                 : null,
             qualityWarnings: [
               ...analysis.qualityWarnings,
-              'Canonical evidence state is ZERO_VALIDATED_EVIDENCE; unverified/context-only material was not promoted into NLP opportunities, recurring problems, or extracted needs.',
+              adjudicationUnavailable
+                ? 'Evidence adjudication is unavailable for one or more raw rows; UNADJUDICATED material was preserved and was not mislabelled as unrelated or promoted into trusted evidence.'
+                : 'Canonical evidence state is NO_VALID_EVIDENCE_FOUND; semantic adjudication completed but no DIRECT_PROBLEM or SUPPORTING_SIGNAL row passed canonical verification.',
             ],
+            evidenceVerdictState: adjudicationUnavailable
+              ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
+              : 'NO_VALID_EVIDENCE_FOUND',
           };
+    const canonicalFamilyLock = this.buildCanonicalProblemFamilyLock(
+      authoritativeAnalysis,
+      canonicalEvidenceLedger,
+      context.requestMode,
+    );
+    const secondaryOnlyFamily = canonicalFamilyLock
+      ? canonicalEvidenceLedger
+          .filter((item) => canonicalFamilyLock.evidenceIds.includes(item.id))
+          .every((item) =>
+            item.evidenceKind === 'ACADEMIC_TECHNICAL_SIGNAL' ||
+            item.evidenceKind === 'NEWS_REPORT' ||
+            item.evidenceKind === 'MARKET_REPORT',
+          )
+      : false;
+    const canonicalOpportunity = canonicalFamilyLock
+      ? authoritativeAnalysis.opportunities.find((opportunity) =>
+          this.problemFamilyMatchesSelectedFamily(
+            canonicalFamilyLock.label,
+            opportunity.title,
+            opportunity.problem,
+          ),
+        ) ?? authoritativeAnalysis.opportunities[0] ?? null
+      : null;
+    const canonicalOpportunities = canonicalFamilyLock && canonicalOpportunity
+      ? [
+          {
+            ...canonicalOpportunity,
+            title: canonicalFamilyLock.label,
+          },
+        ]
+      : [];
+    const canonicalDistinctSourceCount = canonicalFamilyLock
+      ? new Set(
+          canonicalEvidenceLedger
+            .filter((item) => canonicalFamilyLock.evidenceIds.includes(item.id))
+            .map((item) => item.sourceKey),
+        ).size
+      : 0;
+    const canonicalTruthWarnings = this.buildCanonicalTruthWarnings(
+      authoritativeAnalysis.qualityWarnings,
+      canonicalState,
+      Boolean(canonicalFamilyLock),
+    );
     const synchronizedAnalysis: CommunityAiAnalysis = {
       ...authoritativeAnalysis,
+      summary: canonicalFamilyLock
+        ? `Canonical evidence verification locked the discovery problem family to "${canonicalFamilyLock.label}" using ${canonicalFamilyLock.evidenceIds.length} verified family-matched signal(s) across ${canonicalDistinctSourceCount} distinct source(s). This identity is immutable downstream.`
+        : canonicalState.trustedCount > 0
+          ? `Canonical evidence verification retained ${canonicalState.trustedCount} trusted problem signal(s), but no single problem-family identity survived the immutable family-lock check. Trusted rows remain available for diagnostics/recovery and no downstream stage may describe a family as locked.`
+          : authoritativeAnalysis.summary,
+      dominantProblems: canonicalOpportunity ? [canonicalOpportunity.problem] : [],
+      unmetNeeds: canonicalOpportunity ? [canonicalOpportunity.unmetNeed] : [],
+      opportunities: canonicalOpportunities,
+      selectedProblemFamily: canonicalFamilyLock?.label ?? null,
+      selectedProblemFamilyEvidenceIds: canonicalFamilyLock?.evidenceIds ?? [],
+      selectedProblemFamilyTrustedEvidenceCount: canonicalFamilyLock?.evidenceIds.length ?? 0,
+      selectedProblemFamilyDistinctSourceCount: canonicalDistinctSourceCount,
+      canonicalProblemFamilyId: canonicalFamilyLock?.id ?? null,
+      canonicalProblemFamilyLabel: canonicalFamilyLock?.label ?? null,
+      canonicalProblemFamilyEvidenceIds: canonicalFamilyLock?.evidenceIds ?? [],
       evidenceClassifications: canonicalClassifications,
+      fallbackReason: this.buildCanonicalTruthFallbackReason(
+        authoritativeAnalysis.fallbackReason,
+        canonicalState,
+        Boolean(canonicalFamilyLock),
+      ),
+      qualityWarnings: secondaryOnlyFamily
+        ? [
+            ...canonicalTruthWarnings,
+            'The canonical family is supported only by secondary technical/report evidence. It validates a problem signal, not recurring community demand or prevalence.',
+          ]
+        : canonicalTruthWarnings,
     };
 
     const enrichedNlp: IdeaGenerationNlpContext = {
@@ -247,7 +333,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         ? this.toJsonArray([])
         : plannedRequest
           ? this.toJsonArray(
-            authoritativeAnalysis.opportunities.map((opportunity) => ({
+            synchronizedAnalysis.opportunities.map((opportunity) => ({
               domainName: opportunity.domainName,
               title: opportunity.title,
               problem: opportunity.problem,
@@ -260,7 +346,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           )
         : this.mergeJsonArrays(
             context.nlp.recurringProblems,
-            authoritativeAnalysis.opportunities.map((opportunity) => ({
+            synchronizedAnalysis.opportunities.map((opportunity) => ({
               domainName: opportunity.domainName,
               title: opportunity.title,
               problem: opportunity.problem,
@@ -275,7 +361,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         ? this.toJsonArray([])
         : plannedRequest
           ? this.toJsonArray(
-            authoritativeAnalysis.opportunities.map((opportunity) => ({
+            synchronizedAnalysis.opportunities.map((opportunity) => ({
               domainName: opportunity.domainName,
               title: opportunity.unmetNeed,
               need: opportunity.unmetNeed,
@@ -289,7 +375,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           )
         : this.mergeJsonArrays(
             context.nlp.extractedNeeds,
-            authoritativeAnalysis.opportunities.map((opportunity) => ({
+            synchronizedAnalysis.opportunities.map((opportunity) => ({
               domainName: opportunity.domainName,
               title: opportunity.unmetNeed,
               need: opportunity.unmetNeed,
@@ -309,15 +395,15 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
        * opportunities, so replacing the array avoids duplicate ranking work
        * and guarantees that every ranked opportunity came from the AI layer.
        */
-      opportunities: this.toNlpOpportunities(authoritativeAnalysis.opportunities),
+      opportunities: this.toNlpOpportunities(synchronizedAnalysis.opportunities),
       insights: this.mergeJsonArrays(context.nlp.insights, [
         {
           type: 'COMMUNITY_AI_ANALYSIS',
-          summary: authoritativeAnalysis.summary,
-          dominantProblems: [...authoritativeAnalysis.dominantProblems],
-          unmetNeeds: [...authoritativeAnalysis.unmetNeeds],
+          summary: synchronizedAnalysis.summary,
+          dominantProblems: [...synchronizedAnalysis.dominantProblems],
+          unmetNeeds: [...synchronizedAnalysis.unmetNeeds],
           overallConfidence: authoritativeAnalysis.overallConfidence,
-          qualityWarnings: [...authoritativeAnalysis.qualityWarnings],
+          qualityWarnings: [...synchronizedAnalysis.qualityWarnings],
           modelId: authoritativeAnalysis.modelId,
           apiModelId: authoritativeAnalysis.apiModelId,
           attemptCount: authoritativeAnalysis.attemptCount,
@@ -335,6 +421,13 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             (item) => ({ ...item, risks: [...item.risks] }),
           ),
           evidenceClassifications: canonicalClassifications.map((item) => ({ ...item })),
+          evidenceVerdictState:
+            synchronizedAnalysis.evidenceVerdictState ??
+            (canonicalState.trustedCount > 0
+              ? 'VALID_EVIDENCE_FOUND'
+              : adjudicationUnavailable
+                ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
+                : 'NO_VALID_EVIDENCE_FOUND'),
           rawEvidenceCandidateCount,
           /*
            * Keep the two evidence funnels explicit in the run snapshot. Raw
@@ -351,10 +444,11 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
                 (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
             ).length,
           /*
-           * ZERO_VALIDATED_EVIDENCE means zero trustworthy demand-validation
-           * signals, not "the collectors found nothing".  Persist the reviewed
-           * contextual pool separately so UI/QA can show that nearby material
-           * was considered without falsely promoting it to evidence of demand.
+           * Zero trusted evidence has two explicit states. A completed negative
+           * adjudication is NO_VALID_EVIDENCE_FOUND; provider/transport failure
+           * is EVIDENCE_ADJUDICATION_UNAVAILABLE. Persist contextual and
+           * unadjudicated pools separately so UI/QA never confuses "AI said no"
+           * with "AI never returned a verdict".
            */
           contextualEvidenceCandidateCount:
             canonicalClassifications.filter(
@@ -368,17 +462,20 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           aiProposedProblemFamilyEvidenceIds:
             [...(authoritativeAnalysis.aiProposedProblemFamilyEvidenceIds ?? [])],
           selectedProblemFamilySelectionSource:
-            authoritativeAnalysis.selectedProblemFamilySelectionSource ?? null,
+            synchronizedAnalysis.selectedProblemFamilySelectionSource ?? null,
           selectedProblemFamily:
-            authoritativeAnalysis.selectedProblemFamily ?? null,
+            synchronizedAnalysis.selectedProblemFamily ?? null,
           selectedProblemFamilyTrustedEvidenceCount:
-            authoritativeAnalysis.selectedProblemFamilyTrustedEvidenceCount ?? 0,
+            synchronizedAnalysis.selectedProblemFamilyTrustedEvidenceCount ?? 0,
           selectedProblemFamilyDistinctSourceCount:
-            authoritativeAnalysis.selectedProblemFamilyDistinctSourceCount ?? 0,
+            synchronizedAnalysis.selectedProblemFamilyDistinctSourceCount ?? 0,
           selectedProblemFamilyEvidenceIds:
-            [...(authoritativeAnalysis.selectedProblemFamilyEvidenceIds ?? [])],
+            [...(synchronizedAnalysis.selectedProblemFamilyEvidenceIds ?? [])],
+          canonicalProblemFamilyId: synchronizedAnalysis.canonicalProblemFamilyId ?? null,
+          canonicalProblemFamilyLabel: synchronizedAnalysis.canonicalProblemFamilyLabel ?? null,
+          canonicalProblemFamilyEvidenceIds: [...(synchronizedAnalysis.canonicalProblemFamilyEvidenceIds ?? [])],
           evidencePipelineSemantics:
-            'Raw collector candidates are semantically triaged before final trusted evidence admission. DIRECT_PROBLEM + SUPPORTING_SIGNAL are trusted. ANALOGOUS_WORKFLOW_SIGNAL is useful adjacent-workflow context but never validates requester demand.',
+            'Raw collector candidates are semantically triaged before final trusted evidence admission. DIRECT_PROBLEM + SUPPORTING_SIGNAL are trusted. ANALOGOUS_WORKFLOW_SIGNAL is useful adjacent-workflow context but never validates requester demand. UNADJUDICATED means online semantic adjudication did not complete; it is neither related nor unrelated evidence.',
           directEvidenceClassificationCount:
             canonicalClassifications.filter(
               (item) => item.verifiedByDeterministicGuard && item.classification === 'DIRECT_PROBLEM',
@@ -399,6 +496,12 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             canonicalClassifications.filter(
               (item) => item.classification === 'UNRELATED',
             ).length,
+          unadjudicatedEvidenceClassificationCount:
+            canonicalClassifications.filter(
+              (item) => item.classification === 'UNADJUDICATED',
+            ).length,
+          evidenceAdjudicationUnavailable:
+            canonicalState.state === 'EVIDENCE_ADJUDICATION_UNAVAILABLE',
         },
       ]),
       aiUsed: context.nlp.aiUsed || authoritativeAnalysis.aiAttempted || authoritativeAnalysis.aiSucceeded,
@@ -417,7 +520,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         communityAiAnalysis: synchronizedAnalysis,
       },
       resultPreview: (() => {
-        const groundedCount = authoritativeAnalysis.opportunities.filter(
+        const groundedCount = synchronizedAnalysis.opportunities.filter(
           (opportunity) => opportunity.evidenceSamples.length > 0,
         ).length;
         const hypothesisCount = authoritativeAnalysis.unvalidatedDomainHypotheses.length;
@@ -430,13 +533,15 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           return `Generated ${groundedCount} grounded opportunity candidate(s) and kept ${hypothesisCount} unsupported domain hypothesis candidate(s) separate from evidence ranking.`;
         }
 
-        return `No grounded Community AI opportunity survived validation; ${hypothesisCount} unvalidated domain hypothesis candidate(s) were kept separate for last-resort use.`;
+        return adjudicationUnavailable
+          ? `Raw evidence was collected but semantic adjudication is unavailable; ${hypothesisCount} unvalidated domain hypothesis candidate(s) were kept separate without mislabelling the raw corpus as unrelated.`
+          : `No grounded Community AI opportunity survived validation; ${hypothesisCount} unvalidated domain hypothesis candidate(s) were kept separate for last-resort use.`;
       })(),
       metadata: {
         analysisLayer: 'IDEA_OPPORTUNITY_ENRICHMENT',
         duplicatesNlpAiEnhancement: false,
         aiAnalysisApplied: authoritativeAnalysis.aiAttempted || authoritativeAnalysis.aiSucceeded,
-        opportunityCount: authoritativeAnalysis.opportunities.length,
+        opportunityCount: synchronizedAnalysis.opportunities.length,
         overallConfidence: authoritativeAnalysis.overallConfidence,
         modelId: authoritativeAnalysis.modelId,
         apiModelId: authoritativeAnalysis.apiModelId,
@@ -452,7 +557,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         fallbackReason: authoritativeAnalysis.fallbackReason,
         attemptDiagnostics: authoritativeAnalysis.attemptDiagnostics,
         qualityWarnings: authoritativeAnalysis.qualityWarnings,
-        representedDomains: [...new Set(authoritativeAnalysis.opportunities.map((item) => item.domainName))],
+        representedDomains: [...new Set(synchronizedAnalysis.opportunities.map((item) => item.domainName))],
         unvalidatedDomainHypothesisCount: authoritativeAnalysis.unvalidatedDomainHypotheses.length,
         canonicalTrustedEvidenceCount: canonicalEvidenceLedger.filter(
           (item) => item.verified &&
@@ -464,6 +569,13 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             item.classification === 'ANALOGOUS_WORKFLOW_SIGNAL',
         ).length,
         reviewedEvidenceCandidateCount: canonicalEvidenceLedger.length,
+        evidenceVerdictState:
+          synchronizedAnalysis.evidenceVerdictState ??
+          (canonicalState.trustedCount > 0
+            ? 'VALID_EVIDENCE_FOUND'
+            : adjudicationUnavailable
+              ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
+              : 'NO_VALID_EVIDENCE_FOUND'),
       },
     };
   }
@@ -777,6 +889,24 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     );
 
     if (familyItems.length === 0) {
+      const alreadyLocked = Boolean(
+        analysis.selectedProblemFamily?.trim() &&
+          (analysis.selectedProblemFamilyEvidenceIds?.length ?? 0) > 0,
+      );
+      if (alreadyLocked) {
+        // A canonical family may be invalidated by later evidence verification,
+        // but it must never silently mutate into a second problem identity.
+        // Clear the lock and let downstream zero-evidence handling continue.
+        return {
+          ...analysis,
+          selectedProblemFamily: null,
+          selectedProblemFamilySelectionSource: 'AI_PROPOSAL_REJECTED',
+          selectedProblemFamilyTrustedEvidenceCount: 0,
+          selectedProblemFamilyDistinctSourceCount: 0,
+          selectedProblemFamilyEvidenceIds: [],
+        };
+      }
+
       const trusted = ledger
         .filter(
           (item) =>
@@ -845,78 +975,56 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     };
   }
 
+  private normalizeAiProblemFamily(value: string | null | undefined): string {
+    return (value ?? '')
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[_-]+/gu, ' ')
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+  }
+
   private discoveryProblemFamilyEntails(
     selectedFamily: string,
     evidenceFamily: string | null,
   ): boolean {
-    const normalize = (value: string): string =>
-      value
-        .normalize('NFKC')
-        .toLocaleLowerCase()
-        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
-        .replace(/\s+/gu, ' ')
-        .trim();
-    const selected = normalize(selectedFamily);
-    const evidence = normalize(evidenceFamily ?? '');
-    if (!selected || !evidence) return false;
-    if (selected === evidence) return true;
-
-    const stop = new Set([
-      'workflow','friction','problem','problems','issue','issues','operational',
-      'system','systems','software','service','services','user','users','the',
-      'and','for','with','from','after','before','company','technical',
-    ]);
-    const tokens = (value: string) =>
-      value.split(/\s+/u).filter((token) => token.length >= 4 && !stop.has(token));
-    const left = tokens(selected);
-    const right = new Set(tokens(evidence));
-    if (left.length < 2 || right.size < 2) return false;
-    const overlap = left.filter((token) => right.has(token)).length;
-    return overlap >= 2 && overlap / Math.min(left.length, right.size) >= 0.6;
+    const selected = this.normalizeAiProblemFamily(selectedFamily);
+    const evidence = this.normalizeAiProblemFamily(evidenceFamily);
+    return Boolean(selected && evidence && selected === evidence);
   }
 
   private problemFamilyMatchesSelectedFamilyGroup(
     selectedFamily: string,
     items: readonly IdeaGenerationContext['canonicalEvidenceLedger'][number][],
   ): boolean {
-    if (!selectedFamily.trim() || items.length === 0) return false;
-    if (
-      items.some((item) =>
-        this.problemFamilyMatchesSelectedFamily(
-          selectedFamily,
-          item.problemFamily,
-          item.text,
-        ),
-      )
-    ) {
-      return true;
-    }
-    const combinedEvidence = items.map((item) => item.text).join(' ');
-    return matchEvidenceToProblemFamily(
-      selectedFamily,
-      combinedEvidence,
-    ).matched;
+    const selected = this.normalizeAiProblemFamily(selectedFamily);
+    if (!selected || items.length === 0) return false;
+    return items.every(
+      (item) =>
+        item.verified &&
+        item.familyBasis === 'OBSERVED_PROBLEM' &&
+        this.normalizeAiProblemFamily(item.problemFamily) === selected,
+    );
   }
 
   private problemFamilyMatchesSelectedFamily(
     selectedFamily: string,
     evidenceFamily: string | null,
-    evidenceText: string,
+    _evidenceText: string,
   ): boolean {
-    const normalize = (value: string): string =>
-      value
-        .normalize('NFKC')
-        .toLocaleLowerCase()
-        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
-        .replace(/\s+/gu, ' ')
-        .trim();
-    const selected = normalize(selectedFamily);
-    const evidence = normalize(evidenceFamily ?? '');
-    if (selected && evidence && selected === evidence) return true;
-    if (selected && evidence && (selected.includes(evidence) || evidence.includes(selected))) {
-      return true;
-    }
-    return matchEvidenceToProblemFamily(selectedFamily, evidenceText).matched;
+    return this.discoveryProblemFamilyEntails(selectedFamily, evidenceFamily);
+  }
+
+  private problemFamilyIdentityAgreesForCanonicalLock(
+    selectedFamily: string,
+    item: IdeaGenerationContext['canonicalEvidenceLedger'][number],
+  ): boolean {
+    return (
+      item.verified &&
+      item.familyBasis === 'OBSERVED_PROBLEM' &&
+      this.discoveryProblemFamilyEntails(selectedFamily, item.problemFamily)
+    );
   }
 
   private selectStrongestTrustedFamilyItems(
@@ -975,6 +1083,56 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
   }
 
 
+  private buildCanonicalProblemFamilyLock(
+    analysis: CommunityAiAnalysis,
+    ledger: IdeaGenerationContext['canonicalEvidenceLedger'],
+    requestMode: IdeaGenerationContext['requestMode'],
+  ): { readonly id: string; readonly label: string; readonly evidenceIds: string[] } | null {
+    void requestMode;
+    const label = analysis.selectedProblemFamily?.replace(/\s+/gu, ' ').trim() ?? '';
+    const requestedIds = [...new Set(
+      (analysis.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    )];
+    if (!label || requestedIds.length === 0) return null;
+
+    const byId = new Map(ledger.map((item) => [item.id, item] as const));
+    const verified = requestedIds
+      .map((id) => byId.get(id))
+      .filter((item): item is IdeaGenerationContext['canonicalEvidenceLedger'][number] => Boolean(item))
+      .filter((item) =>
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
+      );
+    if (verified.length !== requestedIds.length) return null;
+
+    /*
+     * Semantic family ownership belongs to the accepted Community-AI verdict.
+     * Deterministic code does not re-read evidence text with token/stem/synonym
+     * rules. A canonical lock exists only when every AI-selected row is trusted,
+     * explicitly marked as OBSERVED_PROBLEM, and carries the same normalized
+     * neutral family label selected by the model.
+     */
+    if (!this.problemFamilyMatchesSelectedFamilyGroup(label, verified)) {
+      return null;
+    }
+
+    const evidenceIds = requestedIds;
+    const normalizedLabel = label
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const id = createHash('sha256')
+      .update(`${normalizedLabel}|${[...evidenceIds].sort().join('|')}`)
+      .digest('hex')
+      .slice(0, 24);
+    return { id, label, evidenceIds };
+  }
+
+
   private buildCanonicalEvidenceLedger(
     context: IdeaGenerationContext,
     analysis: CommunityAiAnalysis,
@@ -994,6 +1152,15 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           confidence: classification.confidence,
           problemFamily: classification.problemFamily,
           verifiedByDeterministicGuard: classification.verifiedByDeterministicGuard,
+          evidenceNature: classification.evidenceNature,
+          domainAlignment: classification.domainAlignment,
+          problemAlignment: classification.problemAlignment,
+          familyBasis: classification.familyBasis,
+          observedProblem: classification.observedProblem,
+          causalExplanation: classification.causalExplanation,
+          matchedDomainNames: classification.matchedDomainNames,
+          adjudicationStatus: classification.adjudicationStatus,
+          adjudicationFailureReason: classification.adjudicationFailureReason,
           origin: 'COMMUNITY_AI',
         },
         requestMode: context.requestMode,
@@ -1007,8 +1174,8 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
      * Canonical completeness invariant: every raw item gets exactly one row in
      * the canonical ledger, even when the online triage timed out, returned a
      * partial batch, or omitted an evidence id.  Missing classifications are
-     * conservatively proposed by deterministic rules and then pass through the
-     * exact same verifier as AI classifications.  Raw evidence is therefore
+     * conservatively represented as untrusted fallback rows and then pass through the
+     * exact same structural verifier as AI classifications.  Raw evidence is therefore
      * never lost, while only verified DIRECT/SUPPORTING rows become trusted.
      */
     for (const raw of context.rawEvidenceCorpus ?? []) {
@@ -1100,7 +1267,12 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         ...qualityWarnings,
         ...(missingEvidenceDomains.length > 0 &&
         context.domainResolution?.source === 'USER_SELECTED'
-          ? [`No direct retained evidence was available for selected domain(s): ${missingEvidenceDomains.join(', ')}.`]
+          ? [
+              analysis.evidenceVerdictState ===
+              'EVIDENCE_ADJUDICATION_UNAVAILABLE'
+                ? `No adjudicated direct evidence is currently available for selected domain(s): ${missingEvidenceDomains.join(', ')}; collected raw rows may still be pending semantic verdict.`
+                : `No direct retained evidence was available for selected domain(s): ${missingEvidenceDomains.join(', ')}.`,
+            ]
           : []),
       ],
     };
@@ -1834,6 +2006,65 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     if (/\b(?:i|we|my|our)\b/iu.test(normalized)) score += 10;
     if (/https?:\/\/|\b(?:check out|download|app review|subscribe|tutorial)\b/iu.test(normalized)) score -= 50;
     return score;
+  }
+
+
+  private buildCanonicalTruthFallbackReason(
+    current: string | null | undefined,
+    snapshot: ReturnType<typeof CanonicalEvidenceStateUtil.compute>,
+    hasCanonicalFamilyLock: boolean,
+  ): string | null {
+    if (snapshot.trustedCount === 0) {
+      return current?.trim() || null;
+    }
+
+    if (hasCanonicalFamilyLock) {
+      return 'Community AI synthesis did not return an accepted grounded opportunity, but deterministic canonical verification retained trusted evidence and established a canonical problem-family lock for downstream ranking.';
+    }
+
+    return 'Community AI synthesis did not return an accepted grounded opportunity. Deterministic canonical verification retained trusted supporting evidence, but no canonical problem-family lock was established.';
+  }
+
+  /**
+   * Rewrites stage-level warnings from the final canonical ledger rather than
+   * preserving provisional pre-verification statements that may already have
+   * become false. Community AI can initially classify every row as context,
+   * while the deterministic canonical verifier later admits tightly aligned
+   * SUPPORTING_SIGNAL rows. Once that happens, warnings such as "every item was
+   * unrelated" are stale and must not leak into the persisted run snapshot.
+   */
+  private buildCanonicalTruthWarnings(
+    current: readonly string[],
+    snapshot: ReturnType<typeof CanonicalEvidenceStateUtil.compute>,
+    hasCanonicalFamilyLock: boolean,
+  ): string[] {
+    const staleZeroEvidenceWarning = (warning: string): boolean =>
+      /every classified raw evidence item was unrelated/iu.test(warning) ||
+      /first-pass discovery corpus contained no trusted problem-bearing evidence/iu.test(
+        warning,
+      ) ||
+      /canonical evidence state is (?:NO_VALID_EVIDENCE_FOUND|EVIDENCE_ADJUDICATION_UNAVAILABLE)/iu.test(warning);
+
+    const warnings = snapshot.trustedCount > 0
+      ? current.filter((warning) => !staleZeroEvidenceWarning(warning))
+      : [...current];
+
+    if (snapshot.trustedCount > 0 && snapshot.sourceCount <= 1) {
+      const sourceScope = snapshot.sourceCount === 1
+        ? 'one independent source'
+        : 'an unresolved independent-source set';
+      warnings.push(
+        `Canonical evidence retained ${snapshot.trustedCount} trusted problem signal(s) from ${sourceScope}. This supports a preliminary problem signal only; recurrence, prevalence, and cross-market demand remain unvalidated.`,
+      );
+    }
+
+    if (snapshot.trustedCount > 0 && !hasCanonicalFamilyLock) {
+      warnings.push(
+        'Trusted canonical evidence exists, but no single problem-family identity survived the immutable family-lock check. Downstream stages may use the rows as supporting evidence but must not describe a family as validated or locked.',
+      );
+    }
+
+    return [...new Set(warnings.map((warning) => warning.trim()).filter(Boolean))];
   }
 
   private toJsonArray(values: readonly unknown[]): Prisma.JsonArray {

@@ -159,9 +159,7 @@ export class CollectorQueueService {
       }
 
       this.logger.debug(
-        `Collector task queued${
-          platform ? ` for ${platform}` : ''
-        }. Waiting: ${this.queue.length + 1}`,
+        `Collector task queued${platform ? ` for ${platform}` : ''}. Waiting: ${this.queue.length + 1}`,
       );
 
       await new Promise<void>((resolve) => {
@@ -173,89 +171,110 @@ export class CollectorQueueService {
 
     try {
       this.logger.log(
-        `Collector task started${
-          platform ? ` for ${platform}` : ''
-        }. Running: ${this.running}`,
+        `Collector task started${platform ? ` for ${platform}` : ''}. Running: ${this.running}`,
       );
 
       const controller = new AbortController();
-      const abortFromParent = () => controller.abort(parentSignal?.reason);
+      type TimedResult =
+        | { readonly kind: 'RESULT'; readonly value: T }
+        | { readonly kind: 'ERROR'; readonly error: unknown }
+        | { readonly kind: 'TIMEOUT' }
+        | { readonly kind: 'PARENT_ABORT' };
+
+      let resolveParentAbort: ((value: TimedResult) => void) | null = null;
+      const parentAbortResult = new Promise<TimedResult>((resolve) => {
+        resolveParentAbort = resolve;
+      });
+      const abortFromParent = () => {
+        if (!controller.signal.aborted) {
+          controller.abort(parentSignal?.reason);
+        }
+        resolveParentAbort?.({ kind: 'PARENT_ABORT' });
+      };
+
       if (parentSignal?.aborted) {
         abortFromParent();
       } else {
         parentSignal?.addEventListener('abort', abortFromParent, { once: true });
       }
 
-      if (!timeoutMs || timeoutMs <= 0) {
-        try {
-          return await task(controller.signal);
-        } finally {
-          parentSignal?.removeEventListener('abort', abortFromParent);
-        }
-      }
-
-      let timeoutHandle: NodeJS.Timeout | null = null;
-
-      /*
-       * Fast evidence collection uses a SOFT source budget. Previously the
-       * outer queue aborted the collector at 4.8s, which cancelled every
-       * in-flight App Store / Google Play review request and discarded the
-       * useful app discovery that had already completed. A soft budget keeps
-       * the latency signal without destroying partial/healthy source work.
-       */
-      if (!abortOnTimeout) {
-        try {
-          timeoutHandle = setTimeout(() => {
-            this.logger.warn(
-              `Collector task${platform ? ` for ${platform}` : ''} crossed soft ${timeoutMs}ms budget; allowing it to finish and return partial/complete data.`,
-            );
-          }, timeoutMs);
-          timeoutHandle.unref?.();
-          return await task(controller.signal);
-        } finally {
-          if (timeoutHandle) clearTimeout(timeoutHandle);
-          parentSignal?.removeEventListener('abort', abortFromParent);
-        }
+      if (parentSignal?.aborted) {
+        throw new ServiceUnavailableException(
+          `Collector task${platform ? ` for ${platform}` : ''} was cancelled by the parent generation deadline.`,
+        );
       }
 
       const taskPromise = task(controller.signal);
-      type TimedResult =
-        | { readonly kind: 'RESULT'; readonly value: T }
-        | { readonly kind: 'ERROR'; readonly error: unknown }
-        | { readonly kind: 'TIMEOUT' };
-
       const wrappedTask = taskPromise.then<TimedResult, TimedResult>(
         (value) => ({ kind: 'RESULT', value }),
         (error: unknown) => ({ kind: 'ERROR', error }),
       );
+      const raceBase = parentSignal
+        ? [wrappedTask, parentAbortResult]
+        : [wrappedTask];
+      let timeoutHandle: NodeJS.Timeout | null = null;
+
+      const unwrap = (result: TimedResult): T => {
+        if (result.kind === 'RESULT') return result.value;
+        if (result.kind === 'ERROR') throw result.error;
+        if (result.kind === 'PARENT_ABORT') {
+          throw new ServiceUnavailableException(
+            `Collector task${platform ? ` for ${platform}` : ''} was cancelled by the parent generation deadline.`,
+          );
+        }
+        throw new ServiceUnavailableException(
+          `Collector task${platform ? ` for ${platform}` : ''} exceeded ${timeoutMs ?? 0}ms.`,
+        );
+      };
 
       try {
+        if (!timeoutMs || timeoutMs <= 0) {
+          return unwrap(await Promise.race<TimedResult>(raceBase));
+        }
+
+        /*
+         * A soft source timeout remains telemetry only. Parent cancellation is
+         * different: it is the generation/recovery hard wall-clock contract,
+         * so the queue returns immediately even if a third-party parser ignores
+         * AbortSignal after the underlying HTTP request has already been cut.
+         */
+        if (!abortOnTimeout) {
+          timeoutHandle = setTimeout(() => {
+            this.logger.warn(
+              `Collector task${platform ? ` for ${platform}` : ''} crossed soft ${timeoutMs}ms budget; allowing it to finish unless the parent generation deadline is reached.`,
+            );
+          }, timeoutMs);
+          timeoutHandle.unref?.();
+          return unwrap(await Promise.race<TimedResult>(raceBase));
+        }
+
+        const timeoutResult = new Promise<TimedResult>((resolve) => {
+          timeoutHandle = setTimeout(() => resolve({ kind: 'TIMEOUT' }), timeoutMs);
+          timeoutHandle.unref?.();
+        });
         const first = await Promise.race<TimedResult>([
-          wrappedTask,
-          new Promise<TimedResult>((resolve) => {
-            timeoutHandle = setTimeout(() => resolve({ kind: 'TIMEOUT' }), timeoutMs);
-            timeoutHandle.unref?.();
-          }),
+          ...raceBase,
+          timeoutResult,
         ]);
 
-        if (first.kind === 'RESULT') return first.value;
-        if (first.kind === 'ERROR') throw first.error;
+        if (first.kind !== 'TIMEOUT') return unwrap(first);
 
         const timeoutError = new Error(
           `Collector task${platform ? ` for ${platform}` : ''} exceeded ${timeoutMs}ms.`,
         );
-        controller.abort(timeoutError);
+        if (!controller.signal.aborted) controller.abort(timeoutError);
 
         if (timeoutGraceMs > 0 && !parentSignal?.aborted) {
+          const graceResult = new Promise<TimedResult>((resolve) => {
+            const handle = setTimeout(
+              () => resolve({ kind: 'TIMEOUT' }),
+              timeoutGraceMs,
+            );
+            handle.unref?.();
+          });
           const grace = await Promise.race<TimedResult>([
-            wrappedTask,
-            new Promise<TimedResult>((resolve) => {
-              const handle = setTimeout(
-                () => resolve({ kind: 'TIMEOUT' }),
-                timeoutGraceMs,
-              );
-              handle.unref?.();
-            }),
+            ...raceBase,
+            graceResult,
           ]);
           if (grace.kind === 'RESULT') {
             this.logger.warn(
@@ -266,28 +285,23 @@ export class CollectorQueueService {
           if (grace.kind === 'ERROR' && !controller.signal.aborted) {
             throw grace.error;
           }
+          if (grace.kind === 'PARENT_ABORT') return unwrap(grace);
         }
 
         throw new ServiceUnavailableException(timeoutError.message);
       } finally {
-        if (timeoutHandle) {
-          clearTimeout(timeoutHandle);
-        }
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         parentSignal?.removeEventListener('abort', abortFromParent);
+        resolveParentAbort = null;
       }
     } finally {
       this.running -= 1;
 
       const next = this.queue.shift();
-
-      if (next) {
-        next();
-      }
+      if (next) next();
 
       this.logger.log(
-        `Collector task finished${
-          platform ? ` for ${platform}` : ''
-        }. Running: ${this.running}`,
+        `Collector task finished${platform ? ` for ${platform}` : ''}. Running: ${this.running}`,
       );
     }
   }

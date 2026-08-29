@@ -33,6 +33,8 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { useUserExperience } from '../../../../system/user-experience';
+import NormalPageHero from '../../shared/components/NormalPageHero';
 import {
   getNotifications,
   markAllNotificationsRead,
@@ -122,18 +124,18 @@ function getMeta(type = '') {
   );
 }
 
-function formatDate(value) {
+function formatDate(value, locale = 'en') {
   if (!value) {
-    return 'Just now';
+    return locale === 'ar' ? 'الآن' : 'Just now';
   }
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return 'Recently';
+    return locale === 'ar' ? 'مؤخرًا' : 'Recently';
   }
 
-  return new Intl.DateTimeFormat('en', {
+  return new Intl.DateTimeFormat(locale, {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
@@ -141,8 +143,24 @@ function formatDate(value) {
   }).format(date);
 }
 
+function localizeNotificationMessage(message, t, isArabic) {
+  const text = String(message || '').trim();
+  if (!text) return t('A new Voxidence update is ready.');
+  if (!isArabic) return text;
+
+  const generatedIdeaMatch = text.match(/^Your new idea(?:\s+[“"](.+?)[”"])?\s+has been created successfully\.\s+Open My Ideas to review it\.$/i);
+  if (generatedIdeaMatch) {
+    const title = generatedIdeaMatch[1] ? ` ⁦${generatedIdeaMatch[1]}⁩` : '';
+    return `تم إنشاء فكرتك الجديدة${title} بنجاح. افتح «أفكاري» لمراجعتها.`;
+  }
+
+  return t(text);
+}
+
 export default function NotificationsPage() {
   const navigate = useNavigate();
+  const { t, isArabic } = useUserExperience();
+  const locale = isArabic ? 'ar' : 'en';
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -297,45 +315,23 @@ export default function NotificationsPage() {
   return (
     <main className="notifications-page reveal-page">
       <section className="notifications-shell">
-        <header className="notifications-command">
-          <div className="notifications-command__identity">
-            <span className="notifications-command__icon" aria-hidden="true">
-              <Bell size={20} />
-            </span>
-
-            <div>
-              <span className="notifications-command__eyebrow">
-                Notification center
-              </span>
-
-              <h1>Your updates, clearly organized.</h1>
-
-              <p>
-                Review important activity across ideas, publishing, payments,
-                feedback, and account security.
-              </p>
-            </div>
-          </div>
-
-          <div className="notifications-command__summary">
-            <article>
-              <span>Unread</span>
-              <strong>{unreadCount}</strong>
-              <i aria-hidden="true" />
-            </article>
-
-            <article>
-              <span>Total</span>
-              <strong>{items.length}</strong>
-              <i aria-hidden="true" />
-            </article>
-          </div>
-        </header>
+        <NormalPageHero
+          variant="notifications"
+          eyebrow={t('Notification center')}
+          title={t('Updates that keep your Voxidence work moving.')}
+          description={t('Review generation, publishing, payment, feedback, and account activity without losing the context behind each update.')}
+          chips={[t('Live activity'), t('Focused filters'), t('Account-aware updates')]}
+          stats={[
+            { label: t('Unread'), value: unreadCount },
+            { label: t('Total'), value: items.length },
+          ]}
+          compact
+        />
 
         <div className="notifications-toolbar">
           <nav
             className="notifications-filters"
-            aria-label="Notification categories"
+            aria-label={t('Notification categories')}
           >
             {categories.map((category) => (
               <button
@@ -344,14 +340,14 @@ export default function NotificationsPage() {
                 className={activeFilter === category ? 'is-active' : ''}
                 onClick={() => setActiveFilter(category)}
               >
-                {category}
+                {t(category === 'ALL' ? 'All' : category.charAt(0) + category.slice(1).toLowerCase())}
               </button>
             ))}
           </nav>
 
           <nav
             className="notifications-read-filters"
-            aria-label="Read status"
+            aria-label={t('Read status')}
           >
             {['ALL', 'UNREAD', 'READ'].map((filter) => (
               <button
@@ -360,21 +356,21 @@ export default function NotificationsPage() {
                 className={readFilter === filter ? 'is-active' : ''}
                 onClick={() => setReadFilter(filter)}
               >
-                {filter === 'ALL' ? 'All status' : filter === 'UNREAD' ? 'Unread' : 'Read'}
+                {t(filter === 'ALL' ? 'All status' : filter === 'UNREAD' ? 'Unread' : 'Read')}
               </button>
             ))}
           </nav>
 
           <span className="notifications-toolbar__result">
             {visibleItems.length}{' '}
-            {visibleItems.length === 1 ? 'notification' : 'notifications'}
+            {t(visibleItems.length === 1 ? 'notification' : 'notifications')}
           </span>
         </div>
 
         <div className="notifications-panel-actions">
           <div>
-            <span>Activity controls</span>
-            <p>Refresh the feed or clear every unread notification.</p>
+            <span>{t('Activity controls')}</span>
+            <p>{t('Refresh the feed or clear every unread notification.')}</p>
           </div>
 
           <div className="notifications-panel-actions__buttons">
@@ -388,7 +384,7 @@ export default function NotificationsPage() {
                 size={16}
                 className={loading ? 'spin' : undefined}
               />
-              Refresh
+              {t('Refresh')}
             </button>
 
             <button
@@ -402,7 +398,7 @@ export default function NotificationsPage() {
               ) : (
                 <CheckCheck size={16} />
               )}
-              Mark all read
+              {t('Mark all read')}
             </button>
           </div>
         </div>
@@ -410,46 +406,48 @@ export default function NotificationsPage() {
         <section className="notifications-panel">
           <div className="notifications-panel__heading">
             <div>
-              <span>Activity stream</span>
+              <span>{t('Activity stream')}</span>
               <h2>
                 {readFilter === 'ALL' && activeFilter === 'ALL'
-                  ? 'All notifications'
-                  : `${
-                      readFilter === 'ALL' ? '' : `${readFilter.toLowerCase()} `
-                    }${
-                      activeFilter === 'ALL'
-                        ? 'notifications'
-                        : `${activeFilter.toLowerCase()} notifications`
-                    }`}
+                  ? t('All notifications')
+                  : isArabic
+                    ? t('Filtered notifications')
+                    : `${
+                        readFilter === 'ALL' ? '' : `${readFilter.toLowerCase()} `
+                      }${
+                        activeFilter === 'ALL'
+                          ? 'notifications'
+                          : `${activeFilter.toLowerCase()} notifications`
+                      }`}
               </h2>
             </div>
 
             <span className="notifications-panel__status">
               <i aria-hidden="true" />
-              Live activity
+              {t('Live activity')}
             </span>
           </div>
 
           {loading ? (
             <div className="notifications-state">
               <LoaderCircle className="spin" size={28} />
-              <h3>Loading your activity</h3>
-              <p>Gathering your latest Voxidence updates.</p>
+              <h3>{t('Loading your activity')}</h3>
+              <p>{t('Gathering your latest Voxidence updates.')}</p>
             </div>
           ) : error ? (
             <div className="notifications-state notifications-state--error">
               <RefreshCw size={28} />
-              <h3>Notifications unavailable</h3>
+              <h3>{t('Notifications unavailable')}</h3>
               <p>{error}</p>
               <button type="button" onClick={load}>
-                Try again
+                {t('Try again')}
               </button>
             </div>
           ) : visibleItems.length === 0 ? (
             <div className="notifications-state">
               <Inbox size={30} />
-              <h3>Nothing in this view</h3>
-              <p>New activity will appear here automatically.</p>
+              <h3>{t('Nothing in this view')}</h3>
+              <p>{t('New activity will appear here automatically.')}</p>
             </div>
           ) : (
             <div className="notifications-list">
@@ -490,22 +488,22 @@ export default function NotificationsPage() {
                     <span className="notification-row__content">
                       <span className="notification-row__meta">
                         <span className="notification-row__category">
-                          {meta.label}
+                          {t(meta.label)}
                         </span>
 
                         <span className="notification-row__time">
                           <Clock3 size={13} />
-                          {formatDate(item.createdAt)}
+                          {formatDate(item.createdAt, locale)}
                         </span>
                       </span>
 
-                      <strong>{item.title || meta.label}</strong>
+                      <strong>{t(item.title || meta.label)}</strong>
 
                       <span className="notification-row__message">
-                        {item.message || 'A new Voxidence update is ready.'}
+                        {localizeNotificationMessage(item.message, t, isArabic)}
                       </span>
 
-                      <small>{meta.description}</small>
+                      <small>{t(meta.description)}</small>
                     </span>
 
                     <span className="notification-row__end">
@@ -517,7 +515,7 @@ export default function NotificationsPage() {
                       )}
 
                       <span className="notification-row__open" aria-hidden="true">
-                        View message
+                        {t('View message')}
                         <ChevronRight size={15} />
                       </span>
                     </span>
@@ -551,7 +549,7 @@ export default function NotificationsPage() {
                 type="button"
                 className="notification-detail__close"
                 onClick={closeDetails}
-                aria-label="Close notification"
+                aria-label={t('Close notification')}
               >
                 <X size={18} />
               </button>
@@ -562,13 +560,13 @@ export default function NotificationsPage() {
                 </span>
                 <div className="notification-detail__identity">
                   <div>
-                    <span className="notification-detail__category">{selectedMeta.label}</span>
+                    <span className="notification-detail__category">{t(selectedMeta.label)}</span>
                     <span className={`notification-detail__read-state ${selectedNotification.isRead ? 'is-read' : 'is-unread'}`}>
-                      {selectedNotification.isRead ? 'Read' : 'Unread'}
+                      {t(selectedNotification.isRead ? 'Read' : 'Unread')}
                     </span>
                   </div>
                   <span className="notification-detail__date">
-                    <Clock3 size={13} /> {formatDate(selectedNotification.createdAt)}
+                    <Clock3 size={13} /> {formatDate(selectedNotification.createdAt, locale)}
                   </span>
                 </div>
               </div>
@@ -577,15 +575,13 @@ export default function NotificationsPage() {
                 <section className="notification-detail__hero">
                   <div className="notification-detail__hero-copy">
                     <span className="notification-detail__eyebrow">
-                      <MessageSquareText size={14} /> {isAdminMessage ? 'Administrator message' : 'Voxidence update'}
+                      <MessageSquareText size={14} /> {t(isAdminMessage ? 'Administrator message' : 'Voxidence update')}
                     </span>
                     <h2 id="notification-detail-title">
-                      {selectedNotification.title || selectedMeta.label}
+                      {t(selectedNotification.title || selectedMeta.label)}
                     </h2>
                     <p>
-                      {isAdminMessage
-                        ? 'A direct notice from the Voxidence moderation team.'
-                        : selectedMeta.description}
+                      {t(isAdminMessage ? 'A direct notice from the Voxidence moderation team.' : selectedMeta.description)}
                     </p>
                   </div>
                   <div className="notification-detail__hero-mark" aria-hidden="true">
@@ -600,31 +596,31 @@ export default function NotificationsPage() {
                       {isAdminMessage ? <ShieldCheck size={17} /> : <SelectedIcon size={17} />}
                     </span>
                     <div>
-                      <small>{isAdminMessage ? 'Voxidence moderation' : selectedMeta.label}</small>
-                      <strong>{isAdminMessage ? 'In-app message sent specifically to your account' : selectedMeta.description}</strong>
+                      <small>{t(isAdminMessage ? 'Voxidence moderation' : selectedMeta.label)}</small>
+                      <strong>{t(isAdminMessage ? 'In-app message sent specifically to your account' : selectedMeta.description)}</strong>
                     </div>
-                    <em>IN APP</em>
+                    <em>{t('IN APP')}</em>
                   </div>
-                  <p>{selectedNotification.message || 'A new Voxidence update is ready.'}</p>
+                  <p dir="auto" data-no-auto-translate="true">{localizeNotificationMessage(selectedNotification.message, t, isArabic)}</p>
                   <div className="notification-detail__letter-foot">
-                    <span><Clock3 size={12} /> Delivered {formatDate(selectedNotification.createdAt)}</span>
-                    <span><ShieldCheck size={12} /> Verified Voxidence notice</span>
+                    <span><Clock3 size={12} /> {t('Delivered')} {formatDate(selectedNotification.createdAt, locale)}</span>
+                    <span><ShieldCheck size={12} /> {t('Verified Voxidence notice')}</span>
                   </div>
                 </article>
               </div>
 
               <footer className="notification-detail__actions">
                 <div>
-                  <span>{isAdminMessage ? 'Administrator & moderation notice' : selectedMeta.description}</span>
-                  <small>{selectedNotification.isRead ? 'Already read' : 'Marked as read when opened'}</small>
+                  <span>{t(isAdminMessage ? 'Administrator & moderation notice' : selectedMeta.description)}</span>
+                  <small>{t(selectedNotification.isRead ? 'Already read' : 'Marked as read when opened')}</small>
                 </div>
                 <div>
                   {destination ? (
                     <button type="button" className="is-primary" onClick={openRelatedPage}>
-                      Open related page <ExternalLink size={14} />
+                      {t('Open related page')} <ExternalLink size={14} />
                     </button>
                   ) : null}
-                  <button type="button" className="is-secondary" onClick={closeDetails}>Close</button>
+                  <button type="button" className="is-secondary" onClick={closeDetails}>{t('Close')}</button>
                 </div>
               </footer>
             </section>

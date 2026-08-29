@@ -1140,3 +1140,471 @@
   }
 }
 
+
+
+/* FINAL_PREFERENCES_DARK_POLISH */
+html.vox-user-dark :is(.preferences-hero,.preferences-card,.preferences-section,.preferences-group,.preferences-state,.preferences-domain-group) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .preferences-page :is(input,select,textarea) { color:#eef8f5 !important; background:#10201b !important; }
+
+
+/* FINAL_PREFERENCES_WHITE_SURFACE_ERADICATION */
+html.vox-user-dark .preferences-page :is(
+  .preferences-card,
+  .preferences-section,
+  .preferences-panel,
+  .preferences-row,
+  .preferences-control,
+  .preferences-select,
+  .preferences-modal,
+  .preferences-modal__card
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .preferences-page :is(input,select,textarea) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#10201b !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260827_PREFERENCES_DARK_RTL                                        */
+/* ========================================================================== */
+html.vox-user-dark .preferences-page {
+  color: #eef8f5 !important;
+}
+html.vox-user-dark .preferences-hero {
+  border-color: rgba(112,205,198,.16) !important;
+  background:
+    radial-gradient(circle at 14% 84%,rgba(230,174,185,.06),transparent 26%),
+    radial-gradient(circle at 86% 16%,rgba(112,205,198,.08),transparent 30%),
+    linear-gradient(145deg,#172b24,#10211b) !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .preferences-hero::before {
+  background: radial-gradient(circle at 46% 42%,rgba(112,205,198,.035),transparent 42%) !important;
+}
+html.vox-user-dark .preferences-hero::after,
+html.vox-user-dark .preferences-hero__flow {
+  border-color: rgba(112,205,198,.12) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .preferences-hero__ambient--pink {
+  background: radial-gradient(circle,rgba(230,174,185,.07),transparent 70%) !important;
+}
+html.vox-user-dark .preferences-hero__ambient--mint {
+  background: radial-gradient(circle,rgba(112,205,198,.08),transparent 70%) !important;
+}
+html.vox-user-dark .preferences-hero__sparkles i {
+  background: #8ed9d3 !important;
+  box-shadow: 0 0 18px rgba(112,205,198,.22) !important;
+}
+html.vox-user-dark .preferences-hero h1,
+html.vox-user-dark .preferences-section__heading h2,
+html.vox-user-dark .preferences-group__heading h3,
+html.vox-user-dark .preference-option strong,
+html.vox-user-dark .preferences-field__copy strong {
+  color: #f0f8f6 !important;
+}
+html.vox-user-dark .preferences-hero p,
+html.vox-user-dark .preferences-section__heading p,
+html.vox-user-dark .preference-option small,
+html.vox-user-dark .preferences-field__copy small,
+html.vox-user-dark .preferences-group__heading small,
+html.vox-user-dark .preferences-savebar small {
+  color: #a9bdb6 !important;
+}
+html.vox-user-dark .preferences-hero__eyebrow,
+html.vox-user-dark .preferences-hero__chips span,
+html.vox-user-dark .preferences-section__badge {
+  color: #9fe1db !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #1c382f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .preferences-hero__eyebrow svg,
+html.vox-user-dark .preferences-field__icon,
+html.vox-user-dark .preference-option__number,
+html.vox-user-dark .preference-option__check {
+  color: #9fe1db !important;
+  border-color: rgba(112,205,198,.16) !important;
+  background: #1b382f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .preferences-hero__summary article,
+html.vox-user-dark .preferences-hero__progress,
+html.vox-user-dark .preferences-section,
+html.vox-user-dark .preferences-group,
+html.vox-user-dark .preferences-group__heading,
+html.vox-user-dark .preference-option,
+html.vox-user-dark .preferences-field,
+html.vox-user-dark .preferences-payment-currencies button,
+html.vox-user-dark .preferences-payment-note,
+html.vox-user-dark .preferences-savebar,
+html.vox-user-dark .preferences-state {
+  color: #eef8f5 !important;
+  border-color: rgba(112,205,198,.15) !important;
+  background: #142820 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .preferences-group__heading {
+  background: #173027 !important;
+}
+html.vox-user-dark .preference-option:hover,
+html.vox-user-dark .preference-option.is-selected,
+html.vox-user-dark .preferences-payment-currencies button.is-selected {
+  border-color: rgba(112,205,198,.38) !important;
+  background: #1b382f !important;
+}
+html.vox-user-dark .preferences-field :is(input,select),
+html.vox-user-dark .preferences-select-wrap select {
+  color: #eef8f5 !important;
+  border-color: rgba(112,205,198,.16) !important;
+  background: #0f201a !important;
+}
+html.vox-user-dark .preferences-field :is(input,select)::placeholder {
+  color: #78948b !important;
+}
+html.vox-user-dark .preferences-savebar {
+  backdrop-filter: blur(18px) !important;
+  background: rgba(18,39,32,.94) !important;
+}
+html.vox-user-dark .preferences-savebar>div>span {
+  color: #d9ebe6 !important;
+}
+html.vox-user-dark .preferences-savebar button {
+  color: #fff !important;
+  border-color: rgba(112,205,198,.28) !important;
+  background: linear-gradient(135deg,#57b9b3,#398e89) !important;
+}
+html.vox-user-dark .preferences-savebar button::before {
+  display: none !important;
+}
+
+/* Preserve the same physical English hero layout while Arabic text remains RTL. */
+html.vox-user-rtl .preferences-hero {
+  direction: ltr !important;
+}
+html.vox-user-rtl .preferences-hero__content,
+html.vox-user-rtl .preferences-hero__summary,
+html.vox-user-rtl .preferences-section,
+html.vox-user-rtl .preferences-group {
+  direction: rtl !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .preferences-section__heading,
+html.vox-user-rtl .preferences-group__heading,
+html.vox-user-rtl .preferences-savebar {
+  direction: rtl !important;
+}
+html.vox-user-rtl .preference-option {
+  text-align: right !important;
+}
+html.vox-user-rtl .preference-option strong {
+  padding-right: 0 !important;
+  padding-left: 38px !important;
+}
+html.vox-user-rtl .preference-option__check {
+  right: auto !important;
+  left: 13px !important;
+}
+
+
+/* FINAL_20260827_PREFERENCES_TRANSLATED_DARK_CARDS */
+html.vox-user-dark .preferences-page {
+  background: #0b1713 !important;
+  background-image: none !important;
+}
+html.vox-user-dark .preferences-hero {
+  overflow: hidden !important;
+  border: 1px solid rgba(112,205,198,.15) !important;
+  background:
+    radial-gradient(circle at 82% 12%,rgba(112,205,198,.08),transparent 27%),
+    radial-gradient(circle at 15% 82%,rgba(217,143,160,.05),transparent 24%),
+    linear-gradient(145deg,#172b24,#10211b) !important;
+}
+html.vox-user-dark .preferences-hero__flow,
+html.vox-user-dark .preferences-hero::after {
+  opacity: .34 !important;
+}
+html.vox-user-dark .preferences-group {
+  overflow: hidden !important;
+  background: #13271f !important;
+}
+html.vox-user-dark .preferences-group__heading {
+  border-bottom-color: rgba(112,205,198,.13) !important;
+  background: #162d25 !important;
+}
+html.vox-user-dark .preference-option {
+  color: #e9f5f2 !important;
+  border-color: rgba(112,205,198,.16) !important;
+  background: #142820 !important;
+}
+html.vox-user-dark .preference-option:hover {
+  background: #193229 !important;
+}
+html.vox-user-dark .preference-option.is-selected {
+  border-color: rgba(112,205,198,.44) !important;
+  background: linear-gradient(145deg,#26483d,#1d382f) !important;
+}
+html.vox-user-dark .preference-option strong { color:#eef8f5 !important; }
+html.vox-user-dark .preference-option small { color:#acc0ba !important; }
+html.vox-user-dark .preferences-savebar {
+  border-color: rgba(112,205,198,.18) !important;
+  background: rgba(15,31,25,.96) !important;
+  box-shadow: 0 -12px 30px rgba(0,0,0,.16) !important;
+}
+
+/* FINAL_20260827_PREFERENCES_DARK_SURFACES_V2 */
+html.vox-user-dark .preferences-page,
+html.vox-user-dark .preferences-section,
+html.vox-user-dark .preferences-groups {
+  background-color: #0b1713 !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark .preferences-hero {
+  border-color: rgba(112, 205, 198, .16) !important;
+  background:
+    radial-gradient(circle at 82% 12%, rgba(112, 205, 198, .06), transparent 27%),
+    radial-gradient(circle at 16% 82%, rgba(217, 143, 160, .035), transparent 25%),
+    #10221c !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .preferences-hero__flow,
+html.vox-user-dark .preferences-hero__ambient,
+html.vox-user-dark .preferences-hero__sparkles {
+  opacity: .18 !important;
+}
+
+html.vox-user-dark .preferences-hero__summary article,
+html.vox-user-dark .preferences-hero__progress,
+html.vox-user-dark .preferences-section,
+html.vox-user-dark .preferences-group,
+html.vox-user-dark .preferences-group__heading,
+html.vox-user-dark .preference-option,
+html.vox-user-dark .preferences-field,
+html.vox-user-dark .preferences-payment-currencies button,
+html.vox-user-dark .preferences-payment-note {
+  border-color: rgba(112, 205, 198, .16) !important;
+  background: #12261f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .preference-option:hover,
+html.vox-user-dark .preferences-payment-currencies button:hover {
+  background: #173029 !important;
+}
+
+html.vox-user-dark .preference-option.is-selected,
+html.vox-user-dark .preferences-payment-currencies button.is-selected {
+  color: #effaf7 !important;
+  border-color: rgba(112, 205, 198, .40) !important;
+  background: #214238 !important;
+  box-shadow: inset 0 0 0 1px rgba(112, 205, 198, .06) !important;
+}
+
+html.vox-user-dark .preferences-page :is(h1,h2,h3,strong,.preferences-section__heading h2,.preferences-group__heading h3,.preference-option strong) {
+  color: #eef8f5 !important;
+}
+
+html.vox-user-dark .preferences-page :is(p,small,.preference-option small,.preferences-section__heading p) {
+  color: #abc0ba !important;
+}
+
+html.vox-user-rtl .preferences-hero {
+  direction: ltr !important;
+  grid-template-columns: minmax(300px, .58fr) minmax(0, 1.42fr) !important;
+  grid-template-areas: 'summary content' !important;
+}
+
+html.vox-user-rtl .preferences-hero__content {
+  grid-area: content !important;
+  direction: rtl !important;
+  text-align: right !important;
+  justify-self: stretch !important;
+}
+
+html.vox-user-rtl .preferences-hero__summary {
+  grid-area: summary !important;
+  direction: rtl !important;
+  text-align: right !important;
+  justify-self: stretch !important;
+}
+
+html.vox-user-rtl .preferences-hero__chips {
+  justify-content: flex-start !important;
+}
+
+html.vox-user-rtl .preferences-group__heading,
+html.vox-user-rtl .preference-option {
+  direction: rtl !important;
+  text-align: right !important;
+}
+
+html.vox-user-dark .preferences-hero__summary article > span,
+html.vox-user-dark .preferences-hero__summary small,
+html.vox-user-dark .preferences-group__heading small,
+html.vox-user-dark .preferences-section__heading > div > span {
+  color: #a9bdb6 !important;
+}
+
+html.vox-user-dark .preferences-hero__summary strong,
+html.vox-user-dark .preferences-group__heading h3,
+html.vox-user-dark .preference-option strong {
+  color: #eef8f5 !important;
+}
+
+@media (max-width: 1050px) {
+  html.vox-user-rtl .preferences-hero {
+    direction: rtl !important;
+    grid-template-columns: 1fr !important;
+    grid-template-areas: 'content' 'summary' !important;
+  }
+}
+
+/* 2026-08-27 Preferences hero visual refresh */
+.preferences-hero {
+  border-color: rgba(72, 144, 134, .14) !important;
+  background:
+    radial-gradient(circle at 78% 16%, rgba(110, 204, 197, .23), transparent 27%),
+    radial-gradient(circle at 11% 92%, rgba(240, 179, 195, .17), transparent 28%),
+    linear-gradient(135deg, #fbfefd 0%, #f4fbf8 62%, #fff9fb 100%) !important;
+  box-shadow: 0 22px 58px rgba(44, 90, 82, .08) !important;
+}
+
+.preferences-hero__summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.preferences-hero__visual {
+  position: relative;
+  grid-column: 1 / -1;
+  min-height: 164px;
+  overflow: hidden;
+  border: 1px solid rgba(89, 158, 148, .15);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(111, 205, 198, .17), transparent 38%),
+    linear-gradient(145deg, rgba(255,255,255,.72), rgba(245,251,249,.62));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.78);
+}
+
+.preferences-hero__visual-ring,
+.preferences-hero__visual-core,
+.preferences-hero__visual-node {
+  position: absolute;
+}
+
+.preferences-hero__visual-ring {
+  left: 50%;
+  top: 50%;
+  border: 1px solid rgba(66, 151, 141, .22);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.preferences-hero__visual-ring--one { width: 176px; height: 92px; transform: translate(-50%, -50%) rotate(-10deg); }
+.preferences-hero__visual-ring--two { width: 220px; height: 126px; border-color: rgba(225, 150, 169, .20); transform: translate(-50%, -50%) rotate(15deg); }
+
+.preferences-hero__visual-core,
+.preferences-hero__visual-node {
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(80, 151, 143, .17);
+  background: rgba(255,255,255,.84);
+  color: #3e8d85;
+  box-shadow: 0 11px 28px rgba(49, 96, 89, .10);
+  backdrop-filter: blur(14px);
+}
+
+.preferences-hero__visual-core {
+  left: 50%;
+  top: 50%;
+  width: 72px;
+  height: 72px;
+  border-radius: 24px;
+  transform: translate(-50%, -50%) rotate(-6deg);
+  color: #448f88;
+}
+.preferences-hero__visual-node { width: 40px; height: 40px; border-radius: 14px; }
+.preferences-hero__visual-node--globe { left: 13%; top: 24px; }
+.preferences-hero__visual-node--tune { right: 12%; bottom: 24px; color: #bd7186; }
+.preferences-hero__visual-node--spark { right: 20%; top: 20px; width: 34px; height: 34px; border-radius: 12px; }
+
+@media (max-width: 760px) {
+  .preferences-hero__visual { min-height: 142px; }
+}
+
+/* Keep the preference choices visually on the page instead of nesting cards in cards. */
+.preferences-section {
+  overflow: visible;
+  padding-inline: 0 !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.preferences-section::before { opacity: .45; }
+.preferences-group {
+  overflow: visible;
+  border-color: transparent !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.preferences-group__heading {
+  padding-inline: 4px !important;
+  border-bottom-color: rgba(105, 183, 177, .12) !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+.preferences-options {
+  padding-inline: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+
+/* FINAL_20260828_PREFERENCES_DARK_INTEGRATED_SECTIONS
+   Section/group wrappers disappear into the dark canvas; interactive cards remain. */
+html.vox-user-dark body .preferences-page .preferences-section,
+html.vox-user-dark body .preferences-page .preferences-groups,
+html.vox-user-dark body .preferences-page .preferences-group,
+html.vox-user-dark body .preferences-page .preferences-group__heading,
+html.vox-user-dark body .preferences-page .preferences-options {
+  border-color: transparent !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .preferences-page .preferences-section {
+  overflow: visible !important;
+  padding-inline: 0 !important;
+}
+
+html.vox-user-dark body .preferences-page .preferences-group {
+  overflow: visible !important;
+}
+
+html.vox-user-dark body .preferences-page .preferences-group__heading {
+  padding-inline: 4px !important;
+  border-bottom: 1px solid rgba(112, 205, 198, .11) !important;
+}

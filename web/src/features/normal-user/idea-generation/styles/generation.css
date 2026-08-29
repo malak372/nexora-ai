@@ -8016,3 +8016,625 @@ html.vox-user-dark .nx-language-select__menu button[aria-selected='true'] {
   color: #f3faf7 !important;
   background: #263d35 !important;
 }
+
+
+/* FINAL_GENERATION_DARK_RTL_POLISH */
+html.vox-user-dark :is(
+  .nx-generation-card,.nx-generation-hero,.nx-wizard-actions,
+  .nx-generation-progress__toolbar,.nx-generation-progress__hero,
+  .nx-progress-summary-card,.nx-horizontal-pipeline-card,
+  .nx-horizontal-pipeline-card__head,.nx-horizontal-stage,
+  .nx-generation-progress__current,.nx-generation-loading,
+  .nx-active-run-conflict__dialog,.nx-generation-blocker__card,
+  .nx-cancel-success__dialog
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#162821 !important;
+  background-image:linear-gradient(145deg,#1b3129,#12231d) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .nx-horizontal-stage--active {
+  border-color:rgba(112,205,198,.46) !important;
+  background:linear-gradient(145deg,#25443a,#193129) !important;
+}
+html.vox-user-dark .nx-horizontal-stage--completed { background:linear-gradient(145deg,#1c342c,#152820) !important; }
+html.vox-user-dark :is(.nx-generation-progress__hero h1,.nx-horizontal-stage h3,.nx-generation-progress__current strong) { color:#f1f9f6 !important; }
+html.vox-user-dark :is(.nx-generation-progress__hero p,.nx-horizontal-stage p,.nx-generation-progress__current small) { color:#adc0ba !important; }
+html.vox-user-dark :is(.nx-progress-compact-spinner,.nx-horizontal-stage--active .nx-spin,.nx-generation-loading>.nx-spin) {
+  color:#79d0ca !important;
+  filter:drop-shadow(0 0 10px rgba(121,208,202,.22));
+}
+html.vox-user-dark .nx-progress-compact-spinner { background:#203a31 !important; border-color:rgba(121,208,202,.28) !important; }
+html.vox-user-dark .nx-progress-ring::before { background:#162821 !important; }
+html.vox-user-dark .nx-cancel-run { color:#dcebe7 !important; background:#20372f !important; border-color:rgba(112,205,198,.18) !important; }
+html.vox-user-rtl .nx-generation-progress { direction:rtl; }
+html.vox-user-rtl .nx-generation-progress__toolbar,
+html.vox-user-rtl .nx-generation-progress__hero,
+html.vox-user-rtl .nx-horizontal-pipeline-card__head { text-align:right; }
+
+
+/* FINAL_GENERATION_WHITE_SURFACE_ERADICATION */
+html.vox-user-dark :is(
+  .nx-generation-shell,
+  .nx-generation-progress,
+  .nx-generation-progress__hero,
+  .nx-generation-progress__toolbar,
+  .nx-horizontal-pipeline,
+  .nx-pipeline-meta,
+  .nx-progress-track,
+  .nx-progress-compact-main,
+  .nx-progress-compact-stage,
+  .nx-progress-compact-status,
+  .nx-generation-blocker,
+  .nx-generation-blocker__header,
+  .nx-generation-blocker__content,
+  .nx-generation-blocker__metrics,
+  .nx-generation-blocker__note,
+  .nx-active-run-conflict,
+  .nx-cancel-success,
+  .nx-celebration-burst,
+  .nx-celebration-countdown,
+  .nx-celebration-countdown__number-stage,
+  .nx-celebration-countdown__message
+) {
+  color: #edf7f4 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background-color: #12231e !important;
+  background-image: linear-gradient(145deg,#1b3129,#10201b) !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark :is(
+  .nx-generation-progress__hero::before,
+  .nx-generation-progress__toolbar::before,
+  .nx-progress-compact-main::before
+) {
+  background: transparent !important;
+}
+html.vox-user-dark :is(
+  .nx-progress-compact-spinner,
+  .nx-horizontal-stage--active .nx-spin,
+  .nx-generation-loading > .nx-spin,
+  .nx-spin
+) {
+  color: #8bded8 !important;
+  border-color: rgba(139,222,216,.30) !important;
+  filter: drop-shadow(0 0 12px rgba(139,222,216,.24));
+}
+html.vox-user-dark .nx-celebration-countdown__ring {
+  border-color: rgba(139,222,216,.24) !important;
+}
+html.vox-user-dark .nx-celebration-countdown__ring--middle {
+  border-color: rgba(230,174,185,.18) !important;
+}
+
+
+/* FINAL_CELEBRATION_DARK_SURFACE_FIX */
+html.vox-user-dark .nx-celebration,
+html.vox-user-dark .nx-celebration.is-counting,
+html.vox-user-dark .nx-celebration.is-revealed {
+  color:#edf7f4 !important;
+  background:rgba(5,15,12,.90) !important;
+  background-image:radial-gradient(circle at 20% 10%,rgba(112,205,198,.08),transparent 28%),radial-gradient(circle at 82% 88%,rgba(230,174,185,.06),transparent 30%) !important;
+}
+html.vox-user-dark .nx-celebration__result,
+html.vox-user-dark .nx-celebration--normal .nx-celebration__result,
+html.vox-user-dark .nx-celebration--premium .nx-celebration__result {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.22) !important;
+  background:linear-gradient(145deg,#1d342c,#12231d) !important;
+  box-shadow:0 30px 90px rgba(0,0,0,.42) !important;
+}
+html.vox-user-dark .nx-celebration__result h2 { color:#f3faf8 !important; }
+html.vox-user-dark .nx-celebration__result > p,
+html.vox-user-dark .nx-celebration-countdown > small { color:#b4c7c1 !important; }
+html.vox-user-dark .nx-celebration__icon,
+html.vox-user-dark .nx-celebration__eyebrow {
+  color:#9ee2dc !important;
+  border-color:rgba(112,205,198,.20) !important;
+  background:#20382f !important;
+}
+
+/* Final dark review + bilingual voice controls */
+.nx-voice-language-toggle {
+  flex: 0 0 auto;
+  min-width: 42px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid rgba(92, 189, 185, .20);
+  border-radius: 12px;
+  color: #2f7774;
+  background: #eef8f6;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.nx-voice-language-toggle:disabled { opacity: .55; cursor: not-allowed; }
+html.vox-user-dark .nx-refresh-toggle,
+html.vox-user-dark .nx-normal-generation-note,
+html.vox-user-dark .nx-normal-generation-note.is-premium {
+  color: #edf7f4 !important;
+  border-color: rgba(112,205,198,.20) !important;
+  background: linear-gradient(145deg,#1c322a,#14251f) !important;
+  background-image: linear-gradient(145deg,#1c322a,#14251f) !important;
+  box-shadow: 0 14px 34px rgba(0,0,0,.16) !important;
+}
+html.vox-user-dark .nx-refresh-toggle b,
+html.vox-user-dark .nx-normal-generation-note b { color: #f0f8f6 !important; }
+html.vox-user-dark .nx-refresh-toggle small,
+html.vox-user-dark .nx-normal-generation-note small { color: #aec1bb !important; }
+html.vox-user-dark .nx-voice-language-toggle {
+  color: #a7e6e0 !important;
+  border-color: rgba(112,205,198,.22) !important;
+  background: #20382f !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .nx-voice-language-toggle:hover:not(:disabled) { background: #29463b !important; }
+html.vox-user-rtl .nx-voice-language-toggle { direction:ltr; }
+
+/* ========================================================================== */
+/* FINAL_20260827_GENERATION_DARK_RTL_VOICE                                   */
+/* ========================================================================== */
+html.vox-user-dark .nx-panel--launch .nx-refresh-toggle,
+html.vox-user-dark .nx-panel--launch .nx-normal-generation-note,
+html.vox-user-dark .nx-panel--launch .nx-normal-generation-note.is-premium,
+html[data-vox-user-theme="dark"] .nx-panel--launch .nx-refresh-toggle,
+html[data-vox-user-theme="dark"] .nx-panel--launch .nx-normal-generation-note {
+  color: #edf7f4 !important;
+  border: 1px solid rgba(112,205,198,.18) !important;
+  background: #152a22 !important;
+  background-image: linear-gradient(145deg,#183027,#12241e) !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .nx-panel--launch .nx-refresh-toggle::before,
+html.vox-user-dark .nx-panel--launch .nx-normal-generation-note::before,
+html.vox-user-dark .nx-panel--launch .nx-refresh-toggle::after,
+html.vox-user-dark .nx-panel--launch .nx-normal-generation-note::after {
+  display: none !important;
+}
+html.vox-user-dark .nx-panel--launch .nx-refresh-toggle input {
+  background: transparent !important;
+}
+html.vox-user-dark .nx-panel--launch .nx-refresh-toggle b,
+html.vox-user-dark .nx-panel--launch .nx-normal-generation-note b {
+  color: #f0f8f6 !important;
+}
+html.vox-user-dark .nx-panel--launch .nx-refresh-toggle small,
+html.vox-user-dark .nx-panel--launch .nx-normal-generation-note small {
+  color: #abc0b9 !important;
+}
+
+/* User-entered content keeps its own direction. The placeholder follows the
+   localized example and begins at the true start of the input line. */
+.nx-speech-field textarea[dir="auto"] {
+  text-align: start !important;
+  unicode-bidi: plaintext;
+  padding-inline: 24px !important;
+}
+html.vox-user-rtl .nx-speech-field textarea[dir="auto"] {
+  text-align: start !important;
+}
+
+/* Keep the same physical control order as English. Arabic only changes the
+   copy direction inside each button. */
+html.vox-user-rtl .nx-speech-field__actions {
+  direction: ltr !important;
+  left: 20px !important;
+  right: auto !important;
+  justify-content: flex-start !important;
+}
+html.vox-user-rtl .nx-speech-field__actions > button {
+  direction: rtl !important;
+  flex-direction: row !important;
+}
+html.vox-user-rtl .nx-domain-shortcut svg:last-child {
+  transform: none !important;
+}
+.nx-voice-language-toggle { display: none !important; }
+
+@media (max-width: 760px) {
+  html.vox-user-rtl .nx-speech-field__actions {
+    left: 16px !important;
+    right: 16px !important;
+    direction: rtl !important;
+  }
+}
+
+
+/* FINAL_20260827_GENERATION_VOICE_RTL_GEOMETRY */
+.nx-speech-field textarea[dir="auto"] {
+  unicode-bidi: plaintext !important;
+  text-align: start !important;
+}
+html.vox-user-rtl .nx-speech-field textarea[dir="auto"]::placeholder {
+  direction: rtl !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .nx-speech-field__actions {
+  direction: ltr !important;
+  left: 20px !important;
+  right: 112px !important;
+  justify-content: flex-start !important;
+}
+html.vox-user-rtl .nx-speech-field__actions :is(.nx-voice-button,.nx-domain-shortcut) {
+  direction: rtl !important;
+  flex-direction: row !important;
+}
+html.vox-user-rtl .nx-domain-shortcut svg:last-child {
+  transform: rotate(180deg) !important;
+}
+@media (max-width:760px) {
+  html.vox-user-rtl .nx-speech-field__actions {
+    left: 16px !important;
+    right: 16px !important;
+  }
+}
+
+/* FINAL_20260827_GENERATION_DARK_GEOMETRY_V2 */
+html.vox-user-dark .nx-step-rail {
+  padding-inline: 24px !important;
+}
+
+.nx-step > i {
+  left: calc(50% + 54px) !important;
+  right: calc(-50% + 54px) !important;
+  width: auto !important;
+  height: 1px !important;
+  background: rgba(92, 189, 185, .22) !important;
+}
+
+html.vox-user-rtl .nx-step > i {
+  left: calc(-50% + 54px) !important;
+  right: calc(50% + 54px) !important;
+}
+
+html.vox-user-dark .nx-step {
+  color: #8ea49e !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-step > span {
+  color: #b7ccc6 !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+  background: #173028 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-step.is-complete > span {
+  color: #8bded8 !important;
+  border-color: rgba(112, 205, 198, .28) !important;
+  background: #1d3a31 !important;
+}
+
+html.vox-user-dark .nx-step.is-current > span {
+  color: #f5fbf9 !important;
+  border-color: rgba(139, 222, 216, .42) !important;
+  background: linear-gradient(145deg, #4da8a2, #377f7b) !important;
+  box-shadow: 0 0 0 5px rgba(77, 168, 162, .10), 0 8px 22px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark .nx-step.is-current,
+html.vox-user-dark .nx-step.is-complete {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-step.is-complete > i {
+  background: #4da8a2 !important;
+}
+
+html.vox-user-dark .nx-step-art__canvas {
+  background:
+    linear-gradient(rgba(112, 205, 198, .04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(112, 205, 198, .04) 1px, transparent 1px),
+    radial-gradient(circle at 82% 15%, rgba(112, 205, 198, .09), transparent 38%),
+    #10231d !important;
+  background-size: 22px 22px, 22px 22px, auto, auto !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .nx-step-art__chip {
+  color: #b9cdc7 !important;
+  border-color: rgba(112, 205, 198, .16) !important;
+  background: #183129 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-step-art__core {
+  background: linear-gradient(145deg, #4da8a2, #327a76) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .24), 0 0 0 6px rgba(77, 168, 162, .08) !important;
+}
+
+html.vox-user-dark .nx-step-art__node {
+  border-color: #173028 !important;
+}
+
+html.vox-user-dark .nx-step-art__wash--one {
+  background: rgba(77, 168, 162, .08) !important;
+}
+
+html.vox-user-dark .nx-step-art__wash--two {
+  background: rgba(217, 143, 160, .045) !important;
+}
+
+.nx-speech-field textarea[dir="auto"] {
+  unicode-bidi: plaintext !important;
+  text-align: start !important;
+}
+
+html.vox-user-rtl .nx-speech-field textarea[dir="auto"] {
+  text-align: start !important;
+}
+
+html.vox-user-rtl .nx-speech-field textarea[dir="auto"]::placeholder {
+  direction: rtl !important;
+  unicode-bidi: plaintext !important;
+  text-align: right !important;
+}
+
+@media (max-width: 760px) {
+  .nx-step > i {
+    display: none !important;
+  }
+}
+
+/* 2026-08-27 — description-first auto domain resolution lives on Signal step. */
+.nx-auto-detect-skip {
+  margin-top: 18px;
+}
+
+.nx-auto-detect-skip button {
+  width: 100%;
+  min-height: 84px;
+  padding: 17px 18px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid rgba(92, 189, 185, .18);
+  border-radius: 20px;
+  color: #41544f;
+  text-align: left;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(92, 189, 185, .10), transparent 34%),
+    linear-gradient(145deg, rgba(251,255,254,.96), rgba(246,251,249,.92));
+  box-shadow: 0 12px 30px rgba(52, 65, 63, .05);
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease, opacity .2s ease;
+}
+
+.nx-auto-detect-skip button > svg {
+  width: 42px;
+  height: 42px;
+  padding: 10px;
+  border-radius: 14px;
+  color: #2f8f89;
+  background: #e9f6f3;
+}
+
+.nx-auto-detect-skip button > div {
+  min-width: 0;
+}
+
+.nx-auto-detect-skip b,
+.nx-auto-detect-skip small {
+  display: block;
+}
+
+.nx-auto-detect-skip b {
+  color: #314d47;
+  font-size: 15px;
+}
+
+.nx-auto-detect-skip small {
+  margin-top: 4px;
+  color: #7c8c87;
+  line-height: 1.45;
+}
+
+.nx-auto-detect-skip.is-ready button {
+  border-color: rgba(63, 171, 163, .34);
+  background:
+    radial-gradient(circle at 94% 12%, rgba(92, 189, 185, .15), transparent 35%),
+    linear-gradient(145deg, rgba(242,251,248,.98), rgba(255,249,251,.96));
+  box-shadow: 0 14px 34px rgba(47, 119, 116, .075);
+}
+
+.nx-auto-detect-skip.is-ready button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(47, 143, 137, .50);
+  box-shadow: 0 18px 40px rgba(47, 119, 116, .11);
+}
+
+.nx-auto-detect-skip button:disabled,
+.nx-auto-detect-skip button:disabled:hover {
+  opacity: .46;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+html.vox-user-rtl .nx-auto-detect-skip button {
+  text-align: right;
+}
+
+html.vox-user-rtl .nx-auto-detect-skip button span svg {
+  transform: rotate(180deg);
+}
+
+html.vox-user-dark .nx-auto-detect-skip button {
+  color: #edf7f4 !important;
+  border-color: rgba(104, 200, 195, .18) !important;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(104, 200, 195, .09), transparent 35%),
+    linear-gradient(145deg, rgba(20, 35, 31, .96), rgba(17, 30, 27, .94)) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-auto-detect-skip.is-ready button {
+  border-color: rgba(104, 200, 195, .32) !important;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(104, 200, 195, .14), transparent 35%),
+    linear-gradient(145deg, rgba(23, 43, 38, .98), rgba(19, 35, 31, .96)) !important;
+}
+
+html.vox-user-dark .nx-auto-detect-skip button > svg {
+  color: #8edbd4 !important;
+  background: rgba(39, 76, 65, .82) !important;
+}
+
+html.vox-user-dark .nx-auto-detect-skip b {
+  color: #edf7f4 !important;
+}
+
+html.vox-user-dark .nx-auto-detect-skip small {
+  color: #a8bbb6 !important;
+}
+
+/* FINAL_20260828_PROGRESS_RTL_AND_DARK_POLISH */
+html.vox-user-rtl .nx-dashboard-return,
+html.vox-user-rtl .nx-generation-error-actions button,
+html.vox-user-rtl .nx-cancel-success__dialog button {
+  flex-direction: row-reverse;
+}
+
+html.vox-user-rtl .nx-stage-flow__arrow,
+html.vox-user-rtl .nx-dashboard-return > svg:first-child,
+html.vox-user-rtl .nx-generation-error-actions button > svg:first-child,
+html.vox-user-rtl .nx-cancel-success__dialog button > svg:last-child,
+html.vox-user-rtl .nx-horizontal-stage__state,
+html.vox-user-rtl .nx-pipeline-meta p,
+html.vox-user-rtl .nx-progress-compact-stage,
+html.vox-user-rtl .nx-progress-compact-kicker {
+  direction: rtl;
+}
+
+html.vox-user-rtl .nx-stage-flow__arrow,
+html.vox-user-rtl .nx-dashboard-return > svg:first-child,
+html.vox-user-rtl .nx-generation-error-actions button > svg:first-child {
+  transform: rotate(180deg);
+}
+
+html.vox-user-dark .nx-horizontal-stage__icon {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .nx-personalized-discovery button > svg,
+html.vox-user-dark .nx-auto-detect-skip button > svg,
+html.vox-user-dark .nx-voice-button > svg,
+html.vox-user-dark .nx-domain-shortcut > svg {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-progress-compact-live,
+html.vox-user-dark .nx-progress-compact-live i,
+html.vox-user-dark .nx-progress-compact-spinner {
+  background-color: rgba(31, 58, 49, .92) !important;
+}
+
+/* FINAL_20260828_GENERATION_PROGRESS_COMPLETE_FIXES */
+.nx-horizontal-pipeline[dir="rtl"] {
+  direction: rtl;
+}
+.nx-horizontal-pipeline[dir="ltr"] {
+  direction: ltr;
+}
+html.vox-user-rtl .nx-pipeline-stage-wrap {
+  direction: rtl;
+}
+html.vox-user-rtl .nx-stage-flow {
+  direction: ltr;
+}
+html.vox-user-rtl .nx-stage-flow__arrow {
+  left: -1px !important;
+  right: auto !important;
+  transform: none !important;
+  direction: ltr !important;
+}
+
+/* SVGs should never inherit dark surface fills; only their intended parent
+   tiles can own a background. This removes the black/rectangular slab under icons. */
+html.vox-user-dark .nx-horizontal-stage__icon > svg,
+html.vox-user-dark .nx-personalized-discovery button > svg,
+html.vox-user-dark .nx-auto-detect-skip button > svg,
+html.vox-user-dark .nx-voice-button > svg,
+html.vox-user-dark .nx-domain-shortcut > svg {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.nx-run-error--friendly {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid rgba(215, 132, 150, .22);
+  border-radius: 18px;
+  color: #71515a;
+  background: rgba(255, 249, 250, .92);
+  box-shadow: none;
+}
+.nx-run-error--friendly > svg { color: #c66f82; }
+.nx-run-error__copy { min-width: 0; }
+.nx-run-error__copy strong { display: block; color: #61454d; }
+.nx-run-error__copy p { margin: 4px 0 0; color: #846b72; line-height: 1.55; }
+.nx-run-error__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nx-run-error--friendly .nx-run-error__actions button {
+  min-height: 38px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 11px;
+  cursor: pointer;
+}
+.nx-run-error--friendly .nx-run-error__retry { color: #fff; background: #4da9a3; }
+.nx-run-error--friendly .nx-run-error__dashboard { color: #49625d; background: #edf5f2; }
+html.vox-user-rtl .nx-run-error--friendly { direction: rtl; }
+html.vox-user-dark .nx-run-error--friendly {
+  color: #e9d6dc !important;
+  border-color: rgba(225, 151, 169, .18) !important;
+  background: rgba(51, 31, 36, .52) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .nx-run-error__copy strong { color: #f4e8eb !important; }
+html.vox-user-dark .nx-run-error__copy p { color: #c9b5ba !important; }
+html.vox-user-dark .nx-run-error--friendly .nx-run-error__dashboard {
+  color: #d7e8e3 !important;
+  background: rgba(107, 178, 168, .10) !important;
+}
+@media (max-width: 760px) {
+  .nx-run-error--friendly { grid-template-columns: auto minmax(0, 1fr); }
+  .nx-run-error__actions { grid-column: 1 / -1; }
+}
+
+/* FINAL_20260828_PROGRESS_DIRECTION
+   Anchor the animated progress fill to the logical start edge. */
+html.vox-user-rtl .nx-progress-track {
+  direction: rtl;
+}
+html.vox-user-rtl .nx-progress-track span {
+  margin-inline-start: auto;
+  margin-inline-end: 0;
+}
+html.vox-user-ltr .nx-progress-track {
+  direction: ltr;
+}
+html.vox-user-ltr .nx-progress-track span {
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}

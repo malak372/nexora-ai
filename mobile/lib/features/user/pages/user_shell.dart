@@ -49,17 +49,19 @@ class _UserShellState extends State<UserShell> {
   bool _signingOut = false;
 
   final List<Widget?> _pages = List<Widget?>.filled(5, null);
+  String? _pendingGenerateProblem;
 
   Widget _createPage(int index) {
     return switch (index) {
       0 => DashboardPage(
-          onOpenGenerate: () => _setIndex(2),
+          onOpenGenerate: _openGenerate,
+          onOpenGenerateWithProblem: _openGenerateWithProblem,
           onOpenLibrary: () => _setIndex(3),
           onOpenDiscover: () => _setIndex(1),
         ),
       1 => const DiscoverPage(),
       2 => GenerateIdeaPage(
-          initialProblem: widget.initialGenerateProblem,
+          initialProblem: _pendingGenerateProblem,
           onGenerationStarted: _handleGenerationStarted,
           onExit: () => _setIndex(0),
         ),
@@ -106,6 +108,10 @@ class _UserShellState extends State<UserShell> {
   void initState() {
     super.initState();
     _index = widget.initialIndex.clamp(0, 4).toInt();
+    _pendingGenerateProblem = widget.initialGenerateProblem?.trim();
+    if (_pendingGenerateProblem?.isEmpty == true) {
+      _pendingGenerateProblem = null;
+    }
     _ensurePage(_index);
 
     _controller.addListener(_handleSessionChanged);
@@ -193,6 +199,26 @@ class _UserShellState extends State<UserShell> {
     } finally {
       _premiumCelebrationCheckRunning = false;
     }
+  }
+
+  void _openGenerate() {
+    _setIndex(2);
+  }
+
+  void _openGenerateWithProblem(String problem) {
+    final normalized = problem.trim();
+    if (normalized.isEmpty) {
+      _openGenerate();
+      return;
+    }
+
+    _pendingGenerateProblem = normalized;
+    _pages[2] = GenerateIdeaPage(
+      initialProblem: normalized,
+      onGenerationStarted: _handleGenerationStarted,
+      onExit: () => _setIndex(0),
+    );
+    _setIndex(2);
   }
 
   void _setIndex(int value) {

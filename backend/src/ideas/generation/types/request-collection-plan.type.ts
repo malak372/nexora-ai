@@ -27,6 +27,9 @@ export type RequestCollectionSourcePlan = {
   /** Domain lane that caused this source/query probe to run. Retrieval provenance only. */
   readonly discoveryDomainId?: string | null;
   readonly discoveryDomainName?: string | null;
+  /** Candidate discovery lanes covered by this source call. Same collector may serve multiple domains. */
+  readonly discoveryDomainIds?: readonly string[];
+  readonly discoveryDomainNames?: readonly string[];
   /** Stable query-intent identifier used to trace evidence back to its search decision. */
   readonly queryIntentId?: string | null;
   /** Source budget tier. Every admin-enabled collector may run, but low-fit sources remain micro probes. */
@@ -81,11 +84,30 @@ export type RequestCollectionPlan = {
   readonly domainSelectionMode?: RequestCollectionDomainSelectionMode;
 
   readonly suggestedDomainName: string | null;
+
+  /**
+   * Request-grounded semantic scopes that materially participate in the
+   * described workflow but are not promoted to configured domain rows.
+   *
+   * Example: a text-only Construction Management request may explicitly
+   * involve Insurance and Equipment Rental. Those concepts must remain
+   * available to retrieval, recovery, analytics, and prompt grounding even
+   * when they are not present in the admin domain catalog. They are retrieval
+   * facets only; they are never evidence and never create domain records.
+   */
+  readonly inferredSecondaryScopes?: readonly string[];
+
   readonly requestIntent?: RequestIntentInterpretation;
   readonly domainIdentity?: RequestCollectionDomainIdentity;
   readonly problemProfile?: RequestCanonicalProblemProfile;
   readonly existingDomainMatchScore?: number;
   readonly searchQueries: readonly string[];
+  /**
+   * AI-proposed practitioner/research terminology used only to improve recall.
+   * These phrases are retrieval vocabulary, never evidence and never a problem
+   * claim. Runtime queries anchor them back to the immutable requester scope.
+   */
+  readonly retrievalVocabulary?: readonly string[];
   readonly evidenceTargets: readonly string[];
   readonly intentConcepts: readonly string[];
   readonly sourceFocus: readonly RequestCollectionSourceFocus[];

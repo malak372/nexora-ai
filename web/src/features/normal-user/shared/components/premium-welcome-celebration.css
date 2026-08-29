@@ -472,3 +472,23 @@
         transition-duration: 0.01ms !important;
     }
 }
+
+
+/* FINAL_PREMIUM_WELCOME_DARK_RTL_POLISH */
+html.vox-user-dark .premium-welcome__backdrop { background:rgba(4,13,10,.78) !important; }
+html.vox-user-dark .premium-welcome__card {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.22) !important;
+  background:
+    radial-gradient(circle at 18% 12%,rgba(105,183,177,.12),transparent 28%),
+    radial-gradient(circle at 82% 90%,rgba(217,143,160,.08),transparent 30%),
+    linear-gradient(145deg,#1b3129,#12231d) !important;
+  box-shadow:0 34px 100px rgba(0,0,0,.48) !important;
+}
+html.vox-user-dark .premium-welcome__close { color:#a3ded8 !important; background:#20382f !important; border-color:rgba(112,205,198,.18) !important; }
+html.vox-user-dark .premium-welcome__title,
+html.vox-user-dark .premium-welcome__message { color:#eef8f5 !important; }
+html.vox-user-dark .premium-welcome__eyebrow { color:#93ddd7 !important; background:#20382f !important; border-color:rgba(112,205,198,.18) !important; }
+.premium-welcome__title.is-arabic { display:block !important; direction:rtl; text-align:center !important; letter-spacing:0 !important; }
+.premium-welcome__title-arabic { display:block; white-space:normal; font:inherit; }
+html.vox-user-rtl .premium-welcome__name bdi { direction:auto; unicode-bidi:plaintext; }

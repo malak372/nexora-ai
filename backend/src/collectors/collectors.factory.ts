@@ -8,6 +8,10 @@ import {
   type CollectorRequestSupportInput,
   SocialCollector,
 } from './base/collector.interface';
+import {
+  CollectorRequestCapabilityUtil,
+  type CollectorRequestCapability,
+} from './base/collector-request-capability.util';
 
 import { AppStoreCollector } from './app-store/app-store.collector';
 import { BlogCollector } from './blog/blog.collector';
@@ -137,10 +141,76 @@ export class CollectorsFactory {
     sourceKey: string,
     input: CollectorRequestSupportInput,
   ): boolean {
+    return this.getCollectorRequestCapability(sourceKey, input).supported;
+  }
+
+  /**
+   * Returns whether a collector can actually execute the route at runtime,
+   * without turning the heuristic request-fit score into a hard semantic veto.
+   *
+   * AI-owned retrieval plans and adaptive recovery use this method: the planner
+   * may deliberately choose a lower-scoring source because its corpus contains
+   * the terminology or evidence archetype missing from the first pass. Runtime
+   * availability and explicit collector-specific impossibility remain hard
+   * constraints; the generic score remains a ranking signal only.
+   */
+  isCollectorRouteExecutable(
+    sourceKey: string,
+    input: CollectorRequestSupportInput,
+  ): boolean {
     const normalizedKey = this.normalizeSourceKey(sourceKey);
     const collector = this.collectors.get(normalizedKey);
     if (!collector || !(collector.isRuntimeAvailable?.() ?? true)) return false;
-    return collector.supportsRequest?.(input) ?? true;
+
+    return collector.supportsRequest?.(input) !== false;
+  }
+
+  /**
+   * Returns a normalized request-fit score for source ranking. Missing
+   * supportsRequest() is intentionally NOT equivalent to universal support.
+   * The generic capability model becomes the safety contract, while an
+   * explicit collector hook can veto routes that the collector knows cannot
+   * execute for this request.
+   */
+  getCollectorRequestFitScore(
+    sourceKey: string,
+    input: CollectorRequestSupportInput,
+  ): number {
+    return this.getCollectorRequestCapability(sourceKey, input).score;
+  }
+
+  getCollectorRequestCapability(
+    sourceKey: string,
+    input: CollectorRequestSupportInput,
+  ): CollectorRequestCapability {
+    const normalizedKey = this.normalizeSourceKey(sourceKey);
+    const collector = this.collectors.get(normalizedKey);
+    if (!collector || !(collector.isRuntimeAvailable?.() ?? true)) {
+      return {
+        supported: false,
+        score: 0,
+        reason: 'Collector is not implemented or runtime-available.',
+      };
+    }
+
+    const generic = CollectorRequestCapabilityUtil.evaluate(normalizedKey, input);
+    const explicit = collector.supportsRequest?.(input);
+    if (explicit === false) {
+      return {
+        supported: false,
+        score: 0,
+        reason: 'Collector-specific request capability rejected this route.',
+      };
+    }
+
+    // An explicit true means the collector knows it has a concrete route, but
+    // the generic semantic capability still protects bounded generation from
+    // absurd corpus matches (for example SOAP web-services for handmade soap).
+    const threshold = explicit === true ? 0.34 : 0.42;
+    return {
+      ...generic,
+      supported: generic.score >= threshold,
+    };
   }
 
   getCollectorRuntimeUnavailableReason(sourceKey: string): string | null {

@@ -37,6 +37,8 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { getMyIdeas } from '../../ideas/api/userIdeasApi';
+import NormalPageHero from '../../shared/components/NormalPageHero';
+import { useUserExperience } from '../../../../system/user-experience';
 import {
   createComplaint,
   getComplaintById,
@@ -199,7 +201,7 @@ function CaseDetail({ complaint, loading }) {
       <header className="compliance-detail__header">
         <div>
           <span className="compliance-kicker">Secure case record</span>
-          <h2>{complaint.subject}</h2>
+          <h2 dir="auto" data-no-auto-translate="true">{complaint.subject}</h2>
         </div>
         <CaseStatus status={status} />
       </header>
@@ -288,8 +290,11 @@ function CaseDetail({ complaint, loading }) {
           <span>{complaint.adminReply ? 'Administration response' : 'Protected review'}</span>
           <h3>{complaint.adminReply ? 'The compliance team replied.' : statusMeta.description}</h3>
           <p>
-            {complaint.adminReply ||
-              'A response will appear in this secure record as soon as the review team posts an update.'}
+            {complaint.adminReply ? (
+              <span dir="auto" data-no-auto-translate="true">{complaint.adminReply}</span>
+            ) : (
+              'A response will appear in this secure record as soon as the review team posts an update.'
+            )}
           </p>
           {complaint.resolvedAt ? (
             <small>Finalized {formatDateTime(complaint.resolvedAt)}</small>
@@ -437,6 +442,7 @@ const revealVariants = {
 
 export default function CompliancePage() {
   const shouldReduceMotion = useReducedMotion();
+  const { t } = useUserExperience();
   const [form, setForm] = useState(EMPTY_FORM);
   const [ideas, setIdeas] = useState([]);
   const [items, setItems] = useState([]);
@@ -585,69 +591,23 @@ export default function CompliancePage() {
 
   return (
     <main className="compliance-page reveal-page">
-      <motion.section className="compliance-hero compliance-hero--soft" {...revealProps}>
-        <div className="compliance-hero__wash" aria-hidden="true" />
-        <div className="compliance-hero__grain" aria-hidden="true" />
-
-        <div className="compliance-hero__content">
-          <span className="compliance-eyebrow">
-            <ShieldCheck size={15} /> Trust &amp; resolution
-          </span>
-
-          <h1>
-            A calmer place to
-            <span>raise a concern.</span>
-          </h1>
-
-          <p>
-            Submit a private case, follow every review step, and receive a clear
-            administration response in one protected workspace.
-          </p>
-
-          <div className="compliance-hero__actions">
-            <button type="button" onClick={() => setModalOpen(true)}>
-              <Plus size={17} /> New case
-            </button>
-            <div className="compliance-hero__signal">
-              <span aria-hidden="true" /> Secure review channel
-            </div>
-          </div>
-        </div>
-
-        <div className="compliance-hero__story" aria-label="Complaint review journey">
-          <div className="compliance-story__glow" aria-hidden="true" />
-
-          <div className="compliance-story__header">
-            <span>Case journey</span>
-            <small>Private · Traceable · Human reviewed</small>
-          </div>
-
-          <div className="compliance-story__rail">
-            <span className="compliance-story__line" aria-hidden="true" />
-            {[
-              [Inbox, 'Submit', 'Your concern enters a protected queue.'],
-              [Activity, 'Review', 'A reviewer checks the case and its context.'],
-              [MessageSquareReply, 'Response', 'The decision and reply stay in your record.'],
-            ].map(([Icon, title, text], index) => (
-              <article key={title} style={{ '--story-index': index }}>
-                <i><Icon size={18} /></i>
-                <div>
-                  <strong>{title}</strong>
-                  <p>{text}</p>
-                </div>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-              </article>
-            ))}
-          </div>
-
-          <div className="compliance-story__stats">
-            <div><strong>{stats.total}</strong><span>All cases</span></div>
-            <div><strong>{stats.live}</strong><span>In review</span></div>
-            <div><strong>{stats.resolved}</strong><span>Resolved</span></div>
-            <div><strong>{stats.replies}</strong><span>Replies</span></div>
-          </div>
-        </div>
-      </motion.section>
+      <NormalPageHero
+        variant="compliance"
+        eyebrow={t('Trust and resolution')}
+        title={t('Raise a concern in a protected review space.')}
+        description={t('Submit a private case, follow every review step, and receive a clear administration response in one protected workspace.')}
+        chips={[t('Private intake'), t('Traceable review'), t('Human response')]}
+        stats={[
+          { label: t('In review'), value: stats.live },
+          { label: t('Resolved'), value: stats.resolved },
+        ]}
+        actions={(
+          <button type="button" className="compliance-hero-launch" onClick={() => setModalOpen(true)}>
+            <Plus size={17} /> {t('New case')}
+          </button>
+        )}
+        compact
+      />
 
       <motion.section className="compliance-principles" {...revealProps}>
         <div className="compliance-principles__intro">
@@ -769,8 +729,8 @@ export default function CompliancePage() {
                     <CaseStatus status={complaint.status} compact />
                     <span>{formatDate(complaint.updatedAt || complaint.createdAt)}</span>
                   </div>
-                  <strong>{complaint.subject}</strong>
-                  <p>{shorten(complaint.message)}</p>
+                  <strong dir="auto" data-no-auto-translate="true">{complaint.subject}</strong>
+                  <p dir="auto" data-no-auto-translate="true">{shorten(complaint.message)}</p>
                   <div className="compliance-case-card__footer">
                     <span className={`priority-${getPriority(complaint.priority).toLowerCase()}`}>
                       {getPriority(complaint.priority)} priority

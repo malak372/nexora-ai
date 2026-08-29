@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -54,6 +55,7 @@ import { DomainResolutionService } from './domain-resolution.service';
 import { RequestCollectionPlanningService } from './request-collection-planning.service';
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { LanguageDetectionService } from '../../../nlp/language-detection/language-detection.service';
 import { createHash, randomUUID } from 'node:crypto';
 
 /**
@@ -149,6 +151,9 @@ type ExecuteOwnedIdeaGenerationInput = {
   /** Explicit caller-selected domains preserved until the in-pipeline PREPARING stage resolves semantic scope. */
   requestedDomainIds: string[];
 
+  /** Ordered UI assertions paired with requestedDomainIds for UUID->name verification. */
+  requestedDomainNames: string[];
+
   collectionPlan: RequestCollectionPlan | null;
 
   /**
@@ -166,7 +171,7 @@ type ExecuteOwnedIdeaGenerationInput = {
    */
   location: IdeaGenerationLocation;
 
-  /** Frontend-selected language for every human-readable generated idea value. */
+  /** Request-content-resolved language for every human-readable generated idea value. */
   outputLanguage: LanguageCode;
 
   /**
@@ -240,6 +245,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     private readonly domainResolutionService: DomainResolutionService,
 
     private readonly requestCollectionPlanningService: RequestCollectionPlanningService,
+
+    private readonly languageDetectionService: LanguageDetectionService,
 
     private readonly prisma: PrismaService,
 
@@ -350,11 +357,12 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestFingerprint:
         context.requestFingerprint ?? this.buildRecoveredRequestFingerprint(context),
       requestedDomainIds: context.requestedDomainIds ?? [],
+      requestedDomainNames: context.requestedDomainNames ?? [],
       collectionPlan: context.collectionPlan ?? null,
       keywords: context.keywords,
       requestedDataSourceKeys: context.requestedDataSourceKeys,
       location: context.location,
-      outputLanguage: this.resolveOutputLanguage(context.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(context.outputLanguage, context.requestDescription),
       forceRefresh: context.forceRefresh,
     };
 
@@ -433,6 +441,15 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     readonly selectedDomains: SelectedGenerationDomain[];
     readonly keywords: string[];
   }> {
+    if (
+      dto.domainId?.trim() &&
+      (dto.domainIds?.length ?? 0) > 0 &&
+      dto.domainIds?.[0]?.trim() !== dto.domainId.trim()
+    ) {
+      throw new BadRequestException(
+        'domainId must match the first domainIds entry when both are supplied.',
+      );
+    }
     const explicitRequestedIds = [
       ...new Set(
         (dto.domainIds && dto.domainIds.length > 0
@@ -468,10 +485,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         : [];
 
     const maximumDomainConstraints = hasCurrentIntent ? 4 : 3;
-    const inferredCapacity = Math.max(
-      0,
-      maximumDomainConstraints - explicitRequestedIds.length,
-    );
+    const hasExplicitDomainSelection = explicitRequestedIds.length > 0;
+    const inferredCapacity = hasExplicitDomainSelection
+      ? 0
+      : maximumDomainConstraints;
     const inferredIds = [
       ...new Set([
         resolvedDomain.domainId,
@@ -479,18 +496,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         ...autoPersonalizationDomainIds,
       ].filter((id) => Boolean(id) && !explicitRequestedIds.includes(id))),
     ].slice(0, inferredCapacity);
-    const requestedIds = hasCurrentIntent
-      ? [
-          ...new Set([
-            resolvedDomain.domainId,
-            ...explicitRequestedIds,
-            ...inferredIds,
-          ]),
-        ].slice(0, maximumDomainConstraints)
-      : [...explicitRequestedIds, ...inferredIds].slice(
-          0,
-          maximumDomainConstraints,
-        );
+    /*
+     * Explicit domain selection is immutable request input. Previous behavior
+     * prepended the auto-resolved domain even when domainIds were supplied,
+     * which could silently replace/add a scope that the user never selected.
+     * Auto inference is now used only
+     * when the request contains no explicit domain id at all.
+     */
+    const requestedIds = hasExplicitDomainSelection
+      ? explicitRequestedIds.slice(0, maximumDomainConstraints)
+      : inferredIds.slice(0, maximumDomainConstraints);
 
     const domains = await this.prisma.domain.findMany({
       where: { id: { in: requestedIds }, isActive: true },
@@ -589,9 +604,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         ]
       : [];
     const userKeywords = this.normalizeStringArray(dto.keywords).slice(0, 8);
-    const bridgeKeyword = selectedDomains.length > 1
-      ? `coherent cross-domain workflow combining ${selectedDomains.map((domain) => domain.name).join(' and ')}`
-      : selectedDomains[0].name;
+    const selectedScopeKeyword = selectedDomains[0].name;
 
     /*
      * Build the collection keyword budget in round-robin order. A simple
@@ -621,7 +634,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         ...plannedCollectionKeywords,
         ...requestIntentKeywords,
         ...userKeywords,
-        bridgeKeyword,
+        selectedScopeKeyword,
         ...balancedDomainKeywords,
       ])].slice(0, 60),
     };
@@ -1109,13 +1122,14 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       generationType,
       description: this.normalizeOptionalValue(dto.description) ?? '',
       domainIds: this.normalizeExplicitDomainIds(dto.domainIds, dto.domainId),
+      domainNames: this.normalizeStringArray(dto.domainNames),
       keywords: this.normalizeStringArray(dto.keywords),
       country: this.normalizeRequiredValue(dto.country, 'Country'),
       city: this.normalizeOptionalValue(dto.city) ?? '',
       region: this.normalizeOptionalValue(dto.region) ?? '',
       radiusKm: dto.radiusKm ?? null,
       language: dto.language,
-      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage, dto.description),
       forceRefresh: dto.forceRefresh === true,
     });
   }
@@ -1131,7 +1145,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       region: this.normalizeOptionalValue(dto.region) ?? '',
       radiusKm: dto.radiusKm ?? null,
       language: dto.language,
-      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage, dto.description),
       forceRefresh: dto.forceRefresh === true,
     });
   }
@@ -1146,21 +1160,94 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         .filter((domain) => domain.isExplicitlySelected)
         .map((domain) => domain.id)
         .sort(),
+      domainNames: context.requestedDomainNames ?? [],
       keywords: this.normalizeStringArray(context.keywords),
       country: context.location.country,
       city: context.location.city ?? '',
       region: context.location.region ?? '',
       radiusKm: context.location.radiusKm,
       language: context.location.language,
-      outputLanguage: this.resolveOutputLanguage(context.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(context.outputLanguage, context.requestDescription),
       forceRefresh: context.forceRefresh === true,
     });
   }
 
   private resolveOutputLanguage(
-    value: LanguageCode | null | undefined,
+    _value: LanguageCode | null | undefined,
+    description?: string | null,
   ): LanguageCode {
-    return value && value !== LanguageCode.ANY ? value : LanguageCode.EN;
+    const text = description?.normalize('NFKC').replace(/\s+/gu, ' ').trim() ?? '';
+    if (!text) {
+      return LanguageCode.EN;
+    }
+
+    const detected = this.languageDetectionService.detect(text);
+    if (
+      detected.language === LanguageCode.AR &&
+      detected.confidence >= 0.35
+    ) {
+      return LanguageCode.AR;
+    }
+
+    const arabicLetters = (text.match(/[\u0600-\u06FF]/gu) ?? []).length;
+    const latinLetters = (text.match(/[A-Za-zÀ-ÖØ-öø-ÿĞğİıŞşÇç]/gu) ?? []).length;
+
+    if (arabicLetters >= 3 && arabicLetters >= latinLetters) {
+      return LanguageCode.AR;
+    }
+
+    return LanguageCode.EN;
+  }
+
+  private resolveRequestedDomainNameAssertions(
+    dto: GenerateIdeaDto,
+    requestedDomainIds: readonly string[],
+  ): string[] {
+    /*
+     * UUIDs alone cannot prove which labels the user actually selected. Modern
+     * multi-domain requests therefore echo the ordered UI names; PREPARING
+     * resolves the authoritative DB rows and compares id/name pairs before any
+     * collection starts. Legacy single-domain `domainId` calls stay compatible.
+     */
+    if (!dto.domainIds || dto.domainIds.length === 0) {
+      return [];
+    }
+
+    const assertedNames = Array.isArray(dto.domainNames)
+      ? dto.domainNames.map((name) =>
+          typeof name === 'string' ? name.replace(/\s+/gu, ' ').trim() : '',
+        )
+      : [];
+
+    /*
+     * `domainNames` is an assertion channel, not the source of truth. Older
+     * web/mobile clients only send UUIDs, so rejecting the request when the
+     * assertion is absent turns this safety check into a breaking API change.
+     * PREPARING still resolves every UUID from the authoritative domain table.
+     * When a modern client supplies names, the strict ordered id/name check is
+     * preserved and any mismatch is rejected before collection starts.
+     */
+    if (assertedNames.length === 0) {
+      this.logger.warn(
+        `[DOMAIN ASSERTION] No domainNames supplied for ${requestedDomainIds.length} explicit domain id(s); continuing in compatibility mode with authoritative backend UUID resolution.`,
+      );
+      return [];
+    }
+
+    if (
+      assertedNames.length !== requestedDomainIds.length ||
+      assertedNames.some((name) => !name)
+    ) {
+      throw new BadRequestException({
+        code: 'DOMAIN_SELECTION_ASSERTION_LENGTH_MISMATCH',
+        message:
+          'When domainNames are supplied, they must match domainIds in the same order and length.',
+        requestedDomainIds: [...requestedDomainIds],
+        requestedDomainNames: assertedNames,
+      });
+    }
+
+    return assertedNames;
   }
 
   private normalizeExplicitDomainIds(
@@ -1172,7 +1259,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         .filter((value): value is string => typeof value === 'string')
         .map((value) => value.trim())
         .filter(Boolean),
-    )].sort();
+    )];
   }
 
   private hashRequestFingerprint(value: Record<string, unknown>): string {
@@ -1368,6 +1455,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       input.dto.domainIds,
       input.dto.domainId,
     );
+    const requestedDomainNames = this.resolveRequestedDomainNameAssertions(
+      input.dto,
+      requestedDomainIds,
+    );
     const owner: IdeaOwner = { type: IDEA_OWNER_TYPES.USER, userId };
     const requestFingerprint = this.buildRegisteredRequestFingerprint(
       input.dto,
@@ -1383,6 +1474,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestDescription: this.normalizeOptionalValue(input.dto.description),
       requestFingerprint,
       requestedDomainIds,
+      requestedDomainNames,
       collectionPlan: null,
       keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
@@ -1394,7 +1486,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
-      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage, input.dto.description),
     });
   }
 
@@ -1442,6 +1534,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestDescription: this.normalizeOptionalValue(input.dto.description),
       requestFingerprint: this.buildGuestRequestFingerprint(input.dto),
       requestedDomainIds,
+      requestedDomainNames: [],
       collectionPlan: null,
       keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
@@ -1453,7 +1546,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
-      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage, input.dto.description),
     });
   }
 
@@ -1485,6 +1578,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       input.dto.domainIds,
       input.dto.domainId,
     );
+    const requestedDomainNames = this.resolveRequestedDomainNameAssertions(
+      input.dto,
+      requestedDomainIds,
+    );
 
     return this.queueOwnedGeneration({
       owner: { type: IDEA_OWNER_TYPES.USER, userId },
@@ -1495,6 +1592,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestDescription: this.normalizeOptionalValue(input.dto.description),
       requestFingerprint,
       requestedDomainIds,
+      requestedDomainNames,
       collectionPlan: null,
       keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
@@ -1506,7 +1604,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
-      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage, input.dto.description),
     });
   }
 
@@ -1543,6 +1641,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestDescription: this.normalizeOptionalValue(input.dto.description),
       requestFingerprint,
       requestedDomainIds,
+      requestedDomainNames: [],
       collectionPlan: null,
       keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
@@ -1554,7 +1653,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
-      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage, input.dto.description),
     });
   }
 
@@ -1839,6 +1938,8 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
 
       requestedDomainIds: input.requestedDomainIds,
 
+      requestedDomainNames: input.requestedDomainNames,
+
       collectionPlan: input.collectionPlan,
 
       keywords: input.keywords,
@@ -2009,12 +2110,15 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestedDomainIds: this.normalizeRecoveredStringArray(
         checkpoint.requestedDomainIds ?? [],
       ),
+      requestedDomainNames: this.normalizeRecoveredStringArray(
+        checkpoint.requestedDomainNames ?? [],
+      ),
       collectionPlan: checkpoint.collectionPlan ?? null,
       keywords: this.normalizeRecoveredStringArray(checkpoint.keywords),
       requestedDataSourceKeys: this.normalizeRecoveredStringArray(
         checkpoint.requestedDataSourceKeys,
       ),
-      outputLanguage: this.resolveOutputLanguage(checkpoint.outputLanguage),
+      outputLanguage: this.resolveOutputLanguage(checkpoint.outputLanguage, checkpoint.requestDescription),
       forceRefresh: checkpoint.forceRefresh === true,
       policy: checkpoint.policy ?? null,
       selectedDataSources: Array.isArray(checkpoint.selectedDataSources)

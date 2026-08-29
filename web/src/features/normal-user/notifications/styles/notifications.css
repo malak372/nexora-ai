@@ -2251,3 +2251,384 @@
     animation: none;
   }
 }
+
+
+/* FINAL_NOTIFICATIONS_DARK_RTL_POLISH */
+html.vox-user-dark :is(
+  .notifications-command,
+  .notifications-command__summary,
+  .notifications-command__filters,
+  .notifications-panel-actions,
+  .notifications-panel,
+  .notifications-panel__heading,
+  .notifications-list,
+  .notification-row
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.17) !important;
+  background:#162821 !important;
+  background-image:none !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .notifications-panel__heading {
+  background:linear-gradient(90deg,#1c332b,#172a24) !important;
+}
+html.vox-user-dark :is(.notification-row__content>strong,.notifications-panel h2) { color:#eef8f5 !important; }
+html.vox-user-dark :is(.notification-row__message,.notification-row__content small,.notification-row__time) { color:#aebfba !important; }
+html.vox-user-dark .notification-row__open {
+  color:#9fddd7 !important;
+  border:1px solid rgba(112,205,198,.16) !important;
+  background:#20382f !important;
+}
+html.vox-user-dark .notification-detail,
+html.vox-user-dark .notification-detail__topbar,
+html.vox-user-dark .notification-detail__content,
+html.vox-user-dark .notification-detail__letter,
+html.vox-user-dark .notification-detail__letter-head,
+html.vox-user-dark .notification-detail__actions {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.17) !important;
+  background:#162821 !important;
+  background-image:none !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .notification-detail__close,
+html.vox-user-dark .notification-detail__icon,
+html.vox-user-dark .notification-detail__letter-head>span {
+  color:#9fddd7 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#20382f !important;
+}
+html.vox-user-dark :is(.notification-detail__content h2,.notification-detail__letter-head strong) { color:#eef8f5 !important; }
+html.vox-user-dark :is(.notification-detail__letter>p,.notification-detail__date,.notification-detail__actions span,.notification-detail__actions small) { color:#afc1bb !important; }
+html.vox-user-rtl .notifications-page { direction:rtl; }
+html.vox-user-rtl .notification-row {
+  grid-template-columns: 52px minmax(0,1fr) auto !important;
+  text-align:right !important;
+}
+html.vox-user-rtl .notification-row__content { text-align:right !important; }
+html.vox-user-rtl .notification-row__end { justify-content:flex-start !important; min-width:112px; }
+html.vox-user-rtl .notification-row__open { flex-direction:row-reverse; }
+html.vox-user-rtl .notification-row__open svg { transform:rotate(180deg); }
+html.vox-user-rtl .notification-detail__close { right:auto !important; left:18px !important; }
+html.vox-user-rtl .notification-detail__topbar { padding-right:20px !important; padding-left:66px !important; }
+
+
+/* FINAL_NOTIFICATIONS_RTL_EDGE_FIX */
+html.vox-user-rtl .notification-row {
+  grid-template-columns: 4px 44px minmax(0, 1fr) auto !important;
+  gap: 13px !important;
+  padding-inline: 20px !important;
+}
+html.vox-user-rtl .notification-row__end {
+  min-width: 0 !important;
+  margin-inline-start: 6px;
+  justify-content: flex-start !important;
+}
+html.vox-user-rtl .notification-row__open {
+  min-width: 0 !important;
+  white-space: nowrap;
+}
+html.vox-user-dark .notification-detail__letter-foot,
+html.vox-user-dark .notification-detail__actions .is-secondary {
+  color: #dbeae6 !important;
+  border-color: rgba(112,205,198,.16) !important;
+  background: #1b3029 !important;
+}
+html.vox-user-dark .notification-detail__close:hover {
+  color: #f0b8c4 !important;
+  border-color: rgba(230,174,185,.24) !important;
+  background: #35252b !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-shell {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-command {
+  border: 1px solid rgba(116, 205, 197, .17) !important;
+  border-radius: 28px !important;
+  background:
+    radial-gradient(circle at 86% 8%, rgba(98, 192, 184, .13), transparent 31%),
+    radial-gradient(circle at 8% 110%, rgba(218, 139, 160, .09), transparent 35%),
+    linear-gradient(135deg, #162b24 0%, #12241e 58%, #182a25 100%) !important;
+  box-shadow: 0 22px 58px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-command__icon {
+  border-color: rgba(116, 205, 197, .20) !important;
+  background: linear-gradient(145deg, #1f3b32, #173027) !important;
+  color: #91ded8 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-command__summary {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-command__summary article {
+  border: 1px solid rgba(116, 205, 197, .17) !important;
+  border-radius: 19px !important;
+  background: rgba(28, 56, 47, .82) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-toolbar,
+html.vox-user-dark body .notifications-page .notifications-toolbar::before,
+html.vox-user-dark body .notifications-page .notifications-toolbar::after {
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters {
+  padding: 4px !important;
+  border: 1px solid rgba(116, 205, 197, .14) !important;
+  border-radius: 15px !important;
+  background: rgba(18, 39, 32, .78) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-filters button,
+html.vox-user-dark body .notifications-page .notifications-read-filters button {
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: #aebfb9 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-filters button:hover,
+html.vox-user-dark body .notifications-page .notifications-filters button.is-active,
+html.vox-user-dark body .notifications-page .notifications-read-filters button:hover,
+html.vox-user-dark body .notifications-page .notifications-read-filters button.is-active {
+  background: #28483e !important;
+  color: #f1faf7 !important;
+  box-shadow: inset 0 0 0 1px rgba(116, 205, 197, .14) !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-toolbar__result {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #93aaa3 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-panel-actions {
+  border: 1px solid rgba(116, 205, 197, .15) !important;
+  border-radius: 20px !important;
+  background: linear-gradient(135deg, rgba(26, 52, 43, .88), rgba(20, 41, 34, .92)) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-panel {
+  overflow: hidden;
+  border: 1px solid rgba(116, 205, 197, .15) !important;
+  border-radius: 30px !important;
+  background: #13261f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-panel__heading {
+  border: 0 !important;
+  border-bottom: 1px solid rgba(116, 205, 197, .10) !important;
+  background: linear-gradient(90deg, #193128, #14271f) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-list {
+  border: 0 !important;
+  background: #13261f !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notification-row {
+  border: 0 !important;
+  border-bottom: 1px solid rgba(116, 205, 197, .09) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notification-row:hover,
+html.vox-user-dark body .notifications-page .notification-row.is-unread {
+  background: rgba(116, 205, 197, .045) !important;
+}
+
+
+/* FINAL_20260828_NOTIFICATIONS_INTEGRATED_FILTER_STRIP
+   Category/read filters and result count float directly on the page canvas. */
+html.vox-user-dark body .notifications-page .notifications-toolbar,
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters,
+html.vox-user-dark body .notifications-page .notifications-toolbar__result {
+  border: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters {
+  padding: 0 !important;
+  gap: 7px !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-toolbar__result {
+  padding-inline: 3px !important;
+}
+
+/* FINAL_20260828_DARK_NOTIFICATION_FILTER_SURFACE_REMOVAL */
+html.vox-user-dark body .notifications-page .notifications-toolbar,
+html.vox-user-dark body .notifications-page .notifications-toolbar::before,
+html.vox-user-dark body .notifications-page .notifications-toolbar::after,
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-filters::before,
+html.vox-user-dark body .notifications-page .notifications-filters::after,
+html.vox-user-dark body .notifications-page .notifications-read-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters::before,
+html.vox-user-dark body .notifications-page .notifications-read-filters::after,
+html.vox-user-dark body .notifications-page .notifications-toolbar__result {
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters {
+  padding: 0 !important;
+}
+
+/* FINAL_20260828_NOTIFICATION_TOOLBAR_NO_DARK_SLAB */
+html.vox-user-dark body .notifications-page .notifications-toolbar,
+html.vox-user-dark body .notifications-page .notifications-toolbar > *,
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters,
+html.vox-user-dark body .notifications-page .notifications-toolbar__result {
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html.vox-user-dark body .notifications-page .notifications-toolbar {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+}
+html.vox-user-dark body .notifications-page .notifications-toolbar::before,
+html.vox-user-dark body .notifications-page .notifications-toolbar::after,
+html.vox-user-dark body .notifications-page .notifications-filters::before,
+html.vox-user-dark body .notifications-page .notifications-filters::after,
+html.vox-user-dark body .notifications-page .notifications-read-filters::before,
+html.vox-user-dark body .notifications-page .notifications-read-filters::after {
+  content: none !important;
+  display: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* FINAL_20260828_NOTIFICATIONS_FILTER_SURFACE_FIX
+   Filters float on the page canvas in dark mode; only the individual filter
+   buttons keep their own selected/hover treatment. */
+html.vox-user-dark body .notifications-page .notifications-toolbar {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+html.vox-user-dark body .notifications-page .notifications-toolbar::before,
+html.vox-user-dark body .notifications-page .notifications-toolbar::after,
+html.vox-user-dark body .notifications-page .notifications-filters::before,
+html.vox-user-dark body .notifications-page .notifications-filters::after,
+html.vox-user-dark body .notifications-page .notifications-read-filters::before,
+html.vox-user-dark body .notifications-page .notifications-read-filters::after {
+  content: none !important;
+  display: none !important;
+}
+
+
+
+/* FINAL_20260828_NOTIFICATIONS_DARK_FILTER_CANVAS
+   Match the light layout: the complete filter row floats on the page while
+   only each individual pill carries its own dark-mode surface. */
+html.vox-user-dark body .notifications-page .notifications-toolbar,
+html.vox-user-dark body .notifications-page .notifications-toolbar::before,
+html.vox-user-dark body .notifications-page .notifications-toolbar::after,
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-filters::before,
+html.vox-user-dark body .notifications-page .notifications-filters::after,
+html.vox-user-dark body .notifications-page .notifications-read-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters::before,
+html.vox-user-dark body .notifications-page .notifications-read-filters::after,
+html.vox-user-dark body .notifications-page .notifications-toolbar__result {
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-toolbar::before,
+html.vox-user-dark body .notifications-page .notifications-toolbar::after,
+html.vox-user-dark body .notifications-page .notifications-filters::before,
+html.vox-user-dark body .notifications-page .notifications-filters::after,
+html.vox-user-dark body .notifications-page .notifications-read-filters::before,
+html.vox-user-dark body .notifications-page .notifications-read-filters::after {
+  content: none !important;
+  display: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-toolbar {
+  padding: 0 !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-filters,
+html.vox-user-dark body .notifications-page .notifications-read-filters {
+  padding: 0 !important;
+  gap: 7px !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-filters button,
+html.vox-user-dark body .notifications-page .notifications-read-filters button {
+  border: 1px solid rgba(116, 205, 197, .14) !important;
+  border-radius: 11px !important;
+  background: #132820 !important;
+  color: #c9dad4 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .notifications-page .notifications-filters button:hover,
+html.vox-user-dark body .notifications-page .notifications-filters button.is-active,
+html.vox-user-dark body .notifications-page .notifications-read-filters button:hover,
+html.vox-user-dark body .notifications-page .notifications-read-filters button.is-active {
+  border-color: rgba(116, 205, 197, .34) !important;
+  background: #214238 !important;
+  color: #f3fbf8 !important;
+  box-shadow: none !important;
+}

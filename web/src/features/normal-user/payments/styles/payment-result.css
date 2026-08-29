@@ -227,3 +227,38 @@
     transition-duration: .01ms !important;
   }
 }
+
+
+/* FINAL_PAYMENT_RESULT_DARK_POLISH */
+html.vox-user-dark .payment-result-page { background:#0b1512 !important; }
+html.vox-user-dark :is(.payment-result-pop,.payment-result-facts,.payment-result-facts>article) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .payment-result-icon { color:#8edbd4 !important; background:#20382f !important; }
+html.vox-user-rtl .payment-result-page { direction:rtl; }
+
+
+/* FINAL_PAYMENT_RESULT_CHILD_DARK_FIX */
+html.vox-user-dark .payment-result-pop {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.20) !important;
+  background:linear-gradient(145deg,#1b3129,#12231d) !important;
+  box-shadow:0 32px 90px rgba(0,0,0,.44) !important;
+}
+html.vox-user-dark .payment-result-pop > span,
+html.vox-user-dark .payment-result-facts b {
+  color:#dcebe7 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#20382f !important;
+}
+html.vox-user-dark .payment-result-pop h1 { color:#eef8f5 !important; }
+html.vox-user-dark .payment-result-pop p { color:#aec1bb !important; }
+html.vox-user-dark .payment-result-pop.is-error > span {
+  color:#f0b8c4 !important;
+  border-color:rgba(230,174,185,.22) !important;
+  background:#35252b !important;
+}

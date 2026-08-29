@@ -67,14 +67,15 @@ export class IdeaGenerationModelSelectorService {
 
     const availableModels = await availableModelsPromise;
 
-    const availableModelIds = new Set(availableModels.map((model) => model.id));
-    const temporarilyCooledModels = eligibleModels.filter(
-      (model) => !availableModelIds.has(model.id),
-    );
-    const recoveryPool = [...availableModels, ...temporarilyCooledModels];
-    const temporarilyCooledModelIds = new Set(
-      temporarilyCooledModels.map((model) => model.id),
-    );
+    /*
+     * Respect routing health as an eligibility boundary, not just as a sort
+     * hint. The previous implementation appended quota-blocked, repeatedly
+     * timing-out, and MODEL_NOT_FOUND rows back onto the end of the benchmark
+     * pool. That defeated provider cooldown and caused known-bad models to
+     * consume benchmark slots. A later successful/healthy routing snapshot
+     * automatically makes the model eligible again on a future run.
+     */
+    const recoveryPool = [...availableModels];
 
     if (recoveryPool.length <= 1) {
       void recentUsagePromise.catch(() => undefined);
@@ -178,10 +179,7 @@ export class IdeaGenerationModelSelectorService {
       }
     }
 
-    const deprioritizedModelIds = new Set([
-      ...temporarilyCooledModelIds,
-      ...cooledModelIds,
-    ]);
+    const deprioritizedModelIds = new Set([...cooledModelIds]);
 
     return [
       ...ordered.filter((model) => !deprioritizedModelIds.has(model.id)),
@@ -193,8 +191,9 @@ export class IdeaGenerationModelSelectorService {
    * Returns the provider-diverse initial benchmark group.
    *
    * The fast path starts up to two provider-diverse candidates. Additional
-   * routable models, including temporarily cooled models, remain available for
-   * bounded fallback when the first wave cannot produce a usable candidate.
+   * currently routable models remain available for bounded fallback when the
+   * first wave cannot produce a usable candidate. Models removed by routing
+   * health/cooldown are not reintroduced by the benchmark selector.
    */
   getInitialModels(orderedModels: readonly AiModel[]): AiModel[] {
     return orderedModels.slice(0, IDEA_BENCHMARK_INITIAL_MODEL_COUNT);

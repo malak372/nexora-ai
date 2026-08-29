@@ -343,6 +343,17 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       if (!domains.includes(normalized)) domains.push(normalized);
     };
 
+    const aiOwnedGenerationPlan = (input.plannedQueries ?? []).some((query) => query.trim().length > 0);
+    if (aiOwnedGenerationPlan) {
+      for (const hint of input.sourceHints ?? []) {
+        const urlMatch = hint.match(/https?:\/\/([^/\s]+)/iu);
+        const domainMatch = hint.match(/\b(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)\b/iu);
+        if (urlMatch?.[1]) add(urlMatch[1]);
+        else if (domainMatch?.[1]) add(domainMatch[1]);
+      }
+      return domains.slice(0, 4);
+    }
+
     const knownLabels: ReadonlyArray<readonly [RegExp, string]> = [
       [/\bfountain pen network\b/iu, 'fountainpennetwork.com'],
       [/\bfpgeeks?\b/iu, 'fpgeeks.com'],
@@ -409,6 +420,15 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     const request = this.cleanNormalizedText(input.requestDescription ?? '');
     if (!request || this.isTechnicalRequest(input)) return false;
 
+    // In AI-owned generation, selecting the forum collector means the planner
+    // believes practitioner/community discussion is useful. Discover a
+    // specialist forum generically from the planned queries instead of
+    // requiring another hard-coded vertical/archetype match. Final admission
+    // still goes through the canonical evidence verifier.
+    if ((input.plannedQueries ?? []).some((query) => query.trim().length > 0)) {
+      return true;
+    }
+
     const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
       input.requestDescription,
     );
@@ -467,6 +487,20 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         queries.push(cleaned);
       }
     };
+
+    if ((input.plannedQueries ?? []).some((query) => query.trim().length > 0)) {
+      for (const hint of input.sourceHints ?? []) {
+        if (/https?:\/\//iu.test(hint) || /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/iu.test(hint)) continue;
+        add(`${hint.split(/\s+/u).slice(0, 8).join(' ')} forum discussion`);
+      }
+      for (const query of input.plannedQueries ?? []) {
+        const compact = query.split(/\s+/u).filter(Boolean).slice(0, 9).join(' ');
+        add(`${compact} forum discussion`);
+        add(`${compact} practitioner community`);
+        if (queries.length >= 5) break;
+      }
+      return queries.slice(0, 5);
+    }
 
     if (workflowProfile.restorationIntent && workflowProfile.restorationSubject) {
       const subject = workflowProfile.restorationSubject;
@@ -802,6 +836,20 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     const add = (site: string) => {
       if (!sites.includes(site)) sites.push(site);
     };
+
+    if ((input.plannedQueries ?? []).some((query) => query.trim().length > 0)) {
+      for (const hint of input.sourceHints ?? []) {
+        const normalized = hint
+          .trim()
+          .toLocaleLowerCase()
+          .replace(/^https?:\/\//u, '')
+          .replace(/^www\./u, '')
+          .split('/')[0] ?? '';
+        if (/^(?:[a-z0-9-]+\.)?stackexchange\.com$/u.test(normalized)) add(normalized);
+        else if (['stackoverflow.com', 'serverfault.com', 'superuser.com', 'askubuntu.com'].includes(normalized)) add(normalized);
+      }
+      return sites.slice(0, 2);
+    }
 
     if (nicheCustomCraft && !this.isTechnicalRequest(input)) {
       add('crafts.stackexchange.com');

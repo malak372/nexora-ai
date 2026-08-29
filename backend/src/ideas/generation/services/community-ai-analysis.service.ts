@@ -11,6 +11,7 @@ import { AiModelsService } from '../../../ai-models/ai-models.service';
 import {
   AI_PROVIDER_KEYS,
   normalizeAiProviderKey,
+  type AiProviderKey,
 } from '../../../ai/constants/ai-provider.constants';
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { MIN_AI_REQUEST_TIMEOUT_MS } from '../../../ai/constants/ai-timeouts.constants';
@@ -32,6 +33,10 @@ import {
   COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES,
   COMMUNITY_AI_ANALYSIS_TEMPERATURE,
   COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS,
+  COMMUNITY_AI_EVIDENCE_NATURES,
+  COMMUNITY_AI_PROBLEM_FAMILY_BASES,
+  COMMUNITY_AI_PROVIDER_EVIDENCE_CLASSIFICATIONS,
+  COMMUNITY_AI_SEMANTIC_ALIGNMENTS,
   COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST,
   COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ONLINE_ATTEMPTS,
   COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_OUTPUT_TOKENS,
@@ -43,9 +48,14 @@ import {
 import type {
   CommunityAiAnalysis,
   CommunityAiAttemptDiagnostic,
+  CommunityAiAdjudicationFailureReason,
   CommunityAiDomainHypothesis,
   CommunityAiEvidenceTriage,
   CommunityAiEvidenceClassification,
+  CommunityAiEvidenceNature,
+  CommunityAiProblemFamilyBasis,
+  CommunityAiProviderEvidenceClassification,
+  CommunityAiSemanticAlignment,
   CommunityAiOpportunity,
 } from '../types/community-ai-analysis.type';
 import type {
@@ -60,9 +70,7 @@ import {
 import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
-import { RequestWorkflowIntentProfileUtil } from '../utils/request-workflow-intent-profile.util';
 import { RequestVerticalConstraintUtil } from '../utils/request-vertical-constraint.util';
-import { CanonicalProblemFamilyUtil } from '../utils/canonical-problem-family.util';
 import { SelectedDomainEvidenceAlignmentUtil } from '../utils/selected-domain-evidence-alignment.util';
 import { RequestEvidenceDomainRoleUtil } from '../utils/request-evidence-domain-role.util';
 import {
@@ -96,6 +104,8 @@ import {
 type CommunityAiTriageTelemetry = {
   diagnostics: CommunityAiAttemptDiagnostic[];
   onlineAttemptCount: number;
+  /** True only when at least one online model adjudicated the complete corpus. */
+  fullCorpusAdjudicationCompleted: boolean;
   /**
    * Problem family chosen by the same accepted full-corpus AI triage response.
    * Deterministic code may verify/normalize this choice, but a later ranking
@@ -103,11 +113,17 @@ type CommunityAiTriageTelemetry = {
    */
   selectedProblemFamily: string | null;
   selectedProblemEvidenceIds: string[];
+  /** Number of rows that received an individually admissible online semantic verdict. */
+  adjudicatedEvidenceCount: number;
 };
 
 type ParsedCommunityAiEvidenceTriageCorpus = {
+  /** Individually valid semantic verdicts from one model that saw the complete corpus. */
   readonly classifications: readonly CommunityAiEvidenceTriage[];
-  readonly missingEvidenceIds: readonly string[];
+  /** Evidence ids that were not returned at all by the provider. */
+  readonly omittedEvidenceIds: readonly string[];
+  /** Evidence ids that were returned but failed per-item structural admission. */
+  readonly invalidEvidenceIds: readonly string[];
   readonly selectedProblemFamily: string | null;
   readonly selectedEvidenceIds: readonly string[];
 };
@@ -202,8 +218,10 @@ export class CommunityAiAnalysisService {
     const triageTelemetry: CommunityAiTriageTelemetry = {
       diagnostics: [],
       onlineAttemptCount: 0,
+      fullCorpusAdjudicationCompleted: false,
       selectedProblemFamily: null,
       selectedProblemEvidenceIds: [],
+      adjudicatedEvidenceCount: 0,
     };
     const modelDiscovery = await this.findOnlineFallbackModels(context);
     const onlineModels = modelDiscovery.models;
@@ -225,10 +243,29 @@ export class CommunityAiAnalysisService {
     const synthesisEligibleEvidenceCount = evidenceClassifications.filter(
       (item) => item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL',
     ).length;
+    const unadjudicatedEvidenceCount = evidenceClassifications.filter(
+      (item) => item.classification === 'UNADJUDICATED',
+    ).length;
     const rawTriageEstablishedNoRelevantEvidence =
       hasRawExternalCorpus &&
       evidenceClassifications.length > 0 &&
+      unadjudicatedEvidenceCount === 0 &&
+      triageTelemetry.fullCorpusAdjudicationCompleted &&
       synthesisEligibleEvidenceCount === 0;
+
+    if (
+      hasRawExternalCorpus &&
+      synthesisEligibleEvidenceCount === 0 &&
+      unadjudicatedEvidenceCount > 0
+    ) {
+      return this.buildAdjudicationUnavailableAnalysis(
+        context,
+        triageTelemetry.diagnostics,
+        evidenceClassifications,
+        triageTelemetry.onlineAttemptCount > 0,
+        triageTelemetry.adjudicatedEvidenceCount > 0,
+      );
+    }
     if (
       evidenceClassifications.length > 0 &&
       synthesisEligibleEvidenceCount === 0 &&
@@ -247,6 +284,7 @@ export class CommunityAiAnalysisService {
       );
       return {
         ...analysis,
+        evidenceVerdictState: 'NO_VALID_EVIDENCE_FOUND',
         qualityWarnings: [
           ...analysis.qualityWarnings,
           this.isEvidenceDiscoveryMode(context)
@@ -401,7 +439,7 @@ export class CommunityAiAnalysisService {
       const task: Promise<AttemptResult> = this.withHardTimeout(
         this.aiExecutionService.execute({
           aiModelId: model.id,
-          allowBoundedEmergencyModelAttempt: true,
+          allowBoundedEmergencyModelAttempt: false,
           userPrompt: prompt.userPrompt,
           systemInstruction: prompt.systemInstruction,
           requestType: ApiRequestType.NLP_ENHANCEMENT,
@@ -768,13 +806,16 @@ export class CommunityAiAnalysisService {
         'Community AI did not produce an acceptable grounded opportunity within the bounded budget.',
         'Unvalidated domain hypotheses are not treated as community evidence and may only be used as a last-resort generation direction.',
       ],
+      evidenceVerdictState: 'NO_VALID_EVIDENCE_FOUND',
       modelId: null,
       apiModelId: null,
       attemptCount: effectiveDiagnostics.length,
       aiAttempted,
-      triageAiSucceeded: evidenceClassifications.some((item) =>
-        /AI semantic triage/iu.test(item.reason),
-      ),
+      triageAiSucceeded:
+        evidenceClassifications.length > 0 &&
+        !evidenceClassifications.some(
+          (item) => item.classification === 'UNADJUDICATED',
+        ),
       synthesisAiSucceeded: false,
       aiSucceeded: false,
       fallbackUsed: true,
@@ -789,6 +830,56 @@ export class CommunityAiAnalysisService {
       attemptDiagnostics: effectiveDiagnostics,
       unvalidatedDomainHypotheses: hypotheses,
       evidenceClassifications,
+    };
+  }
+
+  private buildAdjudicationUnavailableAnalysis(
+    context: IdeaGenerationContext,
+    diagnostics: readonly CommunityAiAttemptDiagnostic[],
+    evidenceClassifications: readonly CommunityAiEvidenceTriage[],
+    aiAttempted: boolean,
+    triageAiSucceeded = false,
+  ): CommunityAiAnalysis {
+    const unadjudicatedCount = evidenceClassifications.filter(
+      (item) => item.classification === 'UNADJUDICATED',
+    ).length;
+    return {
+      summary:
+        `External evidence was collected, but semantic adjudication did not complete for ${unadjudicatedCount} raw evidence item(s). The pipeline therefore makes no claim that those rows are related or unrelated and keeps them available for recovery/retry.`,
+      dominantProblems: [],
+      unmetNeeds: [],
+      opportunities: [],
+      overallConfidence: 0,
+      qualityWarnings: [
+        'Evidence adjudication is unavailable: collected raw evidence must not be described as rejected, unrelated, or absent merely because the online semantic models timed out or failed.',
+        'No external-demand claim is promoted until Community AI returns a semantic verdict; raw provenance is preserved for recovery.',
+      ],
+      evidenceVerdictState: 'EVIDENCE_ADJUDICATION_UNAVAILABLE',
+      modelId: null,
+      apiModelId: null,
+      attemptCount: diagnostics.filter((item) => item.status !== 'ABORTED').length,
+      aiAttempted,
+      triageAiSucceeded,
+      synthesisAiSucceeded: false,
+      aiSucceeded: triageAiSucceeded,
+      fallbackUsed: true,
+      onlineAttemptCount: diagnostics.length,
+      executionFailureCount: diagnostics.filter(
+        (item) => item.status === 'EXECUTION_FAILED' || item.status === 'TIMEOUT',
+      ).length,
+      validationRejectedCount: diagnostics.filter(
+        (item) => item.status === 'VALIDATION_REJECTED',
+      ).length,
+      fallbackReason:
+        'EVIDENCE_ADJUDICATION_UNAVAILABLE: the complete raw corpus was collected, but no complete online semantic verdict returned inside the resilient full-corpus budget.',
+      attemptDiagnostics: [...diagnostics],
+      unvalidatedDomainHypotheses: this.buildUnvalidatedDomainHypotheses(
+        context,
+        [],
+      ),
+      evidenceClassifications: [...evidenceClassifications],
+      selectedProblemFamily: null,
+      selectedProblemFamilyEvidenceIds: [],
     };
   }
 
@@ -902,43 +993,34 @@ export class CommunityAiAnalysisService {
     }
 
     /*
-     * Community must see EVERYTHING the collectors returned. The provider JSON
-     * schema has a bounded items-per-request ceiling, so large corpora are split
-     * only for transport capacity; no lexical, relevance, source, thread, or
-     * near-duplicate item is discarded before AI classification. All partitions
-     * start in parallel under one shared wall-clock budget. That keeps latency
-     * close to one triage request while guaranteeing every collected item is
-     * presented to Community AI at least once.
+     * The complete bounded corpus is adjudicated as ONE semantic unit. We do
+     * not split the corpus into independent batches because evidence in one
+     * source/thread can materially change the meaning or family identity of a
+     * distant item. The collector layer is already bounded, and the provider
+     * schema ceiling is sized above the normal fast-generation corpus.
      */
-    const batches: IdeaGenerationRawEvidenceItem[][] = [];
-    for (
-      let offset = 0;
-      offset < aiTriageCorpus.length;
-      offset += COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST
-    ) {
-      batches.push(
-        aiTriageCorpus.slice(
-          offset,
-          offset + COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST,
-        ),
+    const completeCorpus = aiTriageCorpus.slice(
+      0,
+      COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST,
+    );
+    const omittedForTransport = aiTriageCorpus.slice(completeCorpus.length);
+    if (omittedForTransport.length > 0) {
+      this.logger.warn(
+        `Community AI complete-corpus ceiling reached. selected=${aiTriageCorpus.length}, transport=${completeCorpus.length}. Omitted rows stay UNADJUDICATED rather than being classified in a separate batch.`,
       );
     }
 
-    const deadline = Date.now() + COMMUNITY_AI_EVIDENCE_TRIAGE_TOTAL_TIMEOUT_MS;
-    const batchResults = await Promise.all(
-      batches.map((batch) =>
-        this.classifyEvidenceCorpusWithAi({
-          context,
-          corpus: batch,
-          onlineModels,
-          deadline,
-          signal: options.signal,
-          deterministicFallback,
-          telemetry,
-        }),
-      ),
-    );
-    const classified = batchResults.flat();
+    const deadline =
+      Date.now() + this.resolveFullCorpusTriageTotalTimeoutMs(completeCorpus.length);
+    const classified = await this.classifyEvidenceCorpusWithAi({
+      context,
+      corpus: completeCorpus,
+      onlineModels,
+      deadline,
+      signal: options.signal,
+      deterministicFallback,
+      telemetry,
+    });
     const classifiedById = new Map(
       classified.map((item) => [item.evidenceId, item] as const),
     );
@@ -948,26 +1030,47 @@ export class CommunityAiAnalysisService {
       const semantic = classifiedById.get(item.id);
       if (semantic) return semantic;
       if (aiTriageIds.has(item.id)) {
-        return deterministicFallback.get(item.id)!;
+        return this.withAdjudicationFailure(
+          deterministicFallback.get(item.id)!,
+          'AI_MISSING_VERDICT',
+          'No complete full-corpus semantic verdict was returned for this collected row.',
+        );
       }
 
-      return {
-        evidenceId: item.id,
-        classification: 'UNRELATED' as const,
-        confidence: 50,
-        reason:
-          'This raw item was excluded only by non-semantic duplicate/source/thread/full-corpus hygiene and was not admitted as verified evidence.',
-        problemFamily: null,
-        verifiedByDeterministicGuard: false,
-      };
+      return this.buildDeterministicEvidenceTriage(
+        context,
+        item,
+        'AI_MISSING_VERDICT',
+        'The row remained visible in the raw ledger but was outside the bounded full-corpus transport ceiling.',
+      );
     });
     const aiRelevant = result.filter(
       (item) => item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL',
     ).length;
     this.logger.log(
-      `Community AI all-collected triage completed. raw=${rawCorpus.length}, aiCandidates=${aiTriageCorpus.length}, batches=${batches.length}, modelsPerBatch=${Math.min(COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS, onlineModels.length)}, relevant=${aiRelevant}, allCollectedVisible=true, fallbackSafe=true.`,
+      `Community AI all-collected triage completed. raw=${rawCorpus.length}, aiCandidates=${aiTriageCorpus.length}, semanticUnits=1, modelsPerRace=${Math.min(COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS, onlineModels.length)}, relevant=${aiRelevant}, unadjudicated=${result.filter((item) => item.classification === 'UNADJUDICATED').length}, allCollectedVisible=true.`,
     );
     return result;
+  }
+
+  /**
+   * Full-corpus semantic adjudication needs more wall-clock time as the number
+   * of returned rows grows because each row carries a rich structured verdict.
+   * This is intentionally adaptive rather than a fixed 8-9 second cliff.
+   */
+  private resolveFullCorpusTriageRequestTimeoutMs(itemCount: number): number {
+    return Math.min(
+      COMMUNITY_AI_EVIDENCE_TRIAGE_REQUEST_TIMEOUT_MS,
+      Math.max(12_000, 10_000 + Math.max(0, itemCount) * 450),
+    );
+  }
+
+  private resolveFullCorpusTriageTotalTimeoutMs(itemCount: number): number {
+    const requestBudget = this.resolveFullCorpusTriageRequestTimeoutMs(itemCount);
+    return Math.min(
+      COMMUNITY_AI_EVIDENCE_TRIAGE_TOTAL_TIMEOUT_MS,
+      Math.max(requestBudget + 16_000, 24_000),
+    );
   }
 
   private selectAiTriageCandidates(
@@ -1109,16 +1212,31 @@ export class CommunityAiAnalysisService {
       CommunityAiEvidenceTriage
     >;
     readonly telemetry: CommunityAiTriageTelemetry;
-    /** Prevent recursive completion-of-completion loops. */
-    readonly allowMissingCompletion?: boolean;
+    /** One full-corpus rescue retry is allowed after the parallel race fails. */
+    readonly allowFullCorpusRetry?: boolean;
   }): Promise<CommunityAiEvidenceTriage[]> {
-    const fallback = (): CommunityAiEvidenceTriage[] =>
-      input.corpus.map((item) => input.deterministicFallback.get(item.id)!);
-    if (
-      input.signal?.aborted ||
-      input.deadline - Date.now() < MIN_AI_REQUEST_TIMEOUT_MS
-    ) {
-      return fallback();
+    const fallback = (
+      reason: CommunityAiAdjudicationFailureReason,
+      detail?: string,
+    ): CommunityAiEvidenceTriage[] =>
+      input.corpus.map((item) =>
+        this.withAdjudicationFailure(
+          input.deterministicFallback.get(item.id)!,
+          reason,
+          detail,
+        ),
+      );
+    if (input.signal?.aborted) {
+      return fallback(
+        'AI_ABORTED',
+        'Community AI evidence adjudication was cancelled before a full-corpus verdict completed.',
+      );
+    }
+    if (input.deadline - Date.now() < MIN_AI_REQUEST_TIMEOUT_MS) {
+      return fallback(
+        'AI_TIMEOUT',
+        'The shared full-corpus semantic-adjudication deadline expired before another online attempt could start.',
+      );
     }
     /*
      * Provider-facing ids are compact aliases rather than long database/RSS ids.
@@ -1145,11 +1263,20 @@ export class CommunityAiAnalysisService {
             ? { ...fallbackItem, evidenceId: item.id }
             : {
                 evidenceId: item.id,
-                classification: 'UNRELATED' as const,
-                confidence: 50,
-                reason: 'No deterministic fallback classification was available.',
+                classification: 'UNADJUDICATED' as const,
+                confidence: 0,
+                reason: 'No online semantic adjudication was available for this row.',
                 problemFamily: null,
+                evidenceNature: 'OTHER' as const,
+                domainAlignment: 'NONE' as const,
+                problemAlignment: 'NONE' as const,
+                familyBasis: 'NONE' as const,
+                observedProblem: null,
+                causalExplanation: null,
+                matchedDomainNames: [],
                 verifiedByDeterministicGuard: false,
+                adjudicationStatus: 'UNADJUDICATED' as const,
+                adjudicationFailureReason: 'AI_UNAVAILABLE' as const,
               },
         ] as const;
       }),
@@ -1173,26 +1300,45 @@ export class CommunityAiAnalysisService {
 
     /*
      * Race up to three eligible models on the exact same COMPLETE corpus.
-     * They may share an API gateway/provider: model diversity is still useful,
-     * and the first structurally valid answer triggers immediate sibling abort.
+     * Model discovery orders distinct providers first; same-provider models are
+     * used only when there are not enough genuinely distinct providers online.
+     * The first structurally valid answer triggers immediate sibling abort.
      * The bounded full corpus and shared wall-clock deadline keep this redundancy
      * controlled without splitting evidence context across independent batches.
      */
     const candidates = rotatedCandidates;
+    const candidateProviders = [
+      ...new Set(
+        candidates
+          .map((model) => normalizeAiProviderKey(model.providerKey))
+          .filter((provider): provider is AiProviderKey => provider !== undefined),
+      ),
+    ];
     this.logger.debug(
-      `Community AI full-corpus race pool | eligibleModels=${input.onlineModels.length} | startedModels=${candidates.length} | models=${candidates.map((model) => model.apiModelId).join(',') || 'none'}.`,
+      `Community AI full-corpus race pool | eligibleModels=${input.onlineModels.length} | startedModels=${candidates.length} | distinctProviders=${candidateProviders.length} | providers=${candidateProviders.join(',') || 'none'} | models=${candidates.map((model) => model.apiModelId).join(',') || 'none'}.`,
     );
 
-    if (candidates.length === 0) return fallback();
+    if (candidates.length === 0) {
+      return fallback(
+        'AI_UNAVAILABLE',
+        'No provider-diverse online semantic-adjudication candidate could be selected for the full corpus.',
+      );
+    }
 
     type CorpusAttempt = {
       readonly index: number;
       readonly model: AiModel;
+      /**
+       * Non-null when the provider returned every evidence id. Individual
+       * malformed rows are already represented as UNADJUDICATED entries.
+       */
       readonly classifications: CommunityAiEvidenceTriage[] | null;
+      readonly adjudicatedCount?: number;
+      readonly invalidEvidenceIds?: readonly string[];
       readonly selectedProblemFamily?: string | null;
       readonly selectedEvidenceIds?: readonly string[];
       readonly partialClassifications?: readonly CommunityAiEvidenceTriage[];
-      readonly missingEvidenceIds?: readonly string[];
+      readonly omittedEvidenceIds?: readonly string[];
       readonly error?: unknown;
     };
 
@@ -1223,23 +1369,29 @@ export class CommunityAiAnalysisService {
       diagnosticAttemptByIndex.set(index, diagnosticAttempt);
       requestStartedAtByIndex.set(index, Date.now());
       const requestTimeoutMs = Math.min(
-        COMMUNITY_AI_EVIDENCE_TRIAGE_REQUEST_TIMEOUT_MS,
+        this.resolveFullCorpusTriageRequestTimeoutMs(input.corpus.length),
         Math.floor(remainingMs),
       );
       /*
-       * Size the response budget to the actual transport partition. Smaller
-       * batches finish materially faster and are less likely to hit provider
-       * output/time limits, while the cap still leaves comfortable headroom
-       * for one compact classification object per evidence id.
+       * Size the response budget to the complete bounded corpus. Smaller
+       * corpora naturally finish faster, while larger corpora receive enough
+       * output headroom for one compact classification object per evidence id
+       * without fragmenting semantic context across independent requests.
        */
       const triageOutputTokens = Math.min(
         COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_OUTPUT_TOKENS,
-        Math.max(1_600, 1_400 + input.corpus.length * 55),
+        /*
+         * Twelve semantic fields per row need materially more headroom than the
+         * old ~105-token estimate. Under-budgeting encouraged otherwise healthy
+         * models to omit required keys to fit the response. Keep one full-corpus
+         * request, but budget enough output for compact complete rows.
+         */
+        Math.max(3_200, 1_400 + input.corpus.length * 190),
       );
       const task = this.withHardTimeout(
         this.aiExecutionService.execute({
           aiModelId: model.id,
-          allowBoundedEmergencyModelAttempt: true,
+          allowBoundedEmergencyModelAttempt: false,
           userPrompt: prompt.userPrompt,
           systemInstruction: prompt.systemInstruction,
           requestType: ApiRequestType.NLP_ENHANCEMENT,
@@ -1289,28 +1441,78 @@ export class CommunityAiAnalysisService {
             });
             const remappedClassifications =
               parsed.classifications.map(remapClassification);
-            const remappedMissingIds = parsed.missingEvidenceIds.map(
+            const remappedOmittedIds = parsed.omittedEvidenceIds.map(
               (id) => aliasToOriginalId.get(id) ?? id,
             );
-            if (remappedMissingIds.length === 0) {
+            const remappedInvalidIds = parsed.invalidEvidenceIds.map(
+              (id) => aliasToOriginalId.get(id) ?? id,
+            );
+            const selectedEvidenceIds = parsed.selectedEvidenceIds.map(
+              (id) => aliasToOriginalId.get(id) ?? id,
+            );
+
+            /*
+             * When every evidence id is present, this model saw and answered the
+             * complete corpus. Admit each valid row independently and preserve
+             * only malformed rows as UNADJUDICATED. This is the critical
+             * anti-all-or-nothing behavior: one bad enum can no longer erase
+             * nineteen valid semantic verdicts.
+             */
+            const adjudicatedCoverage =
+              remappedClassifications.length / Math.max(1, input.corpus.length);
+            const hasEveryEvidenceId = remappedOmittedIds.length === 0;
+            /*
+             * A full-id response with only a handful of structurally valid rows
+             * should not win the race and cancel a healthier sibling. Accept it
+             * immediately only when every row is valid or when per-item
+             * admission preserved a strong majority of the complete corpus.
+             * Lower-coverage responses stay as single-model partial candidates;
+             * they are never semantically merged with another model.
+             */
+            const strongPerItemCoverage =
+              remappedClassifications.length === input.corpus.length ||
+              adjudicatedCoverage >= 0.75;
+
+            if (
+              hasEveryEvidenceId &&
+              remappedClassifications.length > 0 &&
+              strongPerItemCoverage
+            ) {
+              const validById = new Map(
+                remappedClassifications.map((item) => [item.evidenceId, item] as const),
+              );
+              const completeCoverageClassifications = input.corpus.map(
+                (item) =>
+                  validById.get(item.id) ??
+                  this.withAdjudicationFailure(
+                    input.deterministicFallback.get(item.id)!,
+                    'AI_VALIDATION_REJECTED',
+                    'The full-corpus model returned this evidence id, but that row failed per-item structural admission.',
+                  ),
+              );
               return {
                 index,
                 model,
-                classifications: remappedClassifications,
+                classifications: completeCoverageClassifications,
+                adjudicatedCount: remappedClassifications.length,
+                invalidEvidenceIds: remappedInvalidIds,
                 selectedProblemFamily: parsed.selectedProblemFamily,
-                selectedEvidenceIds: parsed.selectedEvidenceIds.map(
-                  (id) => aliasToOriginalId.get(id) ?? id,
-                ),
+                selectedEvidenceIds,
               };
             }
+
             return {
               index,
               model,
               classifications: null,
+              adjudicatedCount: remappedClassifications.length,
               partialClassifications: remappedClassifications,
-              missingEvidenceIds: remappedMissingIds,
+              omittedEvidenceIds: remappedOmittedIds,
+              invalidEvidenceIds: remappedInvalidIds,
+              selectedProblemFamily: parsed.selectedProblemFamily,
+              selectedEvidenceIds,
               error: new Error(
-                `Community AI evidence triage returned ${remappedClassifications.length}/${input.corpus.length} supplied evidence id(s).`,
+                `Community AI evidence triage returned usable verdicts for ${remappedClassifications.length}/${input.corpus.length} row(s), omitted ${remappedOmittedIds.length}, and returned ${remappedInvalidIds.length} malformed row(s).`,
               ),
             };
           } catch (error: unknown) {
@@ -1329,7 +1531,10 @@ export class CommunityAiAnalysisService {
     if (pending.size === 0) {
       input.signal?.removeEventListener('abort', onParentAbort);
       abortAll();
-      return fallback();
+      return fallback(
+        'AI_UNAVAILABLE',
+        'No full-corpus semantic-adjudication attempt could be started.',
+      );
     }
 
     let lastError: unknown = null;
@@ -1357,6 +1562,14 @@ export class CommunityAiAnalysisService {
         }
         pending.delete(settled.index);
         if (settled.classifications) {
+          const adjudicatedCount =
+            settled.adjudicatedCount ??
+            settled.classifications.filter(
+              (item) => item.classification !== 'UNADJUDICATED',
+            ).length;
+          input.telemetry.adjudicatedEvidenceCount = adjudicatedCount;
+          input.telemetry.fullCorpusAdjudicationCompleted =
+            adjudicatedCount === input.corpus.length;
           input.telemetry.selectedProblemFamily =
             settled.selectedProblemFamily?.trim() || null;
           input.telemetry.selectedProblemEvidenceIds = [
@@ -1372,7 +1585,10 @@ export class CommunityAiAnalysisService {
             providerKey: settled.model.providerKey,
             status: 'ACCEPTED',
             durationMs: Math.max(0, Date.now() - acceptedStartedAt),
-            reason: 'Full-corpus evidence triage accepted the first complete structurally valid response.',
+            reason:
+              adjudicatedCount === input.corpus.length
+                ? 'Full-corpus evidence triage accepted a complete per-item-valid response.'
+                : `Full-corpus evidence triage accepted ${adjudicatedCount}/${input.corpus.length} individually valid verdict(s); ${(settled.invalidEvidenceIds ?? []).length} malformed row(s) were preserved as UNADJUDICATED without discarding valid siblings.`,
           });
           // Early stop: the first structurally valid semantic classification
           // wins. Abort slower sibling calls immediately so parallel model
@@ -1397,15 +1613,15 @@ export class CommunityAiAnalysisService {
           });
           void Promise.allSettled(pending.values());
           this.logger.log(
-            `Community AI full-corpus triage accepted first complete response from ${settled.model.apiModelId}; aborted ${pending.size} slower parallel model(s).`,
+            `Community AI full-corpus triage accepted first full-id response from ${settled.model.apiModelId}; adjudicated=${adjudicatedCount}/${input.corpus.length}, malformed=${(settled.invalidEvidenceIds ?? []).length}; aborted ${pending.size} slower parallel model(s).`,
           );
           return settled.classifications;
         }
         if (
           settled.partialClassifications &&
           settled.partialClassifications.length > 0 &&
-          settled.missingEvidenceIds &&
-          settled.missingEvidenceIds.length > 0
+          ((settled.omittedEvidenceIds?.length ?? 0) > 0 ||
+            (settled.invalidEvidenceIds?.length ?? 0) > 0)
         ) {
           const attempt = diagnosticAttemptByIndex.get(settled.index) ?? 1;
           const attemptStartedAt =
@@ -1417,7 +1633,7 @@ export class CommunityAiAnalysisService {
             providerKey: settled.model.providerKey,
             status: 'VALIDATION_REJECTED',
             durationMs: Math.max(0, Date.now() - attemptStartedAt),
-            reason: `Full-corpus triage returned only ${settled.partialClassifications.length}/${input.corpus.length} evidence id(s); the sibling full-corpus model remains running instead of being cancelled.`,
+            reason: `Full-corpus triage produced ${settled.partialClassifications.length}/${input.corpus.length} individually valid verdict(s), omitted ${settled.omittedEvidenceIds?.length ?? 0} id(s), and returned ${(settled.invalidEvidenceIds ?? []).length} malformed row(s); a sibling full-corpus model remains running for better coverage.`,
           });
 
           if (
@@ -1439,11 +1655,13 @@ export class CommunityAiAnalysisService {
           modelId: settled.model.id,
           apiModelId: settled.model.apiModelId,
           providerKey: settled.model.providerKey,
-          status: /timeout|timed out|exceeded .*ms/u.test(normalizedFailure)
-            ? 'TIMEOUT'
-            : /abort|cancel/u.test(normalizedFailure)
-              ? 'ABORTED'
-              : 'EXECUTION_FAILED',
+          status: (settled.invalidEvidenceIds?.length ?? 0) > 0
+            ? 'VALIDATION_REJECTED'
+            : /timeout|timed out|exceeded .*ms/u.test(normalizedFailure)
+              ? 'TIMEOUT'
+              : /abort|cancel/u.test(normalizedFailure)
+                ? 'ABORTED'
+                : 'EXECUTION_FAILED',
           durationMs: Math.max(
             0,
             Date.now() -
@@ -1492,60 +1710,96 @@ export class CommunityAiAnalysisService {
           (item) => [item.evidenceId, item] as const,
         ),
       );
-      const missingCorpus = input.corpus.filter(
-        (item) => !partialById.has(item.id),
-      );
-
-      /*
-       * A nearly-complete online classification should not throw away the
-       * omitted tail or immediately replace it with deterministic guesses. Ask
-       * Community AI only for the missing ids. The completion request is small,
-       * keeps the same canonical request context, and reuses the remaining
-       * shared deadline. If it also degrades, deterministic fallback is still
-       * available only for those final omitted ids.
-       */
       if (
-        input.allowMissingCompletion !== false &&
-        missingCorpus.length > 0 &&
-        input.deadline - Date.now() >= MIN_AI_REQUEST_TIMEOUT_MS
+        input.allowFullCorpusRetry !== false &&
+        input.onlineModels.length > 0 &&
+        input.deadline - Date.now() >= 8_000
       ) {
+        const rescueModel = input.onlineModels[0];
         this.logger.warn(
-          `Community AI full-corpus race returned ${bestPartial.partialClassifications.length}/${input.corpus.length}; requesting AI completion only for ${missingCorpus.length} omitted evidence id(s).`,
+          `Community AI full-corpus race returned ${bestPartial.partialClassifications.length}/${input.corpus.length}; retrying the SAME complete corpus once with ${rescueModel.apiModelId}. No missing-id subrequest is used because family meaning may depend on cross-corpus relationships.`,
         );
-        const completedMissing = await this.classifyEvidenceCorpusWithAi({
+        const rescue = await this.classifyEvidenceCorpusWithAi({
           ...input,
-          corpus: missingCorpus,
-          allowMissingCompletion: false,
+          onlineModels: [rescueModel],
+          allowFullCorpusRetry: false,
         });
-        const completionById = new Map(
-          completedMissing.map((item) => [item.evidenceId, item] as const),
+        const rescueAdjudicatedCount = rescue.filter(
+          (item) => item.classification !== 'UNADJUDICATED',
+        ).length;
+        if (rescueAdjudicatedCount === input.corpus.length) {
+          return rescue;
+        }
+        const originalAdjudicatedCount =
+          bestPartial.partialClassifications.length;
+        if (rescueAdjudicatedCount > originalAdjudicatedCount) {
+          this.logger.warn(
+            `Community AI full-corpus rescue remained partial but covered more rows (${rescueAdjudicatedCount}/${input.corpus.length}); preserving that internally consistent full-corpus attempt without merging semantic verdicts from different models.`,
+          );
+          return rescue;
+        }
+        this.logger.warn(
+          `Community AI full-corpus rescue remained partial; preserving the stronger original single-model partial verdict (${originalAdjudicatedCount}/${input.corpus.length}) and leaving omitted rows UNADJUDICATED.`,
         );
-        const merged = input.corpus.map(
-          (item) =>
-            partialById.get(item.id) ??
-            completionById.get(item.id) ??
-            input.deterministicFallback.get(item.id)!,
-        );
-        this.logger.log(
-          `Community AI missing-id completion merged ${bestPartial.partialClassifications.length} original AI classification(s) with ${completedMissing.length} completion result(s); corpus=${input.corpus.length}.`,
-        );
-        return merged;
       }
 
+      input.telemetry.adjudicatedEvidenceCount =
+        bestPartial.partialClassifications.length;
+      input.telemetry.fullCorpusAdjudicationCompleted = false;
+      input.telemetry.selectedProblemFamily =
+        bestPartial.selectedProblemFamily?.trim() || null;
+      input.telemetry.selectedProblemEvidenceIds = [
+        ...(bestPartial.selectedEvidenceIds ?? []),
+      ];
       this.logger.warn(
-        `Community AI full-corpus race returned no complete response; preserving ${bestPartial.partialClassifications.length}/${input.corpus.length} AI classifications and using deterministic fallback only for ids that could not be completed online.`,
+        `Community AI full-corpus race returned no full-id response; preserving ${bestPartial.partialClassifications.length}/${input.corpus.length} individually valid verdict(s) from one model that saw the complete corpus. Omitted/malformed rows remain UNADJUDICATED.`,
+      );
+      const failureReason = this.resolveAdjudicationFailureReason(
+        lastError,
+        input.signal,
       );
       return input.corpus.map(
         (item) =>
           partialById.get(item.id) ??
-          input.deterministicFallback.get(item.id)!,
+          this.withAdjudicationFailure(
+            input.deterministicFallback.get(item.id)!,
+            failureReason === 'AI_EXECUTION_FAILED'
+              ? 'AI_MISSING_VERDICT'
+              : failureReason,
+            (bestPartial.invalidEvidenceIds ?? []).includes(item.id)
+              ? 'A model that saw the complete corpus returned this evidence id, but that row failed per-item structural admission.'
+              : 'A model that saw the complete corpus returned a partial response and omitted this evidence id.',
+          ),
       );
     }
 
+    if (
+      input.allowFullCorpusRetry !== false &&
+      input.onlineModels.length > 0 &&
+      input.deadline - Date.now() >= 8_000
+    ) {
+      const rescueModel = input.onlineModels[0];
+      this.logger.warn(
+        `Community AI full-corpus race exhausted without a complete verdict; retrying the SAME complete corpus once with ${rescueModel.apiModelId} inside the remaining shared deadline.`,
+      );
+      return this.classifyEvidenceCorpusWithAi({
+        ...input,
+        onlineModels: [rescueModel],
+        allowFullCorpusRetry: false,
+      });
+    }
+
     this.logger.warn(
-      `Community AI full-corpus race used deterministic fallback after both parallel models failed or timed out: ${this.getErrorMessage(lastError)}.`,
+      `Community AI full-corpus race could not obtain an online semantic verdict: ${this.getErrorMessage(lastError)}. Raw rows remain UNADJUDICATED rather than being reinterpreted deterministically.`,
     );
-    return fallback();
+    const failureReason = this.resolveAdjudicationFailureReason(
+      lastError,
+      input.signal,
+    );
+    return fallback(
+      failureReason,
+      `No online semantic verdict completed for the full corpus: ${this.getErrorMessage(lastError)}`,
+    );
   }
 
   private parseEvidenceTriageCorpus(
@@ -1559,262 +1813,352 @@ export class CommunityAiAnalysisService {
       throw new Error('Community AI evidence triage returned an invalid root object.');
     }
 
-    const discoveryMode = this.isEvidenceDiscoveryMode(context);
     const corpusById = new Map(corpus.map((item) => [item.id, item] as const));
-    const selectedProblemFamily = this.optionalString(
+    const discoveryMode = this.isEvidenceDiscoveryMode(context);
+    const selectedDomainByIdentity = new Map(
+      context.selectedDomains.map((domain) => [
+        domain.name
+          .normalize('NFKC')
+          .toLocaleLowerCase()
+          .replace(/\s+/gu, ' ')
+          .trim(),
+        domain.name,
+      ] as const),
+    );
+
+    const normalizeEnumToken = (value: unknown): string =>
+      typeof value === 'string'
+        ? value
+            .normalize('NFKC')
+            .trim()
+            .toUpperCase()
+            .replace(/[\s-]+/gu, '_')
+        : '';
+
+    const parseExactEnum = <T extends string>(
+      value: unknown,
+      allowed: readonly T[],
+    ): T | null => {
+      const normalized = normalizeEnumToken(value);
+      return (allowed as readonly string[]).includes(normalized)
+        ? (normalized as T)
+        : null;
+    };
+
+    /*
+     * These are transport aliases only: each alias is an explicit lexical
+     * spelling of the exact canonical enum, not a semantic score conversion.
+     * Values such as HIGH/MEDIUM/LOW are intentionally rejected.
+     */
+    const parseAlignment = (value: unknown): CommunityAiSemanticAlignment | null => {
+      const normalized = normalizeEnumToken(value);
+      const direct = parseExactEnum(
+        normalized,
+        COMMUNITY_AI_SEMANTIC_ALIGNMENTS,
+      );
+      if (direct) return direct;
+
+      const aliases: Readonly<Record<string, CommunityAiSemanticAlignment>> = {
+        EXACT_MATCH: 'MATCH',
+        FULL_MATCH: 'MATCH',
+        MATCHED: 'MATCH',
+        PARTIAL_MATCH: 'PARTIAL',
+        PARTIALLY_MATCHED: 'PARTIAL',
+        NO_MATCH: 'NONE',
+        NOT_MATCHED: 'NONE',
+        UNMATCHED: 'NONE',
+      };
+      return aliases[normalized] ?? null;
+    };
+
+    const parseRequiredConfidence = (value: unknown): number | null => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+      const normalized = value <= 1 ? value * 100 : value;
+      if (normalized < 0 || normalized > 100) return null;
+      return Math.round(normalized * 100) / 100;
+    };
+
+    const normalizeProblemFamily = (value: unknown): string | null =>
+      this.optionalString(value, '')
+        .normalize('NFKC')
+        .replace(/[_-]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .slice(0, 120) || null;
+
+    const normalizeShortText = (
+      value: unknown,
+      maxLength: number,
+    ): string | null =>
+      this.optionalString(value, '')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .slice(0, maxLength) || null;
+
+    type ProviderSemanticVerdict = {
+      readonly classification: CommunityAiProviderEvidenceClassification;
+      readonly confidence: number;
+      readonly reason: string;
+      readonly problemFamily: string | null;
+      readonly evidenceNature: CommunityAiEvidenceNature;
+      readonly domainAlignment: CommunityAiSemanticAlignment;
+      readonly problemAlignment: CommunityAiSemanticAlignment;
+      readonly familyBasis: CommunityAiProblemFamilyBasis;
+      readonly observedProblem: string | null;
+      readonly causalExplanation: string | null;
+      readonly matchedDomainNames: readonly string[];
+    };
+
+    const providerById = new Map<string, ProviderSemanticVerdict>();
+    const returnedEvidenceIds = new Set<string>();
+    const duplicateEvidenceIds = new Set<string>();
+
+    for (const entry of parsed.items.slice(0, Math.max(corpus.length * 2, corpus.length))) {
+      if (!this.isRecord(entry)) continue;
+      const evidenceId = this.optionalString(entry.evidenceId, '').trim();
+      if (!evidenceId || !corpusById.has(evidenceId)) continue;
+
+      if (returnedEvidenceIds.has(evidenceId)) {
+        duplicateEvidenceIds.add(evidenceId);
+        providerById.delete(evidenceId);
+        continue;
+      }
+      returnedEvidenceIds.add(evidenceId);
+
+      const classification = parseExactEnum(
+        entry.classification,
+        COMMUNITY_AI_PROVIDER_EVIDENCE_CLASSIFICATIONS,
+      );
+      const confidence = parseRequiredConfidence(entry.confidence);
+      const reason = normalizeShortText(entry.reason, 260);
+      if (!classification || confidence === null || !reason) {
+        continue;
+      }
+
+      const evidenceNature =
+        parseExactEnum(entry.evidenceNature, COMMUNITY_AI_EVIDENCE_NATURES) ??
+        'OTHER';
+      const domainAlignment = parseAlignment(entry.domainAlignment);
+      const problemAlignment = parseAlignment(entry.problemAlignment);
+      const familyBasis =
+        parseExactEnum(entry.familyBasis, COMMUNITY_AI_PROBLEM_FAMILY_BASES) ??
+        'NONE';
+
+      const problemFamily = normalizeProblemFamily(entry.problemFamily);
+      const observedProblem = normalizeShortText(entry.observedProblem, 260);
+      const causalExplanation = normalizeShortText(
+        entry.causalExplanation,
+        260,
+      );
+
+      const matchedDomainNames = Array.isArray(entry.matchedDomainNames)
+        ? [
+            ...new Set(
+              entry.matchedDomainNames
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) =>
+                  selectedDomainByIdentity.get(
+                    value
+                      .normalize('NFKC')
+                      .toLocaleLowerCase()
+                      .replace(/\s+/gu, ' ')
+                      .trim(),
+                  ),
+                )
+                .filter((value): value is string => Boolean(value)),
+            ),
+          ].slice(0, 3)
+        : [];
+
+      /*
+       * Per-item admission is conditional on what the verdict claims.
+       * A CONTEXT_ONLY/UNRELATED row does not need a fabricated family or
+       * observedProblem. Trusted rows do: otherwise that individual row is
+       * UNADJUDICATED rather than poisoning the whole corpus.
+       */
+      const trustedCandidate =
+        classification === 'DIRECT_PROBLEM' ||
+        classification === 'SUPPORTING_SIGNAL';
+      const requiredAlignment = discoveryMode
+        ? domainAlignment
+        : problemAlignment;
+
+      if (
+        trustedCandidate &&
+        (
+          requiredAlignment === null ||
+          familyBasis !== 'OBSERVED_PROBLEM' ||
+          !problemFamily ||
+          !observedProblem ||
+          (discoveryMode && matchedDomainNames.length === 0)
+        )
+      ) {
+        continue;
+      }
+
+      providerById.set(evidenceId, {
+        classification,
+        confidence,
+        reason,
+        problemFamily,
+        evidenceNature,
+        /*
+         * The non-governing alignment is optional metadata. Missing/invalid
+         * metadata is represented as NONE but never used to infer relevance.
+         */
+        domainAlignment: domainAlignment ?? 'NONE',
+        problemAlignment: problemAlignment ?? 'NONE',
+        familyBasis,
+        observedProblem,
+        causalExplanation,
+        matchedDomainNames,
+      });
+    }
+
+    for (const duplicateId of duplicateEvidenceIds) {
+      providerById.delete(duplicateId);
+    }
+
+    const omittedEvidenceIds = corpus
+      .filter((rawItem) => !returnedEvidenceIds.has(rawItem.id))
+      .map((rawItem) => rawItem.id);
+    const structurallyInvalidEvidenceIds = corpus
+      .filter(
+        (rawItem) =>
+          returnedEvidenceIds.has(rawItem.id) &&
+          !providerById.has(rawItem.id),
+      )
+      .map((rawItem) => rawItem.id);
+
+    const classifiedItems = corpus.filter((rawItem) =>
+      providerById.has(rawItem.id),
+    );
+
+    const classifications = classifiedItems.map<CommunityAiEvidenceTriage>(
+      (rawItem) => {
+        const provider = providerById.get(rawItem.id);
+        if (!provider) return deterministicFallback.get(rawItem.id)!;
+
+        let classification = this.capEvidenceClassificationByProvenance(
+          rawItem.sourceKey,
+          provider.classification,
+        );
+
+        // These are non-semantic structural caps over the AI verdict. They never
+        // infer relevance from words in the evidence itself.
+        if (
+          provider.evidenceNature === 'PROMOTIONAL' ||
+          provider.evidenceNature === 'NEUTRAL_CONTEXT'
+        ) {
+          classification =
+            classification === 'UNRELATED' ? 'UNRELATED' : 'CONTEXT_ONLY';
+        }
+        if (
+          provider.evidenceNature === 'MARKET_RESEARCH' &&
+          classification === 'DIRECT_PROBLEM'
+        ) {
+          classification = 'SUPPORTING_SIGNAL';
+        }
+        if (
+          classification === 'DIRECT_PROBLEM' &&
+          provider.evidenceNature !== 'LIVED_EXPERIENCE'
+        ) {
+          classification = 'SUPPORTING_SIGNAL';
+        }
+
+        const trustedCandidate =
+          classification === 'DIRECT_PROBLEM' ||
+          classification === 'SUPPORTING_SIGNAL';
+        const requiredAlignment = discoveryMode
+          ? provider.domainAlignment
+          : provider.problemAlignment;
+        const semanticallyComplete =
+          provider.confidence >= 58 &&
+          provider.familyBasis === 'OBSERVED_PROBLEM' &&
+          Boolean(provider.problemFamily) &&
+          Boolean(provider.observedProblem) &&
+          requiredAlignment !== 'NONE' &&
+          (!discoveryMode || provider.matchedDomainNames.length > 0);
+
+        if (trustedCandidate && !semanticallyComplete) {
+          classification =
+            requiredAlignment === 'NONE' ? 'UNRELATED' : 'CONTEXT_ONLY';
+        } else if (
+          classification === 'DIRECT_PROBLEM' &&
+          requiredAlignment === 'PARTIAL'
+        ) {
+          classification = 'SUPPORTING_SIGNAL';
+        }
+
+        const verified =
+          (classification === 'DIRECT_PROBLEM' ||
+            classification === 'SUPPORTING_SIGNAL') &&
+          semanticallyComplete;
+
+        return {
+          evidenceId: rawItem.id,
+          classification,
+          confidence: provider.confidence,
+          reason: verified
+            ? `${provider.reason} AI semantic verdict passed structural/provenance admission.`
+            : provider.reason,
+          problemFamily: verified ? provider.problemFamily : null,
+          evidenceNature: provider.evidenceNature,
+          domainAlignment: provider.domainAlignment,
+          problemAlignment: provider.problemAlignment,
+          familyBasis: provider.familyBasis,
+          observedProblem: provider.observedProblem,
+          causalExplanation: provider.causalExplanation,
+          matchedDomainNames: provider.matchedDomainNames,
+          verifiedByDeterministicGuard: verified,
+          adjudicationStatus: 'ADJUDICATED',
+          adjudicationFailureReason: null,
+        };
+      },
+    );
+
+    /*
+     * AI-selected family metadata is accepted only when it references rows that
+     * independently survived per-item admission and canonical verification.
+     */
+    const providerSelectedProblemFamily = normalizeProblemFamily(
       parsed.selectedProblemFamily,
-      '',
-    )
-      .replace(/\s+/gu, ' ')
-      .trim()
-      .slice(0, 120) || null;
-    const selectedEvidenceIds = Array.isArray(parsed.selectedEvidenceIds)
+    );
+    const requestedSelectedEvidenceIds = Array.isArray(parsed.selectedEvidenceIds)
       ? parsed.selectedEvidenceIds
           .filter((value): value is string => typeof value === 'string')
           .map((value) => value.trim())
           .filter((value) => corpusById.has(value))
           .slice(0, 8)
       : [];
-    const providerById = new Map<string, {
-      readonly classification: CommunityAiEvidenceClassification;
-      readonly confidence: number;
-      readonly problemFamily: string | null;
-    }>();
-
-    for (const entry of parsed.items.slice(0, corpus.length)) {
-      if (!this.isRecord(entry)) continue;
-      const evidenceId = this.optionalString(entry.evidenceId, '').trim();
-      if (!evidenceId || !corpusById.has(evidenceId)) continue;
-      const rawClassification = this.optionalString(
-        entry.classification,
-        '',
-      ).trim().toUpperCase();
-      if (
-        rawClassification !== 'DIRECT_PROBLEM' &&
-        rawClassification !== 'SUPPORTING_SIGNAL' &&
-        rawClassification !== 'CONTEXT_ONLY' &&
-        rawClassification !== 'UNRELATED'
-      ) {
-        // Treat a missing/invalid label as an omitted id rather than silently
-        // converting it to UNRELATED. The sibling full-corpus model stays alive
-        // and, if necessary, deterministic verified support fills only this id.
-        continue;
-      }
-      const classification = rawClassification as CommunityAiEvidenceClassification;
-      providerById.set(evidenceId, {
-        classification,
-        confidence: this.normalizeOptionalScore(entry.confidence, 50),
-        problemFamily:
-          this.optionalString(entry.problemFamily, '').replace(/\s+/gu, ' ').trim().slice(0, 80) || null,
-      });
-    }
-
-    const classifiedItems = corpus.filter((rawItem) => providerById.has(rawItem.id));
-    const missingEvidenceIds = corpus
-      .filter((rawItem) => !providerById.has(rawItem.id))
-      .map((rawItem) => rawItem.id);
-
-    const classifications = classifiedItems.map<CommunityAiEvidenceTriage>((rawItem) => {
-      const provider = providerById.get(rawItem.id);
-      if (!provider) {
-        const fallback = deterministicFallback.get(rawItem.id)!;
-        return {
-          ...fallback,
-          reason:
-            'The AI triage response omitted this evidence id; deterministic fallback classification was preserved.',
-        };
-      }
-
-      const deterministicClassification =
-        deterministicFallback.get(rawItem.id)?.classification ?? 'UNRELATED';
-
-      if (
-        RequestEvidenceAlignmentUtil.isResearchContextOnlyEvidence(rawItem.text)
-      ) {
-        const alignedContext = discoveryMode
-          ? this.isDiscoveryEvidenceDomainAligned(context, rawItem)
-          : RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-              requestDescription: context.requestDescription,
-              evidenceText: rawItem.text,
-              plannedQueries: context.collectionPlan?.searchQueries ?? [],
-            });
-        return {
-          evidenceId: rawItem.id,
-          classification: alignedContext ? 'CONTEXT_ONLY' : 'UNRELATED',
-          confidence: 100,
-          reason: alignedContext
-            ? 'Research/survey recruitment or study-description material is request-aligned context only; without reported findings it cannot become trusted problem evidence.'
-            : 'Research/survey recruitment material did not contain requester-aligned reported findings.',
-          problemFamily: null,
-          verifiedByDeterministicGuard: false,
-        };
-      }
-
-      // App/Play listing descriptions are discovery metadata. Only their user
-      // reviews/comments may become problem evidence. This preserves the full
-      // raw ledger for Community visibility without allowing promotional copy
-      // to manufacture a SUPPORTING signal.
-      if (
-        (rawItem.sourceKey === 'app-store' || rawItem.sourceKey === 'google-play') &&
-        rawItem.sourceType === 'POST'
-      ) {
-        const alignedContext = discoveryMode
-          ? this.isDiscoveryEvidenceDomainAligned(context, rawItem)
-          : RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-              requestDescription: context.requestDescription,
-              evidenceText: rawItem.text,
-              plannedQueries: context.collectionPlan?.searchQueries ?? [],
-            });
-        return {
-          evidenceId: rawItem.id,
-          classification: alignedContext ? 'CONTEXT_ONLY' : 'UNRELATED',
-          confidence: 100,
-          reason: alignedContext
-            ? 'Mobile-store listing metadata is request-aligned workflow/solution context only; it is excluded from trusted problem evidence.'
-            : 'Mobile-store listing metadata is discovery-only and did not materially match the requester workflow.',
-          problemFamily: null,
-          verifiedByDeterministicGuard: false,
-        };
-      }
-
-      const painAwareAdmission = discoveryMode
-        ? this.passesDiscoveryEvidenceProblemGuard(context, rawItem)
-        : RequestEvidenceAlignmentUtil.passesPostAiPainAwareEvidenceGuard({
-            requestDescription: context.requestDescription,
-            evidenceText: rawItem.text,
-            plannedQueries: context.collectionPlan?.searchQueries ?? [],
-          });
-      if (
-        (provider.classification === 'DIRECT_PROBLEM' ||
-          provider.classification === 'SUPPORTING_SIGNAL') &&
-        !painAwareAdmission
-      ) {
-        const alignedContext = discoveryMode
-          ? this.isDiscoveryEvidenceDomainAligned(context, rawItem)
-          : RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-              requestDescription: context.requestDescription,
-              evidenceText: rawItem.text,
-              plannedQueries: context.collectionPlan?.searchQueries ?? [],
-            });
-        return {
-          evidenceId: rawItem.id,
-          classification: alignedContext ? 'CONTEXT_ONLY' : 'UNRELATED',
-          confidence: Math.min(provider.confidence, 80),
-          reason: alignedContext
-            ? 'AI found request-adjacent material, but deterministic pain verification capped it at CONTEXT_ONLY because it does not prove a requester problem.'
-            : 'AI semantic relevance was rejected after post-AI deterministic pain/workflow and identity verification.',
-          problemFamily: null,
-          verifiedByDeterministicGuard: false,
-        };
-      }
-      /*
-       * Deterministic SUPPORTING is a safety cap/fallback, not permission to
-       * overrule an online model that explicitly rejected a weak contextual
-       * item. If the AI says DIRECT while deterministic alignment supports only
-       * a partial signal, downgrade to SUPPORTING; if the AI says UNRELATED,
-       * keep it unrelated. Missing provider items are handled by the earlier
-       * deterministic fallback branch.
-       */
-      const semanticClassification =
-        provider.classification === 'UNRELATED'
-          ? 'UNRELATED'
-          : provider.classification === 'DIRECT_PROBLEM' &&
-              deterministicClassification === 'SUPPORTING_SIGNAL'
-            ? 'SUPPORTING_SIGNAL'
-            : provider.classification === 'CONTEXT_ONLY' &&
-                deterministicClassification === 'SUPPORTING_SIGNAL' &&
-                painAwareAdmission &&
-                RequestEvidenceAlignmentUtil.hasProblemBearingClaim(rawItem.text)
-              ? 'SUPPORTING_SIGNAL'
-              : provider.classification;
-
-      const directContractClassification =
-        semanticClassification === 'DIRECT_PROBLEM' &&
-        !this.passesGovernmentLegalDirectContract(
-          context.requestDescription,
-          rawItem.text,
-        )
-          ? 'UNRELATED'
-          : semanticClassification;
-      const provenanceCappedClassification =
-        this.capEvidenceClassificationByProvenance(
-          rawItem.sourceKey,
-          directContractClassification,
-        );
-      const trustedProblemClassification =
-        provenanceCappedClassification === 'DIRECT_PROBLEM' ||
-        provenanceCappedClassification === 'SUPPORTING_SIGNAL';
-      const canonicalProblemFamily = trustedProblemClassification
-        ? this.sanitizeEvidenceProblemFamily(
-            context,
-            rawItem.text,
-            provider.problemFamily,
-          )
+    const verifiedById = new Map(
+      classifications
+        .filter((item) => item.verifiedByDeterministicGuard)
+        .map((item) => [item.evidenceId, item] as const),
+    );
+    const selectedEvidenceIds = providerSelectedProblemFamily
+      ? requestedSelectedEvidenceIds.filter((evidenceId) => {
+          const verdict = verifiedById.get(evidenceId);
+          return (
+            verdict?.problemFamily?.toLocaleLowerCase() ===
+            providerSelectedProblemFamily.toLocaleLowerCase()
+          );
+        })
+      : [];
+    const selectedProblemFamily =
+      providerSelectedProblemFamily && selectedEvidenceIds.length > 0
+        ? providerSelectedProblemFamily
         : null;
-      const familyValidatedClassification =
-        trustedProblemClassification &&
-        context.collectionPlan?.problemProfile &&
-        !canonicalProblemFamily
-          ? RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-              requestDescription: context.requestDescription,
-              evidenceText: rawItem.text,
-              plannedQueries: context.collectionPlan?.searchQueries ?? [],
-            })
-            ? 'CONTEXT_ONLY'
-            : 'UNRELATED'
-          : provenanceCappedClassification;
-
-      return {
-        evidenceId: rawItem.id,
-        classification: familyValidatedClassification,
-        confidence: provider.confidence,
-        reason:
-          familyValidatedClassification === 'UNRELATED'
-            ? provenanceCappedClassification === 'UNRELATED'
-              ? 'AI semantic triage classified this evidence as unrelated after deterministic safety verification.'
-              : 'AI semantic relevance was rejected because no requester-owned canonical problem family could be derived from the evidence.'
-            : provider.classification === 'DIRECT_PROBLEM' &&
-                deterministicClassification === 'SUPPORTING_SIGNAL'
-              ? 'AI semantic triage found a direct match, but deterministic request/workflow verification conservatively capped it at SUPPORTING_SIGNAL.'
-              : provider.classification === 'CONTEXT_ONLY' &&
-                  familyValidatedClassification === 'SUPPORTING_SIGNAL'
-                ? 'AI marked the item as contextual, but deterministic request/workflow verification confirmed a concrete problem-bearing facet, so it was retained as partial SUPPORTING_SIGNAL evidence.'
-                : 'AI semantic triage accepted this evidence after deterministic noise/identity verification.',
-        problemFamily:
-          familyValidatedClassification === 'UNRELATED'
-            ? null
-            : canonicalProblemFamily,
-        verifiedByDeterministicGuard:
-          familyValidatedClassification === 'DIRECT_PROBLEM' ||
-          familyValidatedClassification === 'SUPPORTING_SIGNAL',
-      };
-    });
 
     return {
       classifications,
-      missingEvidenceIds,
+      omittedEvidenceIds,
+      invalidEvidenceIds: structurallyInvalidEvidenceIds,
       selectedProblemFamily,
       selectedEvidenceIds,
     };
   }
 
-
-  private passesGovernmentLegalDirectContract(
-    requestDescription: string | null | undefined,
-    evidenceText: string,
-  ): boolean {
-    const request = this.normalizeComparableText(requestDescription ?? '');
-    const isGovernmentLegalRequest =
-      /\b(?:government|municipal|public sector|agency|agencies|attorney general)\b/u.test(request) &&
-      /\b(?:legal|permit|permits|contract|contracts|regulation|regulations|citizen application|citizen applications|case history|case histories|regulatory)\b/u.test(request);
-    if (!isGovernmentLegalRequest) return true;
-
-    const evidence = this.normalizeComparableText(evidenceText);
-    const actor = /\b(?:government|municipal|public sector|public administration|agency|agencies|attorney general|legal department|legal office)\b/u.test(evidence);
-    const workflow = /\b(?:permit|permits|license|licenses|application|applications|contract|contracts|regulation|regulations|regulatory|legal document|legal documents|case history|case histories|case file|case files|document review)\b/u.test(evidence);
-    const pain = /\b(?:delay|delayed|backlog|manual review|manual reviews|repeated review|missing information|incomplete|conflicting requirement|conflicting requirements|inconsistent decision|inconsistent decisions|workload|overload|urgent|bottleneck|fragmented|separate systems|disparate systems)\b/u.test(evidence);
-    return actor && workflow && pain;
-  }
 
   private capEvidenceClassificationByProvenance(
     sourceKey: string | null | undefined,
@@ -1828,292 +2172,103 @@ export class CommunityAiAnalysisService {
     return classification;
   }
 
-  private isDiscoveryEvidenceDomainAligned(
-    context: IdeaGenerationContext,
-    rawItem: IdeaGenerationRawEvidenceItem,
-  ): boolean {
-    if (context.selectedDomains.length === 0) return false;
-    return context.selectedDomains.some((domain) =>
-      this.evidenceSemanticallySupportsDomain(context, domain.name, rawItem.text),
-    );
-  }
-
-  private passesDiscoveryEvidenceProblemGuard(
-    context: IdeaGenerationContext,
-    rawItem: IdeaGenerationRawEvidenceItem,
-  ): boolean {
-    if (!this.isDiscoveryEvidenceDomainAligned(context, rawItem)) return false;
-    return RequestEvidenceAlignmentUtil.hasProblemBearingClaim(rawItem.text);
-  }
-
   private buildDeterministicEvidenceTriage(
-    context: IdeaGenerationContext,
+    _context: IdeaGenerationContext,
     rawItem: IdeaGenerationRawEvidenceItem,
+    failureReason: CommunityAiAdjudicationFailureReason = 'AI_UNAVAILABLE',
+    detail?: string,
   ): CommunityAiEvidenceTriage {
-    const normalizedSource = (rawItem.sourceKey ?? '').trim().toLocaleLowerCase();
-    const discoveryMode = this.isEvidenceDiscoveryMode(context);
-    if (RequestEvidenceAlignmentUtil.isResearchContextOnlyEvidence(rawItem.text)) {
-      const alignedContext = discoveryMode
-        ? this.isDiscoveryEvidenceDomainAligned(context, rawItem)
-        : RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-            requestDescription: context.requestDescription,
-            evidenceText: rawItem.text,
-            plannedQueries: context.collectionPlan?.searchQueries ?? [],
-          });
-      return {
-        evidenceId: rawItem.id,
-        classification: alignedContext ? 'CONTEXT_ONLY' : 'UNRELATED',
-        confidence: 100,
-        reason: alignedContext
-          ? 'Research/survey recruitment or study-description material is retained as CONTEXT_ONLY until actual reported findings are present.'
-          : 'Research/survey recruitment material contains no trusted requester-aligned problem finding.',
-        problemFamily: null,
-        verifiedByDeterministicGuard: false,
-      };
-    }
-    if (
-      (normalizedSource === 'google-play' || normalizedSource === 'app-store') &&
-      rawItem.sourceType === 'POST'
-    ) {
-      const alignedContext = discoveryMode
-        ? this.isDiscoveryEvidenceDomainAligned(context, rawItem)
-        : RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-            requestDescription: context.requestDescription,
-            evidenceText: rawItem.text,
-            plannedQueries: context.collectionPlan?.searchQueries ?? [],
-          });
-      return {
-        evidenceId: rawItem.id,
-        classification: alignedContext ? 'CONTEXT_ONLY' : 'UNRELATED',
-        confidence: 100,
-        reason: alignedContext
-          ? 'Mobile-store listing metadata is retained as CONTEXT_ONLY for workflow vocabulary/recovery and can never become trusted problem evidence.'
-          : 'Mobile-store listing metadata is discovery-only and did not materially match the requester workflow.',
-        problemFamily: null,
-        verifiedByDeterministicGuard: false,
-      };
-    }
-    const discoveryDomainAligned = discoveryMode
-      ? this.isDiscoveryEvidenceDomainAligned(context, rawItem)
-      : false;
-    const discoveryProblemBearing = discoveryMode
-      ? RequestEvidenceAlignmentUtil.hasProblemBearingClaim(rawItem.text)
-      : false;
-    const discoveryDirectSource = ![
-      'crossref',
-      'news',
-      'gdelt',
-      'blog',
-    ].includes(normalizedSource);
-    const fallbackClassification: CommunityAiEvidenceClassification = discoveryMode
-      ? discoveryDomainAligned && discoveryProblemBearing
-        ? discoveryDirectSource
-          ? 'DIRECT_PROBLEM'
-          : 'SUPPORTING_SIGNAL'
-        : discoveryDomainAligned
-          ? 'CONTEXT_ONLY'
-          : 'UNRELATED'
-      : RequestEvidenceAlignmentUtil.classifyForRequestFallback({
-          requestDescription: context.requestDescription,
-          evidenceText: rawItem.text,
-          plannedQueries: context.collectionPlan?.searchQueries ?? [],
-        });
-    const painAwareFallbackClassification: CommunityAiEvidenceClassification =
-      !discoveryMode &&
-      fallbackClassification !== 'UNRELATED' &&
-      fallbackClassification !== 'CONTEXT_ONLY' &&
-      !RequestEvidenceAlignmentUtil.passesPostAiPainAwareEvidenceGuard({
-        requestDescription: context.requestDescription,
-        evidenceText: rawItem.text,
-        plannedQueries: context.collectionPlan?.searchQueries ?? [],
-      })
-        ? 'UNRELATED'
-        : fallbackClassification;
-    const directContractClassification =
-      painAwareFallbackClassification === 'DIRECT_PROBLEM' &&
-      !this.passesGovernmentLegalDirectContract(
-        context.requestDescription,
-        rawItem.text,
-      )
-        ? 'UNRELATED'
-        : painAwareFallbackClassification;
-    const provenanceCappedClassification =
-      this.capEvidenceClassificationByProvenance(
-        rawItem.sourceKey,
-        directContractClassification,
-      );
-    const trustedProblemClassification =
-      provenanceCappedClassification === 'DIRECT_PROBLEM' ||
-      provenanceCappedClassification === 'SUPPORTING_SIGNAL';
-    const canonicalProblemFamily = trustedProblemClassification
-      ? this.sanitizeEvidenceProblemFamily(context, rawItem.text, null)
-      : null;
-    const familyValidatedClassification =
-      trustedProblemClassification &&
-      context.collectionPlan?.problemProfile &&
-      !canonicalProblemFamily
-        ? 'UNRELATED'
-        : provenanceCappedClassification;
-    const verifiedByDeterministicGuard =
-      familyValidatedClassification === 'DIRECT_PROBLEM' ||
-      familyValidatedClassification === 'SUPPORTING_SIGNAL';
-
+    /*
+     * Deterministic code owns provenance/schema safety only. It must never turn
+     * provider failure into an invented semantic verdict such as UNRELATED.
+     */
     return {
       evidenceId: rawItem.id,
-      classification: familyValidatedClassification,
-      confidence:
-        familyValidatedClassification === 'DIRECT_PROBLEM'
-          ? 72
-          : familyValidatedClassification === 'SUPPORTING_SIGNAL'
-            ? 54
-            : 78,
+      classification: 'UNADJUDICATED',
+      confidence: 0,
       reason:
-        familyValidatedClassification === 'DIRECT_PROBLEM'
-          ? 'Online semantic triage did not return a usable classification for this evidence item; deterministic triage fallback retained a requester-aligned problem expression after safety verification.'
-          : familyValidatedClassification === 'SUPPORTING_SIGNAL'
-            ? 'Online semantic triage did not return a usable classification for this evidence item; deterministic triage fallback preserved a conservative requester-related supporting signal with provenance-safe direct-evidence capping.'
-            : 'Online semantic triage did not return a usable classification for this evidence item; deterministic triage fallback found no safe requester alignment.',
-      problemFamily:
-        familyValidatedClassification === 'UNRELATED'
-          ? null
-          : canonicalProblemFamily,
-      verifiedByDeterministicGuard,
+        detail?.trim() ||
+        'No online semantic verdict was available; deterministic code intentionally made no relevance or problem-family claim.',
+      problemFamily: null,
+      evidenceNature: 'OTHER',
+      domainAlignment: 'NONE',
+      problemAlignment: 'NONE',
+      familyBasis: 'NONE',
+      observedProblem: null,
+      causalExplanation: null,
+      matchedDomainNames: [],
+      verifiedByDeterministicGuard: false,
+      adjudicationStatus: 'UNADJUDICATED',
+      adjudicationFailureReason: failureReason,
     };
+  }
+
+  private withAdjudicationFailure(
+    item: CommunityAiEvidenceTriage,
+    failureReason: CommunityAiAdjudicationFailureReason,
+    detail?: string,
+  ): CommunityAiEvidenceTriage {
+    return {
+      ...item,
+      classification: 'UNADJUDICATED',
+      confidence: 0,
+      reason:
+        detail?.trim() ||
+        'Semantic adjudication did not complete for this evidence row.',
+      problemFamily: null,
+      evidenceNature: 'OTHER',
+      domainAlignment: 'NONE',
+      problemAlignment: 'NONE',
+      familyBasis: 'NONE',
+      observedProblem: null,
+      causalExplanation: null,
+      matchedDomainNames: [],
+      verifiedByDeterministicGuard: false,
+      adjudicationStatus: 'UNADJUDICATED',
+      adjudicationFailureReason: failureReason,
+    };
+  }
+
+  private resolveAdjudicationFailureReason(
+    error: unknown,
+    signal?: AbortSignal,
+  ): CommunityAiAdjudicationFailureReason {
+    if (signal?.aborted) return 'AI_ABORTED';
+    const message = this.getErrorMessage(error).toLocaleLowerCase();
+    if (/timeout|timed out|exceeded .*ms|deadline|wall-clock/u.test(message)) {
+      return 'AI_TIMEOUT';
+    }
+    if (/abort|cancel/u.test(message)) return 'AI_ABORTED';
+    if (
+      /validation|invalid root|invalid .*response|returned only|missing evidence|supplied evidence id/u.test(
+        message,
+      )
+    ) {
+      return 'AI_VALIDATION_REJECTED';
+    }
+    if (!message || /no active|no online|unavailable|not configured/u.test(message)) {
+      return 'AI_UNAVAILABLE';
+    }
+    return 'AI_EXECUTION_FAILED';
   }
 
   private sanitizeEvidenceProblemFamily(
-    context: IdeaGenerationContext,
-    evidenceText: string,
+    _context: IdeaGenerationContext,
+    _evidenceText: string,
     providerFamily: string | null,
   ): string | null {
-    const profile = context.collectionPlan?.problemProfile;
-    if (profile) {
-      /*
-       * The PREPARING-stage canonical profile is the family namespace. AI
-       * labels are hints only; they can improve facet selection but may never
-       * introduce a new object/problem noun. Foreign-object labels are discarded,
-       * while synonymous provider labels converge onto one requester facet.
-       */
-      const canonical = CanonicalProblemFamilyUtil.resolve({
-        profile,
-        evidenceText,
-        providerFamily,
-      });
-      return canonical?.label ?? null;
-    }
-
-    const requestDescription = context.requestDescription?.trim() ?? '';
-    const discoveryMode = this.isEvidenceDiscoveryMode(context);
-    const selectedProviderFamily = providerFamily?.trim() ?? '';
-    const evidenceNativeFamily = this.buildEvidenceNativeProblemFamily(evidenceText);
-    if (
-      selectedProviderFamily &&
-      !this.isGenericProblemFamilyLabel(selectedProviderFamily) &&
-      this.isWellFormedDiscoveryProblemFamilyLabel(selectedProviderFamily) &&
-      this.isEvidenceEntailedProblemFamily(evidenceText, selectedProviderFamily) &&
-      this.hasConcreteProblemSemantics(selectedProviderFamily)
-    ) {
-      return selectedProviderFamily.replace(/\s+/gu, ' ').trim().slice(0, 120);
-    }
-
     /*
-     * In discovery mode a provider sometimes returns the product/app title as
-     * the problem family (for example "MyByram Order Medical Supplies").  The
-     * same AI triage is still authoritative about which evidence is relevant,
-     * but the persisted family must describe the pain rather than the entity
-     * that happened to expose it.  Prefer an evidence-native pain label when
-     * the provider label itself has no failure/friction semantics.
+     * The online semantic classifier owns family meaning. Downstream code only
+     * normalizes transport formatting; it never invents or rewrites a family
+     * from lexical overlap, request keywords, or a deterministic taxonomy.
      */
-    if (evidenceNativeFamily && discoveryMode) {
-      return evidenceNativeFamily;
-    }
-
-    const deterministicFamily = resolvePrimaryProblemFamily(evidenceText)?.label ?? null;
-    if (deterministicFamily && this.isEvidenceEntailedProblemFamily(evidenceText, deterministicFamily)) {
-      if (
-        !discoveryMode &&
-        requestDescription &&
-        !matchEvidenceToProblemFamily(requestDescription, evidenceText).matched
-      ) {
-        return null;
-      }
-      return deterministicFamily.replace(/\s+/gu, ' ').trim().slice(0, 120);
-    }
-
-    return evidenceNativeFamily;
-  }
-
-  private hasProblemSemantics(value: string): boolean {
-    return /\b(?:fail(?:ure|ures|ed|ing)?|error|wrong|incorrect|missing|delay(?:ed|s)?|late|difficult|unable|cannot|can['’]?t|outage|downtime|breach|incident|risk|instability|lockout|rework|waste|damag(?:e|ed)|mismatch|confusion|backlog|shortage|overload|friction|liabilit(?:y|ies)|accountability|complaint|problem|issue)\b/iu.test(
-      value,
-    );
-  }
-
-
-  /**
-   * Discovery-family labels must contain a concrete failure/pain concept.
-   * Generic words such as "problem", "issue", "challenge", or
-   * "workflow friction" are not sufficient because paper/article titles can
-   * contain them without naming the actual observed problem. Requester modes
-   * have a canonical problem profile; this stricter rule is primarily for
-   * DOMAINS_ONLY/NO_INPUT evidence-native discovery.
-   */
-  private hasConcreteProblemSemantics(value: string): boolean {
-    return /\b(?:fail(?:ure|ures|ed|ing)?|error|wrong|incorrect|missing|delay(?:ed|s)?|late|difficult(?:y|ies)?|unable|cannot|can['’]?t|outage|downtime|breach|incident|instability|lockout|rework|waste|damag(?:e|ed)|mismatch|confusion|backlog|shortage|overload|fatigue|bottleneck|burden|constraint|barrier|gap|loss(?:es)?|cost(?:s)?|expensive|pressure|privacy|compliance|explainab(?:ility|le)|quality|bias|unsafe|vulnerabilit(?:y|ies)|liabilit(?:y|ies)|accountability)\b/iu.test(
-      value,
-    );
-  }
-
-  private isWellFormedDiscoveryProblemFamilyLabel(value: string): boolean {
-    if (!this.hasConcreteProblemSemantics(value)) return false;
-    const stopwords = new Set([
-      'community', 'comment', 'comments', 'review', 'reviews', 'post', 'posts',
-      'article', 'articles', 'report', 'reports', 'user', 'users', 'customer',
-      'customers', 'says', 'saying', 'said', 'keeps', 'keep', 'there', 'this',
-      'that', 'these', 'those', 'something', 'someone', 'thing', 'things',
-      'workflow', 'friction', 'problem', 'problems', 'issue', 'issues',
-      'technical', 'system', 'systems', 'service', 'services',
-    ]);
-    const informative = this.normalizeComparableText(value)
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter((token) => token.length >= 4 && !stopwords.has(token));
-    const painTokens = informative.filter((token) =>
-      /^(?:fail|failure|failures|error|errors|wrong|incorrect|missing|delay|delays|delayed|outage|downtime|breach|incident|lockout|rework|waste|shortage|overload|fatigue|bottleneck|burden|constraint|barrier|gap|loss|losses|cost|costs|privacy|compliance|explainability|quality|bias|unsafe|vulnerability|vulnerabilities)$/u.test(token),
-    );
-    const contextual = informative.filter((token) => !painTokens.includes(token));
-    return contextual.length >= 2 && informative.length >= 3;
-  }
-
-  private discoveryProblemFamilySupportedByEvidenceGroup(
-    family: string,
-    evidenceTexts: readonly string[],
-  ): boolean {
-    if (!this.isWellFormedDiscoveryProblemFamilyLabel(family)) return false;
-    const combined = evidenceTexts.join(' ');
-    if (!this.hasConcreteProblemSemantics(combined)) return false;
-    if (matchEvidenceToProblemFamily(family, combined).matched) return true;
-
-    const stop = new Set([
-      'problem', 'problems', 'issue', 'issues', 'workflow', 'friction', 'system',
-      'systems', 'service', 'services', 'user', 'users', 'community', 'comment',
-      'comments', 'technical', 'application', 'applications',
-    ]);
-    const normalizeToken = (token: string): string => {
-      if (token.length > 6 && token.endsWith('ies')) return `${token.slice(0, -3)}y`;
-      if (token.length > 6 && token.endsWith('es')) return token.slice(0, -2);
-      if (token.length > 5 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
-      return token;
-    };
-    const tokens = (value: string): string[] =>
-      this.normalizeComparableText(value)
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((token) => token.length >= 4 && !stop.has(token))
-        .map(normalizeToken);
-    const evidenceTokens = new Set(tokens(combined));
-    const familyTokens = [...new Set(tokens(family))];
-    if (familyTokens.length < 2) return false;
-    const overlap = familyTokens.filter((token) => evidenceTokens.has(token)).length;
-    return overlap >= 2 && overlap / familyTokens.length >= 0.4;
+    const family = providerFamily
+      ?.normalize('NFKC')
+      .replace(/[_-]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, 120) ?? '';
+    return family || null;
   }
 
   private async findOnlineFallbackModels(
@@ -2127,11 +2282,7 @@ export class CommunityAiAnalysisService {
               routableModels,
             )
           : [];
-      const normalCandidates =
-        currentlyAvailableModels.length > 0
-          ? currentlyAvailableModels
-          : routableModels;
-
+      const normalCandidates = currentlyAvailableModels;
       const isBaseEligibleOnlineModel = (model: AiModel): boolean => {
         const provider = normalizeAiProviderKey(model.providerKey);
         return (
@@ -2146,12 +2297,120 @@ export class CommunityAiAnalysisService {
         !COMMUNITY_AI_ANALYSIS_EXCLUDED_MODEL_API_IDS.has(model.apiModelId);
 
       let onlineModels = normalCandidates.filter(isFastEligibleOnlineModel);
-      if (onlineModels.length < COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS) {
+
+      /*
+       * Provider diversity must be decided before the three-model cap is
+       * applied.  Previously three fast Google rows could fill the pool first,
+       * which prevented a healthy OpenRouter/other-provider model from ever
+       * entering the candidate set even though the final selector itself
+       * preferred distinct providers.  Keep all fast models, then explicitly
+       * add at least one healthy candidate from every otherwise-missing
+       * provider before final ordering/capping.
+       */
+      const alreadySelectedProviders = new Set(
+        onlineModels
+          .map((model) => normalizeAiProviderKey(model.providerKey))
+          .filter(
+            (provider): provider is AiProviderKey => provider !== undefined,
+          ),
+      );
+      const slowerProviderDiversityCandidates = normalCandidates
+        .filter(isBaseEligibleOnlineModel)
+        .filter(
+          (model) =>
+            !onlineModels.some((candidate) => candidate.id === model.id),
+        )
+        .sort((first, second) => {
+          const firstProvider = normalizeAiProviderKey(first.providerKey);
+          const secondProvider = normalizeAiProviderKey(second.providerKey);
+          const firstDiversity =
+            firstProvider && !alreadySelectedProviders.has(firstProvider)
+              ? 0
+              : 1;
+          const secondDiversity =
+            secondProvider && !alreadySelectedProviders.has(secondProvider)
+              ? 0
+              : 1;
+          return (
+            firstDiversity - secondDiversity ||
+            this.healthRank(first.healthStatus) -
+              this.healthRank(second.healthStatus) ||
+            first.consecutiveFailures - second.consecutiveFailures
+          );
+        });
+      for (const model of slowerProviderDiversityCandidates) {
+        const provider = normalizeAiProviderKey(model.providerKey);
+        if (!provider) continue;
+
+        const addsProviderDiversity = !alreadySelectedProviders.has(provider);
+        const stillNeedsCapacity =
+          onlineModels.length < COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS;
+        if (!addsProviderDiversity && !stillNeedsCapacity) continue;
+
+        onlineModels.push(model);
+        alreadySelectedProviders.add(provider);
+      }
+
+      const onlineProviderCount = new Set(
+        onlineModels
+          .map((model) => normalizeAiProviderKey(model.providerKey))
+          .filter(
+            (provider): provider is AiProviderKey => provider !== undefined,
+          ),
+      ).size;
+      if (
+        onlineModels.length < COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS ||
+        onlineProviderCount < 2
+      ) {
         const emergencyModels = await this.aiModelsService.getEmergencyJsonModels();
-        for (const model of emergencyModels.filter(isBaseEligibleOnlineModel)) {
+        const availableEmergencyModels =
+          await this.aiModelRoutingService.filterTemporarilyUnavailableProviders(
+            emergencyModels,
+          );
+        for (const model of availableEmergencyModels
+          .filter(isBaseEligibleOnlineModel)
+          .sort((first, second) => {
+            const firstProvider = normalizeAiProviderKey(first.providerKey);
+            const secondProvider = normalizeAiProviderKey(second.providerKey);
+            const currentProviders = new Set(
+              onlineModels
+                .map((candidate) =>
+                  normalizeAiProviderKey(candidate.providerKey),
+                )
+                .filter(
+                  (provider): provider is AiProviderKey =>
+                    provider !== undefined,
+                ),
+            );
+            const firstDiversity =
+              firstProvider && !currentProviders.has(firstProvider) ? 0 : 1;
+            const secondDiversity =
+              secondProvider && !currentProviders.has(secondProvider) ? 0 : 1;
+            return (
+              firstDiversity - secondDiversity ||
+              this.healthRank(first.healthStatus) -
+                this.healthRank(second.healthStatus) ||
+              first.consecutiveFailures - second.consecutiveFailures
+            );
+          })) {
           if (onlineModels.some((candidate) => candidate.id === model.id)) continue;
           onlineModels.push(model);
-          if (onlineModels.length >= COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS) break;
+          const providers = new Set(
+            onlineModels
+              .map((candidate) =>
+                normalizeAiProviderKey(candidate.providerKey),
+              )
+              .filter(
+                (provider): provider is AiProviderKey =>
+                  provider !== undefined,
+              ),
+          );
+          if (
+            onlineModels.length >= COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS &&
+            providers.size >= 2
+          ) {
+            break;
+          }
         }
         if (onlineModels.length > 0) {
           this.logger.debug(
@@ -2176,13 +2435,6 @@ export class CommunityAiAnalysisService {
           return first.consecutiveFailures - second.consecutiveFailures;
         }
 
-        const firstProvider = normalizeAiProviderKey(first.providerKey);
-        const secondProvider = normalizeAiProviderKey(second.providerKey);
-        const directProviderDifference =
-          (firstProvider === AI_PROVIDER_KEYS.GOOGLE ? 0 : 1) -
-          (secondProvider === AI_PROVIDER_KEYS.GOOGLE ? 0 : 1);
-        if (directProviderDifference !== 0) return directProviderDifference;
-
         const weightDifference = second.weight - first.weight;
         if (weightDifference !== 0) return weightDifference;
 
@@ -2204,7 +2456,7 @@ export class CommunityAiAnalysisService {
       }
 
       const selected: AiModel[] = [];
-      const usedProviders = new Set<string>();
+      const usedProviders = new Set<AiProviderKey>();
       for (const model of ordered) {
         const provider = normalizeAiProviderKey(model.providerKey);
         if (!provider) continue;
@@ -2756,342 +3008,40 @@ export class CommunityAiAnalysisService {
    */
   /**
    * Converts AI-classified raw evidence into a cautious fallback only after the
-   * deterministic request/workflow guard has capped the provider decision.
+   * structural/provenance admission guard has capped impossible source claims.
    * This closes the old gap where a useful raw item could be discarded before
-   * opportunity extraction, while preventing lexical collisions from becoming
-   * evidence simply because the model labelled them as relevant.
+   * opportunity extraction, while keeping missing/invalid AI verdicts fail-closed without reinterpreting evidence semantics lexically.
    */
-  private passesPostAiSemanticSupportGuard(
-    context: IdeaGenerationContext,
-    evidenceText: string,
-  ): boolean {
-    const requestDescription = context.requestDescription?.trim() ?? '';
-    if (!requestDescription) return false;
-
-    if (this.isEvidenceDiscoveryMode(context)) {
-      const selectedDomains = context.selectedDomains
-        .map((domain) => domain.name.trim())
-        .filter(Boolean);
-      const domainAligned =
-        selectedDomains.length === 0 ||
-        selectedDomains.some((domainName) =>
-          this.evidenceSemanticallySupportsDomain(context, domainName, evidenceText),
-        );
-      return domainAligned && this.hasConcreteProblemSemantics(evidenceText);
-    }
-
-    const explicitProblem =
-      context.collectionPlan?.requestIntent?.explicitProblem?.trim() ||
-      requestDescription;
-    const family = RequestWorkflowIntentProfileUtil.resolve(explicitProblem).family;
-    const deterministicGuard = RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
-      requestDescription: explicitProblem,
-      evidenceText,
-      plannedQueries: context.collectionPlan?.searchQueries ?? [],
-    });
-
-    /*
-     * Specialized workflow contracts already encode safe cross-domain atomic
-     * support. GENERAL requests instead use the PREPARING-stage canonical
-     * profile as the identity boundary so broad actor/domain words cannot make
-     * unrelated evidence relevant.
-     */
-    if (family !== 'GENERAL') return deterministicGuard;
-    return this.passesCanonicalProblemProfileSupport(context, evidenceText);
-  }
-
-  private passesCanonicalProblemProfileSupport(
-    context: IdeaGenerationContext,
-    evidenceText: string,
-  ): boolean {
-    const profile = context.collectionPlan?.problemProfile;
-    if (!profile) {
-      return RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
-        requestDescription: context.requestDescription,
-        evidenceText,
-        plannedQueries: context.collectionPlan?.searchQueries ?? [],
-      });
-    }
-
-    const alias = (token: string): string => {
-      if (/^(?:transportation|transit|mobility)$/u.test(token)) return 'mobility';
-      if (/^(?:cost|costs|expense|expenses)$/u.test(token)) return 'cost';
-      if (/^(?:fee|fees|fare|fares|revenue)$/u.test(token)) return 'revenue';
-      if (/^(?:budget|budgets|funding|funded|underfunded)$/u.test(token)) return 'budget';
-      if (/^(?:maintain|maintenance)$/u.test(token)) return 'maintenance';
-      if (/^(?:invest|investment|investments)$/u.test(token)) return 'investment';
-      return token;
-    };
-    const tokenize = (value: string): string[] =>
-      this.normalizeComparableText(value)
-        .split(/\s+/u)
-        .filter((token) => token.length >= 4)
-        .map(alias)
-        .filter(
-          (token) =>
-            !/^(?:public|municipal|authority|authorities|city|cities|service|services|system|systems|record|records|information|data|financial|performance|program|programs|operation|operations|users|user|often|struggle|separate|separately)$/u.test(
-              token,
-            ),
-        );
-    const evidenceTokens = new Set(tokenize(evidenceText));
-    if (evidenceTokens.size === 0) return false;
-
-    const objectFacets = profile.object
-      .split(/[,;/]|\band\b/iu)
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const objectMatched = objectFacets.some((facet) => {
-      const tokens = tokenize(facet).filter(
-        (token) => !/^(?:cost|revenue|budget|maintenance|investment)$/u.test(token),
-      );
-      if (tokens.length === 0) return false;
-      const overlap = tokens.filter((token) => evidenceTokens.has(token)).length;
-      return overlap >= 1;
-    });
-    if (!objectMatched) return false;
-
-    const axes = [
-      ...profile.failureModes,
-      ...profile.consequences,
-      profile.workflow,
-      profile.coreProblem,
-    ];
-    const axisMatched = axes.some((axis) => {
-      const tokens = tokenize(axis);
-      if (tokens.length === 0) return false;
-      const overlap = tokens.filter((token) => evidenceTokens.has(token)).length;
-      return overlap >= Math.min(2, Math.max(1, Math.ceil(tokens.length * 0.2)));
-    });
-
-    return axisMatched;
-  }
-
-  private isEvidenceEntailedProblemFamily(
-    evidenceText: string,
-    family: string,
-  ): boolean {
-    const stopwords = new Set([
-      'problem', 'problems', 'issue', 'issues', 'workflow', 'operational',
-      'user', 'users', 'service', 'services', 'system', 'systems',
-      'failure', 'failures', 'risk', 'risks', 'content',
-    ]);
-    const tokenize = (value: string): string[] =>
-      this.normalizeComparableText(value)
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((token) => token.length >= 4 && !stopwords.has(token));
-    const evidenceTokens = new Set(tokenize(evidenceText));
-    const familyTokens = tokenize(family);
-    if (familyTokens.length === 0) return false;
-    const overlap = familyTokens.filter((token) => evidenceTokens.has(token)).length;
-    return overlap >= Math.min(2, familyTokens.length) && overlap / familyTokens.length >= 0.6;
-  }
-
-  private buildEvidenceNativeProblemFamily(evidenceText: string): string | null {
-    const normalized = evidenceText.replace(/\s+/gu, ' ').trim();
-    if (!normalized) return null;
-    const comparable = normalized.toLocaleLowerCase();
-
-    if (
-      /\b(?:logistics|shipment|shipments|warehouse confirmation|carrier update|dispatch|drivers?|etas?|freight)\b/u.test(comparable) &&
-      /\b(?:waiting|wait|delay|delays|delayed|reply|replies|updates?|confirmation|response|answer the phone|information)\b/u.test(comparable)
-    ) {
-      return 'Shipment Update and Communication Delays';
-    }
-
-    if (
-      /\b(?:cybersecurity|cyber security|security controls?|security measures?|security updates?)\b/u.test(comparable) &&
-      /\b(?:reliability|uptime|availability|operational continuity|service continuity|downtime|disruption)\b/u.test(comparable)
-    ) {
-      return 'Cybersecurity Operational Reliability Friction';
-    }
-
-    if (
-      /\b(?:mybyram|medical supplies?|glucose sensors?|ostomy supplies?|healthcare supplies?)\b/u.test(comparable) &&
-      /\b(?:order|ordering|catalog|item|items|ship|shipping|delivery|supplies?)\b/u.test(comparable) &&
-      /\b(?:wrong|missing|difficult|delay|delayed|waiting|meaningless|cannot|can['’]?t|problem|issue|logs? out)\b/u.test(comparable)
-    ) {
-      return 'Medical Supply Ordering and Fulfillment Failures';
-    }
-
-    if (
-      /\b(?:crowdstrike|microsoft|software|technology|cloud|provider)\b/u.test(comparable) &&
-      /\b(?:outage|meltdown|major disruption|service disruption|incident)\b/u.test(comparable) &&
-      /\b(?:liabilit(?:y|ies)|accountability|penalt(?:y|ies)|legal incentive|responsib(?:le|ility))\b/u.test(comparable)
-    ) {
-      return 'Software Outage Liability and Vendor Accountability Gaps';
-    }
-
-    if (
-      /\b(?:order|ordering|catalog|checkout|shipment|shipping|delivery|fulfillment|fulfilment)\b/u.test(comparable) &&
-      /\b(?:wrong|incorrect|missing|delay|delayed|late|difficult|unable|cannot|can['’]?t|failed|failure|problem)\b/u.test(comparable)
-    ) {
-      return 'Ordering and Fulfillment Failures';
-    }
-
-    const explicitChallengeFamily = this.extractEvidenceChallengeFamily(normalized);
-    if (explicitChallengeFamily) return explicitChallengeFamily;
-
-    /*
-     * Never manufacture a discovery problem family from the first words of a
-     * title. The old fallback converted headlines such as "Integrating AI in
-     * Audit Workflow: Opportunities, Architecture, and Challenges" into a
-     * fake family even when the actual pain lived later in the abstract. If no
-     * explicit evidence-native pain can be extracted, return null so the item
-     * remains contextual instead of becoming the selected problem.
-     */
-    const clauses = normalized
-      .split(/(?<=[.!?;])\s+|\s+[—–-]\s+/u)
-      .map((value) => value.trim())
-      .filter((value) => value.length >= 18)
-      .filter((value) => this.hasConcreteProblemSemantics(value))
-      .filter((value) => !this.looksLikePromotionalOrPublisherText(value));
-
-    const best = clauses
-      .map((value) => ({
-        value,
-        score:
-          (this.hasProblemSemantics(value) ? 4 : 0) +
-          (this.hasConcreteProblemSemantics(value) ? 8 : 0) +
-          Math.min(3, value.split(/[,;]/u).length - 1),
-      }))
-      .sort((left, right) => right.score - left.score)[0]?.value;
-    if (!best) return null;
-
-    const stopwords = new Set([
-      'opening', 'another', 'using', 'trying', 'working', 'problem', 'problems',
-      'issue', 'issues', 'challenge', 'challenges', 'workflow', 'workflows',
-      'friction', 'with', 'from', 'into', 'between', 'when', 'where', 'this',
-      'that', 'have', 'has', 'were', 'been', 'running', 'same', 'need', 'needs',
-      'cannot', 'unable', 'service', 'system', 'study', 'studies', 'paper',
-      'review', 'reviews', 'systematic', 'opportunities', 'architecture',
-      'integrating', 'integration', 'presents', 'presented', 'research',
-    ]);
-    const tokens = best
-      .normalize('NFKC')
-      .toLocaleLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, ' ')
-      .split(/\s+/u)
-      .filter((token) => token.length >= 4 && !stopwords.has(token));
-    const unique = [...new Set(tokens)].slice(0, 6);
-    if (unique.length < 2) return null;
-    const label = unique
-      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-      .join(' ');
-    return this.hasConcreteProblemSemantics(label)
-      ? label.slice(0, 120)
-      : null;
-  }
-
-  private extractEvidenceChallengeFamily(evidenceText: string): string | null {
-    const normalized = evidenceText.replace(/\s+/gu, ' ').trim();
-    if (!normalized) return null;
-
-    const patterns = [
-      /\b(?:key\s+|main\s+|major\s+|persistent\s+|common\s+|remaining\s+)?(?:challenges?|barriers?|limitations?|constraints?|risks?|concerns?|issues?|problems?)\s*(?:include|includes|including|such as|are|remain|involve|related to|around|:)\s*([^.;!?]{12,240})/giu,
-      /\b(?:faces?|encounters?|experiences?|struggles? with|suffers? from)\s+([^.;!?]{12,220})/giu,
-    ];
-
-    const genericAcademic = /^(?:a\s+)?(?:systematic\s+)?(?:review|study|paper|analysis|survey|framework|architecture|opportunities?)\b/iu;
-    const candidates: string[] = [];
-    for (const pattern of patterns) {
-      for (const match of normalized.matchAll(pattern)) {
-        const fragment = (match[1] ?? '').replace(/\s+/gu, ' ').trim();
-        if (!fragment || genericAcademic.test(fragment)) continue;
-        const pieces = fragment
-          .split(/\s*(?:,|;|\band\b|\bor\b)\s*/iu)
-          .map((piece) => piece.trim())
-          .filter((piece) => piece.length >= 3)
-          .filter((piece) => !genericAcademic.test(piece))
-          .filter((piece) => !/^(?:other|various|several|multiple)\s+(?:issues?|challenges?|problems?)$/iu.test(piece));
-        if (pieces.length >= 2) {
-          candidates.push(pieces.slice(0, 3).join(' | '));
-        } else if (pieces.length === 1 && this.hasConcreteProblemSemantics(pieces[0]!)) {
-          candidates.push(pieces[0]!);
-        }
-      }
-    }
-    if (candidates.length === 0) return null;
-
-    const selected = candidates
-      .sort((left, right) => {
-        const leftConcrete = this.hasConcreteProblemSemantics(left) ? 1 : 0;
-        const rightConcrete = this.hasConcreteProblemSemantics(right) ? 1 : 0;
-        return rightConcrete - leftConcrete || right.length - left.length;
-      })[0]!;
-
-    const labels = selected
-      .split(' | ')
-      .map((piece) =>
-        piece
-          .replace(/^(?:the|a|an)\s+/iu, '')
-          .replace(/\b(?:in|for|of)\s+(?:the\s+)?(?:study|review|paper)\b.*$/iu, '')
-          .trim(),
-      )
-      .filter(Boolean)
-      .slice(0, 3)
-      .map((piece) =>
-        piece
-          .split(/\s+/u)
-          .slice(0, 5)
-          .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLocaleLowerCase())
-          .join(' '),
-      );
-    if (labels.length === 0) return null;
-
-    const joined = labels.length === 1
-      ? labels[0]!
-      : labels.length === 2
-        ? `${labels[0]} and ${labels[1]}`
-        : `${labels[0]}, ${labels[1]} and ${labels[2]}`;
-    const label = /\b(?:failure|failures|delay|delays|downtime|outage|breach|shortage|overload|fatigue|cost|costs|pressure|risk|risks|barrier|barriers|constraint|constraints|gap|gaps|loss|losses|quality|compliance|privacy|explainability)\b/iu.test(joined)
-      ? `${joined} Challenges`
-      : joined;
-    return label.replace(/\s+/gu, ' ').trim().slice(0, 120);
-  }
-
-  private isGenericProblemFamilyLabel(value: string): boolean {
-    const normalized = this.normalizeComparableText(value);
-    return !normalized ||
-      /^(?:most evidenced request problem family|request aligned operational friction|requester problem supporting evidence|request problem|requester problem|supporting evidence|supporting signal|operational problem|workflow problem|education learning)$/u.test(
-        normalized,
-      );
-  }
-
-
   private resolveEvidenceClusterFamily(
     context: IdeaGenerationContext,
     triage: CommunityAiEvidenceTriage,
     raw: IdeaGenerationRawEvidenceItem,
   ): { readonly key: string; readonly family: string } | null {
-    const canonical = CanonicalProblemFamilyUtil.resolve({
-      profile: context.collectionPlan?.problemProfile,
-      evidenceText: raw.text,
-      providerFamily: triage.problemFamily,
-    });
-    if (canonical) {
-      return { key: canonical.key, family: canonical.label };
+    /*
+     * Community AI owns semantic family identity in every request mode. For
+     * explicit text requests, problemAlignment already answers whether this row
+     * supports the requester-owned problem/facet; deterministic code must not
+     * remap the family through a lexical taxonomy afterward. The requester
+     * problem itself remains immutable downstream via the request-scope lock.
+     */
+    if (triage.familyBasis !== 'OBSERVED_PROBLEM') return null;
+    if (!triage.observedProblem?.trim()) return null;
+    if (this.isEvidenceDiscoveryMode(context)) {
+      if (triage.domainAlignment === 'NONE') return null;
+    } else if (triage.problemAlignment === 'NONE') {
+      return null;
     }
 
-    /*
-     * Text-bearing requests with a canonical profile never cluster on a free-
-     * form provider label. If no requester-owned facet matches, keep the
-     * classification in telemetry but do not let it manufacture an opportunity
-     * family. For legacy/no-profile flows, retain the conservative fallback.
-     */
-    if (context.collectionPlan?.problemProfile) return null;
-
-    const sanitizedFamily = this.sanitizeEvidenceProblemFamily(
+    const family = this.sanitizeEvidenceProblemFamily(
       context,
       raw.text,
       triage.problemFamily,
     );
-    if (sanitizedFamily) {
-      return {
-        key: this.normalizeComparableText(sanitizedFamily),
-        family: sanitizedFamily,
-      };
-    }
-    return null;
+    if (!family) return null;
+    return {
+      key: this.normalizeComparableText(family),
+      family,
+    };
   }
 
   private buildClassifiedEvidenceFallbackOpportunities(
@@ -3140,9 +3090,11 @@ export class CommunityAiAnalysisService {
       discoveryMode &&
       aiSelectedFamily &&
       aiSelectedVerified.length > 0 &&
-      this.discoveryProblemFamilySupportedByEvidenceGroup(
-        aiSelectedFamily,
-        aiSelectedVerified.map((item) => (item.raw as IdeaGenerationRawEvidenceItem).text),
+      aiSelectedVerified.every((item) =>
+        item.triage.familyBasis === 'OBSERVED_PROBLEM' &&
+        Boolean(item.triage.observedProblem?.trim()) &&
+        this.normalizeComparableText(item.triage.problemFamily ?? '') ===
+          normalizedAiFamily,
       ),
     );
     const groupedAiSelectedIds = new Set<string>();
@@ -3860,8 +3812,8 @@ export class CommunityAiAnalysisService {
       opportunities.reduce((sum, item) => sum + item.confidence, 0) /
       Math.max(opportunities.length, 1);
     const diagnostics = [...(telemetry.attemptDiagnostics ?? [])];
-    const triageAiSucceeded = (telemetry.evidenceClassifications ?? []).some((item) =>
-      /AI semantic triage/iu.test(item.reason),
+    const triageAiSucceeded = (telemetry.evidenceClassifications ?? []).some(
+      (item) => item.classification !== 'UNADJUDICATED' && item.confidence > 0,
     );
     const semanticClusteringSucceeded =
       telemetry.semanticTriageClustering === true &&
@@ -3884,6 +3836,9 @@ export class CommunityAiAnalysisService {
             'Online community enrichment was unavailable or unusable; retained evidence was preserved instead of failing the stage.',
             'The recovered direction remains preliminary until broader independent evidence is collected.',
           ],
+      evidenceVerdictState: opportunities.length > 0
+        ? 'VALID_EVIDENCE_FOUND'
+        : 'NO_VALID_EVIDENCE_FOUND',
       modelId: null,
       apiModelId: null,
       attemptCount: diagnostics.length,
@@ -4440,210 +4395,18 @@ export class CommunityAiAnalysisService {
   }
 
   private parseAndVerifyEvidenceClassifications(
-    context: IdeaGenerationContext,
-    value: unknown,
+    _context: IdeaGenerationContext,
+    _value: unknown,
   ): CommunityAiEvidenceTriage[] {
-    if (!Array.isArray(value) || (context.rawEvidenceCorpus?.length ?? 0) === 0) {
-      return [];
-    }
-
-    const rawById = new Map(
-      context.rawEvidenceCorpus.map((item) => [item.id, item] as const),
-    );
-    const parsed = new Map<string, {
-      classification: CommunityAiEvidenceClassification;
-      confidence: number;
-      reason: string;
-      problemFamily: string | null;
-    }>();
-
-    for (const entry of value) {
-      if (!this.isRecord(entry)) continue;
-      const evidenceId = this.optionalString(entry.evidenceId, '').trim();
-      if (!evidenceId || !rawById.has(evidenceId)) continue;
-
-      const rawClassification = this.optionalString(
-        entry.classification,
-        'UNRELATED',
-      ).trim().toUpperCase();
-      const classification =
-        rawClassification === 'DIRECT_PROBLEM' ||
-        rawClassification === 'SUPPORTING_SIGNAL' ||
-        rawClassification === 'CONTEXT_ONLY'
-          ? rawClassification
-          : 'UNRELATED';
-
-      parsed.set(evidenceId, {
-        classification,
-        confidence: this.normalizeOptionalScore(entry.confidence, 50),
-        reason: this.optionalString(
-          entry.reason,
-          'Community AI semantic triage.',
-        ).slice(0, 220),
-        problemFamily:
-          this.optionalString(entry.problemFamily, '').replace(/\s+/gu, ' ').trim().slice(0, 80) || null,
-      });
-    }
-
-    const requestDescription = context.requestDescription?.trim() ?? '';
-    return context.rawEvidenceCorpus.map((rawItem) => {
-      const providerEntry = parsed.get(rawItem.id);
-      const provider = providerEntry ?? {
-        classification: 'UNRELATED' as const,
-        confidence: 0,
-        reason:
-          'The provider omitted this raw evidence item from semantic triage.',
-        problemFamily: null,
-      };
-
-      if (!requestDescription) {
-        return {
-          evidenceId: rawItem.id,
-          classification: provider.classification,
-          confidence: provider.confidence,
-          reason: provider.reason,
-          problemFamily: provider.problemFamily,
-          verifiedByDeterministicGuard: true,
-        };
-      }
-
-      const marketplaceListingPost =
-        (rawItem.sourceKey === 'google-play' || rawItem.sourceKey === 'app-store') &&
-        rawItem.sourceType === 'POST';
-      if (marketplaceListingPost) {
-        const alignedContext = RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-          requestDescription,
-          evidenceText: rawItem.text,
-          plannedQueries: context.collectionPlan?.searchQueries ?? [],
-        });
-        return {
-          evidenceId: rawItem.id,
-          classification: alignedContext ? 'CONTEXT_ONLY' as const : 'UNRELATED' as const,
-          confidence: 100,
-          reason: alignedContext
-            ? 'Marketplace application listing is retained as request-aligned CONTEXT_ONLY; it is excluded from community problem evidence.'
-            : 'Marketplace application listing is discovery metadata and did not materially match the requester workflow.',
-          problemFamily: null,
-          verifiedByDeterministicGuard: false,
-        };
-      }
-
-      const deterministic = RequestEvidenceAlignmentUtil.classifyForRequest({
-        requestDescription,
-        evidenceText: rawItem.text,
-        plannedQueries: context.collectionPlan?.searchQueries ?? [],
-      });
-      const deterministicFallback =
-        RequestEvidenceAlignmentUtil.classifyForRequestFallback({
-          requestDescription,
-          evidenceText: rawItem.text,
-          plannedQueries: context.collectionPlan?.searchQueries ?? [],
-        });
-
-      const semanticSupportGuard = this.passesPostAiSemanticSupportGuard(
-        context,
-        rawItem.text,
-      );
-      const atomicSupportGuard =
-        RequestEvidenceAlignmentUtil.passesAtomicSupportingProblemGuard({
-          requestDescription,
-          evidenceText: rawItem.text,
-          plannedQueries: context.collectionPlan?.searchQueries ?? [],
-        });
-
-      let classification: CommunityAiEvidenceClassification =
-        'UNRELATED';
-
-      /*
-       * An explicit online UNRELATED decision is final. Deterministic rules are
-       * safety caps and omitted-id fallbacks; they must never manufacture
-       * evidence after the Community model has inspected the item and rejected
-       * it. This closes false-positive paths such as production-skill wallet
-       * posts being resurrected as customer-specification evidence.
-       */
-      if (providerEntry && provider.classification === 'UNRELATED') {
-        classification = 'UNRELATED';
-      } else if (providerEntry && provider.classification === 'CONTEXT_ONLY') {
-        classification = RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-          requestDescription,
-          evidenceText: rawItem.text,
-          plannedQueries: context.collectionPlan?.searchQueries ?? [],
-        })
-          ? 'CONTEXT_ONLY'
-          : 'UNRELATED';
-      } else if (!providerEntry) {
-        // Only genuinely omitted ids may use deterministic fallback.
-        classification =
-          deterministic === 'DIRECT_PROBLEM'
-            ? 'SUPPORTING_SIGNAL'
-            : deterministicFallback === 'SUPPORTING_SIGNAL' && atomicSupportGuard
-              ? 'SUPPORTING_SIGNAL'
-              : 'UNRELATED';
-      } else if (
-        (provider.classification === 'DIRECT_PROBLEM' ||
-          provider.classification === 'SUPPORTING_SIGNAL') &&
-        provider.confidence >= 68 &&
-        semanticSupportGuard
-      ) {
-        classification =
-          provider.classification === 'DIRECT_PROBLEM' &&
-          deterministic === 'DIRECT_PROBLEM'
-            ? 'DIRECT_PROBLEM'
-            : 'SUPPORTING_SIGNAL';
-      }
-
-      const trustedProblemClassification =
-        classification === 'DIRECT_PROBLEM' ||
-        classification === 'SUPPORTING_SIGNAL';
-      const canonicalProblemFamily = trustedProblemClassification
-        ? this.sanitizeEvidenceProblemFamily(
-            context,
-            rawItem.text,
-            provider.problemFamily,
-          )
-        : null;
-      const familyValidatedClassification =
-        trustedProblemClassification &&
-        context.collectionPlan?.problemProfile &&
-        !canonicalProblemFamily
-          ? RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
-              requestDescription,
-              evidenceText: rawItem.text,
-              plannedQueries: context.collectionPlan?.searchQueries ?? [],
-            })
-            ? 'CONTEXT_ONLY'
-            : 'UNRELATED'
-          : classification;
-
-      return {
-        evidenceId: rawItem.id,
-        classification: familyValidatedClassification,
-        confidence:
-          familyValidatedClassification === 'UNRELATED'
-            ? Math.min(provider.confidence, 75)
-            : provider.confidence,
-        reason:
-          familyValidatedClassification === 'CONTEXT_ONLY' &&
-              (classification === 'DIRECT_PROBLEM' || classification === 'SUPPORTING_SIGNAL')
-            ? 'Semantic support was preserved as CONTEXT_ONLY because it remained request-related but did not map safely to a requester-owned canonical problem family.'
-            : familyValidatedClassification === 'UNRELATED' && (classification === 'DIRECT_PROBLEM' || classification === 'SUPPORTING_SIGNAL')
-              ? 'Semantic support was rejected because it did not map to a requester-owned canonical problem family.'
-            : deterministic === 'UNRELATED' &&
-                (provider.classification === 'DIRECT_PROBLEM' || provider.classification === 'SUPPORTING_SIGNAL')
-              ? `${provider.reason} Deterministic request/workflow verification rejected the semantic match.`
-              : provider.reason,
-        problemFamily:
-          familyValidatedClassification === 'UNRELATED'
-            ? null
-            : canonicalProblemFamily,
-        verifiedByDeterministicGuard:
-          (familyValidatedClassification === 'DIRECT_PROBLEM' ||
-            familyValidatedClassification === 'SUPPORTING_SIGNAL') &&
-          (deterministic !== 'UNRELATED' ||
-            (classification === 'SUPPORTING_SIGNAL' &&
-              (semanticSupportGuard || atomicSupportGuard))),
-      };
-    });
+    /*
+     * Legacy full-response evidenceClassifications are intentionally ignored.
+     * Trusted semantics now come only from the dedicated online corpus-triage
+     * contract, which returns evidence nature, domain/problem alignment, a
+     * neutral observed problem, and family basis for every raw evidence row.
+     * If that dedicated semantic verdict is unavailable we fail closed instead
+     * of reconstructing meaning with request-specific lexical rules.
+     */
+    return [];
   }
 
   private parseOpportunity(value: unknown): CommunityAiOpportunity {
@@ -5147,11 +4910,8 @@ export class CommunityAiAnalysisService {
     const unrelatedCount = evidenceClassifications.filter(
       (item) => item.classification === 'UNRELATED',
     ).length;
-    const deterministicFallbackUsed = evidenceClassifications.some((item) =>
-      /deterministic triage fallback/iu.test(item.reason),
-    );
-    const onlineSemanticCount = evidenceClassifications.filter((item) =>
-      /AI semantic triage/iu.test(item.reason),
+    const unadjudicatedCount = evidenceClassifications.filter(
+      (item) => item.classification === 'UNADJUDICATED',
     ).length;
     const accepted = evidenceClassifications.filter(
       (item) =>
@@ -5168,7 +4928,7 @@ export class CommunityAiAnalysisService {
 
     return {
       summary:
-        `Classified ${evidenceClassifications.length} recovered raw evidence item(s): ${directCount} direct, ${supportingCount} supporting, ${contextOnlyCount} context-only, and ${unrelatedCount} unrelated. Opportunity synthesis was intentionally skipped because ranking consumes this canonical triage ledger directly.`,
+        `Classified ${evidenceClassifications.length} recovered raw evidence item(s): ${directCount} direct, ${supportingCount} supporting, ${contextOnlyCount} context-only, ${unrelatedCount} unrelated, and ${unadjudicatedCount} unadjudicated. Opportunity synthesis was intentionally skipped because ranking consumes this canonical triage ledger directly.`,
       dominantProblems: [],
       unmetNeeds: [],
       opportunities: [],
@@ -5177,20 +4937,25 @@ export class CommunityAiAnalysisService {
         ...(accepted.length === 0
           ? ['No synthesis-eligible recovered evidence remained after semantic classification and deterministic verification.']
           : []),
-        ...(deterministicFallbackUsed
-          ? ['The full-corpus recovery triage used conservative deterministic fallback after online AI triage was unavailable.']
+        ...(unadjudicatedCount > 0
+          ? ['Some recovered raw evidence remains UNADJUDICATED because online semantic triage was unavailable; those rows are not treated as unrelated.']
           : []),
       ],
+      evidenceVerdictState: accepted.length > 0
+        ? 'VALID_EVIDENCE_FOUND'
+        : unadjudicatedCount > 0
+          ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
+          : 'NO_VALID_EVIDENCE_FOUND',
       modelId: null,
       apiModelId: null,
       attemptCount: telemetry.diagnostics.filter(
         (item) => item.status !== 'ABORTED',
       ).length,
       aiAttempted: telemetry.onlineAttemptCount > 0,
-      triageAiSucceeded: onlineSemanticCount > 0,
+      triageAiSucceeded: telemetry.adjudicatedEvidenceCount > 0,
       synthesisAiSucceeded: false,
-      aiSucceeded: onlineSemanticCount > 0,
-      fallbackUsed: deterministicFallbackUsed,
+      aiSucceeded: telemetry.adjudicatedEvidenceCount > 0,
+      fallbackUsed: unadjudicatedCount > 0,
       onlineAttemptCount: telemetry.onlineAttemptCount,
       executionFailureCount: telemetry.diagnostics.filter(
         (item) => item.status === 'EXECUTION_FAILED' || item.status === 'TIMEOUT',
@@ -5198,8 +4963,8 @@ export class CommunityAiAnalysisService {
       validationRejectedCount: telemetry.diagnostics.filter(
         (item) => item.status === 'VALIDATION_REJECTED',
       ).length,
-      fallbackReason: deterministicFallbackUsed
-        ? 'The full-corpus evidence triage used deterministic fallback.'
+      fallbackReason: unadjudicatedCount > 0
+        ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE: some recovered rows did not receive an online semantic verdict.'
         : null,
       attemptDiagnostics: [...telemetry.diagnostics],
       unvalidatedDomainHypotheses: this.buildUnvalidatedDomainHypotheses(

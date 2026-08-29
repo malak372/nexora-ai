@@ -87,7 +87,7 @@ export const IDEA_GENERATION_TARGET_BUDGET_MS = 80_000;
 export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 95_000;
 
 /** Maximum provider time allocated to one non-specialized core model. */
-export const IDEA_CORE_MODEL_TIMEOUT_MS = 18_500;
+export const IDEA_CORE_MODEL_TIMEOUT_MS = 12_000;
 
 /**
  * Provider-specific core-generation deadlines. OpenRouter remains tightly
@@ -95,11 +95,11 @@ export const IDEA_CORE_MODEL_TIMEOUT_MS = 18_500;
  * Google receives a slightly wider window because production runs have shown
  * valid Gemini responses arriving just after the previous 18.5-second cutoff.
  */
-export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 18_500;
-export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 22_500;
+export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 11_000;
+export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 12_000;
 
 /** Use a configured local model only after every online core model fails. */
-export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = false;
+export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = true;
 
 /**
  * Enables comparative AI judging when at least two quality-approved candidates
@@ -563,17 +563,17 @@ export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
  * the pipeline can keep the stronger result without returning to long provider
  * timeout chains.
  */
-export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = IDEA_MIN_ACCEPTED_QUALITY_SCORE;
+export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = 90;
 
 /**
  * Maximum time granted to already-running hedged peer requests after the first
- * quality-approved candidate scores between 70 and 77.99.
+ * quality-approved candidate scores below the 90-point high-confidence target.
  *
  * No new provider request is started for this window. It only allows requests
  * that are already in flight to finish, then the strongest deterministic
  * quality-approved candidate is selected.
  */
-export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 0;
+export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 900;
 
 /**
  * Maximum number of bounded quality-improvement attempts sent to the same

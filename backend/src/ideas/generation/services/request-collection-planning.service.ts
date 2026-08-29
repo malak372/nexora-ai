@@ -21,13 +21,8 @@ import type {
   RequestCanonicalProblemProfile,
   RequestIntentInterpretation,
 } from '../types/request-collection-plan.type';
-import { inferDominantRequestDomainName } from '../utils/request-domain-inference.util';
-import { RequestWorkflowArchetypeUtil } from '../utils/request-workflow-archetype.util';
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
-import { RequestWorkflowIntentProfileUtil } from '../utils/request-workflow-intent-profile.util';
 import { RequestQueryProvenanceUtil } from '../utils/request-query-provenance.util';
-import { RequestNicheCustomCraftUtil } from '../utils/request-niche-custom-craft.util';
-import { RequestReviewStoreQueryUtil } from '../utils/request-review-store-query.util';
 import { CanonicalRequestUnderstandingUtil } from '../utils/canonical-request-understanding.util';
 import { SourceSpecificEvidenceQueryUtil } from '../utils/source-specific-evidence-query.util';
 import { CollectorsFactory } from '../../../collectors/collectors.factory';
@@ -42,6 +37,7 @@ const REQUEST_COLLECTION_PLAN_PROVIDER_LANES = [
 const REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS = 4_700;
 const REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS = 5_100;
 const REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
+const REQUEST_EXISTING_DOMAIN_REUSE_MIN_SCORE = 88;
 
 type RequestDomainCatalogEntry = {
   readonly id: string;
@@ -66,6 +62,14 @@ type RequestSourceCatalogEntry = {
 type RequestDomainDiscoveryAiPlan = {
   readonly searchQueries: readonly string[];
   readonly selectedSourceKeys: readonly string[];
+  readonly domainQueryGroups: readonly {
+    readonly domainName: string;
+    readonly queries: readonly string[];
+  }[];
+  readonly sourceAssignments: readonly {
+    readonly sourceKey: string;
+    readonly domainName: string;
+  }[];
   readonly confidence: number;
 };
 @Injectable()
@@ -130,6 +134,22 @@ export class RequestCollectionPlanningService implements OnModuleInit {
    * plan is already loading the exact same domain rows. Requested order is
    * preserved and only active catalog entries are returned.
    */
+  /**
+   * Reads one already-warmed active domain identity without opening a new
+   * database round trip. PREPARING uses this only when the AI plan selected an
+   * exact existing domain id with high confidence; cache miss falls back to the
+   * authoritative DomainResolutionService path.
+   */
+  resolveActiveDomainByIdImmediate(
+    domainId: string | null | undefined,
+  ): { readonly id: string; readonly name: string } | null {
+    const id = domainId?.trim();
+    if (!id) return null;
+    const catalog = this.readFreshDomainIdentityCatalog();
+    const match = catalog?.find((entry) => entry.id === id);
+    return match ? { id: match.id, name: match.name } : null;
+  }
+
   async resolveActiveDomainsByIds(
     domainIds: readonly string[],
     language?: LanguageCode,
@@ -263,11 +283,6 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         this.buildDeterministicFallback(
           description,
           input.keywords ?? [],
-          {
-            skipBroadExpansion:
-              (input.requestedDomainIds?.length ?? 0) > 0 ||
-              Boolean(RequestNicheCustomCraftUtil.resolve(description)),
-          },
         ),
         domainCatalog,
       ),
@@ -282,10 +297,22 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     readonly keywords?: readonly string[];
     readonly previousQueries?: readonly string[];
     readonly evidenceTargets?: readonly string[];
+    readonly sourceOutcomes?: readonly {
+      readonly sourceKey: string;
+      readonly rawCount: number;
+      readonly trustedCount: number;
+      readonly contextCount: number;
+      readonly unrelatedCount: number;
+      readonly status: 'USEFUL' | 'CONTEXT_ONLY' | 'UNRELATED_ONLY' | 'EMPTY' | 'DEGRADED';
+    }[];
     readonly generationType?: IdeaGenerationType;
     readonly language?: LanguageCode;
     readonly userId?: string;
     readonly guestSessionId?: string;
+    /** Optional caller-owned cancellation for bounded recovery planning. */
+    readonly signal?: AbortSignal;
+    /** Optional wall-clock budget smaller than the normal PREPARING deadline. */
+    readonly deadlineMs?: number;
   }): Promise<RequestCollectionPlan | null> {
     const description = input.description.replace(/\s+/gu, ' ').trim();
     if (!description) return null;
@@ -319,13 +346,25 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       guestSessionId: input.guestSessionId,
       recoveryPreviousQueries: input.previousQueries ?? [],
       recoveryEvidenceTargets: input.evidenceTargets ?? [],
+      recoverySourceOutcomes: input.sourceOutcomes ?? [],
+      signal: input.signal,
+      deadlineMs: input.deadlineMs,
     });
 
     if (aiPlan) return aiPlan;
 
+    // A caller-owned recovery deadline is authoritative. Do not spend more
+    // time constructing a fallback plan after cancellation; the recovery
+    // service already has a deterministic query set it can continue with.
+    if (input.signal?.aborted) return null;
+
     return this.decorateFallbackSourceSelection(
       this.decorateFallbackDomainSelection(
-        this.buildDeterministicFallback(description, input.keywords ?? []),
+        this.buildDeterministicRecoveryFallback(
+          description,
+          input.keywords ?? [],
+          input.previousQueries ?? [],
+        ),
         domainCatalog,
       ),
       sourceCatalog,
@@ -346,30 +385,16 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     readonly userId?: string;
     readonly guestSessionId?: string;
   }): Promise<RequestCollectionPlan> {
-    const sourceCatalog = await this.loadActiveSourceCatalog();
+    const sourceCatalog = this.readActiveSourceCatalogImmediate();
+    void this.loadActiveSourceCatalog().catch((error: unknown) => {
+      this.logger.debug(
+        `[PREPARING] Background source-catalog refresh failed non-fatally during domain discovery: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
     const activeSourceKeys = sourceCatalog.map((source) => source.key);
     const domainNames = this.deduplicatePhrases(input.domainNames).slice(0, 3);
-
-    const deterministicQueries =
-      CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
-        domainNames,
-        8,
-      );
-    const deterministicPrioritySourceKeys =
-      CanonicalRequestUnderstandingUtil.recommendSourceKeys(
-        domainNames.join(' '),
-        activeSourceKeys,
-        7,
-      );
-
-    /*
-     * DOMAINS_ONLY / NO_INPUT still deserve a real AI collection plan. The
-     * earlier implementation skipped AI completely on these paths, which made
-     * collectionPlan.aiUsed=false even though PREPARING spent several seconds
-     * resolving the request. Race several providers and accept the first
-     * locally validated discovery plan; deterministic planning remains only a
-     * provider-outage safety net.
-     */
     const aiDiscoveryPlan =
       await this.runProviderDiverseDomainDiscoveryPlanningRace({
         domainNames,
@@ -380,97 +405,176 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         guestSessionId: input.guestSessionId,
       });
 
-    const searchQueries = this.deduplicateQueries([
-      ...(aiDiscoveryPlan?.searchQueries ?? []),
-      ...deterministicQueries,
-    ]).slice(0, 12);
-    const prioritySourceKeys = this.deduplicatePhrases([
-      ...(aiDiscoveryPlan?.selectedSourceKeys ?? []),
-      ...deterministicPrioritySourceKeys,
-    ])
-      .filter((key) => activeSourceKeys.includes(key))
-      .slice(0, 8);
-    const allRuntimeSourceKeys = this.deduplicatePhrases([
-      ...prioritySourceKeys,
-      ...activeSourceKeys,
-    ]);
-    const secondarySourceKeys = new Set(
-      allRuntimeSourceKeys
-        .filter((key) => !prioritySourceKeys.includes(key))
-        .slice(0, 4),
+    const fallbackQueries =
+      CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+        domainNames,
+        Math.min(15, Math.max(9, domainNames.length * 5)),
+      );
+    const aiGroupedQueries = (
+      aiDiscoveryPlan?.domainQueryGroups.flatMap((group) => group.queries) ?? []
+    ).filter((query) => !this.isGenericDomainDiscoveryQuery(query));
+    const aiGlobalQueries = (aiDiscoveryPlan?.searchQueries ?? []).filter(
+      (query) => !this.isGenericDomainDiscoveryQuery(query),
     );
 
-    const sourcePlans: RequestCollectionSourcePlan[] =
-      allRuntimeSourceKeys.map((sourceKey, index) => {
-        const domain =
-          domainNames[index % Math.max(1, domainNames.length)] ??
-          domainNames[0] ??
-          'software operations';
-        const primaryLane = prioritySourceKeys.includes(sourceKey);
-        const secondaryLane = secondarySourceKeys.has(sourceKey);
-        const maxQueries = primaryLane ? 3 : secondaryLane ? 2 : 1;
+    /*
+     * Do not append generic deterministic probes to a healthy AI plan merely
+     * because capacity remains in the query array. That was how concrete
+     * Government/E-commerce queries ended up next to generic
+     * "users/operators recurring problems" Media queries. Fallback queries are
+     * used only for selected domains that the AI failed to cover.
+     */
+    const aiCoveredDomains = new Set(
+      domainNames
+        .filter((domainName) =>
+          [...aiGroupedQueries, ...aiGlobalQueries].some((query) =>
+            this.discoveryQueryMatchesDomain(query, domainName),
+          ),
+        )
+        .map((domainName) => this.normalizeDiscoveryIdentity(domainName)),
+    );
+    const missingDomainFallbackQueries = domainNames.flatMap((domainName) =>
+      aiCoveredDomains.has(this.normalizeDiscoveryIdentity(domainName))
+        ? []
+        : CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+            [domainName],
+            5,
+          ),
+    );
+    const searchQueries = this.deduplicateQueries([
+      ...aiGroupedQueries,
+      ...aiGlobalQueries,
+      ...(aiDiscoveryPlan ? missingDomainFallbackQueries : fallbackQueries),
+    ]).slice(0, 15);
 
-        const aiDomainQueries = searchQueries.filter((query) =>
-          this.discoveryQueryMatchesDomain(query, domain),
-        );
-        const domainQueries = this.buildDomainProbeQueriesForSource(
-          domain,
-          sourceKey,
-          primaryLane ? 4 : secondaryLane ? 3 : 2,
-        );
-        const baseQueries = this.deduplicateQueries([
-          ...aiDomainQueries,
-          ...domainQueries,
-        ]).slice(0, maxQueries);
-        const queries = SourceSpecificEvidenceQueryUtil.compile({
-          sourceKey,
-          baseQueries:
-            baseQueries.length > 0
-              ? baseQueries
-              : [`${domain} operational problems user complaints`],
-          discoveryDomainName: domain,
-          maxQueries,
-          preserveBaseQueries: primaryLane || secondaryLane,
+    const requestedDiscoverySourceKeys = this.deduplicatePhrases([
+      ...(aiDiscoveryPlan?.sourceAssignments.map((assignment) => assignment.sourceKey) ?? []),
+      ...(aiDiscoveryPlan?.selectedSourceKeys?.length
+        ? aiDiscoveryPlan.selectedSourceKeys
+        : activeSourceKeys),
+    ]).filter((key) => activeSourceKeys.includes(key));
+    const discoveryCapabilityInput = {
+      requestDescription: domainNames.join(' '),
+      domainName: domainNames[0] ?? null,
+      keywords: domainNames,
+      plannedQueries: searchQueries,
+      collectionMode: 'FAST_GENERATION' as const,
+    };
+    const executableDiscoverySourceKeys = activeSourceKeys.filter((sourceKey) =>
+      this.collectorsFactory.isCollectorRouteExecutable(
+        sourceKey,
+        discoveryCapabilityInput,
+      ),
+    );
+    const requestedExecutableSourceKeys = requestedDiscoverySourceKeys.filter((sourceKey) =>
+      executableDiscoverySourceKeys.includes(sourceKey),
+    );
+    const capabilityRankedDiscoverySources = executableDiscoverySourceKeys
+      .filter((sourceKey) => !requestedExecutableSourceKeys.includes(sourceKey))
+      .sort((left, right) =>
+        this.collectorsFactory.getCollectorRequestFitScore(right, discoveryCapabilityInput) -
+          this.collectorsFactory.getCollectorRequestFitScore(left, discoveryCapabilityInput) ||
+        left.localeCompare(right),
+      );
+    const rankedDiscoverySourceKeys = this.deduplicatePhrases([
+      ...requestedExecutableSourceKeys,
+      ...capabilityRankedDiscoverySources,
+    ]);
+    const selectedSourceKeys = this.buildBalancedEvidenceSourcePortfolio(
+      rankedDiscoverySourceKeys,
+      sourceCatalog,
+      9,
+    );
+
+    const completedAssignments = this.completeDomainDiscoverySourceAssignments({
+      domainNames,
+      selectedSourceKeys,
+      aiAssignments: aiDiscoveryPlan?.sourceAssignments ?? [],
+      sourceCatalog,
+    });
+    const aiQueriesByDomain = new Map(
+      (aiDiscoveryPlan?.domainQueryGroups ?? []).map((group) => [
+        this.normalizeDiscoveryIdentity(group.domainName),
+        group.queries,
+      ] as const),
+    );
+
+    const assignmentsBySource = new Map<string, string[]>();
+    for (const assignment of completedAssignments) {
+      const domains = assignmentsBySource.get(assignment.sourceKey) ?? [];
+      if (!domains.some((name) => this.normalizeDiscoveryIdentity(name) === this.normalizeDiscoveryIdentity(assignment.domainName))) {
+        domains.push(assignment.domainName);
+      }
+      assignmentsBySource.set(assignment.sourceKey, domains);
+    }
+
+    const sourcePlans: RequestCollectionSourcePlan[] = [...assignmentsBySource.entries()]
+      .map(([sourceKey, assignedDomains]) => {
+        const perDomainBudget = assignedDomains.length >= 3 ? 2 : assignedDomains.length === 2 ? 3 : 4;
+        const queryPackets = assignedDomains.flatMap((domainName) => {
+          const aiDomainQueries = aiQueriesByDomain.get(
+            this.normalizeDiscoveryIdentity(domainName),
+          ) ?? [];
+          const domainBoundGlobalQueries = searchQueries.filter((query) =>
+            this.discoveryQueryMatchesDomain(query, domainName),
+          );
+          const structuralFallbackQueries =
+            CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
+              [domainName],
+              5,
+            );
+          const baseQueries = this.deduplicateQueries([
+            ...aiDomainQueries,
+            ...domainBoundGlobalQueries,
+            ...structuralFallbackQueries,
+          ]).slice(0, 5);
+
+          const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
+            sourceKey,
+            baseQueries,
+            discoveryDomainName: domainName,
+            maxQueries: perDomainBudget,
+            preserveBaseQueries: true,
+          });
+          return this.deduplicateQueries([
+            ...compiledQueries.filter((query) =>
+              this.discoveryQueryMatchesDomain(query, domainName),
+            ),
+            ...baseQueries,
+          ]).slice(0, perDomainBudget);
         });
+        const maxQueries = Math.min(6, Math.max(4, assignedDomains.length * 2));
+        const queries = this.deduplicateQueries(queryPackets).slice(0, maxQueries);
+        const singleDomain = assignedDomains.length === 1 ? assignedDomains[0]! : null;
 
         return {
           sourceKey,
-          queries:
-            queries.length > 0
-              ? queries.slice(0, maxQueries)
-              : baseQueries.slice(0, maxQueries),
+          queries,
           routingHints: [],
-          discoveryDomainName: domain,
-          queryIntentId: `domain-probe:${index + 1}`,
-          sourceTier: primaryLane
-            ? 'PRIMARY'
-            : secondaryLane
-              ? 'SECONDARY'
-              : 'MICRO_PROBE',
+          discoveryDomainName: singleDomain ?? undefined,
+          discoveryDomainNames: [...assignedDomains],
+          sourceTier: 'PRIMARY' as const,
           problemFacetIds: [],
         };
-      });
+      })
+      .filter((plan) => plan.queries.length > 0);
 
     return {
       selectedExistingDomainId: null,
       domainSelectionMode: 'EXISTING',
       suggestedDomainName: domainNames[0] ?? null,
       searchQueries,
-      evidenceTargets: domainNames
-        .flatMap((name) => [
-          `${name} user-reported operational pain`,
-          `${name} recurring workflow failures and unmet needs`,
-        ])
-        .slice(0, 8),
+      evidenceTargets: [],
       intentConcepts: domainNames,
-      sourceFocus: this.deriveSourceFocusFromKeys(prioritySourceKeys),
-      selectedSourceKeys: prioritySourceKeys,
+      sourceFocus: this.deriveSourceFocusFromKeys(selectedSourceKeys),
+      selectedSourceKeys,
       sourcePlans,
-      confidence: aiDiscoveryPlan?.confidence ?? 58,
+      confidence: aiDiscoveryPlan?.confidence ?? 50,
       aiUsed: Boolean(aiDiscoveryPlan),
       fallbackUsed: !aiDiscoveryPlan,
     };
   }
+
 
 
   /**
@@ -493,94 +597,53 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     },
   ): RequestCollectionPlan {
     const description = (input.description ?? '').replace(/\s+/gu, ' ').trim();
-    const domainNames = this.deduplicatePhrases(
-      input.selectedDomains.map((domain) => domain.name),
-    ).slice(0, 4);
-    const requestKeywords = this.deduplicatePhrases(
-      input.requestKeywords ?? [],
-    ).slice(0, 8);
-    const preferenceTerms = this.deduplicatePhrases(
-      input.preferenceTerms ?? [],
-    ).slice(0, 6);
-    const explicitProblem =
-      plan.requestIntent?.mode === 'EXPLICIT_PROBLEM'
-        ? plan.requestIntent.explicitProblem?.trim() ?? ''
-        : '';
-
-    const intentQueries = RequestDynamicQueryUtil.buildIntentDiscoveryQueries({
-      requestDescription: description,
-      domainNames,
-      preferenceTerms,
-      explicitProblem,
-      desiredOutcome: plan.requestIntent?.desiredOutcome ?? null,
-      actor: plan.domainIdentity?.actor ?? null,
-      object: plan.domainIdentity?.object ?? null,
-      workflow: plan.domainIdentity?.workflow ?? null,
-      intentConcepts: [
-        ...(plan.intentConcepts ?? []),
-        ...(plan.domainIdentity
-          ? [
-              plan.domainIdentity.actor,
-              plan.domainIdentity.object,
-              plan.domainIdentity.workflow,
-            ]
-          : []),
-        ...requestKeywords,
-      ],
-      evidenceTargets:
-        plan.requestIntent?.mode === 'EXPLICIT_PROBLEM'
-          ? plan.evidenceTargets
-          : [],
-      plannedQueries: plan.searchQueries,
-      maxQueries: 12,
-    });
-
-    const professionalQueries = explicitProblem && description
-      ? RequestDynamicQueryUtil.buildProfessionalTerminologyQueries({
+    const searchQueries = this.deduplicateQueries(plan.searchQueries)
+      .filter((query) =>
+        !description ||
+        RequestQueryProvenanceUtil.isQueryGrounded({
           requestDescription: description,
-          intentConcepts: plan.intentConcepts,
-          evidenceTargets: plan.evidenceTargets,
-          plannedQueries: plan.searchQueries,
-          maxQueries: 4,
-        })
-      : [];
-
-    const domainProbeQueries = domainNames.flatMap((domainName) =>
-      CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
-        [domainName],
-        2,
-      ),
-    );
-
-    const searchQueries = this.deduplicateQueries([
-      ...plan.searchQueries.slice(0, 4),
-      ...intentQueries,
-      ...professionalQueries,
-      ...plan.searchQueries.slice(4),
-      ...domainProbeQueries,
-    ]).slice(0, 12);
-
+          query,
+        }),
+      )
+      .slice(0, 14);
     if (searchQueries.length === 0) return plan;
 
     const runtimeSourceKeys = this.deduplicatePhrases([
       ...(plan.selectedSourceKeys ?? []),
       ...(plan.sourcePlans ?? []).map((sourcePlan) => sourcePlan.sourceKey),
-    ]);
-    const sourcePlans = runtimeSourceKeys.length > 0
-      ? this.buildRuntimeSourcePlans(
-          runtimeSourceKeys,
-          searchQueries,
-          description,
-          explicitProblem ? plan.problemProfile : undefined,
-          plan.selectedSourceKeys ?? [],
-        )
-      : plan.sourcePlans;
+    ]).slice(0, 9);
+    const preserveDomainDiscoveryProvenance =
+      !description && (plan.sourcePlans?.length ?? 0) > 0;
+    const sourcePlans = preserveDomainDiscoveryProvenance
+      ? plan.sourcePlans
+      : runtimeSourceKeys.length > 0
+        ? this.buildRuntimeSourcePlans(
+            runtimeSourceKeys,
+            searchQueries,
+            description,
+            plan.requestIntent?.mode === 'EXPLICIT_PROBLEM'
+              ? plan.problemProfile
+              : undefined,
+            plan.selectedSourceKeys ?? [],
+            plan.retrievalVocabulary ?? [],
+          )
+        : plan.sourcePlans;
 
     return {
       ...plan,
       searchQueries,
       sourcePlans,
     };
+  }
+
+
+  private normalizeDiscoveryIdentity(value: string): string {
+    return value
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   private discoveryQueryMatchesDomain(
@@ -638,6 +701,57 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     return tokens.length > 0 && tokens.every((token) => normalizedQuery.includes(token));
   }
 
+  /**
+   * Rejects boilerplate discovery strings that name only a domain plus generic
+   * "problems/challenges" language. The AI planner is required to name a
+   * concrete workflow/object and a concrete failure mode.
+   */
+  private isGenericDomainDiscoveryQuery(query: string): boolean {
+    const normalized = this.normalizeDiscoveryIdentity(query);
+    if (!normalized) return true;
+
+    const explicitBoilerplate = [
+      'users operators recurring problems complaints',
+      'workflow bottlenecks delays reliability issues',
+      'operational failures incidents downtime disruption',
+      'challenges barriers risks case study findings',
+      'common problems challenges',
+      'pain points issues',
+    ];
+    if (explicitBoilerplate.some((phrase) => normalized.includes(phrase))) {
+      return true;
+    }
+
+    const words = normalized.split(' ').filter(Boolean);
+    const failureWords = new Set([
+      'delay', 'delays', 'backlog', 'failure', 'failures', 'error', 'errors',
+      'outage', 'outages', 'shortage', 'shortages', 'rework', 'denial',
+      'denials', 'rejection', 'rejections', 'timeout', 'timeouts', 'fraud',
+      'breach', 'breaches', 'conflict', 'conflicts', 'overrun', 'overruns',
+      'missed', 'incorrect', 'duplicate', 'duplicates', 'blocked', 'barrier',
+      'barriers', 'bottleneck', 'bottlenecks', 'downtime', 'unavailable',
+      'fatigue', 'false', 'positive', 'risk', 'risks', 'incident', 'incidents',
+      'drift', 'leak', 'leaks', 'hallucination', 'hallucinations', 'waste',
+    ]);
+    const workflowWords = new Set([
+      'processing', 'approval', 'verification', 'checkout', 'payment',
+      'scheduling', 'inventory', 'dispatch', 'fulfillment', 'delivery',
+      'publishing', 'licensing', 'rights', 'moderation', 'onboarding',
+      'access', 'reporting', 'reconciliation', 'booking', 'claims',
+      'maintenance', 'procurement', 'production', 'capacity', 'queue',
+      'handoff', 'authentication', 'migration', 'patching', 'response',
+      'calculation', 'customs', 'tariff', 'content', 'streaming',
+      'distribution', 'permit', 'identity', 'records', 'record', 'incident',
+      'detection', 'training', 'deployment', 'billing', 'settlement',
+      'allocation', 'review', 'intake', 'workflow', 'order', 'orders',
+    ]);
+    const hasConcreteFailure = words.some((word) => failureWords.has(word));
+    const hasConcreteWorkflow = words.some((word) => workflowWords.has(word));
+
+    // Short domain + generic noun strings are not useful evidence probes.
+    return words.length <= 7 && !(hasConcreteFailure && hasConcreteWorkflow);
+  }
+
   private async runProviderDiverseDomainDiscoveryPlanningRace(input: {
     readonly domainNames: readonly string[];
     readonly sourceCatalog: readonly RequestSourceCatalogEntry[];
@@ -665,19 +779,24 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       language: input.language ?? LanguageCode.ANY,
       activeSourceCatalog: sourceCatalogText,
       requiredOutput: {
-        searchQueries: '8-12 short search strings',
-        selectedSourceKeys: '6-8 exact active source keys',
+        searchQueries: '10-14 short search strings',
+        selectedSourceKeys: 'up to 9 exact active source keys',
+        domainQueryGroups: 'one object per selected domain with 4-5 concrete operational/failure queries',
+        sourceAssignments: 'up to 3 unique source assignments per domain, covering community/direct voice, documentary/reporting, and research-or-specialist evidence when executable',
         confidence: '0-100',
       },
     });
     const systemInstruction = [
       'You are Voxidence pre-collection evidence planner.',
       'The user supplied no concrete problem statement. Never invent one.',
-      'Return JSON only with keys searchQueries, selectedSourceKeys, confidence.',
+      'Return JSON only with keys searchQueries, selectedSourceKeys, domainQueryGroups, sourceAssignments, confidence.',
       'Create broad but problem-first discovery queries that find real complaints, failures, barriers, incidents, unmet needs, rework, delays, cost pressure, or operational friction inside the selected domains.',
-      'Cover every selected domain with multiple independent query angles.',
+      'Cover every selected domain as an independent discovery lane. Before writing queries, infer 3-5 plausible operational workflow/problem archetypes inside EACH domain, then express concrete failure-mode searches for those archetypes. Do not output the archetypes separately; use them to make the queries specific.',
+      'For every selected domain return 4-5 domainQueryGroups queries. Each query must contain a real workflow/object plus a concrete failure, delay, bottleneck, reliability, access, coordination, cost, rework, compliance, capacity, quality, or unmet-need concept. Never use generic boilerplate such as users operators recurring problems complaints or workflow bottlenecks delays reliability issues by itself.',
+      'Do not create bridge queries merely to connect selected domains. A cross-domain problem is accepted only if one returned evidence item independently demonstrates that workflow.',
       'Keep each query short, natural, and source-searchable; include the selected domain identity plus a concrete pain/discovery term.',
-      'Choose 6-8 exact source keys from the supplied active source catalog. Prefer complementary source families: direct community/reviews, practitioner or technical sources when appropriate, and research/news for corroboration.',
+      'Plan sourceAssignments per domain, not globally. Aim for three unique executable source assignments per domain when the catalog permits: one direct-voice/community-or-review lane, one documentary/reporting lane, and one research-or-specialist lane. Prefer a scholarly source for research when it is semantically useful; otherwise use the best specialist source. Do not give one domain all documentary sources while another domain receives only one source. Use technical developer sources only when a plausible operational archetype is genuinely software/API/infrastructure-related.',
+      'selectedSourceKeys is the unique union of sourceAssignments and may contain up to 9 keys. Source diversity is for recall; returned material is still semantically classified later by Community AI.',
       'Do not return a guessed opportunity, solution, actor, market claim, or problem family. Planning only.',
     ].join(' ');
 
@@ -725,8 +844,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               responseFormat: AiResponseFormat.TEXT,
               strategy: AiRoutingStrategy.BALANCED,
               preferredApiModelIds,
-              estimatedOutputTokens: 220,
-              maxOutputTokens: 420,
+              estimatedOutputTokens: 520,
+              maxOutputTokens: 900,
               temperature: 0.1,
               timeoutMs: REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS,
               maxRetriesPerModel: 0,
@@ -757,8 +876,9 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                       this.discoveryQueryMatchesDomain(query, domain),
                     ),
                   )
+                  .filter((query) => !this.isGenericDomainDiscoveryQuery(query))
                   .filter(SourceSpecificEvidenceQueryUtil.isSafe.bind(SourceSpecificEvidenceQueryUtil))
-                  .slice(0, 12);
+                  .slice(0, 14);
 
                 const rawSourceKeys = Array.isArray(record.selectedSourceKeys)
                   ? record.selectedSourceKeys
@@ -772,7 +892,72 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                 )
                   .map((key) => key.toLocaleLowerCase())
                   .filter((key) => activeSourceKeys.has(key))
-                  .slice(0, 8);
+                  .slice(0, 9);
+
+                const selectedDomainByNormalizedName = new Map(
+                  input.domainNames.map((domainName) => [
+                    this.normalizeDiscoveryIdentity(domainName),
+                    domainName,
+                  ] as const),
+                );
+                const rawDomainQueryGroups = Array.isArray(record.domainQueryGroups)
+                  ? record.domainQueryGroups
+                  : [];
+                const domainQueryGroups = rawDomainQueryGroups
+                  .filter((entry): entry is Record<string, unknown> => this.isRecord(entry))
+                  .map((entry) => {
+                    const rawDomainName = typeof entry.domainName === 'string'
+                      ? entry.domainName
+                      : '';
+                    const domainName = selectedDomainByNormalizedName.get(
+                      this.normalizeDiscoveryIdentity(rawDomainName),
+                    );
+                    const rawGroupQueries = Array.isArray(entry.queries) ? entry.queries : [];
+                    const queries = this.deduplicateQueries(
+                      rawGroupQueries.filter((value): value is string => typeof value === 'string'),
+                    )
+                      .filter(SourceSpecificEvidenceQueryUtil.isSafe.bind(SourceSpecificEvidenceQueryUtil))
+                      .filter((query) => !this.isGenericDomainDiscoveryQuery(query))
+                      .filter((query) => Boolean(domainName) && this.discoveryQueryMatchesDomain(query, domainName!))
+                      .slice(0, 5);
+                    return domainName ? { domainName, queries } : null;
+                  })
+                  .filter((entry): entry is { domainName: string; queries: string[] } => Boolean(entry && entry.queries.length > 0));
+
+                const effectiveSearchQueries = this.deduplicateQueries([
+                  ...domainQueryGroups.flatMap((group) => group.queries),
+                  ...searchQueries,
+                ]).slice(0, 15);
+
+                const rawSourceAssignments = Array.isArray(record.sourceAssignments)
+                  ? record.sourceAssignments
+                  : [];
+                const seenAssignmentPairs = new Set<string>();
+                const sourceAssignments = rawSourceAssignments
+                  .filter((entry): entry is Record<string, unknown> => this.isRecord(entry))
+                  .map((entry) => {
+                    const sourceKey = typeof entry.sourceKey === 'string'
+                      ? entry.sourceKey.trim().toLocaleLowerCase()
+                      : '';
+                    const rawDomainName = typeof entry.domainName === 'string'
+                      ? entry.domainName
+                      : '';
+                    const domainName = selectedDomainByNormalizedName.get(
+                      this.normalizeDiscoveryIdentity(rawDomainName),
+                    );
+                    const pairKey = `${sourceKey}::${this.normalizeDiscoveryIdentity(domainName ?? '')}`;
+                    if (!sourceKey || !domainName || !activeSourceKeys.has(sourceKey) || seenAssignmentPairs.has(pairKey)) {
+                      return null;
+                    }
+                    seenAssignmentPairs.add(pairKey);
+                    return { sourceKey, domainName };
+                  })
+                  .filter((entry): entry is { sourceKey: string; domainName: string } => Boolean(entry))
+                  .slice(0, 18);
+                const effectiveSelectedSourceKeys = this.deduplicatePhrases([
+                  ...sourceAssignments.map((assignment) => assignment.sourceKey),
+                  ...selectedSourceKeys,
+                ]).slice(0, 9);
 
                 // A partial AI plan is still an AI plan. One grounded query/source
                 // is enough to prove useful semantic understanding; the caller
@@ -780,10 +965,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                 // This prevents DOMAINS_ONLY/NO_INPUT from flipping aiUsed=false
                 // merely because the fastest provider returned 2 good queries
                 // instead of the requested 8-12 before its bounded deadline.
-                if (searchQueries.length === 0) {
+                if (effectiveSearchQueries.length === 0) {
                   throw new Error('Domain-discovery AI returned no domain-grounded query.');
                 }
-                if (selectedSourceKeys.length === 0) {
+                if (effectiveSelectedSourceKeys.length === 0) {
                   throw new Error('Domain-discovery AI returned no active source key.');
                 }
 
@@ -794,9 +979,9 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                   if (controllerIndex !== index) controller.abort();
                 });
                 this.logger.log(
-                  `[PREPARING] AI domain-discovery evidence plan accepted. provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${searchQueries.length}, prioritySources=${selectedSourceKeys.length}.`,
+                  `[PREPARING] AI domain-discovery evidence plan accepted. provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${effectiveSearchQueries.length}, prioritySources=${effectiveSelectedSourceKeys.length}.`,
                 );
-                resolve({ searchQueries, selectedSourceKeys, confidence });
+                resolve({ searchQueries: effectiveSearchQueries, selectedSourceKeys: effectiveSelectedSourceKeys, domainQueryGroups, sourceAssignments, confidence });
               } catch (error: unknown) {
                 this.logger.warn(
                   `Domain-discovery AI lane returned unusable planning output: ${
@@ -818,82 +1003,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         },
       );
     });
-  }
-
-  /**
-   * Creates natural, source-shaped discovery queries for paths where the user
-   * supplied domains but no concrete problem. These queries intentionally ask
-   * for observed failures, complaints, barriers, or incidents instead of the
-   * old generic "<domain> operational problem" phrase. Domain names remain
-   * fully dynamic/admin-controlled; no domain taxonomy is hard-coded here.
-   */
-  private buildDomainProbeQueriesForSource(
-    domainName: string,
-    sourceKey: string,
-    maxQueries: number,
-  ): string[] {
-    const domain = domainName.trim();
-    const key = sourceKey.trim().toLocaleLowerCase();
-    const candidates = (() => {
-      if (key === 'reddit' || key === 'forum') {
-        return [
-          `${domain} user problems complaints`,
-          `${domain} workflow frustrations unmet needs`,
-          `${domain} operators recurring issues`,
-          `${domain} service failures user experience`,
-        ];
-      }
-      if (key === 'news' || key === 'gdelt') {
-        return [
-          `${domain} service failures delays incidents`,
-          `${domain} operational disruptions reported`,
-          `${domain} recurring service problems`,
-          `${domain} outages failures investigation`,
-        ];
-      }
-      if (key === 'crossref') {
-        return [
-          `${domain} operational challenges study`,
-          `${domain} workflow barriers service delivery`,
-          `${domain} unmet needs study`,
-          `${domain} process failures analysis`,
-        ];
-      }
-      if (key === 'blog' || key === 'youtube') {
-        return [
-          `${domain} practitioner workflow problems`,
-          `${domain} recurring operational issues`,
-          `${domain} user experience problems`,
-          `${domain} workflow failures lessons learned`,
-        ];
-      }
-      if (key === 'app-store' || key === 'google-play') {
-        return [`${domain} app`, `${domain} service app`];
-      }
-      if (key === 'github' || key === 'stackoverflow' || key === 'dev-to') {
-        return [
-          `${domain} software workflow issue`,
-          `${domain} integration failure`,
-        ];
-      }
-      if (key === 'hacker-news' || key === 'product-hunt') {
-        return [
-          `${domain} workflow software problems`,
-          `${domain} product workflow pain`,
-        ];
-      }
-      return CanonicalRequestUnderstandingUtil.buildDomainDiscoveryQueries(
-        [domain],
-        maxQueries,
-      );
-    })();
-
-    return this.deduplicateQueries(candidates)
-      .filter(SourceSpecificEvidenceQueryUtil.isSafe.bind(SourceSpecificEvidenceQueryUtil))
-      .slice(0, Math.max(1, Math.min(4, maxQueries)));
-  }
-
-  private buildPlanCacheKey(input: {
+  }  private buildPlanCacheKey(input: {
     readonly description: string;
     readonly keywords: readonly string[];
     readonly generationType?: IdeaGenerationType;
@@ -912,7 +1022,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       keywords,
       input.generationType ?? null,
       input.language ?? null,
-      [...input.requestedDomainIds].sort(),
+      [...input.requestedDomainIds],
       input.domainCatalog.map((domain) => [
         domain.id,
         domain.name,
@@ -939,25 +1049,74 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     readonly language?: LanguageCode;
     readonly recoveryPreviousQueries?: readonly string[];
     readonly recoveryEvidenceTargets?: readonly string[];
+    readonly recoverySourceOutcomes?: readonly {
+      readonly sourceKey: string;
+      readonly rawCount: number;
+      readonly trustedCount: number;
+      readonly contextCount: number;
+      readonly unrelatedCount: number;
+      readonly status: 'USEFUL' | 'CONTEXT_ONLY' | 'UNRELATED_ONLY' | 'EMPTY' | 'DEGRADED';
+    }[];
     readonly userId?: string;
     readonly guestSessionId?: string;
+    readonly signal?: AbortSignal;
+    readonly deadlineMs?: number;
   }): Promise<RequestCollectionPlan | null> {
     const controllers = REQUEST_COLLECTION_PLAN_PROVIDER_LANES.map(
       () => new AbortController(),
     );
+    const effectiveDeadlineMs = Math.max(
+      900,
+      Math.min(
+        REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS,
+        Number.isFinite(input.deadlineMs)
+          ? Number(input.deadlineMs)
+          : REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS,
+      ),
+    );
+    const providerTimeoutMs = Math.max(
+      700,
+      Math.min(REQUEST_COLLECTION_PLAN_TIMEOUT_MS, effectiveDeadlineMs - 150),
+    );
+    if (input.signal?.aborted) return null;
+    const userPrompt = this.buildUserPrompt(
+      input.description,
+      input.keywords,
+      input.domainCatalog,
+      input.sourceCatalog,
+      input.requestedDomainIds ?? [],
+      {
+        previousQueries: input.recoveryPreviousQueries ?? [],
+        evidenceTargets: input.recoveryEvidenceTargets ?? [],
+        sourceOutcomes: input.recoverySourceOutcomes ?? [],
+      },
+    );
+    const systemInstruction = this.buildSystemInstruction();
 
     return new Promise<RequestCollectionPlan | null>((resolve) => {
       let settledCount = 0;
       let resolved = false;
+      const cleanupExternalAbort = (): void => {
+        input.signal?.removeEventListener('abort', abortFromCaller);
+      };
+      const abortFromCaller = (): void => {
+        if (resolved) return;
+        resolved = true;
+        controllers.forEach((controller) => controller.abort(input.signal?.reason));
+        cleanupExternalAbort();
+        resolve(null);
+      };
+      input.signal?.addEventListener('abort', abortFromCaller, { once: true });
       const globalDeadline = setTimeout(() => {
         if (resolved) return;
         resolved = true;
         controllers.forEach((controller) => controller.abort());
         this.logger.warn(
-          `[PREPARING] Global planning deadline ${REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS}ms reached; using the deterministic request-derived plan without waiting for additional providers.`,
+          `[PREPARING] Global planning deadline ${effectiveDeadlineMs}ms reached; using the deterministic request-derived plan without waiting for additional providers.`,
         );
+        cleanupExternalAbort();
         resolve(null);
-      }, REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS);
+      }, effectiveDeadlineMs);
 
       const finishFailure = (): void => {
         settledCount += 1;
@@ -965,24 +1124,15 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           resolved = true;
           clearTimeout(globalDeadline);
           controllers.forEach((controller) => controller.abort());
+          cleanupExternalAbort();
           resolve(null);
         }
       };
 
       REQUEST_COLLECTION_PLAN_PROVIDER_LANES.forEach((preferredApiModelIds, index) => {
         void this.aiExecutionService.execute({
-          userPrompt: this.buildUserPrompt(
-            input.description,
-            input.keywords,
-            input.domainCatalog,
-            input.sourceCatalog,
-            input.requestedDomainIds ?? [],
-            {
-              previousQueries: input.recoveryPreviousQueries ?? [],
-              evidenceTargets: input.recoveryEvidenceTargets ?? [],
-            },
-          ),
-          systemInstruction: this.buildSystemInstruction(),
+          userPrompt,
+          systemInstruction,
           requestType: ApiRequestType.NLP_ENHANCEMENT,
           promptType: PromptType.NLP_ANALYSIS,
           generationType: input.generationType,
@@ -999,7 +1149,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           estimatedOutputTokens: 420,
           maxOutputTokens: 800,
           temperature: 0.1,
-          timeoutMs: REQUEST_COLLECTION_PLAN_TIMEOUT_MS,
+          timeoutMs: providerTimeoutMs,
           maxRetriesPerModel: 0,
           maxModelsPerOperation: 1,
           excludeLocalFallback: true,
@@ -1063,6 +1213,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               controllers.forEach((controller, controllerIndex) => {
                 if (controllerIndex !== index) controller.abort();
               });
+              cleanupExternalAbort();
               this.logger.log(
                 `[PREPARING] AI request-understanding/evidence plan accepted from provider-diverse race. provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${planned.searchQueries.length}, sources=${planned.selectedSourceKeys?.length ?? planned.sourcePlans?.length ?? 0}.`,
               );
@@ -1093,16 +1244,16 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     return [
       'You are the PREPARING-stage semantic retrieval planner for software opportunity research.',
       'The requester description is intent/context, not automatically a problem statement and never evidence. First decide whether the text truly states a concrete operational problem or merely expresses a goal, preference, audience, product direction, or area of interest.',
-      'Return ONLY one compact JSON object. The first non-whitespace character must be { and the last must be }. Never return an array, string, Markdown fence, or wrapper object. Use these exact canonical keys: domainSelectionMode, selectedExistingDomainId, suggestedDomainName, requestIntent, domainIdentity, searchQueries, selectedSourceKeys, confidence. requestIntent must contain exactly mode, summary, explicitProblem, desiredOutcome. domainIdentity should contain exactly actor, object, workflow, failure. Do not add prose and do not return problemProfile, evidenceTargets, intentConcepts, sourcePlans, routingHints, or explanations; the runtime derives those locally.',
-      'requestIntent.mode must be EXPLICIT_PROBLEM only when the requester directly asserts a concrete current pain/failure/friction as the problem to solve (for example, a workflow is fragmented, users cannot complete a task, records are lost, or delays/rework are already occurring). Do NOT mark EXPLICIT_PROBLEM merely because the text mentions possible risks, desired capabilities, an audience, a workflow, examples of what might go wrong, or what the requester wants a future product to improve. Those are DISCOVERY_INTENT. In EXPLICIT_PROBLEM put a concise faithful problem in explicitProblem. Otherwise use DISCOVERY_INTENT and explicitProblem:"". desiredOutcome may capture what the requester wants to improve/build/serve, without turning that desire into a market problem.',
-      'Canonical example shape: {"domainSelectionMode":"EXISTING","selectedExistingDomainId":"catalog-id","suggestedDomainName":"","requestIntent":{"mode":"DISCOVERY_INTENT","summary":"...","explicitProblem":"","desiredOutcome":"..."},"domainIdentity":{"actor":"...","object":"...","workflow":"...","failure":""},"searchQueries":["query 1","query 2","query 3","query 4","query 5","query 6"],"selectedSourceKeys":["reddit","news","crossref"],"confidence":90}. For NEW use selectedExistingDomainId:"" and a non-empty suggestedDomainName. For EXISTING use the exact catalog id and suggestedDomainName:"".',
+      'Return ONLY one compact JSON object. The first non-whitespace character must be { and the last must be }. Never return an array, string, Markdown fence, or wrapper object. Use these exact canonical keys: domainSelectionMode, selectedExistingDomainId, suggestedDomainName, secondaryScopes, requestIntent, domainIdentity, searchQueries, retrievalVocabulary, selectedSourceKeys, confidence. requestIntent must contain exactly mode, summary, explicitProblem, desiredOutcome. domainIdentity should contain exactly actor, object, workflow, failure. secondaryScopes is optional and must contain at most four concise requester-grounded operational/industry scopes that materially participate in the described workflow but should NOT become configured domain rows. Exclude the primary suggested/selected domain, generic actors, solution words, and anything not explicitly supported by the requester text. Do not add prose and do not return problemProfile, evidenceTargets, intentConcepts, sourcePlans, routingHints, or explanations; the runtime derives those locally. retrievalVocabulary must contain concise practitioner, operator, industry, standards, or research terminology that people in this workflow actually use for the same problem/failure; it is search vocabulary only, never evidence or a new problem claim. If a NEW domain is necessary, suggestedDomainName must be a stable reusable profession/industry taxonomy category, never the exact actor/persona phrase, role title (Owner, Manager, Lead, Buyer, Seller, User, Operator), customer occasion, product SKU, workflow, solution, order-management, tracking, dashboard, platform, or project name. A role such as "X maker" or "Y painter" belongs under the reusable craft/profession category that describes the underlying production discipline; keep the exact item/occasion in domainIdentity.object/workflow, not in the domain taxonomy.',
+      'requestIntent.mode must be EXPLICIT_PROBLEM when the requester directly asserts a concrete current pain/failure/friction as the problem to solve. Narrative problem descriptions count as explicit problems even when they do not say "I have a problem". Phrases such as "often struggle", "information is scattered", "difficult to confirm", "cannot connect", "leads to errors/rework/waste/delays", or equivalent current-state wording are EXPLICIT_PROBLEM when they describe the requester actor/workflow and a real negative consequence. Do NOT mark EXPLICIT_PROBLEM merely because the text mentions possible future risks, desired capabilities, an audience, a workflow, examples of hypothetical failures, or what the requester wants a future product to improve. Those are DISCOVERY_INTENT. In EXPLICIT_PROBLEM put a concise faithful problem in explicitProblem. Otherwise use DISCOVERY_INTENT and explicitProblem:"". desiredOutcome may capture what the requester wants to improve/build/serve, without turning that desire into a market problem.',
+      'Canonical example shape: {"domainSelectionMode":"EXISTING","selectedExistingDomainId":"catalog-id","suggestedDomainName":"","secondaryScopes":[],"requestIntent":{"mode":"DISCOVERY_INTENT","summary":"...","explicitProblem":"","desiredOutcome":"..."},"domainIdentity":{"actor":"...","object":"...","workflow":"...","failure":""},"searchQueries":["query 1","query 2","query 3","query 4","query 5","query 6","query 7","query 8"],"retrievalVocabulary":["workflow term","failure term","research term"],"selectedSourceKeys":["reddit","forum","news","crossref","app-store","youtube"],"confidence":90}. For NEW use selectedExistingDomainId:"" and a non-empty suggestedDomainName. For EXISTING use the exact catalog id and suggestedDomainName:"".',
       'DOMAIN: choose EXISTING only when the active catalog contains the same professional actor, primary object/resource, and operational workflow. Broad-sector similarity is not enough. Otherwise choose NEW. For EXISTING, return the exact catalog id when available. For NEW, return a narrow reusable professional domain name.',
       'DOMAIN IDENTITY: return concise actor, object, and workflow phrases grounded in the requester intent. Return failure only when the request explicitly states one; otherwise return an empty string.',
-      "QUERIES: target 6 ordered evidence-search seed queries (a partial response is still useful; never exceed 8). When requestIntent.mode=EXPLICIT_PROBLEM, search to validate that problem and its strongest facets. When mode=DISCOVERY_INTENT, search for real complaints, failures, delays, rework, cost pressure, access barriers, unmet needs, incidents, or operational friction that occur inside the requester's actor/object/workflow/desired-outcome scope. Do not invent the winning problem during planning; collection + Community AI choose it from evidence. Write human-searchable 4-9 word queries and avoid proposed-solution terms unless the request itself concerns software/API/system failures or a review-store lane.",
-      'SOURCES: select 3-4 exact sourceKey values from ACTIVE SOURCE CATALOG. Prefer community/practitioner sources for niche/local-service workflows and research/news/institutional sources for public-sector or documented operational workflows. IMPORTANT: when a comparable mobile app or workflow tool plausibly exists, include app-store and google-play because USER REVIEWS are valuable problem evidence. Store listing descriptions are discovery metadata only; reviews/comments are the evidence. Use technical developer sources only for genuine software/API/infrastructure problems.',
+      "QUERIES: target 8 ordered evidence-search seed queries (a partial response is still useful; never exceed 10). Also return 6-12 retrievalVocabulary phrases: terminology/synonyms that practitioners, operators, researchers, or incident reports use for this SAME workflow and failure. These terms may be semantically equivalent to requester wording rather than literal copies, but must stay anchored to the same actor/object/workflow/problem and must not invent a different problem. When requestIntent.mode=EXPLICIT_PROBLEM, search to validate that problem and its strongest facets. When mode=DISCOVERY_INTENT, search for real complaints, failures, delays, rework, cost pressure, access barriers, unmet needs, incidents, or operational friction that occur inside the requester's actor/object/workflow/desired-outcome scope. Do not invent the winning problem during planning; collection + Community AI choose it from evidence. Write human-searchable 4-9 word queries and avoid proposed-solution terms unless the request itself concerns software/API/system failures or a review-store lane. Treat implementation-oriented selected domains such as Artificial Intelligence as scope constraints, not mandatory query words; do not inject them into every evidence query unless the problem statement itself makes that technology part of the failing workflow.",
+      'SOURCES: select 6-8 complementary exact sourceKey values from ACTIVE SOURCE CATALOG when they can execute this retrieval plan. Treat source-fit as a ranking decision, not a reason to omit a complementary research/documentary lane solely because requester wording is niche. First-pass evidence should normally include at least two direct-voice/community lanes and at least two documentary/research lanes; for consumer or service workflows include at least one app-review lane when relevant. Do not pad with unrelated sources. Prefer community/practitioner sources for niche/local-service workflows and research/news/institutional sources for public-sector or documented operational workflows. IMPORTANT: when a comparable mobile app or workflow tool plausibly exists, include app-store or google-play because USER REVIEWS are valuable problem evidence. Store listing descriptions are discovery metadata only; reviews/comments are the evidence. Use technical developer sources only for genuine software/API/infrastructure problems, not merely because AI is part of the proposed solution.',
       'When requester-selected domains are present, choose the best-matching one of those exact existing domains as the primary collection anchor. Do not create an additional NEW domain from the actor phrase. The selected domains are authoritative search scope. If requestIntent.mode=EXPLICIT_PROBLEM, preserve the requester problem and collect evidence that validates or tightly supports it inside that scope. If mode=DISCOVERY_INTENT, use the description only to constrain actor/object/workflow/outcome search intent and let collected verified evidence determine the final problem after collection.',
       'If this is recovery, materially change wording/source mix while preserving the requester intent and any truly explicit problem.',
-      'Be compact: short identity phrases, about 6 short ordered queries, source keys only, and confidence. The runtime preserves safe AI seeds, enriches partial responses, and builds the full source-aware plan locally.',
+      'Be compact: short identity phrases, about 8 strong ordered queries, source keys only, and confidence. The runtime preserves safe AI seeds, enriches partial responses, and builds the full source-aware plan locally.',
     ].join(' ');
   }
 
@@ -1115,6 +1266,14 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     recovery?: {
       readonly previousQueries: readonly string[];
       readonly evidenceTargets: readonly string[];
+      readonly sourceOutcomes: readonly {
+        readonly sourceKey: string;
+        readonly rawCount: number;
+        readonly trustedCount: number;
+        readonly contextCount: number;
+        readonly unrelatedCount: number;
+        readonly status: 'USEFUL' | 'CONTEXT_ONLY' | 'UNRELATED_ONLY' | 'EMPTY' | 'DEGRADED';
+      }[];
     },
   ): string {
     const catalogLines = domainCatalog.map((domain) => {
@@ -1127,7 +1286,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       [
         source.key,
         source.displayName,
-        source.description.slice(0, 80),
+        source.description.slice(0, 180),
         `posts=${source.supportsPosts}`,
         `comments=${source.supportsComments}`,
         `region=${source.supportsRegion}`,
@@ -1166,13 +1325,19 @@ export class RequestCollectionPlanningService implements OnModuleInit {
             'CURRENT EVIDENCE TARGETS:',
             recovery!.evidenceTargets.slice(0, 8).join('\n') || 'none',
             '',
-            'This is a recovery search. Choose a materially better source mix from ACTIVE SOURCE CATALOG when the previous mix was low-yield. Generate substantially different queries using synonyms, practitioner terminology, institutional terminology, incident/report language, and adjacent same-workflow evidence. Do not merely append problem/issue/complaint/not working to old queries.',
+            'SOURCE OUTCOMES FROM THIS EXACT RUN (use these as adaptive retrieval feedback; they are not evidence):',
+            recovery!.sourceOutcomes
+              .slice(0, 12)
+              .map((outcome) => `${outcome.sourceKey} | ${outcome.status} | raw=${outcome.rawCount} | trusted=${outcome.trustedCount} | context=${outcome.contextCount} | unrelated=${outcome.unrelatedCount}`)
+              .join('\n') || 'none',
+            '',
+            'This is a recovery search. Rotate away from EMPTY, DEGRADED, or UNRELATED_ONLY lanes unless there is a materially new retrieval strategy for that source. Prefer complementary source archetypes that were missing or only weakly represented. Generate substantially different queries using practitioner terminology, research terminology, incident/report language, and adjacent same-workflow evidence. Do not merely append problem/issue/complaint/not working to old queries.',
           ]
         : []),
       '',
       isRecovery
-        ? 'Return a compact recovery seed plan: request intent + domain identity + exactly 6 materially different evidence-search seeds + 3-4 exact active source keys + confidence. Preserve the requester actor/object/workflow and any explicit problem without inventing one.'
-        : 'Return a compact first-pass seed plan: domain choice + request intent + domain identity + exactly 6 strong evidence-search seeds + 3-4 exact active source keys + confidence. The final software problem is chosen only after evidence collection.',
+        ? 'Return a compact recovery seed plan: request intent + domain identity + 8 materially different evidence-search seeds + 6-12 retrievalVocabulary phrases + 4-6 exact active source keys + confidence. Preserve the requester actor/object/workflow and any explicit problem without inventing one.'
+        : 'Return a compact first-pass seed plan: domain choice + request intent + domain identity + 8 strong evidence-search seeds + 6-12 retrievalVocabulary phrases + 6-8 exact active source keys + confidence. Cover practitioner wording, workflow/failure terminology, documentary language, and research terminology for the SAME problem. The final software problem is chosen only after evidence collection.',
     ].join('\n');
   }
 
@@ -1352,6 +1517,14 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       parsed.selectedDomainName,
       parsed.selected_domain_name,
     );
+    const secondaryScopes = readArray(
+      parsed.secondaryScopes,
+      parsed.secondary_scopes,
+      parsed.relatedScopes,
+      parsed.related_scopes,
+      parsed.secondaryDomains,
+      parsed.secondary_domains,
+    );
     const searchQueries = readArray(
       parsed.searchQueries,
       parsed.search_queries,
@@ -1362,6 +1535,14 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       parsed.selected_source_keys,
       parsed.sourceKeys,
       parsed.sources,
+    );
+    const retrievalVocabulary = readArray(
+      parsed.retrievalVocabulary,
+      parsed.retrieval_vocabulary,
+      parsed.searchVocabulary,
+      parsed.search_vocabulary,
+      parsed.terminology,
+      parsed.synonyms,
     );
     const confidence = readNumber(
       parsed.confidence,
@@ -1385,6 +1566,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       domainSelectionMode: explicitMode ?? inferredMode ?? 'NEW',
       selectedExistingDomainId: selectedExistingDomainId ?? '',
       suggestedDomainName: suggestedDomainName ?? '',
+      secondaryScopes: secondaryScopes ?? [],
       requestIntent: {
         mode: readString(requestIntent.mode) ?? 'DISCOVERY_INTENT',
         summary: readString(requestIntent.summary) ?? '',
@@ -1398,6 +1580,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         failure: readString(identity.failure) ?? '',
       },
       searchQueries: searchQueries ?? [],
+      retrievalVocabulary: retrievalVocabulary ?? [],
       selectedSourceKeys: selectedSourceKeys ?? [],
       confidence: confidence ?? 0,
     };
@@ -1457,7 +1640,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         : null;
     const reuseExistingDomain = Boolean(
       requestedExistingDomain &&
-      existingDomainMatchScore >= 88 &&
+      existingDomainMatchScore >= REQUEST_EXISTING_DOMAIN_REUSE_MIN_SCORE &&
       this.existingDomainIdentityMatchesRequest(
         requestedExistingDomain,
         domainIdentity,
@@ -1472,6 +1655,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
             : null,
           domainIdentity,
           description,
+          domainCatalog,
         )
       : this.normalizeDomainName(
           typeof parsed.suggestedDomainName === 'string'
@@ -1492,24 +1676,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const explicitDomains = requestedDomainIds
       .map((id) => catalogById.get(id))
       .filter((domain): domain is RequestDomainCatalogEntry => Boolean(domain));
-    const semanticIdentityText = [
-      normalizedAiDomainName ?? '',
-      domainIdentity.actor,
-      domainIdentity.object,
-      domainIdentity.workflow,
-    ]
-      .join(' ')
-      .toLocaleLowerCase();
-    const explicitDomainScore = (domain: RequestDomainCatalogEntry): number =>
-      this.normalizeComparableDomainName(domain.name)
-        .split(/\s+/u)
-        .filter((token) => token.length >= 4)
-        .filter((token) => semanticIdentityText.includes(token)).length;
-    const explicitPrimary = explicitDomains.length > 0
-      ? [...explicitDomains].sort(
-          (left, right) => explicitDomainScore(right) - explicitDomainScore(left),
-        )[0]
-      : null;
+    const explicitPrimary = explicitDomains[0] ?? null;
 
     const domainSelectionMode = explicitPrimary || reuseExistingDomain
       ? 'EXISTING' as const
@@ -1518,9 +1685,45 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       (reuseExistingDomain ? requestedExistingDomain!.id : null);
     const suggestedDomainName = explicitPrimary?.name ??
       (reuseExistingDomain ? requestedExistingDomain!.name : semanticNewDomainName);
+    /*
+     * Keep the persisted score semantically consistent with the final
+     * selection decision.  A NEW domain cannot simultaneously claim a score
+     * at or above the reuse threshold while exposing no selected catalog id;
+     * that combination misleads analytics and later domain-resolution logic.
+     * The threshold itself remains shared with the actual reuse decision, so
+     * this is an invariant rather than a domain/test-specific exception.
+     */
+    const effectiveExistingDomainMatchScore = selectedExistingDomainId
+      ? Math.max(existingDomainMatchScore, REQUEST_EXISTING_DOMAIN_REUSE_MIN_SCORE)
+      : Math.min(
+          existingDomainMatchScore,
+          REQUEST_EXISTING_DOMAIN_REUSE_MIN_SCORE - 1,
+        );
+    const inferredSecondaryScopes = this.normalizeInferredSecondaryScopes(
+      [
+        ...(Array.isArray(parsed.secondaryScopes) ? parsed.secondaryScopes : []),
+        ...this.extractSecondaryScopePhrases(domainIdentity.object),
+      ],
+      description,
+      [
+        suggestedDomainName ?? '',
+        ...explicitDomains.map((domain) => domain.name),
+      ],
+    );
 
+    const retrievalVocabulary = this.normalizeRetrievalVocabulary(
+      parsed.retrievalVocabulary,
+      description,
+      problemProfile,
+      domainIdentity,
+    );
+    const vocabularyAnchoredQueries = this.buildVocabularyAnchoredQueries(
+      retrievalVocabulary,
+      problemProfile,
+      domainIdentity,
+    );
     const rawAiQueries = this.filterAiQueriesForRequest(
-      this.normalizeQueries(parsed.searchQueries, 8),
+      this.normalizeQueries(parsed.searchQueries, 10),
       description,
     );
     /*
@@ -1535,133 +1738,25 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     // Keep AI ownership without making an omitted seed invalidate the whole
     // PREPARING result. One grounded AI seed is enough; missing coverage is
     // completed deterministically without changing aiUsed/fallbackUsed.
-    const acceptedAiQueries = this.deduplicateQueries(rankedAiQueries).slice(0, 6);
+    const acceptedAiQueries = this.deduplicateQueries(rankedAiQueries).slice(0, 8);
     // Do not discard a useful fastest-provider response simply because it is
     // partial. At least one safe, requester-grounded AI query keeps aiUsed=true;
     // deterministic/request-derived lanes fill the remaining retrieval budget.
     if (acceptedAiQueries.length === 0) return fallback;
 
-    const explicitTextDomainPath = requestedDomainIds.length > 0;
-    const nicheCraftProfile = RequestNicheCustomCraftUtil.resolve(description);
-    /*
-     * The AI already owns the primary retrieval wording. Three successive
-     * generic query-expansion passes used to run synchronously after the model
-     * had answered, which could turn a 3-4s provider response into a 20-30s
-     * PREPARING stage and could inject archetype vocabulary such as
-     * refrigeration into unrelated manufacturing requests. Explicit-domain
-     * requests therefore use the AI seeds plus the already-grounded canonical
-     * fallback only. Sparse bespoke crafts use their source-native niche
-     * vocabulary. Generic Text Only requests keep the broader expansion path.
-     */
-    const supportingQueries = explicitTextDomainPath || nicheCraftProfile
-      ? []
-      : RequestDynamicQueryUtil.buildEvidenceFacetQueries({
-          requestDescription: description,
-          intentConcepts: fallback.intentConcepts,
-          evidenceTargets: fallback.evidenceTargets,
-          plannedQueries: acceptedAiQueries,
-          maxQueries: 6,
-        });
-    const professionalQueries = nicheCraftProfile
-      ? this.deduplicateQueries([
-          ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'reddit'),
-          ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'forum'),
-          ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'crossref'),
-          ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'news'),
-        ]).slice(0, 8)
-      : explicitTextDomainPath
-        ? this.deduplicateQueries([
-            ...RequestDynamicQueryUtil.buildProfessionalTerminologyQueries({
-              requestDescription: description,
-              intentConcepts: fallback.intentConcepts,
-              evidenceTargets: fallback.evidenceTargets,
-              plannedQueries: acceptedAiQueries,
-              maxQueries: 8,
-            }),
-            ...fallback.searchQueries,
-          ]).slice(0, 8)
-        : RequestDynamicQueryUtil.buildProfessionalTerminologyQueries({
-            requestDescription: description,
-            intentConcepts: fallback.intentConcepts,
-            evidenceTargets: fallback.evidenceTargets,
-            plannedQueries: acceptedAiQueries,
-            maxQueries: 5,
-          });
-    const broadQueries = explicitTextDomainPath || nicheCraftProfile
-      ? []
-      : RequestDynamicQueryUtil.buildRelaxedRetrievalQueries({
-          requestDescription: description,
-          intentConcepts: fallback.intentConcepts,
-          evidenceTargets: fallback.evidenceTargets,
-          plannedQueries: [
-            ...acceptedAiQueries,
-            ...supportingQueries,
-            ...professionalQueries,
-          ],
-          maxQueries: 4,
-        });
-
-    const normalizedDescription = description.toLocaleLowerCase();
-    const governmentRecordIntegrityRequest =
-      /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|licensing authorities?)\b/u.test(normalizedDescription) &&
-      /\b(?:licenses?|licences?|certificates?|permits?|official records?|official documents?|approval records?|security logs?)\b/u.test(normalizedDescription) &&
-      /\b(?:altered|tamper|unauthorized|unauthorised|fraud|forged|verification|integrity|audit)\w*\b/u.test(normalizedDescription);
-    const restorationProfessionalRequest =
-      RequestWorkflowIntentProfileUtil.resolve(description).family ===
-      'RESTORATION_CONSERVATION';
-    const contractVersionGovernanceRequest =
-      /\b(?:contracts?|agreements?)\b/u.test(normalizedDescription) &&
-      /\b(?:versions?|amendments?|digital signatures?|approval histor(?:y|ies)|authorization|authorisation|compliance obligations?|legally valid|terms? (?:were )?changed|executed agreement|negotiation records?)\b/u.test(
-        normalizedDescription,
-      );
-    const prioritizeProfessionalRetrieval =
-      Boolean(nicheCraftProfile) ||
-      restorationProfessionalRequest ||
-      contractVersionGovernanceRequest ||
-      governmentRecordIntegrityRequest ||
-      (/\b(?:lace|textile)\b/u.test(normalizedDescription) &&
-        /\b(?:restoration|conservation|thread|pattern)\w*\b/u.test(normalizedDescription)) ||
-      (/\b(?:fitness centers?|fitness clubs?|gyms?|health clubs?|sports clubs?)\b/u.test(normalizedDescription) &&
-        /\b(?:energy|electricity|treadmill|hvac|climate control|sauna|occupancy|maintenance|downtime)\b/u.test(normalizedDescription));
-
-    /*
-     * Ordered retrieval strength:
-     *   1) every safe AI-authored query (strongest semantic contract),
-     *   2) request-facet supporting queries,
-     *   3) deterministic high-signal fallback coverage,
-     *   4) relaxed/broad lexical recall.
-     *
-     * We keep a bounded mixed-strength plan (up to twelve unique seeds) and
-     * later guarantee that every accepted AI seed is assigned to at least one
-     * collector. Therefore an AI query can no longer
-     * disappear merely because source adaptation picked a different phrase.
-     */
-    const searchQueries = this.deduplicateQueries([
-      // Preserve the strongest AI seeds, but in sparse craft/facility-energy
-      // workflows immediately follow them with practitioner-native terminology.
-      // Search engines and communities use phrases such as "lace conservation"
-      // or "gym HVAC energy use" much more often than specification-language
-      // generated from the full requester paragraph.
-      ...acceptedAiQueries.slice(0, prioritizeProfessionalRetrieval ? 2 : 3),
-      ...(prioritizeProfessionalRetrieval
-        ? professionalQueries.slice(0, 5)
-        : supportingQueries.slice(0, 3)),
-      ...(prioritizeProfessionalRetrieval
-        ? supportingQueries.slice(0, 2)
-        : professionalQueries.slice(0, 3)),
-      // Every remaining accepted AI seed is still preserved in the bounded
-      // runtime plan; weaker deterministic/broad lanes fill only spare slots.
-      ...acceptedAiQueries.slice(prioritizeProfessionalRetrieval ? 2 : 3),
-      ...fallback.searchQueries,
-      ...broadQueries,
-    ])
+    const searchQueries = this.buildAiPrimarySearchPlan(
+      [...acceptedAiQueries, ...vocabularyAnchoredQueries],
+      fallback.searchQueries,
+      description,
+      problemProfile,
+    )
       .filter((query) =>
         RequestQueryProvenanceUtil.isQueryGrounded({
           requestDescription: description,
           query,
         }),
       )
-      .slice(0, 12);
+      .slice(0, 14);
     if (searchQueries.length === 0) return fallback;
 
     const evidenceTargets = this.deduplicatePhrases([
@@ -1700,115 +1795,60 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       parsed.selectedSourceKeys,
       activeSourceKeys,
     );
-    const technicalRequest =
-      /\b(?:api|sdk|source code|repository|github|webhook|endpoint|database schema|firmware integration|docker|kubernetes|programming|developer|software engineering)\b/iu.test(description) ||
-      /\b(?:software|application|app|server|container|node|javascript|typescript|python|java)\s+runtime\b|\bruntime\s+(?:error|exception|environment|version|dependency|crash)\b/iu.test(description);
-    const technicalOnlyKeys = new Set([
-      'github',
-      'stackoverflow',
-      'dev-to',
-      'hacker-news',
-      'product-hunt',
-    ]);
-    const restorationOrCraftRequest =
-      /\b(?:restoration|restore|repair specialist|repair specialists|cobbler|conservator|conservation|refinishing|artisan|craft|workshop)\w*\b/iu.test(description) &&
-      /\b(?:condition|damage|previous repairs?|materials?|color matching|colour matching|customer preferences?|customer requests?|notes?|photographs?|samples?|history|stitching|sole|finish|rework)\w*\b/iu.test(description);
-    const specialistConservationRequest =
-      /\b(?:conservators?|conservation specialists?|restoration specialists?|restorers?|pottery|ceramic(?:s)?|porcelain|artifacts?|artworks?|museum|heritage|manuscripts?|books?)\b/iu.test(description) &&
-      /\b(?:restoration|conservation|condition reports?|condition|damage|cracks?|missing fragments?|previous repairs?|treatment history|restoration history|materials?|glaze|color matching|colour matching|preservation|documentation|records?|photographs?|samples?)\b/iu.test(description);
-    const clinicalPractitionerRequest =
-      /\b(?:sports rehabilitation|rehabilitation centers?|rehab centers?|sports medicine|physical therapists?|physiotherapists?|clinics?|clinical)\b/iu.test(description) &&
-      /\b(?:athletes?|patients?|recovery|rehabilitation|wearable|pain reports?|mobility|therapy|therapist|remote monitoring|reinjury|return to play)\b/iu.test(description);
-    const reviewStoresUseful =
-      !nicheCraftProfile && this.shouldUseReviewStores(description);
-    const institutionalPublicWorkflow =
-      /\b(?:smart cit(?:y|ies)|municipal|municipality|city government|local authority|public transit|public transportation|public utility|government agency|government agencies|public sector)\b/iu.test(description);
-    const emergencyPublicLogisticsWorkflow =
-      /\b(?:government agenc(?:y|ies)|public sector|public authorit(?:y|ies)|emergency management|disaster response|humanitarian)\b/iu.test(description) &&
-      /\b(?:emergency supplies?|relief supplies?|humanitarian logistics|disaster logistics|inventory|warehouse|transportation availability|regional demand|resource allocation|distribution|shipments?|shortages?)\b/iu.test(description);
-    const reviewStorePriority = reviewStoresUseful && !emergencyPublicLogisticsWorkflow
-      ? institutionalPublicWorkflow
-        ? ['google-play']
-        : ['google-play', 'app-store']
-      : [];
-    const workflowArchetype = RequestWorkflowArchetypeUtil.classify({
+    const capabilityInput = {
       requestDescription: description,
+      domainName: suggestedDomainName,
+      keywords: intentConcepts,
       plannedQueries: searchQueries,
-    }).archetype;
-    const transactionAccountAbuse =
-      workflowArchetype === 'TRANSACTION_ACCOUNT_ABUSE_OPERATIONS';
-    const portfolioPriority = nicheCraftProfile
-      ? ['reddit', 'forum', 'crossref', 'news', 'blog', 'youtube', 'gdelt']
-      : emergencyPublicLogisticsWorkflow
-        ? ['news', 'crossref', 'gdelt', 'forum', 'reddit', 'youtube', 'blog']
-      : transactionAccountAbuse
-      ? institutionalPublicWorkflow
-        ? ['news', 'crossref', 'gdelt', 'forum', 'reddit', ...reviewStorePriority, 'youtube', 'blog']
-        : ['reddit', 'news', 'crossref', 'forum', ...reviewStorePriority, 'gdelt', 'youtube', 'blog']
-      : specialistConservationRequest
-        ? ['crossref', 'forum', 'blog', 'youtube', 'reddit', 'news', 'gdelt']
-        : restorationOrCraftRequest
-          ? ['reddit', 'forum', ...reviewStorePriority, 'news', 'youtube', 'blog', 'crossref', 'gdelt']
-        : clinicalPractitionerRequest
-          ? ['crossref', 'reddit', 'news', 'forum', 'gdelt', 'youtube', 'blog']
-          : ['reddit', 'news', 'crossref', ...reviewStorePriority, 'forum', 'gdelt', 'youtube', 'blog'];
-    const desiredPortfolioSize = 4;
-    const effectiveSourceKeys = this.deduplicatePhrases([
-      // Sparse physical-service niches need practitioner/community sources more
-      // than generic video/app results. Keep AI-selected sources available, but
-      // let the source-native niche portfolio occupy the bounded primary slots
-      // first. This is retrieval routing only; evidence trust remains unchanged.
-      ...(nicheCraftProfile ? portfolioPriority.slice(0, desiredPortfolioSize) : []),
-      ...selectedSourceKeys,
-      // The AI chooses sources first for non-niche workflows. When the request
-      // describes a workflow that commonly has mobile tools, make review stores
-      // available as bounded evidence lanes even if one provider omitted them.
-      ...reviewStorePriority,
-    ])
-      .filter((key) => activeSourceKeys.has(key))
-      .filter((key) => technicalRequest || !technicalOnlyKeys.has(key))
-      // An AI planner may still request mobile stores for a niche workflow.
-      // Runtime suitability is authoritative so specialist conservation and
-      // other no-analogue workflows do not spend collection slots on stores.
-      .filter((key) =>
-        !emergencyPublicLogisticsWorkflow && reviewStoresUseful
-          ? true
-          : !['app-store', 'google-play'].includes(key),
-      )
-      .filter(
-        (key) =>
-          !clinicalPractitionerRequest ||
-          !['app-store', 'google-play', 'product-hunt'].includes(key),
+      collectionMode: 'FAST_GENERATION' as const,
+    };
+    /*
+     * AI-selected sources are semantic retrieval decisions, so a heuristic fit
+     * score must not hard-veto them. Runtime/collector-specific executability is
+     * the hard boundary; generic request-fit remains a ranking signal for the
+     * supplementary portfolio only. This prevents niche professional requests
+     * from silently losing scholarly/documentary sources before collection.
+     */
+    const requestCapableSourceKeys = selectedSourceKeys.filter((sourceKey) =>
+      this.collectorsFactory.isCollectorRouteExecutable(
+        sourceKey,
+        capabilityInput,
+      ),
+    );
+    const executableActiveSourceKeys = [...activeSourceKeys].filter((sourceKey) =>
+      this.collectorsFactory.isCollectorRouteExecutable(
+        sourceKey,
+        capabilityInput,
+      ),
+    );
+    const capabilityRankedSupplement = executableActiveSourceKeys
+      .filter((sourceKey) => !requestCapableSourceKeys.includes(sourceKey))
+      .sort((left, right) =>
+        this.collectorsFactory.getCollectorRequestFitScore(right, capabilityInput) -
+          this.collectorsFactory.getCollectorRequestFitScore(left, capabilityInput) ||
+        left.localeCompare(right),
       );
-    for (const key of portfolioPriority) {
-      if (effectiveSourceKeys.length >= desiredPortfolioSize) break;
-      if (!activeSourceKeys.has(key) || effectiveSourceKeys.includes(key)) continue;
-      effectiveSourceKeys.push(key);
-    }
-    const boundedEffectiveSourceKeys = reviewStoresUseful
-      ? [
-          ...effectiveSourceKeys
-            .filter((key) => key !== 'app-store' && key !== 'google-play')
-            .slice(0, institutionalPublicWorkflow ? 5 : 4),
-          ...['google-play', 'app-store']
-            .filter((key) => effectiveSourceKeys.includes(key))
-            .slice(0, institutionalPublicWorkflow ? 1 : 2),
-        ].slice(0, 4)
-      : effectiveSourceKeys.slice(0, 4);
+    const rankedEffectiveSourceKeys = this.deduplicatePhrases([
+      ...requestCapableSourceKeys,
+      ...capabilityRankedSupplement,
+    ]);
+    const boundedEffectiveSourceKeys = this.buildBalancedEvidenceSourcePortfolio(
+      rankedEffectiveSourceKeys,
+      sourceCatalog,
+      8,
+    );
     if (boundedEffectiveSourceKeys.length === 0) {
       return fallback;
     }
 
-    const allRuntimeSourceKeys = this.deduplicatePhrases([
-      ...boundedEffectiveSourceKeys,
-      ...sourceCatalog.map((source) => source.key),
-    ]);
+    const allRuntimeSourceKeys = [...boundedEffectiveSourceKeys];
     const sourcePlans = this.buildRuntimeSourcePlans(
       allRuntimeSourceKeys,
       searchQueries,
       description,
       problemProfile,
       boundedEffectiveSourceKeys,
+      retrievalVocabulary,
     );
     const sourceFocus = this.deriveSourceFocusFromKeys(boundedEffectiveSourceKeys);
     const confidence = this.normalizeScore(parsed.confidence, fallback.confidence);
@@ -1817,11 +1857,13 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       selectedExistingDomainId,
       domainSelectionMode,
       suggestedDomainName,
+      inferredSecondaryScopes,
       requestIntent,
       domainIdentity,
       ...(problemProfile ? { problemProfile } : {}),
-      existingDomainMatchScore,
+      existingDomainMatchScore: effectiveExistingDomainMatchScore,
       searchQueries,
+      retrievalVocabulary,
       evidenceTargets,
       intentConcepts,
       sourceFocus,
@@ -1837,81 +1879,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     }
 
     return plan;
-  }
-
-  /**
-   * Keeps the AI's semantic domain when it is a concrete professional label.
-   * A deterministic domain can override only when the model returned a broad
-   * parent label while the request itself exposes a clearly narrower vertical.
-   */
-  private selectSuggestedDomainName(
-    aiDomainName: string | null,
-    fallbackDomainName: string | null,
-    description: string,
-  ): string | null {
-    if (!aiDomainName) return fallbackDomainName;
-    if (!fallbackDomainName) return aiDomainName;
-
-    const normalizedAi = aiDomainName.trim().toLocaleLowerCase();
-    const normalizedFallback = fallbackDomainName
-      .trim()
-      .toLocaleLowerCase();
-
-    if (normalizedAi === normalizedFallback) {
-      return aiDomainName;
-    }
-
-    const aiMatchesRequest = this.domainLabelMatchesRequest(
-      aiDomainName,
-      description,
-    );
-    const fallbackMatchesRequest = this.domainLabelMatchesRequest(
-      fallbackDomainName,
-      description,
-    );
-    if (!aiMatchesRequest && fallbackMatchesRequest) {
-      return fallbackDomainName;
-    }
-
-    const broadDomains = new Set([
-      'education',
-      'business operations',
-      'government',
-      'logistics',
-      'healthcare',
-      'tourism',
-      'media & entertainment',
-      'sports & fitness',
-      'wardrobe & personal fashion management',
-      'artificial intelligence',
-      'cybersecurity',
-      'internet of things',
-      'food & restaurants',
-      'finance',
-      'real estate',
-      'transportation',
-      'e-commerce',
-      'agriculture',
-      'energy',
-      'blockchain',
-      'hr & recruitment',
-      'legaltech',
-      'pets',
-      'pet care',
-    ]);
-
-    if (
-      broadDomains.has(normalizedAi) &&
-      !broadDomains.has(normalizedFallback) &&
-      this.domainLabelMatchesRequest(fallbackDomainName, description)
-    ) {
-      return fallbackDomainName;
-    }
-
-    return aiDomainName;
-  }
-
-  /**
+  }  /**
    * AI queries remain first because collectors with tight query budgets use
    * the first one to three entries. Deterministic terms are added only to fill
    * uncovered request concepts; they never push valid AI queries behind broad
@@ -1921,6 +1889,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     aiQueries: readonly string[],
     fallbackQueries: readonly string[],
     description: string,
+    problemProfile?: RequestCanonicalProblemProfile,
   ): string[] {
     /*
      * AI queries are the retrieval contract for text-bearing requests. Keep a
@@ -1932,26 +1901,33 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       aiQueries,
       description,
     );
-    const output = this.deduplicateQueries(acceptedAi).slice(0, 12);
+    const output = this.deduplicateQueries(acceptedAi).slice(0, 14);
 
     if (output.length >= 8) {
       return output;
     }
 
+    const semanticRecallQueries = problemProfile
+      ? CanonicalRequestUnderstandingUtil.buildRecoveryQueries(
+          problemProfile,
+          output,
+          6,
+        )
+      : [];
     const acceptedFallback = this.filterAiQueriesForRequest(
-      fallbackQueries,
+      [...semanticRecallQueries, ...fallbackQueries],
       description,
     );
 
     for (const fallbackQuery of acceptedFallback) {
-      if (output.length >= 12) break;
+      if (output.length >= 14) break;
       const next = this.deduplicateQueries([...output, fallbackQuery]);
       if (next.length > output.length) {
         output.push(next[next.length - 1]);
       }
     }
 
-    return output.slice(0, 12);
+    return output.slice(0, 14);
   }
 
   private rankAiQueriesForRequest(
@@ -2059,6 +2035,12 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           )
             ? 7
             : 0;
+        const proposedSolutionPhrasePenalty =
+          /\b(?:smarter|smart)\s+(?:system|platform|application|app|tool)\b|\b(?:system|platform|application|app|tool)\s+(?:could|can|would)\b/iu.test(
+            query,
+          )
+            ? 12
+            : 0;
 
         return {
           query,
@@ -2072,6 +2054,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
             longQueryPenalty -
             weakProblemShapePenalty -
             solutionBiasPenalty -
+            proposedSolutionPhrasePenalty -
             index * 0.01,
         };
       })
@@ -2122,6 +2105,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       plan.problemProfile?.object ?? '',
       plan.problemProfile?.coreProblem ?? '',
       plan.problemProfile?.workflow ?? '',
+      ...(plan.inferredSecondaryScopes ?? []),
       ...(plan.problemProfile?.failureModes ?? []),
       ...(plan.problemProfile?.consequences ?? []),
       ...plan.searchQueries,
@@ -2142,56 +2126,30 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   private buildDeterministicFallback(
     description: string,
     keywords: readonly string[],
-    options: { readonly skipBroadExpansion?: boolean } = {},
+    _options: { readonly skipBroadExpansion?: boolean } = {},
   ): RequestCollectionPlan {
-    const combined = `${description} ${keywords.join(' ')}`.trim();
     const problemProfile = this.buildDeterministicProblemProfile(description);
-    const domainName =
-      this.inferSpecializedProfessionalDomainName(combined) ??
-      inferDominantRequestDomainName(combined) ??
-      this.composeDomainNameFromProblemProfile(problemProfile) ??
-      this.inferGenericProfessionalDomainName(combined);
-
-    const canonicalQueries = CanonicalRequestUnderstandingUtil.buildSearchQueries(
-      problemProfile,
-      8,
-    );
-    /*
-     * PREPARING fallback must still begin with human-searchable problem
-     * language. The canonical query builder is safe but can be overly literal
-     * for long requester sentences; promote the compact actor/object/pain
-     * combinations first and use canonical queries only to fill uncovered
-     * facets. This keeps fallback quality close to the AI-planned path.
-     */
-    const fallbackStrongQueries = this.deduplicateQueries([
-      ...this.buildFallbackHighSignalQueries(description, problemProfile),
-      ...canonicalQueries,
-    ]).filter((query) =>
-      RequestQueryProvenanceUtil.isQueryGrounded({
-        requestDescription: description,
-        query,
-      }),
-    );
-    const fallbackBroadQueries = options.skipBroadExpansion
-      ? []
-      : RequestDynamicQueryUtil.buildRelaxedRetrievalQueries({
-          requestDescription: description,
-          intentConcepts: [
-            problemProfile.actor,
-            problemProfile.object,
-            problemProfile.workflow,
-          ],
-          evidenceTargets: [
-            ...problemProfile.failureModes,
-            ...problemProfile.consequences,
-          ],
-          plannedQueries: fallbackStrongQueries,
-          maxQueries: 5,
-        });
+    const requestIntent = this.normalizeRequestIntent({}, description);
+    const canonicalQueries =
+      CanonicalRequestUnderstandingUtil.buildSearchQueries(problemProfile, 12);
+    const facetExpansionQueries =
+      CanonicalRequestUnderstandingUtil.buildRecoveryQueries(
+        problemProfile,
+        [],
+        12,
+      );
     const searchQueries = this.deduplicateQueries([
-      ...fallbackStrongQueries,
-      ...fallbackBroadQueries,
-    ]).slice(0, 10);
+      ...canonicalQueries,
+      ...facetExpansionQueries,
+      ...keywords.map((keyword) => keyword.trim()).filter(Boolean),
+    ])
+      .filter((query) =>
+        RequestQueryProvenanceUtil.isQueryGrounded({
+          requestDescription: description,
+          query,
+        }),
+      )
+      .slice(0, 12);
     const evidenceTargets = this.deduplicatePhrases([
       ...(problemProfile.evidenceFacets ?? []),
       ...problemProfile.failureModes,
@@ -2204,244 +2162,113 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ...(problemProfile.objectAliases ?? []),
       problemProfile.workflow,
     ]).slice(0, 10);
+    const suggestedDomainName =
+      this.composeDomainNameFromProblemProfile(problemProfile) ??
+      this.genericFallbackDomainName(problemProfile);
+    const inferredSecondaryScopes = this.normalizeInferredSecondaryScopes(
+      this.extractSecondaryScopePhrases(problemProfile.object),
+      description,
+      [suggestedDomainName],
+    );
 
     return {
       selectedExistingDomainId: null,
       domainSelectionMode: 'NEW',
-      suggestedDomainName: domainName,
-      requestIntent: {
-        mode: 'DISCOVERY_INTENT',
-        summary: description.slice(0, 360),
-        explicitProblem: null,
-        desiredOutcome: null,
-      },
+      suggestedDomainName,
+      inferredSecondaryScopes,
+      requestIntent,
       domainIdentity: {
         actor: problemProfile.actor,
         object: problemProfile.object,
         workflow: problemProfile.workflow,
-        failure: '',
+        failure:
+          requestIntent.mode === 'EXPLICIT_PROBLEM'
+            ? problemProfile.coreProblem || problemProfile.failureModes[0] || ''
+            : '',
       },
+      ...(requestIntent.mode === 'EXPLICIT_PROBLEM'
+        ? { problemProfile }
+        : {}),
       searchQueries,
-      evidenceTargets: [],
+      evidenceTargets:
+        requestIntent.mode === 'EXPLICIT_PROBLEM' ? evidenceTargets : [],
       intentConcepts,
-      sourceFocus: this.inferSourceFocus(description),
-      confidence: domainName ? 78 : 62,
+      sourceFocus: [],
+      confidence: 60,
       aiUsed: false,
       fallbackUsed: true,
     };
   }
 
-
-  private buildFallbackHighSignalQueries(
+  /**
+   * Builds a recovery-specific deterministic plan when the online re-planner
+   * misses its short deadline.  Reusing the initial first-pass query set here
+   * used to make recovery repeat the same weak search surface and, in sparse
+   * niches, spend the whole recovery wave without materially new evidence.
+   *
+   * The plan remains fully requester-derived: it rotates through canonical
+   * actor/object/workflow/failure facets and explicitly excludes the already
+   * executed queries.  It therefore improves recall without promoting any new
+   * problem or domain claim.
+   */
+  private buildDeterministicRecoveryFallback(
     description: string,
-    profile: RequestCanonicalProblemProfile,
-  ): string[] {
-    const normalizedDescription = description.toLocaleLowerCase();
-    const municipalHousingCostRequest =
-      /\b(?:municipal housing authorities?|public housing authorities?|housing authorities?|public housing properties?|social housing|municipal housing)\b/iu.test(normalizedDescription) &&
-      /\b(?:maintenance|repair expenses?|operating costs?|operating expenses?|occupancy|utility bills?|utilities|subsidy payments?|inspection results?|tenant complaints?|budget allocation|financially inefficient|housing quality)\b/iu.test(normalizedDescription);
-    if (municipalHousingCostRequest) {
-      return [
-        'public housing maintenance cost per unit benchmark',
-        'housing authority operating cost outlier properties',
-        'public housing utility consumption building operating expense',
-        'public housing work order backlog repair cost',
-        'housing authority high maintenance cost building intervention',
-        'public housing inspection complaints repair prioritization',
-        'public housing operating expense occupancy subsidy',
-        'municipal housing budget maintenance backlog spending',
-        'public housing property operating expense benchmark maintenance',
-        'housing authority repair backlog budget allocation complaints',
-      ];
-    }
+    keywords: readonly string[],
+    previousQueries: readonly string[],
+  ): RequestCollectionPlan {
+    const base = this.buildDeterministicFallback(description, keywords);
+    const problemProfile =
+      base.problemProfile ?? this.buildDeterministicProblemProfile(description);
+    const previous = new Set(
+      previousQueries
+        .map((query) => query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+    const rotatedQueries = this.deduplicateQueries([
+      ...CanonicalRequestUnderstandingUtil.buildRecoveryQueries(
+        problemProfile,
+        previousQueries,
+        12,
+      ),
+      ...CanonicalRequestUnderstandingUtil.buildSearchQueries(
+        problemProfile,
+        12,
+      ),
+      ...keywords,
+    ])
+      .filter((query) => !previous.has(query.toLocaleLowerCase()))
+      .filter((query) =>
+        RequestQueryProvenanceUtil.isQueryGrounded({
+          requestDescription: description,
+          query,
+        }),
+      )
+      .slice(0, 10);
 
-    const bookEdgeGildingRequest =
-      /\b(?:book[- ]edge gilding specialists?|book edge gilders?|fore[- ]edge gilders?|fore[- ]edge gilding specialists?|book gilding specialists?)\b/iu.test(normalizedDescription) &&
-      /\b(?:gold|metallic|gilding|edge preparation|decorative patterns?|book dimensions?|material compatibility|revision requests?|incorrect finishes?|damaged pages?|wasted materials?|delayed commissions?)\b/iu.test(normalizedDescription);
-    if (bookEdgeGildingRequest) {
-      return [
-        'fore edge gilding damaged pages mistake repair',
-        'book edge gilding gold leaf finish went wrong',
-        'bookbinder gilded edges customer commission mistake',
-        'custom bookbinding client revision rework gilded edges',
-        'book edge gilding material compatibility paper problem',
-        'gilded book edge preparation failure gold leaf',
-        'bookbinding customer specification error remake',
-        'fore edge gilding customer approval revision delay',
-        'gold leaf book edge paper damage bookbinding',
-        'custom book gilding wrong finish repeated work',
-      ];
-    }
-
-    const publicHealthDemandCapacityRequest =
-      /\b(?:urban healthcare networks?|healthcare networks?|hospital networks?|emergency departments?|ambulance services?|clinics?)\b/u.test(normalizedDescription) &&
-      /\b(?:patient demand|hospital capacity|ambulance availability|overcrowded emergency rooms?|resource allocation|response times?|delayed patient care)\b/u.test(normalizedDescription);
-    if (publicHealthDemandCapacityRequest) {
-      return [
-        'emergency department patient demand hospital capacity',
-        'ambulance availability hospital capacity patient demand',
-        'emergency departments overcrowded ambulance response times',
-        'hospital capacity regional health reports patient demand',
-        'ambulance services traffic conditions patient demand',
-        'hospital capacity resource allocation delayed patient care',
-        'healthcare networks patient demand resource allocation',
-        'emergency rooms patient demand delayed patient care',
-      ];
-    }
-
-    const warehouseEnergyAttributionRequest =
-      /\b(?:distribution centers?|warehouses?|fulfillment centers?|fulfilment centers?|logistics facilities?)\b/iu.test(normalizedDescription) &&
-      /\b(?:energy|electricity|conveyor|refrigeration|lighting|charging stations?|loading equipment|shipment volumes?|shipment demand|equipment activity|maintenance records?|consumption)\b/iu.test(normalizedDescription) &&
-      /\b(?:inefficient|efficiency|rising consumption|workload changes?|technical problems?|energy costs?|downtime|analy[sz]ed separately|compare|attribution)\b/iu.test(normalizedDescription);
-    if (warehouseEnergyAttributionRequest) {
-      return [
-        'warehouse energy intensity shipment throughput',
-        'distribution center energy consumption benchmarking shipment volume',
-        'warehouse energy use per shipment workload normalization',
-        'conveyor refrigeration energy efficiency distribution center',
-        'warehouse equipment energy monitoring predictive maintenance',
-        'distribution center electricity consumption equipment activity maintenance',
-        'warehouse energy anomaly workload versus equipment fault',
-        'logistics facility energy consumption maintenance downtime',
-      ];
-    }
-
-    const publicManufacturingAgencyPerformanceRequest =
-      /\b(?:public manufacturing|industrial development agenc(?:y|ies)|manufacturing development agenc(?:y|ies)|industrial authorit(?:y|ies)|public industrial|government manufacturing)\b/iu.test(normalizedDescription) &&
-      /\b(?:factories|factory|facilities|production output|equipment failures?|workforce capacity|inspection results?|subsid(?:y|ies)|moderni[sz]ation|regulatory intervention|operational support|performance|inefficient|funding)\b/iu.test(normalizedDescription);
-    if (publicManufacturingAgencyPerformanceRequest) {
-      return [
-        'industrial development agency factory performance assessment',
-        'factory modernization support prioritization government agency',
-        'manufacturing facility underperformance production inspection subsidy',
-        'industrial subsidy targeting factory performance problems',
-        'factory operational support modernization intervention criteria',
-        'manufacturing inspection production performance intervention',
-        'industrial development agency inefficient factory identification',
-        'factory equipment failures workforce capacity performance assessment',
-        'public industrial funding modernization poorly targeted factories',
-        'manufacturing facility performance benchmark regulatory intervention',
-      ];
-    }
-
-    const connectedEquipmentMaintenanceRequest =
-      /\b(?:equipment|machines?|refrigerators?|freezers?|ovens?|ventilation|hvac|coolers?|sensors?|iot|internet of things|telemetry|maintenance alerts?|equipment alerts?|temperature changes?|energy usage|energy consumption)\b/iu.test(normalizedDescription) &&
-      /\b(?:failure|failures|fault|faults|breakdown|breakdowns|downtime|spoilage|maintenance|repair|repairs|abnormal|early signs?|attention first|prioriti[sz](?:e|ation|ing)|disrupted operations?)\w*\b/iu.test(normalizedDescription);
-    if (connectedEquipmentMaintenanceRequest) {
-      const actor = RequestDynamicQueryUtil.extractActor(description)
-        .normalize('NFKC')
-        .toLocaleLowerCase()
-        .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
-        .replace(/\s+/gu, ' ')
-        .trim()
-        .split(/\s+/u)
-        .slice(0, 4)
-        .join(' ');
-      const actorPrefix = actor || 'equipment operators';
-      const temperatureContext = /\b(?:temperature|thermal|heat|cold|cooling|freezer|refrigerat(?:or|ion)|cold storage)\b/iu.test(normalizedDescription);
-      const refrigerationContext = /\b(?:refrigerat(?:or|ion)|freezers?|cold storage|coolers?)\b/iu.test(normalizedDescription);
-      const energyContext = /\b(?:energy|electricity|power consumption|utility costs?)\b/iu.test(normalizedDescription);
-      const sensorContext = /\b(?:sensors?|iot|internet of things|telemetry|equipment alerts?|maintenance alerts?)\b/iu.test(normalizedDescription);
-      return this.deduplicateQueries([
-        `${actorPrefix} equipment failure maintenance alerts`,
-        `${actorPrefix} predictive maintenance equipment downtime`,
-        `${actorPrefix} equipment alerts maintenance prioritization`,
-        `${actorPrefix} maintenance records equipment failure detection`,
-        ...(temperatureContext
-          ? [`${actorPrefix} temperature equipment failure warning`]
-          : []),
-        ...(refrigerationContext
-          ? [`${actorPrefix} refrigeration equipment failure monitoring`]
-          : []),
-        ...(energyContext
-          ? [`${actorPrefix} equipment energy usage abnormal maintenance`]
-          : []),
-        ...(sensorContext
-          ? [`${actorPrefix} sensor alerts equipment breakdown downtime`]
-          : []),
-      ]).slice(0, 8);
-    }
-
-    const niche = RequestNicheCustomCraftUtil.resolve(description);
-    if (niche) {
-      return this.deduplicateQueries([
-        ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'reddit'),
-        ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'crossref'),
-        ...RequestNicheCustomCraftUtil.buildSourceQueries(description, 'news'),
-      ]).slice(0, 10);
-    }
-
-    const compact = (value: string, maxWords: number): string =>
-      value
-        .normalize('NFKC')
-        .toLocaleLowerCase()
-        .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
-        .replace(/\b(?:however|often|frequently|usually|increasingly|rely|relies|reviewed|managed|separately|making|difficult|determine|whether|caused|information|records|data|such|as|and|or|the|a|an|of|to|for|with|across)\b/gu, ' ')
-        .replace(/\s+/gu, ' ')
-        .trim()
-        .split(/\s+/u)
-        .filter(Boolean)
-        .slice(0, maxWords)
-        .join(' ');
-
-    const actor = compact(profile.actor, 3);
-    const normalized = description.replace(/\s+/gu, ' ').trim();
-    const fragmentedSubject = normalized.match(
-      /([^.!?]{8,260}?)\s+(?:are|is)\s+(?:often\s+|frequently\s+|usually\s+)?(?:reviewed|managed|analy[sz]ed|stored|tracked)(?:\s+across)?\s+(?:separate|different|disconnected|fragmented)\s+(?:systems?|tools?|sources?|records?)|([^.!?]{8,220}?)\s+(?:are|is)\s+(?:often\s+|frequently\s+|usually\s+)?(?:reviewed|managed|analy[sz]ed|stored|tracked)\s+separately/iu,
-    )?.slice(1).find((value) => Boolean(value?.trim()))?.trim() ?? '';
-    const enumeratedObjects = fragmentedSubject
-      ? fragmentedSubject
-          .replace(/^.*?\b(?:however|but)\b[:,]?\s*/iu, '')
-          .split(/,|\band\b/iu)
-          .map((value) => compact(value, 3))
-          .filter((value) => value.split(/\s+/u).length >= 1)
-          .slice(0, 5)
-      : [];
-
-    const objects = this.deduplicatePhrases([
-      ...enumeratedObjects,
-      ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(description)
-        .map((value) => compact(value, 3)),
-    ]).filter(Boolean).slice(0, 6);
-    const difficultyClause = normalized.match(
-      /(?:making it difficult to|difficult to|unable to|cannot)\s+([^.!?]{8,180})/iu,
-    )?.[1]?.trim() ?? '';
-    const pains = this.deduplicatePhrases([
-      compact(difficultyClause, 5),
-      ...profile.failureModes.map((value) => compact(value, 4)),
-      ...profile.consequences.map((value) => compact(value, 4)),
-    ]).filter(Boolean).slice(0, 7);
-
-    const candidates: string[] = [];
-    const add = (...parts: string[]) => {
-      const query = parts
-        .filter(Boolean)
-        .join(' ')
-        .replace(/\s+/gu, ' ')
-        .trim()
-        .split(/\s+/u)
-        .slice(0, 9)
-        .join(' ');
-      if (query.split(/\s+/u).length >= 3) candidates.push(query);
+    return {
+      ...base,
+      searchQueries:
+        rotatedQueries.length > 0 ? rotatedQueries : base.searchQueries,
+      confidence: Math.max(55, Math.min(base.confidence, 62)),
+      aiUsed: false,
+      fallbackUsed: true,
     };
-
-    add(actor, objects[0] ?? '', objects[1] ?? '', pains[0] ?? '');
-    add(actor, objects[0] ?? '', objects[2] ?? '', pains[1] ?? pains[0] ?? '');
-    add(actor, objects[1] ?? objects[0] ?? '', pains[2] ?? pains[0] ?? '');
-    add(actor, objects[2] ?? objects[0] ?? '', pains[3] ?? pains[1] ?? '');
-    add(actor, objects[0] ?? '', pains[4] ?? profile.consequences[0] ?? '');
-    add(actor, objects.slice(0, 2).join(' '), profile.consequences[1] ?? '');
-
-    return this.deduplicateQueries(candidates)
-      .filter((query) => RequestQueryProvenanceUtil.isQueryGrounded({
-        requestDescription: description,
-        query,
-      }))
-      .slice(0, 8);
   }
 
-
-  /**
+  private genericFallbackDomainName(
+    profile: RequestCanonicalProblemProfile,
+  ): string {
+    const identity = this.deduplicatePhrases([
+      profile.actor,
+      profile.object,
+      profile.workflow,
+    ])
+      .map((value) => this.truncateAtBoundary(value, 56))
+      .filter(Boolean)
+      .slice(0, 2)
+      .join(' ');
+    return this.truncateAtBoundary(identity || 'Workflow Operations', 96);
+  }  /**
    * Returns only metadata already available in memory. No database await is
    * permitted here because this method is used immediately before the online
    * PREPARING race starts.
@@ -2452,7 +2279,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   ): RequestDomainCatalogEntry[] {
     const ids = [...new Set(
       requestedDomainIds.map((id) => id.trim()).filter(Boolean),
-    )].sort();
+    )];
 
     if (ids.length > 0) {
       const cacheKey = `${language ?? LanguageCode.ANY}:${ids.join(',')}`;
@@ -2534,6 +2361,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     keywords: readonly string[],
   ): RequestCollectionPlan {
     const profile = this.buildDeterministicProblemProfile(description);
+    const requestIntent = this.normalizeRequestIntent({}, description);
     const canonicalQueries =
       CanonicalRequestUnderstandingUtil.buildSearchQueries(profile, 6);
     const searchQueries = this.deduplicateQueries([
@@ -2560,41 +2388,48 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ...(profile.objectAliases ?? []),
       profile.workflow,
     ]).slice(0, 10);
+    const suggestedDomainName =
+      this.composeDomainNameFromProblemProfile(profile) ??
+      this.genericFallbackDomainName(profile);
 
     return {
       selectedExistingDomainId: null,
       domainSelectionMode: 'NEW',
-      suggestedDomainName:
-        this.composeDomainNameFromProblemProfile(profile) ??
-        this.inferGenericProfessionalDomainName(description),
-      requestIntent: {
-        mode: 'DISCOVERY_INTENT',
-        summary: description.slice(0, 360),
-        explicitProblem: null,
-        desiredOutcome: null,
-      },
+      suggestedDomainName,
+      inferredSecondaryScopes: this.normalizeInferredSecondaryScopes(
+        this.extractSecondaryScopePhrases(profile.object),
+        description,
+        [suggestedDomainName],
+      ),
+      requestIntent,
       domainIdentity: {
         actor: profile.actor,
         object: profile.object,
         workflow: profile.workflow,
-        failure: '',
+        failure:
+          requestIntent.mode === 'EXPLICIT_PROBLEM'
+            ? profile.coreProblem || profile.failureModes[0] || ''
+            : '',
       },
+      ...(requestIntent.mode === 'EXPLICIT_PROBLEM'
+        ? { problemProfile: profile }
+        : {}),
       searchQueries,
-      evidenceTargets: [],
+      evidenceTargets:
+        requestIntent.mode === 'EXPLICIT_PROBLEM' ? evidenceTargets : [],
       intentConcepts,
-      sourceFocus: this.inferSourceFocus(description),
-      confidence: 68,
+      sourceFocus: [],
+      confidence: 58,
       aiUsed: false,
       fallbackUsed: true,
     };
   }
 
-
   private async loadActiveDomainSubset(
     domainIds: readonly string[],
     language?: LanguageCode,
   ): Promise<RequestDomainCatalogEntry[]> {
-    const ids = [...new Set(domainIds.map((id) => id.trim()).filter(Boolean))].sort();
+    const ids = [...new Set(domainIds.map((id) => id.trim()).filter(Boolean))];
     if (ids.length === 0) return [];
 
     const identityCached = this.readFreshDomainIdentityCatalog();
@@ -2620,6 +2455,29 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       }));
     }
     if (cached) this.domainSubsetCache.delete(cacheKey);
+
+    /*
+     * The module warm-up already loads the complete active domain identity
+     * catalog without keyword joins. Reuse that authoritative in-memory view
+     * for explicitly selected ids instead of opening another Supabase query.
+     * This is the common Text + Domains path and removes the 10-20 second
+     * explicitPrefetch tail observed when the remote pool is saturated.
+     */
+    const identityCatalog = this.readFreshDomainIdentityCatalog();
+    if (identityCatalog) {
+      const byId = new Map(identityCatalog.map((entry) => [entry.id, entry] as const));
+      const resolved = ids
+        .map((id) => byId.get(id))
+        .filter((entry): entry is RequestDomainCatalogEntry => Boolean(entry))
+        .map((entry) => ({ ...entry, keywords: [] as string[] }));
+      if (resolved.length === ids.length) {
+        this.domainSubsetCache.set(cacheKey, {
+          expiresAt: Date.now() + REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS,
+          value: resolved,
+        });
+        return resolved.map((entry) => ({ ...entry, keywords: [] }));
+      }
+    }
 
     const active = this.domainSubsetInFlight.get(cacheKey);
     if (active) return active;
@@ -2779,6 +2637,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       'app-store',
       'google-play',
       'dev-to',
+      'hacker-news',
       'product-hunt',
     ]);
     return this.collectorsFactory.getRuntimeAvailableSourceKeys().map((rawKey) => {
@@ -2901,38 +2760,54 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     description: string,
   ): RequestCollectionPlan {
     const activeKeys = sourceCatalog.map((source) => source.key);
-    const active = new Set(activeKeys);
-    const existing = this.normalizeSourceKeys(plan.selectedSourceKeys, active);
-    const nicheCraft = RequestNicheCustomCraftUtil.resolve(description);
-    const nichePriority = nicheCraft
-      ? ['reddit', 'forum', 'news', 'crossref'].filter((key) => active.has(key))
-      : [];
-    const selected = existing.length > 0
-      ? existing.slice(0, 4)
-      : nichePriority.length > 0
-        ? nichePriority.slice(0, 4)
-        : CanonicalRequestUnderstandingUtil.recommendSourceKeys(
-            description,
-            activeKeys,
-            4,
-          );
+    const requestCapabilityInput = {
+      requestDescription: description,
+      domainName: plan.suggestedDomainName,
+      keywords: plan.intentConcepts,
+      plannedQueries: plan.searchQueries,
+      collectionMode: 'FAST_GENERATION' as const,
+    };
+    const executableKeys = activeKeys.filter((sourceKey) =>
+      this.collectorsFactory.isCollectorRouteExecutable(
+        sourceKey,
+        requestCapabilityInput,
+      ),
+    );
+    const executableSet = new Set(executableKeys);
+    const existing = this.normalizeSourceKeys(
+      plan.selectedSourceKeys,
+      executableSet,
+    );
+    const scoredSupplement = executableKeys
+      .filter((sourceKey) => !existing.includes(sourceKey))
+      .sort((left, right) =>
+        this.collectorsFactory.getCollectorRequestFitScore(right, requestCapabilityInput) -
+          this.collectorsFactory.getCollectorRequestFitScore(left, requestCapabilityInput) ||
+        left.localeCompare(right),
+      );
+    const priority = this.buildBalancedEvidenceSourcePortfolio(
+      this.deduplicatePhrases([
+        ...existing,
+        ...scoredSupplement,
+      ]),
+      sourceCatalog,
+      8,
+    );
 
-    const priority = selected.length > 0 ? selected : activeKeys.slice(0, 4);
-    const allActive = this.deduplicatePhrases([...priority, ...activeKeys]);
     return {
       ...plan,
       selectedSourceKeys: priority,
       sourcePlans: this.buildRuntimeSourcePlans(
-        allActive,
+        priority,
         plan.searchQueries,
         description,
         plan.problemProfile,
         priority,
+        plan.retrievalVocabulary ?? [],
       ),
       sourceFocus: this.deriveSourceFocusFromKeys(priority),
     };
   }
-
 
   private normalizeComparableDomainName(value: string): string {
     return value
@@ -2942,2092 +2817,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
-  }
-
-  private inferSpecializedProfessionalDomainName(value: string): string | null {
-    const normalized = value.toLowerCase();
-
-    if (
-      /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|regulatory agencies?|licensing authorities?)\b/u.test(normalized) &&
-      /\b(?:legal records?|licensing documents?|citizen applications?|regulatory files?|official records?|public records?|permit records?|case files?)\b/u.test(normalized) &&
-      /\b(?:unauthorized access|unauthorised access|manipulation|tamper(?:ing|ed)?|access logs?|document histor(?:y|ies)|employee activity|security alerts?|suspicious changes?|who accessed|incident investigation|audit trail)\b/u.test(normalized)
-    ) {
-      return 'Government Record Security & Integrity Operations';
-    }
-
-    if (
-      /\b(?:public transportation authorities?|public transport authorities?|transit agencies?|transportation authorities?|municipal transit|city transit|bus operators?|public transport operators?)\b/u.test(normalized) &&
-      /\b(?:road closures?|accidents?|large events?|special events?|passenger demand|demand surges?|service disruptions?|overcrowded vehicles?|overcrowding|rerout(?:e|ing)|long delays?|incident response)\b/u.test(normalized) &&
-      /\b(?:traffic conditions?|vehicle locations?|passenger volumes?|route schedules?|incident reports?|separate systems?|fragmented systems?|adjusted routes?|route adjustments?)\b/u.test(normalized)
-    ) {
-      return 'Public Transit Disruption & Route Response Operations';
-    }
-
-    if (
-      /\b(?:urban transportation agencies?|transportation agencies?|transit agencies?|city transport(?:ation)? departments?|municipal transport(?:ation)?|public transport(?:ation)? authorities?|urban mobility agencies?)\b/u.test(normalized) &&
-      /\b(?:traffic flow|traffic congestion|public transit demand|transit demand|road incidents?|travel times?|route performance|peak hours?|time periods?|bottlenecks?)\b/u.test(normalized) &&
-      /\b(?:vehicle emissions?|fuel consumption|air quality|environmental measurements?|longer journeys?|travel time reliability|transportation improvements?)\b/u.test(normalized)
-    ) {
-      return 'Urban Mobility Congestion & Emissions Planning';
-    }
-
-    if (
-      /\b(?:energy providers?|electric utilities?|power utilities?|utility companies?|grid operators?|electricity distributors?|power distribution|electricity distribution|power grid)\b/u.test(normalized) &&
-      /\b(?:connected meters?|smart meters?|remote monitoring devices?|automated control systems?|device failures?|unusual consumption|consumption anomalies?|network disruptions?|unauthorized access|malicious interference|telemetry|consumption data integrity|incident response)\b/u.test(normalized)
-    ) {
-      return 'Energy IoT Security & Incident Attribution Operations';
-    }
-
-    if (
-      /\b(?:clock repair specialists?|clock repairers?|clockmakers?|horologists?|horology|antique clock repair|timepiece repair)\b/u.test(normalized) &&
-      /\b(?:mechanical faults?|replacement parts?|previous repairs?|repair history|service history|restoration instructions?|cost approvals?|promised completion dates?|completion dates?|repeated diagnostics?|incorrect replacement parts?|delayed repairs?)\b/u.test(normalized)
-    ) {
-      return 'Clock Repair Practice & Service History Management';
-    }
-
-    if (
-      /\b(?:independent doll restoration specialists?|doll restoration specialists?|doll restorers?|doll restoration studios?|doll restoration workshops?|antique doll restorers?|doll repair specialists?)\b/u.test(normalized) &&
-      /\b(?:damage photographs?|damage photos?|fabric selections?|replacement parts?|paint matching|restoration notes?|approved restoration|material samples?|completion dates?|incorrect replacements?|mismatched materials?|repeated work|lost details|delayed customer orders?)\b/u.test(normalized)
-    ) {
-      return 'Doll Restoration Practice & Client Order Management';
-    }
-
-    if (
-      /\b(?:public healthcare agencies?|public health agencies?|health departments?|health authorities?|healthcare agencies?|hospitals?|clinics?)\b/u.test(normalized) &&
-      /\b(?:rising demand|service demand|healthcare demand|medical service demand|appointment volumes?|emergency visits?|regional health reports?|community healthcare needs?|community health needs?|hospitals? become overloaded|clinics? become overloaded|capacity pressure|waiting times?|resource availability|resource distribution|staff shortages?|demand forecasting|surge detection)\b/u.test(normalized)
-    ) {
-      return 'Public Healthcare Demand & Capacity Planning';
-    }
-
-    if (
-      /\b(?:manufacturing companies?|manufacturers?|manufacturing plants?|factories|factory|industrial plants?|production lines?)\b/u.test(normalized) &&
-      /\b(?:production costs?|raw material expenses?|raw material costs?|machine downtime|labor costs?|labour costs?|defect rates?|maintenance spending|maintenance costs?|supplier prices?|supplier costs?|cost variance|cost forecasts?|profitability)\b/u.test(normalized) &&
-      /\b(?:stable output|output remains stable|analy[sz](?:e|ed|ing)? separately|separate systems?|fragmented|siloed|production stages?|reducing profitability|unnecessary spending|inaccurate cost forecasts?|delayed decisions?|operational improvements?)\w*\b/u.test(normalized)
-    ) {
-      return 'Manufacturing Cost Variance & Production Profitability Operations';
-    }
-
-    if (
-      /\b(?:manufacturing plants?|manufacturers?|factories|factory|industrial plants?|production lines?|plant operators?|plant engineers?)\b/u.test(normalized) &&
-      /\b(?:electricity usage|electricity consumption|energy consumption|energy usage|power draw|power consumption|electricity costs?|energy costs?|kwh|kilowatt)\w*\b/u.test(normalized) &&
-      /\b(?:machines?|equipment|equipment sensors?|machine sensors?|operating hours?|maintenance records?|maintenance history|production schedules?|equipment condition|machine condition|telemetry)\b/u.test(normalized) &&
-      /\b(?:unusually high|abnormal|anomal(?:y|ies)|energy spike|power spike|losing efficiency|efficiency loss|efficiency decline|degradation|predictive maintenance|before (?:a )?failure|impending failure|breakdowns?|downtime|production interruptions?|unnecessary maintenance|electricity costs?|energy costs?)\b/u.test(normalized)
-    ) {
-      return 'Industrial Energy & Equipment Health Operations';
-    }
-
-    if (
-      /\b(?:manufacturing plants?|manufacturers?|factories|factory|industrial plants?|production lines?)\b/u.test(normalized) &&
-      /\b(?:material waste|scrap|scrap records?|raw material consumption|material losses?|yield loss|quality defects?|production defects?|rework|emissions?|environmental impact|waste reduction|material efficiency|circularity|production waste)\b/u.test(normalized)
-    ) {
-      return 'Manufacturing Waste & Sustainability Operations';
-    }
-
-    if (
-      /\b(?:engraving businesses?|engraving shops?|engraving studios?|engravers?|custom engraving|laser engraving)\b/u.test(normalized) &&
-      /\b(?:customer artwork|text details?|material types?|object dimensions?|font preferences?|placement instructions?|revision requests?|approved design|approved version|spelling mistakes?|incorrect placement|wasted materials?)\b/u.test(normalized)
-    ) {
-      return 'Custom Engraving & Personalization Order Management';
-    }
-
-    if (
-      /\b(?:universities|university|higher education|online learning systems?|learning platforms?|learning management systems?|lms|online exams?|online assessments?)\b/u.test(normalized) &&
-      /\b(?:login activity|login records?|authentication logs?|exam sessions?|account permissions?|access permissions?|device information|device data|device fingerprints?|security alerts?|compromised accounts?|account compromise|suspicious activity|unauthorized access|unauthorised access|cybersecurity|academic integrity|exam integrity|false positives?|unnecessary restrictions?)\b/u.test(normalized)
-    ) {
-      return 'Academic Platform Security & Exam Integrity Monitoring';
-    }
-
-    if (
-      /\b(?:decorative fountains?|ornamental fountains?|historic fountains?|fountain restoration specialists?|fountain restorers?|fountain maintenance contractors?|water features?)\b/u.test(normalized) &&
-      /\b(?:pump condition|fountain pumps?|water[- ]?flow|stone damage|metal damage|metal corrosion|replacement components?|replacement parts?|finish preferences?|previous repairs?|repair history|customer requests?|restoration history)\b/u.test(normalized)
-    ) {
-      return 'Decorative Fountain Restoration & Service History Management';
-    }
-
-    if (
-      /\b(?:universities|university departments?|academic departments?|department chairs?|faculty planners?|academic planners?)\b/u.test(normalized) &&
-      /\b(?:instructors?|teaching assistants?|academic support staff|faculty workload|teaching workload|course staffing|course assignments?|student demand|course enrollment|staff availability|scheduling conflicts?|overloaded staff)\b/u.test(normalized)
-    ) {
-      return 'Academic Staffing & Teaching Workload Management';
-    }
-
-    if (
-      /\b(?:independent pet trainers?|pet trainers?|dog trainers?|animal trainers?|behavior trainers?|behaviour trainers?)\b/u.test(normalized) &&
-      /\b(?:behavioral problems?|behavioural problems?|training exercises?|progress between sessions?|owner feedback|triggers?|recommended routines?|training sessions?|behavior history|behaviour history)\b/u.test(normalized)
-    ) {
-      return 'Pet Training Practice & Behavior Progress Management';
-    }
-
-    if (
-      /\b(?:delivery companies?|delivery fleets?|delivery operators?|courier companies?|last[- ]mile delivery|parcel delivery|shipping companies?)\b/u.test(normalized) &&
-      /\b(?:fuel consumption|fuel usage|fuel costs?|emissions?|carbon emissions?|environmental impact|unnecessary mileage|vehicle routes?|traffic conditions?|failed delivery attempts?)\b/u.test(normalized)
-    ) {
-      return 'Sustainable Delivery Fleet & Route Performance Management';
-    }
-
-    if (
-      /\b(?:independent wig makers?|wig makers?|custom wig makers?|wig artisans?|wig studios?|hairpiece makers?)\b/u.test(normalized) &&
-      /\b(?:customer measurements?|hair texture preferences?|color choices?|colour choices?|cap specifications?|styling requests?|fitting notes?|revision history|approved specifications?)\b/u.test(normalized)
-    ) {
-      return 'Wig Making Custom Order & Client Specification Management';
-    }
-
-    if (
-      /\b(?:piano technicians?|piano tuners?|piano tuning|piano service technicians?|piano repair technicians?)\b/u.test(normalized) &&
-      /\b(?:tuning history|service history|mechanical problems?|replaced parts?|replacement parts?|customer preferences?|room conditions?|follow[- ]up visits?|maintenance recommendations?|handwritten notes?|paper invoices?|service visits?)\b/u.test(normalized)
-    ) {
-      return 'Piano Tuning & Instrument Service Management';
-    }
-
-    if (
-      /\b(?:public transportation|public transport|transit operators?|transit agencies?|bus operators?|rail operators?|metro operators?|digital ticketing|fare systems?)\b/u.test(normalized) &&
-      /\b(?:cyberattack|cyber attack|cybersecurity|unusual login|login anomaly|payment anomal|account compromise|device behavior|service disruption|incident investigation|security incident|technical failure|misuse)\w*\b/u.test(normalized)
-    ) {
-      return 'Transit Cybersecurity & Incident Operations';
-    }
-
-    if (
-      /\b(?:glass artists?|glass artisans?|stained glass artists?|glassblowers?|glass blowing|glass studios?|glass art)\b/u.test(normalized) &&
-      /\b(?:custom commissions?|dimensions?|glass colors?|patterns?|engraving|material choices?|design revisions?|approved versions?|completion deadlines?|customer messages?|sketches?|physical samples?)\b/u.test(normalized)
-    ) {
-      return 'Glass Art Commission & Design Version Management';
-    }
-
-    if (
-      /\b(?:commercial buildings?|office buildings?|office complexes?|facility teams?|facility managers?|building operators?|building managers?)\b/u.test(normalized) &&
-      /\b(?:electricity|energy consumption|utility bills?|smart meters?|heating|hvac|elevators?|lighting|office equipment|consumption spikes?|abnormal usage|energy waste|equipment downtime)\b/u.test(normalized)
-    ) {
-      return 'Commercial Building Energy & Equipment Operations';
-    }
-
-    if (
-      /\b(?:costume rental shops?|costume rentals?|costume shops?|costume hire|wardrobe rentals?)\b/u.test(normalized) &&
-      /\b(?:customer measurements?|reserved outfits?|accessories|alteration requests?|return dates?|garment condition|special event requirements?|double reservations?|delayed pickups?)\b/u.test(normalized)
-    ) {
-      return 'Costume Rental & Wardrobe Management';
-    }
-
-    if (
-      /\b(?:municipal governments?|municipalities|city governments?|city councils?|public works|local authorities?)\b/u.test(normalized) &&
-      /\b(?:roads?|streetlights?|street lights?|public spaces?|city infrastructure|public infrastructure|maintenance requests?|citizen complaints?|inspection reports?|repair histories?|asset prioritization|maintenance spending)\b/u.test(normalized)
-    ) {
-      return 'Municipal Infrastructure Maintenance & Asset Prioritization';
-    }
-
-    if (
-      /\b(?:cake decorators?|cake decorating|custom cake decorators?|home bakers?|independent bakers?|cake artists?|custom cake businesses?|bakery decorators?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|design references?|flavors?|flavours?|allergy notes?|allergies|dietary requirements?|cake dimensions?|decoration details?|pickup times?|last[- ]minute revision requests?|chat messages?|handwritten notes?|wasted ingredients?|repeated work|delayed orders?)\b/u.test(normalized)
-    ) {
-      return 'Cake Decorator Order & Design Management';
-    }
-
-    if (
-      /\b(?:calligraphy artists?|calligraphers?|lettering artists?|custom stationery artists?|wedding invitation calligraphers?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|commissions?|wedding invitations?|guest names?|spelling variations?|wording|lettering styles?|paper selections?|paper sizes?|ink preferences?|ink colors?|ink colours?|layout approvals?|envelope details?|revision requests?|approved versions?|approved specifications?|delivery deadlines?|customer messages?|handwritten notes?)\b/u.test(normalized)
-    ) {
-      return 'Custom Calligraphy & Wedding Stationery';
-    }
-
-    const nicheCraftDomainName = RequestNicheCustomCraftUtil.suggestedDomainName(normalized);
-    if (nicheCraftDomainName) {
-      return nicheCraftDomainName;
-    }
-
-    if (
-      RequestNicheCustomCraftUtil.isViolinBowServiceRequest(normalized)
-    ) {
-      return 'Violin Bow Service History & Rehair Management';
-    }
-
-    if (
-      /\b(?:upholstery workshops?|upholstery shops?|upholsterers?|reupholstery|furniture upholstery)\b/u.test(normalized) &&
-      /\b(?:fabric samples?|fabric selections?|fabric orders?|measurements?|material quantities?|material choices?|repair requests?|design changes?|customer notes?|completion dates?|delivery dates?)\b/u.test(normalized)
-    ) {
-      return 'Upholstery Workshop & Project Management';
-    }
-
-    if (
-      /\b(?:leather craft workshops?|leather workshops?|leatherworkers?|leather artisans?|leather craft businesses?|leather goods workshops?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|commissions?|dimensions?|leather types?|stitching styles?|hardware selections?|engraving details?|design revisions?|approved specifications?|completion deadlines?|material samples?|handwritten notes?)\b/u.test(normalized)
-    ) {
-      return 'Leather Craft Workshop & Custom Order Management';
-    }
-
-    if (
-      /\b(?:embroidery businesses?|embroidery shops?|embroidery workshops?|embroiderers?|custom embroidery|embroidery studios?)\b/u.test(normalized) &&
-      /\b(?:customer artwork|thread colors?|garment sizes?|placement instructions?|design revisions?|order quantities?|approved designs?|completion deadlines?|wasted garments?|customization details?)\b/u.test(normalized)
-    ) {
-      return 'Embroidery & Garment Customization Order Management';
-    }
-
-    if (
-      /\b(?:craft workshops?|craft studios?|artisan workshops?|maker studios?|screen printing shops?|woodworking shops?|woodworking workshops?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|commissions?|customer artwork|materials?|measurements?|dimensions?|design revisions?|approved versions?|approved specifications?|completion deadlines?|customer messages?|handwritten notes?)\b/u.test(normalized)
-    ) {
-      return 'Custom Craft Workshop & Order Management';
-    }
-
-    if (
-      /\b(?:human resources?|hr teams?|hr managers?|employment policies?|employee handbooks?|employment contracts?|leave rules?|internal procedures?|corporate policies?|workplace policies?|legal teams?|compliance officers?)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:policy consistency|outdated information|outdated policies?|regulatory changes?|compliance risks?|conflicting rules?|inconsistent decisions?|employee questions?|repeated questions?|document review|policy updates?|leave rules?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Enterprise Human Resources Policy & Compliance Management';
-    }
-
-    if (
-      /\b(?:dance studio|dance studios|dance school|dance schools|dance academy|dance instructor|dance instructors)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:class schedules?|instructor availability|student attendance|choreography|costume|rehearsal|performance|recital)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Dance Studio Operations & Performance Management';
-    }
-
-    if (
-      /\b(?:tattoo studio|tattoo studios|tattoo artist|tattoo artists|tattoo appointment|tattoo appointments)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Tattoo Studio Operations & Client Management';
-    }
-
-    if (
-      /\b(?:independent miniature model makers?|miniature model makers?|model makers?|scale model makers?|miniature makers?)\b/u.test(normalized) &&
-      /\b(?:custom commissions?|scale requirements?|reference images?|material choices?|paint details?|dimensions?|revision requests?|approved versions?|customer finally approved|incorrect proportions|missed visual details|wasted materials?|delayed commissions?)\b/u.test(normalized)
-    ) {
-      return 'Miniature Model Commission & Specification Management';
-    }
-
-    if (
-      /\b(?:shipment|shipments|cargo|parcel|parcels|carrier|carriers|warehouse|warehouses|high-value goods|high value goods)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:traceability|chain of custody|custody trail|handover records?|handoff records?|customs checkpoints?|proof of delivery|tracking provenance|tamper(?:ing)?|transfer verification)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Shipment Traceability & Chain-of-Custody Management';
-    }
-
-    if (
-      /\b(?:recipe|recipes|cooking|cook regularly|ingredient substitutions?|family preferences?|cooking results?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Recipe & Culinary Knowledge Management';
-    }
-
-    if (
-      /\b(?:trip planning|travelers?|travellers?|accommodations?|hotels?|activities|booking websites?|local experiences?)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:booking|bookings|price comparison|prices?|availability|itinerary|itineraries|budget|reviews?|hotel|accommodation|activities|local experiences?)\b/u.test(normalized) &&
-      !/\b(?:public transportation|public transport|transit|bus operator|rail operator|metro operator|digital ticketing|fare payment|cyberattack|cybersecurity|security incident)\b/u.test(normalized)
-    ) {
-      return 'Travel Planning & Comparison';
-    }
-
-    if (
-      /\b(?:book clubs?|reading groups?|reading schedules?|discussion topics?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Book Club & Reading Group Management';
-    }
-
-    if (
-      /\b(?:photography studios?|shot lists?|editing requests?|image selections?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Photography Studio Operations';
-    }
-
-    if (
-      /\b(?:shoemakers?|shoe makers?|shoemaking|shoe making|bespoke shoemakers?|custom shoe makers?|custom footwear makers?|cordwainers?)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:foot measurements?|leather selections?|sole types?|stitching preferences?|fitting notes?|design revisions?|approved specifications?|completion deadlines?|handmade shoes?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Independent Shoemakers Operations & Client Management';
-    }
-
-    if (
-      /\b(?:shoe repair shop|shoe repair shops|cobbler|cobblers|cobbler shop|cobbler shops)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:paper tickets?|repair tickets?|requested repairs?|material choices?|technician notes?|payment status|collection dates?|pickup dates?|misplaced shoes?|repair status)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Shoe Repair Shop Operations & Ticket Management';
-    }
-
-    if (
-      /\b(?:tailor|tailors|tailoring|tailoring shop|tailoring shops|alteration shop|alteration shops|alteration specialist|alteration specialists|bridal alteration specialist|bridal alteration specialists|seamstress|seamstresses|bridal seamstress|bridal seamstresses|dressmaker|dressmakers|bridal dressmaker|bridal dressmakers|clothing alteration specialist|clothing alteration specialists|clothing alteration shop|clothing alteration shops|clothing alterations?|wedding dress alterations?|bridal alterations?|custom apparel|bespoke clothing|bespoke tailoring)\b/u.test(normalized) &&
-      /\b(?:customer measurements?|requested changes?|alteration requests?|fitting dates?|fitting appointments?|fabric details?|payment status|collection times?|promised collection|paper receipts?|lost garments?|incorrect alterations?|repeated fittings?|delayed orders?)\b/u.test(normalized)
-    ) {
-      return 'Tailoring & Custom Apparel';
-    }
-
-    if (
-      /\b(?:restaurants?|commercial kitchens?|restaurant kitchens?|food service kitchens?|kitchen managers?|restaurant managers?)\b/u.test(normalized) &&
-      /\b(?:electricity|gas|energy consumption|utility bills?|utility costs?|refrigeration|cooking equipment|ventilation|lighting|heating|equipment usage|equipment runtime|energy waste|energy efficiency|carbon|emissions?|environmental impact|consumption spikes?|energy monitoring)\b/u.test(normalized)
-    ) {
-      return 'Commercial Kitchen Energy & Sustainability Operations';
-    }
-
-    if (
-      /\b(?:home[- ]cleaning businesses?|home cleaning businesses?|residential cleaning businesses?|residential cleaning services?|house cleaning businesses?|house cleaning services?|cleaning companies?|cleaning teams?)\b/u.test(normalized) &&
-      /\b(?:customer preferences?|recurring appointments?|recurring bookings?|room[- ]specific instructions?|room instructions?|employee assignments?|cleaner assignments?|cleaning supplies?|last[- ]minute schedule changes?|schedule changes?|missed tasks?|scheduling conflicts?|forgotten customer requests?|service quality|phone calls?|messaging apps?|handwritten notes?)\b/u.test(normalized)
-    ) {
-      return 'Residential Cleaning Operations & Client Management';
-    }
-
-    if (
-      /\b(?:restaurant|restaurants|food delivery|food service|commercial kitchen|kitchen managers?|procurement)\b/u.test(normalized) &&
-      /\b(?:ingredient shortages?|inventory|supplier deliveries?|supplier information|demand forecast|demand estimates?|food waste|stockouts?|emergency purchases?|menu items?)\b/u.test(normalized)
-    ) {
-      return 'Restaurant Inventory & Supply Chain Management';
-    }
-
-    if (
-      /\b(?:school|schools|university|universities|learning platform|learning platforms|lms|online assessment|online assessments|online exam|online exams)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:suspicious account|account takeover|security alerts?|login records?|unusual behavior|academic misuse|academic integrity|assessment behavior|student records?|cybersecurity|anomaly detection)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Academic Platform Security & Integrity Monitoring';
-    }
-
-    if (
-      /\b(?:art restoration workshops?|art restoration|art conservation|conservation workshops?|conservation studios?|art conservators?|painting restoration|artifact conservation)\b/u.test(normalized) &&
-      /\b(?:condition|previous repairs?|treatment history|materials used|client instructions?|restoration stages?|delivery deadlines?|photographs?|handwritten notes?|documentation|records?)\b/u.test(normalized)
-    ) {
-      return 'Art Restoration Workshop Operations & Condition Tracking';
-    }
-
-    return null;
-  }
-
-
-  private inferGenericProfessionalDomainName(value: string): string | null {
-    const normalized = value.toLowerCase();
-
-    if (
-      /\b(?:tattoo studio|tattoo studios|tattoo artist|tattoo artists|tattoo appointment|tattoo appointments)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Tattoo Studio Operations & Client Management';
-    }
-
-    if (
-      /\b(?:independent miniature model makers?|miniature model makers?|model makers?|scale model makers?|miniature makers?)\b/u.test(normalized) &&
-      /\b(?:custom commissions?|scale requirements?|reference images?|material choices?|paint details?|dimensions?|revision requests?|approved versions?|customer finally approved|incorrect proportions|missed visual details|wasted materials?|delayed commissions?)\b/u.test(normalized)
-    ) {
-      return 'Miniature Model Commission & Specification Management';
-    }
-
-    if (
-      /\b(?:shipment|shipments|cargo|parcel|parcels|carrier|carriers|warehouse|warehouses|high-value goods|high value goods)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:traceability|chain of custody|custody trail|handover records?|handoff records?|customs checkpoints?|proof of delivery|tracking provenance|tamper(?:ing)?|transfer verification)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Shipment Traceability & Chain-of-Custody Management';
-    }
-
-    if (
-      /\b(?:recipe|recipes|cooking|cook regularly|ingredient substitutions?|family preferences?|cooking results?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Recipe & Culinary Knowledge Management';
-    }
-
-    if (
-      /\b(?:trip planning|travelers?|travellers?|accommodations?|hotels?|activities|booking websites?|local experiences?)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:booking|bookings|price comparison|prices?|availability|itinerary|itineraries|budget|reviews?|hotel|accommodation|activities|local experiences?)\b/u.test(normalized) &&
-      !/\b(?:public transportation|public transport|transit|bus operator|rail operator|metro operator|digital ticketing|fare payment|cyberattack|cybersecurity|security incident)\b/u.test(normalized)
-    ) {
-      return 'Travel Planning & Comparison';
-    }
-
-    if (
-      /\b(?:book clubs?|reading groups?|reading schedules?|discussion topics?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Book Club & Reading Group Management';
-    }
-
-    if (
-      /\b(?:photography studios?|shot lists?|editing requests?|image selections?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Photography Studio Operations';
-    }
-
-    if (
-      /\b(?:shoemakers?|shoe makers?|shoemaking|shoe making|bespoke shoemakers?|custom shoe makers?|custom footwear makers?|cordwainers?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Independent Shoemakers Operations & Client Management';
-    }
-
-    if (
-      /\b(?:shoe repair shop|shoe repair shops|cobbler|cobblers|cobbler shop|cobbler shops)\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Shoe Repair Shop Operations & Ticket Management';
-    }
-
-    if (
-      /\b(?:tailor|tailors|tailoring|tailoring shop|tailoring shops|alteration shop|alteration shops|alteration specialist|alteration specialists|bridal alteration specialist|bridal alteration specialists|seamstress|seamstresses|bridal seamstress|bridal seamstresses|dressmaker|dressmakers|bridal dressmaker|bridal dressmakers|clothing alteration specialist|clothing alteration specialists|clothing alteration shop|clothing alteration shops|clothing alterations?|wedding dress alterations?|bridal alterations?|custom apparel|bespoke clothing|bespoke tailoring)\b/u.test(normalized)
-    ) {
-      return 'Tailoring & Custom Apparel';
-    }
-
-    if (
-      /\b(?:restaurants?|commercial kitchens?|restaurant kitchens?|food service kitchens?|kitchen managers?|restaurant managers?)\b/u.test(normalized) &&
-      /\b(?:electricity|gas|energy consumption|utility bills?|utility costs?|refrigeration|cooking equipment|ventilation|lighting|heating|equipment usage|equipment runtime|energy waste|energy efficiency|carbon|emissions?|environmental impact|consumption spikes?|energy monitoring)\b/u.test(normalized)
-    ) {
-      return 'Commercial Kitchen Energy & Sustainability Operations';
-    }
-
-    if (
-      /\b(?:home[- ]cleaning businesses?|home cleaning businesses?|residential cleaning businesses?|residential cleaning services?|house cleaning businesses?|house cleaning services?|cleaning companies?|cleaning teams?)\b/u.test(normalized)
-    ) {
-      return 'Residential Cleaning Operations & Client Management';
-    }
-
-    if (
-      /\b(?:restaurant|restaurants|food delivery|food service|commercial kitchen)\b/u.test(normalized) &&
-      /\b(?:ingredient|inventory|supplier|demand|food waste|stockout|procurement)\w*\b/u.test(normalized)
-    ) {
-      return 'Restaurant Inventory & Supply Chain Management';
-    }
-
-    if (
-      /\b(?:school|schools|university|universities|learning platform|learning platforms|lms|online assessment|online assessments)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:security|suspicious|account activity|login records?|academic misuse|academic integrity|anomal|assessment behavior)\w*\b/u.test(
-        normalized,
-      )
-    ) {
-      return 'Academic Platform Security & Integrity Monitoring';
-    }
-
-    if (
-      /\b(?:agricultural exporters?|fresh produce exporters?|produce exporters?|fruit exporters?|vegetable exporters?|agricultural export(?:ers?| companies?| businesses?))\b/u.test(normalized) &&
-      /\b(?:transportation delays?|storage costs?|warehouse expenses?|market prices?|product spoilage|shipment profitability|profit margins?|profit estimates?|supplier payments?|sales revenues?|financial losses?)\b/u.test(normalized)
-    ) {
-      return 'Agricultural Export Profitability & Logistics Management';
-    }
-
-    if (
-      /\b(?:eyeglass frame repair specialists?|eyeglass repair specialists?|eyewear repair specialists?|optical frame repair specialists?|spectacle frame repair specialists?|glasses repair specialists?)\b/u.test(normalized) &&
-      /\b(?:frame damage|previous repairs?|replacement hinges?|replacement parts?|color matching|colour matching|fit preferences?|adjustment notes?|pickup dates?|repair history)\b/u.test(normalized)
-    ) {
-      return 'Eyeglass Frame Repair History & Parts Management';
-    }
-
-    if (
-      /\b(?:agricultural cooperatives?|farm cooperatives?|farmers? cooperatives?|farms?|agriculture|fresh produce|produce growers?|cold storage)\b/u.test(normalized) &&
-      /\b(?:harvest(?:ing)?|storage|cold chain|temperature|shipments?|transportation|delivery|spoilage|transport costs?|storage capacity|shipment locations?|logistics)\b/u.test(normalized)
-    ) {
-      return 'Agricultural Cooperative Supply Chain Management';
-    }
-
-    if (
-      /\b(?:picture framing shops?|custom framing shops?|frame shops?|framers?)\b/u.test(normalized) &&
-      /\b(?:artwork measurements?|frame selections?|glass selections?|moulding|material availability|special handling|completion dates?|paper forms?|verbal communication|order changes?|wasted supplies?)\b/u.test(normalized)
-    ) {
-      return 'Picture Framing Shop Operations & Order Management';
-    }
-
-    if (
-      /\b(?:art restoration workshops?|art restoration|art conservation|conservation workshops?|conservation studios?|art conservators?|painting restoration|artifact conservation)\b/u.test(normalized)
-    ) {
-      return 'Art Restoration Workshop Operations & Condition Tracking';
-    }
-
-    const actor = this.extractActorContext(value);
-    if (actor) {
-      const professionalActor = this.professionalizeActor(actor);
-      if (professionalActor) {
-        if (
-          /\b(?:client|customer|appointment|booking|schedule|preference|consent|deposit|revision|session)\b/u.test(
-            normalized,
-          )
-        ) {
-          return `${professionalActor} Operations & Client Management`.slice(0, 80);
-        }
-
-        if (
-          /\b(?:record|records|history|document|documents|handover|audit|compliance)\b/u.test(
-            normalized,
-          )
-        ) {
-          return `${professionalActor} Operations & Record Management`.slice(0, 80);
-        }
-
-        return `${professionalActor} Operations & Workflow Management`.slice(0, 80);
-      }
-    }
-
-    const concepts = this.extractConcepts(value)
-      .filter((concept) => concept.split(' ').length <= 3)
-      .slice(0, 2);
-
-    if (concepts.length === 0) return null;
-
-    const label = concepts
-      .map((part) => this.toTitleCase(part))
-      .join(' & ')
-      .replace(/\s+/gu, ' ')
-      .trim();
-
-    return label.length >= 4 ? `${label} Management`.slice(0, 80) : null;
-  }
-
-  private buildRequestQueries(
-    description: string,
-    concepts: readonly string[],
-  ): string[] {
-    const normalized = description.toLowerCase();
-
-    if (
-      /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|regulatory agencies?|licensing authorities?)\b/u.test(normalized) &&
-      /\b(?:legal records?|licensing documents?|citizen applications?|regulatory files?|official records?|public records?|permit records?|case files?)\b/u.test(normalized) &&
-      /\b(?:unauthorized access|unauthorised access|manipulation|tamper(?:ing|ed)?|access logs?|document histor(?:y|ies)|employee activity|security alerts?|suspicious changes?|who accessed|incident investigation|audit trail)\b/u.test(normalized)
-    ) {
-      return [
-        'government sensitive records unauthorized access audit log investigation',
-        'public sector legal record tampering document history security alert',
-        'government licensing document unauthorized change access log incident',
-        'citizen application record suspicious modification employee activity',
-        'regulatory file integrity who accessed changed record investigation',
-        'government document version history access anomaly compliance incident',
-        'public records compromised credentials suspicious change audit trail',
-        'government records security incident access reconstruction legal compliance',
-      ];
-    }
-
-    if (
-      /\b(?:cities|city governments?|municipalities|municipal governments?|smart cities|urban infrastructure operators?|city infrastructure teams?)\b/u.test(normalized) &&
-      /\b(?:public buildings?|municipal buildings?|street lighting|streetlights?|charging stations?|ev charging|electric vehicle charging|urban infrastructure)\b/u.test(normalized) &&
-      /\b(?:electricity demand|energy demand|energy consumption|power demand|peak demand|peak load|high usage|consumption patterns?|energy efficiency)\b/u.test(normalized)
-    ) {
-      return [
-        'city electricity demand public buildings street lighting peak load',
-        'smart city energy consumption charging stations demand forecast',
-        'municipal buildings streetlights energy use weather demand',
-        'urban infrastructure electricity demand equipment status forecasting',
-        'city charging stations public buildings peak demand energy efficiency',
-        'municipal energy consumption service demand weather correlation',
-        'urban energy inefficient consumption overloaded infrastructure',
-        'smart city electricity demand service interruptions energy costs',
-      ];
-    }
-
-    if (
-      /\b(?:public transportation authorities?|public transport authorities?|transit agencies?|transportation authorities?|municipal transit|city transit|bus operators?|public transport operators?)\b/u.test(normalized) &&
-      /\b(?:road closures?|accidents?|large events?|special events?|passenger demand|demand surges?|service disruptions?|overcrowded vehicles?|overcrowding|rerout(?:e|ing)|long delays?|incident response)\b/u.test(normalized) &&
-      /\b(?:traffic conditions?|vehicle locations?|passenger volumes?|route schedules?|incident reports?|separate systems?|fragmented systems?|adjusted routes?|route adjustments?)\b/u.test(normalized)
-    ) {
-      return [
-        'public transit road closure accident route adjustment delay',
-        'transit agency passenger demand surge overcrowding rerouting',
-        'bus route disruption road incident passenger volume response',
-        'public transportation incident response vehicle location route schedule',
-        'transit operations fragmented traffic vehicle passenger incident data',
-        'transport authority large event passenger surge service disruption',
-        'bus overcrowding delayed rerouting road closure passenger demand',
-        'transit dispatcher route prioritization accident closure passenger volume',
-        'public transport service disruption incident report route adjustment',
-        'transit agency sudden passenger demand route capacity delay',
-      ];
-    }
-
-    if (
-      /\b(?:urban transportation agencies?|transportation agencies?|transit agencies?|city transport(?:ation)? departments?|municipal transport(?:ation)?|public transport(?:ation)? authorities?|urban mobility agencies?)\b/u.test(normalized) &&
-      /\b(?:traffic flow|traffic congestion|public transit demand|transit demand|road incidents?|travel times?|route performance|peak hours?|time periods?|bottlenecks?)\b/u.test(normalized) &&
-      /\b(?:vehicle emissions?|fuel consumption|air quality|environmental measurements?|longer journeys?|travel time reliability|transportation improvements?)\b/u.test(normalized)
-    ) {
-      return [
-        'urban traffic congestion emissions peak hour travel time',
-        'public transit demand road incidents congestion city',
-        'traffic bottleneck fuel consumption vehicle emissions city',
-        'transport agency integrated traffic transit air quality data',
-        'route congestion travel time reliability emissions',
-        'urban mobility corridor delay public transit demand emissions',
-        'road incident traffic flow fuel consumption transport emissions',
-        'transportation improvement priority congestion travel time air quality',
-      ];
-    }
-
-    if (
-      /\b(?:energy providers?|electric utilities?|power utilities?|utility companies?|grid operators?|electricity distributors?|power distribution|electricity distribution|power grid)\b/u.test(normalized) &&
-      /\b(?:connected meters?|smart meters?|remote monitoring devices?|automated control systems?|device failures?|unusual consumption|consumption anomalies?|network disruptions?|unauthorized access|malicious interference|telemetry|consumption data integrity|incident response)\b/u.test(normalized)
-    ) {
-      return [
-        'smart meter anomaly cyberattack or device failure',
-        'utility smart meter tampering unauthorized access incident',
-        'power distribution iot device failure network disruption',
-        'smart meter inaccurate readings cybersecurity incident',
-        'energy utility distinguish equipment failure from cyber attack',
-        'connected meter security anomaly consumption data integrity',
-        'utility telemetry device health network health incident correlation',
-        'smart grid abnormal consumption malicious interference root cause',
-      ];
-    }
-
-    if (
-      /\b(?:clock repair specialists?|clock repairers?|clockmakers?|horologists?|horology|antique clock repair|timepiece repair)\b/u.test(normalized) &&
-      /\b(?:mechanical faults?|replacement parts?|previous repairs?|repair history|service history|restoration instructions?|cost approvals?|promised completion dates?|completion dates?|repeated diagnostics?|incorrect replacement parts?|delayed repairs?)\b/u.test(normalized)
-    ) {
-      return [
-        'clock repair service history previous repairs repeated diagnostics',
-        'horologist mechanical fault replacement part repair records',
-        'antique clock repair handwritten notes customer instructions lost history',
-        'clockmaker cost approval replacement parts customer request tracking',
-        'clock repair wrong replacement part repeated diagnostic delay',
-        'horology workshop service history restoration instruction completion date',
-        'timepiece repair previous work mechanical fault customer approval',
-        'clock repair shop paper records unexpected cost delayed repair',
-      ];
-    }
-
-    if (
-      /\b(?:independent doll restoration specialists?|doll restoration specialists?|doll restorers?|doll restoration studios?|doll restoration workshops?|antique doll restorers?|doll repair specialists?)\b/u.test(normalized) &&
-      /\b(?:damage photographs?|damage photos?|fabric selections?|replacement parts?|paint matching|restoration notes?|approved restoration|material samples?|completion dates?|incorrect replacements?|mismatched materials?|repeated work|lost details|delayed customer orders?)\b/u.test(normalized)
-    ) {
-      return [
-        'doll restoration customer approved repair scope revision',
-        'antique doll restoration damage photos replacement parts records',
-        'doll restorer fabric selection paint matching customer approval',
-        'doll restoration wrong replacement mismatched material rework',
-        'doll restoration scattered notes photos material samples lost details',
-        'doll repair specialist final approved restoration version customer changes',
-        'antique doll restoration parts paint fabric documentation workflow',
-        'doll restoration delayed order revision completion date problem',
-      ];
-    }
-
-    if (
-      /\b(?:public healthcare agencies?|public health agencies?|health departments?|health authorities?|healthcare agencies?|hospitals?|clinics?)\b/u.test(normalized) &&
-      /\b(?:rising demand|service demand|healthcare demand|medical service demand|appointment volumes?|emergency visits?|regional health reports?|community healthcare needs?|community health needs?|hospitals? become overloaded|clinics? become overloaded|capacity pressure|waiting times?|resource availability|resource distribution|staff shortages?|demand forecasting|surge detection)\b/u.test(normalized)
-    ) {
-      return [
-        'public healthcare rising service demand hospital capacity pressure',
-        'appointment volume surge clinic staffing resource availability',
-        'emergency visit trends hospital overload community demand',
-        'regional health reports demand waiting times resource distribution',
-        'health agency community medical service demand forecasting',
-        'hospital clinic capacity pressure appointment emergency visit trends',
-        'public health demand early warning staff shortage waiting time',
-        'community healthcare demand forecast resource allocation hospital capacity',
-      ];
-    }
-
-    if (
-      /\b(?:digital media companies?|media companies?|streaming platforms?|streaming services?|digital publishers?|online media platforms?|video platforms?|content platforms?)\b/u.test(normalized) &&
-      /\b(?:shows?|videos?|content|subscription plans?|subscription tiers?|production costs?|advertising revenue|subscription activity|audience engagement|cancellation patterns?|churn|profitability|sustainable profit|budgeting|revenue forecasts?)\b/u.test(normalized)
-    ) {
-      return [
-        'digital media content profitability production cost advertising revenue',
-        'streaming show profitability subscription revenue production cost margin',
-        'video content ROI advertising yield audience engagement cost',
-        'subscription plan profitability churn cancellation revenue margin',
-        'media content budget production spending revenue forecast accuracy',
-        'streaming content cost attribution subscriber activity profitability',
-        'digital media show investment audience engagement revenue performance',
-        'content portfolio unnecessary production expense budgeting forecast',
-      ];
-    }
-
-    if (
-      /\b(?:manufacturing companies?|manufacturers?|manufacturing plants?|factories|factory|industrial plants?|production lines?)\b/u.test(normalized) &&
-      /\b(?:production costs?|raw material expenses?|raw material costs?|machine downtime|labor costs?|labour costs?|defect rates?|maintenance spending|maintenance costs?|supplier prices?|supplier costs?|cost variance|cost forecasts?|profitability)\b/u.test(normalized)
-    ) {
-      return [
-        'manufacturing production cost variance stable output root cause',
-        'factory raw material labor downtime maintenance cost profitability',
-        'production stage cost drivers defect rate supplier price variance',
-        'manufacturing cost per unit bottleneck downtime material cost',
-        'factory supplier price increase production profitability analysis',
-        'manufacturing maintenance spending defect scrap cost forecast',
-        'production cost overrun stable output operational improvement',
-        'manufacturing cost accounting production stage profitability',
-      ];
-    }
-
-    if (
-      /\b(?:manufacturing plants?|manufacturers?|factories|factory|industrial plants?|production lines?|plant operators?|plant engineers?)\b/u.test(normalized) &&
-      /\b(?:electricity usage|electricity consumption|energy consumption|energy usage|power draw|power consumption|electricity costs?|energy costs?|kwh|kilowatt)\w*\b/u.test(normalized) &&
-      /\b(?:machines?|equipment|equipment sensors?|machine sensors?|operating hours?|maintenance records?|maintenance history|production schedules?|equipment condition|machine condition|telemetry)\b/u.test(normalized) &&
-      /\b(?:unusually high|abnormal|anomal(?:y|ies)|energy spike|power spike|losing efficiency|efficiency loss|efficiency decline|degradation|predictive maintenance|before (?:a )?failure|impending failure|breakdowns?|downtime|production interruptions?|unnecessary maintenance|electricity costs?|energy costs?)\b/u.test(normalized)
-    ) {
-      return [
-        'factory machine abnormal electricity consumption equipment condition',
-        'industrial equipment energy anomaly predictive maintenance breakdown',
-        'machine power draw maintenance history production schedule correlation',
-        'factory equipment efficiency loss operating hours energy consumption',
-        'plant maintenance electricity spike before equipment failure',
-        'industrial machine energy efficiency condition monitoring downtime',
-        'equipment sensors energy consumption maintenance records failure prediction',
-        'factory machine energy anomaly unnecessary maintenance production interruption',
-      ];
-    }
-
-    if (
-      /\b(?:manufacturing plants?|manufacturers?|factories|factory|industrial plants?|production lines?)\b/u.test(normalized) &&
-      /\b(?:material waste|scrap|scrap records?|raw material consumption|material losses?|yield loss|quality defects?|production defects?|rework|emissions?|environmental impact|waste reduction|material efficiency|circularity|production waste)\b/u.test(normalized)
-    ) {
-      return [
-        'manufacturing material scrap waste production stage root cause',
-        'factory scrap records machine output quality defects material loss',
-        'manufacturing raw material consumption yield loss scrap reduction',
-        'production line defects rework scrap material waste',
-        'manufacturing process stage waste loss quality issue',
-        'industrial plant scrap rate machine output defect correlation',
-        'manufacturing sustainability material efficiency production waste',
-      ];
-    }
-
-    if (
-      /\b(?:engraving businesses?|engraving shops?|engraving studios?|engravers?|custom engraving|laser engraving)\b/u.test(normalized) &&
-      /\b(?:customer artwork|text details?|material types?|object dimensions?|font preferences?|placement instructions?|revision requests?|approved design|approved version|spelling mistakes?|incorrect placement|wasted materials?)\b/u.test(normalized)
-    ) {
-      return [
-        'engraving shop wrong spelling placement customer order',
-        'custom engraver artwork revision approved design version',
-        'engraving business customer text font placement mistake',
-        'engraving shop material dimensions order specification error',
-        'laser engraving customer approval revision rework wasted material',
-        'custom engraving scattered messages artwork instructions',
-        'engraver wrong design version repeated work delayed order',
-        'engraving order material type object dimensions font preference',
-      ];
-    }
-
-    if (
-      /\b(?:universities|university|higher education|online learning systems?|learning platforms?|learning management systems?|lms|online exams?|online assessments?)\b/u.test(normalized) &&
-      /\b(?:login activity|login records?|authentication logs?|exam sessions?|account permissions?|access permissions?|device information|device data|device fingerprints?|security alerts?|compromised accounts?|account compromise|suspicious activity|unauthorized access|unauthorised access|cybersecurity|academic integrity|exam integrity|false positives?|unnecessary restrictions?)\b/u.test(normalized)
-    ) {
-      return [
-        'university suspicious login activity online learning account compromise',
-        'higher education account permissions unauthorized access security alerts',
-        'online exam session device fingerprint suspicious account activity',
-        'university learning platform compromised account detection login records',
-        'academic platform security false positive account restriction legitimate student',
-        'online assessment account permission device anomaly incident investigation',
-        'higher education authentication logs exam integrity compromised credentials',
-        'university learning system security alert login device correlation',
-      ];
-    }
-
-    if (
-      /\b(?:decorative fountains?|ornamental fountains?|historic fountains?|fountain restoration specialists?|fountain restorers?|fountain maintenance contractors?|water features?)\b/u.test(normalized) &&
-      /\b(?:pump condition|fountain pumps?|water[- ]?flow|stone damage|metal damage|metal corrosion|replacement components?|replacement parts?|finish preferences?|previous repairs?|repair history|customer requests?|restoration history)\b/u.test(normalized)
-    ) {
-      return [
-        'decorative fountain restoration pump condition repeated diagnostics',
-        'fountain restoration water flow issue pump maintenance history',
-        'historic fountain stone damage metal corrosion restoration repair',
-        'fountain restoration replacement component incorrect part delay',
-        'ornamental fountain finish preference material matching restoration',
-        'fountain restoration previous repair history customer request records',
-        'water feature restoration pump stone metal condition tracking',
-        'fountain maintenance scattered repair notes finish approval delayed completion',
-      ];
-    }
-
-    if (
-      /\b(?:universities|university departments?|academic departments?|department chairs?|faculty planners?|academic planners?)\b/u.test(normalized) &&
-      /\b(?:instructors?|teaching assistants?|academic support staff|faculty workload|teaching workload|course staffing|course assignments?|student demand|course enrollment|staff availability|scheduling conflicts?|overloaded staff)\b/u.test(normalized)
-    ) {
-      return [
-        'university faculty workload course assignment overload',
-        'teaching assistant workload course staffing scheduling conflict',
-        'academic department instructor availability course enrollment demand',
-        'faculty teaching load inequity course assignment university',
-        'university course staffing shortage student demand support',
-        'academic staff workload allocation expertise availability scheduling',
-        'department chair faculty workload balancing teaching assignments',
-        'higher education staffing fragmented enrollment schedule workload data',
-      ];
-    }
-
-    if (
-      /\b(?:independent pet trainers?|pet trainers?|dog trainers?|animal trainers?|behavior trainers?|behaviour trainers?)\b/u.test(normalized) &&
-      /\b(?:behavioral problems?|behavioural problems?|training exercises?|progress between sessions?|owner feedback|triggers?|recommended routines?|training sessions?|behavior history|behaviour history)\b/u.test(normalized)
-    ) {
-      return [
-        'dog trainer client notes behavior progress between sessions',
-        'pet trainer owner feedback training session records',
-        'animal behavior trainer tracking triggers exercises routines',
-        'dog training repeated exercises missing session history',
-        'pet trainer scattered notes videos messages client progress',
-        'dog trainer inconsistent owner instructions behavior plan',
-        'animal training progress records forgotten behavioral patterns',
-        'pet behavior consultant session notes owner follow up tracking',
-      ];
-    }
-
-    if (
-      /\b(?:delivery companies?|delivery fleets?|delivery operators?|courier companies?|last[- ]mile delivery|parcel delivery|shipping companies?)\b/u.test(normalized) &&
-      /\b(?:fuel consumption|fuel usage|fuel costs?|emissions?|carbon emissions?|environmental impact|unnecessary mileage|vehicle routes?|traffic conditions?|failed delivery attempts?)\b/u.test(normalized)
-    ) {
-      return [
-        'delivery fleet fuel consumption route inefficiency emissions',
-        'last mile delivery unnecessary mileage fuel costs traffic',
-        'courier fleet route planning emissions failed delivery attempts',
-        'delivery companies fuel usage traffic delays carbon emissions',
-        'parcel delivery failed attempts extra mileage fuel consumption',
-        'last mile route optimization fuel efficiency environmental impact',
-        'delivery fleet telematics fuel waste delayed deliveries',
-        'fast delivery environmental impact pollution vehicle mileage',
-      ];
-    }
-
-    if (
-      /\b(?:independent wig makers?|wig makers?|custom wig makers?|wig artisans?|wig studios?|hairpiece makers?)\b/u.test(normalized) &&
-      /\b(?:customer measurements?|hair texture preferences?|color choices?|colour choices?|cap specifications?|styling requests?|fitting notes?|revision history|approved specifications?)\b/u.test(normalized)
-    ) {
-      return [
-        'wig maker client measurements fitting notes revision history',
-        'custom wig wrong cap size measurement order adjustment',
-        'wig maker hair texture color specification client notes',
-        'custom wig approved specification revision chat messages',
-        'wig fitting incorrect sizing repeated adjustments material waste',
-        'wig maker client order photos handwritten measurements lost',
-        'custom wig color mismatch fitting revision delayed order',
-        'hairpiece maker customer specifications cap construction fitting history',
-      ];
-    }
-
-    if (
-      /\b(?:home healthcare|home health care|remote patient monitoring|patients? outside hospitals?|home monitoring)\b/u.test(normalized) &&
-      /\b(?:connected medical devices?|medical devices?|wearable devices?|patient readings?|device status|telemetry|security alerts?|access logs?|unauthorized access|device malfunction)\b/u.test(normalized)
-    ) {
-      return [
-        'remote patient monitoring medical device false alert malfunction security',
-        'home healthcare connected device patient reading device fault unauthorized access',
-        'remote monitoring medical device cybersecurity anomaly patient readings',
-        'home health IoT device telemetry access logs security alerts clinical response',
-        'remote patient monitoring device malfunction abnormal readings false alarm',
-        'connected medical device unauthorized access patient data remote monitoring',
-        'home healthcare device status patient readings security event correlation',
-        'remote monitoring clinicians distinguish device fault patient condition cyber incident',
-      ];
-    }
-
-    if (
-      /\b(?:piano technicians?|piano tuners?|piano tuning|piano service technicians?|piano repair technicians?)\b/u.test(normalized) &&
-      /\b(?:tuning history|service history|mechanical problems?|replaced parts?|replacement parts?|customer preferences?|room conditions?|follow[- ]up visits?|maintenance recommendations?|service visits?)\b/u.test(normalized)
-    ) {
-      return [
-        'piano technician tuning history service records recurring mechanical problems',
-        'piano tuner maintenance history replaced parts customer notes',
-        'piano service records handwritten notes repeated diagnostics',
-        'piano technician follow up maintenance recommendations forgotten',
-        'piano tuning customer preferences room humidity condition service history',
-        'piano repair recurring mechanical issue replaced parts service visit records',
-        'piano technician paper invoice notes maintenance tracking problem',
-        'piano service history repeated diagnosis unnecessary part replacement',
-      ];
-    }
-
-    if (
-      /\b(?:commercial buildings?|office buildings?|office complexes?|facility teams?|facility managers?|building operators?|building managers?)\b/u.test(normalized) &&
-      /\b(?:electricity|energy consumption|utility bills?|smart meters?|heating|hvac|elevators?|lighting|office equipment|consumption spikes?|abnormal usage|energy waste|equipment downtime)\b/u.test(normalized)
-    ) {
-      return [
-        'commercial building electricity consumption spike utility bill',
-        'facility manager smart meter abnormal energy usage equipment',
-        'building hvac heating energy anomaly high electricity cost',
-        'elevator lighting office equipment energy waste commercial building',
-        'building energy data separate systems delayed fault detection',
-        'commercial facility equipment power anomaly downtime early warning',
-      ];
-    }
-
-    if (
-      /\b(?:costume rental shops?|costume rentals?|costume shops?|costume hire|wardrobe rentals?)\b/u.test(normalized) &&
-      /\b(?:customer measurements?|reserved outfits?|accessories|alteration requests?|return dates?|garment condition|special event requirements?|double reservations?|delayed pickups?)\b/u.test(normalized)
-    ) {
-      return [
-        'costume rental double booking wrong size customer',
-        'costume shop missing accessories reservation problem',
-        'costume rental customer measurements alteration request mistake',
-        'costume return date garment damage tracking',
-        'formalwear rental measurement fitting wrong size',
-        'theatrical wardrobe missing costume accessories tracking',
-        'dress rental double booking return condition problem',
-        'tuxedo rental alteration reservation pickup delay',
-      ];
-    }
-
-    if (
-      /\b(?:municipal governments?|municipalities|city governments?|city councils?|public works|local authorities?)\b/u.test(normalized) &&
-      /\b(?:roads?|streetlights?|street lights?|public spaces?|city infrastructure|public infrastructure|maintenance requests?|citizen complaints?|inspection reports?|repair histories?|asset prioritization|maintenance spending)\b/u.test(normalized)
-    ) {
-      return [
-        'municipal infrastructure maintenance backlog citizen complaints',
-        'city road streetlight repair requests delayed',
-        'public works maintenance complaints inspection reports prioritization',
-        'city infrastructure repair history urgent maintenance spending',
-        'municipal road repair delays maintenance costs complaints',
-        'public works asset maintenance backlog resource allocation',
-        'smart city infrastructure predictive maintenance prioritization',
-        'AI municipal maintenance request prioritization public works',
-      ];
-    }
-
-    if (
-      /\b(?:cake decorators?|cake decorating|custom cake decorators?|home bakers?|independent bakers?|cake artists?|custom cake businesses?|bakery decorators?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|design references?|flavors?|flavours?|allergy notes?|allergies|dietary requirements?|cake dimensions?|decoration details?|pickup times?|last[- ]minute revision requests?|chat messages?|handwritten notes?|wasted ingredients?|repeated work|delayed orders?)\b/u.test(normalized)
-    ) {
-      return [
-        'cake decorator wrong design missed customer revision',
-        'custom cake allergy note missed order mistake',
-        'cake decorator customer details scattered messages photos notes',
-        'custom cake latest approved design version rework',
-        'home baker last minute cake revision pickup delay',
-        'cake decorating wrong flavor dimensions wasted ingredients',
-        'wedding cake customer revision approval design reference mistake',
-        'custom baker allergy dietary requirement order tracking problem',
-      ];
-    }
-
-    if (
-      /\b(?:calligraphy artists?|calligraphers?|lettering artists?|custom stationery artists?|wedding invitation calligraphers?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|commissions?|wedding invitations?|guest names?|spelling variations?|wording|lettering styles?|paper selections?|paper sizes?|ink preferences?|ink colors?|ink colours?|dimensions?|layout approvals?|envelope details?|revision requests?|approved versions?|approved specifications?|delivery deadlines?|social media messages?|customer messages?|handwritten notes?|misspelled names?|wasted stationery|repeated work)\b/u.test(normalized)
-    ) {
-      return [
-        'wedding calligrapher misspelled guest name invitation remake',
-        'custom wedding invitation client proof approval revision',
-        'envelope calligraphy wrong guest name spelling redo',
-        'wedding stationery paper size ink color client changes rework',
-        'custom invitation lettering style layout approval mistake',
-        'calligraphy commission guest list changes deadline rework',
-        'wedding invitation personalization error wasted stationery',
-        'calligrapher customer messages final approved specification',
-      ];
-    }
-
-    const nicheCraftQueries = RequestNicheCustomCraftUtil.buildSourceQueries(
-      normalized,
-      'generic',
-    );
-    if (nicheCraftQueries.length > 0) {
-      return nicheCraftQueries;
-    }
-
-    if (
-      RequestNicheCustomCraftUtil.isViolinBowServiceRequest(normalized)
-    ) {
-      return [
-        'violin bow rehair tracking paper records',
-        'bow rehairing preferences customer notes',
-        'forgotten bow repair notes incorrect materials',
-        'tracking bow winding grip hair type preferences',
-        'luthier bow service history management',
-        'violin bow previous rehair date service record',
-        'archetier customer bow condition repair history',
-        'bow technician rehair material preference tracking',
-      ];
-    }
-
-    if (
-      /\b(?:restaurants?|commercial kitchens?|restaurant kitchens?|food service kitchens?|kitchen managers?|restaurant managers?)\b/u.test(normalized) &&
-      /\b(?:electricity|gas|energy consumption|utility bills?|utility costs?|refrigeration|cooking equipment|ventilation|lighting|heating|equipment usage|equipment runtime|energy waste|energy efficiency|carbon|emissions?|environmental impact|consumption spikes?|energy monitoring)\b/u.test(normalized)
-    ) {
-      return [
-        'restaurant high utility bill equipment energy use',
-        'commercial kitchen refrigeration energy waste problem',
-        'restaurant ventilation cooking equipment energy cost',
-        'commercial kitchen equipment consumption spike',
-        'restaurant energy monitoring operating hours waste',
-        'kitchen energy efficiency utility cost equipment',
-      ];
-    }
-
-    if (
-      /\b(?:home[- ]cleaning businesses?|home cleaning businesses?|residential cleaning businesses?|residential cleaning services?|house cleaning businesses?|house cleaning services?|cleaning companies?|cleaning teams?)\b/u.test(normalized) &&
-      /\b(?:customer preferences?|recurring appointments?|recurring bookings?|room[- ]specific instructions?|room instructions?|employee assignments?|cleaner assignments?|cleaning supplies?|last[- ]minute schedule changes?|schedule changes?|missed tasks?|scheduling conflicts?|forgotten customer requests?|service quality|phone calls?|messaging apps?|handwritten notes?)\b/u.test(normalized)
-    ) {
-      return [
-        'house cleaning business missed client instructions',
-        'residential cleaning recurring appointments scheduling conflict',
-        'cleaners room specific instructions forgotten requests',
-        'cleaning business employee assignments supplies schedule changes',
-        'house cleaning messaging notes missed tasks',
-        'residential cleaning inconsistent service customer preferences',
-      ];
-    }
-
-    if (
-      /\b(?:healthcare facilities?|hospitals?|clinics?|medical centers?|health systems?|healthcare)\b/u.test(normalized) &&
-      /\b(?:medical waste|clinical waste|healthcare waste|waste disposal|disposal records?|expired supplies?|expiration dates?|unused supplies?|supply usage|environmental reports?|environmental footprint|disposal costs?)\b/u.test(normalized) &&
-      /\b(?:reduce|reduction|waste|disposal|expiration|expired|unused|environmental|sustainability|procurement|purchasing)\b/u.test(normalized)
-    ) {
-      return [
-        'hospital expired medical supplies disposal waste',
-        'healthcare facility medical waste reduction supply usage',
-        'hospital unused supplies expiration disposal cost',
-        'clinical waste treatment volume inventory mismatch',
-        'medical waste environmental footprint hospital procurement',
-        'hospital staff reducing expired supplies patient safety',
-        'healthcare disposal records supply usage environmental reporting',
-        'hospital medical waste regulatory compliance purchasing waste',
-      ];
-    }
-
-    if (
-      /\b(?:hospital|hospitals|healthcare|clinical units?|pharmacy|medical)\b/u.test(normalized) &&
-      /\b(?:medical supplies?|clinical supplies?|medical inventory|supply inventory|stock levels?|stockouts?|blood products?|pharmacy inventory|expiration|expiry|expired products?|supplier deliveries?|emergency supply requests?|reorder|medical supply chain)\b/u.test(normalized)
-    ) {
-      return [
-        'hospital medical supply inventory shortage stockout',
-        'hospital inventory expiration expired supplies waste',
-        'blood product inventory shortage emergency hospital',
-        'pharmacy inventory expiration hospital clinical units',
-        'hospital department supply chain disconnected inventory systems',
-        'medical supply supplier delivery delay hospital',
-      ];
-    }
-
-    if (
-      /\b(?:upholstery workshops?|upholstery shops?|upholsterers?|reupholstery|furniture upholstery)\b/u.test(normalized) &&
-      /\b(?:fabric samples?|fabric selections?|fabric orders?|measurements?|material quantities?|material choices?|repair requests?|design changes?|customer notes?|completion dates?|delivery dates?)\b/u.test(normalized)
-    ) {
-      return [
-        'upholstery workshop lost fabric samples customer notes',
-        'upholstery furniture measurements mistake rework',
-        'upholstery fabric order mistake custom furniture',
-        'upholstery customer design change project tracking',
-        'upholstery material shortage delayed furniture repair',
-        'upholsterer paper work order lost customer request',
-      ];
-    }
-
-    if (
-      /\b(?:hospital|hospitals|healthcare|biomedical engineering|clinical engineering|medical)\b/u.test(normalized) &&
-      /\b(?:medical equipment|medical devices?|equipment tracking|device tracking|asset tracking|equipment location|maintenance status|maintenance logs?|equipment usage|device usage|utilization|device availability|equipment availability|departmental movement|department transfers?|storage rooms?|operating rooms?|operating areas?)\b/u.test(normalized)
-    ) {
-      return [
-        'hospital staff searching for medical equipment',
-        'medical equipment unavailable procedure delay hospital',
-        'hospital equipment location tracking departments',
-        'hospital medical device maintenance status availability',
-        'hospital asset utilization underused medical equipment',
-        'hospital equipment inventory unnecessary purchases',
-      ];
-    }
-
-    if (
-      /\b(?:agricultural exporters?|fresh produce exporters?|produce exporters?|fruit exporters?|vegetable exporters?|agricultural export(?:ers?| companies?| businesses?))\b/u.test(normalized) &&
-      /\b(?:transportation delays?|storage costs?|warehouse expenses?|market prices?|product spoilage|shipment profitability|profit margins?|profit estimates?|supplier payments?|sales revenues?|financial losses?)\b/u.test(normalized)
-    ) {
-      return [
-        'fresh produce exporter transport delay spoilage profit margin problem',
-        'agricultural exporter storage cost market price shipment profitability',
-        'fresh produce cold chain postharvest loss economic impact',
-        'produce export warehouse expense supplier payment sales revenue reconciliation',
-        'agricultural export route profitability logistics cost spoilage',
-        'produce exporter inaccurate profit estimate distribution stage loss',
-        'fresh produce export price volatility transport storage cost',
-        'postharvest loss fresh produce exporter revenue margin',
-      ];
-    }
-
-    if (
-      /\b(?:eyeglass frame repair specialists?|eyeglass repair specialists?|eyewear repair specialists?|optical frame repair specialists?|spectacle frame repair specialists?|glasses repair specialists?)\b/u.test(normalized) &&
-      /\b(?:frame damage|previous repairs?|replacement hinges?|replacement parts?|color matching|colour matching|fit preferences?|adjustment notes?|pickup dates?|repair history)\b/u.test(normalized)
-    ) {
-      return [
-        'eyeglass frame repair wrong hinge repeated adjustment repair history',
-        'glasses repair shop lost repair notes pickup delay',
-        'eyewear repair replacement parts fit preference history',
-        'optical frame repair color matching customer adjustment notes',
-        'eyeglass repair incorrect replacement part repeated adjustment',
-        'spectacle frame repair previous repairs hinge replacement',
-      ];
-    }
-
-    if (
-      /\b(?:agricultural cooperatives?|farm cooperatives?|farmers? cooperatives?|farms?|agriculture|fresh produce|produce growers?|cold storage)\b/u.test(normalized) &&
-      /\b(?:harvest(?:ing)?|storage|cold chain|temperature|shipments?|transportation|delivery|spoilage|transport costs?|storage capacity|shipment locations?|logistics)\b/u.test(normalized)
-    ) {
-      return [
-        'farm cooperative produce spoilage transport delay',
-        'fresh produce cold chain temperature tracking problem',
-        'agricultural harvest storage shipment coordination',
-        'produce delivery partial loads transport cost',
-        'farm logistics storage capacity delivery delay',
-        'produce shipment location temperature visibility gap',
-      ];
-    }
-
-    if (
-      /\b(?:picture framing shops?|custom framing shops?|frame shops?|framers?)\b/u.test(normalized) &&
-      /\b(?:artwork measurements?|frame selections?|glass selections?|moulding|material availability|special handling|completion dates?|paper forms?|verbal communication|order changes?|wasted supplies?)\b/u.test(normalized)
-    ) {
-      return [
-        'picture framing shop wrong measurements remake',
-        'custom framing glass moulding order change problem',
-        'framing shop paper order form customer changes',
-        'picture framer material shortage delayed order',
-        'custom frame wasted material incorrect dimensions',
-        'framing shop promised completion date tracking problem',
-      ];
-    }
-
-    if (
-      /\b(?:art restoration workshops?|art restoration|art conservation|conservation workshops?|conservation studios?|art conservators?|painting restoration|artifact conservation)\b/u.test(normalized)
-    ) {
-      return [
-        'art conservator condition report documentation problem',
-        'art restoration treatment records scattered notes photographs',
-        'conservation workshop previous repairs treatment history missing',
-        'art conservator materials used treatment documentation',
-        'art restoration client instructions deadline tracking',
-        'conservation studio restoration stages record keeping',
-      ];
-    }
-
-    if (
-      /\b(?:dance studio|dance studios|dance school|dance schools|dance academy|dance instructor|dance instructors)\b/u.test(
-        normalized,
-      )
-    ) {
-      return [
-        'dance studio class scheduling instructor availability conflicts',
-        'dance student attendance missed rehearsal tracking',
-        'dance choreography progress performance readiness tracking',
-        'dance costume requirements recital preparation coordination',
-        'dance studio group chats calendars attendance sheets fragmented',
-        'dance performance student readiness costume rehearsal records',
-      ];
-    }
-
-    if (
-      /\b(?:tattoo studio|tattoo studios|tattoo artist|tattoo artists)\b/u.test(
-        normalized,
-      )
-    ) {
-      return [
-        'tattoo studio artist scheduling booking conflicts',
-        'tattoo design revisions client feedback lost changes',
-        'tattoo appointment deposits consent forms management',
-        'tattoo client preferences session history records',
-        'tattoo studio aftercare instructions communication',
-        'tattoo studio messages calendars paper forms fragmented',
-      ];
-    }
-
-    if (
-      /\b(?:public transportation|public transport|transit operators?|transit agencies?|bus operators?|rail operators?|metro operators?|digital ticketing|fare systems?)\b/u.test(normalized) &&
-      /\b(?:cyberattack|cyber attack|cybersecurity|unusual login|login activity|payment anomal|account compromise|device behavior|service disruption|incident investigation|technical failure|misuse)\w*\b/u.test(normalized)
-    ) {
-      return [
-        'public transit ticketing cyber incident unusual login investigation',
-        'transit fare payment anomaly passenger account security incident',
-        'connected vehicle telemetry security event technical failure correlation',
-        'public transport service disruption cyberattack root cause investigation',
-        'transit passenger app account takeover login anomaly incident response',
-        'bus rail ticketing payment device anomaly security operations',
-      ];
-    }
-
-    if (
-      /\b(?:glass artists?|glass artisans?|stained glass artists?|glassblowers?|glass blowing|glass studios?|glass art)\b/u.test(normalized) &&
-      /\b(?:custom commissions?|dimensions?|glass colors?|patterns?|engraving|material choices?|design revisions?|approved versions?|completion deadlines?|customer messages?|sketches?|physical samples?)\b/u.test(normalized)
-    ) {
-      return [
-        'glass artist custom commission wrong dimensions client revision',
-        'stained glass commission approved design version mistake rework',
-        'glass art custom order engraving color specification missed',
-        'glass studio client revisions sketches messages material waste',
-        'custom art commission latest approved version customer sign off',
-        'artisan commission dimensions material choices revision tracking problem',
-      ];
-    }
-
-    if (
-      /\b(?:miniature model makers?|model makers?|scale model makers?|miniature makers?|custom miniature commissions?)\b/u.test(normalized) &&
-      /\b(?:scale requirements?|reference images?|material choices?|paint details?|dimensions?|revision requests?|approved version|customer finally approved|incorrect proportions|missed visual details|repeated work|delayed commissions?)\b/u.test(normalized)
-    ) {
-      return [
-        'miniature model commission customer approved version revision',
-        'custom miniature scale specification dimensions mistake rework',
-        'model maker reference images paint details missed customer commission',
-        'miniature commission material choice revision tracking approval',
-        'scale model wrong proportions customer specification remake',
-        'miniature maker wrong approved version repeated work wasted material',
-        'custom model commission revision request completion deadline delay',
-        'miniature painting commission reference image approval paint specification',
-      ];
-    }
-
-    if (
-      /\b(?:logistics companies?|logistics providers?|logistics operators?|third[- ]party logistics|3pl providers?|freight companies?|freight operators?|delivery operators?|parcel carriers?|distribution operators?|supply chain operators?)\b/u.test(normalized) &&
-      /\b(?:operating costs?|operating expenses?|fuel expenses?|fuel costs?|warehouse costs?|warehousing costs?|failed deliveries?|delivery failures?|vehicle maintenance|maintenance costs?|route performance|route profitability|customer penalties?|delivery penalties?|profit margins?|margin erosion|profitability|route planning|pricing decisions?|financial forecasts?|shipment volumes?|delivery volumes?|cost per shipment|cost per delivery)\b/u.test(normalized) &&
-      /\b(?:profit margins?|profitability|margin erosion|operating costs?|operating expenses?|financial forecasts?|pricing decisions?|cost increase|costs increase|become more expensive|reducing profit)\b/u.test(normalized)
-    ) {
-      return [
-        'logistics company rising delivery costs stable shipment volume fuel warehouse penalties',
-        'freight operator profit margin failed deliveries fuel maintenance route performance',
-        '3pl operating cost warehouse expense delivery penalty margin erosion',
-        'delivery operator cost per shipment route profitability customer penalties',
-        'logistics route planning pricing decisions financial forecast operating expenses',
-        'freight company stable shipment volume rising fuel maintenance costs',
-        'logistics failed delivery penalties warehouse costs reduce profit margin',
-        'supply chain operator route vehicle profitability cost attribution',
-      ];
-    }
-
-    if (
-      /\b(?:shipment|shipments|cargo|supply chain|carriers?|warehouses?|customs)\b/u.test(normalized) &&
-      /\b(?:handover|chain of custody|custody transfer|tampered records?|altered tracking|trusted history|fraudulent delivery claims?|record tampering|shipment provenance|ownership records?)\b/u.test(normalized)
-    ) {
-      return [
-        'shipment handover tampered tracking record chain of custody dispute',
-        'cargo custody transfer carrier warehouse customs record discrepancy',
-        'supply chain altered shipment tracking history fraudulent delivery claim',
-        'shipment handover verification ownership document provenance problem',
-        'carrier warehouse customs conflicting shipment records custody timeline',
-        'supply chain record tampering shipment incident traceability',
-        'shipment chain of custody missing handover event lost goods dispute',
-        'cargo tracking audit trail altered location update responsibility dispute',
-      ];
-    }
-
-    if (
-      /\b(?:shipment|shipments|chain of custody|handover records?|customs checkpoints?|carriers?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return [
-        'high value shipment chain of custody missing handover records',
-        'shipment handover record discrepancy custody responsibility dispute',
-        'carrier warehouse customs shipment record reconciliation',
-        'shipment location updates conflicting delivery confirmations',
-        'multi carrier shipment handoff timeline missing events',
-        'supply chain partner shipment accountability records dispute',
-      ];
-    }
-
-    if (/\b(?:recipe|recipes|cooking|ingredient substitutions?)\b/u.test(normalized)) {
-      return [
-        'saved recipes scattered across apps hard to find',
-        'recipe ingredient substitutions personal changes forgotten',
-        'family recipe preferences notes not stored together',
-        'cooking results recipe adjustments hard to recreate',
-        'recipe collection search organization home cook',
-        'wasted ingredients forgotten recipe changes',
-      ];
-    }
-
-    if (
-      /\b(?:trip planning|travelers?|travellers?|accommodations?|hotels?|activities|local experiences?|booking websites?)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:booking|bookings|price comparison|prices?|availability|itinerary|budget|reviews?|hotel|accommodation|activities|local experiences?)\b/u.test(normalized) &&
-      !/\b(?:public transportation|public transport|transit|digital ticketing|fare payment|cyberattack|cybersecurity|security incident)\b/u.test(normalized)
-    ) {
-      return [
-        'travel accommodation price comparison across booking platforms',
-        'hotel activity transportation availability comparison',
-        'travel price changes budget planning reviews scattered',
-        'multi platform trip planning traveler preferences',
-        'travel booking missed deals price availability',
-        'trip planning reviews activities transport budget comparison',
-      ];
-    }
-
-    if (
-      /\b(?:shoemakers?|shoe makers?|shoemaking|shoe making|bespoke shoemakers?|custom shoe makers?|custom footwear|bespoke footwear|handmade shoes?|made[- ]to[- ]measure shoes?|cordwainers?)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:foot measurements?|leather selections?|sole types?|stitching preferences?|fitting notes?|design revisions?|approved specifications?|completion deadlines?|sizing errors?|repeated fittings?|wasted materials?)\b/u.test(
-        normalized,
-      )
-    ) {
-      return [
-        'bespoke shoemaker customer foot measurements fitting errors',
-        'custom shoemaking leather selection sole type specification revision',
-        'made to measure shoes wrong sizing repeated fitting client notes',
-        'cordwainer custom footwear measurement leather sole approval workflow',
-        'handmade shoes stitching preference design revision customer approval',
-        'bespoke footwear latest approved specification material mistake rework',
-        'custom shoe fitting notes revision history delayed order',
-        'shoemaker scattered sketches samples messages final specification',
-      ];
-    }
-
-    if (
-      /\b(?:shoe repair shop|shoe repair shops|cobbler|cobblers|cobbler shop|cobbler shops)\b/u.test(
-        normalized,
-      )
-    ) {
-      return [
-        'shoe repair shop lost paper ticket misplaced customer shoes',
-        'cobbler repair order wrong instructions customer complaint',
-        'shoe repair technician notes material choice tracking problem',
-        'shoe repair delayed pickup collection date customer complaint',
-        'shoe repair payment status repair ticket confusion',
-        'cobbler shop repair queue urgent orders paper tickets',
-      ];
-    }
-
-    if (
-      /\b(?:school|schools|university|universities|learning platform|learning platforms|lms|online assessment|online assessments|online exam|online exams)\b/u.test(
-        normalized,
-      ) &&
-      /\b(?:security|suspicious|account activity|login records?|academic misuse|academic integrity|anomal|assessment behavior|false positive)\w*\b/u.test(
-        normalized,
-      )
-    ) {
-      return [
-        'university lms suspicious login account takeover incident',
-        'online exam unusual account activity academic integrity investigation',
-        'learning platform security alerts login records correlation problem',
-        'student account anomaly detection false positive online assessment',
-        'university administrators fragmented lms security logs investigation',
-        'online assessment suspicious behavior security alert student privacy',
-      ];
-    }
-
-    const workflowArchetype = RequestWorkflowArchetypeUtil.classify({
-      requestDescription: description,
-      intentConcepts: concepts,
-    });
-
-    if (
-      workflowArchetype.archetype ===
-      'ENTERPRISE_POLICY_COMPLIANCE_OPERATIONS'
-    ) {
-      return [
-        'hr teams outdated employee handbook policy version control problem',
-        'employment policy conflicting leave rules departments compliance risk',
-        'human resources repeated employee policy questions time consuming',
-        'corporate policy regulatory change not updated across departments',
-        'hr legal teams manual contract policy comparison inconsistent decisions',
-        'enterprise employee handbook document review outdated procedures',
-      ];
-    }
-
-    if (
-      workflowArchetype.archetype ===
-      'BUILDING_ENVIRONMENTAL_MONITORING_OPERATIONS'
-    ) {
-      return [
-        'property manager building temperature humidity sensor monitoring abnormal conditions',
-        'residential complex water usage leak detection maintenance delay',
-        'apartment building indoor air quality environmental monitoring sensors',
-        'property maintenance team scattered equipment readings environmental performance',
-        'building manager water waste humidity air quality abnormal equipment readings',
-        'residential building IoT sensor data maintenance environmental problems',
-        'multi family property environmental condition monitoring operating cost',
-        'apartment complex maintenance abnormal temperature humidity water usage',
-      ];
-    }
-
-    if (
-      workflowArchetype.archetype ===
-      'PROPERTY_ASSET_PERFORMANCE_OPERATIONS'
-    ) {
-      return [
-        'rental property profitability rental income maintenance vacancy cash flow',
-        'property investment returns financing costs vacancy maintenance expenses',
-        'real estate portfolio NOI cash flow maintenance vacancy performance',
-        'property manager rising expenses vacancy lower rental returns',
-        'landlord cash flow mortgage interest maintenance vacancy problem',
-        'rental property return estimate local market rent vacancy changes',
-        'property investment financial performance data silos rent expenses vacancy',
-        'real estate asset declining performance unexpected expenses investor',
-      ];
-    }
-
-    if (workflowArchetype.archetype === 'FOOD_STORAGE_CONDITION_OPERATIONS') {
-      const actor = RequestDynamicQueryUtil.extractActor(description) || 'commercial kitchen';
-      return [
-        `${actor} refrigerator temperature food spoilage incident`,
-        `${actor} freezer failure ingredient inventory loss`,
-        `${actor} ingredient expiration food waste tracking`,
-        `${actor} cold storage temperature excursion food waste`,
-        `${actor} refrigeration maintenance spoilage detection delay`,
-        `${actor} fragmented storage condition records food waste`,
-        `${actor} freezer performance food quality problem`,
-        `${actor} storage temperature monitoring expired ingredients`,
-      ];
-    }
-
-    if (workflowArchetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS') {
-      const profile = RequestWorkflowIntentProfileUtil.resolve(description);
-      const subject = profile.restorationSubject || RequestDynamicQueryUtil.extractActor(description) || 'restoration';
-      return [
-        `${subject} restoration condition previous repairs documentation`,
-        `${subject} restoration original design details lost records`,
-        `${subject} restoration replacement material matching problem`,
-        `${subject} restoration cracked damaged missing sections condition report`,
-        `${subject} conservation treatment history handwritten notes photos`,
-        `${subject} restoration physical samples material matching rework`,
-        `${subject} restoration customer preferences previous repair records`,
-        `${subject} restoration incorrect material match delayed project`,
-      ];
-    }
-
-    if (
-      workflowArchetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' &&
-      /\b(?:jewelry repair|jewellery repair|jeweler|jeweller)\b/u.test(
-        normalized,
-      )
-    ) {
-      return [
-        'jewelry repair customer dispute lost item',
-        'jeweler repair estimate approval dispute',
-        'jewelry repair item condition intake problem',
-        'jewelry repair wrong modification customer complaint',
-        'jewelry repair paper ticket lost record',
-        'jeweler repair pickup status replacement material',
-      ];
-    }
-
-    const dynamicQueries = RequestDynamicQueryUtil.build({
-      requestDescription: description,
-      intentConcepts: concepts,
-      maxQueries: 6,
-    });
-    if (dynamicQueries.length >= 3) {
-      return this.deduplicateQueries(dynamicQueries).slice(0, 6);
-    }
-
-    const actor = this.extractActorContext(description);
-    const painSignals = this.extractPainSignals(description);
-    const compactConcepts = concepts.slice(0, 6);
-    const rawQueries: string[] = [];
-
-    for (let index = 0; index < compactConcepts.length; index += 1) {
-      const concept = compactConcepts[index];
-      const next = compactConcepts[(index + 1) % compactConcepts.length];
-      const pain = painSignals[index % Math.max(1, painSignals.length)] ?? '';
-      rawQueries.push(this.composeQuery(actor, concept, next, pain));
-      if (rawQueries.length >= 6) break;
-    }
-
-    if (rawQueries.length < 4) {
-      for (const pain of painSignals) {
-        rawQueries.push(this.composeQuery(actor, ...compactConcepts.slice(0, 2), pain));
-        if (rawQueries.length >= 6) break;
-      }
-    }
-
-    return this.deduplicateQueries(rawQueries).slice(0, 6);
-  }
-
-  private buildEvidenceTargets(
-    description: string,
-    concepts: readonly string[],
-  ): string[] {
-    const normalized = description.toLowerCase();
-    const targets: string[] = [];
-
-    if (
-      /\b(?:digital media companies?|media companies?|streaming platforms?|streaming services?|digital publishers?|online media platforms?|video platforms?|content platforms?)\b/u.test(normalized) &&
-      /\b(?:shows?|videos?|content|subscription plans?|subscription tiers?|production costs?|advertising revenue|subscription activity|audience engagement|cancellation patterns?|churn|profitability|sustainable profit|budgeting|revenue forecasts?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'digital-media or streaming reports that reconcile show, video, or content production costs with advertising and subscription revenue to determine content-level profitability or margin',
-        'media-finance reports connecting subscriber activity, cancellations or churn, and audience engagement with the profitability of subscription plans or content investments',
-        'content-strategy or finance reports describing poor budgeting, wasted production spending, or unnecessary content expense caused by fragmented cost, revenue, and audience-performance data',
-        'digital-media forecasting reports where separated production, advertising, subscription, engagement, or cancellation data contributed to inaccurate revenue or profitability forecasts',
-      );
-    }
-
-    if (
-      /\b(?:government agencies?|government departments?|public sector agencies?|public authorities?|regulatory agencies?|licensing authorities?)\b/u.test(normalized) &&
-      /\b(?:legal records?|licensing documents?|citizen applications?|regulatory files?|official records?|public records?|permit records?|case files?)\b/u.test(normalized) &&
-      /\b(?:unauthorized access|unauthorised access|manipulation|tamper(?:ing|ed)?|access logs?|document histor(?:y|ies)|employee activity|security alerts?|suspicious changes?|who accessed|incident investigation|audit trail)\b/u.test(normalized)
-    ) {
-      return [
-        'government or public-sector reports describing unauthorized access to sensitive official, legal, licensing, citizen-application, permit, or regulatory records',
-        'incidents where access logs, document-version history, employee activity, and security alerts are fragmented across separate systems',
-        'reports of suspicious record edits, tampering, unauthorized permission changes, compromised credentials, or uncertainty about who accessed or changed a critical record',
-        'compliance, audit, or investigation delays caused by incomplete record-access and document-integrity history',
-      ];
-    }
-
-    if (
-      /\b(?:public transportation authorities?|public transport authorities?|transit agencies?|transportation authorities?|municipal transit|city transit|bus operators?|public transport operators?)\b/u.test(normalized) &&
-      /\b(?:road closures?|accidents?|large events?|special events?|passenger demand|demand surges?|service disruptions?|overcrowded vehicles?|overcrowding|rerout(?:e|ing)|long delays?|incident response)\b/u.test(normalized) &&
-      /\b(?:traffic conditions?|vehicle locations?|passenger volumes?|route schedules?|incident reports?|separate systems?|fragmented systems?|adjusted routes?|route adjustments?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'public-transit operator or authority reports where road closures, crashes, major events, or sudden passenger-demand changes disrupted normal route service',
-        'transit operations evidence showing traffic conditions, vehicle locations, passenger loads, route schedules, and incident reports were difficult to reconcile during disruption response',
-        'bus or rail service reports describing overcrowding, long delays, slow or inefficient rerouting, or difficulty prioritizing which routes to adjust after an incident',
-        'transit-dispatch or mobility-operations evidence linking passenger surges or corridor incidents to route-capacity decisions and poor passenger experience',
-      );
-    }
-
-    if (
-      /\b(?:urban transportation agencies?|transportation agencies?|transit agencies?|city transport(?:ation)? departments?|municipal transport(?:ation)?|public transport(?:ation)? authorities?|urban mobility agencies?)\b/u.test(normalized) &&
-      /\b(?:traffic flow|traffic congestion|public transit demand|transit demand|road incidents?|travel times?|route performance|peak hours?|time periods?|bottlenecks?)\b/u.test(normalized) &&
-      /\b(?:vehicle emissions?|fuel consumption|air quality|environmental measurements?|longer journeys?|travel time reliability|transportation improvements?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'urban transportation or transit-agency reports linking congestion, route or corridor travel times, and public-transit demand to specific peak periods or bottlenecks',
-        'transportation planning or environmental reports connecting traffic flow, idling or fuel consumption with vehicle emissions or air-quality impacts',
-        'road-incident or network-performance reports showing how incidents, route demand, and transit conditions affect travel-time reliability',
-        'city mobility planning reports that combine traffic, transit-demand, incident, and environmental measurements to prioritize route or time-period improvements',
-      );
-    }
-
-    if (
-      /\b(?:energy providers?|electric utilities?|power utilities?|utility companies?|grid operators?|electricity distributors?|power distribution|electricity distribution|power grid)\b/u.test(normalized) &&
-      /\b(?:connected meters?|smart meters?|remote monitoring devices?|automated control systems?|device failures?|unusual consumption|consumption anomalies?|network disruptions?|unauthorized access|malicious interference|telemetry|consumption data integrity|incident response)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'electric-utility or smart-grid incident reports where smart-meter anomalies, device failures, network disruptions, or suspicious access had to be correlated before root cause was known',
-        'utility cybersecurity or OT reports involving smart-meter tampering, unauthorized access, malicious interference, or consumption-data integrity problems',
-        'power-distribution operator reports distinguishing equipment or connectivity failures from cybersecurity incidents using telemetry, meter, network, and access signals',
-        'smart-meter or advanced-metering reports describing inaccurate consumption data, service disruption, delayed incident response, or unnecessary investigation cost caused by fragmented monitoring',
-      );
-    }
-
-    if (
-      /\b(?:clock repair specialists?|clock repairers?|clockmakers?|horologists?|horology|antique clock repair|timepiece repair)\b/u.test(normalized) &&
-      /\b(?:mechanical faults?|replacement parts?|previous repairs?|repair history|service history|restoration instructions?|cost approvals?|promised completion dates?|completion dates?|repeated diagnostics?|incorrect replacement parts?|delayed repairs?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'horologist or clock-repair reports describing repeated diagnostics because previous repair history, mechanical fault notes, or replaced parts were difficult to reconstruct',
-        'clockmaker discussions about handwritten notes, paper receipts, photographs, and customer messages fragmenting the service history for an individual clock',
-        'clock-repair operator reports involving wrong replacement parts, forgotten restoration instructions, or missed customer requests',
-        'clock-repair service reports linking unclear cost approvals or promised completion dates to unexpected costs, rework, or delayed repairs',
-      );
-    }
-
-    if (
-      /\b(?:independent doll restoration specialists?|doll restoration specialists?|doll restorers?|doll restoration studios?|doll restoration workshops?|antique doll restorers?|doll repair specialists?)\b/u.test(normalized) &&
-      /\b(?:damage photographs?|damage photos?|fabric selections?|replacement parts?|paint matching|restoration notes?|approved restoration|material samples?|completion dates?|incorrect replacements?|mismatched materials?|repeated work|lost details|delayed customer orders?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'professional doll-restoration reports about customer-approved repair scope, restoration notes, damage photographs, or revision history becoming inconsistent or difficult to track',
-        'antique-doll restoration reports involving wrong replacement parts, fabric mismatches, paint-matching errors, or rework after incomplete customer specifications',
-        'doll-restorer discussions about scattered handwritten notes, photographs, customer messages, swatches, samples, or part references causing lost restoration details',
-        'professional restoration workflow reports linking revision or approval confusion to repeated work or delayed customer orders',
-      );
-    }
-
-    if (
-      /\b(?:public healthcare agencies?|public health agencies?|health departments?|health authorities?|healthcare agencies?|hospitals?|clinics?)\b/u.test(normalized) &&
-      /\b(?:rising demand|service demand|healthcare demand|medical service demand|appointment volumes?|emergency visits?|regional health reports?|community healthcare needs?|community health needs?|hospitals? become overloaded|clinics? become overloaded|capacity pressure|waiting times?|resource availability|resource distribution|staff shortages?|demand forecasting|surge detection)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'public-health or hospital-capacity reports showing rising appointment volumes, emergency visits, or service demand before hospitals or clinics become overloaded',
-        'health-agency reports connecting community-level demand trends with staff shortages, long waiting times, or capacity pressure',
-        'regional healthcare reports describing uneven resource distribution or delayed resource reallocation when demand signals are fragmented across systems',
-        'hospital or public-health planning reports using appointment, emergency-visit, capacity, staffing, or regional indicators for early demand forecasting and surge response',
-      );
-    }
-
-
-    if (
-      /\b(?:manufacturing companies?|manufacturers?|manufacturing plants?|factories|factory|industrial plants?|production lines?)\b/u.test(normalized) &&
-      /\b(?:production costs?|raw material expenses?|raw material costs?|machine downtime|labor costs?|labour costs?|defect rates?|maintenance spending|maintenance costs?|supplier prices?|supplier costs?|cost variance|cost forecasts?|profitability)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'manufacturing reports linking production-cost increases to raw-material prices, labor, machine downtime, defect or scrap rates, maintenance spending, or supplier-price changes',
-        'factory cost-accounting studies identifying which production stage, bottleneck, downtime event, or quality loss reduces margin or raises cost per unit',
-        'manufacturing operations reports comparing stable output with rising material, labor, maintenance, supplier, defect, or downtime costs',
-        'plant-manager or financial-controller discussions about fragmented production and financial data causing inaccurate cost forecasts or delayed operational decisions',
-      );
-    }
-
-    if (
-      /\b(?:manufacturing plants?|manufacturers?|factories|factory|industrial plants?|production lines?|plant operators?|plant engineers?)\b/u.test(normalized) &&
-      /\b(?:electricity usage|electricity consumption|energy consumption|energy usage|power draw|power consumption|electricity costs?|energy costs?|kwh|kilowatt)\w*\b/u.test(normalized) &&
-      /\b(?:machines?|equipment|equipment sensors?|machine sensors?|operating hours?|maintenance records?|maintenance history|production schedules?|equipment condition|machine condition|telemetry)\b/u.test(normalized) &&
-      /\b(?:unusually high|abnormal|anomal(?:y|ies)|energy spike|power spike|losing efficiency|efficiency loss|efficiency decline|degradation|predictive maintenance|before (?:a )?failure|impending failure|breakdowns?|downtime|production interruptions?|unnecessary maintenance|electricity costs?|energy costs?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'factory maintenance or energy-management reports linking abnormal machine electricity consumption with equipment condition, degradation, or impending failure',
-        'industrial operator reports comparing equipment sensors, power draw, operating hours, maintenance history, and production schedules before breakdowns or efficiency loss',
-        'condition-monitoring or predictive-maintenance studies using energy or electrical signatures to identify deteriorating industrial equipment',
-        'plant-engineering discussions about excessive electricity cost, unexpected downtime, or unnecessary maintenance caused by energy and equipment-health data being reviewed separately',
-      );
-    }
-
-    if (
-      /\b(?:manufacturing plants?|manufacturers?|factories|factory|industrial plants?|production lines?)\b/u.test(normalized) &&
-      /\b(?:material waste|scrap|scrap records?|raw material consumption|material losses?|yield loss|quality defects?|production defects?|rework|emissions?|environmental impact|waste reduction|material efficiency|circularity|production waste)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'manufacturing operator reports linking scrap or material loss to a specific production stage, machine-output pattern, quality defect, or rework event',
-        'factory reports comparing scrap records, raw-material consumption, production output, and defect data to identify where material losses are generated',
-        'industrial sustainability reports connecting material waste, emissions, and production efficiency at line or process-stage level',
-        'manufacturing discussions about repeated defects, excessive scrap, wasted raw material, or environmental impact caused by fragmented production and quality data',
-      );
-    }
-
-    if (
-      /\b(?:engraving businesses?|engraving shops?|engraving studios?|engravers?|custom engraving|laser engraving)\b/u.test(normalized) &&
-      /\b(?:customer artwork|text details?|material types?|object dimensions?|font preferences?|placement instructions?|revision requests?|approved design|approved version|spelling mistakes?|incorrect placement|wasted materials?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'engraver or engraving-shop reports about wrong spelling, font, placement, dimensions, or material caused by incomplete or outdated customer specifications',
-        'custom-engraving reports about artwork revisions or approval versions being lost across messages, images, notes, or physical samples',
-        'engraving-business reports about remakes, wasted blanks or materials, repeated work, or delayed orders after the wrong design version was produced',
-        'operator discussions about needing a traceable final customer approval for artwork, text, font, placement, dimensions, and material before engraving starts',
-      );
-    }
-
-    if (
-      /\b(?:miniature model makers?|model makers?|scale model makers?|miniature makers?|custom miniature commissions?)\b/u.test(normalized) &&
-      /\b(?:scale requirements?|reference images?|material choices?|paint details?|dimensions?|revision requests?|approved version|customer finally approved|incorrect proportions|missed visual details|repeated work|delayed commissions?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'miniature-model-maker reports about wrong scale, proportions, dimensions, paint details, or material choices caused by incomplete or outdated customer specifications',
-        'custom miniature commission reports where reference images, revisions, or customer approvals were scattered across sketches, photos, messages, or physical samples',
-        'model-maker reports about remakes, wasted materials, repeated painting or assembly work, or delayed commissions after the wrong revision was produced',
-        'miniature commission discussions about needing one traceable final customer approval for scale, dimensions, reference images, materials, paint details, and completion deadline',
-      );
-    }
-
-    if (
-      /\b(?:shipment|shipments|cargo|supply chain|carriers?|warehouses?|customs)\b/u.test(normalized) &&
-      /\b(?:handover|chain of custody|custody transfer|tampered records?|altered tracking|trusted history|fraudulent delivery claims?|record tampering|shipment provenance|ownership records?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'logistics or supply-chain reports describing altered, conflicting, or tampered shipment tracking records across carrier, warehouse, supplier, or customs handovers',
-        'operator reports about missing custody-transfer evidence, disputed shipment ownership, or inability to reconstruct who held goods at a specific incident point',
-        'fraud or delivery-dispute reports where shipment status said delivered, transferred, or received but supporting handover records or documents conflicted',
-        'supply-chain security reports connecting document provenance, location-update integrity, handover verification, and incident attribution across multiple organizations',
-      );
-    }
-
-    if (
-      /\b(?:universities|university|higher education|online learning systems?|learning platforms?|learning management systems?|lms|online exams?|online assessments?)\b/u.test(normalized) &&
-      /\b(?:login activity|login records?|authentication logs?|exam sessions?|account permissions?|access permissions?|device information|device data|device fingerprints?|security alerts?|compromised accounts?|account compromise|suspicious activity|unauthorized access|unauthorised access|cybersecurity|academic integrity|exam integrity|false positives?|unnecessary restrictions?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'university security or LMS incident reports connecting suspicious login activity, device information, account permissions, and security alerts to compromised-account investigations',
-        'online-exam integrity reports describing unusual account or device activity during assessment sessions and how investigators distinguish compromise from legitimate behavior',
-        'higher-education security reports about unauthorized access, compromised credentials, or permission misuse across learning platforms while avoiding unnecessary restrictions on legitimate students or instructors',
-        'academic-platform operations reports where login, exam-session, device, permission, and security-event records are split across systems and slow incident review',
-      );
-    }
-
-    if (
-      /\b(?:decorative fountains?|ornamental fountains?|historic fountains?|fountain restoration specialists?|fountain restorers?|fountain maintenance contractors?|water features?)\b/u.test(normalized) &&
-      /\b(?:pump condition|fountain pumps?|water[- ]?flow|stone damage|metal damage|metal corrosion|replacement components?|replacement parts?|finish preferences?|previous repairs?|repair history|customer requests?|restoration history)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'decorative-fountain restoration reports connecting pump condition, water-flow problems, stone or metal damage, and previous repair history to repeated diagnostics or delayed work',
-        'fountain-restoration specialist reports about incorrect replacement components, missing prior repairs, or scattered condition notes causing rework',
-        'historic or ornamental fountain maintenance reports describing finish or material matching decisions alongside stone, metal, pump, or circulation condition',
-        'fountain-restoration customer-workflow reports where photographs, physical samples, repair notes, finish preferences, and customer requests are difficult to maintain as one approved service history',
-      );
-    }
-
-    if (
-      /\b(?:universities|university departments?|academic departments?|department chairs?|faculty planners?|academic planners?)\b/u.test(normalized) &&
-      /\b(?:instructors?|teaching assistants?|academic support staff|faculty workload|teaching workload|course staffing|course assignments?|student demand|course enrollment|staff availability|scheduling conflicts?|overloaded staff)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'university or department reports about uneven faculty teaching loads, overloaded instructors, or teaching assistants carrying disproportionate course-support workloads',
-        'academic staffing reports connecting instructor expertise, availability, course enrollment, or student demand with difficult course-assignment decisions',
-        'higher-education operations reports about scheduling conflicts, understaffed courses, delayed student assistance, or fragmented faculty workload records',
-        'department-chair or faculty-operations reports about staffing, enrollment, teaching schedules, and performance records being split across separate systems',
-      );
-    }
-
-    if (
-      /\b(?:independent pet trainers?|pet trainers?|dog trainers?|animal trainers?|behavior trainers?|behaviour trainers?)\b/u.test(normalized) &&
-      /\b(?:behavioral problems?|behavioural problems?|training exercises?|progress between sessions?|owner feedback|triggers?|recommended routines?|training sessions?|behavior history|behaviour history)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'dog-trainer or pet-trainer reports about behavioral triggers, exercises, session notes, and owner feedback being difficult to compare across repeat training sessions',
-        'animal-behavior training reports about scattered notebooks, videos, messages, or verbal owner updates causing missing behavior history or inconsistent instructions',
-        'trainer reports about repeated exercises, forgotten triggers, or slower progress because prior session outcomes and home-practice feedback were not tracked consistently',
-        'pet behavior consultant reports about owner routines, recommended exercises, and between-session progress being hard to maintain in one chronological record',
-      );
-    }
-
-    if (
-      /\b(?:home healthcare|home health care|remote patient monitoring|patients? outside hospitals?|home monitoring)\b/u.test(normalized) &&
-      /\b(?:connected medical devices?|medical devices?|wearable devices?|patient readings?|device status|telemetry|security alerts?|access logs?|unauthorized access|device malfunction)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'home-health or remote-patient-monitoring reports where connected medical-device readings, device status, telemetry, access logs, or security alerts are fragmented across separate tools',
-        'clinical or device-operations reports about abnormal remote readings that are difficult to distinguish between patient deterioration, sensor or device malfunction, connectivity failure, and unauthorized access',
-        'remote-monitoring reports connecting device faults, false alarms, security incidents, or missing device context with delayed or unnecessary clinical intervention',
-        'connected-medical-device security reports about unauthorized access, exposed patient data, compromised telemetry, or trust problems affecting remote patient monitoring',
-      );
-    }
-
-    if (
-      /\b(?:piano technicians?|piano tuners?|piano tuning|piano service technicians?|piano repair technicians?)\b/u.test(normalized) &&
-      /\b(?:tuning history|service history|mechanical problems?|replaced parts?|replacement parts?|customer preferences?|room conditions?|follow[- ]up visits?|maintenance recommendations?|service visits?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'piano-technician or piano-tuner reports about tuning history, service notes, recurring mechanical faults, or replaced parts being difficult to compare across repeat visits',
-        'piano-service reports about handwritten notes, paper invoices, or personal messages causing lost maintenance recommendations, repeated diagnostics, or inconsistent service',
-        'piano-maintenance reports linking room humidity or environmental conditions, customer preferences, and prior service history to follow-up tuning or repair decisions',
-        'instrument-service reports about unnecessary repeated work or part replacement caused by missing historical repair and maintenance records',
-      );
-    }
-
-    if (
-      /\b(?:restaurants?|commercial kitchens?|restaurant kitchens?|food service kitchens?|kitchen managers?|restaurant managers?)\b/u.test(normalized) &&
-      /\b(?:electricity|gas|energy consumption|utility bills?|utility costs?|refrigeration|cooking equipment|ventilation|lighting|heating|equipment usage|equipment runtime|energy waste|energy efficiency|carbon|emissions?|environmental impact|consumption spikes?|energy monitoring)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'restaurant-manager reports about unusually high electricity or gas bills without visibility into which refrigeration, cooking, ventilation, lighting, or heating equipment caused the increase',
-        'commercial-kitchen reports connecting equipment runtime or operating habits with energy waste, utility costs, or carbon impact',
-        'restaurant energy-efficiency discussions about fragmented utility bills, equipment usage, and kitchen activity preventing high-impact improvement decisions',
-      );
-    }
-
-    if (
-      /\b(?:home[- ]cleaning businesses?|home cleaning businesses?|residential cleaning businesses?|residential cleaning services?|house cleaning businesses?|house cleaning services?|cleaning companies?|cleaning teams?)\b/u.test(normalized) &&
-      /\b(?:customer preferences?|recurring appointments?|recurring bookings?|room[- ]specific instructions?|room instructions?|employee assignments?|cleaner assignments?|cleaning supplies?|last[- ]minute schedule changes?|schedule changes?|missed tasks?|scheduling conflicts?|forgotten customer requests?|service quality|phone calls?|messaging apps?|handwritten notes?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'home-cleaning operator reports about cleaners missing room-specific instructions or customer preferences shared through calls, messages, or handwritten notes',
-        'residential-cleaning reports about recurring appointment conflicts, last-minute schedule changes, or incorrect employee assignments',
-        'cleaning-business reports about forgotten customer requests, missing supplies, missed tasks, or inconsistent service quality caused by fragmented coordination',
-      );
-    }
-
-    if (
-      /\b(?:hospital|hospitals|healthcare|clinical units?|pharmacy|medical)\b/u.test(normalized) &&
-      /\b(?:medical supplies?|clinical supplies?|medical inventory|supply inventory|stock levels?|stockouts?|blood products?|pharmacy inventory|expiration|expiry|expired products?|supplier deliveries?|emergency supply requests?|reorder|medical supply chain)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'hospital or pharmacy staff reports about medical-supply stockouts, shortages, or unavailable items delaying clinical work',
-        'hospital inventory reports about expired medicines, blood products, or supplies caused by weak expiration and stock visibility',
-        'clinical-unit reports about emergency purchases or emergency requests caused by disconnected departmental inventory data',
-        'hospital supply-chain reports about supplier delivery delays, reorder failures, or inventory mismatches across departments',
-      );
-    }
-
-    if (
-      /\b(?:costume rental shops?|costume rentals?|costume shops?|costume hire|wardrobe rentals?)\b/u.test(normalized) &&
-      /\b(?:customer measurements?|reserved outfits?|accessories|alteration requests?|return dates?|garment condition|special event requirements?|double reservations?|delayed pickups?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'costume-rental or adjacent formalwear-rental reports about double reservations, reserved outfits being unavailable, or wrong-size allocations',
-        'wardrobe or costume-rental reports about missing accessories, lost fitting or alteration instructions, or customer measurements being recorded incorrectly',
-        'costume, dress, or formalwear-rental reports about damaged garments being missed, return-date tracking failures, or delayed pickups caused by fragmented records',
-      );
-    }
-
-    if (
-      /\b(?:municipal governments?|municipalities|city governments?|city councils?|public works|local authorities?)\b/u.test(normalized) &&
-      /\b(?:roads?|streetlights?|street lights?|public spaces?|city infrastructure|public infrastructure|maintenance requests?|citizen complaints?|inspection reports?|repair histories?|asset prioritization|maintenance spending)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'municipal or public-works reports about road, streetlight, or public-infrastructure repairs being delayed while complaint and inspection data remain fragmented',
-        'city budget or maintenance reports showing that delayed infrastructure repairs increase costs, backlog, or deterioration',
-        'resident or operator reports about repeated maintenance complaints, unresolved repair requests, or lower-priority work being scheduled ahead of more urgent infrastructure issues',
-      );
-    }
-
-    if (
-      /\b(?:cake decorators?|cake decorating|custom cake decorators?|home bakers?|independent bakers?|cake artists?|custom cake businesses?|bakery decorators?)\b/u.test(normalized) &&
-      /\b(?:custom orders?|design references?|flavors?|flavours?|allergy notes?|allergies|dietary requirements?|cake dimensions?|decoration details?|pickup times?|last[- ]minute revisions?|chat messages?|handwritten notes?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'cake-decorator reports about customer design references, flavors, allergy or dietary notes, dimensions, decoration details, or pickup instructions being lost across messages, photos, sketches, or paper notes',
-        'custom-cake reports about a missed or last-minute customer revision causing the wrong design, flavor, size, decoration, pickup expectation, or repeated work',
-        'baker reports about allergy or dietary requirements being overlooked because order details were incomplete, outdated, or scattered',
-        'cake-business reports about wasted ingredients, remakes, or delayed orders caused by using an outdated approved design or missing customer change',
-      );
-    }
-
-    if (
-      /\b(?:upholstery workshops?|upholstery shops?|upholsterers?|reupholstery|furniture upholstery)\b/u.test(normalized) &&
-      /\b(?:fabric samples?|fabric selections?|fabric orders?|measurements?|material quantities?|material choices?|repair requests?|design changes?|customer notes?|completion dates?|delivery dates?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'upholsterer reports about lost fabric samples, forgotten customer notes, or design changes not reaching the work order',
-        'upholstery-shop reports about wrong furniture measurements, fabric-order mistakes, remakes, or wasted material',
-        'custom-upholstery reports about material shortages, wrong fabric selections, or delayed repair and furniture delivery dates',
-        'workshop reports about customer repair requests and project details scattered across paper notes, photos, messages, and samples',
-      );
-    }
-
-    if (
-      /\b(?:hospital|hospitals|healthcare|biomedical engineering|clinical engineering|medical)\b/u.test(normalized) &&
-      /\b(?:medical equipment|medical devices?|equipment tracking|asset tracking|maintenance status|equipment availability|device availability|utilization|departmental movement|storage rooms?|operating rooms?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'hospital staff reports about time lost searching for mobile medical equipment across departments or storage areas',
-        'clinical or biomedical reports connecting unavailable devices with delayed procedures or patient-care workflows',
-        'hospital asset-management reports linking equipment location with maintenance status, utilization, or readiness',
-        'hospital operations reports about underused equipment, duplicate purchases, or poor device availability caused by fragmented tracking',
-      );
-    }
-
-    if (
-      /\b(?:art restoration workshops?|art restoration|art conservation|conservation workshops?|conservation studios?|art conservators?|painting restoration|artifact conservation)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'art conservator reports about scattered condition photographs, treatment notes, or incomplete restoration histories',
-        'conservation-workshop reports about missing previous-repair, material-use, or treatment-stage documentation',
-        'restoration workflow reports involving missed client instructions, duplicate work, incorrect treatment decisions, or delivery delays',
-      );
-    }
-
-    if (
-      /\b(?:scattered|different platforms|separate systems|multiple apps|social media messages?|paper forms?|personal devices?|different organizations?)\b/u.test(
-        normalized,
-      )
-    ) {
-      targets.push('fragmented records or information across multiple tools or organizations');
-    }
-    if (/\b(?:missing|conflicting|lost|inconsistent)\b/u.test(normalized)) {
-      targets.push('missing, conflicting, lost, or inconsistent records');
-    }
-    if (/\b(?:price|prices|cost|expenses?|budget)\b/u.test(normalized)) {
-      targets.push('price, cost, or budget comparison friction');
-    }
-    if (
-      /\b(?:appointment|appointments|booking|bookings|reservation|reservations|double booking|double bookings|availability conflict|availability conflicts)\b/u.test(
-        normalized,
-      )
-    ) {
-      targets.push('availability, scheduling, or booking conflicts');
-    }
-    if (/\b(?:handover|chain of custody|responsibility|dispute|liability)\b/u.test(normalized)) {
-      targets.push('handover, custody, responsibility, or dispute attribution gaps');
-    }
-    if (/\b(?:temperature|sensor|telemetry|location updates?)\b/u.test(normalized)) {
-      targets.push('missing or inconsistent location or sensor telemetry');
-    }
-    if (/\b(?:preferences?|personal changes|substitutions?|reviews?|design revisions?)\b/u.test(normalized)) {
-      targets.push('preference, revision, or change-history tracking');
-    }
-    if (/\b(?:consent forms?|deposits?|aftercare|session history)\b/u.test(normalized)) {
-      targets.push('client forms, deposits, aftercare, or session-history coordination');
-    }
-    if (/\b(?:choreography|costume|costumes|rehearsal|rehearsals|performance readiness|recital|recitals)\b/u.test(normalized)) {
-      targets.push('choreography, rehearsal, costume, or performance-readiness tracking gaps');
-    }
-    if (
-      /\b(?:shoemakers?|shoe makers?|shoemaking|shoe making|bespoke shoemakers?|custom shoe makers?|custom footwear|bespoke footwear|handmade shoes?|made[- ]to[- ]measure shoes?|cordwainers?)\b/u.test(
-        normalized,
-      )
-    ) {
-      targets.push(
-        'bespoke shoemaking reports about incorrect foot measurements, sizing errors, or repeated fittings',
-        'custom-footwear discussions about leather, sole, stitching, design revisions, final approval, material waste, or delayed completion',
-      );
-    }
-
-    if (
-      /\b(?:shoe repair shop|shoe repair shops|cobbler|cobblers)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'shoe-repair operator complaints about lost tickets, misplaced items, wrong repair instructions, or delayed collection',
-        'repair-order tracking failures involving technician notes, material choices, payment status, or promised pickup dates',
-      );
-    }
-    if (
-      /\b(?:agricultural exporters?|fresh produce exporters?|produce exporters?|fruit exporters?|vegetable exporters?|agricultural export(?:ers?| companies?| businesses?))\b/u.test(normalized) &&
-      /\b(?:transportation delays?|storage costs?|warehouse expenses?|market prices?|product spoilage|shipment profitability|profit margins?|profit estimates?|supplier payments?|sales revenues?|financial losses?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'fresh-produce export evidence linking cold-chain or transportation delays to spoilage, logistics cost, or economic loss',
-        'agricultural exporter reports about storage and warehouse costs, market-price volatility, supplier payments, sales revenue, or shipment margins',
-        'operator discussions showing fragmented shipment, harvest, warehouse, supplier-payment, and sales records that make route or product profitability difficult to reconcile',
-        'evidence about route-level, product-level, or distribution-stage losses in perishable agricultural exports',
-      );
-    }
-    if (
-      /\b(?:eyeglass frame repair specialists?|eyeglass repair specialists?|eyewear repair specialists?|optical frame repair specialists?|spectacle frame repair specialists?|glasses repair specialists?)\b/u.test(normalized) &&
-      /\b(?:frame damage|previous repairs?|replacement hinges?|replacement parts?|color matching|colour matching|fit preferences?|adjustment notes?|pickup dates?|repair history)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'eyeglass-repair operator reports about incorrect hinges or replacement parts, repeated adjustments, or missing prior repair history',
-        'optical repair discussions about customer fit preferences, color matching, adjustment notes, scattered repair records, or delayed pickup dates',
-      );
-    }
-
-    if (
-      /\b(?:agricultural cooperatives?|farm cooperatives?|farmers? cooperatives?|farms?|agriculture|fresh produce|produce growers?|cold storage)\b/u.test(normalized) &&
-      /\b(?:harvest(?:ing)?|storage|cold chain|temperature|shipments?|transportation|delivery|spoilage|transport costs?|storage capacity|shipment locations?|logistics)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'agricultural cooperative reports about produce spoilage, cold-chain temperature excursions, or delayed transport between farms, storage, and markets',
-        'farm logistics discussions about shipment visibility, storage-capacity constraints, partial loads, or unnecessary transport costs',
-      );
-    }
-    if (
-      /\b(?:picture framing shops?|custom framing shops?|frame shops?|framers?)\b/u.test(normalized) &&
-      /\b(?:artwork measurements?|frame selections?|glass selections?|moulding|material availability|special handling|completion dates?|paper forms?|verbal communication|order changes?|wasted supplies?)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'picture-framing operator complaints about incorrect measurements, wrong glass or moulding selections, remakes, and wasted materials',
-        'framing-shop discussions about paper order forms, verbal change requests, material shortages, or delayed completion dates',
-      );
-    }
-
-    if (
-      /\b(?:manufacturing|manufacturer|manufacturers|factory|factories|production line|production lines|production planner|production planners|industrial plant|industrial plants)\b/u.test(normalized) &&
-      /\b(?:raw materials?|supplier deliveries?|supplier updates?|supply chain|inventory|warehouse|warehouses|shipment|shipments|production schedules?|demand changes?|demand forecast|bottlenecks?|order prioritization|stock)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'manufacturing reports of production disruption caused by delayed raw-material or supplier arrivals',
-        'factory and warehouse discussions about inventory mismatches, supply bottlenecks, demand changes, or order reprioritization',
-      );
-    }
-
-    if (
-      /\b(?:locksmith|locksmiths|field service|mobile service|emergency service|service dispatch|field technician|field technicians)\b/u.test(normalized) &&
-      /\b(?:dispatch|technician|technicians|service requests?|emergency calls?|locations?|tools?|replacement parts?|parts inventory|job assignment|availability|repeated trips?|payment status)\b/u.test(normalized)
-    ) {
-      targets.push(
-        'locksmith or field-service reports of delayed dispatch, unavailable technicians, or repeated trips caused by missing tools or parts',
-        'operator discussions about phone-based job coordination, technician availability, service-request details, or mobile inventory errors',
-      );
-    }
-
-    const workflowArchetype = RequestWorkflowArchetypeUtil.classify({
-      requestDescription: description,
-      intentConcepts: concepts,
-    });
-    if (
-      workflowArchetype.archetype ===
-      'ENTERPRISE_POLICY_COMPLIANCE_OPERATIONS'
-    ) {
-      targets.push(
-        'HR or compliance reports about outdated employee handbooks, conflicting leave rules, or inconsistent policy versions across departments',
-        'enterprise HR reports about repeated employee policy questions, manual document review, or delayed regulatory-policy updates',
-      );
-    }
-    if (
-      workflowArchetype.archetype ===
-      'BUILDING_ENVIRONMENTAL_MONITORING_OPERATIONS'
-    ) {
-      targets.push(
-        'property-manager or building-maintenance reports connecting temperature, humidity, water use, air quality, or equipment readings with abnormal building conditions',
-        'residential-complex reports about fragmented sensor or building-system data delaying maintenance or hiding leaks, poor air quality, or uncomfortable conditions',
-        'building-operations reports about water waste, environmental problems, or higher operating costs caused by late detection of abnormal environmental readings',
-        'operator discussions about needing one view across IoT sensors, environmental measurements, and maintenance response for large residential properties',
-      );
-    }
-    if (
-      workflowArchetype.archetype ===
-      'PROPERTY_ASSET_PERFORMANCE_OPERATIONS'
-    ) {
-      targets.push(
-        'property-investor or property-manager reports about rental income, maintenance or operating expenses, vacancy, financing costs, or mortgage interest reducing cash flow, NOI, profitability, or returns',
-        'rental-portfolio discussions connecting vacancy, rent changes, repair spending, financing costs, and local market conditions with inaccurate or changing investment returns',
-        'operator reports about fragmented rent, maintenance, vacancy, financing, and market records making property-level financial performance difficult to assess',
-        'real-estate investment reports about unexpected expenses or delayed recognition of declining property performance',
-      );
-    }
-    if (workflowArchetype.archetype === 'FOOD_STORAGE_CONDITION_OPERATIONS') {
-      targets.push(
-        'commercial-kitchen reports linking refrigeration or freezer temperature failures to food spoilage, ingredient loss, or unnecessary disposal',
-        'restaurant-kitchen reports about expiration tracking, cold-storage condition records, or maintenance information being fragmented and delaying spoilage detection',
-        'foodservice operator reports about freezer or refrigeration equipment failures causing inventory loss or inconsistent food quality',
-      );
-    }
-    if (workflowArchetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS') {
-      const profile = RequestWorkflowIntentProfileUtil.resolve(description);
-      const subject = profile.restorationSubject || 'restoration';
-      targets.push(
-        `${subject} practitioner reports about incomplete condition records, previous repair history, or lost original design details causing restoration mistakes`,
-        `${subject} restoration reports about replacement-material or color/finish matching errors, rework, or material waste caused by missing history or samples`,
-        `${subject} conservation discussions about photographs, handwritten notes, physical samples, and customer treatment preferences being scattered across records`,
-      );
-    }
-
-    if (
-      workflowArchetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' &&
-      /\b(?:jewelry repair|jewellery repair|jeweler|jeweller)\b/u.test(
-        normalized,
-      )
-    ) {
-      targets.push(
-        'jewelry-repair reports involving lost or misplaced customer items, disputed item condition, or missing paper repair tickets',
-        'jeweler reports about estimate approvals, incorrect modifications, gemstone or measurement records, or disputed repair results',
-      );
-    }
-
-    if (
-      workflowArchetype.archetype === 'PHYSICAL_LOCAL_SERVICE_OPERATIONS' ||
-      workflowArchetype.archetype === 'RESTORATION_CONSERVATION_OPERATIONS' ||
-      workflowArchetype.archetype === 'RENTAL_INVENTORY_OPERATIONS' ||
-      workflowArchetype.archetype === 'CUSTOM_COMMISSION_APPROVAL_OPERATIONS'
-    ) {
-      const actor = RequestDynamicQueryUtil.extractActor(description) || 'service operator';
-      const workflowConcepts = concepts.slice(0, 4);
-      targets.push(
-        `${actor} reports describing failures, omissions, repeated work, delays, or inconsistent outcomes tied to ${workflowConcepts.slice(0, 2).join(' and ') || 'the described service workflow'}`,
-        `${actor} discussions showing how records, customer instructions, schedules, equipment, visit history, or staff handoffs become fragmented in the described workflow`,
-      );
-    }
-
-    if (
-      /\b(?:school|schools|university|universities|learning platform|learning platforms|lms|online assessment|online assessments)\b/u.test(normalized) &&
-      /\b(?:security|suspicious|login|academic misuse|academic integrity|anomal)\w*\b/u.test(normalized)
-    ) {
-      targets.push(
-        'institutional reports of suspicious LMS logins, account takeover, or fragmented security-event review',
-        'online-assessment integrity investigations involving unusual account behavior while minimizing false positives',
-      );
-    }
-
-    for (const pain of this.extractPainSignals(description)) {
-      if (targets.length >= 6) break;
-      targets.push(pain);
-    }
-
-    for (const concept of concepts) {
-      if (targets.length >= 6) break;
-      targets.push(`${concept} coordination or record gap`);
-    }
-
-    return this.normalizeStrings(targets, 6, 6);
-  }
-
-  private inferSourceFocus(description: string): RequestCollectionSourceFocus[] {
-    const archetype = RequestWorkflowArchetypeUtil.classify({
-      requestDescription: description,
-    });
-
-    return [...RequestWorkflowArchetypeUtil.sourceFocusFor(archetype.archetype)];
-  }
-
-  private extractConcepts(value: string): string[] {
+  }  private extractConcepts(value: string): string[] {
     const normalized = value
       .normalize('NFKC')
       .toLowerCase()
@@ -5300,49 +3090,30 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     fallback: string | null,
     description: string,
   ): string | null {
-    const canonical = inferDominantRequestDomainName(description);
-
     const cleaned = value
       ?.replace(/\s+/gu, ' ')
       .replace(/[.!?]+$/gu, '')
+      .replace(/\b(?:custom\s+order\s+management|order\s+management|workflow\s+management|design\s+specification\s+management|specification\s+management|tracking\s+platform|management\s+platform|intelligence\s+workspace|operations\s+workspace)\b.*$/iu, '')
+      .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, '')
+      .replace(/\b(?:maker|makers|painter|painters)\b$/iu, '')
+      .replace(/\s+/gu, ' ')
       .trim();
 
-    if (!cleaned) return canonical ?? fallback;
-
-    const broadCanonicalDomains = new Set([
-      'education',
-      'business operations',
-      'government',
-      'logistics',
-      'healthcare',
-      'tourism',
-      'media & entertainment',
-      'sports & fitness',
-      'wardrobe & personal fashion management',
-      'artificial intelligence',
-      'cybersecurity',
-      'internet of things',
-    ]);
+    if (!cleaned) return fallback;
+    if (cleaned.length > 80) return fallback;
     if (
-      canonical &&
-      broadCanonicalDomains.has(canonical.trim().toLocaleLowerCase()) &&
-      cleaned.trim().toLocaleLowerCase() !== canonical.trim().toLocaleLowerCase()
-    ) {
-      return cleaned;
-    }
-    if (canonical) return canonical;
-
-    if (
-      cleaned.length > 80 ||
-      /^(?:people|users|companies|travelers|travellers|members|owners|teams?|students?)\b/iu.test(cleaned) ||
-      /\b(?:often|struggle|struggles|need to|want to|who|coordinate artist|studios coordinate)\b/iu.test(cleaned)
+      /^(?:people|users|companies|businesses|organizations|teams|students)\b/iu.test(
+        cleaned,
+      )
     ) {
       return fallback;
     }
+    if (!this.domainLabelMatchesRequest(cleaned, description)) {
+      return fallback ?? cleaned;
+    }
 
-    const wordCount = cleaned.split(/\s+/u).length;
-    if (wordCount >= 2 && wordCount <= 8) return cleaned;
-    return canonical ?? fallback;
+    const wordCount = cleaned.split(/\s+/u).filter(Boolean).length;
+    return wordCount >= 1 && wordCount <= 8 ? cleaned : fallback;
   }
 
   private filterAiQueriesForRequest(
@@ -5406,6 +3177,9 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         ) {
           return false;
         }
+        if (this.isSolutionSeekingEvidenceQuery(normalized, description)) {
+          return false;
+        }
 
         const queryTokens = this.semanticTokens(normalized);
         const actorOverlap = [...actorTokens].filter((token) =>
@@ -5464,72 +3238,125 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       seenContentWords.add(key);
       return true;
     });
+    const terminalFillers = new Set([
+      'and', 'or', 'about', 'with', 'for', 'to', 'of', 'on', 'in', 'from',
+      'by', 'regarding', 'concerning',
+    ]);
+    while (
+      deduplicatedWords.length > 0 &&
+      terminalFillers.has(
+        (deduplicatedWords[deduplicatedWords.length - 1] ?? '')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ''),
+      )
+    ) {
+      deduplicatedWords.pop();
+    }
     if (deduplicatedWords.length < 3) return null;
     return deduplicatedWords.slice(0, 9).join(' ');
   }
 
-  private queryPreservesSpecializedRequestIntent(
+  private isSolutionSeekingEvidenceQuery(
     query: string,
     description: string,
   ): boolean {
     const request = description.toLocaleLowerCase();
     const candidate = query.toLocaleLowerCase();
-    if (!RequestWorkflowIntentProfileUtil.isTemplateQueryCompatible(description, query)) {
-      return false;
-    }
-    if (!RequestQueryProvenanceUtil.isQueryGrounded({ requestDescription: description, query })) {
-      return false;
-    }
+    const requestIsSoftwareFailure =
+      /\b(?:api|sdk|software|application|app|platform|system|server|database|webhook|endpoint|runtime|repository|source code)\b/u.test(request) &&
+      /\b(?:bug|bugs|error|errors|failure|failures|failed|crash|crashes|latency|timeout|timeouts|outage|unavailable|broken|incorrect|security|permission|authentication|data loss)\w*\b/u.test(request);
+    if (requestIsSoftwareFailure) return false;
 
     if (
-      /\b(?:restaurant delivery platforms?|food delivery platforms?|food delivery apps?|restaurant delivery apps?|online food ordering services?|meal delivery platforms?|restaurant courier platforms?)\b/u.test(request) &&
-      /\b(?:suspicious orders?|account takeovers?|account takeover|refund abuse|fraudulent refunds?|promotional abuse|promo(?:tional)? fraud|promo code abuse|payment behavior|device information|device signals?|customer complaints?|security alerts?|false positives?|blocked legitimate (?:users?|customers?)|coordinated abuse)\b/u.test(request)
+      /\b(?:tracking|management|monitoring|scheduling|coordination|approval|measurement|analytics|inventory|workflow)\s+(?:software|platform|app|application|tool|dashboard|system|tracker)\b/u.test(candidate)
     ) {
-      if (/\b(?:carrier scan|proof of delivery|shipping address|warehouse handoff|warehouse update|parcel tracking|shipment chain of custody|chain of custody|lost merchandise|freight|cargo)\b/u.test(candidate)) {
-        return false;
-      }
-      const actor = /\b(?:restaurant delivery|food delivery|online food ordering|meal delivery|delivery app|restaurant courier)\b/u.test(candidate);
-      const fraudAxis = /\b(?:fraud|suspicious order|account takeover|refund abuse|promotional abuse|promo abuse|promo fraud|payment behavior|device signal|customer complaint|security alert|false positive|blocked legitimate|coordinated abuse)\w*\b/u.test(candidate);
-      if (!actor || !fraudAxis) return false;
+      return true;
     }
 
-    const specializedIntents: readonly {
-      readonly requestPattern: RegExp;
-      readonly requiredQueryPattern: RegExp;
-      readonly conflictingQueryPattern?: RegExp;
-    }[] = [
-      {
-        requestPattern: /\b(?:universities|university|higher education|online learning systems?|learning platforms?|learning management systems?|lms|online exams?|online assessments?)\b.*\b(?:login|account permissions?|device|security alerts?|compromised|unauthorized access|cybersecurity|exam integrity|academic integrity)\b|\b(?:login|account permissions?|device|security alerts?|compromised|unauthorized access|cybersecurity|exam integrity|academic integrity)\b.*\b(?:universities|university|higher education|online learning systems?|learning platforms?|lms|online exams?|online assessments?)\b/u,
-        requiredQueryPattern: /\b(?:university|higher education|learning platform|lms|online exam|online assessment|login|account|permission|device|security|authentication|compromis|unauthorized|integrity)\w*\b/u,
-        conflictingQueryPattern: /\b(?:faculty workload|teaching workload|course staffing|course assignment|staffing shortage|teaching assistant workload|department staffing)\b/u,
-      },
-      {
-        requestPattern: /\b(?:decorative fountains?|ornamental fountains?|historic fountains?|fountain restoration specialists?|fountain restorers?|fountain maintenance contractors?|water features?)\b/u,
-        requiredQueryPattern: /\b(?:fountain|water feature)\b/u,
-        conflictingQueryPattern: /\b(?:wall paintings?|decorative laminates?|satoumi|electronic components?|fountain pen|software restoration)\b/u,
-      },
-      {
-        requestPattern: /\b(?:medical waste|clinical waste|healthcare waste|waste disposal|disposal records?|expired supplies?|expiration dates?|environmental footprint|disposal costs?)\b/u,
-        requiredQueryPattern: /\b(?:waste|disposal|expired|expiration|expiry|unused|environmental|sustainability)\b/u,
-        conflictingQueryPattern: /\b(?:stockout|stock out|shortage|blood product shortage|supplier delivery delay)\b/u,
-      },
-      {
-        requestPattern: /\b(?:seller risk|listing risk|seller trust|listing trust|fake seller|suspicious listing|pre[- ]purchase risk)\b/u,
-        requiredQueryPattern: /\b(?:seller|listing|fraud|trust|risk|buyer|dispute)\b/u,
-      },
-      {
-        requestPattern: /\b(?:violin bow|bow rehair|rehairing|archetier)\b/u,
-        requiredQueryPattern: /\b(?:violin bow|bow|rehair|rehairing|archetier|luthier)\b/u,
-      },
-    ];
+    return /\b(?:software|app|application|tool|dashboard|tracker|solution)\s*$/u.test(
+      candidate,
+    );
+  }  private normalizeRetrievalVocabulary(
+    value: unknown,
+    _description: string,
+    _problemProfile?: RequestCanonicalProblemProfile,
+    _domainIdentity?: RequestCollectionDomainIdentity,
+  ): string[] {
+    if (!Array.isArray(value)) return [];
 
-    for (const intent of specializedIntents) {
-      if (!intent.requestPattern.test(request)) continue;
-      if (intent.conflictingQueryPattern?.test(candidate)) return false;
-      if (!intent.requiredQueryPattern.test(candidate)) return false;
-    }
+    /*
+     * Vocabulary is AI-owned retrieval metadata, not evidence. Do not apply a
+     * domain-specific deny-list or require literal overlap with requester words:
+     * that would defeat the purpose of semantic terminology expansion. Safety
+     * comes from anchoring every vocabulary probe to the immutable request
+     * identity and from the downstream evidence verifier.
+     */
+    return this.deduplicatePhrases(
+      value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) =>
+          item
+            .normalize('NFKC')
+            .replace(/[^\p{L}\p{N}\s+.#/_'-]+/gu, ' ')
+            .replace(/\s+/gu, ' ')
+            .trim(),
+        )
+        .filter((item) => item.length >= 2 && item.length <= 80)
+        .filter((item) => SourceSpecificEvidenceQueryUtil.isSafe(item)),
+    ).slice(0, 10);
+  }
 
-    return true;
+  private buildVocabularyAnchoredQueries(
+    vocabulary: readonly string[],
+    problemProfile?: RequestCanonicalProblemProfile,
+    domainIdentity?: RequestCollectionDomainIdentity,
+  ): string[] {
+    if (vocabulary.length === 0) return [];
+
+    const actor = this.compactSearchPhrase(
+      problemProfile?.actor ?? domainIdentity?.actor ?? '',
+      3,
+    );
+    const object = this.compactSearchPhrase(
+      problemProfile?.object ?? domainIdentity?.object ?? '',
+      3,
+    );
+    const workflow = this.compactSearchPhrase(
+      problemProfile?.workflow ?? domainIdentity?.workflow ?? '',
+      3,
+    );
+    const failure = this.compactSearchPhrase(
+      problemProfile?.friction ??
+        problemProfile?.failureModes?.[0] ??
+        domainIdentity?.failure ??
+        '',
+      3,
+    );
+    const anchor = [actor, object].filter(Boolean).join(' ');
+
+    return this.deduplicateQueries(
+      vocabulary.map((term, index) =>
+        [
+          anchor,
+          this.compactSearchPhrase(term, 5),
+          index % 2 === 0 ? failure : workflow,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      ),
+    ).slice(0, 8);
+  }
+
+  private compactSearchPhrase(value: string, maxWords: number): string {
+    return value
+      .normalize('NFKC')
+      .replace(/[^\p{L}\p{N}\s+.#/_'-]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .split(/\s+/u)
+      .filter(Boolean)
+      .slice(0, Math.max(1, maxWords))
+      .join(' ');
   }
 
   private normalizeQueries(value: unknown, maxItems: number): string[] {
@@ -5572,17 +3399,22 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       }
     }
 
-    while (
-      output.length > 0 &&
-      new Set([
-        'and', 'or', 'but', 'to', 'of', 'for', 'from', 'with', 'without',
-        'into', 'across', 'between', 'while', 'because',
-      ]).has(output[0])
-    ) {
+    const boundaryFillers = new Set([
+      'and', 'or', 'but', 'to', 'of', 'for', 'from', 'with', 'without',
+      'into', 'across', 'between', 'while', 'because', 'about', 'on', 'in',
+      'by', 'regarding', 'concerning',
+    ]);
+    while (output.length > 0 && boundaryFillers.has(output[0])) {
       output.shift();
     }
+    while (
+      output.length > 0 &&
+      boundaryFillers.has(output[output.length - 1] ?? '')
+    ) {
+      output.pop();
+    }
 
-    return output.join(' ').slice(0, 140);
+    return this.truncateAtBoundary(output.join(' '), 140);
   }
 
   private deduplicateQueries(values: readonly string[]): string[] {
@@ -5629,6 +3461,22 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     return output;
   }
 
+  private truncateAtBoundary(value: string, maxLength: number): string {
+    const cleaned = value.replace(/\s+/gu, ' ').trim();
+    if (cleaned.length <= maxLength) return cleaned;
+    const prefix = cleaned.slice(0, maxLength + 1);
+    const sentenceMatches = [...prefix.matchAll(/(.+?[.!?])(?:\s|$)/gu)];
+    const sentence = sentenceMatches.at(-1)?.[1]?.trim();
+    if (sentence && sentence.length >= Math.floor(maxLength * 0.45)) {
+      return sentence;
+    }
+    const wordBoundary = prefix
+      .slice(0, maxLength)
+      .replace(/\s+\S*$/u, '')
+      .trim();
+    return wordBoundary || cleaned.slice(0, maxLength).trim();
+  }
+
   private normalizeStrings(
     value: unknown,
     maxItems: number,
@@ -5640,9 +3488,60 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     return this.deduplicatePhrases(
       value
         .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.replace(/\s+/gu, ' ').trim().slice(0, maxLength))
+        .map((item) => this.truncateAtBoundary(item.replace(/\s+/gu, ' ').trim(), maxLength))
         .filter((item) => item.length >= minLength),
     ).slice(0, maxItems);
+  }
+
+  private normalizeInferredSecondaryScopes(
+    value: unknown,
+    description: string,
+    excludedDomainNames: readonly string[],
+  ): string[] {
+    const excluded = new Set(
+      excludedDomainNames
+        .map((item) => this.normalizeComparableDomainName(item))
+        .filter(Boolean),
+    );
+
+    return this.normalizeStrings(value, 4, 2, 80)
+      .filter((scope) =>
+        RequestQueryProvenanceUtil.isDerivedConceptGrounded(
+          description,
+          scope,
+        ),
+      )
+      .filter(
+        (scope) =>
+          !excluded.has(this.normalizeComparableDomainName(scope)),
+      )
+      .filter(
+        (scope) =>
+          !/\b(?:platform|dashboard|software|system|solution|workspace|application|app|tracking|management)\b/iu.test(
+            scope,
+          ),
+      )
+      .slice(0, 4);
+  }
+
+  private extractSecondaryScopePhrases(value: string): string[] {
+    if (!value.trim()) return [];
+
+    return this.deduplicatePhrases(
+      value
+        .split(/\s*(?:,|;|\band\b|&|\/)\s*/giu)
+        .map((item) => item.replace(/^(?:the|a|an)\s+/iu, '').trim())
+        .filter((item) => {
+          const words = item.split(/\s+/u).filter(Boolean);
+          return words.length >= 1 && words.length <= 5;
+        })
+        .filter(
+          (item) =>
+            !/^(?:data|information|records?|workflow|operations?|process|services?|users?|companies?|staff|teams?)$/iu.test(
+              item,
+            ),
+        ),
+    ).slice(0, 4);
   }
 
   /**
@@ -5669,7 +3568,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     });
     return this.deduplicatePhrases(
       extracted
-        .map((item) => item.replace(/\s+/gu, ' ').trim().slice(0, maxLength))
+        .map((item) => this.truncateAtBoundary(item.replace(/\s+/gu, ' ').trim(), maxLength))
         .filter((item) => item.length >= minLength),
     ).slice(0, maxItems);
   }
@@ -5683,28 +3582,152 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ? record.mode.trim().toLocaleUpperCase()
       : '';
     const summaryRaw = typeof record.summary === 'string'
-      ? record.summary.replace(/\s+/gu, ' ').trim().slice(0, 360)
+      ? this.truncateAtBoundary(record.summary.replace(/\s+/gu, ' ').trim(), 360)
       : '';
     const explicitProblemRaw = typeof record.explicitProblem === 'string'
-      ? record.explicitProblem.replace(/\s+/gu, ' ').trim().slice(0, 600)
+      ? this.truncateAtBoundary(record.explicitProblem.replace(/\s+/gu, ' ').trim(), 600)
       : '';
     const desiredOutcomeRaw = typeof record.desiredOutcome === 'string'
-      ? record.desiredOutcome.replace(/\s+/gu, ' ').trim().slice(0, 360)
+      ? this.truncateAtBoundary(record.desiredOutcome.replace(/\s+/gu, ' ').trim(), 360)
       : '';
-    const explicitProblem = explicitProblemRaw &&
+    const aiExplicitProblem = explicitProblemRaw &&
       RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, explicitProblemRaw)
       ? explicitProblemRaw
       : null;
-    const mode = modeRaw === 'EXPLICIT_PROBLEM' && explicitProblem
+    const deterministicExplicitProblem =
+      this.resolveDeterministicExplicitProblem(description);
+    const explicitProblem = deterministicExplicitProblem
+      ? deterministicExplicitProblem
+      : modeRaw === 'EXPLICIT_PROBLEM' && aiExplicitProblem
+        ? aiExplicitProblem
+        : null;
+    const mode = explicitProblem
       ? 'EXPLICIT_PROBLEM'
       : 'DISCOVERY_INTENT';
 
+    if (
+      modeRaw === 'DISCOVERY_INTENT' &&
+      deterministicExplicitProblem
+    ) {
+      this.logger.debug(
+        '[PREPARING] Deterministic explicit-problem sanity guard overrode an AI DISCOVERY_INTENT false negative.',
+      );
+    }
+
     return {
       mode,
-      summary: summaryRaw || description.slice(0, 360),
+      summary: summaryRaw || this.truncateAtBoundary(description, 360),
       explicitProblem: mode === 'EXPLICIT_PROBLEM' ? explicitProblem : null,
       desiredOutcome: desiredOutcomeRaw || null,
     };
+  }
+
+  private resolveDeterministicExplicitProblem(
+    description: string,
+  ): string | null {
+    const normalized = description.replace(/\s+/gu, ' ').trim();
+    if (normalized.length < 32) return null;
+
+    /*
+     * A requester does not need to spell out a downstream consequence for a
+     * current pain to be a real problem statement.  Phrases such as
+     * "operators often struggle to coordinate ..." or "users cannot verify
+     * ..." already assert present friction.  The previous implementation
+     * required a second "leads to errors/delays/..." clause as well, which
+     * caused valid TEXT_ONLY requests to be downgraded to DISCOVERY_INTENT and
+     * then incorrectly subjected to the domain-only zero-evidence guard.
+     *
+     * Keep this linguistic rather than domain-specific: strong current-pain
+     * assertions are sufficient on their own; weaker state descriptions such
+     * as "records are scattered" still require workflow/state or consequence
+     * context below.
+     */
+    const strongCurrentPainAssertion =
+      /\b(?:often|frequently|usually|currently|regularly)\s+(?:struggle|struggles|struggling|face|faces|facing|experience|experiences)\b|\b(?:struggle|struggles|struggling)\s+to\b|\b(?:have|has)\s+difficulty\b|\b(?:find|finds)\s+it\s+difficult\b|\b(?:cannot|can't|unable\s+to|difficult\s+to|hard\s+to|fail(?:s)?\s+to)\b|(?:يعاني|تعاني|يعانون|يواجه|تواجه|يواجهون|صعوبة|يصعب|لا يستطيع|لا تستطيع|لا يمكن)/iu.test(
+        normalized,
+      );
+
+    const fragmentedCurrentState =
+      /\b(?:information|data|records?|measurements?|scores?|feedback|details?|notes?|files?|requirements?|specifications?)\b[^.!?]{0,160}\b(?:scattered|fragmented|split|spread|disconnected|stored separately|kept separately|reviewed separately|managed separately)\b|(?:متناثر|متناثرة|مبعثر|مبعثرة|مجزأ|مجزأة|منفصل|منفصلة|غير متسق|غير متسقة)/iu.test(
+        normalized,
+      );
+    if (!strongCurrentPainAssertion && !fragmentedCurrentState) return null;
+
+    const hypotheticalPainOnly =
+      /\b(?:may|might|could|would)\s+(?:struggle|face|experience|have difficulty|find it difficult)\b/iu.test(
+        normalized,
+      ) &&
+      !/\b(?:often|frequently|usually|currently|regularly)\s+(?:struggle|face|experience)\b|\b(?:cannot|can't|unable\s+to)\b|\b(?:is|are)\s+(?:scattered|fragmented|split|disconnected)\b/iu.test(
+        normalized,
+      );
+    if (hypotheticalPainOnly && !fragmentedCurrentState) return null;
+
+    const futureOnly =
+      /^(?:i|we)\s+(?:want|would like|need|plan|hope)\b|^(?:أريد|نريد|أرغب|نرغب|نخطط|أحتاج|نحتاج)\b/iu.test(
+        normalized,
+      );
+    if (
+      futureOnly &&
+      !strongCurrentPainAssertion &&
+      !fragmentedCurrentState
+    ) {
+      return null;
+    }
+
+    if (strongCurrentPainAssertion) {
+      return this.extractExplicitProblemAssertion(normalized);
+    }
+
+    const workflowOrState =
+      /\b(?:workflow|process|tracking|assessment|approval|revision|handoff|coordination|records?|data|information|measurements?|sizing|fabric|materials?|reference photos?|feedback|scores?|case exposure|readiness|orders?|deadlines?|specifications?|versions?)\b|(?:سير العمل|العملية|التتبع|التقييم|الموافقة|المراجعات|السجلات|البيانات|المعلومات|القياسات|المقاسات|الأقمشة|المواد|الصور المرجعية|التغذية الراجعة|الدرجات|الحالات السريرية|الجاهزية|الطلبات|المواعيد|المواصفات|الإصدارات)/iu.test(
+        normalized,
+      );
+    if (!workflowOrState) return null;
+
+    const consequence =
+      /\b(?:can\s+lead\s+to|leads?\s+to|can\s+result\s+in|results?\s+in|caus(?:e|es|ing)|which\s+(?:can\s+)?lead|making\s+it\s+difficult|creates?|resulting\s+in)\b[^.!?]{0,220}\b(?:errors?|rework|remakes?|waste|wasted|delays?|missed|loss|losses|uneven|inconsistent|difficulty|problems?|failures?|lower quality|poor quality|slow|late|incorrect|wrong)\b|(?:يؤدي|تؤدي|قد يؤدي|قد تؤدي|ينتج عن|تنتج عن|يسبب|تسبب)[^.!?]{0,220}(?:أخطاء|إعادة العمل|هدر|تأخير|تأخيرات|ضياع|خسائر|مشاكل|فشل|ضعف|جودة|أبطأ|بطء)/iu.test(
+        normalized,
+      );
+    if (!consequence) return null;
+
+    const currentStateStructure =
+      /\b(?:often|frequently|usually|currently|regularly)\b|\b(?:is|are)\s+(?:scattered|fragmented|split|disconnected)|\b(?:cannot|can't|unable to|difficult to|hard to)\b|(?:غالبًا|عادة|حاليًا|بشكل متكرر|لا يستطيع|لا تستطيع|لا يمكن|يصعب|صعوبة)/iu.test(
+        normalized,
+      );
+    if (!currentStateStructure) return null;
+
+    return this.extractExplicitProblemAssertion(normalized);
+  }
+
+  private extractExplicitProblemAssertion(description: string): string {
+    const normalized = description.replace(/\s+/gu, ' ').trim();
+    const sentences = normalized
+      .split(/(?<=[.!?])\s+/u)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+    if (sentences.length <= 1) {
+      return this.truncateAtBoundary(normalized, 600);
+    }
+
+    const painPattern =
+      /\b(?:often|frequently|usually|currently|regularly)\s+(?:struggle|struggles|face|faces|experience|experiences)\b|\b(?:struggle|struggles|struggling)\s+to\b|\b(?:have|has)\s+difficulty\b|\b(?:cannot|can't|unable\s+to|difficult\s+to|hard\s+to|fail(?:s)?\s+to)\b|\b(?:is|are)\s+(?:scattered|fragmented|split|disconnected)\b|(?:يعاني|تعاني|يعانون|يواجه|تواجه|يواجهون|صعوبة|يصعب|لا يستطيع|لا تستطيع|لا يمكن|متناثر|مبعثر|مجزأ)/iu;
+    const consequencePattern =
+      /\b(?:lead|leads|caus(?:e|es)|result(?:s)?\s+in|delay|delays|waste|rework|loss|losses|error|errors|failure|failures|difficulty)\b|(?:يؤدي|تؤدي|يسبب|تسبب|تأخير|هدر|خسائر|أخطاء|فشل)/iu;
+
+    const startIndex = sentences.findIndex((sentence) =>
+      painPattern.test(sentence),
+    );
+    if (startIndex < 0) {
+      return this.truncateAtBoundary(normalized, 600);
+    }
+
+    const selected = [sentences[startIndex]];
+    const next = sentences[startIndex + 1];
+    if (next && consequencePattern.test(next) && !/\b(?:could|would|should)\b/iu.test(next)) {
+      selected.push(next);
+    }
+
+    return this.truncateAtBoundary(selected.join(' '), 600);
   }
 
   private normalizeProblemProfile(
@@ -5716,7 +3739,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const record = this.isRecord(value) ? value : {};
     const scalar = (key: string, fallbackValue: string): string => {
       const candidate = typeof record[key] === 'string'
-        ? String(record[key]).replace(/\s+/gu, ' ').trim().slice(0, 240)
+        ? this.truncateAtBoundary(String(record[key]).replace(/\s+/gu, ' ').trim(), 240)
         : '';
       if (
         candidate &&
@@ -5750,96 +3773,94 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     return CanonicalRequestUnderstandingUtil.resolve(description);
   }
 
+  private inferReusableIndustryDomainName(
+    description: string,
+    identity: RequestCollectionDomainIdentity,
+    domainCatalog: readonly RequestDomainCatalogEntry[],
+  ): string | null {
+    if (domainCatalog.length === 0) return null;
 
-  private extractProblemConsequences(description: string): string[] {
-    const normalized = description.replace(/\s+/gu, ' ').trim();
-    const match = normalized.match(
-      /\b(?:can\s+lead\s+to|lead\s+to|leads\s+to|can\s+result\s+in|results?\s+in|caus(?:e|es|ing))\s+([^.!?]{5,320})/iu,
+    const requestTokens = this.meaningfulIdentityTokens(
+      `${description} ${identity.actor} ${identity.object} ${identity.workflow}`,
     );
-    if (!match?.[1]) return [];
-    return this.deduplicatePhrases(
-      match[1]
-        .split(/,|;|\band\b/iu)
-        .map((value) => value.replace(/\s+/gu, ' ').trim())
-        .filter((value) => value.length >= 4),
-    ).slice(0, 6);
+    if (requestTokens.size === 0) return null;
+
+    const ranked = domainCatalog
+      .map((domain) => {
+        const domainTokens = this.meaningfulIdentityTokens(
+          [domain.name, ...domain.keywords].join(' '),
+        );
+        if (domainTokens.size === 0) {
+          return { domain, score: 0, overlap: 0 };
+        }
+
+        const overlap = [...domainTokens].filter((token) =>
+          requestTokens.has(token),
+        ).length;
+        const domainCoverage = overlap / domainTokens.size;
+        const overlapStrength = Math.min(1, overlap / 2);
+        const exactNameMention = description
+          .toLocaleLowerCase()
+          .includes(domain.name.trim().toLocaleLowerCase())
+          ? 1
+          : 0;
+        const score =
+          domainCoverage * 0.7 +
+          overlapStrength * 0.2 +
+          exactNameMention * 0.1;
+        return { domain, score, overlap };
+      })
+      .filter((candidate) => candidate.overlap > 0)
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          right.overlap - left.overlap ||
+          left.domain.name.localeCompare(right.domain.name),
+      );
+
+    const best = ranked[0];
+    if (!best) return null;
+
+    return best.score >= 0.5 ? best.domain.name : null;
   }
 
-  private buildProblemProfileQueries(
-    profile: RequestCanonicalProblemProfile,
-    description: string,
-  ): string[] {
-    const compact = (value: string, maxWords: number): string =>
-      value
-        .normalize('NFKC')
-        .toLocaleLowerCase()
-        .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
-        .replace(/\b(?:often|frequently|usually|commonly|struggle|struggles|struggling|difficult|difficulty|analyzing|analysing|managing|manage|because|which|that|these|those|their|with|without|across|separately|frequently)\b/gu, ' ')
-        .replace(/\s+/gu, ' ')
-        .trim()
-        .split(/\s+/u)
-        .filter(Boolean)
-        .slice(0, maxWords)
-        .join(' ');
-
-    const actor = compact(profile.actor, 3);
-    const object = compact(profile.object, 4);
-    const workflow = compact(profile.workflow, 4);
-    const failures = profile.failureModes.slice(0, 3).map((item) => compact(item, 3));
-    const consequences = profile.consequences.slice(0, 2).map((item) => compact(item, 2));
-    const candidates = [
-      [actor, object, failures[0]],
-      [actor, workflow, failures[0]],
-      [object, workflow, failures[1]],
-      [actor, object, consequences[0]],
-      [object, failures[1], consequences[1]],
-      [actor, workflow, failures[2]],
-    ]
-      .map((parts) => parts.filter(Boolean).join(' ').split(/\s+/u).slice(0, 9).join(' '))
-      .filter(Boolean);
-
-    return this.deduplicateQueries(candidates)
-      .filter((query) => {
-        const words = query.split(/\s+/u).filter(Boolean);
-        return words.length >= 3 && words.length <= 9 &&
-          RequestQueryProvenanceUtil.isQueryGrounded({
-            requestDescription: description,
-            query,
-          });
-      })
-      .slice(0, 6);
+  private isActorLikeDomainLabel(value: string): boolean {
+    return /\b(?:owner|owners|manager|managers|lead|leads|buyer|buyers|seller|sellers|user|users|operator|operators|customer|customers|client|clients|staff|team|teams|employee|employees|engineer|engineers|designer|designers|brand owner|business owner)\b/iu.test(
+      value,
+    );
   }
 
   private normalizeNewAiDomainName(
     value: string | null,
     identity: RequestCollectionDomainIdentity,
     description: string,
+    domainCatalog: readonly RequestDomainCatalogEntry[],
   ): string | null {
-    const nicheCraftDomainName =
-      RequestNicheCustomCraftUtil.suggestedDomainName(description);
-    if (nicheCraftDomainName) return nicheCraftDomainName;
-
     const cleaned = value
       ?.replace(/\s+/gu, ' ')
       .replace(/[.!?]+$/gu, '')
+      .replace(/\b(?:custom\s+order\s+management|order\s+management|workflow\s+management|design\s+specification\s+management|specification\s+management|tracking\s+platform|management\s+platform|intelligence\s+workspace|operations\s+workspace)\b.*$/iu, '')
+      .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, '')
       .trim();
+    const reusableIndustryName = this.inferReusableIndustryDomainName(
+      description,
+      identity,
+      domainCatalog,
+    );
     const identityName = this.composeDomainNameFromIdentity(identity);
-    if (!cleaned) return identityName;
+    if (!cleaned) return reusableIndustryName ?? identityName;
 
-    const restorationRequest =
-      /\b(?:restoration|restore|restorer|restorers|conservation|conservator|repair specialist)\b/iu.test(
-        description,
-      );
-    const restorationLabel =
-      /\b(?:restoration|conservation|repair)\b/iu.test(cleaned);
-    if (restorationRequest && !restorationLabel) {
-      return identityName ?? cleaned;
+    if (this.isActorLikeDomainLabel(cleaned)) {
+      return reusableIndustryName ?? identityName ?? cleaned;
     }
 
     if (!this.domainLabelMatchesRequest(cleaned, description)) {
-      return identityName ?? cleaned;
+      return reusableIndustryName ?? identityName ?? cleaned;
     }
-    return cleaned;
+    const words = cleaned.split(/\s+/u).filter(Boolean);
+    return words.length <= 8
+      ? cleaned
+      : reusableIndustryName ?? identityName ?? cleaned;
   }
 
   private composeDomainNameFromProblemProfile(
@@ -5861,7 +3882,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const record = this.isRecord(value) ? value : {};
     const read = (key: string): string => {
       const candidate = typeof record[key] === 'string'
-        ? String(record[key]).replace(/\s+/gu, ' ').trim().slice(0, 140)
+        ? this.truncateAtBoundary(String(record[key]).replace(/\s+/gu, ' ').trim(), 140)
         : '';
       return candidate || this.fallbackIdentityPhrase(description, key);
     };
@@ -5897,14 +3918,26 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   ): boolean {
     const domainText = [domain.name, ...domain.keywords].join(' ');
     const objectOverlap = this.semanticOverlapRatio(identity.object, domainText);
-    const workflowOverlap = this.semanticOverlapRatio(identity.workflow, domainText);
     const actorOverlap = this.semanticOverlapRatio(identity.actor, domainText);
     const identityGrounded = [identity.object, identity.workflow]
       .every((value) => RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, value));
 
     if (!identityGrounded) return false;
-    if (objectOverlap < 0.34 || workflowOverlap < 0.28) return false;
-    return actorOverlap >= 0.18 || objectOverlap >= 0.5;
+    const domainTokens = this.meaningfulIdentityTokens(domainText);
+    const requestTokens = this.meaningfulIdentityTokens(
+      `${description} ${identity.actor} ${identity.object}`,
+    );
+    const overlap = [...domainTokens].filter((token) =>
+      requestTokens.has(token),
+    ).length;
+    if (overlap === 0) return false;
+
+    const domainCoverage = overlap / Math.max(1, domainTokens.size);
+    return (
+      domainCoverage >= 0.4 ||
+      objectOverlap >= 0.25 ||
+      actorOverlap >= 0.25
+    );
   }
 
   private semanticOverlapRatio(left: string, right: string): number {
@@ -5940,6 +3973,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   ): string | null {
     const actor = identity.actor
       .replace(/\b(?:independent|professional|professionals|specialist|specialists|practitioner|practitioners|staff|teams?|departments?)\b/giu, ' ')
+      .replace(/\b(?:maker|makers|painter|painters|owner|owners|manager|managers|lead|leads|buyer|buyers|seller|sellers|operator|operators|designer|designers)\b$/iu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
     const actorWords = actor.split(/\s+/u).filter(Boolean);
@@ -5974,289 +4008,80 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       const key = item.trim().toLocaleLowerCase();
       if (!key || !activeSourceKeys.has(key) || output.includes(key)) continue;
       output.push(key);
-      if (output.length >= 7) break;
+      if (output.length >= 8) break;
     }
     return output;
-  }
-
-  private shouldUseReviewStores(description: string): boolean {
-    const normalized = description.toLocaleLowerCase();
-    if (!normalized.trim()) return false;
-
-    // Reviews are especially useful when end users/operators interact with a
-    // repeatable management, monitoring, approval, booking, finance, asset, or
-    // service workflow for which mobile tools commonly exist. This is a recall
-    // lane only; listings never become trusted evidence by themselves.
-    const workflow = /\b(?:manage|management|monitor|monitoring|track|tracking|schedule|scheduling|booking|appointment|approval|revision|records?|inventory|billing|payment|budget|maintenance|energy|property|tenant|customer|client|delivery|logistics|security|fraud|health|fitness|tattoo|engraving|restaurant|marketplace|workflow)\w*\b/u.test(normalized);
-    const clearlyResearchOnly = /\b(?:laboratory assay|molecular|genome|protein sequence|theorem|pure mathematics|particle physics)\b/u.test(normalized);
-    const specialistConservationWorkflow =
-      /\b(?:restoration specialists?|conservation specialists?|conservators?|restorers?|pottery restoration|ceramic restoration|object conservation|art conservation|luthiers?|violin varnish|museum conservation|heritage conservation)\b/u.test(normalized) &&
-      /\b(?:condition|surface condition|cracks?|missing fragments?|glaze|previous repairs?|previous coatings?|treatment history|restoration history|condition reports?|color matching|colour matching|material choices?|material mixtures?|application techniques?|preservation preferences?|workshop records?|workshop notes?|handwritten notes?|handwritten formulas?|photographs?|physical samples?)\b/u.test(normalized);
-    const mainstreamDigitalAnalogue =
-      /\b(?:booking|appointment|customer orders?|client orders?|inventory|billing|payment|delivery|tenant|property management|restaurant ordering|loyalty accounts?|subscription accounts?|account security|fraud)\b/u.test(normalized);
-    if (specialistConservationWorkflow && !mainstreamDigitalAnalogue) {
-      return false;
-    }
-    return workflow && !clearlyResearchOnly;
-  }
-
-  private buildRuntimeSourcePlans(
+  }  private buildRuntimeSourcePlans(
     selectedSourceKeys: readonly string[],
     searchQueries: readonly string[],
     description: string,
     problemProfile?: RequestCanonicalProblemProfile,
     plannerPrioritySourceKeys: readonly string[] = [],
+    retrievalVocabulary: readonly string[] = [],
   ): RequestCollectionSourcePlan[] {
-    const normalizedQueries = this.deduplicateQueries(searchQueries).slice(0, 20);
-    if (normalizedQueries.length === 0) return [];
+    const sourceKeys = this.deduplicatePhrases(selectedSourceKeys)
+      .map((key) => key.toLocaleLowerCase())
+      .slice(0, 8);
+    const queries = this.deduplicateQueries(searchQueries).slice(0, 24);
+    const vocabularyQueries = this.buildVocabularyAnchoredQueries(
+      retrievalVocabulary,
+      problemProfile,
+      undefined,
+    );
+    if (sourceKeys.length === 0 || (queries.length === 0 && vocabularyQueries.length === 0)) return [];
 
-    const archetype = RequestWorkflowArchetypeUtil.classify({
-      requestDescription: description,
-      plannedQueries: normalizedQueries,
-      selectedDomainNames: [],
-    });
-    const preferredKeys = new Set(
-      archetype.preferredSourceKeys.map((key) => key.toLocaleLowerCase()),
-    );
-    const blockedKeys = new Set(
-      archetype.blockedSourceKeys.map((key) => key.toLocaleLowerCase()),
-    );
-    const plannerPriorityKeys = new Set(
+    const priority = new Set(
       plannerPrioritySourceKeys.map((key) => key.toLocaleLowerCase()),
     );
-    const normalizedDescription = description.toLocaleLowerCase();
-    const peopleProblemHeavy =
-      /\b(?:complaints?|residents?|tenants?|customers?|clients?|patients?|passengers?|workers?|staff|operators?|specialists?|practitioners?|collectors?|performers?|restaurants?|kitchens?|facilities?|facility teams?|maintenance teams?|technicians?)\b/u.test(normalizedDescription) &&
-      /\b(?:delay|delayed|missing|wrong|incorrect|repeated|rework|struggle|difficult|complaint|failure|failed|fault|breakdown|downtime|spoilage|fragmented|scattered|separate systems?|maintenance|repair|inspection|approval|preference|alert|temperature)\w*\b/u.test(normalizedDescription);
-    const researchOnly = /\b(?:assay|molecular|genome|protein sequence|theorem|particle physics|pure mathematics)\b/u.test(normalizedDescription);
+    const assignments = new Map<string, string[]>(
+      sourceKeys.map((key) => [key, []] as const),
+    );
 
-    const resolveTier = (
-      sourceKey: string,
-    ): 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE' => {
-      const key = sourceKey.toLocaleLowerCase();
-      if (peopleProblemHeavy && !researchOnly && (key === 'reddit' || key === 'forum')) {
-        return 'PRIMARY';
-      }
-      if (peopleProblemHeavy && !researchOnly && (key === 'news' || key === 'crossref' || key === 'youtube')) {
-        return plannerPriorityKeys.has(key) || preferredKeys.has(key) ? 'PRIMARY' : 'SECONDARY';
-      }
-      if (archetype.confidence >= 0.85) {
-        if (preferredKeys.has(key)) return 'PRIMARY';
-        if (blockedKeys.has(key)) return 'MICRO_PROBE';
-        return plannerPriorityKeys.has(key) ? 'SECONDARY' : 'MICRO_PROBE';
-      }
-      return plannerPriorityKeys.has(key) ? 'PRIMARY' : 'MICRO_PROBE';
-    };
-
-    const scoreForSource = (sourceKey: string, query: string): number => {
-      const value = query.toLocaleLowerCase();
-      let score = 0;
-      if (sourceKey === 'reddit' || sourceKey === 'forum') {
-        if (/\b(?:struggle|missing|lost|wrong|failed|problem|issue|delay|rework|customer|client|handoff|scattered|unauthorized|fraud|waste|maintenance)\w*\b/u.test(value)) score += 4;
-        if (/\b(?:specialist|practitioner|operator|manager|warehouse|restorer|conservator|therapist|driver|hospital|facility)\w*\b/u.test(value)) score += 2;
-      } else if (sourceKey === 'crossref') {
-        if (/\b(?:assessment|management|monitoring|records?|documentation|analysis|detection|conservation|rehabilitation|procurement|logistics|energy|maintenance|efficiency)\w*\b/u.test(value)) score += 4;
-      } else if (sourceKey === 'news' || sourceKey === 'gdelt') {
-        if (/\b(?:fraud|theft|stolen|missing|unauthorized|incident|delay|investigation|risk|failure|loss|oversight|waste|cost|maintenance|energy)\w*\b/u.test(value)) score += 4;
-      } else if (sourceKey === 'youtube' || sourceKey === 'blog') {
-        if (/\b(?:repair|restoration|workflow|condition|diagnos|treatment|material|tracking|monitoring|maintenance|energy)\w*\b/u.test(value)) score += 3;
-      } else if (sourceKey === 'app-store' || sourceKey === 'google-play') {
-        if (/\b(?:management|manager|monitor|tracking|scheduler|booking|inventory|billing|maintenance|energy|property|tenant|customer|client|delivery|security|workflow)\w*\b/u.test(value)) score += 5;
-        if (/\b(?:wrong|missing|delay|rework|error|problem|issue|approval|revision)\w*\b/u.test(value)) score += 1;
-      }
-      if (RequestQueryProvenanceUtil.isQueryGrounded({
-        requestDescription: description,
-        query,
-      })) score += 3;
-      if (plannerPriorityKeys.has(sourceKey)) score += 2;
-      if (preferredKeys.has(sourceKey)) score += 2;
-      if (blockedKeys.has(sourceKey)) score -= 4;
-      return score;
-    };
-
-    const descriptors = selectedSourceKeys.map((sourceKey) => {
-      const sourceTier = resolveTier(sourceKey);
-      return {
-        sourceKey,
-        sourceTier,
-        budget: sourceTier === 'PRIMARY' ? 3 : sourceTier === 'SECONDARY' ? 2 : 1,
-      } as const;
+    queries.forEach((query, index) => {
+      const sourceKey = sourceKeys[index % sourceKeys.length];
+      assignments.get(sourceKey)?.push(query);
     });
 
-    /*
-     * Coverage invariant: every PREPARING search query is executed by at least
-     * one collector whenever aggregate source capacity permits it. The old
-     * per-source ranking could silently omit the model's third/fourth query,
-     * making the persisted plan disagree with what actually reached sources.
-     */
-    const assignedCoverage = new Map<string, string[]>();
-    descriptors.forEach((descriptor) => assignedCoverage.set(descriptor.sourceKey, []));
-    for (const query of normalizedQueries) {
-      const candidates = descriptors
-        .filter((descriptor) =>
-          (assignedCoverage.get(descriptor.sourceKey)?.length ?? 0) < descriptor.budget,
-        )
-        // Review stores are product-discovery lanes; use them for guaranteed
-        // coverage only if ordinary community/research lanes are saturated.
-        .sort((left, right) => {
-          const leftStore = ['app-store', 'google-play'].includes(left.sourceKey) ? 1 : 0;
-          const rightStore = ['app-store', 'google-play'].includes(right.sourceKey) ? 1 : 0;
-          const tierWeight = (tier: typeof left.sourceTier): number =>
-            tier === 'PRIMARY' ? 8 : tier === 'SECONDARY' ? 4 : 0;
-          const leftLoad = assignedCoverage.get(left.sourceKey)?.length ?? 0;
-          const rightLoad = assignedCoverage.get(right.sourceKey)?.length ?? 0;
-          return (
-            tierWeight(right.sourceTier) +
-            scoreForSource(right.sourceKey, query) -
-            rightStore * 3 -
-            rightLoad * 2
-          ) - (
-            tierWeight(left.sourceTier) +
-            scoreForSource(left.sourceKey, query) -
-            leftStore * 3 -
-            leftLoad * 2
-          );
-        });
-      const selected = candidates[0];
-      if (!selected) break;
-      assignedCoverage.get(selected.sourceKey)?.push(query);
-    }
-
-    return descriptors
-      .map((descriptor, sourceIndex) => {
-        const { sourceKey, sourceTier, budget } = descriptor;
-        const ranked = normalizedQueries
-          .map((query, queryIndex) => ({
-            query,
-            queryIndex,
-            score: scoreForSource(sourceKey, query),
-          }))
-          .sort((left, right) =>
-            right.score - left.score ||
-            ((left.queryIndex + sourceIndex) % normalizedQueries.length) -
-              ((right.queryIndex + sourceIndex) % normalizedQueries.length),
-          )
-          .map((entry) => entry.query);
-
-        const guaranteedQueries = assignedCoverage.get(sourceKey) ?? [];
-        const rankedQueries = this.deduplicateQueries([
-          ...guaranteedQueries,
-          ...ranked,
-          normalizedQueries[(sourceIndex * 2) % normalizedQueries.length] ?? '',
-        ])
-          .filter(Boolean)
-          .slice(0, budget);
-
-        const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
+    return sourceKeys
+      .map((sourceKey) => {
+        const assigned = assignments.get(sourceKey) ?? [];
+        const budget = Math.max(1, Math.min(priority.has(sourceKey) ? 4 : 3, 4));
+        const sourceVocabulary = vocabularyQueries.length > 0
+          ? [
+              vocabularyQueries[sourceKeys.indexOf(sourceKey) % vocabularyQueries.length],
+              vocabularyQueries[(sourceKeys.indexOf(sourceKey) + 1) % vocabularyQueries.length],
+            ].filter((query): query is string => Boolean(query))
+          : [];
+        const baseQueries = this.deduplicateQueries([
+          ...assigned,
+          ...sourceVocabulary,
+          ...queries,
+        ]).slice(0, Math.max(7, budget * 3));
+        const sourceQueries = SourceSpecificEvidenceQueryUtil.compile({
           sourceKey,
-          baseQueries: rankedQueries,
+          baseQueries,
           requestDescription: description,
           problemProfile,
           maxQueries: budget,
-          // Always preserve an assigned planner query. Source adaptation adds
-          // weaker supporting/broad variants; it never replaces the AI seed.
           preserveBaseQueries: true,
         });
-        const queries = this.deduplicateQueries([
-          ...guaranteedQueries,
-          ...compiledQueries,
-          ...rankedQueries,
-        ]).slice(0, budget);
-
         return {
           sourceKey,
-          queries,
-          sourceTier,
-          routingHints:
-            sourceKey === 'forum'
-              ? this.resolveDeterministicForumRoutingHints(description).slice(0, 4)
-              : [],
+          queries:
+            sourceQueries.length > 0
+              ? sourceQueries
+              : baseQueries.slice(0, budget),
+          sourceTier: priority.has(sourceKey) ? 'PRIMARY' as const : 'SECONDARY' as const,
+          /*
+           * Forum discovery is query-driven. Do not encode named niche forums
+           * in backend code; the collector may discover specialist communities
+           * from the semantic query itself, and recovery can change that query
+           * from observed yield.
+           */
+          routingHints: [],
         };
       })
       .filter((plan) => plan.queries.length > 0);
-  }
-
-  private normalizeSourcePlans(
-    value: unknown,
-    selectedSourceKeys: readonly string[],
-    activeSourceKeys: ReadonlySet<string>,
-    description: string,
-  ): RequestCollectionSourcePlan[] {
-    if (!Array.isArray(value)) return [];
-    const selected = new Set(selectedSourceKeys);
-    const output: RequestCollectionSourcePlan[] = [];
-
-    for (const item of value) {
-      if (!this.isRecord(item)) continue;
-      const sourceKey = typeof item.sourceKey === 'string'
-        ? item.sourceKey.trim().toLocaleLowerCase()
-        : '';
-      if (!sourceKey || !activeSourceKeys.has(sourceKey)) continue;
-      if (selected.size > 0 && !selected.has(sourceKey)) continue;
-      if (output.some((entry) => entry.sourceKey === sourceKey)) continue;
-
-      const queries = this.filterAiQueriesForRequest(
-        this.normalizeQueries(item.queries, 5),
-        description,
-      ).slice(0, 5);
-      const aiRoutingHints = this.normalizeStrings(
-        item.routingHints,
-        4,
-        3,
-        140,
-      ).filter((hint) =>
-        RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, hint),
-      );
-      const routingHints = sourceKey === 'forum'
-        ? this.uniqueStrings([
-            ...this.resolveDeterministicForumRoutingHints(description),
-            ...aiRoutingHints,
-          ]).slice(0, 4)
-        : aiRoutingHints;
-      if (queries.length === 0) continue;
-      output.push({ sourceKey, queries, routingHints });
-      if (output.length >= 7) break;
-    }
-
-    return output;
-  }
-
-  private resolveDeterministicForumRoutingHints(description: string): string[] {
-    const normalized = description
-      .normalize('NFKC')
-      .toLocaleLowerCase()
-      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
-      .replace(/\s+/gu, ' ')
-      .trim();
-    if (!normalized) return [];
-
-    const hints: string[] = [];
-    const add = (value: string) => {
-      if (!hints.includes(value)) hints.push(value);
-    };
-
-    if (/\b(?:fountain pen|fountain pens|nib repair|pen restoration|pen repair)\b/u.test(normalized)) {
-      add('https://www.fountainpennetwork.com/forum/');
-    }
-    if (/\b(?:vintage camera|antique camera|film camera|camera restoration|camera repair)\b/u.test(normalized)) {
-      add('https://www.photo.net/forums/');
-    }
-    if (
-      /\b(?:antique|vintage|historic|heirloom)\s+(?:jewelry|jewellery|ring|rings|pendant|bracelet|necklace|brooch)|\b(?:jewelry|jewellery)\s+(?:restoration|repair)|\bbench jeweler\b/u.test(
-        normalized,
-      )
-    ) {
-      add('https://orchid.ganoksin.com/');
-    }
-    if (
-      /\b(?:shoe restoration|shoe repair|shoe repairer|cobbler|cobblers|footwear repair|boot repair|sneaker restoration|leather shoe repair|resoling|re-?soling)\b/u.test(
-        normalized,
-      )
-    ) {
-      add('https://leatherworker.net/forum/');
-    }
-
-    return hints;
   }
 
   private uniqueStrings(values: readonly string[]): string[] {
@@ -6287,33 +4112,137 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     return [...families].slice(0, 4);
   }
 
+  private completeDomainDiscoverySourceAssignments(input: {
+    readonly domainNames: readonly string[];
+    readonly selectedSourceKeys: readonly string[];
+    readonly aiAssignments: readonly { readonly sourceKey: string; readonly domainName: string }[];
+    readonly sourceCatalog: readonly RequestSourceCatalogEntry[];
+  }): { sourceKey: string; domainName: string }[] {
+    const domains = this.deduplicatePhrases(input.domainNames).slice(0, 3);
+    if (domains.length === 0) return [];
+
+    const selectedKeys = this.deduplicatePhrases(input.selectedSourceKeys)
+      .map((key) => key.toLocaleLowerCase());
+    const selectedSet = new Set(selectedKeys);
+    const domainByIdentity = new Map(
+      domains.map((domainName) => [this.normalizeDiscoveryIdentity(domainName), domainName] as const),
+    );
+    const sourceByKey = new Map(
+      input.sourceCatalog.map((source) => [source.key.toLocaleLowerCase(), source] as const),
+    );
+
+    const assignments: { sourceKey: string; domainName: string }[] = [];
+    const assignmentPairs = new Set<string>();
+    const perDomainCount = new Map<string, number>(
+      domains.map((domainName) => [domainName, 0]),
+    );
+    const perDomainArchetypes = new Map(
+      domains.map((domainName) => [domainName, new Set<string>()] as const),
+    );
+    const archetypeOf = (sourceKey: string): 'COMMUNITY' | 'DOCUMENTARY' | 'RESEARCH_OR_SPECIALIST' => {
+      const source = sourceByKey.get(sourceKey);
+      const description = source?.description ?? '';
+      if (/\b(?:scholarly|academic|research|stud(?:y|ies)|scientific|technical|developer|engineering|specialist)\b/iu.test(description)) {
+        return 'RESEARCH_OR_SPECIALIST';
+      }
+      if (source?.supportsComments) return 'COMMUNITY';
+      return 'DOCUMENTARY';
+    };
+    const add = (sourceKey: string, domainName: string): boolean => {
+      const key = sourceKey.toLocaleLowerCase();
+      const canonicalDomain = domainByIdentity.get(this.normalizeDiscoveryIdentity(domainName));
+      if (!selectedSet.has(key) || !canonicalDomain) return false;
+      if ((perDomainCount.get(canonicalDomain) ?? 0) >= 3) return false;
+      const pairKey = `${key}::${this.normalizeDiscoveryIdentity(canonicalDomain)}`;
+      if (assignmentPairs.has(pairKey)) return false;
+      assignmentPairs.add(pairKey);
+      assignments.push({ sourceKey: key, domainName: canonicalDomain });
+      perDomainCount.set(canonicalDomain, (perDomainCount.get(canonicalDomain) ?? 0) + 1);
+      perDomainArchetypes.get(canonicalDomain)?.add(archetypeOf(key));
+      return true;
+    };
+
+    // Keep the AI semantic assignment matrix first. Reusing one healthy source
+    // across multiple domain lanes is allowed; collection later merges those
+    // query packets into one bounded source call and AI triage decides which
+    // selected domain the returned problem actually belongs to.
+    for (const assignment of input.aiAssignments) {
+      const domainName = domainByIdentity.get(
+        this.normalizeDiscoveryIdentity(assignment.domainName),
+      );
+      if (domainName) add(assignment.sourceKey, domainName);
+    }
+
+    for (const archetype of ['COMMUNITY', 'DOCUMENTARY', 'RESEARCH_OR_SPECIALIST'] as const) {
+      for (const domainName of domains) {
+        if (perDomainArchetypes.get(domainName)?.has(archetype)) continue;
+        const candidate = selectedKeys.find((sourceKey) => archetypeOf(sourceKey) === archetype);
+        if (candidate) add(candidate, domainName);
+      }
+    }
+
+    // Ensure every selected domain receives three independent query lanes when
+    // at least one executable source exists. Source reuse is intentional here:
+    // semantic domain attribution is AI-owned, while the collector call remains
+    // deduplicated by source for latency/rate-limit safety.
+    for (const domainName of domains) {
+      let cursor = 0;
+      while ((perDomainCount.get(domainName) ?? 0) < 3 && cursor < selectedKeys.length * 2) {
+        const candidate = selectedKeys[cursor % Math.max(1, selectedKeys.length)];
+        if (candidate) add(candidate, domainName);
+        cursor += 1;
+      }
+    }
+
+    return assignments;
+  }
+
+  private buildBalancedEvidenceSourcePortfolio(
+    rankedSourceKeys: readonly string[],
+    sourceCatalog: readonly RequestSourceCatalogEntry[],
+    maxSources: number,
+  ): string[] {
+    const limit = Math.max(1, Math.min(9, maxSources));
+    const ranked = this.deduplicatePhrases(rankedSourceKeys)
+      .map((key) => key.trim().toLocaleLowerCase())
+      .filter(Boolean);
+    if (ranked.length <= 1) return ranked.slice(0, limit);
+
+    const byKey = new Map(
+      sourceCatalog.map((source) => [source.key.toLocaleLowerCase(), source] as const),
+    );
+    const directVoice = ranked.filter((key) => byKey.get(key)?.supportsComments);
+    const documentary = ranked.filter((key) => !byKey.get(key)?.supportsComments);
+    const researchDocumentary = documentary.filter((key) =>
+      /\b(?:scholarly|academic|research|stud(?:y|ies)|scientific)\b/iu.test(
+        byKey.get(key)?.description ?? '',
+      ),
+    );
+    const interleaved: string[] = [];
+
+    /*
+     * Evidence-archetype diversity is source-metadata driven, never business-
+     * domain driven. Reserve early room for direct voice, documentary reporting,
+     * and (when installed) a scholarly/research lane so niche operational
+     * requests are not forced to rely on generic web/community snippets only.
+     */
+    if (directVoice[0]) interleaved.push(directVoice[0]);
+    if (documentary[0]) interleaved.push(documentary[0]);
+    if (directVoice[1]) interleaved.push(directVoice[1]);
+    if (researchDocumentary[0]) interleaved.push(researchDocumentary[0]);
+
+    const width = Math.max(directVoice.length, documentary.length);
+    for (let index = 0; index < width; index += 1) {
+      if (directVoice[index]) interleaved.push(directVoice[index]!);
+      if (documentary[index]) interleaved.push(documentary[index]!);
+    }
+
+    return this.deduplicatePhrases([...interleaved, ...ranked]).slice(0, limit);
+  }
+
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-  }
-
-  private normalizeSourceFocus(value: unknown): RequestCollectionSourceFocus[] {
-    const allowed = new Set<RequestCollectionSourceFocus>([
-      'REVIEWS',
-      'FORUMS',
-      'TECHNICAL',
-      'NEWS',
-      'PRODUCT_DISCOVERY',
-    ]);
-    const values = Array.isArray(value)
-      ? value
-      : typeof value === 'string'
-        ? [value]
-        : [];
-
-    return [...new Set(
-      values.filter(
-        (item): item is RequestCollectionSourceFocus =>
-          typeof item === 'string' && allowed.has(item as RequestCollectionSourceFocus),
-      ),
-    )].slice(0, 4);
-  }
-
-  private normalizeScore(value: unknown, fallback: number): number {
+  }  private normalizeScore(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value)
       ? Math.max(0, Math.min(100, value))
       : fallback;

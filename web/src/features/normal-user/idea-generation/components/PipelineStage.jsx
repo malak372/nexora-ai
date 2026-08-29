@@ -9,11 +9,13 @@
  */
 import {
   Check,
+  ChevronLeft,
   ChevronRight,
   LoaderCircle,
   TriangleAlert,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { useUserExperience } from '../../../../system/user-experience';
 
 export default function PipelineStage({
   stage,
@@ -21,17 +23,27 @@ export default function PipelineStage({
   isLast,
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const { t, isArabic } = useUserExperience();
   const Icon = stage.icon;
   const isActive = stage.status === 'active';
 
-  const label =
-    stage.status === 'completed'
-      ? 'Done'
-      : isActive
-        ? 'Working'
-        : stage.status === 'failed'
-          ? 'Attention'
-          : 'Queued';
+  // Backend status -> stable translation key. Keep the mapping before render
+  // so dynamic statuses never leak raw English labels into Arabic UI.
+  const STATUS_LABEL_KEYS = {
+    completed: 'Done',
+    active: 'Working',
+    failed: 'Failed',
+    waiting: 'Queued',
+    processing: 'Processing',
+    preparing: 'Preparing',
+  };
+
+  const statusKey = isActive
+    ? 'active'
+    : String(stage.status || 'waiting').toLowerCase();
+
+  const label = t(STATUS_LABEL_KEYS[statusKey] || 'Queued');
+  const FlowArrow = isArabic ? ChevronLeft : ChevronRight;
 
   return (
     <div
@@ -121,8 +133,8 @@ export default function PipelineStage({
           {label}
         </div>
 
-        <h3>{stage.title}</h3>
-        <p>{stage.description}</p>
+        <h3>{t(stage.title)}</h3>
+        <p>{t(stage.description)}</p>
       </motion.article>
 
       {!isLast ? (
@@ -136,9 +148,9 @@ export default function PipelineStage({
             className="nx-stage-flow__spark"
             animate={
               shouldReduceMotion || !isActive
-                ? { opacity: 0, x: '-130%' }
+                ? { opacity: 0, x: isArabic ? '230%' : '-130%' }
                 : {
-                    x: ['-130%', '230%'],
+                    x: isArabic ? ['230%', '-130%'] : ['-130%', '230%'],
                     opacity: [0, 1, 1, 0],
                   }
             }
@@ -149,7 +161,7 @@ export default function PipelineStage({
             }}
           />
 
-          <ChevronRight
+          <FlowArrow
             className="nx-stage-flow__arrow"
             size={16}
             strokeWidth={2.4}

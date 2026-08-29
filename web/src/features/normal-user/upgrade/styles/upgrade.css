@@ -2081,3 +2081,234 @@
     min-height: 47px;
   }
 }
+
+
+/* FINAL_UPGRADE_DARK_RTL_POLISH */
+html.vox-user-dark .upgrade-page { color:#edf7f4 !important; }
+html.vox-user-dark :is(
+  .upgrade-checkout,
+  .upgrade-currency-preference,
+  .upgrade-methods label,
+  .upgrade-credit-price,
+  .upgrade-activation-fee,
+  .upgrade-order-summary,
+  .upgrade-quantity > button,
+  .upgrade-custom-quantity__control,
+  .upgrade-payment-stack
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .upgrade-quantity > button.selected,
+html.vox-user-dark .upgrade-methods label.selected {
+  border-color:rgba(112,205,198,.46) !important;
+  background:linear-gradient(145deg,#29483d,#20382f) !important;
+}
+html.vox-user-dark :is(.upgrade-summary-copy,.upgrade-checkout p,.upgrade-benefits p,.upgrade-credit-price small,.upgrade-activation-fee small,.upgrade-order-summary small) {
+  color:#aec1bb !important;
+}
+html.vox-user-dark :is(.upgrade-currency-preference__icon,.upgrade-methods__icon,.upgrade-methods__check) {
+  color:#8edbd4 !important;
+  background:#203a31 !important;
+}
+html.vox-user-dark .upgrade-custom-quantity__control input { color:#f3faf8 !important; background:#10201b !important; }
+html.vox-user-rtl .upgrade-page { direction:rtl; }
+html.vox-user-rtl :is(.upgrade-story__content,.upgrade-checkout,.upgrade-benefits article) { text-align:right; }
+
+
+/* FINAL_UPGRADE_DARK_SURFACE_CHILD_FIX */
+html.vox-user-dark .upgrade-methods label,
+html.vox-user-dark .upgrade-currency-preference,
+html.vox-user-dark .upgrade-credit-price,
+html.vox-user-dark .upgrade-activation-fee,
+html.vox-user-dark .upgrade-order-summary {
+  color: #edf7f4 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #172a24 !important;
+  background-image: linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .upgrade-methods label.selected {
+  border-color: rgba(112,205,198,.5) !important;
+  background: linear-gradient(145deg,#29483d,#20382f) !important;
+}
+html.vox-user-dark .upgrade-currency-preference a {
+  color: #9fddd7 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #20382f !important;
+}
+html.vox-user-dark .upgrade-activation-fee.is-inactive {
+  opacity: .82;
+}
+html.vox-user-rtl .upgrade-story__trust,
+html.vox-user-rtl .upgrade-section-title,
+html.vox-user-rtl .upgrade-currency-preference,
+html.vox-user-rtl .upgrade-order-summary {
+  direction: rtl;
+  text-align: right;
+}
+
+/* ========================================================================== */
+/* FINAL_20260827_UPGRADE_DARK_RTL_MATCH_ENGLISH                              */
+/* ========================================================================== */
+html.vox-user-dark .upgrade-page {
+  background: #091511 !important;
+}
+html.vox-user-dark .upgrade-story,
+html.vox-user-dark .upgrade-checkout {
+  color: #eef8f5 !important;
+  border-color: rgba(112,205,198,.15) !important;
+  background: linear-gradient(145deg,#172b24,#10211b) !important;
+  background-image: linear-gradient(145deg,#172b24,#10211b) !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .upgrade-story__grid {
+  opacity: .08 !important;
+}
+html.vox-user-dark .upgrade-story__orb {
+  opacity: .12 !important;
+}
+html.vox-user-dark .upgrade-benefits article,
+html.vox-user-dark .upgrade-quantity button,
+html.vox-user-dark .upgrade-currency-preference,
+html.vox-user-dark .upgrade-methods label,
+html.vox-user-dark .upgrade-credit-price,
+html.vox-user-dark .upgrade-activation-fee,
+html.vox-user-dark .upgrade-order-summary,
+html.vox-user-dark .upgrade-custom-quantity__control {
+  color: #eef8f5 !important;
+  border-color: rgba(112,205,198,.15) !important;
+  background: #173028 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .upgrade-benefits article p,
+html.vox-user-dark .upgrade-summary-copy,
+html.vox-user-dark .upgrade-checkout p,
+html.vox-user-dark .upgrade-credit-price small,
+html.vox-user-dark .upgrade-activation-fee small,
+html.vox-user-dark .upgrade-order-summary small,
+html.vox-user-dark .upgrade-methods__copy em,
+html.vox-user-dark .upgrade-currency-preference p {
+  color: #a9bdb6 !important;
+}
+html.vox-user-dark .upgrade-quantity button.selected,
+html.vox-user-dark .upgrade-methods label.selected {
+  color: #f2faf8 !important;
+  border-color: rgba(112,205,198,.40) !important;
+  background: #1d3c32 !important;
+}
+html.vox-user-dark .upgrade-methods__icon,
+html.vox-user-dark .upgrade-currency-preference__icon,
+html.vox-user-dark .upgrade-methods__check {
+  color: #9fe1db !important;
+  border-color: rgba(112,205,198,.16) !important;
+  background: #1d3a31 !important;
+}
+html.vox-user-dark .upgrade-custom-quantity__control input {
+  color: #f1f9f7 !important;
+  background: #0f201a !important;
+}
+html.vox-user-dark .upgrade-checkout-button {
+  color: #fff !important;
+  background: linear-gradient(135deg,#55b8b2,#398d88) !important;
+  border-color: rgba(112,205,198,.30) !important;
+}
+
+/* Keep the same physical left/right composition used by English. */
+html.vox-user-rtl .upgrade-page {
+  direction: ltr !important;
+}
+html.vox-user-rtl .upgrade-story,
+html.vox-user-rtl .upgrade-checkout {
+  direction: rtl !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .upgrade-benefits article,
+html.vox-user-rtl .upgrade-currency-preference,
+html.vox-user-rtl .upgrade-methods label,
+html.vox-user-rtl .upgrade-order-summary {
+  direction: rtl !important;
+  text-align: right !important;
+}
+
+html.vox-user-dark .upgrade-custom-quantity__heading > span,
+html.vox-user-dark .upgrade-section-title > span,
+html.vox-user-dark .upgrade-currency-preference small,
+html.vox-user-dark .upgrade-methods__copy b,
+html.vox-user-dark .upgrade-credit-price > div > span,
+html.vox-user-dark .upgrade-activation-fee > div > span,
+html.vox-user-dark .upgrade-order-summary > span,
+html.vox-user-dark .upgrade-checkout h2,
+html.vox-user-dark .upgrade-quantity button strong {
+  color: #eef8f5 !important;
+}
+
+html.vox-user-dark .upgrade-custom-quantity__heading > small,
+html.vox-user-dark .upgrade-section-title > small,
+html.vox-user-dark .upgrade-methods__copy em,
+html.vox-user-dark .upgrade-currency-preference p,
+html.vox-user-dark .upgrade-order-summary small {
+  color: #a8bdb6 !important;
+}
+
+.upgrade-custom-quantity__control input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  direction: ltr !important;
+  text-align: center !important;
+  padding-inline: 10px !important;
+}
+
+.upgrade-custom-quantity__control input[type='number']::-webkit-outer-spin-button,
+.upgrade-custom-quantity__control input[type='number']::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+html.vox-user-dark .upgrade-custom-quantity__control input[type='number'] {
+  border: 1px solid rgba(112, 205, 198, .18) !important;
+  outline: 0 !important;
+  color: #f4fbf9 !important;
+  background: #0d1e18 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .015) !important;
+}
+
+html.vox-user-dark .upgrade-custom-quantity__control input[type='number']:focus {
+  border-color: rgba(112, 205, 198, .48) !important;
+  box-shadow: 0 0 0 3px rgba(112, 205, 198, .07) !important;
+}
+
+html.vox-user-rtl .upgrade-checkout,
+html.vox-user-rtl .upgrade-checkout :is(.upgrade-custom-quantity__heading,.upgrade-section-title,.upgrade-credit-price,.upgrade-activation-fee,.upgrade-order-summary),
+html.vox-user-rtl .upgrade-currency-preference > div,
+html.vox-user-rtl .upgrade-methods__copy {
+  direction: rtl !important;
+  text-align: right !important;
+}
+
+
+/* FINAL_20260828_LANGUAGE_AWARE_UPGRADE_COLUMNS
+   English checkout remains on the right; Arabic checkout moves to the left. */
+@media (min-width: 981px) {
+  html.vox-user-rtl .upgrade-page {
+    grid-template-columns: minmax(370px, .72fr) minmax(0, 1.08fr) !important;
+    direction: ltr !important;
+  }
+  html.vox-user-rtl .upgrade-checkout {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    direction: rtl !important;
+    text-align: right !important;
+  }
+  html.vox-user-rtl .upgrade-story {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    direction: rtl !important;
+    text-align: right !important;
+  }
+}

@@ -133,42 +133,36 @@ export function buildCommunityAiAnalysisSchema(options?: {
 }
 
 /**
- * Small structured-output contract used only for raw evidence classification.
- * Opportunity synthesis is deliberately excluded so a large raw corpus can be
- * classified without producing an oversized JSON response.
+ * Provider transport envelope for raw evidence classification.
+ *
+ * IMPORTANT: this schema intentionally validates only the outer JSON shape.
+ * Semantic item validation happens independently inside
+ * CommunityAiAnalysisService.parseEvidenceTriageCorpus().
+ *
+ * Why this is deliberately permissive:
+ * - Hosted structured-output adapters validate the entire response atomically.
+ * - One malformed enum or one omitted field must not discard valid verdicts
+ *   for every other evidence item in the same full-corpus response.
+ * - The model still receives the exact canonical field/enumeration contract in
+ *   the prompt, while application code admits or rejects each item separately.
+ *
+ * The full corpus is still sent in one request; this is NOT batching.
  */
 export function buildCommunityAiEvidenceTriageSchema(): AiJsonSchema {
   return {
     type: 'object',
-    additionalProperties: false,
+    additionalProperties: true,
     required: ['items'],
     properties: {
-      selectedProblemFamily: { type: 'string', maxLength: 120 },
-      selectedEvidenceIds: {
-        type: 'array',
-        maxItems: 8,
-        items: { type: 'string', maxLength: 220 },
-      },
       items: {
         type: 'array',
         minItems: 1,
         maxItems: COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST,
         items: {
           type: 'object',
-          additionalProperties: false,
-          required: ['evidenceId'],
-          properties: {
-            evidenceId: { type: 'string', maxLength: 220 },
-            classification: {
-              type: 'string',
-              enum: ['DIRECT_PROBLEM', 'SUPPORTING_SIGNAL', 'CONTEXT_ONLY', 'UNRELATED'],
-            },
-            confidence: { type: 'number', minimum: 0, maximum: 100 },
-            problemFamily: { type: 'string', maxLength: 240 },
-          },
+          additionalProperties: true,
         },
       },
     },
   } as const;
 }
-

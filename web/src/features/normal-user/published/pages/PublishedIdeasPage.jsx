@@ -12,12 +12,9 @@ import {
   Archive,
   ArrowLeft,
   ArrowRight,
-  BarChart3,
   RefreshCw,
   Search,
   Send,
-  Sparkles,
-  TrendingUp,
 } from 'lucide-react';
 
 import {
@@ -45,6 +42,8 @@ import {
 import PublishedIdeaCard from '../components/PublishedIdeaCard';
 import PublicationInsightsPanel from '../components/PublicationInsightsPanel';
 import { preloadPublicationStudio } from '../../../../routes/routePreloaders';
+import { useUserExperience } from '../../../../system/user-experience';
+import NormalPageHero from '../../shared/components/NormalPageHero';
 
 import '../styles/published.css';
 
@@ -67,6 +66,7 @@ const FILTERS = [
 
 export default function PublishedIdeasPage() {
   const navigate = useNavigate();
+  const { t } = useUserExperience();
 
   const shouldReduceMotion = useReducedMotion();
 
@@ -425,119 +425,18 @@ export default function PublishedIdeasPage() {
         duration: 0.35,
       }}
     >
-      <motion.header
-        className="published-page__header"
-        initial={
-          shouldReduceMotion
-            ? undefined
-            : {
-              opacity: 0,
-              y: 24,
-              scale: 0.985,
-            }
-        }
-        animate={{
-          opacity: 1,
-          y: 0,
-          scale: 1,
-        }}
-        transition={{
-          duration: 0.66,
-          ease: [
-            0.22,
-            1,
-            0.36,
-            1,
-          ],
-        }}
-      >
-        <div className="published-page__orb published-page__orb--one" />
-
-        <div className="published-page__orb published-page__orb--two" />
-
-        <div className="published-page__grid" />
-
-        <div>
-          <span className="published-page__eyebrow">
-            <Send size={15} />
-            Creator publishing desk
-          </span>
-
-          <h1>
-            Publication history,
-            <em>
-              community signals.
-            </em>
-          </h1>
-
-          <p>
-            Manage live and stopped
-            publications without losing
-            accepted-user access,
-            ratings, votes, comments,
-            or owner-only insights.
-          </p>
-
-          <div className="published-page__chips">
-            <span>
-              <TrendingUp
-                size={14}
-              />
-
-              Persistent engagement
-              history
-            </span>
-
-            <span>
-              <Sparkles
-                size={14}
-              />
-
-              Re-publish anytime
-            </span>
-          </div>
-        </div>
-
-        <div className="published-page__stat">
-          <span>
-            {statusFilter ===
-              'ARCHIVED' ? (
-              <Archive
-                size={20}
-              />
-            ) : (
-              <BarChart3
-                size={20}
-              />
-            )}
-          </span>
-
-          <div>
-            <small>
-              {statusFilter ===
-                'ALL'
-                ? 'Matching publications'
-                : statusFilter ===
-                  'PUBLISHED'
-                  ? 'Currently live'
-                  : 'Stopped publications'}
-            </small>
-
-            {/* FIX:
-                publishedTotal did not exist.
-                The total returned by the API is
-                already stored in pagination.total.
-            */}
-            <strong>
-              {pagination?.total ?? 0}
-            </strong>
-
-            <em>
-              publications
-            </em>
-          </div>
-        </div>
-      </motion.header>
+      <NormalPageHero
+        variant="published"
+        eyebrow={t('Creator publishing desk')}
+        title={t('Publication history with community signals in view.')}
+        description={t('Manage live and stopped publications without losing accepted-user access, ratings, votes, comments, or owner-only insights.')}
+        chips={[t('Persistent engagement history'), t('Re-publish anytime'), t('Audience signals')]}
+        stats={[{
+          label: t(statusFilter === 'ALL' ? 'Matching publications' : statusFilter === 'PUBLISHED' ? 'Currently live' : 'Stopped publications'),
+          value: pagination?.total ?? 0,
+        }]}
+        compact
+      />
 
       <section className="published-toolbar">
         <form
@@ -561,17 +460,17 @@ export default function PublishedIdeasPage() {
                 event.target.value,
               )
             }
-            placeholder="Search your publication history..."
+            placeholder={t('Search your publication history...')}
           />
 
           <button type="submit">
-            Search
+            {t('Search')}
           </button>
         </form>
 
         <div
           className="published-status-filter"
-          aria-label="Publication status filter"
+          aria-label={t('Publication status filter')}
         >
           {FILTERS.map(
             (filter) => (
@@ -595,7 +494,7 @@ export default function PublishedIdeasPage() {
                 }}
               >
                 {
-                  filter.label
+                  t(filter.label)
                 }
               </button>
             ),
@@ -623,8 +522,7 @@ export default function PublishedIdeasPage() {
           />
 
           <h2>
-            Publication history
-            unavailable
+            {t('Publication history unavailable')}
           </h2>
 
           <p>
@@ -637,7 +535,7 @@ export default function PublishedIdeasPage() {
               loadPublished(true)
             }
           >
-            Try again
+            {t('Try again')}
           </button>
         </div>
       ) : items.length ===
@@ -657,18 +555,18 @@ export default function PublishedIdeasPage() {
           <h2>
             {statusFilter ===
               'ARCHIVED'
-              ? 'No stopped publications'
+              ? t('No stopped publications')
               : statusFilter ===
                 'PUBLISHED'
-                ? 'No live publications'
-                : 'No publications yet'}
+                ? t('No live publications')
+                : t('No publications yet')}
           </h2>
 
           <p>
             {statusFilter ===
               'ARCHIVED'
-              ? 'Stopped publications will remain here with their full engagement history.'
-              : 'Publish one of your completed ideas to start receiving community activity.'}
+              ? t('Stopped publications will remain here with their full engagement history.')
+              : t('Publish one of your completed ideas to start receiving community activity.')}
           </p>
 
           <button
@@ -679,7 +577,7 @@ export default function PublishedIdeasPage() {
               )
             }
           >
-            Open My Ideas
+            {t('Open My Ideas')}
           </button>
         </div>
       ) : (

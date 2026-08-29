@@ -416,6 +416,8 @@ export type IdeaGenerationRawEvidenceItem = {
   /** Retrieval provenance. These fields explain why this evidence was collected; they are never proof by themselves. */
   readonly discoveryDomainId?: string | null;
   readonly discoveryDomainName?: string | null;
+  readonly discoveryDomainIds?: readonly string[];
+  readonly discoveryDomainNames?: readonly string[];
   readonly queryIntentId?: string | null;
   readonly queryText?: string | null;
   readonly problemFacetIds?: readonly string[];
@@ -430,15 +432,36 @@ export type IdeaGenerationCanonicalEvidenceItem = {
   readonly sourceType: 'POST' | 'COMMENT';
   readonly text: string;
   readonly title?: string | null;
-  readonly classification: 'DIRECT_PROBLEM' | 'SUPPORTING_SIGNAL' | 'ANALOGOUS_WORKFLOW_SIGNAL' | 'CONTEXT_ONLY' | 'UNRELATED';
+  readonly classification: 'DIRECT_PROBLEM' | 'SUPPORTING_SIGNAL' | 'ANALOGOUS_WORKFLOW_SIGNAL' | 'CONTEXT_ONLY' | 'UNRELATED' | 'UNADJUDICATED';
   readonly confidence: number;
   readonly problemFamily: string | null;
+  readonly evidenceKind: 'USER_COMPLAINT' | 'OPERATIONAL_INCIDENT' | 'ACADEMIC_TECHNICAL_SIGNAL' | 'NEWS_REPORT' | 'MARKET_REPORT' | 'COMMUNITY_DISCUSSION' | 'UNKNOWN';
+  /** AI-owned semantic verdict fields. Deterministic code only validates shape/provenance. */
+  readonly evidenceNature?: 'LIVED_EXPERIENCE' | 'DOCUMENTED_FINDING' | 'MARKET_RESEARCH' | 'PROMOTIONAL' | 'NEUTRAL_CONTEXT' | 'OTHER';
+  readonly domainAlignment?: 'MATCH' | 'PARTIAL' | 'NONE';
+  readonly problemAlignment?: 'MATCH' | 'PARTIAL' | 'NONE';
+  readonly familyBasis?: 'OBSERVED_PROBLEM' | 'CAUSAL_EXPLANATION' | 'SOLUTION_OPINION' | 'NONE';
+  readonly observedProblem?: string | null;
+  readonly causalExplanation?: string | null;
+  /** Exact selected-domain names that the AI says the observed problem itself belongs to. */
+  readonly matchedDomainNames?: readonly string[];
   readonly verified: boolean;
+  readonly adjudicationStatus?: 'ADJUDICATED' | 'UNADJUDICATED';
+  readonly adjudicationFailureReason?:
+    | 'AI_TIMEOUT'
+    | 'AI_EXECUTION_FAILED'
+    | 'AI_VALIDATION_REJECTED'
+    | 'AI_UNAVAILABLE'
+    | 'AI_ABORTED'
+    | 'AI_MISSING_VERDICT'
+    | null;
   readonly origin: 'COMMUNITY_AI' | 'DOMAIN_DIRECT_FALLBACK' | 'DETERMINISTIC_FALLBACK' | 'RECOVERY';
   readonly matchedDomainIds: readonly string[];
   readonly matchedFacetIds: readonly string[];
   readonly discoveryDomainId: string | null;
   readonly discoveryDomainName: string | null;
+  readonly discoveryDomainIds?: readonly string[];
+  readonly discoveryDomainNames?: readonly string[];
   readonly queryIntentId: string | null;
   readonly queryText: string | null;
   readonly collectionPhase: IdeaGenerationCollectionPhase;
@@ -453,6 +476,8 @@ export type IdeaGenerationBenchmarkCandidateSnapshot = {
   opportunityRank: number;
   opportunityTitle: string;
   parsedOutput: ParsedIdeaAiOutput;
+  /** True only for the in-process requester-locked continuity candidate. */
+  deterministicEmergencyFallback?: boolean;
 };
 
 export type IdeaGenerationContext = {
@@ -504,6 +529,9 @@ export type IdeaGenerationContext = {
 
   /** Explicit domain ids requested by the caller before PREPARING resolves the semantic primary domain. */
   requestedDomainIds: string[];
+
+  /** Ordered UI domain-name assertions paired one-to-one with requestedDomainIds. */
+  requestedDomainNames: string[];
 
   /** Bounded AI/deterministic plan created inside the PREPARING pipeline stage when request text exists. */
   collectionPlan: RequestCollectionPlan | null;
@@ -715,6 +743,9 @@ export type CreateIdeaGenerationContextInput = {
   /** Explicit domain ids preserved until the PREPARING stage resolves the final domain profile. */
   requestedDomainIds?: string[];
 
+  /** Ordered caller name assertions used to verify UUID->domain mapping at PREPARING. */
+  requestedDomainNames?: string[];
+
   /** Optional in-pipeline pre-collection intent plan derived from request text. */
   collectionPlan?: RequestCollectionPlan | null;
 
@@ -770,6 +801,7 @@ export function createIdeaGenerationContext(
     requestDescription: input.requestDescription ?? null,
     requestFingerprint: input.requestFingerprint ?? null,
     requestedDomainIds: input.requestedDomainIds ?? [],
+    requestedDomainNames: input.requestedDomainNames ?? [],
     collectionPlan: input.collectionPlan ?? null,
     requestMode:
       input.requestDescription?.trim()
@@ -780,7 +812,7 @@ export function createIdeaGenerationContext(
           ? 'DOMAINS_ONLY'
           : 'NO_INPUT',
     canonicalProblemSpec: null,
-    evidenceState: 'ZERO_VALIDATED_EVIDENCE',
+    evidenceState: 'NO_VALID_EVIDENCE_FOUND',
     keywords: input.keywords ?? [],
 
     requestedDataSourceKeys: input.requestedDataSourceKeys ?? [],

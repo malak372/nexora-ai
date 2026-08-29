@@ -20,9 +20,7 @@ import {
   LoaderCircle,
   MapPin,
   Save,
-  SlidersHorizontal,
   Sparkles,
-  WandSparkles,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
@@ -37,6 +35,7 @@ import {
   storePaymentCurrency,
 } from '../../payments/utils/paymentCurrency';
 import { useUserExperience } from '../../../../system/user-experience';
+import NormalPageHero from '../../shared/components/NormalPageHero';
 import '../styles/preferences.css';
 
 const LANGUAGE_OPTIONS = ['EN', 'AR', 'FR', 'ES', 'DE', 'TR', 'ANY'];
@@ -77,7 +76,7 @@ const revealVariants = {
 };
 
 export default function PreferencesPage() {
-  const { t } = useUserExperience();
+  const { t, language: uiLanguage } = useUserExperience();
   const shouldReduceMotion = useReducedMotion();
   const location = useLocation();
   const navigate = useNavigate();
@@ -146,11 +145,15 @@ export default function PreferencesPage() {
 
   const completionLabel = useMemo(() => {
     if (selectedCount < 3) {
-      return `${3 - selectedCount} more to personalize`;
+      return uiLanguage === 'ar'
+        ? `اختر ${3 - selectedCount} اهتمامًا إضافيًا`
+        : `${3 - selectedCount} more to personalize`;
     }
 
-    return `${selectedCount} interests selected`;
-  }, [selectedCount]);
+    return uiLanguage === 'ar'
+      ? `تم اختيار ${selectedCount} اهتمامات`
+      : `${selectedCount} interests selected`;
+  }, [selectedCount, uiLanguage]);
 
   const togglePreference = (id) => {
     setSelected((current) => {
@@ -211,81 +214,29 @@ export default function PreferencesPage() {
       <div className="preferences-backbar">
         <button type="button" onClick={goBack}>
           <ArrowLeft size={17} />
-          <span>{returnLabel}</span>
+          <span>{t(returnLabel)}</span>
         </button>
       </div>
 
-      <section className="preferences-hero">
-        <div className="preferences-hero__ambient preferences-hero__ambient--pink" aria-hidden="true" />
-        <div className="preferences-hero__ambient preferences-hero__ambient--mint" aria-hidden="true" />
-        <div className="preferences-hero__flow preferences-hero__flow--top" aria-hidden="true" />
-        <div className="preferences-hero__flow preferences-hero__flow--bottom" aria-hidden="true" />
-        <div className="preferences-hero__sparkles" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </div>
-
-        <div className="preferences-hero__content">
-          <span className="preferences-hero__eyebrow">
-            <SlidersHorizontal size={16} />
-            Personalization studio
-          </span>
-
-          <h1>Shape a Voxidence experience that feels made for you.</h1>
-
-          <p>
-            Fine-tune discovery, localization, and generation defaults so every
-            recommendation starts closer to what matters most.
-          </p>
-
-          <div className="preferences-hero__chips">
-            <span>
-              <Sparkles size={15} />
-              Smarter discovery
-            </span>
-            <span>
-              <Globe2 size={15} />
-              Local relevance
-            </span>
-            <span>
-              <WandSparkles size={15} />
-              Better generation defaults
-            </span>
-          </div>
-        </div>
-
-        <div className="preferences-hero__summary">
-          <article>
-            <span>Selected</span>
-            <strong>{selectedCount}</strong>
-            <small>interests</small>
-          </article>
-
-          <article>
-            <span>Language</span>
-            <strong>{form.preferredLanguage}</strong>
-            <small>default</small>
-          </article>
-
-          <div className="preferences-hero__progress">
-            <span>
-              <i
-                style={{
-                  width: `${Math.min((selectedCount / 6) * 100, 100)}%`,
-                }}
-              />
-            </span>
-            <small>{completionLabel}</small>
-          </div>
-        </div>
-      </section>
+      <NormalPageHero
+        variant="preferences"
+        eyebrow={t('Personalization studio')}
+        title={t('Tune Voxidence around how you discover and create.')}
+        description={t('Set your local context, preferred language, interests, and generation defaults so every new discovery starts closer to what matters to you.')}
+        chips={[t('Smarter discovery'), t('Local relevance'), t('Better generation defaults')]}
+        stats={[
+          { label: t('Selected interests'), value: selectedCount },
+          { label: t('Language'), value: form.preferredLanguage },
+        ]}
+        footnote={<span>{completionLabel}</span>}
+        compact
+      />
 
       {loading ? (
         <section className="preferences-state">
           <LoaderCircle className="spin" size={28} />
-          <h2>Preparing your personalization studio</h2>
-          <p>Loading your current preferences and available options.</p>
+          <h2>{t('Preparing your personalization studio')}</h2>
+          <p>{t('Loading your current preferences and available options.')}</p>
         </section>
       ) : (
         <>
@@ -295,17 +246,14 @@ export default function PreferencesPage() {
           >
             <div className="preferences-section__heading">
               <div>
-                <span>Step 01</span>
-                <h2>Set your local context</h2>
-                <p>
-                  These defaults help Voxidence localize ideas, opportunities, and
-                  generation results.
-                </p>
+                <span>{t('Step 01')}</span>
+                <h2>{t('Set your local context')}</h2>
+                <p>{t('These defaults help Voxidence localize ideas, opportunities, and generation results.')}</p>
               </div>
 
               <div className="preferences-section__badge">
                 <MapPin size={17} />
-                Location aware
+                {t('Location aware')}
               </div>
             </div>
 
@@ -315,8 +263,8 @@ export default function PreferencesPage() {
                   <Globe2 size={17} />
                 </span>
                 <span className="preferences-field__copy">
-                  <small>Language</small>
-                  <strong>Preferred language</strong>
+                  <small>{t('Language')}</small>
+                  <strong>{t('Preferred language')}</strong>
                 </span>
 
                 <div className="preferences-select-wrap">
@@ -342,13 +290,13 @@ export default function PreferencesPage() {
                     <MapPin size={17} />
                   </span>
                   <span className="preferences-field__copy">
-                    <small>{field.label}</small>
-                    <strong>{field.label}</strong>
+                    <small>{t(field.label)}</small>
+                    <strong>{t(field.label)}</strong>
                   </span>
 
                   <input
                     value={form[field.key]}
-                    placeholder={field.placeholder}
+                    placeholder={t(field.placeholder)}
                     onChange={(event) =>
                       updateField(field.key, event.target.value)
                     }
@@ -364,12 +312,9 @@ export default function PreferencesPage() {
           >
             <div className="preferences-section__heading">
               <div>
-                <span>Step 02</span>
-                <h2>Choose your payment currency once</h2>
-                <p>
-                  Voxidence will remember this choice and use it automatically
-                  for credit purchases, direct unlocks, and paid publication access.
-                </p>
+                <span>{t('Step 02')}</span>
+                <h2>{t('Choose your payment currency once')}</h2>
+                <p>{t('Voxidence will remember this choice and use it automatically for credit purchases, direct unlocks, and paid publication access.')}</p>
               </div>
 
               <div className="preferences-section__badge is-payment">
@@ -378,7 +323,7 @@ export default function PreferencesPage() {
               </div>
             </div>
 
-            <div className="preferences-payment-currencies" role="radiogroup" aria-label="Preferred payment currency">
+            <div className="preferences-payment-currencies" role="radiogroup" aria-label={t('Preferred payment currency')}>
               {PAYMENT_CURRENCIES.map((currency) => {
                 const active = form.paymentCurrency === currency.code;
 
@@ -394,7 +339,7 @@ export default function PreferencesPage() {
                     <span>{currency.symbol}</span>
                     <div>
                       <strong>{currency.code}</strong>
-                      <small>{currency.name}</small>
+                      <small>{t(currency.name)}</small>
                     </div>
                     <i>{active ? <Check size={15} /> : null}</i>
                   </button>
@@ -404,10 +349,7 @@ export default function PreferencesPage() {
 
             <div className="preferences-payment-note">
               <CreditCard size={16} />
-              <span>
-                Prices are converted by the backend from the administrator's
-                base pricing currency into your saved payment currency.
-              </span>
+              <span>{t("Prices are converted by the backend from the administrator's base pricing currency into your saved payment currency.")}</span>
             </div>
           </motion.section>
 
@@ -417,17 +359,14 @@ export default function PreferencesPage() {
           >
             <div className="preferences-section__heading">
               <div>
-                <span>Step 03</span>
-                <h2>Choose what you care about</h2>
-                <p>
-                  Select at least three interests. Voxidence uses them to tune
-                  discovery and future generation suggestions.
-                </p>
+                <span>{t('Step 03')}</span>
+                <h2>{t('Choose what you care about')}</h2>
+                <p>{t('Select at least three interests. Voxidence uses them to tune discovery and future generation suggestions.')}</p>
               </div>
 
               <div className="preferences-section__badge is-purple">
                 <Sparkles size={17} />
-                {selectedCount} selected
+                {selectedCount} {t('selected')}
               </div>
             </div>
 
@@ -450,7 +389,7 @@ export default function PreferencesPage() {
                   <div className="preferences-group__heading">
                     <div>
                       <span>{String(groupIndex + 1).padStart(2, '0')}</span>
-                      <h3>{group.category.replaceAll('_', ' ')}</h3>
+                      <h3>{t(group.category.replaceAll('_', ' '))}</h3>
                     </div>
 
                     <small>
@@ -459,7 +398,7 @@ export default function PreferencesPage() {
                           selected.has(option.id),
                         ).length
                       }{' '}
-                      selected
+                      {t('selected')}
                     </small>
                   </div>
 
@@ -497,8 +436,8 @@ export default function PreferencesPage() {
                             {String(optionIndex + 1).padStart(2, '0')}
                           </span>
 
-                          <strong>{option.name}</strong>
-                          <small>{option.description}</small>
+                          <strong>{t(option.name)}</strong>
+                          <small>{t(option.description)}</small>
                         </motion.button>
                       );
                     })}
@@ -513,9 +452,7 @@ export default function PreferencesPage() {
               <span className={message ? 'has-message' : ''}>
                 {message || completionLabel}
               </span>
-              <small>
-                Your choices are saved securely and can be changed anytime.
-              </small>
+              <small>{t('Your choices are saved securely and can be changed anytime.')}</small>
             </div>
 
             <button type="button" onClick={submit} disabled={saving}>

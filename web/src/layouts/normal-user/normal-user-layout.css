@@ -1407,3 +1407,168 @@ html.vox-user-dark .normal-header__profile-menu button small {
     width: min(320px, calc(100vw - 18px));
   }
 }
+
+
+/* FINAL_NORMAL_HEADER_DARK_POLISH */
+html.vox-user-dark .normal-header.normal-header--professional {
+  color: #edf7f4 !important;
+  border-color: rgba(112,205,198,.20) !important;
+  background: linear-gradient(120deg, rgba(25,44,38,.98), rgba(17,31,26,.97)) !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,.26) !important;
+}
+html.vox-user-dark .normal-header__nav a { color: #cbdad5 !important; }
+html.vox-user-dark .normal-header__nav a:is(:hover,.is-active) {
+  color: #92ddd6 !important;
+  background: #213a32 !important;
+}
+html.vox-user-dark :is(.normal-header__search,.normal-header__profile,.normal-header__icon,.normal-header__menu,.normal-header__profile-menu) {
+  color: #dbe9e5 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #15271f !important;
+  background-image: none !important;
+}
+html.vox-user-dark .normal-header__search input { background: transparent !important; }
+html.vox-user-dark .normal-header__search kbd { color:#9adfd9 !important; background:#20382f !important; }
+
+/* Profile image stays correctly cropped in both LTR and RTL menus. */
+.normal-header__avatar img,
+.normal-header__menu-avatar img,
+.normal-drawer__avatar img {
+  object-fit:cover !important;
+  object-position:center !important;
+  transform:none !important;
+}
+html.vox-user-rtl .normal-header__profile-menu { text-align:right; }
+
+/* FINAL_20260828_NORMAL_BRAND_HOVER_NO_RECTANGLE */
+.normal-header__brand,
+.normal-header__brand:hover,
+.normal-header__brand:focus,
+.normal-header__brand:focus-visible,
+html.vox-user-dark .normal-header__brand,
+html.vox-user-dark .normal-header__brand:hover,
+html.vox-user-dark .normal-header__brand:focus,
+html.vox-user-dark .normal-header__brand:focus-visible {
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+}
+.normal-header__brand::before,
+.normal-header__brand::after {
+  content: none !important;
+  display: none !important;
+}
+.normal-header__brand-mark,
+.normal-header__brand-copy,
+.normal-header__brand-copy > * {
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+
+/* ==========================================================================
+   FINAL_20260828_NORMAL_USER_CANVAS_UNIFICATION
+   Remove the page-sized "outer card" feeling on normal-user screens by
+   forcing page roots to sit directly on the shared workspace canvas.
+   Dashboard is intentionally excluded.
+   ========================================================================== */
+.normal-app-shell__main > :is(
+  .preferences-page,
+  .profile-settings-page,
+  .discover-page,
+  .publication-detail-page,
+  .notifications-page,
+  .compliance-page,
+  .published-page,
+  .ideas-page,
+  .upgrade-page,
+  .billing-page,
+  .bm-page,
+  .accepted-workspace-page,
+  .unlock-page
+) {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
+/* ==========================================================================
+   FINAL_20260828_NORMAL_USER_WIDE_CONTENT
+   Let normal-user pages use the workspace width like Billing does, instead of
+   stacking page-level max-width + page padding inside the main container.
+   Generate / generation-progress pages are intentionally not included.
+   ========================================================================== */
+@media (min-width: 901px) {
+  .normal-app-shell__main > :is(
+    .preferences-page,
+    .profile-settings-page,
+    .discover-page,
+    .publication-detail-page,
+    .notifications-page,
+    .compliance-page,
+    .published-page,
+    .ideas-page,
+    .upgrade-page,
+    .billing-page,
+    .bm-page,
+    .publish-page,
+    .idea-workspace,
+    .unlock-page,
+    .accepted-workspace-page
+  ) {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    padding-inline: 0 !important;
+  }
+
+  .normal-app-shell__main > .notifications-page > .notifications-shell {
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+  }
+}
+
+
+
+/* ==========================================================================
+   FINAL_20260828_NORMAL_USER_HERO_SPACING
+   Keep top-level normal-user heroes at the same distance from the workspace
+   header as Home/Billing. Page roots no longer add a second top inset.
+   Generation progress is intentionally excluded.
+   ========================================================================== */
+@media (min-width: 901px) {
+  .normal-app-shell__main > :is(
+    .preferences-page,
+    .profile-settings-page,
+    .discover-page,
+    .publication-detail-page,
+    .notifications-page,
+    .compliance-page,
+    .published-page,
+    .ideas-page,
+    .upgrade-page,
+    .billing-page,
+    .bm-page,
+    .publish-page,
+    .idea-workspace,
+    .unlock-page,
+    .accepted-workspace-page
+  ) {
+    padding-top: 0 !important;
+  }
+
+  /* Restore the original generation wizard proportions while giving the
+     wizard the same comfortable header gap as Home/Billing. */
+  .normal-app-shell__main:has(> .nx-generation-page) {
+    padding-top: 30px !important;
+  }
+}

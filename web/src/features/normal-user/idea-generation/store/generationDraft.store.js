@@ -20,6 +20,7 @@ const initialDraft = {
   generationType: 'NORMAL_FREE',
   forceRefresh: false,
   personalizedDiscovery: false,
+  autoDetectDomains: false,
 };
 
 export const useGenerationDraftStore = create(
@@ -37,7 +38,7 @@ export const useGenerationDraftStore = create(
     }),
     {
       name: 'nexora_generation_draft',
-      version: 3,
+      version: 4,
       migrate: (persistedState) => {
         const persistedDraft = persistedState?.draft ?? {};
         const legacyDomainId = persistedDraft.domainId;

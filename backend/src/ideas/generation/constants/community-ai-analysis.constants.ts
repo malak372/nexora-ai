@@ -32,23 +32,54 @@ export const COMMUNITY_AI_ANALYSIS_TEMPERATURE = 0.1;
  * collector corpus from exhausting the synthesis response token budget.
  */
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_SCHEMA_NAME =
-  'nexora_community_evidence_triage_v11_ai_owned_family_selection';
+  'nexora_community_evidence_triage_v12_transport_envelope_per_item_admission';
 
-/** Maximum evidence items one Community AI transport partition may classify. */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST = 84;
+/** Canonical provider-facing semantic labels. Keep prompt/schema/parser in sync by importing these arrays. */
+export const COMMUNITY_AI_PROVIDER_EVIDENCE_CLASSIFICATIONS = [
+  'DIRECT_PROBLEM',
+  'SUPPORTING_SIGNAL',
+  'CONTEXT_ONLY',
+  'UNRELATED',
+] as const;
+
+export const COMMUNITY_AI_EVIDENCE_NATURES = [
+  'LIVED_EXPERIENCE',
+  'DOCUMENTED_FINDING',
+  'MARKET_RESEARCH',
+  'PROMOTIONAL',
+  'NEUTRAL_CONTEXT',
+  'OTHER',
+] as const;
+
+export const COMMUNITY_AI_SEMANTIC_ALIGNMENTS = [
+  'MATCH',
+  'PARTIAL',
+  'NONE',
+] as const;
+
+export const COMMUNITY_AI_PROBLEM_FAMILY_BASES = [
+  'OBSERVED_PROBLEM',
+  'CAUSAL_EXPLANATION',
+  'SOLUTION_OPINION',
+  'NONE',
+] as const;
+
+/** Maximum evidence items one complete full-corpus Community AI request may classify. */
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST = 96;
 
 /**
  * Maximum representative raw evidence items sent to online semantic triage.
  *
  * The raw collector corpus may contain many repeated comments from one source or
  * thread. Non-semantic duplicate/source/thread hygiene is still applied, but the
- * selected corpus is partitioned only when it exceeds the 84-item transport
- * ceiling. Each partition is sent to up to three online models in parallel so each model
- * sees the exact same complete evidence picture. The first COMPLETE structurally
- * valid classification wins and aborts its slower sibling. A partial response is
- * never allowed to cancel a sibling that may still return the complete corpus.
+ * selected corpus is kept as one semantic unit. The collector-side corpus is
+ * already bounded below this transport ceiling in normal generation. Up to
+ * three online models receive the exact same complete evidence picture. The
+ * first complete or strong-majority per-item-valid response wins and aborts its
+ * slower sibling. Low-coverage partial responses never cancel a sibling that
+ * may still return better coverage of the same complete corpus.
  */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_CANDIDATES = 84;
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_CANDIDATES = 96;
 
 /** Maximum items one source may contribute when multiple sources are present. */
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_SOURCE = 28;
@@ -60,28 +91,27 @@ export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_COMMENTS_PER_THREAD = 2;
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_NEAR_DUPLICATE_THRESHOLD = 0.9;
 
 /**
- * Safety brake across all all-collected transport partitions. Each partition
- * may race up to three models; 64 attempts still bounds pathological collector output
- * while allowing every normal collected item to reach online Community AI.
+ * Safety brake across full-corpus attempts/recovery retries.
  */
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ONLINE_ATTEMPTS = 64;
 
 /**
- * Compact triage returns only id + label + confidence + short family. This
- * budget is intentionally independent from the richer opportunity response.
+ * Full-corpus triage returns one compact semantic verdict object per evidence
+ * row. This budget is intentionally independent from the richer opportunity
+ * synthesis response and leaves enough headroom to avoid omitted fields.
  */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_OUTPUT_TOKENS = 7_200;
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_OUTPUT_TOKENS = 12_000;
 
 /**
  * Generous per-model safety cap for full-corpus triage. The service uses an
- * adaptive deadline and still returns immediately when the first COMPLETE valid
- * model response arrives, so this cap prevents provider hangs without turning a
- * normal slow response into lost evidence.
+ * adaptive deadline and still returns immediately when the first sufficiently
+ * complete per-item-valid model response arrives, so this cap prevents provider
+ * hangs without turning a normal slow response into lost evidence.
  */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_REQUEST_TIMEOUT_MS = 8_500;
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_REQUEST_TIMEOUT_MS = 24_000;
 
 /** Absolute safety ceiling for the three-model first-complete race. */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_TOTAL_TIMEOUT_MS = 9_000;
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_TOTAL_TIMEOUT_MS = 42_000;
 
 /** Number of parallel online models allowed for the full-corpus triage race. */
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS = 3;

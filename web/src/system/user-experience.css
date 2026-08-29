@@ -93,9 +93,14 @@ html.vox-user-rtl body :is(h1, h2, h3, h4, h5, h6, p, small, label, li, dt, dd, 
   unicode-bidi: plaintext;
 }
 
-html.vox-user-rtl body :is(input, textarea, select) {
+html.vox-user-rtl body :is(input, textarea, select):not([dir='auto']):not([dir='ltr']) {
   direction: rtl;
   text-align: right;
+}
+
+html.vox-user-rtl body :is(input, textarea)[dir='auto'] {
+  text-align: start;
+  unicode-bidi: plaintext;
 }
 
 html.vox-user-rtl body :is(
@@ -155,4 +160,29 @@ html.vox-user-rtl body > :is([role='dialog'], [role='menu'], [role='listbox']) :
   .vox-experience-controls { right: 10px; bottom: 10px; gap: 3px; padding: 3px; border-radius: 12px; }
   html.vox-user-rtl .vox-experience-controls { right: auto; left: 10px; }
   .vox-experience-button { min-width: 32px; height: 31px; padding: 0 7px; gap: 4px; border-radius: 9px; font-size: 10px; }
+}
+
+
+/* FINAL_USER_DARK_PORTAL_SURFACE_HARDENING */
+html.vox-user-dark body :is(
+  [role='dialog'].nx-active-run-conflict__dialog,
+  [role='dialog'].nx-cancel-success__dialog,
+  [role='dialog'].notification-detail,
+  [role='dialog'].invoice-sheet,
+  [role='dialog'].bm-modal__shell,
+  [role='dialog'].premium-welcome__card
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.20) !important;
+  background-color:#172a24 !important;
+}
+html.vox-user-dark body :is(input,textarea)[dir='auto'] {
+  text-align:start !important;
+  unicode-bidi:plaintext;
+}
+html.vox-user-rtl body [data-no-auto-translate='true'][dir='ltr'],
+html.vox-user-rtl body [data-idea-content='true'][dir='ltr'] {
+  direction:ltr !important;
+  text-align:left !important;
+  unicode-bidi:isolate;
 }

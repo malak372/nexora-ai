@@ -25,6 +25,38 @@ export type NormalizeGenerationStringArrayOptions = {
   maxItemLength?: number;
 };
 
+
+/**
+ * Truncates generation text without cutting a word in the middle.
+ * Sentence boundaries are preferred when they occur close to the limit,
+ * otherwise the last whitespace boundary is used.
+ */
+export function truncateGenerationTextAtBoundary(
+  value: string,
+  maxLength: number,
+): string {
+  const normalized = value.replace(/\s+/gu, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+
+  const candidate = normalized.slice(0, maxLength + 1);
+  const sentenceBoundary = Math.max(
+    candidate.lastIndexOf('. '),
+    candidate.lastIndexOf('! '),
+    candidate.lastIndexOf('? '),
+    candidate.lastIndexOf('; '),
+  );
+  if (sentenceBoundary >= Math.floor(maxLength * 0.65)) {
+    return candidate.slice(0, sentenceBoundary + 1).trim();
+  }
+
+  const wordBoundary = candidate.lastIndexOf(' ');
+  if (wordBoundary >= Math.floor(maxLength * 0.55)) {
+    return candidate.slice(0, wordBoundary).trim();
+  }
+
+  return normalized.slice(0, maxLength).trim();
+}
+
 /**
  * Normalizes an optional text value.
  *
@@ -152,7 +184,10 @@ export function normalizeGenerationStringArray(
     }
 
     if (maxItemLength !== undefined && normalizedValue.length > maxItemLength) {
-      normalizedValue = normalizedValue.slice(0, maxItemLength);
+      normalizedValue = truncateGenerationTextAtBoundary(
+        normalizedValue,
+        maxItemLength,
+      );
     }
 
     if (lowercase) {

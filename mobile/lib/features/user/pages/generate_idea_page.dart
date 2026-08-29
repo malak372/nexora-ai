@@ -207,17 +207,15 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   }
 
   Future<String?> _speechLocale() async {
-    if (_language == 'ANY') return null;
-    final prefix = switch (_language) {
-      'AR' => 'ar',
-      'EN' => 'en',
-      'FR' => 'fr',
-      'ES' => 'es',
-      'DE' => 'de',
-      'TR' => 'tr',
-      _ => '',
-    };
-    if (prefix.isEmpty) return null;
+    final text = _description.text.trim();
+    if (text.isEmpty) return null;
+
+    final arabicLetters = RegExp(r'[\u0600-\u06FF]').allMatches(text).length;
+    final latinLetters = RegExp(r'[A-Za-z]').allMatches(text).length;
+    final prefix = arabicLetters >= 3 && arabicLetters >= latinLetters
+        ? 'ar'
+        : 'en';
+
     try {
       for (final locale in await _speech.locales()) {
         if (locale.localeId.toLowerCase().startsWith(prefix)) {
@@ -226,6 +224,15 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
       }
     } catch (_) {}
     return null;
+  }
+
+  String _outputLanguageForDescription() {
+    final text = _description.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.isEmpty) return 'EN';
+
+    final arabicLetters = RegExp(r'[\u0600-\u06FF]').allMatches(text).length;
+    final latinLetters = RegExp(r'[A-Za-z]').allMatches(text).length;
+    return arabicLetters >= 3 && arabicLetters >= latinLetters ? 'AR' : 'EN';
   }
 
   Future<void> _toggleVoice() async {
@@ -570,7 +577,7 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
         if (_city.text.trim().isNotEmpty) 'city': _city.text.trim(),
         if (_region.text.trim().isNotEmpty) 'region': _region.text.trim(),
         'language': _language,
-        'outputLanguage': 'EN',
+        'outputLanguage': _outputLanguageForDescription(),
         'forceRefresh': _forceRefresh,
         'keywords': const <String>[],
       };

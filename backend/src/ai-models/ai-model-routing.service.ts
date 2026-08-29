@@ -26,11 +26,34 @@ const DEFAULT_MODEL_TRANSIENT_COOLDOWN_MINUTES = 10;
 const MIN_MODEL_TRANSIENT_COOLDOWN_MINUTES = 1;
 const MAX_MODEL_TRANSIENT_COOLDOWN_MINUTES = 60;
 
+const DEFAULT_MODEL_HARD_COOLDOWN_MINUTES = 6 * 60;
+const MIN_MODEL_HARD_COOLDOWN_MINUTES = 15;
+const MAX_MODEL_HARD_COOLDOWN_MINUTES = 7 * 24 * 60;
+
 const MODEL_TRANSIENT_ERROR_CODES = new Set([
   'RATE_LIMIT',
   'PROVIDER_UNAVAILABLE',
   'TIMEOUT',
   'NETWORK',
+]);
+
+/**
+ * Model-specific failures that make another attempt against the same model
+ * pointless until configuration/availability changes. Unlike transient
+ * timeouts, one confirmed hard failure is enough to cool the model.
+ */
+const PROVIDER_HARD_UNAVAILABLE_ERROR_CODES = new Set([
+  'INSUFFICIENT_QUOTA',
+  'INVALID_CREDENTIALS',
+  'FORBIDDEN',
+]);
+
+const MODEL_HARD_UNAVAILABLE_ERROR_CODES = new Set([
+  'MODEL_NOT_FOUND',
+  'INVALID_MODEL_CONFIGURATION',
+  'INSUFFICIENT_QUOTA',
+  'INVALID_CREDENTIALS',
+  'FORBIDDEN',
 ]);
 
 /** A single transient provider hiccup must not disable a proven model across runs. */
@@ -105,6 +128,8 @@ export class AiModelRoutingService implements OnModuleInit {
    */
   private readonly modelTransientCooldownMs: number;
 
+  private readonly modelHardCooldownMs: number;
+
   private executionAvailabilityCache: {
     readonly refreshedAt: number;
     readonly expiresAt: number;
@@ -141,6 +166,21 @@ export class AiModelRoutingService implements OnModuleInit {
         : DEFAULT_MODEL_TRANSIENT_COOLDOWN_MINUTES;
 
     this.modelTransientCooldownMs = modelCooldownMinutes * 60 * 1_000;
+
+    const configuredHardCooldownMinutes = Number(
+      configService.get<string>('AI_MODEL_HARD_COOLDOWN_MINUTES'),
+    );
+    const hardCooldownMinutes =
+      Number.isInteger(configuredHardCooldownMinutes) &&
+      configuredHardCooldownMinutes >= MIN_MODEL_HARD_COOLDOWN_MINUTES &&
+      configuredHardCooldownMinutes <= MAX_MODEL_HARD_COOLDOWN_MINUTES
+        ? configuredHardCooldownMinutes
+        : DEFAULT_MODEL_HARD_COOLDOWN_MINUTES;
+    this.modelHardCooldownMs = hardCooldownMinutes * 60 * 1_000;
+  }
+
+  invalidateExecutionAvailabilityCache(): void {
+    this.executionAvailabilityCache = null;
   }
 
   onModuleInit(): void {
@@ -353,7 +393,8 @@ export class AiModelRoutingService implements OnModuleInit {
   /**
    * Removes account-level quota failures and temporarily overloaded models.
    *
-   * Provider-wide blocking is reserved for INSUFFICIENT_QUOTA because a
+   * Provider-wide blocking is reserved for provider-scoped hard availability
+   * failures (quota/auth/forbidden), because a
    * generic OpenRouter 429 may affect only one free model or upstream host.
    * RATE_LIMIT and PROVIDER_UNAVAILABLE therefore create a model-level
    * cooldown only after repeated consecutive transient failures. Other models
@@ -369,11 +410,17 @@ export class AiModelRoutingService implements OnModuleInit {
     const providerKeys = [...new Set(models.map((model) => model.providerKey))];
     const modelIds = models.map((model) => model.id);
     const providerCutoff = new Date(Date.now() - this.providerQuotaCooldownMs);
-    const modelCutoff = new Date(Date.now() - this.modelTransientCooldownMs);
-    const earliestCutoff =
-      providerCutoff.getTime() < modelCutoff.getTime()
-        ? providerCutoff
-        : modelCutoff;
+    const modelTransientCutoff = new Date(
+      Date.now() - this.modelTransientCooldownMs,
+    );
+    const modelHardCutoff = new Date(Date.now() - this.modelHardCooldownMs);
+    const earliestCutoff = new Date(
+      Math.min(
+        providerCutoff.getTime(),
+        modelTransientCutoff.getTime(),
+        modelHardCutoff.getTime(),
+      ),
+    );
 
     const recentLogs = await this.prisma.externalApiLog.findMany({
       where: {
@@ -411,7 +458,11 @@ export class AiModelRoutingService implements OnModuleInit {
     for (const log of recentLogs) {
       if (
         log.createdAt >= providerCutoff &&
-        (log.isSuccess || log.errorCode === 'INSUFFICIENT_QUOTA') &&
+        (
+          log.isSuccess ||
+          (log.errorCode !== null &&
+            PROVIDER_HARD_UNAVAILABLE_ERROR_CODES.has(log.errorCode))
+        ) &&
         !latestLogByProvider.has(log.providerKey)
       ) {
         latestLogByProvider.set(log.providerKey, {
@@ -421,7 +472,7 @@ export class AiModelRoutingService implements OnModuleInit {
         });
       }
 
-      if (log.aiModelId && log.createdAt >= modelCutoff) {
+      if (log.aiModelId && log.createdAt >= modelHardCutoff) {
         const modelLogs = recentLogsByModel.get(log.aiModelId) ?? [];
         modelLogs.push({
           isSuccess: log.isSuccess,
@@ -438,16 +489,32 @@ export class AiModelRoutingService implements OnModuleInit {
     for (const [providerKey, latestLog] of latestLogByProvider) {
       if (
         !latestLog.isSuccess &&
-        latestLog.errorCode === 'INSUFFICIENT_QUOTA'
+        latestLog.errorCode !== null &&
+        PROVIDER_HARD_UNAVAILABLE_ERROR_CODES.has(latestLog.errorCode)
       ) {
         blockedProviders.add(providerKey);
       }
     }
 
     for (const [modelId, modelLogs] of recentLogsByModel) {
+      const latestModelLog = modelLogs[0];
+      if (
+        latestModelLog &&
+        latestModelLog.createdAt >= modelHardCutoff &&
+        !latestModelLog.isSuccess &&
+        latestModelLog.errorCode !== null &&
+        MODEL_HARD_UNAVAILABLE_ERROR_CODES.has(latestModelLog.errorCode)
+      ) {
+        blockedModels.add(modelId);
+        continue;
+      }
+
       let consecutiveTransientFailures = 0;
 
       for (const log of modelLogs) {
+        if (log.createdAt < modelTransientCutoff) {
+          break;
+        }
         if (log.isSuccess) {
           break;
         }

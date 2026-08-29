@@ -129,6 +129,111 @@ const FORM_STEPS = [
     'Review',
 ];
 
+const GUEST_CANVAS_TEXT = {
+    en: {
+        steps: ['Your signal', 'Focus', 'Location', 'Review'],
+        step: 'Step',
+        titles: [
+            'Start with the problem, not the solution.',
+            'Give the signal a direction.',
+            'Anchor the idea in a real place.',
+            'Your discovery brief is ready.',
+        ],
+        descriptions: [
+            'Tell us what keeps going wrong, who feels it, and why it matters.',
+            'Choose a software space, or let Voxidence infer the best fit from your signal.',
+            'Local context helps shape relevance, regulations, and realistic market assumptions.',
+            'Check the essentials once, then let Voxidence turn them into an evidence-backed software idea.',
+        ],
+        visualTags: ['Community signal', 'Opportunity focus', 'Local context', 'Discovery brief'],
+        flow: ['Listen', 'Focus', 'Ground', 'Build'],
+        evidenceTitle: 'Evidence before ideas.',
+        evidenceText: 'We use your context to search for a meaningful opportunity, not a random concept.',
+        describeSignal: 'Describe the signal',
+        fourWords: 'Four words are enough to begin.',
+        example: 'Example: Students struggle to coordinate shared transportation when class schedules change at short notice…',
+        goodSignal: 'Good signal — there is enough context to continue.',
+        chooseSpace: 'Choose the opportunity space',
+        optionalDomain: 'Optional — Voxidence can infer it for you.',
+        requiredDomain: 'Required because the signal is very short.',
+        letDecide: 'Let Voxidence decide',
+        inferDomain: 'Infer the strongest domain from the problem signal.',
+        addLocal: 'Add local context',
+        countryOnly: 'Only country is required.',
+        country: 'Country *',
+        city: 'City',
+        region: 'Region',
+        language: 'Language',
+        finalBrief: 'Final discovery brief',
+        everything: 'Everything Voxidence will start from.',
+        problemSignal: 'Problem signal',
+        noSignal: 'No written signal — generation will use the selected domain.',
+        domain: 'Domain',
+        location: 'Location',
+        autoDetected: 'Auto-detected',
+        ready: 'Ready to discover',
+        readyText: 'Your free guest idea will start from this brief.',
+        cancel: 'Cancel',
+        previous: 'Previous',
+        continue: 'Continue',
+        chooseDomainInstead: 'Choose domain instead',
+        skipDomain: 'Skip domain',
+        generate: 'Generate my free idea',
+        of: 'of',
+    },
+    ar: {
+        steps: ['إشارتك', 'التركيز', 'الموقع', 'المراجعة'],
+        step: 'الخطوة',
+        titles: [
+            'ابدأ بالمشكلة، لا بالحل.',
+            'امنح الإشارة اتجاهًا واضحًا.',
+            'اربط الفكرة بمكان حقيقي.',
+            'ملخص الاستكشاف جاهز.',
+        ],
+        descriptions: [
+            'أخبرنا ما الذي يتكرر بشكل خاطئ، ومن يتأثر به، ولماذا يهم.',
+            'اختر مجالًا برمجيًا، أو دع فوكسيدنس يستنتج الأنسب من إشارتك.',
+            'يساعد السياق المحلي على تحسين الملاءمة واللوائح والافتراضات الواقعية للسوق.',
+            'راجع الأساسيات مرة واحدة، ثم دع فوكسيدنس يحولها إلى فكرة برمجية مدعومة بالأدلة.',
+        ],
+        visualTags: ['إشارة المجتمع', 'تركيز الفرصة', 'السياق المحلي', 'ملخص الاستكشاف'],
+        flow: ['استمع', 'ركّز', 'ثبّت السياق', 'ابنِ'],
+        evidenceTitle: 'الأدلة قبل الأفكار.',
+        evidenceText: 'نستخدم سياقك للبحث عن فرصة ذات معنى، لا عن فكرة عشوائية.',
+        describeSignal: 'صف الإشارة',
+        fourWords: 'أربع كلمات تكفي للبدء.',
+        example: 'مثال: يواجه الطلاب صعوبة في تنسيق النقل المشترك عندما تتغير جداول المحاضرات بإشعار قصير…',
+        goodSignal: 'إشارة جيدة — يوجد سياق كافٍ للمتابعة.',
+        chooseSpace: 'اختر مساحة الفرصة',
+        optionalDomain: 'اختياري — يمكن لفوكسيدنس استنتاجه نيابةً عنك.',
+        requiredDomain: 'مطلوب لأن الإشارة قصيرة جدًا.',
+        letDecide: 'دع فوكسيدنس يحدد',
+        inferDomain: 'استنتج أقوى مجال من إشارة المشكلة.',
+        addLocal: 'أضف السياق المحلي',
+        countryOnly: 'الدولة فقط مطلوبة.',
+        country: 'الدولة *',
+        city: 'المدينة',
+        region: 'المنطقة',
+        language: 'اللغة',
+        finalBrief: 'ملخص الاستكشاف النهائي',
+        everything: 'كل ما سيبدأ منه فوكسيدنس.',
+        problemSignal: 'إشارة المشكلة',
+        noSignal: 'لا توجد إشارة مكتوبة — سيعتمد التوليد على المجال المحدد.',
+        domain: 'المجال',
+        location: 'الموقع',
+        autoDetected: 'يُكتشف تلقائيًا',
+        ready: 'جاهز للاستكشاف',
+        readyText: 'ستبدأ فكرتك المجانية كضيف من هذا الملخص.',
+        cancel: 'إلغاء',
+        previous: 'السابق',
+        continue: 'متابعة',
+        chooseDomainInstead: 'اختر مجالًا بدلًا من ذلك',
+        skipDomain: 'تخطي المجال',
+        generate: 'ولّد فكرتي المجانية',
+        of: 'من',
+    },
+};
+
 /**
  * Initial values of the guest idea generation form.
  *
@@ -162,7 +267,9 @@ const INITIAL_DRAFT = {
  */
 export default function GuestGenerateIdeaPage() {
     const navigate = useNavigate();
-    const { language: uiLanguage } = useUserExperience();
+    const { language: uiLanguage, t } = useUserExperience();
+    const isArabicUi = uiLanguage === 'ar';
+    const canvasText = GUEST_CANVAS_TEXT[isArabicUi ? 'ar' : 'en'];
 
     /**
      * Current form step index.
@@ -505,7 +612,7 @@ export default function GuestGenerateIdeaPage() {
                     : {}),
 
                 language: draft.language,
-                outputLanguage: uiLanguage === 'ar' ? 'AR' : 'EN',
+                outputLanguage: draft.description.trim() ? 'ANY' : (uiLanguage === 'ar' ? 'AR' : 'EN'),
                 forceRefresh: draft.forceRefresh,
             });
 
@@ -1012,7 +1119,7 @@ export default function GuestGenerateIdeaPage() {
                         onClick={() => navigate('/')}
                     >
                         <ArrowLeft />
-                        Back home
+                        {isArabicUi ? 'العودة للرئيسية' : 'Back home'}
                     </button>
 
                     <div className="guest-canvas-brand">
@@ -1022,13 +1129,21 @@ export default function GuestGenerateIdeaPage() {
 
                         <span>
                             <b>Voxidence</b>
-                            <small>Evidence-led idea discovery</small>
+                            <small>
+                                {isArabicUi
+                                    ? 'اكتشاف أفكار قائم على الأدلة'
+                                    : 'Evidence-led idea discovery'}
+                            </small>
                         </span>
                     </div>
 
                     <div className="guest-canvas-pass">
                         <Sparkles />
-                        <span>1 free guest idea</span>
+                        <span>
+                            {isArabicUi
+                                ? 'فكرة ضيف مجانية واحدة'
+                                : '1 free guest idea'}
+                        </span>
                     </div>
                 </div>
 
@@ -1036,34 +1151,23 @@ export default function GuestGenerateIdeaPage() {
                     <header className="guest-canvas-head">
                         <div className="guest-canvas-head-copy">
                             <span className="guest-canvas-overline">
-                                Step {String(step + 1).padStart(2, '0')}
+                                {canvasText.step} {String(step + 1).padStart(2, '0')}
                                 <i />
-                                {FORM_STEPS[step]}
+                                {canvasText.steps[step]}
                             </span>
 
-                            <h1>
-                                {step === 0
-                                    ? 'Start with the problem, not the solution.'
-                                    : step === 1
-                                        ? 'Give the signal a direction.'
-                                        : step === 2
-                                            ? 'Anchor the idea in a real place.'
-                                            : 'Your discovery brief is ready.'}
-                            </h1>
+                            <h1>{canvasText.titles[step]}</h1>
 
-                            <p>
-                                {step === 0
-                                    ? 'Tell us what keeps going wrong, who feels it, and why it matters.'
-                                    : step === 1
-                                        ? 'Choose a software space, or let Voxidence infer the best fit from your signal.'
-                                        : step === 2
-                                            ? 'Local context helps shape relevance, regulations, and realistic market assumptions.'
-                                            : 'Check the essentials once, then let Voxidence turn them into an evidence-backed software idea.'}
-                            </p>
+                            <p>{canvasText.descriptions[step]}</p>
                         </div>
 
-                        <div className="guest-canvas-progress" aria-label={`Step ${step + 1} of ${FORM_STEPS.length}`}>
-                            {FORM_STEPS.map((label, index) => {
+                        <div
+                            className="guest-canvas-progress"
+                            aria-label={isArabicUi
+                                ? `الخطوة ${step + 1} من ${FORM_STEPS.length}`
+                                : `Step ${step + 1} of ${FORM_STEPS.length}`}
+                        >
+                            {canvasText.steps.map((label, index) => {
                                 const isActive = index === step;
                                 const isCompleted = index < step;
 
@@ -1092,13 +1196,7 @@ export default function GuestGenerateIdeaPage() {
                         <aside className="guest-canvas-visual">
                             <div className="guest-canvas-visual-top">
                                 <span className="guest-canvas-visual-tag">
-                                    {step === 0
-                                        ? 'Community signal'
-                                        : step === 1
-                                            ? 'Opportunity focus'
-                                            : step === 2
-                                                ? 'Local context'
-                                                : 'Discovery brief'}
+                                    {canvasText.visualTags[step]}
                                 </span>
 
                                 <div className="guest-canvas-visual-icon">
@@ -1131,39 +1229,36 @@ export default function GuestGenerateIdeaPage() {
                             <div className="guest-canvas-visual-flow">
                                 <div className={step >= 0 ? 'active' : ''}>
                                     <span>01</span>
-                                    <b>Listen</b>
+                                    <b>{canvasText.flow[0]}</b>
                                 </div>
 
                                 <i />
 
                                 <div className={step >= 1 ? 'active' : ''}>
                                     <span>02</span>
-                                    <b>Focus</b>
+                                    <b>{canvasText.flow[1]}</b>
                                 </div>
 
                                 <i />
 
                                 <div className={step >= 2 ? 'active' : ''}>
                                     <span>03</span>
-                                    <b>Ground</b>
+                                    <b>{canvasText.flow[2]}</b>
                                 </div>
 
                                 <i />
 
                                 <div className={step >= 3 ? 'active' : ''}>
                                     <span>04</span>
-                                    <b>Build</b>
+                                    <b>{canvasText.flow[3]}</b>
                                 </div>
                             </div>
 
                             <div className="guest-canvas-visual-note">
                                 <WandSparkles />
                                 <span>
-                                    <b>Evidence before ideas.</b>
-                                    <small>
-                                        We use your context to search for a meaningful opportunity,
-                                        not a random concept.
-                                    </small>
+                                    <b>{canvasText.evidenceTitle}</b>
+                                    <small>{canvasText.evidenceText}</small>
                                 </span>
                             </div>
                         </aside>
@@ -1174,17 +1269,19 @@ export default function GuestGenerateIdeaPage() {
                                     <div className="guest-canvas-section-title">
                                         <span>01</span>
                                         <div>
-                                            <b>Describe the signal</b>
-                                            <small>Four words are enough to begin.</small>
+                                            <b>{canvasText.describeSignal}</b>
+                                            <small>{canvasText.fourWords}</small>
                                         </div>
                                     </div>
 
                                     <div className="guest-canvas-textarea">
                                         <textarea
-                                            dir="auto"
+                                            dir={draft.description.trim()
+                                                ? 'auto'
+                                                : (isArabicUi ? 'rtl' : 'ltr')}
                                             value={draft.description}
                                             maxLength={2000}
-                                            placeholder="Example: Students struggle to coordinate shared transportation when class schedules change at short notice…"
+                                            placeholder={canvasText.example}
                                             onChange={(event) =>
                                                 updateDraft({
                                                     description: event.target.value,
@@ -1212,10 +1309,14 @@ export default function GuestGenerateIdeaPage() {
                                     >
                                         <span>
                                             {descriptionExceedsLimit
-                                                ? `Reduce the description to ${MAX_DESCRIPTION_WORDS} words.`
+                                                ? isArabicUi
+                                                    ? `اختصر الوصف إلى ${MAX_DESCRIPTION_WORDS} كلمة.`
+                                                    : `Reduce the description to ${MAX_DESCRIPTION_WORDS} words.`
                                                 : hasValidDescription
-                                                    ? 'Good signal — there is enough context to continue.'
-                                                    : `Write at least ${MIN_DESCRIPTION_WORDS} words, or choose a domain in the next step.`}
+                                                    ? canvasText.goodSignal
+                                                    : isArabicUi
+                                                        ? `اكتب ${MIN_DESCRIPTION_WORDS} كلمات على الأقل، أو اختر مجالًا في الخطوة التالية.`
+                                                        : `Write at least ${MIN_DESCRIPTION_WORDS} words, or choose a domain in the next step.`}
                                         </span>
 
                                         <b>
@@ -1230,11 +1331,11 @@ export default function GuestGenerateIdeaPage() {
                                     <div className="guest-canvas-section-title">
                                         <span>02</span>
                                         <div>
-                                            <b>Choose the opportunity space</b>
+                                            <b>{canvasText.chooseSpace}</b>
                                             <small>
                                                 {hasValidDescription
-                                                    ? 'Optional — Voxidence can infer it for you.'
-                                                    : 'Required because the signal is very short.'}
+                                                    ? canvasText.optionalDomain
+                                                    : canvasText.requiredDomain}
                                             </small>
                                         </div>
                                     </div>
@@ -1258,10 +1359,8 @@ export default function GuestGenerateIdeaPage() {
                                             </span>
 
                                             <span>
-                                                <b>Let Voxidence decide</b>
-                                                <small>
-                                                    Infer the strongest domain from the problem signal.
-                                                </small>
+                                                <b>{canvasText.letDecide}</b>
+                                                <small>{canvasText.inferDomain}</small>
                                             </span>
 
                                             <span className="guest-canvas-auto-check">
@@ -1289,7 +1388,9 @@ export default function GuestGenerateIdeaPage() {
                                                     </span>
 
                                                     <b>
-                                                        {domain.name || domain.displayName}
+                                                        {isArabicUi
+                                                            ? t(domain.name || domain.displayName)
+                                                            : (domain.name || domain.displayName)}
                                                     </b>
 
                                                     <span className="guest-canvas-domain-selected">
@@ -1307,14 +1408,14 @@ export default function GuestGenerateIdeaPage() {
                                     <div className="guest-canvas-section-title">
                                         <span>03</span>
                                         <div>
-                                            <b>Add local context</b>
-                                            <small>Only country is required.</small>
+                                            <b>{canvasText.addLocal}</b>
+                                            <small>{canvasText.countryOnly}</small>
                                         </div>
                                     </div>
 
                                     <div className="guest-location-grid guest-canvas-location-grid">
                                         <label>
-                                            <span>Country *</span>
+                                            <span>{canvasText.country}</span>
                                             <div className="guest-canvas-field">
                                                 <Globe2 />
                                                 <input
@@ -1330,13 +1431,13 @@ export default function GuestGenerateIdeaPage() {
                                         </label>
 
                                         <label>
-                                            <span>City</span>
+                                            <span>{canvasText.city}</span>
                                             <div className="guest-canvas-field">
                                                 <MapPin />
                                                 <input
                                                     dir="auto"
                                                     value={draft.city}
-                                                    placeholder="Nablus"
+                                                    placeholder={isArabicUi ? 'نابلس' : 'Nablus'}
                                                     onChange={(event) =>
                                                         updateDraft({
                                                             city: event.target.value,
@@ -1347,13 +1448,13 @@ export default function GuestGenerateIdeaPage() {
                                         </label>
 
                                         <label>
-                                            <span>Region</span>
+                                            <span>{canvasText.region}</span>
                                             <div className="guest-canvas-field">
                                                 <MapPin />
                                                 <input
                                                     dir="auto"
                                                     value={draft.region}
-                                                    placeholder="West Bank"
+                                                    placeholder={isArabicUi ? 'الضفة الغربية' : 'West Bank'}
                                                     onChange={(event) =>
                                                         updateDraft({
                                                             region: event.target.value,
@@ -1364,7 +1465,7 @@ export default function GuestGenerateIdeaPage() {
                                         </label>
 
                                         <label>
-                                            <span>Language</span>
+                                            <span>{canvasText.language}</span>
                                             <div className="guest-canvas-field">
                                                 <Globe2 />
                                                 <select
@@ -1380,7 +1481,7 @@ export default function GuestGenerateIdeaPage() {
                                                             key={language.code}
                                                             value={language.code}
                                                         >
-                                                            {language.name}
+                                                            {isArabicUi ? t(language.name) : language.name}
                                                         </option>
                                                     ))}
                                                 </select>
@@ -1395,35 +1496,41 @@ export default function GuestGenerateIdeaPage() {
                                     <div className="guest-canvas-section-title">
                                         <span>04</span>
                                         <div>
-                                            <b>Final discovery brief</b>
-                                            <small>Everything Voxidence will start from.</small>
+                                            <b>{canvasText.finalBrief}</b>
+                                            <small>{canvasText.everything}</small>
                                         </div>
                                     </div>
 
                                     <div className="guest-review guest-canvas-review">
                                         <article className="guest-canvas-review-signal">
-                                            <span>Problem signal</span>
+                                            <span>{canvasText.problemSignal}</span>
                                             {draft.description ? (
                                                 <p dir="auto" data-no-auto-translate="true">
                                                     {draft.description}
                                                 </p>
                                             ) : (
-                                                <p>No written signal — generation will use the selected domain.</p>
+                                                <p>{canvasText.noSignal}</p>
                                             )}
                                         </article>
 
                                         <div className="guest-canvas-review-grid">
                                             <article>
-                                                <small>Domain</small>
+                                                <small>{canvasText.domain}</small>
                                                 <b>
-                                                    {selectedDomain?.name ||
-                                                        selectedDomain?.displayName ||
-                                                        'Auto-detected'}
+                                                    {selectedDomain
+                                                        ? (isArabicUi
+                                                            ? t(
+                                                                selectedDomain.name ||
+                                                                selectedDomain.displayName,
+                                                            )
+                                                            : (selectedDomain.name ||
+                                                                selectedDomain.displayName))
+                                                        : canvasText.autoDetected}
                                                 </b>
                                             </article>
 
                                             <article>
-                                                <small>Location</small>
+                                                <small>{canvasText.location}</small>
                                                 <b dir="auto" data-no-auto-translate="true">
                                                     {[draft.city, draft.region, draft.country]
                                                         .filter(Boolean)
@@ -1432,12 +1539,19 @@ export default function GuestGenerateIdeaPage() {
                                             </article>
 
                                             <article>
-                                                <small>Language</small>
+                                                <small>{canvasText.language}</small>
                                                 <b>
-                                                    {languages.find(
-                                                        (language) =>
-                                                            language.code === draft.language,
-                                                    )?.name || draft.language}
+                                                    {(() => {
+                                                        const selectedLanguage = languages.find(
+                                                            (language) => language.code === draft.language,
+                                                        )?.name;
+
+                                                        if (!selectedLanguage) return draft.language;
+
+                                                        return isArabicUi
+                                                            ? t(selectedLanguage)
+                                                            : selectedLanguage;
+                                                    })()}
                                                 </b>
                                             </article>
                                         </div>
@@ -1449,10 +1563,8 @@ export default function GuestGenerateIdeaPage() {
                                         </span>
 
                                         <div>
-                                            <b>Ready to discover</b>
-                                            <small>
-                                                Your free guest idea will start from this brief.
-                                            </small>
+                                            <b>{canvasText.ready}</b>
+                                            <small>{canvasText.readyText}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -1460,7 +1572,7 @@ export default function GuestGenerateIdeaPage() {
 
                             {error ? (
                                 <div className="guest-error guest-canvas-error">
-                                    {error}
+                                    {isArabicUi ? t(error) : error}
                                 </div>
                             ) : null}
 
@@ -1471,11 +1583,11 @@ export default function GuestGenerateIdeaPage() {
                                     onClick={handlePrevious}
                                 >
                                     <ArrowLeft />
-                                    {step === 0 ? 'Cancel' : 'Previous'}
+                                    {step === 0 ? canvasText.cancel : canvasText.previous}
                                 </button>
 
                                 <span className="guest-canvas-actions-note">
-                                    {step + 1} of {FORM_STEPS.length}
+                                    {step + 1} {canvasText.of} {FORM_STEPS.length}
                                 </span>
 
                                 {step < FORM_STEPS.length - 1 ? (
@@ -1487,13 +1599,13 @@ export default function GuestGenerateIdeaPage() {
                                     >
                                         {step === 0
                                             ? hasValidDescription
-                                                ? 'Continue'
-                                                : 'Choose domain instead'
+                                                ? canvasText.continue
+                                                : canvasText.chooseDomainInstead
                                             : step === 1 &&
                                                 hasValidDescription &&
                                                 !draft.domainId
-                                                ? 'Skip domain'
-                                                : 'Continue'}
+                                                ? canvasText.skipDomain
+                                                : canvasText.continue}
 
                                         <ArrowRight />
                                     </button>
@@ -1510,7 +1622,7 @@ export default function GuestGenerateIdeaPage() {
                                             <WandSparkles />
                                         )}
 
-                                        Generate my free idea
+                                        {canvasText.generate}
                                     </button>
                                 )}
                             </footer>

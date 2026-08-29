@@ -3563,3 +3563,178 @@ html.vox-user-rtl .normal-dashboard-page :is(
   transform: rotate(180deg);
 }
 
+
+/* 2026-08-27 — restore the original dashboard intelligence-core hero.
+   Dark mode keeps the same composition instead of flattening it into a slab. */
+html.vox-user-dark body .normal-dashboard-page {
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-hero.normal-dashboard-hero--core {
+  overflow: hidden !important;
+  border-color: rgba(111, 205, 197, .19) !important;
+  background:
+    radial-gradient(circle at 78% 18%, rgba(91, 198, 190, .18), transparent 32%),
+    radial-gradient(circle at 10% 96%, rgba(222, 145, 166, .10), transparent 31%),
+    radial-gradient(circle at 54% 116%, rgba(112, 205, 198, .07), transparent 30%),
+    linear-gradient(145deg, #10251f 0%, #0d201a 58%, #11261f 100%) !important;
+  box-shadow: 0 28px 68px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255,255,255,.025) !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-hero__mesh {
+  opacity: .24 !important;
+  background-image: radial-gradient(circle, rgba(112, 205, 198, .22) 1px, transparent 1.5px) !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-hero__access {
+  color: #d8e8e4 !important;
+  border-color: rgba(111, 205, 197, .16) !important;
+  background: rgba(21, 47, 39, .52) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(12px);
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-hero__access strong {
+  color: #8fddd6 !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-hero__access span {
+  color: #a9bdb7 !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-signal-core {
+  background: radial-gradient(circle, rgba(91, 198, 190, .13), transparent 59%) !important;
+  background-image: radial-gradient(circle, rgba(91, 198, 190, .13), transparent 59%) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-signal-core__ring {
+  border-color: rgba(112, 205, 198, .25) !important;
+  box-shadow: 0 0 44px rgba(80, 190, 181, .06) !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-signal-core__brain {
+  color: #f8fffd !important;
+  border-color: rgba(188, 240, 234, .24) !important;
+  background: linear-gradient(145deg, #62c7c0, #46aaa4 55%, #318d87) !important;
+  box-shadow: 0 28px 66px rgba(26, 116, 108, .28), inset 0 1px 0 rgba(255,255,255,.24) !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-signal-core__node {
+  color: #92ddd7 !important;
+  border-color: rgba(112, 205, 198, .19) !important;
+  background: rgba(23, 52, 43, .88) !important;
+  background-image: none !important;
+  box-shadow: 0 15px 34px rgba(0, 0, 0, .15) !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-signal-core__node--4 {
+  color: #a8e9d0 !important;
+  background: rgba(24, 62, 49, .90) !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-signal-core__counter {
+  color: #dcece8 !important;
+  border-color: rgba(112, 205, 198, .17) !important;
+  background: rgba(20, 47, 39, .78) !important;
+  background-image: none !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .13) !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-signal-core__counter strong {
+  color: #8fddd6 !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-signal-core__counter span {
+  color: #9fb4ae !important;
+}
+
+/* FINAL_20260828_DASHBOARD_COUNTER_VOICE_EMAIL */
+.normal-dashboard-page .normal-signal-core__counter {
+  left: 50% !important;
+  right: auto !important;
+  bottom: 10px !important;
+  top: auto !important;
+  transform: translateX(-50%) !important;
+}
+html.vox-user-rtl .normal-dashboard-page .normal-signal-core__counter {
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%) !important;
+}
+
+.normal-launcher__voice-status {
+  margin: 7px 2px 0;
+  color: #6f817c;
+  font-size: .78rem;
+  line-height: 1.45;
+}
+.normal-launcher__voice.is-listening {
+  color: #2f8f89 !important;
+  border-color: rgba(47, 143, 137, .30) !important;
+  background: rgba(78, 178, 169, .10) !important;
+}
+.normal-dashboard-page .normal-launcher__voice > svg,
+html.vox-user-dark body .normal-dashboard-page .normal-launcher__voice > svg {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .normal-dashboard-page .normal-launcher__voice-status {
+  color: #a9bbb5 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-contact-card__email,
+html.vox-user-dark body .normal-dashboard-page .normal-contact-card__email > * {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* 2026-08-28 — Dark mode readability for the unlocked advanced-workspace hint.
+   The light-mode card is untouched. The previous dark surface changed only the
+   container background, leaving the light-mode dark heading (#2b2337) on top
+   of it, which made the message look almost invisible. */
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint--unlocked {
+  border-color: rgba(112, 205, 198, 0.28) !important;
+  background:
+    radial-gradient(circle at 92% 18%, rgba(105, 197, 190, 0.12), transparent 34%),
+    linear-gradient(145deg, #274139 0%, #20352e 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(220, 249, 244, 0.04),
+    0 14px 30px rgba(0, 0, 0, 0.14) !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint--unlocked b {
+  color: #f2fbf8 !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.16);
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint--unlocked small {
+  color: #bed1cb !important;
+}
+
+html.vox-user-dark body .normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint--unlocked .normal-direct-unlock-hint__icon {
+  color: #f8fffd !important;
+  border-color: rgba(220, 249, 244, 0.32) !important;
+  background:
+    radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.34), transparent 28%),
+    linear-gradient(145deg, #74c9c2 0%, #55afa9 58%, #d98fa0 100%) !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    0 0 0 5px rgba(92, 189, 185, 0.08) !important;
+}

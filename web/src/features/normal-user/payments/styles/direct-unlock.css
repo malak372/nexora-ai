@@ -1198,3 +1198,48 @@ button.unlock-pay:hover:not(:disabled) {
   }
 }
 
+
+
+/* FINAL_DIRECT_UNLOCK_DARK_POLISH */
+html.vox-user-dark :is(.direct-unlock-page,.direct-unlock-card,.direct-unlock-panel,.direct-unlock-summary) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+
+
+/* FINAL_DIRECT_UNLOCK_ACTUAL_DARK_RTL_FIX */
+html.vox-user-dark .unlock-page { color:#edf7f4 !important; background:#0b1512 !important; }
+html.vox-user-dark :is(
+  .unlock-checkout,
+  .unlock-currency-preference,
+  .unlock-methods label,
+  .unlock-backend-price,
+  .unlock-secure,
+  .unlock-benefits > div
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .unlock-methods label.selected {
+  border-color:rgba(112,205,198,.48) !important;
+  background:linear-gradient(145deg,#29483d,#20382f) !important;
+}
+html.vox-user-dark .unlock-currency-preference a,
+html.vox-user-dark .unlock-lock,
+html.vox-user-dark :is(.unlock-methods__icon,.unlock-methods__check) {
+  color:#9fddd7 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#20382f !important;
+}
+html.vox-user-dark :is(.unlock-checkout p,.unlock-currency-preference p,.unlock-currency-preference small,.unlock-methods em,.unlock-secure small) {
+  color:#aec1bb !important;
+}
+html.vox-user-rtl .unlock-page { direction:rtl; }
+html.vox-user-rtl :is(.unlock-story__content,.unlock-checkout,.unlock-story__trust,.unlock-currency-preference) { text-align:right; }
+html.vox-user-rtl .unlock-back svg { transform:rotate(180deg); }

@@ -14,6 +14,7 @@ import {
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useUserExperience } from '../../../../system/user-experience';
 
 
 const NORMAL_CONFETTI_COUNT = 18;
@@ -26,6 +27,7 @@ export default function CompletionCelebration({
   onOpenIdea,
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const { t } = useUserExperience();
   const [countdown, setCountdown] = useState(3);
   const celebrationReady = countdown === 0;
 
@@ -90,7 +92,7 @@ export default function CompletionCelebration({
 
           <span className="nx-celebration-countdown__eyebrow" id="generation-countdown-title">
             {isPremium ? <Crown size={16} /> : <Sparkles size={16} />}
-            {isPremium ? 'Premium workspace prepared' : 'Your idea is ready'}
+            {t(isPremium ? 'Premium workspace prepared' : 'Your idea is ready')}
           </span>
 
           <div className="nx-celebration-countdown__number-stage">
@@ -117,7 +119,7 @@ export default function CompletionCelebration({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.08 }}
           >
-            {countdown === 3 ? 'Evidence locked in.' : countdown === 2 ? 'Workspace coming together.' : 'Get ready to reveal it.'}
+            {t(countdown === 3 ? 'Evidence locked in.' : countdown === 2 ? 'Workspace coming together.' : 'Get ready to reveal it.')}
           </motion.strong>
 
           <div className="nx-celebration-countdown__track" aria-hidden="true">
@@ -126,7 +128,7 @@ export default function CompletionCelebration({
             <i className={countdown <= 1 ? 'is-active' : ''} />
           </div>
 
-          <small>{isPremium ? 'Your complete premium workspace is about to open.' : 'Your validated idea is about to appear.'}</small>
+          <small>{t(isPremium ? 'Your complete premium workspace is about to open.' : 'Your validated idea is about to appear.')}</small>
         </motion.div>
       ) : (
         <>
@@ -185,7 +187,7 @@ export default function CompletionCelebration({
               transition={{ delay: 0.18, duration: 0.3 }}
             >
               {isPremium ? <Sparkles size={15} /> : <CheckCircle2 size={15} />}
-              {isPremium ? 'Premium workspace ready' : 'Generation complete'}
+              {t(isPremium ? 'Premium workspace ready' : 'Generation complete')}
             </motion.span>
 
             <motion.h2
@@ -194,7 +196,7 @@ export default function CompletionCelebration({
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.24, duration: 0.35 }}
             >
-              {ideaTitle || 'Your new Voxidence idea'}
+              <bdi dir="auto" data-idea-content="true">{ideaTitle || t('Your new Voxidence idea')}</bdi>
             </motion.h2>
 
             <motion.p
@@ -202,9 +204,9 @@ export default function CompletionCelebration({
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.29, duration: 0.35 }}
             >
-              {isPremium
+              {t(isPremium
                 ? 'Your evidence-backed idea is ready, validated, saved, and unlocked with its advanced workspace.'
-                : 'Your validated idea has been saved and its workspace is ready.'}
+                : 'Your validated idea has been saved and its workspace is ready.')}
             </motion.p>
 
             {isPremium ? (
@@ -215,9 +217,9 @@ export default function CompletionCelebration({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.34, duration: 0.35 }}
               >
-                <span><CheckCircle2 size={16} />Advanced outputs</span>
-                <span><CheckCircle2 size={16} />Workspace unlocked</span>
-                <span><CheckCircle2 size={16} />Evidence saved</span>
+                <span><CheckCircle2 size={16} />{t('Advanced outputs')}</span>
+                <span><CheckCircle2 size={16} />{t('Workspace unlocked')}</span>
+                <span><CheckCircle2 size={16} />{t('Evidence saved')}</span>
               </motion.div>
             ) : null}
 
@@ -230,7 +232,7 @@ export default function CompletionCelebration({
               whileHover={shouldReduceMotion ? undefined : { y: -2, scale: 1.01 }}
               whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
             >
-              {isPremium ? 'Open premium workspace' : 'Open idea workspace'}
+              {t(isPremium ? 'Open premium workspace' : 'Open idea workspace')}
               <ArrowRight size={18} />
             </motion.button>
           </motion.div>
