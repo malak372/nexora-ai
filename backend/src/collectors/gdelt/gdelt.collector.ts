@@ -44,6 +44,8 @@ export class GdeltCollector extends BaseCollector implements SocialCollector {
   private static transientCircuitOpenUntil = 0;
   private static consecutiveTransientFailures = 0;
   private static readonly TRANSIENT_COOLDOWN_MS = 45 * 1000;
+  private static readonly TLS_CERTIFICATE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+  private static runtimeUnavailableReason: string | null = null;
 
   constructor(configService: ConfigService) {
     super(configService, GdeltCollector.name);
@@ -56,7 +58,8 @@ export class GdeltCollector extends BaseCollector implements SocialCollector {
   getRuntimeUnavailableReason(): string | null {
     return this.isRuntimeAvailable()
       ? null
-      : 'GDELT transient timeout circuit is currently open.';
+      : GdeltCollector.runtimeUnavailableReason ??
+          'GDELT transient failure circuit is currently open.';
   }
 
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
@@ -167,30 +170,44 @@ export class GdeltCollector extends BaseCollector implements SocialCollector {
       });
 
       GdeltCollector.consecutiveTransientFailures = 0;
+      GdeltCollector.runtimeUnavailableReason = null;
       return Array.isArray(response.data?.articles)
         ? [...response.data.articles]
         : [];
     } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const certificateFailure =
+        /certificate has expired|cert_has_expired|unable to verify the first certificate|self signed certificate/iu.test(
+          errorMessage,
+        );
       const transient =
         axios.isAxiosError(error) &&
         (!error.response ||
           error.code === 'ECONNABORTED' ||
           error.code === 'ETIMEDOUT' ||
           (error.response.status >= 500 && error.response.status <= 599));
-      if (transient) {
+      if (certificateFailure) {
+        GdeltCollector.transientCircuitOpenUntil = Math.max(
+          GdeltCollector.transientCircuitOpenUntil,
+          Date.now() + GdeltCollector.TLS_CERTIFICATE_COOLDOWN_MS,
+        );
+        GdeltCollector.runtimeUnavailableReason =
+          'GDELT TLS certificate validation failed; collector is cooling down rather than bypassing certificate verification.';
+      } else if (transient) {
         GdeltCollector.consecutiveTransientFailures += 1;
         if (GdeltCollector.consecutiveTransientFailures >= 2) {
           GdeltCollector.transientCircuitOpenUntil = Math.max(
             GdeltCollector.transientCircuitOpenUntil,
             Date.now() + GdeltCollector.TRANSIENT_COOLDOWN_MS,
           );
+          GdeltCollector.runtimeUnavailableReason =
+            'GDELT transient network failure circuit is currently open.';
         }
       }
 
       this.logger.debug(
-        `GDELT query failed non-fatally. query="${query}" error=${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `GDELT query failed non-fatally. query="${query}" error=${errorMessage}`,
       );
       return [];
     }

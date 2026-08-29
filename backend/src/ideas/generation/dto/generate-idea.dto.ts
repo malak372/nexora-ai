@@ -85,6 +85,32 @@ export class GenerateIdeaDto {
   domainIds?: string[];
 
   /**
+   * Ordered human-readable assertions for `domainIds`.
+   *
+   * Updated cross-domain clients submit these names together with the UUIDs.
+   * PREPARING resolves every UUID from the authoritative domain table and,
+   * when assertions are present, rejects the request if a resolved name differs
+   * from the asserted UI selection. Older clients that send UUIDs only remain
+   * compatible and still use authoritative backend domain resolution.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(3)
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  @Transform(({ value }: TransformFnParams): unknown => {
+    if (!Array.isArray(value)) {
+      return value;
+    }
+
+    return value.map((item) =>
+      typeof item === 'string' ? item.replace(/\s+/gu, ' ').trim() : item,
+    );
+  })
+  domainNames?: string[];
+
+  /**
    * Requested generation entitlement.
    *
    * Only registered-user generation types are accepted here.
@@ -165,9 +191,10 @@ export class GenerateIdeaDto {
    * Language of the generated idea content.
    *
    * This is intentionally separate from `language`, which controls collection
-   * and community-evidence language metadata. The frontend should send its
-   * active interface language here so evidence may be collected in one
-   * language while the generated idea is written in another.
+   * and community-evidence language metadata. When a requester description is
+   * present, the backend resolves the generated-content language from that
+   * description. This field is only a fallback for requests with no usable
+   * text-language signal and must not be treated as the UI locale.
    */
   @IsOptional()
   @IsEnum(LanguageCode)

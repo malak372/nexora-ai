@@ -31,6 +31,7 @@ import {
   type RequestProductBlueprint,
 } from '../../utils/request-product-blueprint.util';
 import { CanonicalRequestProductBlueprintUtil } from '../../utils/canonical-request-product-blueprint.util';
+import { TargetUserDeduplicationUtil } from '../../utils/target-user-deduplication.util';
 import type {
   AdvancedIdeaAiOutput,
   CoreIdeaAiOutput,
@@ -94,11 +95,11 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
-    if (context.evidenceState === 'ZERO_VALIDATED_EVIDENCE') {
+    if ((context.evidenceState === 'NO_VALID_EVIDENCE_FOUND' || context.evidenceState === 'EVIDENCE_ADJUDICATION_UNAVAILABLE')) {
       return {
         context,
         resultPreview:
-          'Skipped semantic duplicate rescue for a zero-evidence validation workspace; exact-title uniqueness is enforced atomically during persistence with domain-scoped title variants.',
+          'Skipped semantic duplicate rescue for a ungrounded validation workspace; exact-title uniqueness is enforced atomically during persistence with domain-scoped title variants.',
         metadata: {
           isDuplicate: false,
           softDuplicateSignalDetected: false,
@@ -534,9 +535,10 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
         : `${anchor} ${focusWord} Evidence Decision Workspace`,
     );
     const country = context.location.country?.trim() || 'the selected pilot region';
-    const targetUsers = blueprint?.targetUsers.length
-      ? [...blueprint.targetUsers]
-      : [...coreIdea.targetUsers];
+    const targetUsers = this.mergeTargetUsers(
+      coreIdea.targetUsers,
+      blueprint?.targetUsers ?? [],
+    );
     const problemStatement = [
       problem,
       'The implementation is intentionally limited to validating evidence quality, exception patterns, and workflow ownership before any broader operational product is deployed.',
@@ -963,7 +965,10 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
           ...blueprint.objectives.slice(0, 3),
           `Measure ${blueprint.metrics.slice(0, 4).join(', ')} during the pilot in ${country} and compare outcomes against the baseline before broader rollout.`,
         ],
-        targetUsers: [...blueprint.targetUsers],
+        targetUsers: this.mergeTargetUsers(
+          context.coreIdea.targetUsers,
+          blueprint.targetUsers,
+        ),
         ...(context.coreIdea.fullAbstract
           ? {
               fullAbstract: [
@@ -1087,9 +1092,10 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
       title,
       problemStatement,
       objectives,
-      targetUsers: blueprint?.targetUsers.length
-        ? [...blueprint.targetUsers]
-        : [...coreIdea.targetUsers],
+      targetUsers: this.mergeTargetUsers(
+        coreIdea.targetUsers,
+        blueprint?.targetUsers ?? [],
+      ),
       ...(fullAbstract ? { fullAbstract } : {}),
       ...(partialAbstract ? { partialAbstract } : {}),
       ...(limitedAbstract ? { limitedAbstract } : {}),
@@ -1620,6 +1626,16 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
       .slice(0, 4);
 
     return tokens.length > 0 ? tokens.join(' ') : 'Operational Evidence';
+  }
+
+  private mergeTargetUsers(
+    primary: readonly string[],
+    supplemental: readonly string[],
+  ): string[] {
+    return TargetUserDeduplicationUtil.deduplicate(
+      [...primary, ...supplemental],
+      5,
+    );
   }
 
   private escapeRegExp(value: string): string {

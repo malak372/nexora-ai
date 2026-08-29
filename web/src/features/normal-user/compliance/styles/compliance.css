@@ -799,7 +799,7 @@
 }
 
 .compliance-case-card__footer .priority-medium {
-    color: #a06f2d;
+    color: #b8627b;
 }
 
 .compliance-case-card__footer .priority-low {
@@ -824,8 +824,8 @@
 }
 
 .compliance-status.is-in_progress {
-    color: #825e21;
-    background: #fff3d9;
+    color: #a95670;
+    background: #fff0f4;
 }
 
 .compliance-status.is-resolved {
@@ -1024,7 +1024,7 @@
 }
 
 .compliance-detail__meta strong.is-medium {
-    color: #98702f;
+    color: #b45f78;
 }
 
 .compliance-detail__meta strong.is-low {
@@ -3256,4 +3256,120 @@ html.vox-user-rtl .compliance-page,
 html.vox-user-rtl .compliance-page :is(.compliance-hero__content, .compliance-story__header, .compliance-story__rail article, .compliance-principles__cards article, .compliance-case-card, .compliance-detail, .compliance-modal__dialog) {
     direction: rtl;
     text-align: right;
+}
+
+
+/* FINAL_COMPLIANCE_DARK_RTL_POLISH */
+html.vox-user-dark :is(
+  .compliance-hero,
+  .compliance-hero__story,
+  .compliance-shell,
+  .compliance-list,
+  .compliance-list__header,
+  .compliance-card,
+  .compliance-detail,
+  .compliance-detail__meta>article,
+  .compliance-message-card,
+  .compliance-timeline-card,
+  .compliance-reply-card,
+  .compliance-modal__dialog
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .compliance-detail__meta > * {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.16) !important;
+  background:#20372f !important;
+}
+html.vox-user-dark :is(.compliance-detail p,.compliance-card p,.compliance-timeline p,.compliance-timeline small) { color:#afc1bb !important; }
+html.vox-user-dark :is(.compliance-modal input,.compliance-modal textarea,.compliance-modal select) { background:#10201b !important; color:#eef8f5 !important; }
+html.vox-user-rtl .compliance-page,
+html.vox-user-rtl .compliance-modal { direction:rtl; }
+html.vox-user-rtl :is(.compliance-list__header,.compliance-card,.compliance-detail__inner,.compliance-modal__content) { text-align:right; }
+
+
+/* FINAL_COMPLIANCE_DARK_SURFACES_FIX */
+html.vox-user-dark :is(
+  .compliance-rail > header,
+  .compliance-rail__tools,
+  .compliance-search,
+  .compliance-filter,
+  .compliance-case-card,
+  .compliance-detail__meta > div,
+  .compliance-section,
+  .compliance-reply-card,
+  .compliance-timeline,
+  .compliance-modal,
+  .compliance-modal__card
+) {
+  color: #edf7f4 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #172a24 !important;
+  background-image: linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark :is(.compliance-search input,.compliance-filter select) {
+  color: #edf7f4 !important;
+  background: transparent !important;
+}
+html.vox-user-dark :is(.compliance-rail header h2,.compliance-case-card > strong,.compliance-detail h1,.compliance-detail h2,.compliance-detail h3) {
+  color: #eef8f5 !important;
+}
+html.vox-user-dark :is(.compliance-rail header p,.compliance-case-card > p,.compliance-detail p,.compliance-detail small) {
+  color: #aec1bb !important;
+}
+html.vox-user-dark .compliance-rail__actions .is-icon,
+html.vox-user-dark .compliance-modal__close,
+html.vox-user-dark .compliance-modal__actions .is-secondary {
+  color: #dcebe7 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #20382f !important;
+}
+
+
+/* FINAL_COMPLIANCE_WHITE_CARD_ERADICATION */
+html.vox-user-dark :is(
+  .compliance-message-card,
+  .compliance-timeline-card,
+  .compliance-related-idea,
+  .compliance-detail__header,
+  .compliance-detail__inner,
+  .compliance-list-state
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .compliance-case-card.is-selected {
+  border-color:rgba(112,205,198,.46) !important;
+  background:linear-gradient(145deg,#244138,#1a3028) !important;
+}
+
+/* 2026-08-27 normal-user page hero integration */
+.compliance-page > .normal-page-hero { margin-bottom: 22px; }
+.compliance-hero-launch {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 18px;
+  border: 1px solid rgba(76, 174, 165, .28);
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(135deg, #5fc3bc, #3f9d97);
+  box-shadow: 0 12px 28px rgba(63,157,151,.18);
+  font-weight: 800;
+  cursor: pointer;
+}
+html.vox-user-dark .compliance-hero-launch {
+  border-color: rgba(130,221,213,.25);
+  background: linear-gradient(135deg,#55b9b2,#378d87);
+  box-shadow: 0 12px 28px rgba(0,0,0,.16);
 }

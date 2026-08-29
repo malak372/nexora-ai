@@ -8,13 +8,14 @@
  */
 import {
   ArrowLeft, ArrowRight, CheckCircle2, CreditCard, Download, FileText,
-  LoaderCircle, ReceiptText, ShieldCheck, Sparkles, X,
+  LoaderCircle, ReceiptText, ShieldCheck, X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { downloadMyInvoice, getMyInvoice, getMyInvoices, prefetchMyInvoice } from '../api/invoicesApi';
 import { useUserExperience } from '../../../../system/user-experience';
+import NormalPageHero from '../../shared/components/NormalPageHero';
 import '../styles/billing-history.css';
 
 const PURPOSE_LABELS = {
@@ -24,16 +25,18 @@ const PURPOSE_LABELS = {
   UNLOCK_PUBLICATION_ADVANCED: 'Advanced publication unlock',
 };
 
-function formatMoney(amount, currency) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(amount || 0));
+function formatMoney(amount, currency, locale = 'en-US') {
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(amount || 0));
 }
 
-function formatDate(value) {
-  return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value));
+function formatDate(value, locale = 'en-US') {
+  return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value));
 }
 
 export default function BillingHistoryPage() {
-  const { t } = useUserExperience();
+  const { t, isArabic } = useUserExperience();
+  const locale = isArabic ? 'ar' : 'en-US';
+  const moneyLocale = 'en-US';
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [page, setPage] = useState(1);
@@ -110,51 +113,41 @@ export default function BillingHistoryPage() {
 
   return (
     <main className="billing-page reveal-page">
-      <section className="billing-hero">
-        <div className="billing-hero__copy">
-          <span><Sparkles size={15} /> VERIFIED BILLING</span>
-          <h1>Billing history,<br />beautifully organized.</h1>
-          <p>Every successful Stripe payment creates a secure invoice automatically. Review provider references, totals, and downloadable records from one private workspace.</p>
-          <div className="billing-trust-row">
-            <span><ShieldCheck size={16} /> Provider verified</span>
-            <span><ReceiptText size={16} /> Auto-generated invoices</span>
-          </div>
-        </div>
-        <div className="billing-hero__visual" aria-hidden="true">
-          <div className="billing-hero__card">
-            <small>VOXIDENCE INVOICE</small>
-            <strong>{pagination.total}</strong>
-            <span>billing records</span>
-            <i><ReceiptText size={30} /></i>
-          </div>
-        </div>
-      </section>
+      <NormalPageHero
+        variant="billing"
+        eyebrow={t('VERIFIED BILLING')}
+        title={t('Billing history, beautifully organized.')}
+        description={t('Every successful Stripe payment creates a secure invoice automatically. Review provider references, totals, and downloadable records from one private workspace.')}
+        chips={[t('Provider verified'), t('Auto-generated invoices'), t('Secure payment records')]}
+        stats={[{ label: t('Billing records'), value: pagination.total }]}
+        compact
+      />
 
       <section className="billing-panel">
         <header>
-          <div><span>BILLING LEDGER</span><h2>Your invoices</h2><p>Private records tied to your authenticated account.</p></div>
-          <div className="billing-panel__provider"><CreditCard size={18} /><span><strong>Stripe Checkout</strong><small>Secure provider history</small></span></div>
+          <div><span>{t('BILLING LEDGER')}</span><h2>{t('Your invoices')}</h2><p>{t('Private records tied to your authenticated account.')}</p></div>
+          <div className="billing-panel__provider"><CreditCard size={18} /><span><strong dir="ltr" data-no-auto-translate="true">Stripe Checkout</strong><small>{t('Secure provider history')}</small></span></div>
         </header>
 
         {loading ? (
-          <div className="billing-state"><LoaderCircle className="billing-spin" /><h3>Loading billing history</h3></div>
+          <div className="billing-state"><LoaderCircle className="billing-spin" /><h3>{t('Loading billing history')}</h3></div>
         ) : error ? (
-          <div className="billing-state billing-state--error"><ShieldCheck /><h3>Billing history unavailable</h3><p>{error}</p></div>
+          <div className="billing-state billing-state--error"><ShieldCheck /><h3>{t('Billing history unavailable')}</h3><p dir="auto">{error}</p></div>
         ) : items.length === 0 ? (
-          <div className="billing-state"><ReceiptText /><h3>No invoices yet</h3><p>A verified invoice will appear here after your first successful payment.</p></div>
+          <div className="billing-state"><ReceiptText /><h3>{t('No invoices yet')}</h3><p>{t('A verified invoice will appear here after your first successful payment.')}</p></div>
         ) : (
           <div className="billing-table-wrap">
             <table className="billing-table">
-              <thead><tr><th>Invoice</th><th>Date</th><th>Purpose</th><th>Provider</th><th>Total</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th>{t('Invoice')}</th><th>{t('Date')}</th><th>{t('Purpose')}</th><th>{t('Provider')}</th><th>{t('Total')}</th><th>{t('Status')}</th><th /></tr></thead>
               <tbody>{items.map((invoice) => (
                 <tr key={invoice.id}>
-                  <td><div className="billing-invoice-id"><i><FileText size={17} /></i><span><strong>{invoice.invoiceNumber}</strong><small>{invoice.transactionReference || 'Verified transaction'}</small></span></div></td>
-                  <td>{formatDate(invoice.issuedAt)}</td>
-                  <td>{PURPOSE_LABELS[invoice.paymentPurpose] || invoice.paymentPurpose}</td>
+                  <td><div className="billing-invoice-id"><i><FileText size={17} /></i><span><strong>{invoice.invoiceNumber}</strong><small><bdi dir="ltr" data-no-auto-translate="true">{invoice.transactionReference || t('Verified transaction')}</bdi></small></span></div></td>
+                  <td>{formatDate(invoice.issuedAt, locale)}</td>
+                  <td>{t(PURPOSE_LABELS[invoice.paymentPurpose] || invoice.paymentPurpose)}</td>
                   <td><span className={`billing-provider billing-provider--${invoice.providerKey}`}>{invoice.providerKey}</span></td>
-                  <td><strong>{formatMoney(invoice.amount, invoice.currency)}</strong></td>
-                  <td><span className="billing-status"><CheckCircle2 size={14} />{invoice.status}</span></td>
-                  <td><button type="button" onMouseEnter={() => void prefetchMyInvoice(invoice.id)} onFocus={() => void prefetchMyInvoice(invoice.id)} onClick={() => openInvoice(invoice)}>View</button></td>
+                  <td><strong dir="auto">{formatMoney(invoice.amount, invoice.currency, moneyLocale)}</strong></td>
+                  <td><span className="billing-status"><CheckCircle2 size={14} />{t(invoice.status)}</span></td>
+                  <td><button type="button" onMouseEnter={() => void prefetchMyInvoice(invoice.id)} onFocus={() => void prefetchMyInvoice(invoice.id)} onClick={() => openInvoice(invoice)}>{t('View')}</button></td>
                 </tr>
               ))}</tbody>
             </table>
@@ -163,32 +156,32 @@ export default function BillingHistoryPage() {
 
         {pagination.totalPages > 1 ? (
           <footer className="billing-pagination">
-            <button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ArrowLeft size={17} /> Previous</button>
-            <span>Page <strong>{page}</strong> of {pagination.totalPages}</span>
-            <button type="button" disabled={page >= pagination.totalPages} onClick={() => setPage((value) => value + 1)}>Next <ArrowRight size={17} /></button>
+            <button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ArrowLeft size={17} /> {t('Previous')}</button>
+            <span>{t('Page')} <strong>{page}</strong> {t('of')} {pagination.totalPages}</span>
+            <button type="button" disabled={page >= pagination.totalPages} onClick={() => setPage((value) => value + 1)}>{t('Next')} <ArrowRight size={17} /></button>
           </footer>
         ) : null}
       </section>
 
       {selected && typeof document !== 'undefined'
         ? createPortal(
-          <div className="invoice-modal" role="dialog" aria-modal="true" aria-label="Invoice details">
-            <button type="button" className="invoice-modal__backdrop" aria-label="Close invoice" onClick={() => setSelected(null)} />
+          <div className="invoice-modal" role="dialog" aria-modal="true" aria-label={t('Invoice details')}>
+            <button type="button" className="invoice-modal__backdrop" aria-label={t('Close invoice')} onClick={() => setSelected(null)} />
             <article className="invoice-sheet" onClick={(event) => event.stopPropagation()}>
               <header>
-                <div><span>VOXIDENCE</span><h2>Invoice</h2><p>{selected.invoiceNumber}</p></div>
-                <div className="invoice-sheet__status">{detailLoading ? <LoaderCircle size={16} className="billing-spin" /> : <CheckCircle2 size={16} />} {detailLoading ? 'Refreshing' : selected.status}</div>
+                <div><span data-no-auto-translate="true">VOXIDENCE</span><h2>{t('Invoice')}</h2><p dir="ltr" data-no-auto-translate="true">{selected.invoiceNumber}</p></div>
+                <div className="invoice-sheet__status">{detailLoading ? <LoaderCircle size={16} className="billing-spin" /> : <CheckCircle2 size={16} />} {detailLoading ? t('Refreshing') : t(selected.status)}</div>
                 <button type="button" className="invoice-sheet__close" onClick={() => setSelected(null)}><X size={19} /></button>
               </header>
               <section className="invoice-sheet__meta">
-                <div><small>Billed to</small><strong>{selected.customerName || 'Voxidence account'}</strong><span>{selected.customerEmail || 'Loading account details…'}</span></div>
-                <div><small>Issued</small><strong>{formatDate(selected.issuedAt)}</strong><span>{String(selected.providerKey || 'provider').toUpperCase()} · {selected.paymentMethodKey || 'Verified payment'}</span></div>
-                <div><small>Purpose</small><strong>{PURPOSE_LABELS[selected.paymentPurpose] || selected.paymentPurpose}</strong></div>
-                <div><small>Reference</small><strong>{selected.transactionReference || selected.providerPaymentId || 'Verified transaction'}</strong></div>
+                <div><small>{t('Billed to')}</small><strong dir="auto" data-no-auto-translate="true">{selected.customerName || t('Voxidence account')}</strong><span dir="ltr" data-no-auto-translate="true">{selected.customerEmail || t('Loading account details…')}</span></div>
+                <div><small>{t('Issued')}</small><strong>{formatDate(selected.issuedAt, locale)}</strong><span dir="ltr" data-no-auto-translate="true">{String(selected.providerKey || 'provider').toUpperCase()} · {selected.paymentMethodKey || t('Verified payment')}</span></div>
+                <div><small>{t('Purpose')}</small><strong>{t(PURPOSE_LABELS[selected.paymentPurpose] || selected.paymentPurpose)}</strong></div>
+                <div><small>{t('Reference')}</small><strong dir="ltr" data-no-auto-translate="true">{selected.transactionReference || selected.providerPaymentId || t('Verified transaction')}</strong></div>
               </section>
-              <section className="invoice-sheet__total"><span>{t('Total paid')}</span><strong>{formatMoney(selected.amount, selected.currency)}</strong></section>
+              <section className="invoice-sheet__total"><span>{t('Total paid')}</span><strong dir="auto">{formatMoney(selected.amount, selected.currency, moneyLocale)}</strong></section>
               <footer>
-                <div><ShieldCheck size={17} /><span><strong>Verified provider confirmation</strong><small>Voxidence stores no card or wallet credentials.</small></span></div>
+                <div><ShieldCheck size={17} /><span><strong>{t('Verified provider confirmation')}</strong><small>{t('Voxidence stores no card or wallet credentials.')}</small></span></div>
                 <button type="button" disabled={downloadLoading} onClick={handleDownload}>{downloadLoading ? <LoaderCircle size={17} className="billing-spin" /> : <Download size={17} />} {t(downloadLoading ? 'Preparing PDF...' : 'Download PDF')}</button>
               </footer>
             </article>

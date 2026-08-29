@@ -45,6 +45,95 @@ const humanizeKey = (value) =>
     .replace(/[-_]/g, ' ')
     .replace(/\b\w/g, (character) => character.toUpperCase());
 
+
+const ARABIC_WORKSPACE_SECTION_TITLES = Object.freeze({
+  'full abstract': 'الملخص الكامل',
+  'executive summary': 'الملخص التنفيذي',
+  'technology stack': 'التقنيات المستخدمة',
+  'technical stack': 'التقنيات المستخدمة',
+  'system architecture': 'معمارية النظام',
+  'solution architecture': 'معمارية الحل',
+  'database design': 'تصميم قاعدة البيانات',
+  'data model': 'نموذج البيانات',
+  'mvp features': 'ميزات المنتج الأولي',
+  'mvp feature set': 'ميزات المنتج الأولي',
+  'value proposition': 'عرض القيمة',
+  'business model': 'نموذج العمل',
+  'revenue model': 'نموذج الإيرادات',
+  'market analysis': 'تحليل السوق',
+  'competitive analysis': 'تحليل المنافسين',
+  'implementation plan': 'خطة التنفيذ',
+  'project plan': 'خطة المشروع',
+  'roadmap': 'خارطة الطريق',
+  'development roadmap': 'خارطة طريق التطوير',
+  'product roadmap': 'خارطة طريق المنتج',
+  'security and privacy': 'الأمان والخصوصية',
+  'security privacy': 'الأمان والخصوصية',
+  'api design': 'تصميم واجهات البرمجة',
+  'deployment strategy': 'استراتيجية النشر',
+  'testing strategy': 'استراتيجية الاختبار',
+  'user flows': 'مسارات المستخدم',
+  'risk assessment': 'تقييم المخاطر',
+  'scalability plan': 'خطة قابلية التوسع',
+  'technical requirements': 'المتطلبات التقنية',
+  'functional requirements': 'المتطلبات الوظيفية',
+  'non functional requirements': 'المتطلبات غير الوظيفية',
+  'ui ux design': 'تصميم واجهة وتجربة المستخدم',
+  'technical specifications': 'المواصفات التقنية',
+  'technical specification': 'المواصفات التقنية',
+  'acceptance criteria': 'معايير القبول',
+  'product requirements': 'متطلبات المنتج',
+  'budget estimation': 'تقدير الميزانية',
+  'budget estimate': 'تقدير الميزانية',
+  'cost estimation': 'تقدير التكاليف',
+  'cost estimate': 'تقدير التكاليف',
+  'feasibility assessment': 'تقييم الجدوى',
+  'feasibility analysis': 'تحليل الجدوى',
+  'implementation timeline': 'الجدول الزمني للتنفيذ',
+  'project timeline': 'الجدول الزمني للمشروع',
+  'development timeline': 'الجدول الزمني للتطوير',
+  'market potential': 'إمكانات السوق',
+  'market opportunity': 'فرصة السوق',
+  'nlp executive summary': 'الملخص التنفيذي للمعالجة اللغوية',
+  'natural language processing executive summary': 'الملخص التنفيذي للمعالجة اللغوية',
+  'community feedback summary': 'ملخص ملاحظات المجتمع',
+  'community feedback': 'ملاحظات المجتمع',
+  'local regulations': 'اللوائح المحلية',
+  'local regulation': 'اللوائح المحلية',
+  'local regulatory requirements': 'المتطلبات التنظيمية المحلية',
+  'regulatory requirements': 'المتطلبات التنظيمية',
+  'regulatory compliance': 'الامتثال التنظيمي',
+});
+
+const normalizeWorkspaceSectionTitle = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[-_/]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+const localizeWorkspaceSectionTitle = (section, language, t) => {
+  const rawTitle = section?.title || humanizeKey(section?.key);
+
+  if (language !== 'ar') return rawTitle;
+
+  const candidates = [
+    rawTitle,
+    section?.key,
+    humanizeKey(section?.key),
+  ];
+
+  for (const candidate of candidates) {
+    const translated = ARABIC_WORKSPACE_SECTION_TITLES[
+      normalizeWorkspaceSectionTitle(candidate)
+    ];
+    if (translated) return translated;
+  }
+
+  return t(rawTitle);
+};
+
 /**
  * Converts backend generation enums into user-facing product labels.
  * The API value remains unchanged so permissions and business logic are safe.
@@ -122,15 +211,15 @@ function WorkspaceContent({ value }) {
   );
 }
 
-function WorkspaceLoadingState() {
+function WorkspaceLoadingState({ t }) {
   return (
     <section className="workspace-state workspace-state--loading">
       <span className="workspace-state__orb">
         <WandSparkles size={24} />
       </span>
       <div>
-        <h1>Preparing your idea workspace</h1>
-        <p>Organizing the core brief and available execution outputs.</p>
+        <h1>{t('Preparing your idea workspace')}</h1>
+        <p>{t('Organizing the core brief and available execution outputs.')}</p>
       </div>
       <span className="workspace-state__progress" aria-hidden="true">
         <i />
@@ -139,7 +228,7 @@ function WorkspaceLoadingState() {
   );
 }
 
-function WorkspaceSectionArtwork({ section, index }) {
+function WorkspaceSectionArtwork({ section, index, label }) {
   const Icon = section?.icon || FileText;
   const tone = ['mint', 'rose', 'sky', 'pearl'][index % 4];
 
@@ -170,7 +259,7 @@ function WorkspaceSectionArtwork({ section, index }) {
 
       <span className="workspace-section-art__label">
         <Sparkles size={11} />
-        Idea signal
+        {label}
       </span>
     </div>
   );
@@ -340,7 +429,7 @@ export default function IdeaWorkspacePage() {
   );
   const coreJourneySections = sections.slice(0, Math.min(4, sections.length));
 
-  if (loading) return <WorkspaceLoadingState />;
+  if (loading) return <WorkspaceLoadingState t={t} />;
 
   if (error || !idea) {
     return (
@@ -349,12 +438,12 @@ export default function IdeaWorkspacePage() {
           <LockKeyhole size={24} />
         </span>
         <div>
-          <h1>Idea unavailable</h1>
-          <p>{error || 'This workspace could not be loaded.'}</p>
+          <h1>{t('Idea unavailable')}</h1>
+          <p>{error || (language === 'ar' ? 'تعذر تحميل مساحة العمل هذه.' : 'This workspace could not be loaded.')}</p>
         </div>
         <button type="button" onClick={() => navigate('/normal/ideas')}>
           <ArrowLeft size={17} />
-          Back to My ideas
+          {t('Back to My ideas')}
         </button>
       </section>
     );
@@ -381,7 +470,7 @@ export default function IdeaWorkspacePage() {
         onClick={() => navigate('/normal/ideas')}
       >
         <ArrowLeft size={17} />
-        <span>My ideas</span>
+        <span>{t('My ideas')}</span>
       </button>
 
       <motion.section
@@ -403,15 +492,15 @@ export default function IdeaWorkspacePage() {
         <div className="workspace-hero__content">
           <span className="workspace-eyebrow">
             <Sparkles size={14} />
-            Private idea workspace
+            {t('Private idea workspace')}
           </span>
 
           <h1 dir="auto" data-idea-content="true">{idea.title}</h1>
 
           <p>
-            <span dir="auto" data-idea-content="true">{idea.domain?.name || 'General innovation'}</span>
+            <span dir="auto" data-idea-content="true">{idea.domain?.name || t('General innovation')}</span>
             <span aria-hidden="true">·</span>
-            <span dir="auto" data-idea-content="true">{idea.selectedRegion || 'Global scope'}</span>
+            <span dir="auto" data-idea-content="true">{idea.selectedRegion || t('Global scope')}</span>
           </p>
 
           <div className="workspace-hero__status">
@@ -422,15 +511,15 @@ export default function IdeaWorkspacePage() {
                 <LockKeyhole size={14} />
               )}
               {idea.isUnlocked
-                ? 'Advanced workspace'
+                ? t('Advanced workspace')
                 : unlockProcessing
-                  ? 'Preparing advanced workspace'
-                  : 'Core workspace'}
+                  ? t('Preparing advanced workspace')
+                  : t('Core workspace')}
             </span>
 
             <span>
               <CalendarDays size={14} />
-              Created {createdDate}
+              {t('Created')} {createdDate}
             </span>
           </div>
         </div>
@@ -443,10 +532,9 @@ export default function IdeaWorkspacePage() {
           >
             <WandSparkles size={18} />
             <span>
-              <strong>Preparing advanced outputs…</strong>
+              <strong>{t('Preparing advanced outputs…')}</strong>
               <small>
-                Your payment is confirmed. You can stay on this page while the
-                advanced workspace finishes in the background.
+                {t('Your payment is confirmed. You can stay on this page while the advanced workspace finishes in the background.')}
               </small>
             </span>
           </div>
@@ -461,8 +549,8 @@ export default function IdeaWorkspacePage() {
             >
               <LockKeyhole size={17} />
               <span>
-                <strong>{isPremium ? 'Unlock idea' : 'Direct unlock'}</strong>
-                <small>Open advanced outputs</small>
+                <strong>{t(isPremium ? 'Unlock idea' : 'Direct unlock')}</strong>
+                <small>{t('Open advanced outputs')}</small>
               </span>
               <ChevronRight size={17} />
             </button>
@@ -475,8 +563,8 @@ export default function IdeaWorkspacePage() {
             >
               <BriefcaseBusiness size={17} />
               <span>
-                <strong>Business model</strong>
-                <small>Shape the strategy</small>
+                <strong>{t('Business model')}</strong>
+                <small>{t('Shape the strategy')}</small>
               </span>
               <ChevronRight size={17} />
             </button>
@@ -503,8 +591,8 @@ export default function IdeaWorkspacePage() {
             >
               <Bot size={17} />
               <span>
-                <strong>AI Chat</strong>
-                <small>Discuss this idea</small>
+                <strong>{t('AI Chat')}</strong>
+                <small>{t('Discuss this idea')}</small>
               </span>
               <ChevronRight size={17} />
             </button>
@@ -532,13 +620,13 @@ export default function IdeaWorkspacePage() {
             <span>
               <strong>
                 {String(idea.publication?.status ?? '').toUpperCase() === 'PUBLISHED'
-                  ? 'Edit publication'
-                  : 'Publish idea'}
+                  ? t('Edit publication')
+                  : (language === 'ar' ? 'نشر الفكرة' : 'Publish idea')}
               </strong>
               <small>
                 {String(idea.publication?.status ?? '').toUpperCase() === 'PUBLISHED'
-                  ? 'Update the public story'
-                  : 'Prepare the public story'}
+                  ? t('Update the public story')
+                  : t('Prepare the public story')}
               </small>
             </span>
             <ChevronRight size={17} />
@@ -561,7 +649,7 @@ export default function IdeaWorkspacePage() {
             <Rocket size={20} />
           </span>
           <div>
-            <span>Generation type</span>
+            <span>{t('Generation type')}</span>
             <strong>{t(formatGenerationType(idea.generationType))}</strong>
           </div>
         </motion.article>
@@ -574,7 +662,7 @@ export default function IdeaWorkspacePage() {
             <CheckCircle2 size={20} />
           </span>
           <div>
-            <span>Workspace access</span>
+            <span>{t('Workspace access')}</span>
             <strong>{t(idea.isUnlocked ? 'Unlocked' : 'Core access')}</strong>
           </div>
         </motion.article>
@@ -587,7 +675,7 @@ export default function IdeaWorkspacePage() {
             <CalendarDays size={20} />
           </span>
           <div>
-            <span>Created</span>
+            <span>{t('Created')}</span>
             <strong>{createdDate}</strong>
           </div>
         </motion.article>
@@ -599,15 +687,15 @@ export default function IdeaWorkspacePage() {
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, amount: 0.2 }}
         transition={{ duration: 0.5 }}
-        aria-label="Core idea journey"
+        aria-label={t('Core idea journey')}
       >
         <div className="workspace-storyline__intro">
           <span className="workspace-storyline__spark">
             <Sparkles size={17} />
           </span>
           <div>
-            <span>IDEA JOURNEY</span>
-            <strong>Explore the story visually</strong>
+            <span>{t('IDEA JOURNEY')}</span>
+            <strong>{t('Explore the story visually')}</strong>
           </div>
         </div>
 
@@ -628,11 +716,9 @@ export default function IdeaWorkspacePage() {
                 </span>
                 <span>
                   <small>{String(index + 1).padStart(2, '0')}</small>
-                  {section.preserveTitle ? (
-                    <strong dir="auto" data-idea-content="true">{section.title}</strong>
-                  ) : (
-                    <strong>{section.title}</strong>
-                  )}
+                  <strong dir="auto">
+                    {localizeWorkspaceSectionTitle(section, language, t)}
+                  </strong>
                 </span>
               </button>
             );
@@ -643,8 +729,8 @@ export default function IdeaWorkspacePage() {
           <div className="workspace-storyline__advanced">
             <WandSparkles size={15} />
             <span>
-              <strong>{sections.length - 4} advanced outputs</strong>
-              <small>Continue the journey in the document navigator.</small>
+              <strong>{t(`${sections.length - 4} advanced outputs`)}</strong>
+              <small>{t('Continue the journey in the document navigator.')}</small>
             </span>
           </div>
         ) : null}
@@ -657,12 +743,12 @@ export default function IdeaWorkspacePage() {
         viewport={{ once: true, amount: 0.12 }}
         transition={{ duration: 0.58, ease: [0.22, 1, 0.36, 1] }}
       >
-        <aside aria-label="Idea document sections">
+        <aside aria-label={t('Idea document sections')}>
           <div className="workspace-nav__intro">
             <span><FileText size={16} /></span>
             <div>
-              <strong>Idea document</strong>
-              <small>{sections.length} sections available</small>
+              <strong>{t('Idea document')}</strong>
+              <small>{t(`${sections.length} sections available`)}</small>
             </div>
           </div>
 
@@ -706,12 +792,10 @@ export default function IdeaWorkspacePage() {
                     <Icon size={16} />
                   </span>
                   <span className="workspace-nav__copy">
-                    {section.preserveTitle ? (
-                      <strong dir="auto" data-idea-content="true">{section.title}</strong>
-                    ) : (
-                      <strong>{section.title}</strong>
-                    )}
-                    <small>{section.caption}</small>
+                    <strong dir="auto">
+                      {localizeWorkspaceSectionTitle(section, language, t)}
+                    </strong>
+                    <small>{t(section.caption)}</small>
                   </span>
                   <ChevronRight
                     className="workspace-nav__arrow"
@@ -732,27 +816,25 @@ export default function IdeaWorkspacePage() {
         >
           <div className="workspace-document__header">
             <div className="workspace-document__heading">
-              <span>Idea document</span>
-              {current.preserveTitle ? (
-                <h2 dir="auto" data-idea-content="true">{current.title}</h2>
-              ) : (
-                <h2>{current.title}</h2>
-              )}
-              <p>{current.caption}</p>
+              <span>{t('Idea document')}</span>
+              <h2 dir="auto">
+                {localizeWorkspaceSectionTitle(current, language, t)}
+              </h2>
+              <p>{t(current.caption)}</p>
 
               <div className="workspace-document__chapter">
                 <span>
-                  Chapter {String(currentIndex + 1).padStart(2, '0')}
+                  {language === 'ar' ? `الفصل ${String(currentIndex + 1).padStart(2, '0')}` : `Chapter ${String(currentIndex + 1).padStart(2, '0')}`}
                 </span>
                 <i aria-hidden="true" />
                 <span>
-                  {currentIndex < 4 ? 'Core narrative' : 'Execution output'}
+                  {t(currentIndex < 4 ? 'Core narrative' : 'Execution output')}
                 </span>
               </div>
             </div>
 
             <div className="workspace-document__visual">
-              <WorkspaceSectionArtwork section={current} index={currentIndex} />
+              <WorkspaceSectionArtwork section={current} index={currentIndex} label={t('Idea signal')} />
               <span className="workspace-document__badge">
                 {String(currentIndex + 1).padStart(2, '0')}
               </span>

@@ -211,7 +211,6 @@ html.vox-user-dark body :is(
   .normal-dashboard-hero,
   .normal-active-generation,
   .ideas-page__header,
-  .ideas-page__toolbar,
   .discover-controls,
   .discover-featured,
   .discover-state,
@@ -228,8 +227,6 @@ html.vox-user-dark body :is(
   .profile-settings-panel,
   .billing-hero,
   .billing-panel,
-  .notifications-shell,
-  .notifications-toolbar,
   .notifications-panel,
   .compliance-hero,
   .compliance-story,
@@ -573,8 +570,8 @@ html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form
 html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-tile']:not([class*='__']),
 html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-row']:not([class*='__']),
 html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-item']:not([class*='__']),
-html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-toolbar']:not([class*='__']),
-html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-filters']:not([class*='__']),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-toolbar']:not([class*='__']):not(.notifications-toolbar),
+html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-filters']:not([class*='__']):not(.ideas-filters):not(.notifications-filters):not(.notifications-read-filters),
 html.vox-user-dark body .normal-app-shell :is(div, article, section, aside, form, li)[class*='-state']:not([class*='__']) {
   color: var(--vx-dark-text) !important;
   border-color: var(--vx-dark-border) !important;
@@ -661,10 +658,8 @@ html.vox-user-dark body :is(
   .notifications-panel-actions,
   .notifications-panel,
   .notification-detail,
-  .notifications-read-filters,
   .billing-hero__card,
   .invoice-sheet,
-  .ideas-filters,
   .ideas-search,
   .ideas-date-filter__fields,
   .ideas-accepted-note,

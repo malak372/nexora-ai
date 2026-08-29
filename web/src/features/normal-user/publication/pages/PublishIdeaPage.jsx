@@ -346,7 +346,7 @@ export default function PublishIdeaPage() {
       </button>
 
       <motion.section
-        className="publish-hero"
+        className={`publish-hero ${isAlreadyPublished ? 'is-editing' : 'is-new'}`}
         initial={
           shouldReduceMotion
             ? undefined
@@ -361,12 +361,46 @@ export default function PublishIdeaPage() {
         <div className="publish-hero__orb publish-hero__orb--one" />
         <div className="publish-hero__orb publish-hero__orb--two" />
         <div className="publish-hero__grid" aria-hidden="true" />
-        <div>
-          <span><Sparkles size={14} /> PUBLICATION STUDIO</span>
-          <h1>Prepare a clear story for the right audience.</h1>
-          <p>Shape a polished public snapshot while Voxidence keeps advanced execution details protected.</p>
+
+        <div className="publish-hero__copy">
+          <span>
+            <Sparkles size={14} />
+            {t(isAlreadyPublished ? 'Edit publication' : 'PUBLICATION STUDIO')}
+          </span>
+          <h1>{t('Prepare a clear story for the right audience.')}</h1>
+          <p>{t('Shape a polished public snapshot while Voxidence keeps advanced execution details protected.')}</p>
         </div>
-        <ShieldCheck size={70} />
+
+        <div className="publish-hero__visual" aria-hidden="true">
+          <span className="publish-hero__visual-orbit publish-hero__visual-orbit--one" />
+          <span className="publish-hero__visual-orbit publish-hero__visual-orbit--two" />
+          <span className="publish-hero__visual-line publish-hero__visual-line--one" />
+          <span className="publish-hero__visual-line publish-hero__visual-line--two" />
+          <span className="publish-hero__visual-sheet">
+            <i /><i /><i /><i />
+          </span>
+          <span className="publish-hero__visual-signal">
+            <i /><i /><i /><i /><i />
+          </span>
+          <span className="publish-hero__visual-dot publish-hero__visual-dot--one" />
+          <span className="publish-hero__visual-dot publish-hero__visual-dot--two" />
+          <span className="publish-hero__visual-core">
+            <ShieldCheck size={38} strokeWidth={1.8} />
+          </span>
+          <span className="publish-hero__visual-node publish-hero__visual-node--preview">
+            <Eye size={18} />
+          </span>
+          <span className="publish-hero__visual-node publish-hero__visual-node--audience">
+            <UsersRound size={18} />
+          </span>
+          <span className="publish-hero__visual-node publish-hero__visual-node--feedback">
+            <MessageSquareText size={17} />
+          </span>
+          <span className="publish-hero__visual-caption">
+            <i />
+            {t(isAlreadyPublished ? 'Edit publication' : 'LIVE PREVIEW')}
+          </span>
+        </div>
       </motion.section>
 
       <motion.section

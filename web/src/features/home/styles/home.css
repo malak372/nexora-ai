@@ -5718,3 +5718,1628 @@ html.vox-user-rtl .vox-home-page .vox-hero-lead {
 .vox-navbar-brand__name {
   unicode-bidi: isolate;
 }
+
+
+/* FINAL_PUBLIC_DARK_RTL_POLISH */
+html.vox-user-dark .vox-home-page,
+html.vox-user-dark .vox-hero-stage,
+html.vox-user-dark .vox-domains-section,
+html.vox-user-dark .vox-discoveries-section {
+  background: #0b1512 !important;
+}
+
+html.vox-user-dark .vox-hero-shell,
+html.vox-user-dark .vox-domains-container,
+html.vox-user-dark .vox-discoveries-container {
+  border-color: rgba(112, 205, 198, .18) !important;
+  background:
+    radial-gradient(circle at 84% 12%, rgba(101, 197, 191, .10), transparent 28%),
+    radial-gradient(circle at 12% 88%, rgba(217, 143, 160, .07), transparent 30%),
+    linear-gradient(145deg, #172a24, #12211c) !important;
+  box-shadow: 0 28px 70px rgba(0,0,0,.22) !important;
+}
+
+html.vox-user-dark .vox-stage-showcase-frame {
+  border-color: rgba(112, 205, 198, .18) !important;
+  background: #12231d !important;
+  box-shadow: inset 0 0 0 1px rgba(112,205,198,.06), 0 24px 58px rgba(0,0,0,.25) !important;
+}
+
+html.vox-user-dark .vox-stage-showcase-image {
+  filter: brightness(.58) saturate(.72) contrast(1.05) !important;
+  opacity: .86;
+}
+
+html.vox-user-dark .vox-stage-showcase-glass {
+  background: linear-gradient(145deg, rgba(8,18,15,.20), rgba(8,18,15,.58)) !important;
+}
+
+html.vox-user-dark .vox-domain-card,
+html.vox-user-dark .vox-discovery-card {
+  color: #edf7f4 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: linear-gradient(145deg, #1a3028, #14261f) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-domain-card:hover,
+html.vox-user-dark .vox-discovery-card:hover {
+  border-color: rgba(112,205,198,.34) !important;
+  background: linear-gradient(145deg, #203a31, #172b24) !important;
+}
+
+html.vox-user-dark :is(.vox-domain-card__title,.vox-discoveries-title,.vox-domains-title,.vox-discovery-card h3) {
+  color: #f1f8f6 !important;
+}
+html.vox-user-dark :is(.vox-domain-card__description,.vox-domains-intro,.vox-discoveries-intro,.vox-discovery-card__summary) {
+  color: #b3c5bf !important;
+}
+
+html.vox-user-dark .vox-hero-button-secondary {
+  color: #e8f4f1 !important;
+  border-color: rgba(112,205,198,.22) !important;
+  background: #1b3029 !important;
+}
+
+html.vox-user-rtl .vox-hero-copy,
+html.vox-user-rtl .vox-domains-heading,
+html.vox-user-rtl .vox-discoveries-heading { text-align: right; }
+html.vox-user-rtl .vox-hero-actions,
+html.vox-user-rtl .vox-hero-trust,
+html.vox-user-rtl .vox-domains-kicker-row,
+html.vox-user-rtl .vox-discoveries-eyebrow-row { justify-content: flex-start; }
+
+/* Final public dark-mode unification: remove pale islands from hero/domains/discoveries. */
+html.vox-user-dark .vox-home-page .vox-hero-shell {
+  overflow:hidden !important;
+  background:linear-gradient(145deg,#12251f,#0f1e1a) !important;
+}
+html.vox-user-dark .vox-home-page .vox-stage-showcase,
+html.vox-user-dark .vox-home-page .vox-stage-showcase-frame {
+  background:#13251f !important;
+  background-image:radial-gradient(circle at 50% 45%,rgba(103,201,194,.09),transparent 42%) !important;
+}
+html.vox-user-dark .vox-home-page .vox-stage-showcase-image {
+  filter:brightness(.43) saturate(.62) contrast(1.10) !important;
+  opacity:.76 !important;
+}
+html.vox-user-dark .vox-home-page .vox-stage-showcase-glass {
+  background:linear-gradient(145deg,rgba(12,29,24,.30),rgba(12,29,24,.58)) !important;
+}
+html.vox-user-dark .vox-home-page :is(.vox-domains-container,.vox-discoveries-container) {
+  border:1px solid rgba(112,205,198,.14) !important;
+  border-radius:34px !important;
+  padding:clamp(22px,3vw,34px) !important;
+  background:linear-gradient(145deg,#172a24,#12231d) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .vox-home-page :is(.vox-domain-card,.vox-discovery-card) {
+  background:#172d26 !important;
+  background-image:linear-gradient(145deg,#1a3129,#14261f) !important;
+  border-color:rgba(112,205,198,.16) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .vox-home-page :is(.vox-domain-card__icon,.vox-discovery-card__icon,.vox-discovery-card__direction) {
+  background:#203a31 !important;
+  background-image:none !important;
+  border-color:rgba(112,205,198,.16) !important;
+}
+html.vox-user-dark .vox-home-page .vox-domain-card--more,
+html.vox-user-dark .vox-home-page .vox-domains-more {
+  background:#193029 !important;
+  background-image:linear-gradient(145deg,#1c342c,#152820) !important;
+}
+html.vox-user-dark .vox-home-page :is(.vox-domains-title,.vox-discoveries-header h2) { color:#f0f8f6 !important; }
+html.vox-user-dark .vox-home-page :is(.vox-domains-intro,.vox-discoveries-header p,.vox-domain-card__description,.vox-discovery-card__summary) { color:#aec1bb !important; }
+html.vox-user-rtl .vox-home-page :is(.vox-domains-heading,.vox-discoveries-heading,.vox-domain-card__copy,.vox-discovery-card) { text-align:right !important; }
+
+/* ========================================================================== */
+/* FINAL_20260827_PUBLIC_DARK_RTL_ALIGNMENT                                   */
+/* Keep the dark Arabic landing page structurally identical to the English   */
+/* layout while removing the pale/grey islands that survived older themes.   */
+/* ========================================================================== */
+html.vox-user-dark .vox-home-page {
+  background: #091511 !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-hero-shell {
+  border: 1px solid rgba(112,205,198,.14) !important;
+  background: linear-gradient(145deg,#10221c 0%,#0d1c18 100%) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase,
+html.vox-user-dark .vox-home-page .vox-stage-showcase-frame {
+  isolation: isolate;
+  overflow: hidden !important;
+  border-color: rgba(112,205,198,.14) !important;
+  background: #10211c !important;
+  background-image: none !important;
+  box-shadow: inset 0 0 0 1px rgba(112,205,198,.04), 0 18px 44px rgba(0,0,0,.24) !important;
+}
+
+/* The slideshow SVGs are intentionally light. In dark mode they are treated
+   like illustrations printed behind smoked glass instead of white cards. */
+html.vox-user-dark .vox-home-page .vox-stage-showcase-image {
+  filter: brightness(.29) saturate(.55) contrast(1.16) !important;
+  opacity: .68 !important;
+  mix-blend-mode: luminosity;
+}
+html.vox-user-dark .vox-home-page .vox-stage-showcase-glass {
+  z-index: 3 !important;
+  background:
+    radial-gradient(circle at 48% 44%, rgba(112,205,198,.05), transparent 42%),
+    linear-gradient(145deg,rgba(7,20,16,.34),rgba(7,20,16,.74)) !important;
+}
+
+/* Match the physical English layout. RTL changes text direction, not the
+   placement of the hero/story artwork. */
+html.vox-user-rtl .vox-home-page .vox-hero-shell {
+  direction: ltr !important;
+}
+html.vox-user-rtl .vox-home-page .vox-hero-copy {
+  direction: rtl !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .vox-home-page .vox-stage-showcase {
+  direction: ltr !important;
+}
+html.vox-user-rtl .vox-home-page .vox-hero-actions,
+html.vox-user-rtl .vox-home-page .vox-hero-trust {
+  direction: ltr !important;
+  justify-content: flex-start !important;
+}
+html.vox-user-rtl .vox-home-page .vox-hero-button {
+  direction: rtl !important;
+}
+
+/* How it works: keep the clean English rail instead of four heavy dark boxes. */
+html.vox-user-dark .vox-home-page .vox-how-section,
+html.vox-user-dark .vox-home-page .vox-how-container,
+html.vox-user-dark .vox-home-page .vox-how-panel {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-how-panel {
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+html.vox-user-dark .vox-home-page .vox-how-card {
+  border: 0 !important;
+  border-inline-end: 1px solid rgba(112,205,198,.13) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-how-step-wrap:last-child .vox-how-card {
+  border-inline-end: 0 !important;
+}
+html.vox-user-dark .vox-home-page .vox-how-card:hover {
+  transform: translateY(-2px) !important;
+  background: rgba(112,205,198,.035) !important;
+}
+html.vox-user-dark .vox-home-page .vox-how-summary {
+  border: 0 !important;
+  border-top: 1px solid rgba(112,205,198,.12) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.vox-user-rtl .vox-home-page .vox-how-flow {
+  direction: ltr !important;
+}
+html.vox-user-rtl .vox-home-page .vox-how-card {
+  direction: rtl !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .vox-home-page .vox-how-connector svg {
+  transform: none !important;
+}
+
+/* Why Voxidence: no detached grey slab, and keep the same physical layout
+   used by the English version. */
+html.vox-user-dark .vox-home-page .vox-about-panel,
+html.vox-user-dark .vox-home-page .vox-about-story-card,
+html.vox-user-dark .vox-home-page .vox-about-feature-grid {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-about-story-card {
+  border-color: rgba(112,205,198,.14) !important;
+  background: rgba(20,43,35,.72) !important;
+}
+html.vox-user-dark .vox-home-page .vox-about-feature {
+  border-color: rgba(112,205,198,.14) !important;
+  background: rgba(20,43,35,.72) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-rtl .vox-home-page .vox-about-layout {
+  direction: ltr !important;
+}
+html.vox-user-rtl .vox-home-page .vox-about-story-card,
+html.vox-user-rtl .vox-home-page .vox-about-feature-grid,
+html.vox-user-rtl .vox-home-page .vox-about-feature {
+  direction: rtl !important;
+  text-align: right !important;
+}
+
+/* Domains and public discoveries: remove the large translucent grey panels. */
+html.vox-user-dark .vox-home-page .vox-domains-container,
+html.vox-user-dark .vox-home-page .vox-discoveries-container {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-domain-card,
+html.vox-user-dark .vox-home-page .vox-discovery-card,
+html.vox-user-dark .vox-home-page .vox-domain-card--more,
+html.vox-user-dark .vox-home-page .vox-domains-more {
+  border-color: rgba(112,205,198,.16) !important;
+  background: #13271f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-domain-card:hover,
+html.vox-user-dark .vox-home-page .vox-discovery-card:hover {
+  background: #183129 !important;
+}
+html.vox-user-dark .vox-home-page .vox-domain-card__icon,
+html.vox-user-dark .vox-home-page .vox-discovery-card__icon,
+html.vox-user-dark .vox-home-page .vox-discovery-card__direction {
+  background: #1b382f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 1080px) {
+  html.vox-user-rtl .vox-home-page .vox-hero-shell,
+  html.vox-user-rtl .vox-home-page .vox-about-layout {
+    direction: rtl !important;
+  }
+  html.vox-user-dark .vox-home-page .vox-how-card {
+    border-inline-end: 0 !important;
+    border-bottom: 1px solid rgba(112,205,198,.12) !important;
+  }
+}
+
+
+/* FINAL_20260827_HOME_SEAMLESS_DARK_SECTIONS */
+html.vox-user-dark .vox-home-page,
+html.vox-user-dark .vox-home-page .vox-hero-stage,
+html.vox-user-dark .vox-home-page .vox-domains-section,
+html.vox-user-dark .vox-home-page .vox-discoveries-section {
+  background: #091511 !important;
+  background-image: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-domains-section::before,
+html.vox-user-dark .vox-home-page .vox-domains-section::after,
+html.vox-user-dark .vox-home-page .vox-discoveries-section::before,
+html.vox-user-dark .vox-home-page .vox-discoveries-section::after,
+html.vox-user-dark .vox-home-page .vox-domains-container::before,
+html.vox-user-dark .vox-home-page .vox-domains-container::after,
+html.vox-user-dark .vox-home-page .vox-discoveries-container::before,
+html.vox-user-dark .vox-home-page .vox-discoveries-container::after {
+  display: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-domains-container,
+html.vox-user-dark .vox-home-page .vox-discoveries-container {
+  padding-inline: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-domains-header,
+html.vox-user-dark .vox-home-page .vox-discoveries-header {
+  background: transparent !important;
+}
+html.vox-user-dark .vox-home-page .vox-domain-card,
+html.vox-user-dark .vox-home-page .vox-discovery-card,
+html.vox-user-dark .vox-home-page .vox-domain-card--more,
+html.vox-user-dark .vox-home-page .vox-domains-more {
+  border-color: rgba(112,205,198,.16) !important;
+  background: #12251f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .vox-home-page .vox-hero-shell {
+  border-color: rgba(112,205,198,.15) !important;
+  background:
+    radial-gradient(circle at 84% 14%,rgba(112,205,198,.06),transparent 27%),
+    radial-gradient(circle at 12% 86%,rgba(217,143,160,.04),transparent 26%),
+    #0d1d18 !important;
+}
+html.vox-user-dark .vox-home-page .vox-stage-showcase,
+html.vox-user-dark .vox-home-page .vox-stage-showcase-frame {
+  border-color: rgba(112,205,198,.15) !important;
+  background: #10231d !important;
+  box-shadow: 0 18px 44px rgba(0,0,0,.20) !important;
+}
+html.vox-user-dark .vox-home-page .vox-stage-showcase-image {
+  opacity: .86 !important;
+  filter: brightness(.56) saturate(.76) contrast(1.04) !important;
+  mix-blend-mode: normal !important;
+}
+html.vox-user-dark .vox-home-page .vox-stage-showcase-glass {
+  background: linear-gradient(145deg,rgba(8,22,17,.18),rgba(8,22,17,.46)) !important;
+}
+
+/* FINAL_20260827_HOME_DARK_CONTINUITY_V2 */
+html.vox-user-dark .vox-home-page,
+html.vox-user-dark .vox-home-page .vox-home-sections,
+html.vox-user-dark .vox-home-page .vox-hero-stage,
+html.vox-user-dark .vox-home-page .vox-domains-section,
+html.vox-user-dark .vox-home-page .vox-discoveries-section,
+html.vox-user-dark .vox-home-page .vox-domains-container,
+html.vox-user-dark .vox-home-page .vox-discoveries-container,
+html.vox-user-dark .vox-home-page .vox-domains-content,
+html.vox-user-dark .vox-home-page .vox-discoveries-grid {
+  background-color: #091511 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-hero-shell {
+  overflow: hidden !important;
+  border-color: rgba(112, 205, 198, .14) !important;
+  background:
+    radial-gradient(circle at 83% 16%, rgba(112, 205, 198, .055), transparent 28%),
+    radial-gradient(circle at 12% 86%, rgba(217, 143, 160, .035), transparent 25%),
+    #0b1b16 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase,
+html.vox-user-dark .vox-home-page .vox-stage-showcase-frame {
+  border-color: rgba(112, 205, 198, .16) !important;
+  background: #10231d !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .22) !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase-image {
+  opacity: .94 !important;
+  filter: brightness(.66) saturate(.92) contrast(1.08) !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase-glass {
+  background:
+    linear-gradient(145deg, rgba(7, 22, 17, .16), rgba(7, 22, 17, .48)),
+    rgba(18, 48, 39, .20) !important;
+  mix-blend-mode: multiply !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-backdrop {
+  opacity: .22 !important;
+  filter: blur(2px) !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-domains-section,
+html.vox-user-dark .vox-home-page .vox-discoveries-section {
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-domains-header,
+html.vox-user-dark .vox-home-page .vox-discoveries-header {
+  background: transparent !important;
+  border-color: rgba(112, 205, 198, .10) !important;
+}
+
+html.vox-user-dark .vox-home-page :is(.vox-domains-eyebrow,.vox-domains-count,.vox-discoveries-eyebrow,.vox-discoveries-live) {
+  color: #9edbd6 !important;
+  border-color: rgba(112, 205, 198, .17) !important;
+  background: #13271f !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-domain-card,
+html.vox-user-dark .vox-home-page .vox-domain-card--more,
+html.vox-user-dark .vox-home-page .vox-domains-more,
+html.vox-user-dark .vox-home-page .vox-discovery-card {
+  background: #12251f !important;
+  border-color: rgba(112, 205, 198, .15) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html.vox-user-dark .vox-home-page :is(.vox-domain-card:hover,.vox-discovery-card:hover) {
+  background: #173029 !important;
+}
+
+html.vox-user-dark .vox-home-page,
+html.vox-user-dark .vox-home-page .vox-home-background,
+html.vox-user-dark .vox-home-page .vox-home-sections,
+html.vox-user-dark .vox-home-page .vox-hero-stage,
+html.vox-user-dark .vox-home-page .vox-hero-stage::after,
+html.vox-user-dark .vox-home-page .vox-domains-section,
+html.vox-user-dark .vox-home-page .vox-discoveries-section {
+  background: #0b1b16 !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-hero-shell {
+  border-color: rgba(112, 205, 198, .16) !important;
+  background:
+    radial-gradient(circle at 84% 14%, rgba(112, 205, 198, .055), transparent 28%),
+    radial-gradient(circle at 12% 86%, rgba(217, 143, 160, .03), transparent 25%),
+    #0b1b16 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-hero-ambient {
+  opacity: .38 !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase,
+html.vox-user-dark .vox-home-page .vox-stage-showcase-frame {
+  border-color: rgba(112, 205, 198, .17) !important;
+  background: #0f231c !important;
+  background-image: none !important;
+  box-shadow: inset 0 0 0 1px rgba(112, 205, 198, .035), 0 18px 42px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase-image {
+  opacity: .9 !important;
+  filter: brightness(.61) saturate(.80) contrast(1.05) !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-stage-showcase-glass {
+  background: linear-gradient(145deg, rgba(7, 24, 18, .20), rgba(7, 24, 18, .42)) !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-domains-container,
+html.vox-user-dark .vox-home-page .vox-discoveries-container,
+html.vox-user-dark .vox-home-page .vox-domains-content,
+html.vox-user-dark .vox-home-page .vox-discoveries-grid {
+  background: #0b1b16 !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark .vox-home-page .vox-domain-card,
+html.vox-user-dark .vox-home-page .vox-domain-card--more,
+html.vox-user-dark .vox-home-page .vox-domains-more,
+html.vox-user-dark .vox-home-page .vox-discovery-card {
+  border-color: rgba(112, 205, 198, .16) !important;
+  background: #11271f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* 2026-08-27 Arabic hero composition: copy right, artwork left */
+html.vox-user-rtl .vox-home-page .vox-hero-shell {
+  direction: rtl !important;
+}
+html.vox-user-rtl .vox-home-page .vox-hero-copy {
+  direction: rtl !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .vox-home-page .vox-stage-showcase {
+  direction: ltr !important;
+}
+html.vox-user-rtl .vox-home-page .vox-hero-actions,
+html.vox-user-rtl .vox-home-page .vox-hero-trust {
+  direction: rtl !important;
+  justify-content: flex-start !important;
+}
+
+@media (max-width: 1080px) {
+  html.vox-user-rtl .vox-home-page .vox-hero-shell {
+    direction: rtl !important;
+  }
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-shell {
+  border: 1px solid rgba(116, 205, 197, .17) !important;
+  border-radius: 34px !important;
+  background:
+    radial-gradient(circle at 83% 14%, rgba(94, 190, 181, .14), transparent 30%),
+    radial-gradient(circle at 11% 88%, rgba(218, 139, 160, .10), transparent 29%),
+    linear-gradient(135deg, #10251e 0%, #0d1f1a 58%, #152721 100%) !important;
+  box-shadow: 0 24px 62px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-badge {
+  border-color: rgba(116, 205, 197, .18) !important;
+  background: rgba(24, 53, 44, .86) !important;
+  color: #9de0da !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-heading {
+  color: #f2f8f6 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-heading span {
+  background: linear-gradient(100deg, #80d5ce 0%, #a8ded8 48%, #e3a4b5 100%) !important;
+  background-clip: text !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-lead {
+  color: #b6c7c1 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-trust,
+html.vox-user-dark body .vox-home-page .vox-hero-trust span {
+  color: #b8cbc5 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-trust svg {
+  color: #75d0c9 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-button-secondary {
+  border-color: rgba(116, 205, 197, .20) !important;
+  background: rgba(28, 54, 46, .86) !important;
+  color: #e7f3f0 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase {
+  border-color: rgba(116, 205, 197, .17) !important;
+  border-radius: inherit !important;
+  background: #10251e !important;
+  background-image: none !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+  overflow: hidden !important;
+  border-color: rgba(116, 205, 197, .15) !important;
+  background: #10251e !important;
+  background-image:
+    radial-gradient(circle at 25% 20%, rgba(95, 192, 183, .10), transparent 35%),
+    radial-gradient(circle at 78% 78%, rgba(218, 139, 160, .08), transparent 31%) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  opacity: .96 !important;
+  filter: brightness(.79) saturate(.98) contrast(1.04) !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background:
+    radial-gradient(circle at 22% 20%, rgba(104, 205, 196, .055), transparent 35%),
+    radial-gradient(circle at 80% 78%, rgba(225, 145, 166, .045), transparent 31%),
+    linear-gradient(145deg, rgba(8, 27, 21, .16), rgba(8, 27, 21, .31)) !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail {
+  border-color: rgba(116, 205, 197, .16) !important;
+  background: rgba(17, 45, 36, .82) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span {
+  opacity: .9 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-corner-accent {
+  opacity: .82 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop {
+  opacity: .34 !important;
+  filter: blur(1px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame::after {
+  display: none !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260827_HOME_HERO_LIGHT_DARK_PARITY_AND_DIRECTION                  */
+/* ========================================================================== */
+html.vox-user-rtl .vox-home-page .vox-hero-shell {
+  direction: ltr !important;
+}
+
+html.vox-user-rtl .vox-home-page .vox-hero-copy {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  direction: rtl !important;
+  text-align: right !important;
+  justify-self: stretch;
+}
+
+html.vox-user-rtl .vox-home-page .vox-stage-showcase {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  direction: ltr !important;
+}
+
+html.vox-user-rtl .vox-home-page .vox-hero-actions,
+html.vox-user-rtl .vox-home-page .vox-hero-trust {
+  direction: rtl !important;
+  justify-content: flex-start !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-shell {
+  border-color: rgba(118, 213, 205, .22) !important;
+  background:
+    radial-gradient(circle at 84% 10%, rgba(91, 201, 193, .20), transparent 31%),
+    radial-gradient(circle at 8% 91%, rgba(225, 145, 168, .13), transparent 31%),
+    linear-gradient(126deg, #102720 0%, #0d211b 51%, #122a23 100%) !important;
+  box-shadow: 0 30px 72px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255,255,255,.025) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase,
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+  border-color: rgba(116, 205, 197, .23) !important;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(100, 210, 200, .15), transparent 31%),
+    radial-gradient(circle at 83% 82%, rgba(224, 148, 169, .12), transparent 29%),
+    linear-gradient(145deg, #18372f, #112820) !important;
+  box-shadow: 0 24px 52px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.045) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  opacity: .985 !important;
+  filter: brightness(.96) saturate(1.04) contrast(1.01) !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background:
+    linear-gradient(145deg, rgba(8, 27, 21, .015), rgba(8, 27, 21, .055)) !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one {
+  opacity: .58 !important;
+  background: rgba(91, 201, 193, .20) !important;
+  filter: blur(24px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two {
+  opacity: .50 !important;
+  background: rgba(224, 148, 169, .15) !important;
+  filter: blur(26px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail {
+  border-color: rgba(111, 205, 197, .18) !important;
+  background: rgba(16, 48, 39, .72) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-button-secondary {
+  border-color: rgba(116,205,197,.25) !important;
+  background: rgba(28,58,49,.78) !important;
+  color: #eff9f7 !important;
+}
+
+@media (max-width: 1180px) {
+  html.vox-user-rtl .vox-home-page .vox-hero-copy {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+  html.vox-user-rtl .vox-home-page .vox-stage-showcase {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+  }
+}
+
+/* ========================================================================== */
+/* 2026-08-27 — dark home parity: keep the light composition, not nested slabs */
+/* ========================================================================== */
+html.vox-user-dark body .vox-home-page .vox-hero-stage {
+  background:
+    radial-gradient(circle at 8% 10%, rgba(224, 146, 166, .095), transparent 31rem),
+    radial-gradient(circle at 92% 10%, rgba(105, 210, 201, .15), transparent 34rem),
+    radial-gradient(circle at 70% 92%, rgba(79, 155, 135, .09), transparent 31rem),
+    linear-gradient(135deg, #0a1914 0%, #0b1b16 48%, #0c1b17 100%) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-stage::after {
+  background: linear-gradient(to bottom, transparent, #0a1914) !important;
+}
+
+/* The light version has no card around the whole hero grid. Do the same in
+   dark mode so the illustration and copy breathe on one continuous canvas. */
+html.vox-user-dark body .vox-home-page .vox-hero-shell {
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-ambient {
+  opacity: .62 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase {
+  border-color: rgba(118, 213, 205, .18) !important;
+  background:
+    radial-gradient(circle at 20% 18%, rgba(110, 218, 207, .14), transparent 31%),
+    radial-gradient(circle at 82% 82%, rgba(226, 151, 171, .105), transparent 30%),
+    linear-gradient(145deg, rgba(25, 57, 48, .94), rgba(15, 38, 31, .96)) !important;
+  box-shadow: 0 28px 62px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+  border-color: rgba(118, 213, 205, .14) !important;
+  background:
+    radial-gradient(circle at 24% 20%, rgba(98, 207, 198, .11), transparent 34%),
+    radial-gradient(circle at 78% 80%, rgba(226, 151, 171, .085), transparent 32%),
+    rgba(18, 43, 35, .92) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  opacity: .99 !important;
+  filter: brightness(.88) saturate(.98) contrast(1.015) !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(102, 210, 201, .035), transparent 35%),
+    radial-gradient(circle at 82% 80%, rgba(228, 151, 173, .03), transparent 32%) !important;
+  mix-blend-mode: normal !important;
+}
+
+/* How it works follows the same open rail used by light mode. */
+html.vox-user-dark body .vox-home-page .vox-how-section {
+  background:
+    radial-gradient(circle at 7% 4%, rgba(94, 205, 197, .055), transparent 26rem),
+    radial-gradient(circle at 94% 10%, rgba(222, 145, 165, .045), transparent 26rem),
+    linear-gradient(180deg, #0a1914 0%, #0b1b16 58%, #0a1914 100%) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-transition {
+  background: linear-gradient(180deg, rgba(10,25,20,0), rgba(10,25,20,.72) 45%, #0a1914 100%) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-container,
+html.vox-user-dark body .vox-home-page .vox-how-panel,
+html.vox-user-dark body .vox-home-page .vox-how-flow,
+html.vox-user-dark body .vox-home-page .vox-how-step-wrap,
+html.vox-user-dark body .vox-home-page .vox-how-card,
+html.vox-user-dark body .vox-home-page .vox-how-summary {
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-panel {
+  border: 0 !important;
+  border-radius: 0 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-header {
+  border-bottom-color: rgba(112, 205, 198, .13) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-eyebrow {
+  color: #91ddd6 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background: rgba(19, 48, 39, .66) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-header h2 {
+  color: #f0f8f5 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-header > p {
+  color: #aebfba !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-flow {
+  border-top-color: rgba(112, 205, 198, .13) !important;
+  border-bottom-color: rgba(112, 205, 198, .13) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-card {
+  border: 0 !important;
+  border-inline-end: 1px solid rgba(112, 205, 198, .13) !important;
+  border-radius: 0 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-step-wrap:last-child .vox-how-card {
+  border-inline-end: 0 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-card:hover {
+  transform: translateY(-2px) !important;
+  background: linear-gradient(180deg, rgba(112,205,198,.045), rgba(112,205,198,.012)) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-icon {
+  color: #91ddd6 !important;
+  border-color: rgba(112, 205, 198, .17) !important;
+  background: rgba(24, 55, 46, .78) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-card h3 {
+  color: #eef7f4 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-card p,
+html.vox-user-dark body .vox-home-page .vox-how-number,
+html.vox-user-dark body .vox-home-page .vox-how-summary {
+  color: #a9bbb5 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-how-summary {
+  border: 0 !important;
+  border-top: 1px solid rgba(112, 205, 198, .12) !important;
+  border-radius: 0 !important;
+}
+
+@media (max-width: 1080px) {
+  html.vox-user-dark body .vox-home-page .vox-how-card {
+    border-inline-end: 0 !important;
+    border-bottom: 1px solid rgba(112, 205, 198, .12) !important;
+  }
+
+  html.vox-user-dark body .vox-home-page .vox-how-step-wrap:last-child .vox-how-card {
+    border-bottom: 0 !important;
+  }
+}
+
+/* FINAL_20260828_HOME_HERO_DARK_MATCH_LIGHT */
+html.vox-user-dark body .vox-home-page .vox-hero-stage {
+  background:
+    radial-gradient(circle at 8% 8%, rgba(243, 201, 211, .18), transparent 31rem),
+    radial-gradient(circle at 91% 12%, rgba(183, 221, 216, .18), transparent 32rem),
+    radial-gradient(circle at 73% 88%, rgba(220, 232, 226, .12), transparent 31rem),
+    linear-gradient(135deg, #0d1917 0%, #0f1f1b 48%, #0d1917 100%) !important;
+  background-image:
+    radial-gradient(circle at 8% 8%, rgba(243, 201, 211, .18), transparent 31rem),
+    radial-gradient(circle at 91% 12%, rgba(183, 221, 216, .18), transparent 32rem),
+    radial-gradient(circle at 73% 88%, rgba(220, 232, 226, .12), transparent 31rem),
+    linear-gradient(135deg, #0d1917 0%, #0f1f1b 48%, #0d1917 100%) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-shell {
+  border-color: rgba(112, 205, 198, .16) !important;
+  background:
+    radial-gradient(circle at 84% 14%, rgba(112, 205, 198, .10), transparent 28%),
+    radial-gradient(circle at 12% 86%, rgba(217, 143, 160, .07), transparent 25%),
+    linear-gradient(135deg, rgba(11, 30, 24, .96), rgba(9, 25, 21, .96)) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase,
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+  border-color: rgba(112, 205, 198, .16) !important;
+  background: linear-gradient(145deg, rgba(251, 252, 251, .92), rgba(237, 243, 240, .90)) !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 18px 36px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  opacity: 1 !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02)) !important;
+  mix-blend-mode: screen !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two,
+html.vox-user-dark body .vox-home-page .vox-stage-corner-accent {
+  opacity: .92 !important;
+  filter: none !important;
+}
+
+/* FINAL_20260828_PUBLIC_HOME_DARK_HERO_LIGHT_PARITY
+   The light hero shell is layout-only; dark mode must not turn it into a card. */
+html.vox-user-dark body .vox-home-page .vox-hero-shell {
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two,
+html.vox-user-dark body .vox-home-page .vox-stage-corner-accent {
+  opacity: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+/* FINAL_20260828_HOME_CONTACT_EMAIL_NO_DARK_RECTANGLE */
+html.vox-user-dark body .vox-home-page .vox-contact-reply-note,
+html.vox-user-dark body .vox-home-page .vox-contact-reply-note > span,
+html.vox-user-dark body .vox-home-page .vox-contact-reply-note > svg {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260828_PUBLIC_HOME_HERO_EXACT_LIGHT_PARITY                          */
+/* The public Home hero intentionally keeps the exact light visual treatment  */
+/* when the rest of the site is in dark mode. This block is last on purpose.  */
+/* ========================================================================== */
+html.vox-user-dark body .vox-home-page .vox-hero-stage {
+    color: #213532 !important;
+    background:
+        radial-gradient(circle at 8% 8%, rgba(243, 201, 211, .42), transparent 31rem),
+        radial-gradient(circle at 91% 12%, rgba(183, 221, 216, .54), transparent 32rem),
+        radial-gradient(circle at 73% 88%, rgba(220, 232, 226, .34), transparent 31rem),
+        linear-gradient(135deg, #fffdfc 0%, #faf9f6 48%, #fffdfc 100%) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-stage::after {
+    background: linear-gradient(to bottom, transparent, #f8fbfa) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-ambient,
+html.vox-user-dark body .vox-home-page .vox-ambient-grid {
+    opacity: initial !important;
+    filter: none;
+}
+
+html.vox-user-dark body .vox-home-page .vox-ambient-grid {
+    opacity: .28 !important;
+    background-image: radial-gradient(rgba(65, 125, 117, .18) .7px, transparent .7px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-ambient-glow {
+    opacity: .7 !important;
+    filter: blur(58px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-ambient-glow-one { background: rgba(243, 201, 211, .44) !important; }
+html.vox-user-dark body .vox-home-page .vox-ambient-glow-two { background: rgba(183, 221, 216, .54) !important; }
+html.vox-user-dark body .vox-home-page .vox-ambient-glow-three { background: rgba(220, 232, 226, .34) !important; }
+
+html.vox-user-dark body .vox-home-page .vox-hero-shell {
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-badge {
+    border-color: rgba(92, 189, 185, .20) !important;
+    background: rgba(255, 253, 252, .88) !important;
+    color: #2f7774 !important;
+    box-shadow: 0 12px 28px rgba(47, 119, 116, .07), inset 0 1px 0 rgba(255,255,255,.94) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-badge-dot {
+    background: #5cbdb9 !important;
+    box-shadow: 0 0 0 6px rgba(92, 189, 185, .13) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-heading { color: #355f59 !important; }
+html.vox-user-dark body .vox-home-page .vox-hero-heading span {
+    color: transparent !important;
+    background: linear-gradient(112deg, #2f7774 0%, #5cbdb9 44%, #69b7b1 72%, #d98fa0 100%) !important;
+    background-clip: text !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+html.vox-user-dark body .vox-home-page .vox-hero-lead { color: #60756f !important; }
+html.vox-user-dark body .vox-home-page .vox-hero-brand-name { color: #2f7774 !important; }
+
+html.vox-user-dark body .vox-home-page .vox-hero-button-primary {
+    border-color: rgba(92, 189, 185, .34) !important;
+    background: linear-gradient(135deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%) !important;
+    color: #fff !important;
+    box-shadow: 0 14px 30px rgba(47,119,116,.22), inset 0 1px 0 rgba(255,255,255,.34) !important;
+}
+html.vox-user-dark body .vox-home-page .vox-hero-button-mark {
+    background: rgba(255,255,255,.18) !important;
+    color: #fff !important;
+}
+html.vox-user-dark body .vox-home-page .vox-hero-button-secondary {
+    border-color: rgba(217, 143, 160, .24) !important;
+    background: linear-gradient(145deg, rgba(255,253,252,.94), rgba(250,249,246,.94)) !important;
+    color: #2f7774 !important;
+    box-shadow: 0 12px 28px rgba(73,83,79,.07) !important;
+}
+html.vox-user-dark body .vox-home-page .vox-hero-trust { color: #747d79 !important; }
+html.vox-user-dark body .vox-home-page .vox-hero-trust svg { color: #5cbdb9 !important; }
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase {
+    isolation: isolate !important;
+    border-color: rgba(123, 169, 159, .22) !important;
+    background: linear-gradient(145deg, rgba(255,255,255,.90), rgba(239,248,245,.78)) !important;
+    box-shadow:
+        0 42px 95px rgba(45,84,75,.16),
+        0 12px 32px rgba(71,132,120,.08),
+        inset 0 1px 0 rgba(255,255,255,.96) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase::before {
+    opacity: .8 !important;
+    background: rgba(122, 201, 187, .19) !important;
+    filter: blur(50px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two {
+    opacity: 1 !important;
+    border: 1px solid rgba(137,181,171,.20) !important;
+    background: rgba(255,255,255,.42) !important;
+    background-image: none !important;
+    box-shadow: 0 24px 60px rgba(50,92,82,.08) !important;
+    filter: none !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two { opacity: .72 !important; }
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+    border-color: rgba(132,174,164,.20) !important;
+    background: linear-gradient(145deg, #f7fbfa, #eef7f4) !important;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.72), 0 18px 48px rgba(42,85,75,.10) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+    opacity: 1 !important;
+    filter: saturate(.98) contrast(1.01) !important;
+    mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+    background:
+        linear-gradient(115deg, rgba(255,255,255,.17), transparent 29%, transparent 70%, rgba(255,255,255,.12)),
+        linear-gradient(180deg, rgba(255,255,255,.06), transparent 34%) !important;
+    mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail {
+    opacity: 1 !important;
+    border-color: rgba(255,255,255,.70) !important;
+    background: rgba(255,255,255,.56) !important;
+    box-shadow: 0 8px 24px rgba(52,91,82,.08) !important;
+    filter: none !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:first-child { background: rgba(76,154,143,.38) !important; }
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:nth-child(2) { background: rgba(213,151,174,.34) !important; }
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:nth-child(3) { background: rgba(202,181,126,.40) !important; }
+
+html.vox-user-dark body .vox-home-page .vox-stage-corner-accent {
+    opacity: 1 !important;
+    border: 0 !important;
+    background: linear-gradient(90deg, rgba(91,188,178,.18), rgba(91,188,178,.58)) !important;
+    box-shadow: 0 0 20px rgba(91,188,178,.20) !important;
+    filter: none !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260828_PUBLIC_HOME_HERO_DARK_LAYOUT_PARITY                          */
+/* Same geometry/layers as light mode, translated into a real dark palette.   */
+/* This block intentionally comes last so old dark experiments cannot turn     */
+/* the hero shell into a card or force the light palette back in dark mode.    */
+/* ========================================================================== */
+html.vox-user-dark body .vox-home-page .vox-hero-stage {
+    color: #eef8f5 !important;
+    background:
+        radial-gradient(circle at 8% 8%, rgba(224, 151, 170, .12), transparent 31rem),
+        radial-gradient(circle at 91% 12%, rgba(103, 201, 192, .15), transparent 32rem),
+        radial-gradient(circle at 73% 88%, rgba(107, 158, 148, .09), transparent 31rem),
+        linear-gradient(135deg, #0d1917 0%, #10201c 48%, #0d1917 100%) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-stage::after {
+    background: linear-gradient(to bottom, transparent, #17231f) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-shell {
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-ambient-grid {
+    opacity: .24 !important;
+    background-image: radial-gradient(rgba(120, 209, 202, .19) .7px, transparent .7px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-ambient-glow {
+    opacity: .72 !important;
+    filter: blur(58px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-ambient-glow-one {
+    background: rgba(85, 185, 177, .18) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-ambient-glow-two {
+    background: rgba(224, 151, 170, .14) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-ambient-glow-three {
+    background: rgba(101, 191, 181, .13) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-badge {
+    color: #9fe1db !important;
+    border-color: rgba(112, 205, 198, .20) !important;
+    background: rgba(24, 45, 38, .74) !important;
+    box-shadow:
+        0 12px 32px rgba(0, 0, 0, .15),
+        inset 0 1px 0 rgba(255, 255, 255, .045) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-badge-dot {
+    background: #72d0c8 !important;
+    box-shadow: 0 0 0 7px rgba(114, 208, 200, .10) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-heading {
+    color: #eef8f5 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-heading span {
+    color: transparent !important;
+    background: linear-gradient(95deg, #8bd8d2 0%, #62c4bd 48%, #e0a0b1 100%) !important;
+    background-clip: text !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-lead {
+    color: #b2c5bf !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-brand-name {
+    color: #87d7d0 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-button-primary {
+    color: #fff !important;
+    border-color: rgba(120, 209, 202, .34) !important;
+    background: linear-gradient(110deg, #68c7c0 0%, #4aa8a1 55%, #347d77 100%) !important;
+    box-shadow:
+        0 17px 38px rgba(34, 110, 103, .26),
+        inset 0 1px rgba(255, 255, 255, .24) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-button-mark {
+    color: #fff !important;
+    background: rgba(255, 255, 255, .16) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-button-secondary {
+    color: #dff3ef !important;
+    border-color: rgba(112, 205, 198, .18) !important;
+    background: rgba(29, 52, 44, .78) !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .14) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-button-secondary:hover {
+    color: #f2fbf8 !important;
+    border-color: rgba(120, 209, 202, .34) !important;
+    background: rgba(35, 63, 53, .94) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-trust,
+html.vox-user-dark body .vox-home-page .vox-hero-trust span {
+    color: #a9bbb5 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-hero-trust svg {
+    color: #72d0c8 !important;
+}
+
+/* Preserve the exact light-mode showcase composition, only darken its skin. */
+html.vox-user-dark body .vox-home-page .vox-stage-showcase {
+    isolation: isolate !important;
+    border-color: rgba(112, 205, 198, .18) !important;
+    background: linear-gradient(145deg, rgba(27, 49, 42, .94), rgba(17, 35, 29, .90)) !important;
+    box-shadow:
+        0 42px 95px rgba(0, 0, 0, .24),
+        0 12px 32px rgba(0, 0, 0, .13),
+        inset 0 1px 0 rgba(255, 255, 255, .045) !important;
+    backdrop-filter: blur(18px) !important;
+    -webkit-backdrop-filter: blur(18px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase::before {
+    opacity: .68 !important;
+    background: rgba(86, 186, 177, .13) !important;
+    filter: blur(50px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two {
+    border-color: rgba(112, 205, 198, .11) !important;
+    background: rgba(28, 50, 43, .42) !important;
+    background-image: none !important;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .12) !important;
+    filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one {
+    opacity: .86 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two {
+    opacity: .58 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+    border-color: rgba(112, 205, 198, .15) !important;
+    background: linear-gradient(145deg, #172d26, #10241e) !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, .025),
+        0 18px 48px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame::after {
+    background: linear-gradient(90deg, transparent, rgba(142, 218, 210, .16), transparent) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+    opacity: 1 !important;
+    filter: saturate(.96) contrast(1.02) brightness(.92) !important;
+    mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+    background:
+        linear-gradient(115deg, rgba(137, 217, 208, .06), transparent 29%, transparent 70%, rgba(220, 160, 177, .045)),
+        linear-gradient(180deg, rgba(255, 255, 255, .018), transparent 34%) !important;
+    mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail {
+    opacity: 1 !important;
+    border-color: rgba(112, 205, 198, .13) !important;
+    background: rgba(18, 40, 33, .68) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .14) !important;
+    filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:first-child {
+    background: rgba(101, 202, 193, .56) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:nth-child(2) {
+    background: rgba(224, 151, 170, .48) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:nth-child(3) {
+    background: rgba(203, 178, 119, .48) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-corner-accent {
+    opacity: 1 !important;
+    border: 0 !important;
+    background: linear-gradient(90deg, rgba(103, 201, 192, .14), rgba(103, 201, 192, .54)) !important;
+    box-shadow: 0 0 20px rgba(103, 201, 192, .15) !important;
+    filter: none !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase:hover {
+        border-color: rgba(112, 205, 198, .30) !important;
+        box-shadow:
+            0 50px 108px rgba(0, 0, 0, .29),
+            0 16px 38px rgba(0, 0, 0, .16),
+            0 0 0 5px rgba(119, 201, 189, .045),
+            inset 0 1px 0 rgba(255, 255, 255, .055) !important;
+    }
+
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase:hover .vox-stage-showcase-frame {
+        border-color: rgba(112, 205, 198, .25) !important;
+        box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, .03),
+            0 23px 56px rgba(0, 0, 0, .20) !important;
+    }
+
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase:hover .vox-stage-showcase-image {
+        filter: saturate(1.01) contrast(1.035) brightness(.96) !important;
+    }
+}
+
+/* Keep every rotating Home-stage illustration fully visible in both themes. */
+.vox-home-page .vox-stage-showcase-image {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    object-fit: contain;
+    object-position: center;
+}
+
+/* ========================================================================== */
+/* FINAL_20260828_PUBLIC_HERO_DARK_ART                                         */
+/* The Home hero keeps the exact light-mode geometry in dark mode, but the     */
+/* stage illustration itself is transformed into a real dark illustration     */
+/* instead of remaining a pale rectangle inside a dark frame.                 */
+/* ========================================================================== */
+html.vox-user-dark body .vox-home-page .vox-stage-showcase {
+    padding: 12px !important;
+    border-color: rgba(121, 207, 198, .17) !important;
+    background:
+        radial-gradient(circle at 18% 14%, rgba(103, 201, 192, .09), transparent 32%),
+        radial-gradient(circle at 86% 84%, rgba(224, 151, 170, .055), transparent 31%),
+        linear-gradient(145deg, rgba(22, 43, 36, .96), rgba(13, 30, 25, .94)) !important;
+    box-shadow:
+        0 34px 82px rgba(0, 0, 0, .26),
+        0 10px 28px rgba(0, 0, 0, .13),
+        inset 0 1px 0 rgba(255, 255, 255, .04) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+    overflow: hidden !important;
+    border-color: rgba(121, 207, 198, .14) !important;
+    background:
+        radial-gradient(circle at 50% 42%, rgba(96, 190, 181, .10), transparent 39%),
+        linear-gradient(145deg, #153028, #0e221c) !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, .025),
+        0 18px 44px rgba(0, 0, 0, .18) !important;
+}
+
+/* Invert most of the illustration luminance, then rotate its hue back. This
+   turns the SVG's white canvas dark while keeping teal/rose artwork familiar. */
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    object-fit: contain !important;
+    object-position: center !important;
+    opacity: .98 !important;
+    filter:
+        invert(84%)
+        hue-rotate(180deg)
+        saturate(.84)
+        brightness(.96)
+        contrast(.96) !important;
+    mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+    z-index: 3 !important;
+    background:
+        linear-gradient(115deg, rgba(126, 210, 201, .055), transparent 30%, transparent 70%, rgba(226, 160, 178, .04)),
+        linear-gradient(180deg, rgba(255, 255, 255, .012), transparent 36%) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail {
+    border-color: rgba(126, 210, 201, .16) !important;
+    background: rgba(15, 35, 29, .76) !important;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .15) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-corner-accent {
+    background: linear-gradient(90deg, rgba(103, 201, 192, .16), rgba(103, 201, 192, .62)) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop {
+    border-color: rgba(121, 207, 198, .10) !important;
+    background: rgba(24, 47, 39, .36) !important;
+    box-shadow: 0 20px 52px rgba(0, 0, 0, .11) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase:hover .vox-stage-showcase-image {
+        filter:
+            invert(84%)
+            hue-rotate(180deg)
+            saturate(.90)
+            brightness(1)
+            contrast(.98) !important;
+    }
+}
+
+@media (max-width: 680px) {
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase {
+        padding: 9px !important;
+    }
+}
+
+/* ========================================================================== */
+/* FINAL_20260828_HOME_STAGE_EXACT_LIGHT_ART_IN_DARK                          */
+/* The user requested the Home hero artwork to look IDENTICAL in dark mode:   */
+/* same white canvas, same pastel colors, same borders, same image treatment. */
+/* Only the surrounding page remains dark.                                    */
+/* ========================================================================== */
+html.vox-user-dark body .vox-home-page .vox-stage-showcase {
+    isolation: isolate !important;
+    width: min(100%, 720px) !important;
+    padding: 14px !important;
+    border: 1px solid rgba(123, 169, 159, 0.22) !important;
+    border-radius: 36px !important;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(239, 248, 245, 0.78)) !important;
+    box-shadow:
+        0 42px 95px rgba(45, 84, 75, 0.16),
+        0 12px 32px rgba(71, 132, 120, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.96) !important;
+    overflow: visible !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase::before {
+    inset: -18% 15% auto -10% !important;
+    height: 54% !important;
+    opacity: 0.8 !important;
+    background: rgba(91, 188, 178, 0.14) !important;
+    filter: blur(50px) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one,
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two {
+    border: 1px solid rgba(137, 181, 171, 0.2) !important;
+    background: rgba(255, 255, 255, 0.42) !important;
+    background-image: none !important;
+    box-shadow: 0 24px 60px rgba(50, 92, 82, 0.08) !important;
+    filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one {
+    opacity: 1 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two {
+    opacity: 0.72 !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+    overflow: hidden !important;
+    aspect-ratio: 4 / 3 !important;
+    border: 1px solid rgba(132, 174, 164, 0.2) !important;
+    border-radius: 26px !important;
+    background: linear-gradient(145deg, #f7fbfa, #eef7f4) !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+        0 18px 48px rgba(42, 85, 75, 0.1) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .46), transparent) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    object-fit: contain !important;
+    object-position: center !important;
+    opacity: 1 !important;
+    filter: saturate(0.98) contrast(1.01) !important;
+    mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+    z-index: 3 !important;
+    background:
+        linear-gradient(115deg, rgba(255, 255, 255, 0.17), transparent 29%, transparent 70%, rgba(255, 255, 255, 0.12)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 34%) !important;
+    mix-blend-mode: normal !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail {
+    opacity: 1 !important;
+    border: 1px solid rgba(255, 255, 255, 0.7) !important;
+    background: rgba(255, 255, 255, 0.56) !important;
+    box-shadow: 0 8px 24px rgba(52, 91, 82, 0.08) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    filter: none !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:first-child {
+    background: rgba(76, 154, 143, 0.38) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:nth-child(2) {
+    background: rgba(213, 151, 174, 0.34) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail span:nth-child(3) {
+    background: rgba(202, 181, 126, 0.4) !important;
+}
+
+html.vox-user-dark body .vox-home-page .vox-stage-corner-accent {
+    opacity: 1 !important;
+    border: 0 !important;
+    background: linear-gradient(90deg, rgba(91, 188, 178, 0.18), rgba(91, 188, 178, 0.58)) !important;
+    box-shadow: 0 0 20px rgba(91, 188, 178, 0.2) !important;
+    filter: none !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase:hover {
+        transform: translateY(-5px) !important;
+        border-color: rgba(91, 174, 162, .38) !important;
+        box-shadow:
+            0 50px 108px rgba(45, 84, 75, .19),
+            0 16px 38px rgba(71, 132, 120, .11),
+            0 0 0 5px rgba(119, 201, 189, .08),
+            inset 0 1px 0 rgba(255, 255, 255, .98) !important;
+    }
+
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase:hover .vox-stage-showcase-frame {
+        transform: scale(1.008) !important;
+        border-color: rgba(91, 174, 162, .32) !important;
+        box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, .78),
+            0 23px 56px rgba(42, 85, 75, .14) !important;
+    }
+
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase:hover .vox-stage-showcase-image {
+        filter: saturate(1.045) contrast(1.025) brightness(1.015) !important;
+    }
+
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase:hover .vox-stage-corner-accent {
+        box-shadow: 0 0 27px rgba(91, 188, 178, .35) !important;
+    }
+}
+
+@media (max-width: 680px) {
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase {
+        padding: 9px !important;
+        border-radius: 27px !important;
+    }
+
+    html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+        border-radius: 21px !important;
+    }
+}

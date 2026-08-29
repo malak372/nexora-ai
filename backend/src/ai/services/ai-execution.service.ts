@@ -1651,6 +1651,18 @@ export class AiExecutionService {
     await this.ignoreMaintenanceFailure(
       this.modelHealthService.recordFailure(modelId),
     );
+
+    if (
+      [
+        AiProviderErrorCode.INSUFFICIENT_QUOTA,
+        AiProviderErrorCode.INVALID_CREDENTIALS,
+        AiProviderErrorCode.FORBIDDEN,
+        AiProviderErrorCode.MODEL_NOT_FOUND,
+        AiProviderErrorCode.INVALID_MODEL_CONFIGURATION,
+      ].includes(error.code)
+    ) {
+      this.modelRoutingService.invalidateExecutionAvailabilityCache();
+    }
   }
 
   /**

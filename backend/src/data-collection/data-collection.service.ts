@@ -23,11 +23,8 @@ import {
 import { ProblemFirstCollectorQueryUtil } from '../collectors/base/problem-first-collector-query.util';
 import { RequestVerticalConstraintUtil, type RequestVerticalConstraint } from '../ideas/generation/utils/request-vertical-constraint.util';
 import { RequestWorkflowArchetypeUtil } from '../ideas/generation/utils/request-workflow-archetype.util';
-import { RequestWorkflowIntentProfileUtil } from '../ideas/generation/utils/request-workflow-intent-profile.util';
 import { RequestEvidenceAlignmentUtil } from '../ideas/generation/utils/request-evidence-alignment.util';
 import { RequestQueryProvenanceUtil } from '../ideas/generation/utils/request-query-provenance.util';
-import { RequestNicheCustomCraftUtil } from '../ideas/generation/utils/request-niche-custom-craft.util';
-import { RequestOnlinePharmacyFraudUtil } from '../ideas/generation/utils/request-online-pharmacy-fraud.util';
 
 import { RelevanceScoreUtil } from '../collectors/base/relevance-score.util';
 
@@ -94,6 +91,8 @@ export type IdeaGenerationCollectionInput = {
     readonly routingHints: readonly string[];
     readonly discoveryDomainId?: string | null;
     readonly discoveryDomainName?: string | null;
+    readonly discoveryDomainIds?: readonly string[];
+    readonly discoveryDomainNames?: readonly string[];
     readonly queryIntentId?: string | null;
     readonly sourceTier?: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE';
     readonly problemFacetIds?: readonly string[];
@@ -294,25 +293,8 @@ export class DataCollectionService {
       ...userKeywords,
       ...plannedRelevanceTerms,
     ]);
-    const requestVerticalConstraint = RequestVerticalConstraintUtil.resolve({
-      requestDescription:
-        'userDescription' in dto ? dto.userDescription : undefined,
-      domainName: isGeneralDomain ? undefined : domain.name,
-      plannedQueries:
-        'plannedQueries' in dto ? dto.plannedQueries ?? [] : [],
-    });
-
     const requestDescription =
       'userDescription' in dto ? dto.userDescription?.trim() ?? '' : '';
-    const requestArchetype = RequestWorkflowArchetypeUtil.classify({
-      requestDescription,
-      plannedQueries: 'plannedQueries' in dto ? dto.plannedQueries ?? [] : [],
-      selectedDomainNames: isGeneralDomain ? [] : [domain.name],
-    });
-    const violinCaseRestorationRequest =
-      requestVerticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' &&
-      requestVerticalConstraint.label ===
-        'violin case restoration condition materials and repair history operations';
     const hasAiOwnedPlan =
       isTrustedInternalGeneration &&
       'queriesGeneratedByAi' in dto &&
@@ -321,39 +303,38 @@ export class DataCollectionService {
         (('sourcePlans' in dto
           ? dto.sourcePlans?.some((plan) => (plan.queries?.length ?? 0) > 0)
           : false) === true));
-    // The AI-owned plan is authoritative for query/source planning, but it must
-    // never erase requester identity during evidence admission. A rich plan used
-    // to downgrade strict verticals to GENERAL here, allowing lexical collisions
-    // (food delivery, opioid-abuse papers, generic workflow pages) into the raw
-    // corpus. Keep the request-derived constraint active for every collector item.
+
+    // Internal idea generation uses the AI-owned canonical plan as the semantic
+    // authority. Legacy vertical/archetype routing remains available only to
+    // manual collection calls that do not carry an authoritative AI plan.
+    const requestVerticalConstraint = hasAiOwnedPlan
+      ? RequestVerticalConstraintUtil.resolve({})
+      : RequestVerticalConstraintUtil.resolve({
+          requestDescription:
+            'userDescription' in dto ? dto.userDescription : undefined,
+          domainName: isGeneralDomain ? undefined : domain.name,
+          plannedQueries:
+            'plannedQueries' in dto ? dto.plannedQueries ?? [] : [],
+        });
+    const requestArchetype = hasAiOwnedPlan
+      ? { preferredSourceKeys: [] as string[], blockedSourceKeys: [] as string[] }
+      : RequestWorkflowArchetypeUtil.classify({
+          requestDescription,
+          plannedQueries: 'plannedQueries' in dto ? dto.plannedQueries ?? [] : [],
+          selectedDomainNames: isGeneralDomain ? [] : [domain.name],
+        });
     const effectiveRequestVerticalConstraint = requestVerticalConstraint;
     const preferredRequestSourceKeys = new Set(
       (hasAiOwnedPlan
         ? ('sourcePlans' in dto && dto.sourcePlans?.length
             ? dto.sourcePlans.slice(0, 4).map((plan) => plan.sourceKey)
             : dataSources.slice(0, 4).map((source) => source.key))
-        : violinCaseRestorationRequest
-          ? ['forum', 'youtube', 'news', 'crossref', 'gdelt']
-          : requestArchetype.preferredSourceKeys
+        : requestArchetype.preferredSourceKeys
       ).map((key) => key.toLocaleLowerCase()),
     );
     const blockedRequestSourceKeys = new Set(
-      (hasAiOwnedPlan
-        ? []
-        : violinCaseRestorationRequest
-          ? [
-              ...requestArchetype.blockedSourceKeys,
-              'blog',
-              'app-store',
-              'google-play',
-              'product-hunt',
-              'github',
-              'stackoverflow',
-              'dev-to',
-              'hacker-news',
-            ]
-          : requestArchetype.blockedSourceKeys
-      ).map((key) => key.toLocaleLowerCase()),
+      (hasAiOwnedPlan ? [] : requestArchetype.blockedSourceKeys)
+        .map((key) => key.toLocaleLowerCase()),
     );
 
     /*
@@ -467,11 +448,14 @@ export class DataCollectionService {
               sourcePlan?.sourceTier,
               collectionMode,
             );
+            const multiDomainLaneCount = sourcePlan?.discoveryDomainNames?.length ?? 0;
             const sourceQueryBudget = sourcePlan?.queries?.length
               ? sourcePlan.sourceTier === 'PRIMARY'
-                ? 3
+                ? multiDomainLaneCount > 1
+                  ? Math.min(6, Math.max(4, multiDomainLaneCount * 2))
+                  : 4
                 : sourcePlan.sourceTier === 'SECONDARY'
-                  ? 2
+                  ? 3
                   : 1
               : 1;
             const sourceSpecificAiQueries = this.unique(
@@ -542,6 +526,30 @@ export class DataCollectionService {
             }
 
             const collectorStartedMs = Date.now();
+            const sourceCollectorTimeoutMs = this.resolveSourceCollectorTimeoutMs(
+              dataSource.key,
+              collectionMode,
+              effectiveRequestVerticalConstraint,
+              requestDescription,
+              preferredRequestSourceKeys,
+              blockedRequestSourceKeys,
+              sourcePlan?.sourceTier,
+            );
+            const timeoutGraceFloorMs = sourcePlan?.sourceTier === 'PRIMARY'
+              ? 900
+              : sourcePlan?.sourceTier === 'SECONDARY'
+                ? 650
+                : 400;
+            const sourceCollectorGraceMs =
+              isFastPathCollection && sourceCollectorTimeoutMs !== undefined
+                ? Math.min(
+                    1_500,
+                    Math.max(
+                      timeoutGraceFloorMs,
+                      Math.round(sourceCollectorTimeoutMs * 0.25),
+                    ),
+                  )
+                : 0;
             const postsPromise = this.collectorQueueService.run(
               (sourceSignal) =>
                 CollectorAbortContextUtil.run(sourceSignal ?? signal, () =>
@@ -552,27 +560,13 @@ export class DataCollectionService {
               {
                 platform: dataSource.key,
                 signal,
-                timeoutMs: this.resolveSourceCollectorTimeoutMs(
-                  dataSource.key,
-                  collectionMode,
-                  effectiveRequestVerticalConstraint,
-                  requestDescription,
-                  preferredRequestSourceKeys,
-                  blockedRequestSourceKeys,
-                  sourcePlan?.sourceTier,
-                ),
+                timeoutMs: sourceCollectorTimeoutMs,
                 // Preserve already-discovered partial data after timeout. The
                 // queue aborts the expensive remaining HTTP work, then gives a
                 // very small tier-aware grace window for cooperative collectors
                 // (especially app/review sources) to return what they already
                 // found instead of discarding the entire source result.
-                timeoutGraceMs: isFastPathCollection
-                  ? sourcePlan?.sourceTier === 'PRIMARY'
-                    ? 900
-                    : sourcePlan?.sourceTier === 'SECONDARY'
-                      ? 650
-                      : 400
-                  : 0,
+                timeoutGraceMs: sourceCollectorGraceMs,
                 // FAST_GENERATION/TARGETED_RECOVERY are latency-bounded. A slow
                 // collector must never hold the whole generation run hostage.
                 // Collectors receive the AbortSignal and may return partial data;
@@ -628,8 +622,8 @@ export class DataCollectionService {
              *
              * This raw ledger is classification input only. It does not make an
              * item trusted evidence; DIRECT/SUPPORTING admission still requires
-             * Community AI classification plus the existing deterministic
-             * post-AI verifier. Keeping the ledger in memory also avoids extra
+             * Community AI semantic classification plus structural/provenance
+             * post-AI admission checks. Keeping the ledger in memory also avoids extra
              * database writes and therefore adds recall without adding a serial
              * persistence step to the generation critical path.
              */
@@ -699,6 +693,7 @@ export class DataCollectionService {
                   post,
                   effectiveRequestVerticalConstraint,
                   requestDescription,
+                  guaranteedSourceQueries,
                 ),
               );
               const persistencePostCap = Math.min(
@@ -1152,6 +1147,8 @@ export class DataCollectionService {
     const provenance = {
       discoveryDomainId: sourcePlan?.discoveryDomainId ?? null,
       discoveryDomainName: sourcePlan?.discoveryDomainName ?? null,
+      discoveryDomainIds: sourcePlan?.discoveryDomainIds ?? [],
+      discoveryDomainNames: sourcePlan?.discoveryDomainNames ?? [],
       queryIntentId: sourcePlan?.queryIntentId ?? null,
       queryText: plannedQueries.length > 0 ? plannedQueries.join(' || ') : null,
       problemFacetIds: sourcePlan?.problemFacetIds ?? [],
@@ -1777,66 +1774,33 @@ export class DataCollectionService {
    */
   private passesFastRawTriageIdentityGate(
     post: CollectorPost,
-    verticalConstraint: RequestVerticalConstraint,
+    _verticalConstraint: RequestVerticalConstraint,
     requestDescription: string,
+    plannedQueries: readonly string[] = [],
   ): boolean {
     if (!requestDescription) return true;
-    const evidenceText = `${post.title ?? ''} ${post.content ?? ''}`.replace(/\s+/gu, ' ').trim();
+    const evidenceText = `${post.title ?? ''} ${post.content ?? ''}`
+      .replace(/\s+/gu, ' ')
+      .trim();
     if (!evidenceText) return false;
 
-    if (verticalConstraint.kind === 'ONLINE_PHARMACY_FRAUD') {
-      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(
-        requestDescription,
-        evidenceText,
-      );
-    }
+    // Generation-time raw admission is domain-agnostic. A candidate survives
+    // when it shares the requester identity/workflow/problem semantics or one
+    // of the AI-planned retrieval facets. No vertical/niche classifier is
+    // allowed to promote or reject it here; canonical evidence verification
+    // remains the only authority for DIRECT/SUPPORTING trust downstream.
+    const classification = RequestEvidenceAlignmentUtil.classifyForRequestFallback({
+      requestDescription,
+      evidenceText,
+      plannedQueries,
+    });
+    if (classification !== 'UNRELATED') return true;
 
-    if (
-      verticalConstraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' &&
-      RequestNicheCustomCraftUtil.resolve(requestDescription)
-    ) {
-      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(
-        requestDescription,
-        evidenceText,
-      );
-    }
-
-    /*
-     * Every strict request must enforce requester identity before raw
-     * persistence. Previously only Online Pharmacy and custom-craft requests
-     * used this gate, so a PHYSICAL_SERVICE_VERTICAL post could be rejected by
-     * central relevance and still leak into rawEvidenceCorpus for Community AI.
-     *
-     * The fallback classifier is intentionally SUPPORTING-aware: same-mechanism
-     * evidence from an adjacent selected domain may survive, while lexical
-     * collisions such as concrete/steel hinges for eyeglass repair do not.
-     */
-    if (verticalConstraint.strict) {
-      const requestClassification =
-        RequestEvidenceAlignmentUtil.classifyForRequestFallback({
-          requestDescription,
-          evidenceText,
-        });
-      if (requestClassification !== 'UNRELATED') return true;
-
-      const verticalAligned = RequestVerticalConstraintUtil.matchesVertical(
-        evidenceText,
-        verticalConstraint,
-      );
-      const workflowAligned = RequestVerticalConstraintUtil.matchesWorkflow(
-        evidenceText,
-        verticalConstraint,
-      );
-      const concreteProblem =
-        /\b(?:wrong|incorrect|inaccurate|missing|lost|forgotten|mismatch|mismatched|repeat(?:ed)?|rework|delay(?:ed)?|late|waste(?:d)?|shortage|interruption|downtime|cost|expense|loss|profit|margin|fragmented|scattered|siloed|difficult|hard to|failure|failed|problem|issue)\w*\b/iu.test(
-          evidenceText,
-        );
-      return verticalAligned && workflowAligned && concreteProblem;
-    }
-
-    // Non-strict/general workflows keep the broad bounded corpus for semantic
-    // discovery so the stricter policy above does not reduce generic recall.
-    return true;
+    return RequestEvidenceAlignmentUtil.passesPreAiTriageCandidateGuard({
+      requestDescription,
+      evidenceText,
+      plannedQueries,
+    });
   }
 
   private filterRelevantPosts(
@@ -1888,19 +1852,19 @@ export class DataCollectionService {
         .filter(Boolean)
         .join(' ');
       const verticalAnchorGuard =
-        RequestVerticalConstraintUtil.matchesVertical(
-          fullEvidenceContext,
-          verticalConstraint,
-        );
+        RequestEvidenceAlignmentUtil.passesPreAiTriageCandidateGuard({
+          requestDescription,
+          evidenceText: fullEvidenceContext,
+          plannedQueries,
+        });
       const verticalWorkflowSignal =
-        RequestVerticalConstraintUtil.matchesWorkflow(
-          fullEvidenceContext,
-          verticalConstraint,
-        );
+        RequestEvidenceAlignmentUtil.isRequestWorkflowContextEvidence({
+          requestDescription,
+          evidenceText: fullEvidenceContext,
+          plannedQueries,
+        });
       const strictWorkflowGuard =
-        !hasPlannedQueries ||
-        !verticalConstraint.strict ||
-        verticalWorkflowSignal;
+        !hasPlannedQueries || verticalWorkflowSignal;
 
       /*
        * Marketplace descriptions remain excluded from evidence scoring.
@@ -1940,6 +1904,7 @@ export class DataCollectionService {
         normalizedTerms,
         normalizedTags,
         hasExactSourceTagMatch,
+        sourceKey,
       );
       const hasCommunityProblemSignal =
         this.hasCommunityProblemSignal(post, sourceKey);
@@ -2029,20 +1994,19 @@ export class DataCollectionService {
         requestSemanticCandidateAdmission ||
         compositeRequestCandidateAdmission ||
         atomicRequestPainAdmission;
-      const requestIntentFamily = requestDescription?.trim()
-        ? RequestWorkflowIntentProfileUtil.resolve(requestDescription).family
-        : 'GENERAL';
       /*
-       * Reddit is intentionally broad and lexical scoring can otherwise admit
-       * relationship/AITAH posts through generic words such as expenses,
-       * account, restrictions, delayed, or family. For transaction/account
-       * abuse requests, require the dedicated request-aware semantic candidate
-       * contract before the item may enter the broad first-pass lane.
+       * Reddit is intentionally broad. For every text-bearing request—not one
+       * hand-written vertical—require at least one generic request-aware
+       * semantic admission signal before the broad first-pass lane can accept
+       * a post. Discovery requests without text remain governed by their AI
+       * planned queries and the canonical domain verifier downstream.
        */
       const noisyCommunitySemanticGuard =
         sourceKey !== 'reddit' ||
-        requestIntentFamily !== 'TRANSACTION_ACCOUNT_ABUSE' ||
-        requestSemanticCandidateAdmission;
+        !requestDescription?.trim() ||
+        requestSemanticCandidateAdmission ||
+        compositeRequestCandidateAdmission ||
+        atomicRequestPainAdmission;
 
 
       /*
@@ -2132,7 +2096,7 @@ export class DataCollectionService {
       );
       const requestDerivedAdmissionGuard =
         !requestDescription?.trim() ||
-        verticalConstraint.strict ||
+        verticalAnchorGuard ||
         domainAgnosticSupportingOverride ||
         domainAgnosticCommentSupportingOverride;
 
@@ -2187,10 +2151,7 @@ export class DataCollectionService {
        * supporting semantics are present. It is still RAW evidence only; AI
        * classification plus deterministic verification remain authoritative.
        */
-      const broadFirstPassWorkflowIdentityRequired =
-        verticalConstraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' ||
-        verticalConstraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION' ||
-        verticalConstraint.kind === 'OPERATIONAL_COST_ATTRIBUTION';
+      const broadFirstPassWorkflowIdentityRequired = hasPlannedQueries;
       const broadFirstPassSemanticTriageOverride =
         Boolean(requestDescription?.trim()) &&
         collectionMode === 'FAST_GENERATION' &&
@@ -2209,9 +2170,7 @@ export class DataCollectionService {
           sourceKey === 'app-store' ||
           sourceKey === 'google-play');
 
-      const targetedRecoveryRequiresExactWorkflow =
-        verticalConstraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION' ||
-        verticalConstraint.kind === 'OPERATIONAL_COST_ATTRIBUTION';
+      const targetedRecoveryRequiresExactWorkflow = hasPlannedQueries;
       const targetedRecoveryDomainProblemOverride =
         collectionMode === 'TARGETED_RECOVERY' &&
         secondaryOperationalSource &&
@@ -2250,7 +2209,7 @@ export class DataCollectionService {
         aiTriageComments.length > 0 &&
         plannedContainerAnchorGuard &&
         verticalAnchorGuard &&
-        (!verticalConstraint.strict || verticalWorkflowSignal) &&
+        verticalWorkflowSignal &&
         broadDomainCollisionGuard &&
         containerDomainScore >=
           Math.max(18, this.resolveContainerDomainMinimum(sourceKey, collectionMode) - 8);
@@ -3155,48 +3114,12 @@ export class DataCollectionService {
 
   private passesBroadDomainCollisionGuard(
     value: string,
-    normalizedTerms: readonly string[],
-    verticalConstraint: RequestVerticalConstraint,
+    _normalizedTerms: readonly string[],
+    _verticalConstraint: RequestVerticalConstraint,
   ): boolean {
-    if (verticalConstraint.strict) {
-      return true;
-    }
-
-    const normalized = value
-      .normalize('NFKC')
-      .toLocaleLowerCase()
-      .replace(/\s+/gu, ' ')
-      .trim();
-
-    if (!normalized) return false;
-
-    const foodSelected = normalizedTerms.some((term) =>
-      /^(?:food|food & restaurants|food system|restaurant operations|kitchen workflow)$/u.test(
-        term,
-      ),
-    );
-
-    if (foodSelected && /\bfood\b/u.test(normalized)) {
-      const foodContext = /\b(?:restaurant|restaurants|commercial kitchen|kitchen|food service|food delivery|food ordering|meal|meals|menu|menus|ingredient|ingredients|cooking|chef|dining|catering|grocery|groceries|food waste|refrigeration)\b/iu.test(
-        normalized,
-      );
-      const otherSelectedDomainContext = normalizedTerms
-        .filter(
-          (term) =>
-            term.length >= 5 &&
-            !/^(?:food|food & restaurants|food system|food platform|food application|restaurant operations|kitchen workflow)$/u.test(
-              term,
-            ),
-        )
-        .some((term) => normalized.includes(term));
-
-      if (!foodContext && !otherSelectedDomainContext) {
-        return false;
-      }
-    }
-
-    return true;
+    return Boolean(value.normalize('NFKC').trim());
   }
+
 
   /**
    * Technical sources use domain vocabulary that differs from end-user labels.
@@ -3207,21 +3130,9 @@ export class DataCollectionService {
     value: string,
     normalizedTerms: readonly string[],
   ): boolean {
-    const normalized = value.normalize('NFKC').toLowerCase();
-    const smartCitySelected = normalizedTerms.some((term) =>
-      /smart cit|transport|public transport|urban mobility|city infrastructure|internet of things|iot/iu.test(
-        term,
-      ),
-    );
-
-    if (!smartCitySelected) {
-      return false;
-    }
-
-    return /\b(?:gtfs(?:[_ -]?rt)?|general transit feed|avl feed|automatic vehicle location|train platform|platform change|arrival times?|departure times?|metro[- ]north|transit feed|parking availability|parking occupancy|street light|street lighting|traffic sensor|traffic signal|municipal service|civic service|vehicle location|sensor telemetry|iot sensor)\b/iu.test(
-      normalized,
-    );
+    return this.hasStrongDomainAnchor(value, normalizedTerms);
   }
+
 
   /**
    * Adds compact technical aliases only when the selected domain family needs
@@ -3230,39 +3141,12 @@ export class DataCollectionService {
   private expandTechnicalRelevanceTerms(
     normalizedTerms: readonly string[],
   ): string[] {
-    const smartCitySelected = normalizedTerms.some((term) =>
-      /smart cit|transport|public transport|urban mobility|city infrastructure|internet of things|iot/iu.test(
-        term,
-      ),
-    );
-
-    if (!smartCitySelected) {
-      return [...normalizedTerms];
-    }
-
-    return this.unique([
-      ...normalizedTerms,
-      'gtfs',
-      'gtfs rt',
-      'transit feed',
-      'train platform',
-      'arrival time',
-      'departure time',
-      'parking availability',
-      'parking occupancy',
-      'street light',
-      'traffic sensor',
-      'municipal service',
-      'vehicle location',
-      'iot sensor',
-    ]);
+    // AI planning owns semantic expansion. Collection scoring only normalizes
+    // the supplied domain/request/query vocabulary and never injects aliases
+    // for a hand-written industry family.
+    return this.unique(normalizedTerms);
   }
 
-  /**
-   * Recovery thresholds are source aware. Technical community sources receive
-   * a lower threshold only when a direct problem signal and technical-domain
-   * alias are both present; noisy media and publisher sources remain strict.
-   */
   private resolveMinimumRelevanceScore(
     sourceKey?: string,
     collectionMode?: CollectorInput['collectionMode'],
@@ -3308,8 +3192,13 @@ export class DataCollectionService {
     normalizedTerms: readonly string[],
     normalizedTags: readonly string[],
     hasExactSourceTagMatch: boolean,
+    sourceKey?: string,
   ): boolean {
     const title = (post.title ?? '').trim().toLowerCase().replace(/\s+/gu, ' ');
+
+    if (this.isObviousSerializedNarrativeNoise(post, sourceKey)) {
+      return false;
+    }
 
     if (!this.isGenericDomainTitle(title, normalizedTerms)) {
       return true;
@@ -3338,6 +3227,37 @@ export class DataCollectionService {
       );
 
     return hasMultipleBodyMatches || hasConcreteCommunitySignal;
+  }
+
+  private isObviousSerializedNarrativeNoise(
+    post: CollectorPost,
+    sourceKey?: string,
+  ): boolean {
+    const source = (sourceKey ?? '').trim().toLocaleLowerCase();
+    if (!['reddit', 'forum', 'youtube', 'hacker-news'].includes(source)) {
+      return false;
+    }
+
+    const title = (post.title ?? '')
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!title) return false;
+
+    const serializedTitle =
+      /^(?:\[[^\]]{2,80}\]\s*)?(?:chapter|ch\.?|episode|ep\.?|part)\s*#?\d+\b/u.test(
+        title,
+      ) ||
+      /\b(?:chapter|episode|part)\s*#?\d+\b.{0,80}\b(?:story|fiction|fanfic|serial)\b/u.test(
+        title,
+      );
+    const fandomSerial =
+      /^\[[^\]]{2,80}\]\s*(?:chapter|episode|part)\s*#?\d+\b/u.test(
+        title,
+      );
+
+    return serializedTitle || fandomSerial;
   }
 
   /**
@@ -3393,7 +3313,7 @@ export class DataCollectionService {
   private resolveSourceCollectorTimeoutMs(
     sourceKey: string,
     collectionMode: CollectorInput['collectionMode'],
-    verticalConstraint: RequestVerticalConstraint | undefined,
+    _verticalConstraint: RequestVerticalConstraint | undefined,
     requestDescription: string,
     preferredSourceKeys: ReadonlySet<string>,
     blockedSourceKeys: ReadonlySet<string>,
@@ -3405,7 +3325,8 @@ export class DataCollectionService {
     ) {
       return undefined;
     }
-    const key = sourceKey.toLocaleLowerCase();
+
+    const key = sourceKey.trim().toLocaleLowerCase();
     const tierCap =
       sourceTier === 'MICRO_PROBE'
         ? 2_100
@@ -3413,1076 +3334,145 @@ export class DataCollectionService {
           ? 3_800
           : 5_500;
     const recoveryAdjustment =
-      collectionMode === 'TARGETED_RECOVERY' ? -700 : 0;
+      collectionMode === 'TARGETED_RECOVERY' ? -650 : 0;
     const bounded = (value: number): number =>
-      Math.min(tierCap, Math.max(1_500, value + recoveryAdjustment));
+      Math.min(tierCap, Math.max(1_450, value + recoveryAdjustment));
 
-    // Discovery-only runs still execute every enabled collector, but no source
-    // is allowed an unbounded wait just because there is no requester text.
-    if (!requestDescription) {
-      if (key === 'reddit') return bounded(5_200);
-      if (key === 'app-store' || key === 'google-play') return bounded(4_500);
-      if (key === 'crossref' || key === 'news' || key === 'forum') return bounded(4_200);
-      return bounded(3_200);
-    }
+    if (blockedSourceKeys.has(key)) return bounded(1_700);
 
-    /*
-     * Review stores need time for two phases: app discovery and review fetch.
-     * This value is a SOFT budget in generation mode (CollectorQueueService no
-     * longer aborts the source), so crossing it only emits telemetry. Collector
-     * local soft sub-deadlines still let the source return whatever completed.
-     */
+    const preferred = preferredSourceKeys.has(key);
+    const hasRequesterText = Boolean(requestDescription.trim());
+
+    // These are source-capability budgets, not vertical-specific routes. New
+    // domains therefore inherit sane latency behavior without adding a named
+    // actor/workflow branch to the backend.
     if (key === 'app-store' || key === 'google-play') {
-      return bounded(9_000);
+      return bounded(preferred ? 5_400 : 4_400);
     }
-
-    const professionalEvidenceHeavy = Boolean(
-      verticalConstraint?.strict &&
-      [
-        'PUBLIC_PROGRAM_COST_ATTRIBUTION',
-        'OPERATIONAL_COST_ATTRIBUTION',
-        'HEALTHCARE_SUPPLY_COST_EFFICIENCY',
-        'HEALTHCARE_COST_RESOURCE_EFFICIENCY',
-        'AGRICULTURE_DISTRIBUTION_PROFITABILITY',
-        'AGRICULTURE_EXPORT_PROFITABILITY',
-        'RESTORATION_CONSERVATION',
-      ].includes(verticalConstraint.kind),
-    );
-    if (professionalEvidenceHeavy) {
-      if (key === 'crossref') return bounded(6_000);
-      if (key === 'news') return bounded(5_600);
-      if (key === 'gdelt') return bounded(3_800);
-    }
-
-    /*
-     * Strict requester workflows get source-aware deadlines before the generic
-     * preferred-source timeout. The values are deliberately long enough for a
-     * healthy source to finish, but short enough that one slow professional
-     * lane cannot dominate the parallel collection wall clock.
-     */
-    if (verticalConstraint?.strict) {
-      if (
-        verticalConstraint.kind === 'RESTORATION_CONSERVATION' ||
-        verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL'
-      ) {
-        if (key === 'forum') return bounded(5_200);
-        if (['news', 'crossref'].includes(key)) return bounded(4_800);
-        if (key === 'youtube') return bounded(3_800);
-        if (key === 'gdelt') return bounded(2_800);
-        if (key === 'blog') return bounded(3_000);
-      }
-      if (verticalConstraint.kind === 'ECOMMERCE_MARGIN_PROFITABILITY') {
-        if (['forum', 'news', 'crossref'].includes(key)) return bounded(4_800);
-        if (key === 'youtube') return bounded(3_800);
-        if (key === 'gdelt') return bounded(2_800);
-        if (key === 'blog') return bounded(3_000);
-      }
-    }
-
     if (key === 'reddit') {
-      /*
-       * Reddit public RSS deliberately spaces requests to avoid 429 responses.
-       * Resolve this before vertical-specific defaults so no request family can
-       * accidentally push Reddit back to a 1.8-4.8s timeout.
-       * The collector itself uses a smaller internal deadline and returns posts
-       * before optional comments when the remaining budget is tight.
-       */
-      return bounded(7_200);
+      // Reddit needs room for public-RSS pacing, but the outer generation/recovery
+      // signal remains the hard wall-clock cancellation authority.
+      return bounded(preferred ? 5_200 : 4_500);
     }
-
-    if (verticalConstraint?.strict && verticalConstraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY') {
-      if (key === 'crossref') return bounded(6_200);
-      if (key === 'news') return bounded(5_800);
-      if (key === 'forum') return bounded(4_200);
-      if (key === 'gdelt') return bounded(3_200);
-      if (key === 'youtube') return bounded(3_000);
+    if (key === 'forum') return bounded(preferred ? 4_800 : 4_000);
+    if (key === 'crossref' || key === 'news') {
+      return bounded(preferred ? 4_600 : 3_900);
     }
-
+    if (key === 'youtube') return bounded(preferred ? 4_000 : 3_300);
+    if (key === 'blog') return bounded(preferred ? 3_800 : 3_100);
+    if (key === 'gdelt') return bounded(preferred ? 3_300 : 2_700);
     if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'ACCOUNT_ACCESS_SECURITY'
+      key === 'github' ||
+      key === 'dev-to' ||
+      key === 'stackoverflow' ||
+      key === 'hacker-news' ||
+      key === 'product-hunt'
     ) {
-      if (['app-store', 'google-play'].includes(key)) return bounded(7_500);
-      if (['news', 'crossref'].includes(key)) return bounded(4_400);
-      if (key === 'youtube') return bounded(4_000);
-      if (key === 'gdelt') return bounded(2_500);
+      return bounded(preferred ? 3_300 : 2_500);
     }
 
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'PUBLIC_SECTOR' &&
-      verticalConstraint.label === 'public grant evaluation and funding allocation'
-    ) {
-      if (['forum', 'news', 'gdelt', 'crossref', 'blog'].includes(key)) {
-        return bounded(4_200);
-      }
-      if (key === 'youtube') return bounded(3_400);
-      return bounded(2_200);
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' &&
-      verticalConstraint.label ===
-        'typewriter restoration condition parts and repair history operations'
-    ) {
-      if (['forum', 'youtube', 'blog'].includes(key)) return bounded(4_200);
-      if (['crossref', 'news'].includes(key)) return bounded(3_200);
-      if (key === 'gdelt') return bounded(2_500);
-      return bounded(1_900);
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      (verticalConstraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY' ||
-        verticalConstraint.kind === 'AGRICULTURE_DISTRIBUTION_PROFITABILITY')
-    ) {
-      if (['news', 'crossref', 'forum'].includes(key)) return bounded(4_200);
-      if (['gdelt', 'youtube', 'blog'].includes(key)) return bounded(3_600);
-      return bounded(1_800);
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' &&
-      verticalConstraint.label ===
-        'eyeglass frame repair history parts fit and pickup operations'
-    ) {
-      if (['forum', 'youtube', 'news'].includes(key)) return bounded(3_800);
-      if (['blog', 'crossref', 'gdelt'].includes(key)) return bounded(3_000);
-      return bounded(1_700);
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'RESTAURANT_DELIVERY_FRAUD'
-    ) {
-      if (['app-store', 'google-play'].includes(key)) return bounded(6_500);
-      if (['news', 'forum', 'youtube'].includes(key)) return bounded(3_600);
-      if (key === 'gdelt') return bounded(3_200);
-      if (['crossref', 'blog'].includes(key)) return bounded(2_800);
-      return bounded(1_800);
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'FARM_ENERGY_OPERATIONS'
-    ) {
-      if (['news', 'crossref', 'gdelt', 'youtube', 'forum'].includes(key)) {
-        return bounded(3_600);
-      }
-      if (key === 'blog') return bounded(2_000);
-      return bounded(1_700);
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'RENEWABLE_ASSET_PERFORMANCE'
-    ) {
-      if (['news', 'gdelt', 'crossref', 'forum', 'blog', 'dev-to'].includes(key)) {
-        return bounded(3_800);
-      }
-      if (key === 'youtube') return bounded(3_200);
-      return bounded(1_800);
-    }
-
-    if (blockedSourceKeys.has(key)) return bounded(2_000);
-    if (preferredSourceKeys.has(key)) return bounded(4_800);
-    return bounded(3_000);
+    if (!hasRequesterText) return bounded(preferred ? 4_000 : 3_000);
+    return bounded(preferred ? 4_200 : 3_000);
   }
 
   private resolveSourceCollectorLimits(
     sourceKey: string,
     collectionMode: CollectorInput['collectionMode'],
     limits: CollectorInput['limits'] | undefined,
-    verticalConstraint: RequestVerticalConstraint | undefined,
+    _verticalConstraint: RequestVerticalConstraint | undefined,
     requestDescription: string,
     preferredSourceKeys: ReadonlySet<string>,
     blockedSourceKeys: ReadonlySet<string>,
     aiOwnedTextPlan: boolean,
   ): CollectorInput['limits'] {
-    if (collectionMode !== 'FAST_GENERATION') {
+    if (
+      collectionMode !== 'FAST_GENERATION' &&
+      collectionMode !== 'TARGETED_RECOVERY'
+    ) {
       return limits;
     }
 
+    const key = sourceKey.trim().toLocaleLowerCase();
     const cap = (value: number | undefined, maximum: number): number =>
       Math.max(1, Math.min(value ?? maximum, maximum));
-    const normalizedSourceKey = sourceKey.toLocaleLowerCase();
+    const withCaps = (
+      fetchedPosts: number,
+      savedPosts: number,
+      fetchedComments: number,
+      savedComments: number,
+    ): CollectorInput['limits'] => ({
+      maxFetchedPosts: cap(limits?.maxFetchedPosts, fetchedPosts),
+      maxSavedPosts: cap(limits?.maxSavedPosts, savedPosts),
+      maxFetchedComments: cap(limits?.maxFetchedComments, fetchedComments),
+      maxSavedComments: cap(limits?.maxSavedComments, savedComments),
+    });
 
-    // DOMAINS_ONLY / NO_INPUT now do the breadth up front so recovery is rarely
-    // needed. PRIMARY lanes get two useful result slots and enough comments to
-    // expose real complaints; MICRO_PROBE lanes are capped later by tier.
-    if (!requestDescription.trim()) {
-      return {
-        // The tier limiter runs immediately after this method. Start with a
-        // useful breadth budget so PRIMARY lanes can actually retain several
-        // independent signals while SECONDARY/MICRO lanes are still capped.
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 6),
-        maxSavedComments: cap(limits?.maxSavedComments, 4),
-      };
+    if (blockedSourceKeys.has(key)) return withCaps(2, 1, 2, 1);
+
+    const preferred = preferredSourceKeys.has(key);
+    const requesterText = Boolean(requestDescription.trim());
+    const recovery = collectionMode === 'TARGETED_RECOVERY';
+
+    // A non-preferred source is an exploratory recall lane. AI-owned source
+    // plans may promote it through preferredSourceKeys, but no named vertical
+    // gets a hidden larger corpus budget anymore.
+    const exploratory = requesterText && preferredSourceKeys.size > 0 && !preferred;
+    const exploratoryScale = exploratory && !aiOwnedTextPlan ? 1 : 0;
+
+    if (key === 'reddit' || key === 'forum') {
+      return exploratoryScale
+        ? withCaps(4, 2, 6, 2)
+        : recovery
+          ? withCaps(6, 4, 10, 4)
+          : withCaps(8, 5, 14, 5);
     }
 
-    // All collectors participate for text requests too. Sources outside the
-    // planner's preferred family are exploratory recall lanes, not equal-budget
-    // fan-out. This keeps evidence breadth while protecting precision/tokens.
-    if (
-      preferredSourceKeys.size > 0 &&
-      !preferredSourceKeys.has(normalizedSourceKey) &&
-      !aiOwnedTextPlan
-    ) {
-      return {
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 4),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 2),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 4),
-        maxSavedComments: cap(limits?.maxSavedComments, 2),
-      };
+    if (key === 'app-store' || key === 'google-play') {
+      return exploratoryScale
+        ? withCaps(3, 2, 6, 3)
+        : recovery
+          ? withCaps(5, 3, 10, 4)
+          : withCaps(7, 4, 14, 5);
     }
 
-    /*
-     * A rich AI plan owns query wording, not evidence volume. Strict
-     * restoration/physical/e-commerce workflows must apply their balanced
-     * source budgets BEFORE the generic AI-owned-plan branch; otherwise one
-     * broad Crossref/News source can consume most of the Community corpus with
-     * lexical neighbours while specialist sources contribute little.
-     * Community AI still receives every item actually fetched by these bounded
-     * collectors through the all-collected raw ledger.
-     */
-    if (requestDescription && verticalConstraint?.strict) {
-      if (blockedSourceKeys.has(normalizedSourceKey)) {
-        return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 4),
-          maxSavedComments: cap(limits?.maxSavedComments, 2),
-        };
-      }
-      const balancedProblemFirstVertical =
-        verticalConstraint.kind === 'RESTORATION_CONSERVATION' ||
-        verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' ||
-        verticalConstraint.kind === 'FOOD_STORAGE_CONDITION' ||
-        verticalConstraint.kind === 'RENTAL_INVENTORY_OPERATIONS' ||
-        verticalConstraint.kind === 'ECOMMERCE_MARGIN_PROFITABILITY' ||
-        verticalConstraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION' ||
-        verticalConstraint.kind === 'OPERATIONAL_COST_ATTRIBUTION' ||
-        verticalConstraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY';
+    if (key === 'youtube') {
+      return exploratoryScale
+        ? withCaps(3, 2, 4, 2)
+        : recovery
+          ? withCaps(5, 3, 8, 3)
+          : withCaps(6, 4, 10, 4);
+    }
 
-      if (balancedProblemFirstVertical) {
-        if (['forum', 'reddit'].includes(normalizedSourceKey)) {
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 12),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 7),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 20),
-            maxSavedComments: cap(limits?.maxSavedComments, 6),
-          };
-        }
-        if (normalizedSourceKey === 'crossref') {
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 12),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 8),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 2),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-        }
-        if (normalizedSourceKey === 'news') {
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 10),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 6),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 2),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-        }
-        if (normalizedSourceKey === 'youtube') {
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        }
-        if (normalizedSourceKey === 'gdelt') {
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 1),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-        }
-        if (normalizedSourceKey === 'blog') {
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 1),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-        }
-      }
+    if (key === 'crossref' || key === 'news') {
+      return exploratoryScale
+        ? withCaps(4, 2, 1, 1)
+        : recovery
+          ? withCaps(6, 4, 1, 1)
+          : withCaps(8, 5, 1, 1);
+    }
+
+    if (key === 'blog' || key === 'gdelt') {
+      return exploratoryScale
+        ? withCaps(3, 2, 1, 1)
+        : recovery
+          ? withCaps(5, 3, 1, 1)
+          : withCaps(6, 4, 1, 1);
     }
 
     if (
-      requestDescription &&
-      aiOwnedTextPlan &&
-      preferredSourceKeys.size > 0 &&
-      !preferredSourceKeys.has(normalizedSourceKey)
+      key === 'github' ||
+      key === 'dev-to' ||
+      key === 'stackoverflow' ||
+      key === 'hacker-news' ||
+      key === 'product-hunt'
     ) {
-      return {
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 4),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 2),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 4),
-        maxSavedComments: cap(limits?.maxSavedComments, 2),
-      };
+      return exploratoryScale
+        ? withCaps(3, 2, 3, 2)
+        : withCaps(recovery ? 4 : 5, recovery ? 3 : 4, 5, 3);
     }
 
-    if (requestDescription && aiOwnedTextPlan) {
-      /*
-       * Request-aware generation should collect a broad high-signal first-pass
-       * corpus so targeted recovery is rarely necessary. These are source-level
-       * budgets across parallel collectors; individual collectors still impose
-       * tighter per-thread/per-item caps and Community AI applies lexical/source
-       * hygiene before its single full-corpus race.
-       */
-      if (['news', 'crossref', 'gdelt', 'blog'].includes(normalizedSourceKey)) {
-        return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 10),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 6),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 4),
-          maxSavedComments: cap(limits?.maxSavedComments, 2),
-        };
-      }
-
-      if (['forum', 'reddit'].includes(normalizedSourceKey)) {
-        return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 9),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 6),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 16),
-          maxSavedComments: cap(limits?.maxSavedComments, 8),
-        };
-      }
-
-      if (normalizedSourceKey === 'youtube') {
-        return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 10),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 6),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 8),
-          maxSavedComments: cap(limits?.maxSavedComments, 4),
-        };
-      }
-
-      if (['app-store', 'google-play'].includes(normalizedSourceKey)) {
-        return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-          // Reviews are the evidence payload; keep every bounded fetched review
-          // visible to Community instead of dropping three before semantic
-          // classification. Listing posts remain discovery-only downstream.
-          maxFetchedComments: cap(limits?.maxFetchedComments, 8),
-          maxSavedComments: cap(limits?.maxSavedComments, 8),
-        };
-      }
-
-      return {
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 6),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 6),
-        maxSavedComments: cap(limits?.maxSavedComments, 4),
-      };
-    }
-
-    if (requestDescription && !aiOwnedTextPlan && !blockedSourceKeys.has(normalizedSourceKey)) {
-      /*
-       * PREPARING fallback must not mean narrow collection. The fallback is
-       * still request-derived, so keep a large but bounded first-pass corpus
-       * and let semantic triage decide relevance afterwards.
-       */
-      if (['news', 'crossref', 'gdelt', 'blog'].includes(normalizedSourceKey)) {
-        return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 2),
-          maxSavedComments: cap(limits?.maxSavedComments, 2),
-        };
-      }
-      if (['forum', 'reddit'].includes(normalizedSourceKey)) {
-        return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-          maxSavedComments: cap(limits?.maxSavedComments, 6),
-        };
-      }
-      if (normalizedSourceKey === 'youtube') {
-        return {
-          maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-          maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-          maxFetchedComments: cap(limits?.maxFetchedComments, 4),
-          maxSavedComments: cap(limits?.maxSavedComments, 2),
-        };
-      }
-      return {
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 6),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 6),
-        maxSavedComments: cap(limits?.maxSavedComments, 4),
-      };
-    }
-
-    /*
-     * Smart all-source fan-out keeps every source in the first pass, but a
-     * source that the request archetype explicitly blocks receives only a
-     * tiny exploratory budget. Sources outside the preferred family get a
-     * bounded secondary budget. Preferred sources keep their source-specific
-     * behavior below. No-text paths are left untouched.
-     */
-    if (requestDescription && blockedSourceKeys.has(normalizedSourceKey)) {
-      return {
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 4),
-        maxSavedComments: cap(limits?.maxSavedComments, 2),
-      };
-    }
-
-    if (
-      requestDescription &&
-      preferredSourceKeys.size > 0 &&
-      !preferredSourceKeys.has(normalizedSourceKey)
-    ) {
-      return {
-        maxFetchedPosts: cap(limits?.maxFetchedPosts, 4),
-        maxSavedPosts: cap(limits?.maxSavedPosts, 2),
-        maxFetchedComments: cap(limits?.maxFetchedComments, 6),
-        maxSavedComments: cap(limits?.maxSavedComments, 2),
-      };
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      (verticalConstraint.kind === 'AGRICULTURE_EXPORT_PROFITABILITY' ||
-        verticalConstraint.kind === 'AGRICULTURE_DISTRIBUTION_PROFITABILITY')
-    ) {
-      switch (normalizedSourceKey) {
-        case 'news':
-        case 'crossref':
-        case 'gdelt':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'forum':
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 5),
-          };
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 3),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-      }
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' &&
-      verticalConstraint.label ===
-        'eyeglass frame repair history parts fit and pickup operations'
-    ) {
-      switch (normalizedSourceKey) {
-        case 'forum':
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 5),
-          };
-        case 'news':
-        case 'blog':
-        case 'crossref':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 3),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-      }
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'RESTAURANT_DELIVERY_FRAUD'
-    ) {
-      switch (normalizedSourceKey) {
-        case 'app-store':
-        case 'google-play':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 2),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 5),
-          };
-        case 'news':
-        case 'gdelt':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'forum':
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 10),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'crossref':
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 4),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 2),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 3),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-      }
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'FARM_ENERGY_OPERATIONS'
-    ) {
-      switch (normalizedSourceKey) {
-        case 'news':
-        case 'crossref':
-        case 'gdelt':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'youtube':
-        case 'forum':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 8),
-            maxSavedComments: cap(limits?.maxSavedComments, 3),
-          };
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 3),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-      }
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'RENEWABLE_ASSET_PERFORMANCE'
-    ) {
-      switch (normalizedSourceKey) {
-        case 'news':
-        case 'gdelt':
-        case 'crossref':
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'forum':
-        case 'dev-to':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 10),
-            maxSavedComments: cap(limits?.maxSavedComments, 3),
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 2),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 8),
-            maxSavedComments: cap(limits?.maxSavedComments, 2),
-          };
-        default:
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 3),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-      }
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'PUBLIC_SECTOR' &&
-      verticalConstraint.label === 'public grant evaluation and funding allocation'
-    ) {
-      switch (sourceKey) {
-        case 'forum':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'news':
-        case 'gdelt':
-        case 'crossref':
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 8),
-            maxSavedComments: cap(limits?.maxSavedComments, 3),
-          };
-        default:
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 3),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 2),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 4),
-            maxSavedComments: cap(limits?.maxSavedComments, 2),
-          };
-      }
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' &&
-      verticalConstraint.label ===
-        'typewriter restoration condition parts and repair history operations'
-    ) {
-      switch (sourceKey) {
-        case 'forum':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 14),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 14),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'blog':
-        case 'crossref':
-        case 'news':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'gdelt':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 4),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 2),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 2),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 1),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 3),
-            maxSavedComments: cap(limits?.maxSavedComments, 1),
-          };
-      }
-    }
-
-    if (sourceKey === 'google-play' || sourceKey === 'app-store') {
-      return {
-        maxFetchedPosts: Math.max(2, limits?.maxFetchedPosts ?? 2),
-        maxSavedPosts: Math.max(2, limits?.maxSavedPosts ?? 2),
-        maxFetchedComments: Math.max(20, limits?.maxFetchedComments ?? 20),
-        maxSavedComments: Math.max(12, limits?.maxSavedComments ?? 12),
-      };
-    }
-
-    /*
-     * For high-confidence physical-service requests the first pass should be
-     * community-first, not "save eighteen headlines from the first broad
-     * publisher source". Lower per-source persistence caps keep source
-     * diversity available to semantic triage, reduce database/LLM work, and
-     * preserve more comment budget on sources that can contain first-person
-     * workflow pain. The collectors still run concurrently.
-     */
-    if (
-      verticalConstraint?.strict &&
-      (verticalConstraint.kind === 'PHYSICAL_SERVICE_VERTICAL' ||
-        verticalConstraint.kind === 'RESTORATION_CONSERVATION' ||
-        verticalConstraint.kind === 'FOOD_STORAGE_CONDITION' ||
-        verticalConstraint.kind === 'RENTAL_INVENTORY_OPERATIONS')
-    ) {
-      switch (sourceKey) {
-        case 'forum':
-        case 'reddit':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 9),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 18),
-            maxSavedComments: cap(limits?.maxSavedComments, 5),
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 20),
-            maxSavedComments: cap(limits?.maxSavedComments, 5),
-          };
-        case 'news':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'gdelt':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return limits;
-      }
-    }
-
-
-    /*
-     * Urban energy / EV infrastructure requests have strong academic and news
-     * coverage, but saving a dozen variants from both News and Crossref only
-     * enlarges semantic-triage and ranking cost. Keep corroborating sources
-     * bounded while preserving enough independent utilization/cost evidence.
-     */
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'URBAN_ENERGY_DEMAND_INTELLIGENCE'
-    ) {
-      const cap = (value: number | undefined, maximum: number): number =>
-        Math.max(1, Math.min(value ?? maximum, maximum));
-
-      switch (sourceKey) {
-        case 'forum':
-        case 'reddit':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 10),
-            maxSavedComments: cap(limits?.maxSavedComments, 3),
-          };
-        case 'news':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'gdelt':
-        case 'crossref':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return limits;
-      }
-    }
-
-    /*
-     * Professional agency workflows should never spend the fast path on broad
-     * consumer-app review corpora. Keep community and editorial sources small
-     * and high-signal so semantic triage sees assignment/availability evidence
-     * instead of dozens of generic scheduling-app comments.
-     */
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'PROFESSIONAL_SERVICE_AGENCY'
-    ) {
-      const cap = (
-        value: number | undefined,
-        maximum: number,
-      ): number => Math.max(1, Math.min(value ?? maximum, maximum));
-
-      switch (sourceKey) {
-        case 'forum':
-        case 'reddit':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 14),
-            maxSavedComments: cap(limits?.maxSavedComments, 5),
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'news':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'gdelt':
-        case 'crossref':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return limits;
-      }
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'MANUFACTURING_COST_PROFITABILITY'
-    ) {
-      const cap = (value: number | undefined, maximum: number): number =>
-        Math.max(1, Math.min(value ?? maximum, maximum));
-      switch (sourceKey) {
-        case 'crossref':
-        case 'news':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'reddit':
-        case 'forum':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 8),
-            maxSavedComments: cap(limits?.maxSavedComments, 3),
-          };
-        case 'blog':
-        case 'gdelt':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return limits;
-      }
-    }
-
-    if (verticalConstraint?.strict && verticalConstraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY') {
-      const cap = (value: number | undefined, maximum: number): number => Math.max(1, Math.min(value ?? maximum, maximum));
-      switch (sourceKey) {
-        case 'crossref':
-        case 'news': return { maxFetchedPosts: cap(limits?.maxFetchedPosts, 8), maxSavedPosts: cap(limits?.maxSavedPosts, 5), maxFetchedComments: 1, maxSavedComments: 1 };
-        case 'reddit':
-        case 'forum': return { maxFetchedPosts: cap(limits?.maxFetchedPosts, 7), maxSavedPosts: cap(limits?.maxSavedPosts, 4), maxFetchedComments: cap(limits?.maxFetchedComments, 10), maxSavedComments: cap(limits?.maxSavedComments, 4) };
-        case 'gdelt': return { maxFetchedPosts: cap(limits?.maxFetchedPosts, 5), maxSavedPosts: cap(limits?.maxSavedPosts, 3), maxFetchedComments: 1, maxSavedComments: 1 };
-        case 'youtube': return { maxFetchedPosts: cap(limits?.maxFetchedPosts, 4), maxSavedPosts: cap(limits?.maxSavedPosts, 2), maxFetchedComments: cap(limits?.maxFetchedComments, 4), maxSavedComments: cap(limits?.maxSavedComments, 2) };
-        default: return limits;
-      }
-    }
-
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'HEALTHCARE_COST_RESOURCE_EFFICIENCY'
-    ) {
-      const cap = (value: number | undefined, maximum: number): number =>
-        Math.max(1, Math.min(value ?? maximum, maximum));
-      switch (sourceKey) {
-        case 'crossref':
-        case 'news':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'reddit':
-        case 'forum':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 12),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 8),
-            maxSavedComments: cap(limits?.maxSavedComments, 3),
-          };
-        case 'blog':
-        case 'gdelt':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 5),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return limits;
-      }
-    }
-
-    /*
-     * Restaurant cost/energy requests already have a high-signal academic and
-     * editorial surface. Keep each source bounded so one broad News/Crossref
-     * lane cannot create a 30+ item corpus that then forces extra AI batches.
-     * Community-bearing sources keep a larger comment allowance while
-     * corroborating sources contribute only a few focused records.
-     */
-    if (
-      verticalConstraint?.strict &&
-      verticalConstraint.kind === 'RESTAURANT_ENERGY'
-    ) {
-      const cap = (
-        value: number | undefined,
-        maximum: number,
-      ): number => Math.max(1, Math.min(value ?? maximum, maximum));
-
-      switch (sourceKey) {
-        case 'forum':
-        case 'reddit':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 16),
-            maxSavedComments: cap(limits?.maxSavedComments, 5),
-          };
-        case 'youtube':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: cap(limits?.maxFetchedComments, 16),
-            maxSavedComments: cap(limits?.maxSavedComments, 4),
-          };
-        case 'news':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 8),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 5),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'gdelt':
-        case 'crossref':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 7),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 4),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        case 'blog':
-          return {
-            maxFetchedPosts: cap(limits?.maxFetchedPosts, 6),
-            maxSavedPosts: cap(limits?.maxSavedPosts, 3),
-            maxFetchedComments: 1,
-            maxSavedComments: 1,
-          };
-        default:
-          return limits;
-      }
-    }
-
-    return limits;
+    if (!requesterText) return withCaps(6, 4, 6, 4);
+    return exploratoryScale ? withCaps(3, 2, 3, 2) : withCaps(6, 4, 6, 4);
   }
 
   /**

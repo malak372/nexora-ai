@@ -949,3 +949,461 @@ html.vox-user-dark body :where(.nx-login__experience-card, .nx-register__experie
 
 /* Keep source-language idea data visually coherent inside Arabic UI. */
 html.vox-user-rtl [data-idea-content='true'] { unicode-bidi: plaintext; text-align: start; }
+
+/* ========================================================================== */
+/* 2026-08-27 requested dark-mode surface cleanup                            */
+/* ========================================================================== */
+
+/* Generation progress: status text must not sit on a rectangular strip. */
+html.vox-user-dark body .nx-horizontal-stage__state,
+html.vox-user-dark body .nx-horizontal-stage--active .nx-horizontal-stage__state,
+html.vox-user-dark body .nx-horizontal-stage--completed .nx-horizontal-stage__state,
+html.vox-user-dark body .nx-horizontal-stage--waiting .nx-horizontal-stage__state,
+html.vox-user-dark body .nx-horizontal-stage--failed .nx-horizontal-stage__state {
+  width: fit-content !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Home: one continuous canvas, softer artwork colors, Arabic copy on right. */
+html.vox-user-dark body .vox-home-page .vox-hero-shell {
+  border-color: rgba(112, 205, 198, .13) !important;
+  background: #0b1b16 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase,
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+  border-color: rgba(112, 205, 198, .14) !important;
+  background: #0b1b16 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  opacity: .92 !important;
+  filter: brightness(.73) saturate(.98) contrast(1.03) !important;
+  mix-blend-mode: normal !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background:
+    radial-gradient(circle at 24% 20%, rgba(112,205,198,.08), transparent 35%),
+    radial-gradient(circle at 80% 78%, rgba(222,153,171,.055), transparent 30%),
+    linear-gradient(145deg, rgba(7,24,18,.08), rgba(7,24,18,.26)) !important;
+  mix-blend-mode: normal !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop {
+  opacity: .16 !important;
+}
+html.vox-user-rtl body .vox-home-page .vox-hero-shell { direction: rtl !important; }
+html.vox-user-rtl body .vox-home-page .vox-hero-copy { direction: rtl !important; text-align: right !important; }
+html.vox-user-rtl body .vox-home-page .vox-stage-showcase { direction: ltr !important; }
+html.vox-user-rtl body .vox-home-page .vox-hero-actions,
+html.vox-user-rtl body .vox-home-page .vox-hero-trust { direction: rtl !important; justify-content: flex-start !important; }
+
+/* My Ideas: a designed hero without a dark slab beneath the filter controls. */
+html.vox-user-dark body .ideas-page__header {
+  color: var(--vx-final-text) !important;
+  border-color: rgba(112,205,198,.15) !important;
+  background:
+    radial-gradient(circle at 77% 22%, rgba(112,205,198,.10), transparent 29%),
+    radial-gradient(circle at 13% 92%, rgba(222,153,171,.055), transparent 28%),
+    #10211b !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .ideas-page__header::after { opacity: .14 !important; }
+html.vox-user-dark body .ideas-page__hero-orbit { border-color: rgba(112,205,198,.22) !important; }
+html.vox-user-dark body .ideas-page__hero-orbit--two { border-color: rgba(222,153,171,.18) !important; }
+html.vox-user-dark body .ideas-page__hero-node {
+  color: #8bdbd4 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #19332a !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .ideas-page__hero-node--spark { color: #e6a5b5 !important; }
+html.vox-user-dark body .ideas-page__count {
+  border-color: rgba(112,205,198,.16) !important;
+  background: rgba(25,48,40,.72) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .ideas-page__toolbar,
+html.vox-user-dark body .ideas-filters,
+html.vox-user-dark body .ideas-date-filter {
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .ideas-filters {
+  padding: 0 !important;
+}
+html.vox-user-dark body .ideas-filters button {
+  border-color: rgba(112,205,198,.16) !important;
+  background: #12251f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .ideas-filters button:is(:hover,.is-active) {
+  background: #25443a !important;
+  background-image: none !important;
+}
+
+/* Notifications: remove the black nested rectangle and let the feed breathe. */
+html.vox-user-dark body .notifications-shell,
+html.vox-user-dark body .notifications-toolbar,
+html.vox-user-dark body .notifications-filters,
+html.vox-user-dark body .notifications-panel,
+html.vox-user-dark body .notifications-panel__heading,
+html.vox-user-dark body .notifications-list {
+  border-color: transparent !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .notifications-command {
+  border-color: rgba(112,205,198,.15) !important;
+  background:
+    radial-gradient(circle at 84% 14%, rgba(112,205,198,.10), transparent 30%),
+    radial-gradient(circle at 8% 100%, rgba(222,153,171,.055), transparent 28%),
+    #10211b !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .notifications-command__summary {
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .notifications-command__summary article {
+  border-color: rgba(112,205,198,.15) !important;
+  background: rgba(25,48,40,.80) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .notifications-filters { padding: 0 !important; }
+html.vox-user-dark body .notifications-filters button {
+  border-color: rgba(112,205,198,.13) !important;
+  background: #12251f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .notifications-filters button:is(:hover,.is-active) {
+  border-color: rgba(112,205,198,.30) !important;
+  background: #25443a !important;
+  background-image: none !important;
+}
+html.vox-user-dark body .notifications-panel-actions {
+  border-color: rgba(112,205,198,.13) !important;
+  background: rgba(18,37,31,.62) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .notification-row {
+  border: 0 !important;
+  border-bottom: 1px solid rgba(112,205,198,.09) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .notification-row:is(:hover,.is-unread) {
+  background: rgba(112,205,198,.035) !important;
+}
+
+/* Preferences: redesigned hero plus cards that sit on the page, not inside boxes. */
+html.vox-user-dark body .preferences-hero {
+  border-color: rgba(112,205,198,.15) !important;
+  background:
+    radial-gradient(circle at 80% 15%, rgba(112,205,198,.10), transparent 28%),
+    radial-gradient(circle at 10% 94%, rgba(222,153,171,.055), transparent 28%),
+    #10211b !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .preferences-hero__ambient,
+html.vox-user-dark body .preferences-hero__flow { opacity: .22 !important; }
+html.vox-user-dark body .preferences-hero__visual {
+  border-color: rgba(112,205,198,.14) !important;
+  background: rgba(17,39,31,.52) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .preferences-hero__visual-ring { border-color: rgba(112,205,198,.21) !important; }
+html.vox-user-dark body .preferences-hero__visual-ring--two { border-color: rgba(222,153,171,.17) !important; }
+html.vox-user-dark body .preferences-hero__visual-core,
+html.vox-user-dark body .preferences-hero__visual-node {
+  color: #8bdbd4 !important;
+  border-color: rgba(112,205,198,.17) !important;
+  background: #19332a !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .preferences-hero__visual-node--tune { color: #e4a0b2 !important; }
+html.vox-user-dark body .preferences-hero__summary article,
+html.vox-user-dark body .preferences-hero__progress {
+  border-color: rgba(112,205,198,.14) !important;
+  background: rgba(25,48,40,.72) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .preferences-section,
+html.vox-user-dark body .preferences-group,
+html.vox-user-dark body .preferences-grid,
+html.vox-user-dark body .preferences-domain-group {
+  border-color: transparent !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark body .preferences-section {
+  padding-inline: 0 !important;
+}
+html.vox-user-dark body .preference-option,
+html.vox-user-dark body .preferences-field,
+html.vox-user-dark body .preferences-location-card,
+html.vox-user-dark body .preferences-language-card {
+  border-color: rgba(112,205,198,.14) !important;
+  background: #12251f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* Auth pages keep their content direction, but the form is physically left. */
+@media (min-width: 901px) {
+  html.vox-user-dark body .nx-login__auth,
+  html.vox-user-dark body .nx-register__form-panel { grid-column: 1 !important; grid-row: 1 !important; }
+  html.vox-user-dark body .nx-login__story,
+  html.vox-user-dark body .nx-register__story { grid-column: 2 !important; grid-row: 1 !important; }
+}
+
+/* Profile settings remains readable and rerenders in the selected UI language. */
+html.vox-user-dark body .profile-settings-card__identity strong,
+html.vox-user-dark body .profile-settings-panel__title strong,
+html.vox-user-dark body .profile-settings-danger h2 {
+  color: #f1f8f5 !important;
+}
+html.vox-user-dark body .profile-settings-card__identity > span,
+html.vox-user-dark body .profile-settings-card__identity small,
+html.vox-user-dark body .profile-settings-panel__title span {
+  color: #adbfba !important;
+}
+
+@media (min-width: 921px) {
+  html.vox-user-dark body .nx-login__experience {
+    grid-template-columns: minmax(470px, .92fr) minmax(0, 1.08fr) !important;
+  }
+  html.vox-user-dark body .nx-register__layout {
+    grid-template-columns: minmax(470px, .92fr) minmax(0, 1.08fr) !important;
+  }
+}
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop {
+  border-color: rgba(112,205,198,.10) !important;
+  background: #0b1b16 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  opacity: .48 !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame::after {
+  display: none !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase::before {
+  opacity: .10 !important;
+}
+/* Keep the hero illustration colorful without leaving a pale image slab. */
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  opacity: .96 !important;
+  filter: brightness(.80) saturate(1.08) contrast(1.04) !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background:
+    radial-gradient(circle at 22% 22%, rgba(91,190,182,.11), transparent 36%),
+    radial-gradient(circle at 79% 76%, rgba(218,139,160,.09), transparent 31%),
+    linear-gradient(145deg, rgba(7,24,18,.56), rgba(7,24,18,.70)) !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-window-rail {
+  border-color: rgba(112,205,198,.14) !important;
+  background: rgba(14,38,30,.78) !important;
+  box-shadow: none !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260827_HOME_HERO_PARITY_GUARD                                      */
+/* Keeps the public hero composition identical across themes while preserving */
+/* Arabic copy on the physical right and English copy on the physical left.   */
+/* ========================================================================== */
+html.vox-user-rtl body .vox-home-page .vox-hero-shell {
+  direction: ltr !important;
+}
+html.vox-user-rtl body .vox-home-page .vox-hero-copy {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  direction: rtl !important;
+  text-align: right !important;
+}
+html.vox-user-rtl body .vox-home-page .vox-stage-showcase {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  direction: ltr !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-image {
+  opacity: .985 !important;
+  filter: brightness(.96) saturate(1.04) contrast(1.01) !important;
+  mix-blend-mode: normal !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-glass {
+  background: linear-gradient(145deg, rgba(8,27,21,.015), rgba(8,27,21,.055)) !important;
+  mix-blend-mode: normal !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-showcase,
+html.vox-user-dark body .vox-home-page .vox-stage-showcase-frame {
+  border-color: rgba(116,205,197,.23) !important;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(100,210,200,.15), transparent 31%),
+    radial-gradient(circle at 83% 82%, rgba(224,148,169,.12), transparent 29%),
+    linear-gradient(145deg,#18372f,#112820) !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-one {
+  opacity: .58 !important;
+  background: rgba(91,201,193,.20) !important;
+  background-image: none !important;
+}
+html.vox-user-dark body .vox-home-page .vox-stage-backdrop-two {
+  opacity: .50 !important;
+  background: rgba(224,148,169,.15) !important;
+  background-image: none !important;
+}
+@media (max-width:1180px) {
+  html.vox-user-rtl body .vox-home-page .vox-hero-copy {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+  html.vox-user-rtl body .vox-home-page .vox-stage-showcase {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+  }
+}
+
+
+/* ========================================================================== */
+/* FINAL_20260828_FILTER_ROWS_MATCH_LIGHT_LAYOUT                              */
+/* My Ideas + Notifications keep the light-mode row geometry in dark mode.   */
+/* Only the individual pills/inputs carry a dark surface; never the row.      */
+/* ========================================================================== */
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-page__toolbar,
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-filters,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-toolbar,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-filters,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-read-filters,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-toolbar__result {
+  border: 0 !important;
+  outline: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-page__toolbar::before,
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-page__toolbar::after,
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-filters::before,
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-filters::after,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-toolbar::before,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-toolbar::after,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-filters::before,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-filters::after,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-read-filters::before,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-read-filters::after {
+  content: none !important;
+  display: none !important;
+}
+
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-filters,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-filters,
+html.vox-user-dark body .normal-app-shell .notifications-page .notifications-read-filters {
+  padding: 0 !important;
+}
+
+/* 2026-08-28 — My Ideas date range must keep the light-mode geometry. */
+html.vox-user-dark body .ideas-page .ideas-date-filter__fields {
+  gap: 5px !important;
+  padding: 4px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(112,205,198,.19) !important;
+  border-radius: 16px !important;
+  background: #12261f !important;
+  background-image: none !important;
+  box-shadow: 0 11px 28px rgba(2,10,8,.14), inset 0 1px 0 rgba(185,229,222,.035) !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label {
+  border: 0 !important;
+  border-radius: 11px !important;
+  background: linear-gradient(145deg, #153129, #10261f) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label + label::before {
+  display: block !important;
+  content: '' !important;
+  background: rgba(137,202,192,.15) !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter input {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #edf7f3 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-pagination__pages {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-pagination .ideas-pagination__page.is-active {
+  border-color: rgba(112,205,198,.42) !important;
+  background: #25483d !important;
+  background-image: none !important;
+  color: #f2fffb !important;
+}
+
+/* FINAL_20260828_MY_IDEAS_DATE_ICON_VISIBLE */
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-date-filter__input-wrap {
+  position: relative !important;
+}
+
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-date-filter__input-wrap input[type='date'] {
+  padding-inline-end: 23px !important;
+}
+
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-date-filter__input-wrap input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0 !important;
+  filter: none !important;
+}
+
+html.vox-user-dark body .normal-app-shell .ideas-page .ideas-date-filter__calendar-icon {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  color: #b9d7ce !important;
+  stroke: currentColor !important;
+}
+
+/* FINAL_20260828_DASHBOARD_ADVANCED_WORKSPACE_READABILITY
+   Keep the unlocked workspace message legible after the global dark-surface
+   rules. This is deliberately scoped to the dashboard's latest-idea card. */
+html.vox-user-dark body .normal-app-shell .normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint--unlocked b {
+  color: #f2fbf8 !important;
+}
+
+html.vox-user-dark body .normal-app-shell .normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint--unlocked small {
+  color: #bed1cb !important;
+}

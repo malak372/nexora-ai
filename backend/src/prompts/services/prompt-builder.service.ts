@@ -507,10 +507,11 @@ export class PromptBuilderService {
 
     return [
       'APPLICATION-ENFORCED OUTPUT LANGUAGE — FINAL OVERRIDE:',
-      `- The frontend selected ${languageName} (${input.outputLanguage}) as the generated-idea language.`,
+      `- The backend resolved ${languageName} (${input.outputLanguage}) as the generated-idea content language. Requester-authored text is the primary language signal when present; the UI locale is not a content-language signal.`,
       `- Write every human-readable generated VALUE in ${languageName}.`,
+      '- Preserve the requester content language. Never translate requester-authored English into Arabic merely because the interface is Arabic, and never translate requester-authored Arabic into English merely because the interface is English.',
       '- Keep JSON property names, enum values, stable output keys, schema structure, and machine identifiers exactly as required by the supplied response schema.',
-      '- Translate or summarize evidence semantically into the requested output language even when source evidence is written in another language.',
+      '- Translate or summarize external evidence semantically into the resolved generated-content language even when source evidence is written in another language.',
       '- Do not mix narrative languages. Proper nouns, product names, API/library names, protocols, code identifiers, and standard technical acronyms may remain in their conventional form when translating them would reduce clarity.',
       '- This directive overrides any older configurable template sentence that requests a different narrative language.',
     ].join('\n');
@@ -577,12 +578,19 @@ export class PromptBuilderService {
     const supportingCount = trusted.filter(
       (item) => item.classification === 'SUPPORTING_SIGNAL',
     ).length;
+    const unadjudicatedCount = ledger.filter(
+      (item) =>
+        item.classification === 'UNADJUDICATED' ||
+        item.adjudicationStatus === 'UNADJUDICATED',
+    ).length;
     const state = input.evidenceState ??
       (directCount > 0
         ? 'DIRECT_VALIDATED'
         : supportingCount > 0
           ? 'SUPPORTING_VALIDATED'
-          : 'ZERO_VALIDATED_EVIDENCE');
+          : unadjudicatedCount > 0
+            ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
+            : 'NO_VALID_EVIDENCE_FOUND');
     const verifiedFacetIds = [
       ...new Set(trusted.flatMap((item) => item.matchedFacetIds ?? [])),
     ];
@@ -602,8 +610,10 @@ export class PromptBuilderService {
       ...(unvalidatedFacetIds.length
         ? [`- Unvalidated requester facets: ${unvalidatedFacetIds.join(', ')}. Do not present these as evidence-proven.`]
         : []),
-      state === 'ZERO_VALIDATED_EVIDENCE'
-        ? '- ZERO evidence language lock: describe the problem only as requester-described/discovery hypothesis. Use may/could/if confirmed. Never write data shows, evidence indicates, reports show, users report, frequently, typically, recurring, validated demand, observed demand, or similar evidence-backed wording.'
+      state === 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
+        ? '- ADJUDICATION-UNAVAILABLE language lock: raw external material exists, but semantic triage did not complete for part or all of it. Never say the material was unrelated or that no evidence exists. Describe the problem only as requester-described/discovery hypothesis and explicitly keep external grounding unconfirmed.'
+        : state === 'NO_VALID_EVIDENCE_FOUND'
+          ? '- NO-VALID-EVIDENCE language lock: semantic adjudication completed without retaining trusted DIRECT/SUPPORTING evidence. Describe the problem only as requester-described/discovery hypothesis. Use may/could/if confirmed and never imply validated or recurring demand.'
         : state === 'SUPPORTING_VALIDATED'
           ? '- SUPPORTING-only lock: evidence validates only the matched facet(s). Preserve the full canonical requester problem as scope, but mark unmatched facets as unvalidated. Never claim the entire problem chain or every selected domain is proven.'
           : '- DIRECT state: strong wording is allowed only for the exact verified problem/facet and verified domain(s); do not generalize prevalence or recurrence beyond the retained evidence.',
@@ -998,8 +1008,10 @@ export class PromptBuilderService {
     }
 
     const selected = input.opportunityRanking?.selected;
-    const canonicalZeroEvidence = input.evidenceState === 'ZERO_VALIDATED_EVIDENCE';
-    const validationOnly = canonicalZeroEvidence || Boolean(
+    const canonicalUngroundedEvidence =
+      input.evidenceState === 'NO_VALID_EVIDENCE_FOUND' ||
+      input.evidenceState === 'EVIDENCE_ADJUDICATION_UNAVAILABLE';
+    const validationOnly = canonicalUngroundedEvidence || Boolean(
       selected?.disqualificationReasons.includes(
         'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
       ),

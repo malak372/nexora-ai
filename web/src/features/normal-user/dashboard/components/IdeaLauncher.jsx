@@ -5,9 +5,10 @@
  */
 
 import { useState } from "react";
-import { ArrowUpRight, Mic, Sparkles } from "lucide-react";
+import { ArrowUpRight, Mic, MicOff, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useUserExperience } from '../../../../system/user-experience';
+import useVoiceTyping from '../../shared/components/useVoiceTyping';
 
 const EXAMPLES = [
   "University scheduling problems",
@@ -19,6 +20,17 @@ export default function IdeaLauncher({ compact = false }) {
   const navigate = useNavigate();
   const { t, isArabic } = useUserExperience();
   const [problem, setProblem] = useState("");
+  const {
+    isListening,
+    isSupported: voiceSupported,
+    error: voiceError,
+    toggle: toggleVoice,
+  } = useVoiceTyping({
+    value: problem,
+    onChange: setProblem,
+    preferredLanguage: isArabic ? 'AR' : 'EN',
+    maxLength: 2000,
+  });
 
   const continueToGenerator = () => {
     const trimmedProblem = problem.trim();
@@ -37,6 +49,8 @@ export default function IdeaLauncher({ compact = false }) {
           onChange={(event) => setProblem(event.target.value.slice(0, 2000))}
           placeholder={t('Describe the challenge in your own words...')}
           aria-label={t('Describe the problem you want to solve')}
+          dir="auto"
+          maxLength={2000}
         />
 
         <div className="normal-launcher__input-meta">
@@ -44,12 +58,20 @@ export default function IdeaLauncher({ compact = false }) {
 
           <div className="normal-launcher__actions">
             <button
-              className="normal-icon-button"
+              className={`normal-icon-button normal-launcher__voice ${isListening ? 'is-listening' : ''}`}
               type="button"
-              aria-label={t('Use voice input')}
-              title={t('Voice input will be connected in the generation wizard')}
+              onClick={toggleVoice}
+              aria-label={t(isListening ? 'Stop voice typing' : 'Start voice typing')}
+              aria-pressed={isListening}
+              title={t(
+                voiceSupported
+                  ? isListening
+                    ? 'Stop voice typing'
+                    : 'Speak and convert your voice to text'
+                  : 'Voice typing is unavailable in this browser'
+              )}
             >
-              <Mic size={18} />
+              {isListening ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
 
             <button
@@ -63,6 +85,13 @@ export default function IdeaLauncher({ compact = false }) {
           </div>
         </div>
       </div>
+
+      {voiceError ? (
+        <div className="normal-launcher__voice-status is-error">
+          <span />
+          {t(voiceError)}
+        </div>
+      ) : null}
 
       <div className="normal-launcher__examples">
         <span>

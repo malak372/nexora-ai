@@ -203,8 +203,22 @@ export class CanonicalRequestProductBlueprintUtil {
 
   private static isGenericOrUnsafeOpportunityTitle(value: string): boolean {
     if (!value) return true;
-    return /^(?:requester-defined workflow opportunity|most-evidenced request problem family|selected-domain evidence discovery|request-aligned operational friction)$/iu.test(value) ||
-      /\b(?:payment\s*&\s*account abuse|passenger|refund abuse investigation|booking behavior)\b/iu.test(value);
+    return /^(?:requester-defined workflow opportunity|most-evidenced request problem family|selected-domain evidence discovery|request-aligned operational friction)$/iu.test(value);
+  }
+
+  private static truncateAtBoundary(value: string, maxLength: number): string {
+    const normalized = this.clean(value);
+    if (normalized.length <= maxLength) return normalized;
+    const bounded = normalized.slice(0, maxLength + 1);
+    const boundary = Math.max(
+      bounded.lastIndexOf('. '),
+      bounded.lastIndexOf('; '),
+      bounded.lastIndexOf(', '),
+      bounded.lastIndexOf(' '),
+    );
+    return (boundary >= Math.floor(maxLength * 0.55)
+      ? bounded.slice(0, boundary)
+      : bounded.slice(0, maxLength)).trim();
   }
 
   private static compactDomainLabel(value: string): string {
@@ -212,19 +226,20 @@ export class CanonicalRequestProductBlueprintUtil {
       .replace(/\b(?:operations?|management|records? management)\b/giu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
-    return (cleaned || 'Requester Workflow').slice(0, 72);
+    return this.truncateAtBoundary(cleaned || 'Requester Workflow', 72);
   }
 
   private static metricLabel(value: string): string {
     const cleaned = this.clean(value)
       .replace(/^(?:increased?|higher|significant|severe)\s+/iu, '')
-      .replace(/[.!?]+$/gu, '')
-      .slice(0, 90);
-    return cleaned ? `${cleaned} trend` : 'requester-defined outcome trend';
+      .replace(/[.!?]+$/gu, '');
+    return cleaned
+      ? `${this.truncateAtBoundary(cleaned, 90)} trend`
+      : 'requester-defined outcome trend';
   }
 
   private static limitTitle(value: string): string {
-    return this.clean(value).slice(0, 100);
+    return this.truncateAtBoundary(value, 100);
   }
 
   private static unique(values: readonly string[]): string[] {

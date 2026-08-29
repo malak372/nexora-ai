@@ -24,6 +24,7 @@ import { Link } from 'react-router-dom';
 
 import RegisterForm from '../components/RegisterForm';
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
+import { useUserExperience } from '../../../../system/user-experience';
 
 import '../../Login/styles/login-page.css';
 import '../styles/register-page.css';
@@ -57,6 +58,7 @@ const BACKGROUND_PARTICLES = Array.from(
 );
 
 export default function RegisterPage() {
+    const { t } = useUserExperience();
     const pageRef = useRef(null);
 
     function handlePointerMove(event) {
@@ -216,7 +218,7 @@ export default function RegisterPage() {
                                 <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
 
                                 <small>
-                                    Ideas built from real needs
+                                    {t('Ideas built from real needs')}
                                 </small>
                             </span>
                         </Link>
@@ -257,7 +259,7 @@ export default function RegisterPage() {
                                 aria-hidden="true"
                             />
 
-                            Discover what is worth building
+                            {t('Discover what is worth building')}
                         </motion.div>
 
                         <motion.h1
@@ -273,10 +275,10 @@ export default function RegisterPage() {
                                 delay: 0.21,
                             }}
                         >
-                            Every great project
+                            {t('Every great project')}
 
                             <span>
-                                begins as a hidden signal.
+                                {t('begins as a hidden signal.')}
                             </span>
                         </motion.h1>
 
@@ -294,10 +296,7 @@ export default function RegisterPage() {
                                 delay: 0.29,
                             }}
                         >
-                            Voxidence listens to real community needs, discovers
-                            the patterns others overlook, and transforms them
-                            into software ideas backed by evidence—not
-                            guesswork.
+                            {t('Voxidence listens to real community needs, discovers the patterns others overlook, and transforms them into software ideas backed by evidence—not guesswork.')}
                         </motion.p>
 
                         <motion.div
@@ -346,11 +345,11 @@ export default function RegisterPage() {
 
                                         <div>
                                             <h2>
-                                                {benefit.title}
+                                                {t(benefit.title)}
                                             </h2>
 
                                             <p>
-                                                {benefit.description}
+                                                {t(benefit.description)}
                                             </p>
                                         </div>
                                     </motion.article>
@@ -371,7 +370,7 @@ export default function RegisterPage() {
 
                         <div>
                             <strong>
-                                From scattered signals to clear direction.
+                                {t('From scattered signals to clear direction.')}
                             </strong>
 
                             <p>
@@ -380,7 +379,7 @@ export default function RegisterPage() {
                                     aria-hidden="true"
                                 />
 
-                                Your private workspace is ready when you are.
+                                {t('Your private workspace is ready when you are.')}
                             </p>
                         </div>
                     </footer>
@@ -416,7 +415,7 @@ export default function RegisterPage() {
                                         aria-hidden="true"
                                     />
 
-                                    Your workspace awaits
+                                    {t('Your workspace awaits')}
                                 </span>
 
                                 <Link
@@ -425,17 +424,16 @@ export default function RegisterPage() {
                                     aria-label="Back to Nexora home page"
                                 >
                                     <ArrowLeft size={14} aria-hidden="true" />
-                                    Back to home
+                                    {t('Back to home')}
                                 </Link>
                             </div>
 
                             <h2>
-                                Create your account.
+                                {t('Create your account.')}
                             </h2>
 
                             <p>
-                                Add your details, choose your role, then verify
-                                your email to activate your workspace.
+                                {t('Add your details, choose your role, then verify your email to activate your workspace.')}
                             </p>
                         </header>
 
@@ -447,7 +445,7 @@ export default function RegisterPage() {
                                 aria-hidden="true"
                             />
 
-                            Protected account. Verified email. Private ideas.
+                            {t('Protected account. Verified email. Private ideas.')}
                         </footer>
                     </div>
                 </motion.section>

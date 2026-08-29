@@ -11,6 +11,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
   Grid2X2,
   Globe2,
@@ -37,6 +38,7 @@ import {
   preloadIdeaWorkspace,
 } from '../../../../routes/routePreloaders';
 import { useUserExperience } from '../../../../system/user-experience';
+import NormalPageHero from '../../shared/components/NormalPageHero';
 import '../styles/ideas.css';
 
 const PAGE_SIZE = 9;
@@ -84,6 +86,42 @@ function getTodayInputValue() {
     .slice(0, 10);
 }
 
+
+/**
+ * Converts a date-input value into the exact inclusive boundaries expected by
+ * the backend date filters. Keeping the conversion local preserves the user's
+ * timezone while still sending an unambiguous ISO timestamp.
+ */
+function toStartOfDayIso(value) {
+  if (!value) return undefined;
+  return new Date(`${value}T00:00:00`).toISOString();
+}
+
+function toEndOfDayIso(value) {
+  if (!value) return undefined;
+  return new Date(`${value}T23:59:59.999`).toISOString();
+}
+
+/**
+ * Returns at most five consecutive page numbers around the active page.
+ * Examples: 1..5, 3..7, 8..12. This keeps the control stable while the user
+ * moves through a long library.
+ */
+function getPaginationWindow(currentPage, totalPages, windowSize = 5) {
+  const safeTotal = Math.max(1, Number(totalPages) || 1);
+  const safeCurrent = Math.min(
+    safeTotal,
+    Math.max(1, Number(currentPage) || 1),
+  );
+  const size = Math.min(windowSize, safeTotal);
+  const half = Math.floor(size / 2);
+
+  let start = safeCurrent - half;
+  start = Math.max(1, Math.min(start, safeTotal - size + 1));
+
+  return Array.from({ length: size }, (_, index) => start + index);
+}
+
 /**
  * Converts a backend date value into a valid local Date object.
  *
@@ -98,6 +136,24 @@ function toLocalDateValue(value) {
   return Number.isNaN(date.getTime())
     ? null
     : date;
+}
+
+/**
+ * Opens the browser date picker from the full field, while allowing a custom
+ * calendar icon to stay visible in both light and dark mode.
+ *
+ * @param {React.MouseEvent<HTMLInputElement>} event
+ */
+function openDatePicker(event) {
+  const input = event.currentTarget;
+
+  if (typeof input?.showPicker !== 'function') return;
+
+  try {
+    input.showPicker();
+  } catch {
+    // Safari/Firefox may rely on their native click behaviour instead.
+  }
 }
 
 /**
@@ -334,11 +390,11 @@ export default function MyIdeasPage() {
     }
 
     if (fromDate) {
-      params.fromDate = fromDate;
+      params.fromDate = toStartOfDayIso(fromDate);
     }
 
     if (toDate) {
-      params.toDate = toDate;
+      params.toDate = toEndOfDayIso(toDate);
     }
 
     return params;
@@ -401,8 +457,8 @@ export default function MyIdeasPage() {
           status: 'PUBLISHED',
           sortBy: 'publishedAt',
           sortOrder: 'desc',
-          fromDate: fromDate || undefined,
-          toDate: toDate || undefined,
+          fromDate: toStartOfDayIso(fromDate),
+          toDate: toEndOfDayIso(toDate),
         };
 
         const publishedResult =
@@ -449,8 +505,8 @@ export default function MyIdeasPage() {
           search: search || undefined,
           sortBy: 'acceptedAt',
           sortOrder: 'desc',
-          fromDate: fromDate || undefined,
-          toDate: toDate || undefined,
+          fromDate: toStartOfDayIso(fromDate),
+          toDate: toEndOfDayIso(toDate),
         };
 
         const acceptedResult =
@@ -560,8 +616,8 @@ export default function MyIdeasPage() {
       page: 1,
       limit: PAGE_SIZE,
       search: search || undefined,
-      fromDate: fromDate || undefined,
-      toDate: toDate || undefined,
+      fromDate: toStartOfDayIso(fromDate),
+      toDate: toEndOfDayIso(toDate),
     };
 
     if (nextFilter === 'favorites') {
@@ -924,55 +980,30 @@ export default function MyIdeasPage() {
   const isFavoritesView =
     filter === 'favorites';
 
+  const visiblePageNumbers = useMemo(
+    () => getPaginationWindow(page, pagination.totalPages, 5),
+    [page, pagination.totalPages],
+  );
+
+  useEffect(() => {
+    const safeTotalPages = Math.max(1, Number(pagination.totalPages) || 1);
+    if (page > safeTotalPages) setPage(safeTotalPages);
+  }, [page, pagination.totalPages]);
+
   return (
     <section className="ideas-page reveal-page" aria-busy={loading || isRefreshing}>
-      <header className="ideas-page__header">
-        <div>
-          <span className="ideas-page__kicker">
-            {t('Private workspace')}
-          </span>
-
-          <h1>{t('My ideas')}</h1>
-
-          <p>{t('Review, continue, and manage every idea you created.')}</p>
-        </div>
-
-        <div
-          className={`ideas-page__count${isAcceptedView
-              ? ' ideas-page__count--accepted'
-              : isPublishedView
-                ? ' ideas-page__count--published'
-                : isFavoritesView
-                ? ' ideas-page__count--favorites'
-                : ''
-            }`}
-        >
-          {isAcceptedView ? (
-            <CheckCircle2 size={18} />
-          ) : isPublishedView ? (
-            <Globe2 size={18} />
-          ) : isFavoritesView ? (
-            <Heart size={18} fill="currentColor" />
-          ) : (
-            <Grid2X2 size={18} />
-          )}
-
-          <strong>
-            {pagination.total ??
-              items.length}
-          </strong>
-
-          <span>
-            {t(isAcceptedView
-              ? 'accepted'
-              : isPublishedView
-                ? 'published'
-                : isFavoritesView
-                ? 'favorites'
-                : 'ideas')}
-          </span>
-        </div>
-      </header>
+      <NormalPageHero
+        variant="ideas"
+        eyebrow={t('Private idea library')}
+        title={t('My ideas, organized around your next move.')}
+        description={t('Return to every generated direction, keep favorites close, continue accepted work, and manage publication progress from one private workspace.')}
+        chips={[t('Created by you'), t('Favorites in one place'), t('Publication-ready workspace')]}
+        stats={[{
+          label: t(isAcceptedView ? 'Accepted' : isPublishedView ? 'Published' : isFavoritesView ? 'Favorites' : 'Ideas'),
+          value: pagination.total ?? items.length,
+        }]}
+        compact
+      />
 
       <div className="ideas-page__toolbar">
         <form
@@ -1034,57 +1065,79 @@ export default function MyIdeasPage() {
             <label>
               <span>{t('From')}</span>
 
-              <input
-                type="date"
-                value={fromDate}
-                max={toDate || today}
-                onChange={(event) => {
-                  const nextFrom =
-                    event.target.value;
+              <div className="ideas-date-filter__input-wrap">
+                <input
+                  type="date"
+                  lang={language === 'ar' ? 'ar' : 'en'}
+                  dir={language === 'ar' ? 'rtl' : 'ltr'}
+                  value={fromDate}
+                  max={toDate || today}
+                  onClick={openDatePicker}
+                  onChange={(event) => {
+                    const nextFrom =
+                      event.target.value;
 
-                  setFromDate(nextFrom);
+                    setFromDate(nextFrom);
 
-                  if (
-                    toDate &&
-                    nextFrom &&
-                    nextFrom > toDate
-                  ) {
-                    setToDate(nextFrom);
-                  }
+                    if (
+                      toDate &&
+                      nextFrom &&
+                      nextFrom > toDate
+                    ) {
+                      setToDate(nextFrom);
+                    }
 
-                  setPage(1);
-                }}
-              />
+                    setPage(1);
+                  }}
+                />
+                <CalendarDays
+                  className="ideas-date-filter__calendar-icon"
+                  size={14}
+                  strokeWidth={1.9}
+                  aria-hidden="true"
+                />
+              </div>
             </label>
 
             <label>
               <span>{t('To')}</span>
 
-              <input
-                type="date"
-                value={toDate}
-                min={
-                  fromDate ||
-                  undefined
-                }
-                max={today}
-                onChange={(event) => {
-                  const nextTo =
-                    event.target.value;
-
-                  setToDate(nextTo);
-
-                  if (
-                    fromDate &&
-                    nextTo &&
-                    nextTo < fromDate
-                  ) {
-                    setFromDate(nextTo);
+              <div className="ideas-date-filter__input-wrap">
+                <input
+                  type="date"
+                  lang={language === 'ar' ? 'ar' : 'en'}
+                  dir={language === 'ar' ? 'rtl' : 'ltr'}
+                  value={toDate}
+                  min={
+                    fromDate ||
+                    undefined
                   }
+                  max={today}
+                  onClick={openDatePicker}
+                  onChange={(event) => {
+                    const nextTo =
+                      event.target.value;
 
-                  setPage(1);
-                }}
-              />
+                    setToDate(nextTo);
+
+                    if (
+                      fromDate &&
+                      nextTo &&
+                      nextTo < fromDate
+                    ) {
+                      setFromDate(nextTo);
+                    }
+
+                    setPage(1);
+                  }}
+                />
+                <CalendarDays
+                  className="ideas-date-filter__calendar-icon"
+                  size={14}
+                  strokeWidth={1.9}
+                  aria-hidden="true"
+                />
+              </div>
             </label>
           </div>
         </div>
@@ -1281,11 +1334,12 @@ export default function MyIdeasPage() {
           >
             <button
               type="button"
+              className="ideas-pagination__nav ideas-pagination__nav--previous"
               disabled={page <= 1}
               onClick={() =>
                 setPage(
                   (current) =>
-                    current - 1,
+                    Math.max(1, current - 1),
                 )
               }
             >
@@ -1293,15 +1347,24 @@ export default function MyIdeasPage() {
               {t('Previous')}
             </button>
 
-            <span>
-              {t('Page')} {' '}
-              <strong>{page}</strong>{' '}
-              {t('of')} {' '}
-              {pagination.totalPages}
-            </span>
+            <div className="ideas-pagination__pages" aria-label={t('Page numbers')}>
+              {visiblePageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  className={`ideas-pagination__page${pageNumber === page ? ' is-active' : ''}`}
+                  aria-current={pageNumber === page ? 'page' : undefined}
+                  aria-label={`${t('Page')} ${pageNumber}`}
+                  onClick={() => setPage(pageNumber)}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+            </div>
 
             <button
               type="button"
+              className="ideas-pagination__nav ideas-pagination__nav--next"
               disabled={
                 page >=
                 pagination.totalPages
@@ -1309,7 +1372,7 @@ export default function MyIdeasPage() {
               onClick={() =>
                 setPage(
                   (current) =>
-                    current + 1,
+                    Math.min(pagination.totalPages, current + 1),
                 )
               }
             >

@@ -5,7 +5,10 @@ import gplay from 'google-play-scraper';
 import { BaseCollector } from '../base/base.collector';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorExternalCacheUtil } from '../base/collector-external-cache.util';
-import { SocialCollector } from '../base/collector.interface';
+import {
+  type CollectorRequestSupportInput,
+  SocialCollector,
+} from '../base/collector.interface';
 import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { CollectorRegionUtil } from '../base/collector-region.util';
 
@@ -89,6 +92,34 @@ export class GooglePlayCollector
   constructor(configService: ConfigService) {
     super(configService, GooglePlayCollector.name);
   }
+
+  supportsRequest(input: CollectorRequestSupportInput): boolean {
+    const bounded =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
+    if (!bounded) return true;
+
+    const corpus = [
+      input.requestDescription ?? '',
+      input.domainName ?? '',
+      ...(input.keywords ?? []),
+      ...(input.plannedQueries ?? []),
+      ...(input.sourceHints ?? []),
+    ]
+      .join(' ')
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!corpus) return false;
+
+    // Review stores can only produce useful evidence when the affected
+    // workflow is itself a digital/mobile product or when the retrieval plan
+    // explicitly asks for app-review evidence. Physical-service/craft requests
+    // are not routed here merely because a generic "manager" app could exist.
+    return /\b(?:mobile app|mobile application|android app|ios app|web app|software|saas|digital platform|online platform|customer portal|user portal|account login|sign in|sync|app crash|application crash|app review|user review|store review|app store|google play)\b/u.test(corpus);
+  }
+
 
   /**
    * Collects, ranks, and maps Google Play applications.

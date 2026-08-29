@@ -15,7 +15,6 @@ import {
   Sparkles,
   Star,
   ThumbsUp,
-  TrendingUp,
   UsersRound,
 } from 'lucide-react';
 import {
@@ -29,6 +28,7 @@ import DiscoveryCard from '../components/DiscoveryCard';
 import { getDiscoveries } from '../api/discoveriesApi';
 import { preloadDiscoveryDetail } from '../../../../routes/routePreloaders';
 import { useUserExperience } from '../../../../system/user-experience';
+import NormalPageHero from '../../shared/components/NormalPageHero';
 import '../styles/discoveries.css';
 
 const PAGE_SIZE = 12;
@@ -204,74 +204,15 @@ export default function DiscoveriesPage() {
 
   return (
     <main className="discover-page reveal-page">
-      <motion.section
-        className="discover-head"
-        initial={
-          shouldReduceMotion
-            ? undefined
-            : {
-              opacity: 0,
-              y: 24,
-              scale: 0.985,
-            }
-        }
-        animate={{
-          opacity: 1,
-          y: 0,
-          scale: 1,
-        }}
-        transition={{
-          duration: 0.68,
-          ease: [0.22, 1, 0.36, 1],
-        }}
-      >
-        <div className="discover-head__orb discover-head__orb--one" />
-        <div className="discover-head__orb discover-head__orb--two" />
-        <div className="discover-head__grid" />
-
-        <div className="discover-head__copy">
-          <span>
-            <Sparkles size={15} />
-            {t('Community intelligence')}
-          </span>
-
-          <h1>
-            {t('Discover ideas shaped by')}
-            <em>{t('real community needs.')}</em>
-          </h1>
-
-          <p>{t("Explore public opportunities created through Voxidence's evidence-driven generation workflow and shared by creators across the community.")}</p>
-
-          <div className="discover-head__chips">
-            <span>
-              <TrendingUp size={14} />
-              {t('Evidence driven')}
-            </span>
-            <span>
-              <Star size={14} />
-              {t('Community rated')}
-            </span>
-            <span>
-              <ThumbsUp size={14} />
-              {t('Open for feedback')}
-            </span>
-          </div>
-        </div>
-
-        <div className="discover-head__stat">
-          <div className="discover-head__stat-icon">
-            <Sparkles size={22} />
-          </div>
-
-          <div>
-            <small>{t('Available now')}</small>
-            <strong>{publications.length}</strong>
-            <span>{t('discoveries loaded')}</span>
-          </div>
-
-          <i aria-hidden="true" />
-        </div>
-      </motion.section>
+      <NormalPageHero
+        variant="discover"
+        eyebrow={t('Community intelligence')}
+        title={t('Discover ideas shaped by real community needs.')}
+        description={t("Explore public opportunities created through Voxidence's evidence-driven generation workflow and shared by creators across the community.")}
+        chips={[t('Evidence driven'), t('Community rated'), t('Open for feedback')]}
+        stats={[{ label: t('Discoveries available'), value: publications.length }]}
+        compact
+      />
 
       <motion.section
         className="discover-controls"

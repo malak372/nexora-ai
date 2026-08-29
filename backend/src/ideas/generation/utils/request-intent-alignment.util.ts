@@ -255,3 +255,28 @@ export function evaluateRequestIntentAlignment(
     sharedTokens: sharedTokens.slice(0, 16),
   };
 }
+
+/**
+ * Accepts a candidate when the aggregate `matched` flag is false only because
+ * one conservative section/actor heuristic missed, while the actual requester
+ * problem and solution-side overlap are both materially strong.
+ *
+ * This intentionally requires much stronger numeric overlap than the ordinary
+ * matcher. It is therefore a continuity guard for explicit-problem generation,
+ * not a relaxation that allows a same-domain but different workflow to pass.
+ */
+export function isStrongExplicitProblemAlignment(
+  alignment: RequestIntentAlignmentResult,
+  solutionAlignment: RequestIntentAlignmentResult,
+): boolean {
+  return (
+    alignment.sharedTokenCount >= alignment.requiredSharedTokenCount &&
+    alignment.score >= 0.58 &&
+    alignment.problemScore >= 0.5 &&
+    solutionAlignment.sharedTokenCount >=
+      solutionAlignment.requiredSharedTokenCount &&
+    solutionAlignment.score >= 0.28 &&
+    solutionAlignment.problemScore >= 0.16 &&
+    solutionAlignment.supportingSectionCount >= 1
+  );
+}

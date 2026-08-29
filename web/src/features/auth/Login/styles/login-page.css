@@ -2144,3 +2144,274 @@ html.vox-user-rtl .nx-login .nx-field__control input[type='password'] {
 html.vox-user-rtl .nx-login :is(.nx-auth-card__back-home svg, .nx-form__submit svg) {
   transform: scaleX(-1);
 }
+
+/* Keep Arabic login geometry identical to the English experience. */
+html.vox-user-rtl .nx-login__experience { direction:rtl; }
+html.vox-user-rtl .nx-login__story,
+html.vox-user-rtl .nx-login__auth,
+html.vox-user-rtl .nx-auth-card,
+html.vox-user-rtl .nx-login__story-content { text-align:right; }
+html.vox-user-rtl .nx-auth-card__topline,
+html.vox-user-rtl .nx-login__story-footer { flex-direction:row-reverse; }
+html.vox-user-rtl .nx-auth-card__back-home svg { transform:rotate(180deg); }
+html.vox-user-dark .nx-login :is(.nx-story-item,.nx-auth-card,.nx-form__field,.nx-field input) {
+  border-color:rgba(112,205,198,.18) !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260827_AUTH_RTL_MATCH_ENGLISH                                      */
+/* Arabic keeps RTL copy but does not mirror the English split-screen layout. */
+/* ========================================================================== */
+html.vox-user-rtl .nx-login__experience {
+  direction: ltr !important;
+}
+html.vox-user-rtl .nx-login__story,
+html.vox-user-rtl .nx-login__story-content,
+html.vox-user-rtl .nx-login__auth,
+html.vox-user-rtl .nx-auth-card {
+  direction: rtl !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .nx-auth-card__topline,
+html.vox-user-rtl .nx-login__story-footer {
+  flex-direction: row !important;
+}
+html.vox-user-dark .nx-login::before,
+html.vox-user-dark .nx-login::after {
+  opacity: .16 !important;
+}
+
+
+/* FINAL_20260827_LOGIN_BACKGROUND_AND_RTL */
+html.vox-user-dark .auth-layout-shell,
+html.vox-user-dark .nx-login,
+html.vox-user-dark .nx-login__experience,
+html.vox-user-dark .nx-login__auth {
+  background: #0f1d18 !important;
+  background-image: none !important;
+}
+html.vox-user-dark .nx-login__story,
+html.vox-user-dark .nx-auth-card {
+  border-color: rgba(112,205,198,.18) !important;
+  background: linear-gradient(145deg,#193029,#12251f) !important;
+  box-shadow: 0 24px 58px rgba(0,0,0,.20) !important;
+}
+html.vox-user-rtl .nx-login__story :is(h1,h2,p,small,strong),
+html.vox-user-rtl .nx-auth-card :is(h1,h2,p,label,.nx-form__register,.nx-form__footer) {
+  text-align: right !important;
+}
+
+html.vox-user-rtl .nx-login__experience { direction: ltr !important; }
+html.vox-user-rtl .nx-login__story,
+html.vox-user-rtl .nx-login__auth,
+html.vox-user-rtl .nx-auth-card { direction: rtl !important; }
+
+/* FINAL_20260827_LOGIN_FULL_DARK_V2 */
+html.vox-user-dark body,
+html.vox-user-dark #root,
+html.vox-user-dark .auth-layout-shell,
+html.vox-user-dark .nx-login,
+html.vox-user-dark .nx-login__experience,
+html.vox-user-dark .nx-login__auth {
+  background: #0a1713 !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark .nx-login {
+  min-height: 100svh !important;
+}
+
+html.vox-user-dark .nx-login :is(.nx-login__gradient-flow,.nx-login__mesh,.nx-login__beam,.nx-login__grain,.nx-login__cursor-pixels,.nx-login__silk,.nx-login__prism,.nx-login__light-ring) {
+  opacity: .16 !important;
+}
+
+html.vox-user-dark .nx-login__story,
+html.vox-user-dark .nx-login .nx-auth-card {
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .16) !important;
+  background: linear-gradient(145deg, #172d25, #10211b) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-rtl .nx-login__experience {
+  direction: ltr !important;
+}
+
+html.vox-user-rtl .nx-login__story,
+html.vox-user-rtl .nx-login__auth,
+html.vox-user-rtl .nx-login .nx-auth-card {
+  direction: rtl !important;
+  text-align: right !important;
+}
+
+html.vox-user-rtl .nx-login__story-content,
+html.vox-user-rtl .nx-login .nx-auth-card__heading,
+html.vox-user-rtl .nx-login .nx-form {
+  text-align: right !important;
+}
+
+html.vox-user-dark .nx-login,
+html.vox-user-dark .nx-login__experience,
+html.vox-user-dark .nx-login__auth,
+html.vox-user-dark .nx-login__story {
+  background-color: #0b1b16 !important;
+}
+
+html.vox-user-dark .nx-login__experience {
+  background-image: none !important;
+}
+
+html.vox-user-dark .nx-login__story,
+html.vox-user-dark .nx-login .nx-auth-card {
+  border-color: rgba(112, 205, 198, .17) !important;
+  background: #11271f !important;
+  background-image: linear-gradient(145deg, #142b23, #0f211b) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .nx-login__auth {
+  background: #0b1b16 !important;
+}
+
+html.vox-user-rtl .nx-login__story-content,
+html.vox-user-rtl .nx-login .nx-auth-card,
+html.vox-user-rtl .nx-login .nx-form,
+html.vox-user-rtl .nx-login .nx-form__field {
+  direction: rtl !important;
+  text-align: right !important;
+}
+
+html.vox-user-rtl .nx-login .nx-form__options,
+html.vox-user-rtl .nx-login .nx-auth-card__topline {
+  direction: rtl !important;
+}
+
+/* 2026-08-27 desktop auth composition: form left, story right */
+@media (min-width: 901px) {
+  .nx-login__auth {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+
+  .nx-login__story {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    margin: 26px 26px 26px 0 !important;
+  }
+}
+@media (min-width: 921px) {
+  .nx-login__experience {
+    grid-template-columns: minmax(470px, .92fr) minmax(0, 1.08fr) !important;
+  }
+}
+
+
+/* FINAL_20260828_LANGUAGE_AWARE_AUTH_COLUMNS
+   English: story left / form right. Arabic: form left / story right. */
+@media (min-width: 901px) {
+  html:not(.vox-user-rtl) .nx-login__experience {
+    grid-template-columns: minmax(0, 1.08fr) minmax(470px, .92fr) !important;
+  }
+  html:not(.vox-user-rtl) .nx-login__story {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    margin: 26px 0 26px 26px !important;
+  }
+  html:not(.vox-user-rtl) .nx-login__auth {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+
+  html.vox-user-rtl .nx-login__experience {
+    grid-template-columns: minmax(470px, .92fr) minmax(0, 1.08fr) !important;
+    direction: ltr !important;
+  }
+  html.vox-user-rtl .nx-login__auth {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+  html.vox-user-rtl .nx-login__story {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    margin: 26px 26px 26px 0 !important;
+  }
+}
+
+
+/* ========================================================================== */
+/* FINAL_20260828_AUTH_SIDE_BY_LANGUAGE                                       */
+/* English -> story left / typing card right. Arabic -> card left / story right. */
+/* Uses both the persisted class and the document dir so the layout is correct */
+/* immediately during a language switch, before/after the experience layer runs. */
+/* ========================================================================== */
+@media (min-width: 901px) {
+  html[dir='ltr'] .nx-login__experience,
+  html:not(.vox-user-rtl) .nx-login__experience {
+    direction: ltr !important;
+    grid-template-columns: minmax(0, 1.08fr) minmax(470px, .92fr) !important;
+  }
+
+  html[dir='ltr'] .nx-login__story,
+  html:not(.vox-user-rtl) .nx-login__story {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    margin: 26px 0 26px 26px !important;
+  }
+
+  html[dir='ltr'] .nx-login__auth,
+  html:not(.vox-user-rtl) .nx-login__auth {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+
+  html[dir='rtl'] .nx-login__experience,
+  html.vox-user-rtl .nx-login__experience {
+    direction: ltr !important;
+    grid-template-columns: minmax(470px, .92fr) minmax(0, 1.08fr) !important;
+  }
+
+  html[dir='rtl'] .nx-login__auth,
+  html.vox-user-rtl .nx-login__auth {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    direction: rtl !important;
+  }
+
+  html[dir='rtl'] .nx-login__story,
+  html.vox-user-rtl .nx-login__story {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    margin: 26px 26px 26px 0 !important;
+    direction: rtl !important;
+  }
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .nx-login .nx-field__control input,
+html.vox-user-dark[dir='ltr'] .nx-login .nx-field__control input {
+  direction: ltr !important;
+  text-align: left !important;
+  unicode-bidi: plaintext;
+}
+
+/* FINAL_20260828_DARK_ENGLISH_LOGIN_SIDE
+   Dark + English keeps the typing card on the right and story on the left. */
+@media (min-width: 901px) {
+  html.vox-user-dark:not(.vox-user-rtl) .nx-login__experience,
+  html.vox-user-dark[dir='ltr'] .nx-login__experience {
+    direction: ltr !important;
+    grid-template-columns: minmax(0, 1.08fr) minmax(470px, .92fr) !important;
+  }
+
+  html.vox-user-dark:not(.vox-user-rtl) .nx-login__story,
+  html.vox-user-dark[dir='ltr'] .nx-login__story {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    margin: 26px 0 26px 26px !important;
+  }
+
+  html.vox-user-dark:not(.vox-user-rtl) .nx-login__auth,
+  html.vox-user-dark[dir='ltr'] .nx-login__auth {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+}

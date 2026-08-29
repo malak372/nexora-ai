@@ -309,14 +309,31 @@ export class CanonicalProblemFamilyUtil {
       .replace(/[.!?]+$/gu, '')
       .trim();
     const words = cleaned.split(/\s+/u).filter(Boolean).slice(0, 8);
-    return words
-      .map((word) =>
-        /^[A-Z0-9_-]+$/u.test(word)
-          ? word
-          : word.charAt(0).toLocaleUpperCase() + word.slice(1),
-      )
-      .join(' ')
-      .slice(0, 120);
+    return this.truncateAtBoundary(
+      words
+        .map((word) =>
+          /^[A-Z0-9_-]+$/u.test(word)
+            ? word
+            : word.charAt(0).toLocaleUpperCase() + word.slice(1),
+        )
+        .join(' '),
+      120,
+    );
+  }
+
+  private static truncateAtBoundary(value: string, maxLength: number): string {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    if (normalized.length <= maxLength) return normalized;
+    const bounded = normalized.slice(0, maxLength + 1);
+    const boundary = Math.max(
+      bounded.lastIndexOf('. '),
+      bounded.lastIndexOf('; '),
+      bounded.lastIndexOf(', '),
+      bounded.lastIndexOf(' '),
+    );
+    return (boundary >= Math.floor(maxLength * 0.55)
+      ? bounded.slice(0, boundary)
+      : bounded.slice(0, maxLength)).trim();
   }
 
   private static enrichLabel(
@@ -324,124 +341,11 @@ export class CanonicalProblemFamilyUtil {
     facetTokens: readonly string[],
     evidenceTokens: ReadonlySet<string>,
   ): string {
-    const overlap = new Set(
-      facetTokens.filter((token) => evidenceTokens.has(token)),
-    );
-    if (overlap.has('booking') && evidenceTokens.has('fraud')) {
-      return evidenceTokens.has('compromise')
-        ? 'Booking and Reservation Fraud with Account Compromise'
-        : 'Booking and Reservation Fraud';
-    }
-    if (overlap.has('account') && overlap.has('compromise')) {
-      return 'Account Takeover and Account Compromise';
-    }
-    if (overlap.has('fake') && overlap.has('review')) {
-      return 'Fake Review Manipulation';
-    }
-    if (overlap.has('payment') && evidenceTokens.has('fraud')) {
-      return 'Fraudulent Payment Activity and Losses';
-    }
-
-    /*
-     * Professional conservation literature frequently describes the exact
-     * condition/specification workflow without complaint-style wording. Use a
-     * compact evidence-owned family instead of inheriting a truncated actor
-     * sentence from the requester profile. Every noun below must be present in
-     * the evidence itself, so the label cannot overclaim an unsupported pain.
-     */
-    const restorationEvidence =
-      evidenceTokens.has('restoration') || evidenceTokens.has('conservation');
-    const conditionEvidence =
-      evidenceTokens.has('condition') ||
-      evidenceTokens.has('assessment') ||
-      evidenceTokens.has('deterioration') ||
-      evidenceTokens.has('damage');
-    if (restorationEvidence && conditionEvidence) {
-      if (evidenceTokens.has('specification') || evidenceTokens.has('specifications')) {
-        return 'Restoration Condition Assessment and Specifications';
-      }
-      if (
-        evidenceTokens.has('documentation') ||
-        evidenceTokens.has('record') ||
-        evidenceTokens.has('history')
-      ) {
-        return 'Restoration Condition Documentation and Treatment History';
-      }
-      if (evidenceTokens.has('material') || evidenceTokens.has('replacement')) {
-        return 'Restoration Condition and Material Treatment Decisions';
-      }
-      return 'Restoration Condition Assessment and Treatment';
-    }
-
-    /*
-     * Supporting cost/profitability evidence must not inherit a narrower
-     * requester facet than the evidence actually says. For example, a paper on
-     * distribution/operating cost and manufacturing profitability cannot be
-     * renamed "Transportation Costs On Order Margins" unless transportation
-     * and order-level margin semantics are present in the evidence itself.
-     */
-    const agricultureEvidence =
-      evidenceTokens.has('agricultural') ||
-      evidenceTokens.has('agriculture') ||
-      evidenceTokens.has('crop') ||
-      evidenceTokens.has('produce') ||
-      evidenceTokens.has('postharvest');
-    if (
-      agricultureEvidence &&
-      evidenceTokens.has('profitability') &&
-      (evidenceTokens.has('transport') ||
-        evidenceTokens.has('inventory') ||
-        evidenceTokens.has('distribution') ||
-        evidenceTokens.has('cost'))
-    ) {
-      return 'Agricultural Distribution Costs and Crop Profitability';
-    }
-
-    if (evidenceTokens.has('cost') && evidenceTokens.has('profitability')) {
-      if (evidenceTokens.has('transport')) {
-        return 'Transportation and Logistics Costs Affect Profitability';
-      }
-      if (evidenceTokens.has('distribution')) {
-        return 'Distribution and Operating Costs Affect Profitability';
-      }
-      if (evidenceTokens.has('inventory')) {
-        return 'Inventory and Operating Costs Affect Profitability';
-      }
-      return 'Operating Costs Affect Profitability';
-    }
-    if (overlap.has('missing') && overlap.has('component')) {
-      return 'Missing and Replacement Components';
-    }
-    if (overlap.has('case')) {
-      return evidenceTokens.has('damage') || evidenceTokens.has('restoration')
-        ? 'Case Condition and Restoration Scope'
-        : 'Case Condition';
-    }
-    if (overlap.has('history') && overlap.has('restoration')) {
-      return 'Previous Repair and Restoration History';
-    }
-    if (overlap.has('damage') && overlap.has('restoration')) {
-      return 'Damage and Restoration Decisions';
-    }
-
-    let label = baseLabel;
-    const normalized = label.toLocaleLowerCase();
-    const facetHasBooking = facetTokens.includes('booking');
-    const evidenceHasFraud = evidenceTokens.has('fraud');
-    const evidenceHasCompromise = evidenceTokens.has('compromise');
-    if (facetHasBooking && evidenceHasFraud && !/\bfraud\b/u.test(normalized)) {
-      label = /\bpatterns?\b/iu.test(label)
-        ? label.replace(/\bpatterns?\b/iu, 'Fraud Patterns')
-        : `${label} Fraud`;
-    }
-    if (
-      facetHasBooking &&
-      evidenceHasCompromise &&
-      !/\b(?:compromise|takeover|hijack)\w*\b/iu.test(label)
-    ) {
-      label = `${label} and Account Compromise`;
-    }
-    return label.replace(/\s+/gu, ' ').trim().slice(0, 120);
+    // The family label is evidence-native. Facet/token overlap is used only to
+    // verify entailment; it must never inject a pre-authored domain scenario.
+    void facetTokens;
+    void evidenceTokens;
+    return this.truncateAtBoundary(baseLabel, 120);
   }
 
   private static tokenize(value: string): string[] {

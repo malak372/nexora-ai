@@ -810,3 +810,367 @@
         animation: none
     }
 }
+
+
+/* FINAL_BILLING_DARK_RTL_POLISH */
+html.vox-user-dark :is(.billing-hero,.billing-panel,.billing-panel__provider,.billing-pagination) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .billing-table-wrap { background:#14261f !important; border-radius:18px; }
+html.vox-user-dark .billing-table :is(thead,tbody,tr,th,td) { background:#14261f !important; border-color:rgba(112,205,198,.13) !important; }
+html.vox-user-dark .billing-table th { color:#9fb4ad !important; }
+html.vox-user-dark .billing-table td { color:#c0d1cc !important; }
+html.vox-user-dark .billing-table tbody tr:hover { background:#1d352d !important; box-shadow:none !important; }
+html.vox-user-dark .invoice-modal { background:rgba(4,13,10,.76) !important; backdrop-filter:blur(12px); }
+html.vox-user-dark :is(.invoice-sheet,.invoice-sheet__header,.invoice-sheet__meta>div,.invoice-sheet__total,.invoice-sheet__footer) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:none !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .invoice-sheet__meta>div { background:#20372f !important; }
+html.vox-user-dark .invoice-sheet__meta :is(small,span),
+html.vox-user-dark .invoice-sheet__footer small { color:#aec0ba !important; }
+html.vox-user-dark .invoice-sheet__meta strong,
+html.vox-user-dark .invoice-sheet__total { color:#eef8f5 !important; }
+html.vox-user-dark .invoice-sheet__close { color:#a3ded8 !important; background:#20382f !important; border-color:rgba(112,205,198,.18) !important; }
+html.vox-user-rtl .billing-page,
+html.vox-user-rtl .invoice-sheet { direction:rtl; }
+html.vox-user-rtl .billing-hero {
+  grid-template-columns:minmax(280px,.75fr) minmax(0,1.25fr) !important;
+  grid-template-areas:'visual copy';
+}
+html.vox-user-rtl .billing-hero__copy { grid-area:copy; text-align:right; }
+html.vox-user-rtl .billing-hero__visual { grid-area:visual; }
+html.vox-user-rtl .billing-table :is(th,td) { text-align:right !important; }
+html.vox-user-rtl .invoice-sheet__header,
+html.vox-user-rtl .invoice-sheet__footer { flex-direction:row-reverse; }
+html.vox-user-rtl .invoice-sheet__close { right:auto; left:20px; }
+@media(max-width:820px){html.vox-user-rtl .billing-hero{grid-template-columns:1fr!important;grid-template-areas:'copy' 'visual';}}
+
+
+/* FINAL_BILLING_ACTUAL_SURFACE_RTL_FIX */
+html.vox-user-dark .billing-hero__card,
+html.vox-user-dark .invoice-sheet > header,
+html.vox-user-dark .invoice-sheet > footer,
+html.vox-user-dark .invoice-sheet__meta,
+html.vox-user-dark .billing-table-wrap {
+  color: #edf7f4 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #172a24 !important;
+  background-image: linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .billing-hero__card::after,
+html.vox-user-dark .billing-hero::before {
+  opacity: .16 !important;
+}
+html.vox-user-dark .billing-hero__card :is(small,span) { color:#aebfba !important; }
+html.vox-user-dark .billing-hero__card strong { color:#eef8f5 !important; }
+html.vox-user-dark .invoice-sheet > header :is(span,small),
+html.vox-user-dark .invoice-sheet > footer small { color:#aec0ba !important; }
+html.vox-user-dark .invoice-sheet > header h2,
+html.vox-user-dark .invoice-sheet > footer strong { color:#eef8f5 !important; }
+html.vox-user-rtl .billing-hero {
+  direction: ltr !important;
+  grid-template-columns: minmax(280px,.75fr) minmax(0,1.25fr) !important;
+  grid-template-areas: 'visual copy' !important;
+}
+html.vox-user-rtl .billing-hero__copy {
+  direction: rtl !important;
+  grid-area: copy !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .billing-hero__visual {
+  direction: rtl !important;
+  grid-area: visual !important;
+}
+html.vox-user-rtl .invoice-sheet > header,
+html.vox-user-rtl .invoice-sheet > footer {
+  direction: rtl !important;
+  flex-direction: row !important;
+}
+@media (max-width:820px) {
+  html.vox-user-rtl .billing-hero {
+    direction: rtl !important;
+    grid-template-columns: 1fr !important;
+    grid-template-areas: 'copy' 'visual' !important;
+  }
+}
+
+
+/* FINAL_BILLING_STATUS_ICON_DARK_FIX */
+html.vox-user-dark :is(.billing-status,.billing-invoice-id,.billing-panel__provider,.billing-pagination button) {
+  color:#cfe3de !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#20382f !important;
+}
+html.vox-user-dark .billing-table td:last-child button,
+html.vox-user-dark .billing-table button {
+  color:#9fddd7 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#20382f !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260827_BILLING_RTL_MATCH_ENGLISH                                   */
+/* ========================================================================== */
+/* Keep the same physical hero composition as English: copy first, visual last. */
+html.vox-user-rtl .billing-hero {
+  direction: ltr !important;
+  grid-template-columns: minmax(0,1.25fr) minmax(280px,.75fr) !important;
+  grid-template-areas: 'copy visual' !important;
+}
+html.vox-user-rtl .billing-hero__copy {
+  direction: rtl !important;
+  grid-area: copy !important;
+  text-align: right !important;
+}
+html.vox-user-rtl .billing-hero__visual {
+  direction: ltr !important;
+  grid-area: visual !important;
+}
+
+/* The invoice number itself must not render as a dark rectangle. */
+html.vox-user-dark .billing-invoice-id {
+  color: inherit !important;
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .billing-invoice-id i {
+  color: #9ee1db !important;
+  border: 1px solid rgba(112,205,198,.16) !important;
+  background: #1c392f !important;
+}
+html.vox-user-dark .billing-invoice-id strong {
+  color: #9edbd5 !important;
+}
+html.vox-user-dark .billing-invoice-id small {
+  color: #93aaa3 !important;
+}
+
+html.vox-user-dark .billing-table-wrap,
+html.vox-user-dark .billing-table,
+html.vox-user-dark .billing-table :is(thead,tbody,tr,th,td) {
+  background: transparent !important;
+  background-image: none !important;
+}
+html.vox-user-dark .billing-table tbody tr:hover {
+  background: rgba(112,205,198,.035) !important;
+}
+
+html.vox-user-dark .billing-hero__card {
+  transform: none !important;
+  animation: none !important;
+  background: #152a22 !important;
+  background-image: linear-gradient(145deg,#193027,#12241e) !important;
+}
+html.vox-user-dark .billing-hero::before,
+html.vox-user-dark .billing-hero__card::after {
+  display: none !important;
+}
+
+@media (max-width:820px) {
+  html.vox-user-rtl .billing-hero {
+    direction: rtl !important;
+    grid-template-columns: 1fr !important;
+    grid-template-areas: 'copy' 'visual' !important;
+  }
+}
+
+html.vox-user-rtl .billing-hero {
+  direction: ltr !important;
+  grid-template-columns: minmax(280px, .75fr) minmax(0, 1.25fr) !important;
+  grid-template-areas: 'visual copy' !important;
+}
+
+html.vox-user-rtl .billing-hero__copy {
+  grid-area: copy !important;
+  direction: rtl !important;
+  text-align: right !important;
+  justify-self: stretch !important;
+}
+
+html.vox-user-rtl .billing-hero__copy > * {
+  margin-inline-left: 0 !important;
+  margin-inline-right: 0 !important;
+}
+
+html.vox-user-rtl .billing-hero__visual {
+  grid-area: visual !important;
+  direction: ltr !important;
+  justify-self: start !important;
+}
+
+html.vox-user-dark .billing-table tbody td:first-child,
+html.vox-user-dark .billing-invoice-id,
+html.vox-user-dark .billing-invoice-id > span {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .billing-invoice-id {
+  padding: 0 !important;
+}
+
+html.vox-user-dark .billing-table tbody tr:hover td:first-child,
+html.vox-user-dark .billing-table tbody tr:hover .billing-invoice-id,
+html.vox-user-dark .billing-table tbody tr:hover .billing-invoice-id > span {
+  background: transparent !important;
+}
+
+@media (max-width: 820px) {
+  html.vox-user-rtl .billing-hero {
+    direction: rtl !important;
+    grid-template-columns: 1fr !important;
+    grid-template-areas: 'copy' 'visual' !important;
+  }
+
+  html.vox-user-rtl .billing-hero__visual {
+    justify-self: stretch !important;
+  }
+}
+
+html.vox-user-dark body .billing-page .billing-hero {
+  min-height: 310px !important;
+  padding: 46px 52px !important;
+  gap: 40px !important;
+  border: 1px solid rgba(116, 205, 197, .17) !important;
+  border-radius: 34px !important;
+  background:
+    radial-gradient(circle at 86% 16%, rgba(93, 188, 180, .14), transparent 31%),
+    radial-gradient(circle at 8% 0, rgba(218, 139, 160, .10), transparent 33%),
+    linear-gradient(135deg, #172b24 0%, #13241f 58%, #192b26 100%) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark body .billing-page .billing-hero__copy > span {
+  color: #8edbd4 !important;
+}
+
+html.vox-user-dark body .billing-page .billing-hero h1 {
+  color: #f2f8f6 !important;
+}
+
+html.vox-user-dark body .billing-page .billing-hero p {
+  color: #aec0ba !important;
+}
+
+html.vox-user-dark body .billing-page .billing-hero__card {
+  width: min(310px, 100%) !important;
+  min-height: 220px !important;
+  padding: 28px !important;
+  border: 1px solid rgba(255, 255, 255, .42) !important;
+  border-radius: 30px !important;
+  background: linear-gradient(145deg, #66c8c0 0%, #3e9f99 55%, #236f6b 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 28px 68px rgba(18, 75, 70, .30), inset 0 1px 0 rgba(255, 255, 255, .44) !important;
+  transform: rotate(2deg) !important;
+}
+
+html.vox-user-dark body .billing-page .billing-hero__card::after {
+  display: block !important;
+  opacity: 1 !important;
+  background: radial-gradient(circle at 82% 12%, rgba(255, 255, 255, .28), transparent 31%) !important;
+}
+
+html.vox-user-dark body .billing-page .billing-hero__card small,
+html.vox-user-dark body .billing-page .billing-hero__card span,
+html.vox-user-dark body .billing-page .billing-hero__card strong {
+  color: #fff !important;
+}
+
+html.vox-user-dark body .billing-page .billing-hero__card small,
+html.vox-user-dark body .billing-page .billing-hero__card span {
+  opacity: .84 !important;
+}
+
+html.vox-user-dark body .billing-page .billing-hero__card i {
+  background: rgba(255, 255, 255, .17) !important;
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, .16) !important;
+}
+
+html.vox-user-rtl body .billing-page .billing-hero {
+  direction: ltr !important;
+  grid-template-columns: minmax(280px, .75fr) minmax(0, 1.25fr) !important;
+  grid-template-areas: 'visual copy' !important;
+}
+
+html.vox-user-rtl body .billing-page .billing-hero__copy {
+  grid-area: copy !important;
+  direction: rtl !important;
+  text-align: right !important;
+}
+
+html.vox-user-rtl body .billing-page .billing-hero__visual {
+  grid-area: visual !important;
+  direction: ltr !important;
+  justify-self: center !important;
+}
+
+html.vox-user-rtl body .billing-page .billing-hero h1 {
+  font-size: clamp(42px, 4.5vw, 66px) !important;
+  line-height: 1.02 !important;
+}
+
+html.vox-user-dark body .billing-page .billing-table-wrap,
+html.vox-user-dark body .billing-page .billing-table,
+html.vox-user-dark body .billing-page .billing-table :is(thead, tbody, tr, th, td) {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .billing-page .billing-table tbody td:first-child,
+html.vox-user-dark body .billing-page .billing-invoice-id,
+html.vox-user-dark body .billing-page .billing-invoice-id > span,
+html.vox-user-dark body .billing-page .billing-invoice-id::before,
+html.vox-user-dark body .billing-page .billing-invoice-id::after,
+html.vox-user-dark body .billing-page .billing-invoice-id > span::before,
+html.vox-user-dark body .billing-page .billing-invoice-id > span::after {
+  padding-inline: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .billing-page .billing-invoice-id i {
+  width: 38px !important;
+  height: 38px !important;
+  border: 1px solid rgba(116, 205, 197, .17) !important;
+  border-radius: 12px !important;
+  background: #1b382f !important;
+  color: #9fe0da !important;
+}
+
+html.vox-user-dark body .billing-page .billing-table tbody tr:hover,
+html.vox-user-dark body .billing-page .billing-table tbody tr:hover td {
+  background: rgba(116, 205, 197, .035) !important;
+}
+
+html.vox-user-dark body .billing-page .billing-table tbody tr:hover td:first-child,
+html.vox-user-dark body .billing-page .billing-table tbody tr:hover .billing-invoice-id,
+html.vox-user-dark body .billing-page .billing-table tbody tr:hover .billing-invoice-id > span {
+  background: transparent !important;
+}
+
+@media (max-width: 820px) {
+  html.vox-user-rtl body .billing-page .billing-hero {
+    direction: rtl !important;
+    grid-template-columns: 1fr !important;
+    grid-template-areas: 'copy' 'visual' !important;
+  }
+}

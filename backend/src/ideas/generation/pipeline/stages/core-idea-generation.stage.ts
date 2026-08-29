@@ -75,6 +75,8 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
         opportunityRank: candidate.opportunityRank,
         opportunityTitle: candidate.opportunityTitle,
         parsedOutput: candidate.parsedOutput,
+        deterministicEmergencyFallback:
+          candidate.deterministicEmergencyFallback,
       })),
       advancedOutputs: this.mergeAdvancedOutputs(
         context.advancedOutputs,

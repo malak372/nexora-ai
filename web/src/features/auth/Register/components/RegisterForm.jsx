@@ -84,7 +84,7 @@ const USER_TYPE_OPTIONS = [
     {
         value: 'OTHER',
         label: 'Other',
-        description: 'Use Nexora for another discovery goal.',
+        description: 'Use Voxidence for another discovery goal.',
         icon: BriefcaseBusiness,
     },
 ];

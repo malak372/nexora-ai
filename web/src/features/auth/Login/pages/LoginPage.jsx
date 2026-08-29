@@ -32,6 +32,7 @@ import { markPremiumWelcomePending } from '../../../normal-user/shared/component
 import { login } from '../api/login.api';
 import LoginForm from '../components/LoginForm';
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
+import { useUserExperience } from '../../../../system/user-experience';
 
 import '../styles/login-page.css';
 
@@ -66,6 +67,7 @@ function getDestinationByUser(user) {
 }
 
 export default function LoginPage() {
+    const { t } = useUserExperience();
     const navigate = useNavigate();
     const pageRef = useRef(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -262,7 +264,7 @@ export default function LoginPage() {
 
                             <span className="nx-brand__copy">
                                 <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
-                                <small>Ideas built from real needs</small>
+                                <small>{t('Ideas built from real needs')}</small>
                             </span>
                         </Link>
 
@@ -284,7 +286,7 @@ export default function LoginPage() {
                             transition={{ delay: 0.14 }}
                         >
                             <Sparkles size={15} aria-hidden="true" />
-                            Discover what is worth building
+                            {t('Discover what is worth building')}
                         </motion.div>
 
                         <motion.h1
@@ -292,8 +294,8 @@ export default function LoginPage() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.21 }}
                         >
-                            Every great project
-                            <span> begins as a hidden signal.</span>
+                            {t('Every great project')}
+                            <span>{t('begins as a hidden signal.')}</span>
                         </motion.h1>
 
                         <motion.p
@@ -302,9 +304,7 @@ export default function LoginPage() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.29 }}
                         >
-                            Voxidence listens to real community needs, discovers
-                            the patterns others overlook, and transforms them
-                            into software ideas backed by evidence—not guesswork.
+                            {t('Voxidence listens to real community needs, discovers the patterns others overlook, and transforms them into software ideas backed by evidence—not guesswork.')}
                         </motion.p>
 
                         <motion.div
@@ -338,8 +338,8 @@ export default function LoginPage() {
                                     </span>
 
                                     <span>
-                                        <strong>{title}</strong>
-                                        <small>{text}</small>
+                                        <strong>{t(title)}</strong>
+                                        <small>{t(text)}</small>
                                     </span>
 
                                     <ArrowUpRight
@@ -360,10 +360,10 @@ export default function LoginPage() {
                         </div>
 
                         <div>
-                            <strong>From scattered signals to clear direction.</strong>
+                            <strong>{t('From scattered signals to clear direction.')}</strong>
                             <span>
                                 <CheckCircle2 size={14} aria-hidden="true" />
-                                Your private workspace is ready when you are
+                                {t('Your private workspace is ready when you are.')}
                             </span>
                         </div>
                     </footer>
@@ -388,7 +388,7 @@ export default function LoginPage() {
 
                             <span className="nx-brand__copy">
                                 <strong dir="ltr" data-no-auto-translate="true">Voxidence</strong>
-                                <small>Ideas built from real needs</small>
+                                <small>{t('Ideas built from real needs')}</small>
                             </span>
                         </Link>
                     </div>
@@ -408,7 +408,7 @@ export default function LoginPage() {
                         <div className="nx-auth-card__topline">
                             <span>
                                 <ShieldCheck size={15} aria-hidden="true" />
-                                Your workspace awaits
+                                {t('Your workspace awaits')}
                             </span>
 
                             <Link
@@ -417,17 +417,16 @@ export default function LoginPage() {
                                 aria-label="Back to Voxidence home page"
                             >
                                 <ArrowLeft size={14} aria-hidden="true" />
-                                Back to home
+                                {t('Back to home')}
                             </Link>
                         </div>
 
                         <div className="nx-auth-card__heading">
                             <h2 id="login-heading">
-                                Step back into the signal.
+                                {t('Step back into the signal.')}
                             </h2>
                             <p>
-                                Continue discovering, validating, and shaping
-                                ideas designed to solve real problems.
+                                {t('Continue discovering, validating, and shaping ideas designed to solve real problems.')}
                             </p>
                         </div>
 
@@ -441,7 +440,7 @@ export default function LoginPage() {
                         <div className="nx-auth-card__trust">
                             <ShieldCheck size={15} aria-hidden="true" />
                             <span>
-                                Protected credentials. Private ideas. Secure workspace.
+                                {t('Protected credentials. Private ideas. Secure workspace.')}
                             </span>
                         </div>
                     </motion.div>

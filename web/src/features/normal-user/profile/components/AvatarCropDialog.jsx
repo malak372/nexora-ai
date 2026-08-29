@@ -21,6 +21,7 @@ import {
 } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useUserExperience } from '../../../../system/user-experience';
 
 const OUTPUT_SIZE = 512;
 
@@ -64,6 +65,7 @@ export default function AvatarCropDialog({
   onCancel,
   onConfirm,
 }) {
+  const { t } = useUserExperience();
   const shouldReduceMotion = useReducedMotion();
   const canvasRef = useRef(null);
 
@@ -255,13 +257,13 @@ export default function AvatarCropDialog({
           <div className="avatar-crop-dialog__title">
             <span>
               <ImageIcon size={15} />
-              Avatar studio
+              {t('Avatar studio')}
             </span>
 
-            <strong>Crop your photo</strong>
+            <strong>{t('Crop your photo')}</strong>
 
             <small>
-              The centered square becomes your Voxidence avatar.
+              {t('The centered square becomes your Voxidence avatar.')}
             </small>
           </div>
 
@@ -298,7 +300,7 @@ export default function AvatarCropDialog({
 
         <div className="avatar-crop-dialog__zoom">
           <div>
-            <span>Zoom</span>
+            <span>{t('Zoom')}</span>
             <strong>{zoom.toFixed(2)}×</strong>
           </div>
 
@@ -350,7 +352,7 @@ export default function AvatarCropDialog({
             className="is-secondary"
             onClick={onCancel}
           >
-            Cancel
+            {t('Cancel')}
           </button>
 
           <button
@@ -386,8 +388,8 @@ export default function AvatarCropDialog({
             )}
 
             {saving
-              ? 'Uploading...'
-              : 'Use photo'}
+              ? t('Uploading...')
+              : t('Use photo')}
           </button>
         </div>
 

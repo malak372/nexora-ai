@@ -8,6 +8,7 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -37,6 +38,10 @@ import {
   getIdeaAdvancedOutputSequence,
   REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS,
 } from '../constants/idea-output.constants';
+import {
+  IDEA_GENERATION_ERROR_CODES,
+  MAX_DUPLICATE_TITLE_LENGTH,
+} from '../constants/idea-generation.constants';
 
 import type {
   AdvancedIdeaAiOutput,
@@ -46,30 +51,30 @@ import type {
 } from '../types/idea-ai-output.type';
 
 import { isTransientDatabaseError } from '../utils/transient-database-error.util';
-import { IdeaDuplicateDetectionService } from './idea-duplicate-detection.service';
+import { TargetUserDeduplicationUtil } from '../utils/target-user-deduplication.util';
 
 /**
- * Maximum number of attempts used when a serializable transaction
- * fails because of a retryable write conflict, timeout, or transient
- * database connection interruption.
+ * Maximum number of attempts used when the atomic persistence transaction
+ * fails because of a retryable lock/acquisition timeout or transient database
+ * connection interruption.
  */
-const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
+const PERSISTENCE_TRANSACTION_MAX_ATTEMPTS = 3;
 
 /**
  * Maximum time Prisma may wait to acquire an interactive
  * transaction connection before failing the persistence attempt.
  */
-const SERIALIZABLE_TRANSACTION_MAX_WAIT_MS = 1_500;
+const PERSISTENCE_TRANSACTION_MAX_WAIT_MS = 4_500;
 
 /**
  * Maximum lifetime of one interactive persistence transaction.
  *
- * The persistence flow performs several dependent validation and
- * write operations. The explicit timeout prevents Prisma's shorter
- * default timeout from closing the transaction before entitlement
- * consumption and generation-run linking are completed.
+ * The flow keeps idea creation, run attachment, generated outputs, and
+ * entitlement consumption atomic. Targeted row/advisory locks protect the
+ * actual race-sensitive resources, so the transaction does not need the broad
+ * SERIALIZABLE isolation level that caused avoidable PostgreSQL 40001 failures.
  */
-const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 14_000;
+const PERSISTENCE_TRANSACTION_TIMEOUT_MS = 14_000;
 
 /**
  * Maximum server-side execution time for one SQL statement inside idea
@@ -77,15 +82,15 @@ const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 14_000;
  * a stalled remote query fails early and the complete atomic transaction can
  * be retried on a fresh pooled connection.
  */
-const SERIALIZABLE_STATEMENT_TIMEOUT_MS = 6_000;
+const PERSISTENCE_STATEMENT_TIMEOUT_MS = 6_000;
 
 /**
  * Maximum time one persistence statement may wait on a PostgreSQL lock.
  * Generation persistence should never sit behind a long-running lock while the
  * user waits on the completion screen; a short lock timeout lets the bounded
- * serializable retry path recover instead.
+ * atomic persistence retry path recover instead.
  */
-const SERIALIZABLE_LOCK_TIMEOUT_MS = 1_200;
+const PERSISTENCE_LOCK_TIMEOUT_MS = 1_500;
 
 /**
  * Prisma transaction client accepted by idea-persistence
@@ -229,7 +234,7 @@ export type PersistedGeneratedIdea = {
  * - Store objectives and target users as Prisma JSON values.
  * - Store advanced AI results as GeneratedOutput records.
  * - Link the generation run to the created idea.
- * - Retry retryable serializable transaction conflicts.
+ * - Retry transient/lock transaction conflicts without weakening atomicity.
  * - Invalidate credit caches after a committed premium deduction.
  * - Trigger low or exhausted credit emails after commit.
  *
@@ -261,8 +266,6 @@ export class IdeaPersistenceService {
   constructor(
     private readonly prisma: PrismaService,
 
-    private readonly duplicateDetectionService: IdeaDuplicateDetectionService,
-
     private readonly creditBalanceService: CreditBalanceService,
 
     private readonly creditBalanceNotificationService: CreditBalanceNotificationService,
@@ -273,7 +276,7 @@ export class IdeaPersistenceService {
 
   /**
    * Persists one generated idea and consumes its entitlement
-   * inside one serializable Prisma transaction.
+   * inside one atomic Prisma transaction.
    *
    * The pipeline should call this method only after:
    * - Data collection is complete.
@@ -291,14 +294,14 @@ export class IdeaPersistenceService {
 
     /*
      * Do not repeat the same remote reads before the transaction. The
-     * serializable transaction already validates the run, prompt history,
+     * atomic transaction already validates the run, prompt history,
      * collection job, duplicate state, and entitlement immediately before
      * writing. Removing the three preflight queries saves database round-trips
      * without weakening atomicity or race protection.
      */
     const transactionStartedAt = Date.now();
     const transactionResult =
-      await this.executeSerializableTransaction(normalizedInput);
+      await this.executeAtomicPersistenceTransaction(normalizedInput);
     this.logger.debug(
       `Idea persistence transaction committed in ${Date.now() - transactionStartedAt}ms for run "${normalizedInput.runId}" with ${normalizedInput.parsedOutput.advancedOutputs.length} advanced output(s).`,
     );
@@ -341,63 +344,12 @@ export class IdeaPersistenceService {
     return persistedIdea;
   }
 
-  /**
-   * Executes the persistence transaction with bounded retries for
-   * retryable serializable write conflicts.
-   *
-   * Each retry runs the entire transaction again. Therefore, no
-   * partial entitlement consumption or idea persistence can escape
-   * a rolled-back attempt.
-   *
-   * @param input Normalized persistence input.
-   * @returns Committed idea identifier and optional credit adjustment.
-   */
-  private async preflightGenerationRun(
-    input: PersistGeneratedIdeaInput,
-  ): Promise<void> {
-    const run = await this.prisma.ideaGenerationRun.findUnique({
-      where: { id: input.runId },
-      select: { id: true },
-    });
-    if (!run) {
-      throw new NotFoundException(`Idea generation run "${input.runId}" was not found.`);
-    }
-  }
-
-  private async preflightPromptHistory(
-    input: PersistGeneratedIdeaInput,
-  ): Promise<void> {
-    const prompt = await this.prisma.promptHistory.findUnique({
-      where: { id: input.promptHistoryId },
-      select: { generationRunId: true },
-    });
-    if (!prompt || prompt.generationRunId !== input.runId) {
-      throw new BadRequestException(
-        'The prompt history does not belong to the provided generation run.',
-      );
-    }
-  }
-
-  private async preflightCollectionJob(
-    input: PersistGeneratedIdeaInput,
-  ): Promise<void> {
-    const collection = await this.prisma.collectionJob.findUnique({
-      where: { id: input.collectionJobId },
-      select: { domainId: true },
-    });
-    if (!collection || collection.domainId !== input.collectionDomainId) {
-      throw new BadRequestException(
-        'The collection job does not belong to the generation collection anchor domain.',
-      );
-    }
-  }
-
-  private async executeSerializableTransaction(
+  private async executeAtomicPersistenceTransaction(
     input: PersistGeneratedIdeaInput,
   ): Promise<IdeaPersistenceTransactionResult> {
     for (
       let attempt = 1;
-      attempt <= SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS;
+      attempt <= PERSISTENCE_TRANSACTION_MAX_ATTEMPTS;
       attempt += 1
     ) {
       const attemptStartedAt = Date.now();
@@ -425,31 +377,13 @@ export class IdeaPersistenceService {
              * business data. set_config(..., true) has the same transaction-
              * local semantics and automatically resets at transaction end.
              */
-            await transaction.$queryRawUnsafe(
-              `SELECT set_config('statement_timeout', '${SERIALIZABLE_STATEMENT_TIMEOUT_MS}ms', true), set_config('lock_timeout', '${SERIALIZABLE_LOCK_TIMEOUT_MS}ms', true)`,
-            );
-
-            /*
-             * The duplicate-title predicate stays inside SERIALIZABLE so
-             * concurrent identical generations still conflict safely. The
-             * generation-run read is intentionally removed from the successful
-             * path: attachIdeaToGenerationRun performs the owner/type/status/
-             * cancellation/prompt/collection checks atomically and returns the
-             * guarded run row. A diagnostic read happens only if that guarded
-             * update fails.
-             */
-            await this.duplicateDetectionService.assertNoExactTitleDuplicate(
-              input.parsedOutput.coreIdea,
-              transaction,
-            );
-            const validationMs = Date.now() - timingStartedAt;
-
             const commentsCount = input.analyzedCommentsCount;
 
             /*
              * Create the base idea, attach prompt history, and insert all
-             * generated outputs in one nested Prisma write. This removes two
-             * remote database round-trips from the serializable transaction.
+             * generated outputs in one PostgreSQL CTE. This keeps the outer
+             * atomic transaction while removing the hidden nested-write
+             * round trips that dominated Supabase persistence latency.
              */
             const ideaCreateStartedAt = Date.now();
             const created = await this.createIdeaWithRelations(
@@ -472,16 +406,12 @@ export class IdeaPersistenceService {
               input,
               idea.id,
             );
-            const run = await this.attachIdeaToGenerationRun(
-              transaction,
-              input,
-              idea.id,
-            );
+            const run = created.run;
             const guardedWritesMs = Date.now() - guardedWritesStartedAt;
 
             callbackExitedAt = Date.now();
             this.logger.debug(
-              `Idea persistence DB timing for run "${input.runId}": validation=${validationMs}ms, ideaCreate=${ideaCreateMs}ms, guardedWrites=${guardedWritesMs}ms, transactionBody=${callbackExitedAt - timingStartedAt}ms.`,
+              `Idea persistence DB timing for run "${input.runId}": atomicCreateAndAttach=${ideaCreateMs}ms, entitlement=${guardedWritesMs}ms, transactionBody=${callbackExitedAt - timingStartedAt}ms.`,
             );
 
             return {
@@ -501,9 +431,9 @@ export class IdeaPersistenceService {
             };
           },
           {
-            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-            maxWait: SERIALIZABLE_TRANSACTION_MAX_WAIT_MS,
-            timeout: SERIALIZABLE_TRANSACTION_TIMEOUT_MS,
+            isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+            maxWait: PERSISTENCE_TRANSACTION_MAX_WAIT_MS,
+            timeout: PERSISTENCE_TRANSACTION_TIMEOUT_MS,
           },
         );
         const transactionResolvedAt = Date.now();
@@ -518,18 +448,16 @@ export class IdeaPersistenceService {
       } catch (error: unknown) {
         if (
           !this.isRetryableTransactionError(error) ||
-          attempt === SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS
+          attempt === PERSISTENCE_TRANSACTION_MAX_ATTEMPTS
         ) {
           throw error;
         }
 
         const transientConnectionFailure = isTransientDatabaseError(error);
         const retryDelayMs = transientConnectionFailure
-          ? Math.min(500, 150 * 2 ** (attempt - 1))
-          : Math.min(350, 100 * attempt);
-        const jitterMs = transientConnectionFailure
-          ? Math.floor(Math.random() * 60)
-          : 0;
+          ? Math.min(900, 250 * 2 ** (attempt - 1))
+          : Math.min(650, 180 * attempt);
+        const jitterMs = Math.floor(Math.random() * 90);
         const boundedDelayMs = retryDelayMs + jitterMs;
 
         const errorMessage =
@@ -542,7 +470,7 @@ export class IdeaPersistenceService {
         this.logger.warn(
           `Retrying idea-persistence transaction after a transient ${
             transientConnectionFailure ? 'database connection' : 'transaction'
-          } failure. Attempt ${attempt + 1}/${SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS} in ${boundedDelayMs}ms; failedAttemptMs=${Date.now() - attemptStartedAt}; reason=${compactError}.`,
+          } failure. Attempt ${attempt + 1}/${PERSISTENCE_TRANSACTION_MAX_ATTEMPTS} in ${boundedDelayMs}ms; failedAttemptMs=${Date.now() - attemptStartedAt}; reason=${compactError}.`,
         );
         await new Promise<void>((resolve) => {
           setTimeout(resolve, boundedDelayMs);
@@ -668,6 +596,10 @@ export class IdeaPersistenceService {
         .replace(/\bNode\s*\.\s*js\b/giu, 'Node.js')
         .replace(/\bReact\s*\.\s*js\b/giu, 'React')
         .replace(/\s+([,.;:!?])/gu, '$1')
+        .replace(
+          /\bdesigned to help\s+([^.!?]{3,140}?)\s+is\b/giu,
+          'designed to help ensure $1 is',
+        )
         .replace(/[ \t]{2,}/gu, ' ')
         .replace(
           /\b(?:one retained community report|a retained community report) indicates that collected feedback(?: from [^.!?]{0,120})? indicates that\s*/giu,
@@ -693,6 +625,10 @@ export class IdeaPersistenceService {
         .replace(
           /\b((?:Two|Three|Four|Five|\d+) retained direct user reports across (?:two|three|four|five|\d+) independent sources)\s+describes\b/giu,
           '$1 describe',
+        )
+        .replace(
+          /\b((?:Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|\d+) verified supporting signals) was retained\b/giu,
+          '$1 were retained',
         )
         .trim();
 
@@ -724,7 +660,10 @@ export class IdeaPersistenceService {
         title: sanitizeText(parsedOutput.coreIdea.title),
         problemStatement: sanitizeText(parsedOutput.coreIdea.problemStatement),
         objectives: parsedOutput.coreIdea.objectives.map(sanitizeText),
-        targetUsers: parsedOutput.coreIdea.targetUsers.map(sanitizeText),
+        targetUsers: TargetUserDeduplicationUtil.deduplicate(
+          parsedOutput.coreIdea.targetUsers.map(sanitizeText),
+          4,
+        ),
         ...(parsedOutput.coreIdea.limitedAbstract !== undefined
           ? { limitedAbstract: sanitizeText(parsedOutput.coreIdea.limitedAbstract) }
           : {}),
@@ -1338,6 +1277,7 @@ export class IdeaPersistenceService {
     const isPremium =
       input.generationType === IdeaGenerationType.PREMIUM_CREDIT;
     const now = new Date();
+    const ideaId = randomUUID();
     const generatedOutputs = input.parsedOutput.advancedOutputs.map(
       (output) => ({
         id: randomUUID(),
@@ -1348,77 +1288,244 @@ export class IdeaPersistenceService {
         content: output.content,
         structuredContent:
           output.structuredContent === undefined
-            ? undefined
+            ? null
             : this.toInputJsonValue(output.structuredContent),
         errorMessage: null,
-        generatedAt: now,
+        generatedAt: now.toISOString(),
       }),
     );
 
-    const idea = await transaction.idea.create({
-      data: {
-        userId: input.userId ?? null,
-        guestSessionId: input.guestSessionId ?? null,
-        domainId: input.domainId,
-        collectionJobId: input.collectionJobId,
-        commentsCount,
-        selectedRegion: input.selectedRegion,
-        title: core.title,
-        problemStatement: core.problemStatement,
-        objectives: this.toInputJsonValue(core.objectives),
-        targetUsers: this.toInputJsonValue(core.targetUsers),
-        limitedAbstract: core.limitedAbstract ?? null,
-        partialAbstract: core.partialAbstract ?? null,
-        fullAbstract: core.fullAbstract ?? null,
-        generationType: input.generationType,
-        isUnlocked: isPremium,
-        unlockMethod: isPremium
-          ? UnlockMethod.CREDIT_GENERATION
-          : UnlockMethod.NONE,
-        unlockedAt: isPremium ? now : null,
+    /*
+     * Supabase/network latency made Prisma's nested create visible as several
+     * SQL round trips (idea row, prompt connect, generated-output createMany).
+     * Persist those independent relational writes in one PostgreSQL CTE while
+     * retaining the outer atomic transaction for entitlement/run guards.
+     * Transaction-local advisory locks serialize only the same generation run
+     * and the same normalized title, avoiding broad SERIALIZABLE conflicts while
+     * preserving race protection for the resources that actually collide.
+     * No business invariant is weakened: a missing/foreign prompt makes the
+     * later guarded run attachment fail and rolls the entire transaction back.
+     */
+    const duplicateTitle = core.title
+      .trim()
+      .slice(0, MAX_DUPLICATE_TITLE_LENGTH);
+    const rows = await transaction.$queryRaw<Array<{
+      id: string | null;
+      title: string | null;
+      domainId: string | null;
+      domainName: string | null;
+      runId: string | null;
+      runStatus: IdeaGenerationRunStatus | null;
+      runProgressPercent: number | null;
+      duplicateId: string | null;
+      duplicateTitle: string | null;
+    }>>(Prisma.sql`
+      WITH settings AS (
+        SELECT
+          set_config('statement_timeout', ${`${PERSISTENCE_STATEMENT_TIMEOUT_MS}ms`}, true),
+          set_config('lock_timeout', ${`${PERSISTENCE_LOCK_TIMEOUT_MS}ms`}, true),
+          pg_advisory_xact_lock(hashtextextended(${`idea-run:${input.runId}`}, 0)),
+          pg_advisory_xact_lock(hashtextextended(${`idea-title:${duplicateTitle.toLocaleLowerCase()}`}, 0))
+      ),
+      existing_duplicate AS (
+        SELECT idea."id", idea."title"
+        FROM "ideas" AS idea, settings
+        WHERE idea."deleted_at" IS NULL
+          AND lower(idea."title") = lower(${duplicateTitle})
+        LIMIT 1
+      ),
+      eligible_run AS (
+        SELECT
+          run."id",
+          run."status",
+          run."progress_percent"
+        FROM "idea_generation_runs" AS run, settings
+        WHERE run."id" = ${input.runId}
+          AND run."status"::text = ${IdeaGenerationRunStatus.RUNNING}
+          AND run."idea_id" IS NULL
+          AND run."cancel_requested_at" IS NULL
+          AND run."generation_type"::text = ${input.generationType}
+          AND run."user_id" IS NOT DISTINCT FROM ${input.userId ?? null}
+          AND run."guest_session_id" IS NOT DISTINCT FROM ${input.guestSessionId ?? null}
+          AND (
+            run."collection_job_id" IS NULL
+            OR run."collection_job_id" = ${input.collectionJobId}
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM "prompt_histories" AS prompt
+            WHERE prompt."id" = ${input.promptHistoryId}
+              AND prompt."generation_run_id" = run."id"
+              AND prompt."collection_job_id" = ${input.collectionJobId}
+              AND prompt."idea_id" IS NULL
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM "collection_jobs" AS collection
+            WHERE collection."id" = ${input.collectionJobId}
+              AND collection."domain_id" = ${input.collectionDomainId}
+              AND (
+                collection."created_by_id" IS NULL
+                OR collection."created_by_id" IS NOT DISTINCT FROM ${input.userId ?? null}
+              )
+          )
+        LIMIT 1
+      ),
+      inserted_idea AS (
+        INSERT INTO "ideas" (
+          "id", "user_id", "guest_session_id", "title",
+          "limited_abstract", "partial_abstract", "full_abstract",
+          "problem_statement", "generation_type", "is_unlocked",
+          "unlock_method", "unlocked_at", "comments_count",
+          "created_at", "updated_at", "selected_region", "domain_id",
+          "collection_job_id", "objectives", "target_users"
+        )
+        SELECT
+          ${ideaId},
+          ${input.userId ?? null},
+          ${input.guestSessionId ?? null},
+          ${core.title},
+          ${core.limitedAbstract ?? null},
+          ${core.partialAbstract ?? null},
+          ${core.fullAbstract ?? null},
+          ${core.problemStatement},
+          CAST(${input.generationType} AS "IdeaGenerationType"),
+          ${isPremium},
+          CAST(${isPremium ? UnlockMethod.CREDIT_GENERATION : UnlockMethod.NONE} AS "UnlockMethod"),
+          ${isPremium ? now : null},
+          ${commentsCount},
+          ${now},
+          ${now},
+          ${input.selectedRegion},
+          ${input.domainId},
+          ${input.collectionJobId},
+          CAST(${JSON.stringify(core.objectives)} AS jsonb),
+          CAST(${JSON.stringify(core.targetUsers)} AS jsonb)
+        FROM eligible_run
+        WHERE NOT EXISTS (SELECT 1 FROM existing_duplicate)
+        RETURNING "id", "title", "domain_id"
+      ),
+      linked_prompt AS (
+        UPDATE "prompt_histories" AS prompt
+        SET "idea_id" = ${ideaId}
+        WHERE prompt."id" = ${input.promptHistoryId}
+          AND prompt."generation_run_id" = ${input.runId}
+          AND prompt."collection_job_id" = ${input.collectionJobId}
+          AND prompt."idea_id" IS NULL
+          AND EXISTS (SELECT 1 FROM inserted_idea)
+        RETURNING prompt."id"
+      ),
+      inserted_outputs AS (
+        INSERT INTO "generated_outputs" (
+          "id", "idea_id", "content", "created_at", "updated_at",
+          "error_message", "generated_at", "output_key", "sequence",
+          "status", "structured_content", "title"
+        )
+        SELECT
+          output."id",
+          inserted_idea."id",
+          output."content",
+          ${now},
+          ${now},
+          NULL,
+          CAST(output."generatedAt" AS timestamptz),
+          output."outputKey",
+          output."sequence",
+          CAST(${GeneratedOutputStatus.COMPLETED} AS "GeneratedOutputStatus"),
+          output."structuredContent",
+          output."title"
+        FROM inserted_idea
+        CROSS JOIN jsonb_to_recordset(CAST(${JSON.stringify(generatedOutputs)} AS jsonb)) AS output(
+          "id" text,
+          "outputKey" text,
+          "title" text,
+          "sequence" integer,
+          "content" text,
+          "structuredContent" jsonb,
+          "generatedAt" text
+        )
+        RETURNING "id"
+      ),
+      attached_run AS (
+        UPDATE "idea_generation_runs" AS run
+        SET
+          "idea_id" = ${ideaId},
+          "collection_job_id" = ${input.collectionJobId},
+          "last_heartbeat_at" = NOW(),
+          "updated_at" = NOW()
+        WHERE run."id" IN (SELECT "id" FROM eligible_run)
+          AND EXISTS (SELECT 1 FROM inserted_idea)
+          AND EXISTS (SELECT 1 FROM linked_prompt)
+        RETURNING run."id", run."status", run."progress_percent"
+      )
+      SELECT
+        inserted_idea."id" AS "id",
+        inserted_idea."title" AS "title",
+        domain."id" AS "domainId",
+        domain."name" AS "domainName",
+        attached_run."id" AS "runId",
+        attached_run."status" AS "runStatus",
+        attached_run."progress_percent" AS "runProgressPercent",
+        NULL::text AS "duplicateId",
+        NULL::text AS "duplicateTitle"
+      FROM inserted_idea
+      INNER JOIN "domains" AS domain ON domain."id" = inserted_idea."domain_id"
+      CROSS JOIN attached_run
+      UNION ALL
+      SELECT
+        NULL::text AS "id",
+        NULL::text AS "title",
+        NULL::text AS "domainId",
+        NULL::text AS "domainName",
+        NULL::text AS "runId",
+        NULL::"IdeaGenerationRunStatus" AS "runStatus",
+        NULL::integer AS "runProgressPercent",
+        existing_duplicate."id" AS "duplicateId",
+        existing_duplicate."title" AS "duplicateTitle"
+      FROM existing_duplicate
+      WHERE NOT EXISTS (SELECT 1 FROM inserted_idea)
+      LIMIT 1
+    `);
 
-        /*
-         * These relations do not depend on entitlement consumption and can be
-         * persisted by Prisma as part of the same nested create. This removes
-         * separate PromptHistory.update + GeneratedOutput.createMany calls.
-         */
-        promptHistories: {
-          connect: { id: input.promptHistoryId },
+    const created = rows[0];
+    if (created?.duplicateId && created.duplicateTitle) {
+      throw new ConflictException({
+        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
+        message:
+          'An idea with the same title already exists on the platform and cannot be generated again.',
+        details: {
+          matchedIdeaId: created.duplicateId,
+          matchedTitle: created.duplicateTitle,
+          duplicateReasons: ['EXACT_OR_NEAR_TITLE'],
+          titleSimilarity: 1,
         },
-        ...(generatedOutputs.length > 0
-          ? {
-              generatedOutputs: {
-                createMany: {
-                  data: generatedOutputs.map((output) => ({
-                    id: output.id,
-                    outputKey: output.outputKey,
-                    title: output.title,
-                    sequence: output.sequence,
-                    status: output.status,
-                    content: output.content,
-                    structuredContent:
-                      output.structuredContent === undefined
-                        ? Prisma.JsonNull
-                        : output.structuredContent,
-                    errorMessage: output.errorMessage,
-                    generatedAt: output.generatedAt,
-                  })),
-                },
-              },
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        title: true,
-        domain: {
-          select: { id: true, name: true },
-        },
-      },
-    });
+      });
+    }
+    if (
+      !created?.id ||
+      !created.title ||
+      !created.domainId ||
+      !created.domainName ||
+      !created.runId ||
+      !created.runStatus ||
+      created.runProgressPercent === null
+    ) {
+      throw new BadRequestException(
+        'The generated idea could not be atomically persisted and attached to the active generation run.',
+      );
+    }
 
     return {
-      idea,
+      idea: {
+        id: created.id,
+        title: created.title,
+        domain: { id: created.domainId, name: created.domainName },
+      },
+      run: {
+        id: created.runId,
+        status: created.runStatus,
+        progressPercent: created.runProgressPercent,
+      },
       generatedOutputs: generatedOutputs
         .slice()
         .sort((first, second) => first.sequence - second.sequence)
@@ -1507,6 +1614,7 @@ export class IdeaPersistenceService {
           WHERE prompt."id" = ${input.promptHistoryId}
             AND prompt."generation_run_id" = run."id"
             AND prompt."collection_job_id" = ${input.collectionJobId}
+            AND prompt."idea_id" = ${ideaId}
         )
         AND EXISTS (
           SELECT 1
@@ -1677,7 +1785,7 @@ export class IdeaPersistenceService {
 
   /**
    * Determines whether a Prisma error represents a retryable
-   * serializable transaction failure or transient database interruption.
+   * transaction conflict, lock timeout, or transient database interruption.
    *
    * @param error Unknown transaction error.
    * @returns Whether the complete transaction may be retried.

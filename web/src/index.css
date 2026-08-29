@@ -3788,3 +3788,9 @@ footer::before {
     display: none;
   }
 }
+
+html.vox-user-dark .auth-layout-shell {
+  min-height: 100svh;
+  background: #0f1d18 !important;
+  color: #eef8f5 !important;
+}
