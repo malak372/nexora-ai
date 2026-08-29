@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 /**
  * Administrator team-chat interface styles.
  *
@@ -1059,5 +1061,461 @@
 @media (hover: none) {
     .admin-team-chat-message__more {
         opacity: 1;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * Dark mode + Arabic/RTL hardening
+ * --------------------------------------------------------------------------
+ * The generic administrator dark theme cannot safely infer every team-chat
+ * surface because this feature uses its own shell/list/message class names.
+ * These overrides keep the entire workspace consistently dark without
+ * changing the team-chat behavior or data flow.
+ */
+html.vox-user-dark .admin-team-chat-page,
+.admin-shell--dark .admin-team-chat-page {
+    --team: #65c5bb;
+    --team-dark: #8ed8d1;
+    --team-soft: rgba(101, 197, 187, .12);
+}
+
+html.vox-user-dark .admin-team-chat-hero,
+.admin-shell--dark .admin-team-chat-hero {
+    border-color: rgba(164, 205, 195, .14) !important;
+    background: linear-gradient(135deg, #111b19 0%, #162522 100%) !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-team-chat-unread,
+.admin-shell--dark .admin-team-chat-unread {
+    border-color: rgba(164, 205, 195, .16);
+    background: #111a18;
+    color: #9fb3ad;
+}
+
+html.vox-user-dark .admin-team-chat-unread b,
+.admin-shell--dark .admin-team-chat-unread b {
+    color: #84d6ce;
+}
+
+html.vox-user-dark .admin-team-chat-error,
+.admin-shell--dark .admin-team-chat-error {
+    border-color: rgba(239, 158, 174, .24);
+    background: rgba(117, 35, 50, .18);
+    color: #f0a4b2;
+}
+
+html.vox-user-dark .admin-team-chat-shell,
+.admin-shell--dark .admin-team-chat-shell {
+    border-color: rgba(164, 205, 195, .14);
+    background: #121c1a;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .28);
+}
+
+html.vox-user-dark .admin-team-chat-list,
+.admin-shell--dark .admin-team-chat-list {
+    border-color: rgba(164, 205, 195, .12);
+    background: #111a18;
+}
+
+html.vox-user-dark .admin-team-chat-list__head strong,
+.admin-shell--dark .admin-team-chat-list__head strong,
+html.vox-user-dark .admin-team-chat-conversation__head strong,
+.admin-shell--dark .admin-team-chat-conversation__head strong {
+    color: #edf5f2;
+}
+
+html.vox-user-dark .admin-team-chat-list__head small,
+.admin-shell--dark .admin-team-chat-list__head small,
+html.vox-user-dark .admin-team-chat-conversation__head small,
+.admin-shell--dark .admin-team-chat-conversation__head small {
+    color: #91a59f;
+}
+
+html.vox-user-dark .admin-team-chat-search,
+.admin-shell--dark .admin-team-chat-search,
+html.vox-user-dark .admin-team-chat-modal__search,
+.admin-shell--dark .admin-team-chat-modal__search {
+    border-color: rgba(164, 205, 195, .15);
+    background: #0f1816;
+    color: #829791;
+}
+
+html.vox-user-dark .admin-team-chat-search:focus-within,
+.admin-shell--dark .admin-team-chat-search:focus-within,
+html.vox-user-dark .admin-team-chat-modal__search:focus-within,
+.admin-shell--dark .admin-team-chat-modal__search:focus-within {
+    border-color: rgba(115, 200, 192, .48);
+    box-shadow: 0 0 0 3px rgba(115, 200, 192, .09);
+}
+
+html.vox-user-dark .admin-team-chat-search input,
+.admin-shell--dark .admin-team-chat-search input,
+html.vox-user-dark .admin-team-chat-modal__search input,
+.admin-shell--dark .admin-team-chat-modal__search input {
+    color: #e7f1ee !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark .admin-team-chat-thread,
+.admin-shell--dark .admin-team-chat-thread {
+    color: #d9e5e1;
+}
+
+html.vox-user-dark .admin-team-chat-thread:hover,
+.admin-shell--dark .admin-team-chat-thread:hover {
+    background: rgba(115, 200, 192, .07);
+}
+
+html.vox-user-dark .admin-team-chat-thread.is-active,
+.admin-shell--dark .admin-team-chat-thread.is-active {
+    background: rgba(101, 197, 187, .13);
+}
+
+html.vox-user-dark .admin-team-chat-avatar,
+.admin-shell--dark .admin-team-chat-avatar {
+    background: linear-gradient(145deg, #1b302c, #203a35);
+    color: #9adfd8;
+}
+
+html.vox-user-dark .admin-team-chat-thread__copy strong,
+.admin-shell--dark .admin-team-chat-thread__copy strong {
+    color: #e5efec;
+}
+
+html.vox-user-dark .admin-team-chat-thread__copy time,
+.admin-shell--dark .admin-team-chat-thread__copy time {
+    color: #738982;
+}
+
+html.vox-user-dark .admin-team-chat-thread__copy small,
+.admin-shell--dark .admin-team-chat-thread__copy small {
+    color: #93a69f;
+}
+
+html.vox-user-dark .admin-team-chat-thread__copy b,
+.admin-shell--dark .admin-team-chat-thread__copy b {
+    background: #58b9b0;
+    color: #071210;
+}
+
+html.vox-user-dark .admin-team-chat-conversation,
+.admin-shell--dark .admin-team-chat-conversation {
+    background: linear-gradient(180deg, #131d1b 0%, #101816 100%);
+}
+
+html.vox-user-dark .admin-team-chat-conversation__head,
+.admin-shell--dark .admin-team-chat-conversation__head,
+html.vox-user-dark .admin-team-chat-composer,
+.admin-shell--dark .admin-team-chat-composer {
+    border-color: rgba(164, 205, 195, .11);
+}
+
+html.vox-user-dark .admin-team-chat-conversation__head,
+.admin-shell--dark .admin-team-chat-conversation__head {
+    background: #141f1d;
+}
+
+html.vox-user-dark .admin-team-chat-private,
+.admin-shell--dark .admin-team-chat-private {
+    background: rgba(101, 197, 187, .12);
+    color: #8ed8d1;
+}
+
+html.vox-user-dark .admin-team-chat-back,
+.admin-shell--dark .admin-team-chat-back {
+    color: #a5bbb5;
+}
+
+html.vox-user-dark .admin-team-chat-messages,
+.admin-shell--dark .admin-team-chat-messages {
+    background:
+        radial-gradient(circle at 10% 0%, rgba(101, 197, 187, .05), transparent 36%),
+        #0f1715;
+}
+
+html.vox-user-dark .admin-team-chat-message strong,
+.admin-shell--dark .admin-team-chat-message strong {
+    color: #91a69f;
+}
+
+html.vox-user-dark .admin-team-chat-message p,
+.admin-shell--dark .admin-team-chat-message p {
+    border-color: rgba(164, 205, 195, .13);
+    background: #192421;
+    color: #d7e4e0;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .15);
+}
+
+html.vox-user-dark .admin-team-chat-message.is-mine p,
+.admin-shell--dark .admin-team-chat-message.is-mine p {
+    border-color: rgba(101, 197, 187, .23);
+    background: #19332e;
+    color: #dff5f0;
+}
+
+html.vox-user-dark .admin-team-chat-message time,
+.admin-shell--dark .admin-team-chat-message time {
+    color: #70847e;
+}
+
+html.vox-user-dark .admin-team-chat-composer,
+.admin-shell--dark .admin-team-chat-composer {
+    background: #121c1a;
+}
+
+html.vox-user-dark .admin-team-chat-composer textarea,
+.admin-shell--dark .admin-team-chat-composer textarea {
+    border-color: rgba(164, 205, 195, .14) !important;
+    background: #0d1614 !important;
+    color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-team-chat-composer textarea:focus,
+.admin-shell--dark .admin-team-chat-composer textarea:focus {
+    border-color: rgba(115, 200, 192, .5) !important;
+    box-shadow: 0 0 0 3px rgba(115, 200, 192, .1) !important;
+}
+
+html.vox-user-dark .admin-team-chat-composer button,
+.admin-shell--dark .admin-team-chat-composer button {
+    background: linear-gradient(135deg, #67c4bb, #4ea9a1);
+    color: #071310;
+    box-shadow: 0 9px 20px rgba(0, 0, 0, .22);
+}
+
+html.vox-user-dark .admin-shell .admin-team-chat-state,
+.admin-shell--dark .admin-team-chat-state,
+html.vox-user-dark .admin-shell .admin-team-chat-empty-chat,
+.admin-shell--dark .admin-team-chat-empty-chat {
+    color: #8da29b !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-team-chat-state strong,
+.admin-shell--dark .admin-team-chat-state strong,
+html.vox-user-dark .admin-team-chat-empty-chat strong,
+.admin-shell--dark .admin-team-chat-empty-chat strong {
+    color: #c9d8d4;
+}
+
+html.vox-user-dark .admin-team-chat-state span,
+.admin-shell--dark .admin-team-chat-state span,
+html.vox-user-dark .admin-team-chat-empty-chat p,
+.admin-shell--dark .admin-team-chat-empty-chat p {
+    color: #879a94;
+}
+
+html.vox-user-dark .admin-team-chat-empty-chat>span,
+.admin-shell--dark .admin-team-chat-empty-chat>span {
+    background: rgba(101, 197, 187, .11);
+    color: #84d4cc;
+}
+
+html.vox-user-dark .admin-team-chat-state__actions button,
+.admin-shell--dark .admin-team-chat-state__actions button {
+    border-color: rgba(164, 205, 195, .15);
+    background: #151f1d;
+    color: #8ed8d1;
+}
+
+html.vox-user-dark .admin-team-chat-state__actions button:hover,
+.admin-shell--dark .admin-team-chat-state__actions button:hover {
+    border-color: rgba(115, 200, 192, .3);
+    background: rgba(101, 197, 187, .09);
+}
+
+html.vox-user-dark .admin-team-chat-modal-backdrop,
+.admin-shell--dark .admin-team-chat-modal-backdrop {
+    background: rgba(3, 8, 7, .76);
+}
+
+html.vox-user-dark .admin-team-chat-modal,
+.admin-shell--dark .admin-team-chat-modal {
+    border-color: rgba(164, 205, 195, .16) !important;
+    background: #151f1d !important;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, .52) !important;
+}
+
+html.vox-user-dark .admin-team-chat-modal>header,
+.admin-shell--dark .admin-team-chat-modal>header,
+html.vox-user-dark .admin-team-chat-modal>footer,
+.admin-shell--dark .admin-team-chat-modal>footer {
+    border-color: rgba(164, 205, 195, .11);
+}
+
+html.vox-user-dark .admin-team-chat-modal>header>div>span,
+.admin-shell--dark .admin-team-chat-modal>header>div>span {
+    background: rgba(101, 197, 187, .11);
+    color: #8ed8d1;
+}
+
+html.vox-user-dark .admin-team-chat-modal header strong,
+.admin-shell--dark .admin-team-chat-modal header strong,
+html.vox-user-dark .admin-team-chat-modal__members strong,
+.admin-shell--dark .admin-team-chat-modal__members strong {
+    color: #e6efec;
+}
+
+html.vox-user-dark .admin-team-chat-modal header small,
+.admin-shell--dark .admin-team-chat-modal header small,
+html.vox-user-dark .admin-team-chat-modal__members small,
+.admin-shell--dark .admin-team-chat-modal__members small {
+    color: #8da19a;
+}
+
+html.vox-user-dark .admin-team-chat-modal header button,
+.admin-shell--dark .admin-team-chat-modal header button {
+    color: #91a59f;
+}
+
+html.vox-user-dark .admin-team-chat-modal__title>span,
+.admin-shell--dark .admin-team-chat-modal__title>span,
+html.vox-user-dark .admin-team-chat-modal__member-tools span,
+.admin-shell--dark .admin-team-chat-modal__member-tools span {
+    color: #a4b7b1;
+}
+
+html.vox-user-dark .admin-team-chat-modal__title input,
+.admin-shell--dark .admin-team-chat-modal__title input {
+    border-color: rgba(164, 205, 195, .15) !important;
+    background: #0f1816 !important;
+    color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-team-chat-direct-list em,
+.admin-shell--dark .admin-team-chat-direct-list em,
+html.vox-user-dark .admin-team-chat-modal__member-tools button,
+.admin-shell--dark .admin-team-chat-modal__member-tools button {
+    color: #84d4cc;
+}
+
+html.vox-user-dark .admin-team-chat-modal__empty,
+.admin-shell--dark .admin-team-chat-modal__empty {
+    color: #8ca099;
+}
+
+html.vox-user-dark .admin-team-chat-modal__members button,
+.admin-shell--dark .admin-team-chat-modal__members button {
+    color: #d9e5e1;
+}
+
+html.vox-user-dark .admin-team-chat-modal__members button:hover,
+.admin-shell--dark .admin-team-chat-modal__members button:hover {
+    background: rgba(115, 200, 192, .06);
+}
+
+html.vox-user-dark .admin-team-chat-modal__members button.is-selected,
+.admin-shell--dark .admin-team-chat-modal__members button.is-selected {
+    border-color: rgba(115, 200, 192, .26);
+    background: rgba(101, 197, 187, .1);
+}
+
+html.vox-user-dark .admin-team-chat-modal__members i,
+.admin-shell--dark .admin-team-chat-modal__members i {
+    border-color: rgba(164, 205, 195, .18);
+    color: #8ed8d1;
+}
+
+html.vox-user-dark .admin-team-chat-modal__members .is-selected i,
+.admin-shell--dark .admin-team-chat-modal__members .is-selected i {
+    border-color: rgba(115, 200, 192, .35);
+    background: rgba(101, 197, 187, .14);
+}
+
+html.vox-user-dark .admin-team-chat-modal>footer,
+.admin-shell--dark .admin-team-chat-modal>footer {
+    background: #111a18;
+}
+
+html.vox-user-dark .admin-team-chat-message__more,
+.admin-shell--dark .admin-team-chat-message__more {
+    border-color: rgba(164, 205, 195, .15);
+    background: rgba(20, 31, 29, .97);
+    color: #8fa49e;
+    box-shadow: 0 7px 20px rgba(0, 0, 0, .26);
+}
+
+html.vox-user-dark .admin-team-chat-message__more:hover:not(:disabled),
+.admin-shell--dark .admin-team-chat-message__more:hover:not(:disabled) {
+    border-color: rgba(115, 200, 192, .32);
+    color: #91ddd6;
+}
+
+html.vox-user-dark .admin-team-chat-message__menu,
+.admin-shell--dark .admin-team-chat-message__menu {
+    border-color: rgba(164, 205, 195, .15) !important;
+    background: #17211f !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, .4) !important;
+}
+
+html.vox-user-dark .admin-team-chat-message__menu button,
+.admin-shell--dark .admin-team-chat-message__menu button {
+    color: #d0dfda;
+}
+
+html.vox-user-dark .admin-team-chat-message__menu button:hover,
+.admin-shell--dark .admin-team-chat-message__menu button:hover {
+    background: rgba(115, 200, 192, .07);
+}
+
+html.vox-user-dark .admin-team-chat-message__menu button.is-danger,
+.admin-shell--dark .admin-team-chat-message__menu button.is-danger {
+    color: #f0a2b0;
+}
+
+html.vox-user-dark .admin-team-chat-message__menu button.is-danger:hover,
+.admin-shell--dark .admin-team-chat-message__menu button.is-danger:hover {
+    background: rgba(190, 68, 86, .12);
+}
+
+html.vox-user-dark .admin-team-chat-list__body,
+.admin-shell--dark .admin-team-chat-list__body,
+html.vox-user-dark .admin-team-chat-messages,
+.admin-shell--dark .admin-team-chat-messages,
+html.vox-user-dark .admin-team-chat-modal__members,
+.admin-shell--dark .admin-team-chat-modal__members {
+    scrollbar-color: rgba(122, 163, 153, .38) transparent;
+}
+
+/* RTL alignment is intentionally limited to layout chrome. User-entered chat
+ * content keeps dir="auto" in JSX so Arabic and English messages both render
+ * naturally without being rewritten. */
+html.vox-user-rtl .admin-team-chat-list,
+.admin-shell--rtl .admin-team-chat-list {
+    border-right: 0;
+    border-left: 1px solid #e5eeeb;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-team-chat-list,
+.admin-shell--dark.admin-shell--rtl .admin-team-chat-list {
+    border-left-color: rgba(164, 205, 195, .12);
+}
+
+html.vox-user-rtl .admin-team-chat-thread,
+.admin-shell--rtl .admin-team-chat-thread,
+html.vox-user-rtl .admin-team-chat-modal__members button,
+.admin-shell--rtl .admin-team-chat-modal__members button,
+html.vox-user-rtl .admin-team-chat-message__menu button,
+.admin-shell--rtl .admin-team-chat-message__menu button {
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-team-chat-direct-list em,
+.admin-shell--rtl .admin-team-chat-direct-list em {
+    justify-content: flex-start;
+}
+
+html.vox-user-rtl .admin-team-chat-back svg,
+.admin-shell--rtl .admin-team-chat-back svg {
+    transform: rotate(180deg);
+}
+
+@media (max-width: 820px) {
+
+    html.vox-user-rtl .admin-team-chat-list,
+    .admin-shell--rtl .admin-team-chat-list {
+        border-left: 0;
     }
 }

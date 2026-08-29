@@ -400,7 +400,7 @@ export default function AdminPublicationReportsPage() {
 
   return (
     <div className="admin-page admin-publication-reports-page">
-      <section className="admin-publication-reports-hero admin-publication-reports-hero--document">
+      <section className="admin-publication-reports-hero admin-publication-reports-hero--creative">
         <div className="admin-publication-reports-hero__copy">
           <span><ShieldCheck size={14} /> TRUST & SAFETY · REPORT DESK</span>
           <h2>Publication report center</h2>
@@ -412,30 +412,101 @@ export default function AdminPublicationReportsPage() {
           </div>
         </div>
 
-        <div className="admin-report-template-preview" aria-hidden="true">
-          <div className="admin-report-template-preview__shadow" />
-          <div className="admin-report-template-preview__paper">
-            <header>
-              <span>VOXIDENCE</span>
-              <strong>PUBLICATION REPORT</strong>
-              <em>MODERATION COPY</em>
-            </header>
-            <div className="admin-report-template-preview__meta">
-              <div><small>CASE</small><b>Auto-filled</b></div>
-              <div><small>QUEUE</small><b>{summaryLoading ? '…' : `${Number(summaryValue.pendingReports || 0)} pending`}</b></div>
+        <div className="admin-report-hero-scene" aria-hidden="true">
+          <div className="admin-report-hero-orbit admin-report-hero-orbit--one" />
+          <div className="admin-report-hero-orbit admin-report-hero-orbit--two" />
+          <span className="admin-report-hero-dot admin-report-hero-dot--one" />
+          <span className="admin-report-hero-dot admin-report-hero-dot--two" />
+          <span className="admin-report-hero-dot admin-report-hero-dot--three" />
+          <span className="admin-report-hero-dot admin-report-hero-dot--four" />
+
+          <div className="admin-report-hero-float admin-report-hero-trend">
+            <small>Reports trend</small>
+            <svg viewBox="0 0 100 42" role="presentation">
+              <path d="M4 35 L23 27 L38 31 L56 18 L72 24 L94 8" />
+              <circle cx="94" cy="8" r="3" />
+            </svg>
+          </div>
+
+          <div className="admin-report-hero-float admin-report-hero-priority">
+            <span className="admin-report-hero-priority__alert">!</span>
+            <small>High priority</small>
+            <strong>{summaryLoading ? '…' : Number(summaryValue.pendingReports || 0)}</strong>
+            <em>Needs attention</em>
+          </div>
+
+          <div className="admin-report-hero-folder">
+            <div className="admin-report-hero-folder__tab" />
+            <div className="admin-report-hero-folder__papers">
+              <span />
+              <span />
+              <span />
             </div>
-            <div className="admin-report-template-preview__section">
-              <span>01 · REPORTED PUBLICATION</span>
-              <i /><i /><i className="is-short" />
+            <div className="admin-report-hero-folder__report-sheet">
+              <div className="admin-report-hero-folder__report-head">
+                <span>PUBLICATION REPORT</span>
+                <ShieldCheck size={11} strokeWidth={1.8} />
+              </div>
+
+              <div className="admin-report-hero-folder__report-id">
+                <small>Report ID</small>
+                <strong>#PR-2024-0521</strong>
+              </div>
+
+              <div className="admin-report-hero-folder__report-row">
+                <small>Reported publication</small>
+                <i />
+              </div>
+              <div className="admin-report-hero-folder__report-row is-short">
+                <small>Reason</small>
+                <i />
+              </div>
+
+              <div className="admin-report-hero-folder__report-status">
+                <span />
+                Under review
+              </div>
             </div>
-            <div className="admin-report-template-preview__section">
-              <span>02 · MODERATION DECISION</span>
-              <div className="admin-report-template-preview__checks"><b>✓</b><b /><b /></div>
+            <div className="admin-report-hero-folder__front">
+              <ShieldCheck size={50} strokeWidth={1.65} />
             </div>
-            <footer>
-              <span>Administrator review</span>
-              <strong>{summaryLoading ? '…' : Number(summaryValue.pendingReports || 0)} NEED REVIEW</strong>
-            </footer>
+          </div>
+
+          <div className="admin-report-hero-float admin-report-hero-checklist">
+            <strong>Review checklist</strong>
+            <span><i>✓</i> Policy check</span>
+            <span><i>✓</i> Content review</span>
+            <span><i>✓</i> Source validation</span>
+            <span><i>✓</i> Impact assessment</span>
+          </div>
+
+          <div className="admin-report-hero-float admin-report-hero-resolution">
+            <small>Resolution rate</small>
+            <div className="admin-report-hero-resolution__row">
+              <div className="admin-report-hero-ring"><span /></div>
+              <strong>
+                {summaryLoading
+                  ? '…'
+                  : `${Number(summaryValue.totalReports || 0) > 0
+                    ? Math.round((Number(summaryValue.resolvedReports || 0) / Number(summaryValue.totalReports || 1)) * 100)
+                    : 0}%`}
+              </strong>
+            </div>
+          </div>
+
+          <div className="admin-report-hero-float admin-report-hero-publication">
+            <div className="admin-report-hero-publication__head">
+              <small>Publication</small>
+              <ChevronDown size={10} />
+            </div>
+            <div className="admin-report-hero-publication__body">
+              <span><i /><i /></span>
+              <b><i /><i /><i /></b>
+            </div>
+          </div>
+
+          <div className="admin-report-hero-ghost-shield">
+            <ShieldCheck size={66} strokeWidth={1.35} />
           </div>
         </div>
       </section>

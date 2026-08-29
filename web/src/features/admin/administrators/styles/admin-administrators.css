@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-administrators-page {
   --aa-ink: #163f3b;
   --aa-text: #45635d;
@@ -1917,4 +1919,359 @@
   .admin-administrators-scene__chip {
     animation: none !important;
   }
+}
+
+html.vox-user-dark .admin-administrators-page,
+html.vox-user-dark .admin-admin-invite-layer {
+  color: #e7f0ed;
+}
+
+html.vox-user-dark .admin-administrators-page .admin-admin-invite-modal,
+html.vox-user-dark .admin-administrators-page .admin-administrator-current-stat,
+html.vox-user-dark .admin-administrators-page .admin-administrators-filterbar,
+html.vox-user-dark .admin-administrators-page .admin-administrators-hero,
+html.vox-user-dark .admin-administrators-page .admin-administrators-sidebar,
+html.vox-user-dark .admin-administrators-page .admin-administrators-stats,
+html.vox-user-dark .admin-administrators-page .admin-administrators-table-wrap,
+html.vox-user-dark .admin-administrators-page .admin-administrators-workspace,
+html.vox-user-dark .admin-administrators-page .admin-panel--administrators,
+html.vox-user-dark .admin-administrators-page .admin-stat,
+html.vox-user-dark .admin-administrators-page .admin-status,
+html.vox-user-dark .admin-administrators-page .admin-status--neutral,
+html.vox-user-dark .admin-admin-invite-layer .admin-admin-invite-modal,
+html.vox-user-dark .admin-admin-invite-layer .admin-administrator-current-stat,
+html.vox-user-dark .admin-admin-invite-layer .admin-administrators-filterbar,
+html.vox-user-dark .admin-admin-invite-layer .admin-administrators-hero,
+html.vox-user-dark .admin-admin-invite-layer .admin-administrators-sidebar,
+html.vox-user-dark .admin-admin-invite-layer .admin-administrators-stats,
+html.vox-user-dark .admin-admin-invite-layer .admin-administrators-table-wrap,
+html.vox-user-dark .admin-admin-invite-layer .admin-administrators-workspace,
+html.vox-user-dark .admin-admin-invite-layer .admin-panel--administrators,
+html.vox-user-dark .admin-admin-invite-layer .admin-stat,
+html.vox-user-dark .admin-admin-invite-layer .admin-status,
+html.vox-user-dark .admin-admin-invite-layer .admin-status--neutral {
+  border-color: rgba(145, 198, 190, .16) !important;
+  background-color: #111d1b !important;
+  color: #e7f0ed !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .20);
+}
+
+html.vox-user-dark .admin-administrators-page :is(h1, h2, h3, h4, h5, strong, label, th),
+html.vox-user-dark .admin-admin-invite-layer :is(h1, h2, h3, h4, h5, strong, label, th) {
+  color: #eaf3f0 !important;
+}
+
+html.vox-user-dark .admin-administrators-page :is(p, small, td),
+html.vox-user-dark .admin-admin-invite-layer :is(p, small, td) {
+  color: #a5b7b1;
+}
+
+html.vox-user-dark .admin-administrators-page :is(input, select, textarea),
+html.vox-user-dark .admin-admin-invite-layer :is(input, select, textarea) {
+  border-color: rgba(145, 198, 190, .18) !important;
+  background: #0e1917 !important;
+  color: #e8f1ee !important;
+  caret-color: #8fd2c9;
+}
+
+html.vox-user-dark .admin-administrators-page :is(input, textarea)::placeholder,
+html.vox-user-dark .admin-admin-invite-layer :is(input, textarea)::placeholder {
+  color: #7f928b !important;
+}
+
+html.vox-user-dark .admin-administrators-page :is(table, thead, tbody, tr),
+html.vox-user-dark .admin-admin-invite-layer :is(table, thead, tbody, tr) {
+  border-color: rgba(145, 198, 190, .12);
+}
+
+html.vox-user-rtl .admin-administrators-page,
+html.vox-user-rtl .admin-admin-invite-layer {
+  direction: rtl;
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-administrators-page :is(input, select, textarea, table),
+html.vox-user-rtl .admin-admin-invite-layer :is(input, select, textarea, table) {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Arabic + dark mode polish for the administrator directory only.
+   English/light mode intentionally keeps the original visual design. */
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-workspace {
+  border-color: rgba(130, 201, 191, .15) !important;
+  background:
+    radial-gradient(circle at 94% 4%, rgba(76, 166, 157, .10), transparent 25%),
+    radial-gradient(circle at 6% 96%, rgba(219, 126, 151, .055), transparent 25%),
+    #0f1a18 !important;
+  box-shadow: 0 24px 58px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-sidebar {
+  border-right: 0 !important;
+  border-left: 1px solid rgba(145, 198, 190, .13) !important;
+  background:
+    radial-gradient(circle at 55% 66%, rgba(81, 179, 170, .09), transparent 31%),
+    linear-gradient(180deg, rgba(20, 34, 31, .98), rgba(15, 27, 25, .98)) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-sidebar__label {
+  color: #849a94 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-tabs button {
+  color: #a6b8b2 !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-tabs button:hover {
+  color: #dce9e5 !important;
+  border-color: rgba(111, 195, 186, .12) !important;
+  background: rgba(116, 202, 193, .055) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-tabs button.is-active {
+  color: #edf7f4 !important;
+  border-color: rgba(105, 196, 186, .20) !important;
+  background: linear-gradient(135deg, rgba(35, 87, 80, .82), rgba(26, 64, 59, .92)) !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-tabs__icon,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-sidebar__security>span {
+  color: #78cec5 !important;
+  background: rgba(78, 175, 166, .12) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-tabs button.is-active .admin-administrators-tabs__icon {
+  color: #9ce1da !important;
+  background: rgba(113, 207, 197, .16) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-tabs__copy small,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-sidebar__security small {
+  color: #81958f !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-tabs__count {
+  color: #b9d9d3 !important;
+  border-color: rgba(127, 199, 190, .14) !important;
+  background: rgba(92, 179, 170, .10) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-sidebar__security {
+  border-color: rgba(132, 201, 191, .13) !important;
+  background: rgba(19, 34, 31, .78) !important;
+  box-shadow: 0 12px 25px rgba(0, 0, 0, .15) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero {
+  border-color: rgba(136, 202, 193, .11) !important;
+  background:
+    radial-gradient(circle at 78% 20%, rgba(71, 163, 154, .13), transparent 22%),
+    radial-gradient(circle at 98% 62%, rgba(61, 139, 132, .09), transparent 27%),
+    linear-gradient(115deg, #101c1a 0%, #11201d 52%, #0d1917 100%) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero__eyebrow {
+  color: #80d2ca !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero>div:first-child>p {
+  color: #a8bbb5 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero__highlights>div {
+  border-color: rgba(138, 201, 192, .14) !important;
+  background: linear-gradient(135deg, rgba(24, 42, 38, .92), rgba(20, 35, 32, .84)) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero__highlights>div>span {
+  color: #79d0c7 !important;
+  background: rgba(76, 173, 164, .13) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero__highlights strong {
+  color: #e5efec !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero__highlights small {
+  color: #91a69f !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero__actions .admin-btn:not(.admin-btn--primary),
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-filterbar>.admin-btn {
+  color: #c7d7d2 !important;
+  border-color: rgba(135, 199, 190, .16) !important;
+  background: rgba(19, 34, 31, .88) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .14) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-hero__actions .admin-btn:not(.admin-btn--primary):hover:not(:disabled),
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-filterbar>.admin-btn:hover:not(:disabled) {
+  color: #8dd8d0 !important;
+  border-color: rgba(120, 207, 197, .30) !important;
+  background: #182b27 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-scene__chip {
+  color: #9edbd5 !important;
+  border-color: rgba(131, 205, 195, .16) !important;
+  background: rgba(17, 31, 28, .90) !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, .22) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-scene__chip--staff {
+  color: #eea6b7 !important;
+  border-color: rgba(231, 139, 162, .20) !important;
+  background: rgba(49, 26, 33, .88) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-panel--administrators {
+  border-color: rgba(137, 201, 192, .14) !important;
+  background: #101c1a !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-panel--administrators>.admin-panel__head {
+  border-color: rgba(137, 201, 192, .10) !important;
+  background: linear-gradient(90deg, rgba(18, 33, 30, .98), rgba(17, 30, 28, .96) 60%, rgba(35, 23, 28, .65)) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-live-chip {
+  color: #b7cbc5 !important;
+  border-color: rgba(132, 201, 191, .14) !important;
+  background: rgba(22, 39, 35, .88) !important;
+  box-shadow: 0 7px 18px rgba(0, 0, 0, .14) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-filterbar .admin-searchbox {
+  color: #a9bcb6 !important;
+  border-color: rgba(137, 201, 192, .16) !important;
+  background: #0d1816 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-table tbody td {
+  color: #c6d5d0 !important;
+  border-color: rgba(142, 201, 193, .10) !important;
+  background: #14211f !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-table tbody tr:hover td,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-table tbody tr:focus-within td {
+  border-color: rgba(116, 202, 192, .19) !important;
+  background: #172824 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-table tbody tr.is-empty-row td {
+  border-color: rgba(137, 201, 192, .16) !important;
+  background: rgba(18, 31, 29, .76) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-staff-identity>span {
+  color: #7dd1c8 !important;
+  border-color: rgba(128, 202, 192, .13) !important;
+  background: linear-gradient(145deg, #17302b, #12231f) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-staff-identity strong i,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-status {
+  color: #8bd7cf !important;
+  border-color: rgba(126, 201, 191, .13) !important;
+  background: rgba(65, 151, 143, .12) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-status--neutral,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-self-action {
+  color: #a0b1ac !important;
+  border-color: rgba(150, 178, 171, .10) !important;
+  background: rgba(110, 132, 126, .10) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-message-btn {
+  color: #8bd8d0 !important;
+  border-color: rgba(112, 200, 190, .20) !important;
+  background: linear-gradient(180deg, rgba(30, 68, 62, .78), rgba(24, 53, 49, .88)) !important;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-message-btn:hover {
+  border-color: rgba(118, 212, 201, .34) !important;
+  background: #21443e !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat:nth-child(2),
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat:nth-child(3),
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat:nth-child(4) {
+  border-color: rgba(137, 201, 192, .13) !important;
+  background: linear-gradient(145deg, #14231f, #101b19) !important;
+  box-shadow: 0 11px 27px rgba(0, 0, 0, .17) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat__icon,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat__avatar,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat:nth-child(2) .admin-stat__icon,
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat:nth-child(3) .admin-stat__icon {
+  color: #80d3cb !important;
+  border-color: rgba(128, 202, 192, .12) !important;
+  background: rgba(66, 153, 145, .12) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat:nth-child(3) .admin-stat__icon {
+  color: #e89aae !important;
+  background: rgba(201, 92, 119, .12) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat__avatar {
+  color: #c4a8eb !important;
+  background: rgba(126, 92, 176, .14) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-stats .admin-stat i {
+  color: #8fd7d0 !important;
+  background: rgba(69, 157, 149, .12) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-feedback.is-error {
+  color: #f0a8b8 !important;
+  border-color: rgba(223, 126, 150, .24) !important;
+  background: rgba(69, 31, 41, .78) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-administrators-page .admin-administrators-feedback.is-success {
+  color: #94d9d1 !important;
+  border-color: rgba(98, 188, 178, .20) !important;
+  background: rgba(26, 62, 56, .76) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-admin-invite-layer .admin-admin-invite-modal {
+  border-color: rgba(139, 203, 194, .16) !important;
+  background:
+    radial-gradient(circle at 88% 8%, rgba(75, 170, 160, .10), transparent 27%),
+    #121f1c !important;
+  color: #e8f2ef !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-admin-invite-layer .admin-admin-invite-modal__mark,
+html.vox-user-dark.vox-user-rtl .admin-admin-invite-layer .admin-admin-invite-modal__security-note {
+  border-color: rgba(135, 201, 191, .14) !important;
+  background: rgba(62, 151, 142, .11) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-admin-invite-layer .admin-admin-invite-modal__fields label>div {
+  border-color: rgba(139, 203, 194, .16) !important;
+  background: #0e1917 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-admin-invite-layer .admin-admin-invite-modal__cancel {
+  color: #c6d5d0 !important;
+  border-color: rgba(139, 203, 194, .15) !important;
+  background: #182622 !important;
 }

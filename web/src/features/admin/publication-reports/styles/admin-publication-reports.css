@@ -1,14 +1,9 @@
-/**
- * Publication reports administration workspace.
- *
- * @author  Malak
- */
+@import "../../shared/styles/admin-feature-theme.css";
 
 .admin-publication-reports-page {
     min-width: 0;
     gap: 16px;
 }
-
 
 .admin-publication-reports-hero {
     position: relative;
@@ -124,7 +119,6 @@
     font-weight: 850;
     letter-spacing: 0.03em;
 }
-
 
 .admin-publication-report-summary-strip {
     display: grid;
@@ -256,7 +250,6 @@
     white-space: nowrap;
 }
 
-
 .admin-publication-reports-workspace {
     position: relative;
     min-width: 0;
@@ -349,7 +342,6 @@
     background: #fff;
     box-shadow: 0 9px 22px rgba(47, 91, 81, 0.06);
 }
-
 
 .admin-publication-reports-controls {
     margin: 0 18px 13px;
@@ -537,7 +529,6 @@
 .admin-publication-reports-controls input::placeholder {
     color: #9ba8a4;
 }
-
 
 .admin-publication-reports-table-wrap {
     position: relative;
@@ -1693,7 +1684,6 @@
     cursor: not-allowed;
 }
 
-
 .admin-report-idea-detail,
 .admin-report-insights-view {
     display: grid;
@@ -1878,7 +1868,6 @@
 .admin-report-feedback-preview article p {
     margin-top: 4px;
 }
-
 
 .admin-spin {
     animation: adminReportSpin 0.8s linear infinite;
@@ -3000,8 +2989,6 @@
     font-weight: 850 !important;
 }
 
-
-
 .admin-publication-reports-table tbody td:nth-child(1) {
     align-items: stretch;
     background: linear-gradient(145deg, color-mix(in srgb, var(--report-card-soft) 82%, #f8fbfa), color-mix(in srgb, var(--report-card-accent) 24%, #fffdfd)) !important;
@@ -3047,7 +3034,6 @@
     background: rgba(255, 255, 255, 0.58) !important;
 }
 
-
 .admin-publication-reports-table .admin-report-publication-cell {
     justify-content: flex-start !important;
     gap: 14px !important;
@@ -3072,7 +3058,6 @@
     margin-top: 8px !important;
 }
 
-
 .admin-publication-reports-table .admin-report-publication-cell>div {
     display: flex;
     flex-direction: column;
@@ -3092,7 +3077,6 @@
 .admin-publication-reports-table tbody>tr>td:nth-child(1) .admin-report-publication-cell small {
     margin-top: auto !important;
 }
-
 
 .admin-publication-reports-table tbody>tr>td:nth-child(1) .admin-report-publication-cell strong {
     min-height: 44px !important;
@@ -3549,12 +3533,6 @@
     }
 }
 
-/* =========================================================
-   REPORT-SPECIFIC HERO
-   Visual-only override: turns the hero into a report desk
-   with a real moderation document preview.
-   ========================================================= */
-
 .admin-publication-reports-hero.admin-publication-reports-hero--document {
     position: relative !important;
     min-height: 260px !important;
@@ -3842,7 +3820,6 @@
     letter-spacing: .07em;
 }
 
-/* The old generic number card is no longer used by the new hero markup. */
 .admin-publication-reports-hero--document .admin-publication-reports-hero__pulse {
     display: none !important;
 }
@@ -3888,8 +3865,6 @@
     }
 }
 
-
-/* Final project-brand override for the selected moderation checkbox */
 .admin-publication-reports-hero--document .admin-report-template-preview__paper .admin-report-template-preview__checks b:first-child {
     border-color: #5cbdb9 !important;
     background: #5cbdb9 !important;
@@ -4359,4 +4334,2851 @@
     .admin-publication-report-summary-strip {
         grid-template-columns: 1fr;
     }
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-page {
+    color-scheme: dark;
+    --report-dark-bg: #081512;
+    --report-dark-surface: #0f1f1b;
+    --report-dark-surface-2: #132722;
+    --report-dark-surface-3: #172d27;
+    --report-dark-border: rgba(116, 185, 174, .18);
+    --report-dark-border-soft: rgba(116, 185, 174, .10);
+    --report-dark-text: #edf7f3;
+    --report-dark-muted: #a4b9b2;
+    --report-dark-faint: #78918a;
+    --report-dark-teal: #62c8c0;
+    --report-dark-rose: #dfa6b4;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-page,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-page :is(button, input, textarea) {
+    direction: rtl;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-hero.admin-publication-reports-hero--document {
+    border-color: var(--report-dark-border) !important;
+    background:
+        radial-gradient(circle at 14% 14%, rgba(98, 200, 192, .10), transparent 29%),
+        radial-gradient(circle at 2% 94%, rgba(223, 166, 180, .08), transparent 25%),
+        linear-gradient(135deg, #0d1c19 0%, #10221e 58%, #132824 100%) !important;
+    box-shadow: 0 22px 54px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-hero--document::before {
+    right: 0;
+    left: auto;
+    border-radius: 999px 0 0 999px;
+    background: linear-gradient(180deg, var(--report-dark-teal), var(--report-dark-rose));
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-hero--document::after {
+    content: 'بلاغ  •  مراجعة  •  قرار  •  توثيق' !important;
+    right: 36px;
+    left: auto;
+    color: rgba(119, 207, 199, .42);
+    letter-spacing: .05em;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-hero__copy>span {
+    color: var(--report-dark-teal) !important;
+    letter-spacing: .04em !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-hero__copy h2 {
+    color: var(--report-dark-text) !important;
+    letter-spacing: -.025em !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-hero__copy>p {
+    color: var(--report-dark-muted) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-legend span {
+    border-color: var(--report-dark-border) !important;
+    background: rgba(21, 42, 37, .86) !important;
+    color: #b7cbc4 !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__shadow {
+    background: rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper {
+    border-color: rgba(105, 177, 166, .21) !important;
+    background:
+        repeating-linear-gradient(0deg,
+            rgba(118, 192, 181, .028) 0,
+            rgba(118, 192, 181, .028) 1px,
+            transparent 1px,
+            transparent 23px),
+        #13231f !important;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, .30) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper::before {
+    border-color: rgba(110, 182, 171, .18) !important;
+    background: linear-gradient(180deg, #243731, #182925) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 3px 8px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper header {
+    border-bottom-color: rgba(111, 191, 179, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper header span,
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper footer strong {
+    color: #70d0c8 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper header strong,
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__meta b {
+    color: #e4f1ed !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper header em {
+    border-color: rgba(223, 166, 180, .24) !important;
+    color: #e8b5c1 !important;
+    background: rgba(111, 54, 69, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__meta div {
+    border-color: rgba(116, 185, 174, .11) !important;
+    background: rgba(21, 42, 37, .70) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__meta small,
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__section>span,
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper footer span {
+    color: #8fa69f !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__section>i {
+    background: rgba(166, 195, 187, .13) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__checks b {
+    border-color: rgba(112, 188, 176, .19) !important;
+    background: #172a25 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__checks b:first-child {
+    border-color: #4aa9a2 !important;
+    color: #fff !important;
+    background: linear-gradient(135deg, #347f7a 0%, #4da59e 100%) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper footer {
+    border-top-color: rgba(116, 185, 174, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip>article {
+    border-color: var(--report-dark-border) !important;
+    background: linear-gradient(145deg, #12231f 0%, #0f1e1b 100%) !important;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip>article:hover {
+    border-color: rgba(104, 199, 190, .31) !important;
+    background: linear-gradient(145deg, #172b26 0%, #12231f 100%) !important;
+    box-shadow: 0 18px 36px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip>article::after,
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip>article>i {
+    opacity: .48;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-stat__icon,
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip>article.is-pending .admin-report-stat__icon {
+    border: 1px solid rgba(107, 194, 184, .16) !important;
+    color: #71d0c8 !important;
+    background: linear-gradient(145deg, #18302a, #11221e) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .018) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip>article.is-pending .admin-report-stat__icon {
+    color: #e3a9b7 !important;
+    border-color: rgba(223, 166, 180, .17) !important;
+    background: linear-gradient(145deg, #312128, #1d181b) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip small {
+    color: #96ada6 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip strong {
+    color: #f0f8f5 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-summary-strip article div>span {
+    color: #718b83 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace {
+    border-color: var(--report-dark-border) !important;
+    background: linear-gradient(180deg, #0d1b18 0%, #0a1714 100%) !important;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace::before {
+    background: linear-gradient(90deg, transparent, rgba(98, 200, 192, .16), rgba(223, 166, 180, .11), transparent) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace>header {
+    border-bottom-color: var(--report-dark-border-soft) !important;
+    background: rgba(14, 29, 25, .92) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace>header span {
+    color: #64c8c0 !important;
+    letter-spacing: .04em !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace>header h3,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-toast strong {
+    color: var(--report-dark-text) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace>header p,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-toast span {
+    color: var(--report-dark-muted) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace>header>button,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-error button,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-pagination button {
+    border-color: rgba(106, 189, 178, .18) !important;
+    color: #b7cec7 !important;
+    background: #142722 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace>header>button:hover,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-error button:hover,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-pagination button:hover:not(:disabled) {
+    border-color: rgba(103, 204, 194, .36) !important;
+    color: #e9f6f2 !important;
+    background: #19312b !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-controls {
+    border-color: var(--report-dark-border-soft) !important;
+    background: #0f1f1b !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-tabs {
+    background: rgba(8, 21, 18, .58) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-tabs button {
+    color: #91a9a2 !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-tabs button:hover {
+    color: #dbeae5 !important;
+    background: rgba(93, 174, 164, .08) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-report-tabs button.is-active {
+    border-color: rgba(100, 205, 195, .20) !important;
+    color: #e8f7f3 !important;
+    background: linear-gradient(135deg, #1a3832, #18302b) !important;
+    box-shadow: inset 0 -2px 0 rgba(102, 205, 196, .70) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__trigger,
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__direction,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-controls>label {
+    border-color: rgba(106, 189, 178, .15) !important;
+    color: #9cb3ac !important;
+    background: #132521 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__trigger:hover,
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__direction:hover,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-controls>label:focus-within {
+    border-color: rgba(102, 204, 194, .34) !important;
+    background: #172d28 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__trigger small {
+    color: #738f87 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__trigger strong,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-controls input {
+    color: #e3efeb !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-controls input::placeholder {
+    color: #6e8780 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__menu {
+    border-color: rgba(107, 191, 180, .18) !important;
+    background: #10211d !important;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, .32) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__menu button {
+    color: #a6bbb5 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__menu button:hover,
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__menu button.is-active {
+    color: #edf8f4 !important;
+    background: #18312b !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table-wrap {
+    background: transparent !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr {
+    --report-card-surface: #10201c !important;
+    --report-card-soft: #172a25 !important;
+    --report-card-ink: #e1efea !important;
+    --report-card-muted: #8fa69f !important;
+    border-color: rgba(111, 189, 178, .16) !important;
+    background: #10201c !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr:hover,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr:focus-within {
+    border-color: rgba(105, 204, 194, .30) !important;
+    background: #132620 !important;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, .27) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr::after {
+    border-color: rgba(255, 255, 255, .045) !important;
+    box-shadow: 0 0 0 30px rgba(255, 255, 255, .018) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr:hover>td,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr:focus-within>td {
+    border-color: rgba(116, 185, 174, .09) !important;
+    color: #bdd0ca !important;
+    background: transparent !important;
+    text-align: right !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(1),
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr:hover>td:nth-child(1),
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr:focus-within>td:nth-child(1) {
+    border-bottom-color: rgba(119, 196, 185, .12) !important;
+    background: linear-gradient(145deg, #183029 0%, #142720 100%) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(7),
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:last-child {
+    border-top-color: rgba(111, 189, 178, .11) !important;
+    background: linear-gradient(90deg, rgba(17, 35, 30, .86), rgba(20, 42, 36, .84)) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td::before,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:not(:first-child)::before {
+    color: #8db1a8 !important;
+    letter-spacing: .02em !important;
+    text-transform: none !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(1)::before {
+    content: 'بلاغ النشر' !important;
+    right: 20px !important;
+    left: auto !important;
+    color: #9ec1b8 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(2)::before {
+    content: 'المُبلِّغ' !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(3)::before {
+    content: 'السبب' !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(4)::before {
+    content: 'الحالة' !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(5)::before {
+    content: 'آخر قرار' !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(6)::before {
+    content: 'تاريخ الإرسال' !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(7)::before {
+    content: '' !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-publication-cell strong,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-reporter-cell strong,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-decision-cell strong,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-reason-cell>span {
+    color: #e6f2ee !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-publication-cell small,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-reporter-cell small,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-decision-cell small,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-reason-cell small,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-date-cell,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(6),
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(6) time,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table tbody>tr>td:nth-child(6) span {
+    color: #8fa8a0 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-publication-icon,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-reporter-avatar {
+    border-color: rgba(112, 194, 183, .15) !important;
+    color: #70cdc4 !important;
+    background: #1a332c !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-status-pill {
+    border-color: rgba(111, 189, 178, .16) !important;
+    color: #c7d9d3 !important;
+    background: #172b26 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-status-pill.is-pending {
+    color: #e6b1bd !important;
+    border-color: rgba(223, 166, 180, .19) !important;
+    background: rgba(101, 48, 62, .23) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-status-pill.is-reviewing {
+    color: #82d8d0 !important;
+    background: rgba(48, 120, 113, .20) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-status-pill.is-resolved {
+    color: #a7d8c8 !important;
+    background: rgba(67, 118, 100, .20) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-status-pill.is-dismissed {
+    color: #c7b4bc !important;
+    background: rgba(102, 75, 85, .22) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-row-actions {
+    justify-content: flex-start !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-row-actions button {
+    border-color: rgba(112, 194, 183, .16) !important;
+    color: #adc4bd !important;
+    background: #142823 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-row-actions button:hover,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-row-actions button.is-primary:hover {
+    border-color: rgba(103, 206, 196, .33) !important;
+    color: #f0f9f6 !important;
+    background: #1b3730 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table .admin-report-row-actions button.is-primary {
+    border-color: rgba(99, 201, 191, .22) !important;
+    color: #8edbd4 !important;
+    background: rgba(47, 117, 110, .20) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-loading,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-empty,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-error,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-pagination>span {
+    color: #9eb5ae !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-error {
+    border-color: rgba(213, 141, 158, .20) !important;
+    color: #e8b1be !important;
+    background: rgba(89, 42, 53, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-toast {
+    border-color: rgba(104, 203, 193, .20) !important;
+    color: #dff3ed !important;
+    background: #132823 !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, .34) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-review-backdrop {
+    background: rgba(2, 8, 7, .72) !important;
+    backdrop-filter: blur(5px);
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-review-drawer {
+    direction: rtl;
+    border-left-color: rgba(112, 194, 183, .18) !important;
+    border-right-color: rgba(112, 194, 183, .18) !important;
+    background: #091713 !important;
+    box-shadow: -24px 0 60px rgba(0, 0, 0, .42) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-review-drawer>header {
+    border-bottom-color: rgba(112, 194, 183, .11) !important;
+    background: #0d1d19 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-review-drawer>header span,
+html.vox-user-dark.vox-user-rtl .admin-moderation-summary small,
+html.vox-user-dark.vox-user-rtl .admin-moderation-panel>header span,
+html.vox-user-dark.vox-user-rtl .admin-moderation-history>header span {
+    color: #6cd0c7 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-review-drawer>header h3,
+html.vox-user-dark.vox-user-rtl .admin-moderation-summary strong,
+html.vox-user-dark.vox-user-rtl .admin-moderation-panel h4,
+html.vox-user-dark.vox-user-rtl .admin-moderation-history h4,
+html.vox-user-dark.vox-user-rtl .admin-report-idea-detail h4,
+html.vox-user-dark.vox-user-rtl .admin-report-publication-snapshot h4,
+html.vox-user-dark.vox-user-rtl .admin-report-feedback-preview h4 {
+    color: #ecf7f3 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-review-drawer>header p,
+html.vox-user-dark.vox-user-rtl .admin-moderation-summary p,
+html.vox-user-dark.vox-user-rtl .admin-report-people-grid p,
+html.vox-user-dark.vox-user-rtl .admin-moderation-history p,
+html.vox-user-dark.vox-user-rtl .admin-moderation-panel p,
+html.vox-user-dark.vox-user-rtl .admin-report-idea-detail p,
+html.vox-user-dark.vox-user-rtl .admin-report-publication-snapshot p,
+html.vox-user-dark.vox-user-rtl .admin-report-feedback-preview p {
+    color: #9db3ac !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-review-drawer>header>button,
+html.vox-user-dark.vox-user-rtl .admin-report-drawer-tabs button {
+    border-color: rgba(112, 194, 183, .14) !important;
+    color: #a6bdb6 !important;
+    background: #122520 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-drawer-tabs {
+    border-bottom-color: rgba(112, 194, 183, .10) !important;
+    background: #0b1916 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-drawer-tabs button:hover {
+    color: #dbeae5 !important;
+    background: #152b25 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-drawer-tabs button.is-active {
+    color: #8fddd6 !important;
+    background: rgba(53, 128, 120, .18) !important;
+    box-shadow: inset 0 -2px 0 #5fc6bd !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-review-drawer__body {
+    background: #091713 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-summary,
+html.vox-user-dark.vox-user-rtl .admin-moderation-history,
+html.vox-user-dark.vox-user-rtl .admin-moderation-panel,
+html.vox-user-dark.vox-user-rtl .admin-report-idea-detail>section,
+html.vox-user-dark.vox-user-rtl .admin-report-publication-snapshot,
+html.vox-user-dark.vox-user-rtl .admin-report-feedback-preview {
+    border-color: rgba(112, 194, 183, .13) !important;
+    background: #10211d !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-summary__icon,
+html.vox-user-dark.vox-user-rtl .admin-moderation-panel>header>div:first-child,
+html.vox-user-dark.vox-user-rtl .admin-report-idea-hero>div:first-child {
+    border-color: rgba(105, 199, 189, .15) !important;
+    color: #72d0c8 !important;
+    background: #19332c !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-people-grid>section,
+html.vox-user-dark.vox-user-rtl .admin-moderation-history__grid article,
+html.vox-user-dark.vox-user-rtl .admin-report-idea-meta>div,
+html.vox-user-dark.vox-user-rtl .admin-report-insight-strip>div,
+html.vox-user-dark.vox-user-rtl .admin-report-publication-snapshot dl>div,
+html.vox-user-dark.vox-user-rtl .admin-report-feedback-preview article {
+    border-color: rgba(112, 194, 183, .11) !important;
+    background: #132722 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-people-grid span,
+html.vox-user-dark.vox-user-rtl .admin-moderation-history__grid span,
+html.vox-user-dark.vox-user-rtl .admin-report-idea-meta span,
+html.vox-user-dark.vox-user-rtl .admin-report-insight-strip span,
+html.vox-user-dark.vox-user-rtl .admin-report-publication-snapshot dt {
+    color: #809b93 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-people-grid strong,
+html.vox-user-dark.vox-user-rtl .admin-moderation-history__grid strong,
+html.vox-user-dark.vox-user-rtl .admin-report-idea-meta strong,
+html.vox-user-dark.vox-user-rtl .admin-report-insight-strip strong,
+html.vox-user-dark.vox-user-rtl .admin-report-publication-snapshot dd,
+html.vox-user-dark.vox-user-rtl .admin-report-feedback-preview article strong {
+    color: #e3f0ec !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-history__badges span,
+html.vox-user-dark.vox-user-rtl .admin-report-status-segments button {
+    border-color: rgba(112, 194, 183, .13) !important;
+    color: #a7beb7 !important;
+    background: #132621 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-actions-grid>button {
+    border-color: rgba(112, 194, 183, .13) !important;
+    color: #bfd1cb !important;
+    background: #12241f !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-actions-grid>button:hover {
+    border-color: rgba(104, 203, 193, .28) !important;
+    background: #172e28 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-actions-grid>button.is-selected {
+    border-color: rgba(101, 207, 196, .36) !important;
+    background: rgba(48, 119, 111, .22) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-actions-grid strong,
+html.vox-user-dark.vox-user-rtl .admin-moderation-toggle strong {
+    color: #e5f1ed !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-actions-grid small,
+html.vox-user-dark.vox-user-rtl .admin-moderation-toggle small {
+    color: #879f98 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-message>span {
+    color: #aac0b9 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-message textarea,
+html.vox-user-dark.vox-user-rtl .admin-moderation-reporter-notice textarea {
+    border-color: rgba(112, 194, 183, .14) !important;
+    color: #e6f1ed !important;
+    background: #0b1a17 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-message textarea::placeholder,
+html.vox-user-dark.vox-user-rtl .admin-moderation-reporter-notice textarea::placeholder {
+    color: #617d75 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-message textarea:focus,
+html.vox-user-dark.vox-user-rtl .admin-moderation-reporter-notice textarea:focus {
+    border-color: rgba(102, 207, 196, .38) !important;
+    background: #0f211d !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-reporter-notice {
+    border-color: rgba(112, 194, 183, .11) !important;
+    background: #12241f !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-toggle {
+    color: #bfd1cb !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-toggle>span {
+    border-color: rgba(112, 194, 183, .17) !important;
+    background: #20332e !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-toggle.is-on>span {
+    background: #2f7774 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-status-segments {
+    border-color: rgba(112, 194, 183, .11) !important;
+    background: #0d1d19 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-status-segments button.is-active {
+    border-color: rgba(102, 205, 195, .26) !important;
+    color: #ecf8f4 !important;
+    background: #1b3932 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-footer {
+    border-top-color: rgba(112, 194, 183, .12) !important;
+    background: #0d1d19 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-footer small {
+    color: #78958d !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-footer strong {
+    color: #dcebe6 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-moderation-footer>button {
+    border-color: rgba(94, 198, 188, .30) !important;
+    color: #f6fbf9 !important;
+    background: linear-gradient(135deg, #347f79 0%, #2c6d68 100%) !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-context-loading {
+    color: #9fb7b0 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-context-error {
+    border-color: rgba(217, 145, 161, .18) !important;
+    color: #e8b2be !important;
+    background: rgba(92, 43, 55, .18) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-insight-strip>div svg {
+    color: #75d1c9 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__trigger>span,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-workspace>header>div,
+html.vox-user-dark.vox-user-rtl .admin-report-review-drawer>header>div,
+html.vox-user-dark.vox-user-rtl .admin-moderation-panel>header>div,
+html.vox-user-dark.vox-user-rtl .admin-moderation-history>header>div,
+html.vox-user-dark.vox-user-rtl .admin-report-idea-hero>div {
+    text-align: right;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__menu,
+html.vox-user-dark.vox-user-rtl .admin-report-sort-picker__menu button,
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-controls input,
+html.vox-user-dark.vox-user-rtl .admin-moderation-message textarea,
+html.vox-user-dark.vox-user-rtl .admin-moderation-reporter-notice textarea {
+    text-align: right !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table-wrap {
+    background: transparent !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table thead {
+    display: block !important;
+    width: 100% !important;
+    table-layout: auto !important;
+    margin-bottom: 18px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(102, 196, 186, .14) !important;
+    border-radius: 18px !important;
+    background: #0d1d19 !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table thead tr {
+    display: grid !important;
+    grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table thead th {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 62px !important;
+    min-height: 62px !important;
+    padding: 0 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 0 !important;
+    border-right: 1px solid rgba(116, 190, 180, .10) !important;
+    border-radius: 0 !important;
+    background: #10221e !important;
+    color: #a8bbb5 !important;
+    font-size: 9px !important;
+    font-weight: 900 !important;
+    letter-spacing: .065em !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table thead th:first-child,
+html.vox-user-dark .admin-publication-reports-table thead th:last-child {
+    background: #10221e !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table thead th:last-child {
+    border-right: 0 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table thead th {
+    border-right: 0 !important;
+    border-left: 1px solid rgba(116, 190, 180, .10) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-publication-reports-table thead th:last-child {
+    border-left: 0 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-sort-head {
+    min-height: 40px !important;
+    padding: 8px 10px !important;
+    justify-content: center !important;
+    border-radius: 9px !important;
+    color: #a8bbb5 !important;
+    transition: color .16s ease, background .16s ease !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-sort-head svg {
+    color: #78958d !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-sort-head:hover {
+    color: #d9ece7 !important;
+    background: rgba(92, 189, 185, .08) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-sort-head:hover svg {
+    color: #73cbc3 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-sort-head.is-active {
+    color: #eaf7f3 !important;
+    background: #1a3932 !important;
+    box-shadow: inset 0 -2px 0 rgba(101, 206, 196, .72) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-sort-head.is-active svg {
+    color: #69d0c6 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr {
+    --report-card-accent: #4fa99f !important;
+    --report-card-deep: #79d0c7 !important;
+    --report-card-soft: #142a25 !important;
+    --report-card-soft-2: #19332d !important;
+    --report-card-dot: #5cbdb9 !important;
+    border-color: rgba(111, 190, 179, .14) !important;
+    background: #0f201c !important;
+    box-shadow: 0 15px 34px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr.is-pending {
+    --report-card-accent: #b96f82 !important;
+    --report-card-deep: #e6a0b2 !important;
+    --report-card-soft: #291c21 !important;
+    --report-card-soft-2: #342229 !important;
+    --report-card-dot: #d98fa3 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr.is-reviewing {
+    --report-card-accent: #4fa99f !important;
+    --report-card-deep: #79d0c7 !important;
+    --report-card-soft: #142a25 !important;
+    --report-card-soft-2: #19332d !important;
+    --report-card-dot: #5cbdb9 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr.is-resolved,
+html.vox-user-dark .admin-publication-reports-table tbody>tr.is-reviewed {
+    --report-card-accent: #72986a !important;
+    --report-card-deep: #a9cda1 !important;
+    --report-card-soft: #1b281c !important;
+    --report-card-soft-2: #233522 !important;
+    --report-card-dot: #8eb684 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr.is-dismissed,
+html.vox-user-dark .admin-publication-reports-table tbody>tr.is-rejected {
+    --report-card-accent: #75847f !important;
+    --report-card-deep: #b7c5c0 !important;
+    --report-card-soft: #1b2421 !important;
+    --report-card-soft-2: #222e2a !important;
+    --report-card-dot: #8d9c97 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr:hover,
+html.vox-user-dark .admin-publication-reports-table tbody>tr:focus-within {
+    border-color: rgba(104, 202, 192, .26) !important;
+    background: #132721 !important;
+    box-shadow: 0 20px 42px rgba(0, 0, 0, .27) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr>td,
+html.vox-user-dark .admin-publication-reports-table tbody>tr:hover>td,
+html.vox-user-dark .admin-publication-reports-table tbody>tr:focus-within>td {
+    border-color: rgba(112, 188, 177, .08) !important;
+    background: #0f201c !important;
+    color: #bfd0cb !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr>td:nth-child(1),
+html.vox-user-dark .admin-publication-reports-table tbody>tr:hover>td:nth-child(1),
+html.vox-user-dark .admin-publication-reports-table tbody>tr:focus-within>td:nth-child(1) {
+    background: linear-gradient(100deg, var(--report-card-soft) 0%, #10231e 58%, var(--report-card-soft-2) 100%) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr>td:nth-child(5),
+html.vox-user-dark .admin-publication-reports-table tbody>tr>td:nth-child(7) {
+    background: linear-gradient(90deg, #0f201c, #122721) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table tbody>tr>td::before {
+    color: #829c94 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-publication-cell strong,
+html.vox-user-dark .admin-publication-reports-table .admin-report-reporter-cell strong,
+html.vox-user-dark .admin-publication-reports-table .admin-report-decision-cell strong,
+html.vox-user-dark .admin-publication-reports-table .admin-report-reason-cell>span {
+    color: #e0ece8 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-publication-cell small,
+html.vox-user-dark .admin-publication-reports-table .admin-report-reporter-cell small,
+html.vox-user-dark .admin-publication-reports-table .admin-report-decision-cell small,
+html.vox-user-dark .admin-publication-reports-table .admin-report-reason-cell small,
+html.vox-user-dark .admin-publication-reports-table .admin-report-date-cell {
+    color: #91a8a1 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-publication-icon,
+html.vox-user-dark .admin-publication-reports-table .admin-report-reporter-avatar {
+    border-color: rgba(111, 196, 185, .12) !important;
+    background: #19312b !important;
+    color: var(--report-card-deep) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-status-pill {
+    border-color: rgba(111, 196, 185, .14) !important;
+    background: var(--report-card-soft) !important;
+    color: var(--report-card-deep) !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-row-actions button {
+    border-color: rgba(111, 190, 179, .12) !important;
+    background: #142722 !important;
+    color: #9fb7b0 !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-row-actions button:hover {
+    border-color: rgba(103, 205, 194, .28) !important;
+    background: #1a342d !important;
+    color: #dff0eb !important;
+}
+
+html.vox-user-dark .admin-publication-reports-table .admin-report-row-actions button.is-primary {
+    border-color: rgba(103, 205, 194, .24) !important;
+    background: #18312b !important;
+    color: #73d0c7 !important;
+}
+
+@media (max-width: 760px) {
+    html.vox-user-dark .admin-publication-reports-table thead {
+        display: none !important;
+    }
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-page {
+    color-scheme: dark;
+    --report-dark-bg: #081512;
+    --report-dark-surface: #0f1f1b;
+    --report-dark-surface-2: #132722;
+    --report-dark-surface-3: #172d27;
+    --report-dark-border: rgba(116, 185, 174, .18);
+    --report-dark-border-soft: rgba(116, 185, 174, .10);
+    --report-dark-text: #edf7f3;
+    --report-dark-muted: #a4b9b2;
+    --report-dark-faint: #78918a;
+    --report-dark-teal: #62c8c0;
+    --report-dark-rose: #dfa6b4;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-hero.admin-publication-reports-hero--document {
+    border-color: var(--report-dark-border) !important;
+    background: radial-gradient(circle at 14% 14%, rgba(98, 200, 192, .10), transparent 29%),
+        radial-gradient(circle at 2% 94%, rgba(223, 166, 180, .08), transparent 25%),
+        linear-gradient(135deg, #0d1c19 0%, #10221e 58%, #132824 100%) !important;
+    box-shadow: 0 22px 54px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-hero--document::before {
+    border-radius: 999px 0 0 999px;
+    background: linear-gradient(180deg, var(--report-dark-teal), var(--report-dark-rose));
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-hero--document::after {
+    color: rgba(119, 207, 199, .42);
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-hero__copy>span {
+    color: var(--report-dark-teal) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-hero__copy h2 {
+    color: var(--report-dark-text) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-hero__copy>p {
+    color: var(--report-dark-muted) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-legend span {
+    border-color: var(--report-dark-border) !important;
+    background: rgba(21, 42, 37, .86) !important;
+    color: #b7cbc4 !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__shadow {
+    background: rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper {
+    border-color: rgba(105, 177, 166, .21) !important;
+    background: repeating-linear-gradient(0deg,
+            rgba(118, 192, 181, .028) 0,
+            rgba(118, 192, 181, .028) 1px,
+            transparent 1px,
+            transparent 23px),
+        #13231f !important;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, .30) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper::before {
+    border-color: rgba(110, 182, 171, .18) !important;
+    background: linear-gradient(180deg, #243731, #182925) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 3px 8px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper header {
+    border-bottom-color: rgba(111, 191, 179, .18) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper header span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper footer strong {
+    color: #70d0c8 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper header strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__meta b {
+    color: #e4f1ed !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper header em {
+    border-color: rgba(223, 166, 180, .24) !important;
+    color: #e8b5c1 !important;
+    background: rgba(111, 54, 69, .18) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__meta div {
+    border-color: rgba(116, 185, 174, .11) !important;
+    background: rgba(21, 42, 37, .70) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__meta small,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__section>span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper footer span {
+    color: #8fa69f !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__section>i {
+    background: rgba(166, 195, 187, .13) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__checks b {
+    border-color: rgba(112, 188, 176, .19) !important;
+    background: #172a25 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__checks b:first-child {
+    border-color: #4aa9a2 !important;
+    color: #fff !important;
+    background: linear-gradient(135deg, #347f7a 0%, #4da59e 100%) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper footer {
+    border-top-color: rgba(116, 185, 174, .18) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip>article {
+    border-color: var(--report-dark-border) !important;
+    background: linear-gradient(145deg, #12231f 0%, #0f1e1b 100%) !important;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip>article:hover {
+    border-color: rgba(104, 199, 190, .31) !important;
+    background: linear-gradient(145deg, #172b26 0%, #12231f 100%) !important;
+    box-shadow: 0 18px 36px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip>article::after,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip>article>i {
+    opacity: .48;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-stat__icon,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip>article.is-pending .admin-report-stat__icon {
+    border: 1px solid rgba(107, 194, 184, .16) !important;
+    color: #71d0c8 !important;
+    background: linear-gradient(145deg, #18302a, #11221e) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .018) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip>article.is-pending .admin-report-stat__icon {
+    color: #e3a9b7 !important;
+    border-color: rgba(223, 166, 180, .17) !important;
+    background: linear-gradient(145deg, #312128, #1d181b) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip small {
+    color: #96ada6 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip strong {
+    color: #f0f8f5 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-summary-strip article div>span {
+    color: #718b83 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-workspace {
+    border-color: var(--report-dark-border) !important;
+    background: linear-gradient(180deg, #0d1b18 0%, #0a1714 100%) !important;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-workspace::before {
+    background: linear-gradient(90deg, transparent, rgba(98, 200, 192, .16), rgba(223, 166, 180, .11), transparent) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-workspace>header {
+    border-bottom-color: var(--report-dark-border-soft) !important;
+    background: rgba(14, 29, 25, .92) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-workspace>header span {
+    color: #64c8c0 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-workspace>header h3,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-toast strong {
+    color: var(--report-dark-text) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-workspace>header p,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-toast span {
+    color: var(--report-dark-muted) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-workspace>header>button,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-error button,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-pagination button {
+    border-color: rgba(106, 189, 178, .18) !important;
+    color: #b7cec7 !important;
+    background: #142722 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-workspace>header>button:hover,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-error button:hover,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-pagination button:hover:not(:disabled) {
+    border-color: rgba(103, 204, 194, .36) !important;
+    color: #e9f6f2 !important;
+    background: #19312b !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-controls {
+    border-color: var(--report-dark-border-soft) !important;
+    background: #0f1f1b !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-tabs {
+    background: rgba(8, 21, 18, .58) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-tabs button {
+    color: #91a9a2 !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-tabs button:hover {
+    color: #dbeae5 !important;
+    background: rgba(93, 174, 164, .08) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-report-tabs button.is-active {
+    border-color: rgba(100, 205, 195, .20) !important;
+    color: #e8f7f3 !important;
+    background: linear-gradient(135deg, #1a3832, #18302b) !important;
+    box-shadow: inset 0 -2px 0 rgba(102, 205, 196, .70) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__trigger,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__direction,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-controls>label {
+    border-color: rgba(106, 189, 178, .15) !important;
+    color: #9cb3ac !important;
+    background: #132521 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__trigger:hover,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__direction:hover,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-controls>label:focus-within {
+    border-color: rgba(102, 204, 194, .34) !important;
+    background: #172d28 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__trigger small {
+    color: #738f87 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__trigger strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-controls input {
+    color: #e3efeb !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-controls input::placeholder {
+    color: #6e8780 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__menu {
+    border-color: rgba(107, 191, 180, .18) !important;
+    background: #10211d !important;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, .32) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__menu button {
+    color: #a6bbb5 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__menu button:hover,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-sort-picker__menu button.is-active {
+    color: #edf8f4 !important;
+    background: #18312b !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table-wrap {
+    background: transparent !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr {
+    border-color: rgba(111, 189, 178, .16) !important;
+    background: #10201c !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr:hover,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr:focus-within {
+    border-color: rgba(105, 204, 194, .30) !important;
+    background: #132620 !important;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, .27) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr::after {
+    border-color: rgba(255, 255, 255, .045) !important;
+    box-shadow: 0 0 0 30px rgba(255, 255, 255, .018) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr:hover>td,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr:focus-within>td {
+    border-color: rgba(116, 185, 174, .09) !important;
+    color: #bdd0ca !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td:nth-child(1),
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr:hover>td:nth-child(1),
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr:focus-within>td:nth-child(1) {
+    border-bottom-color: rgba(119, 196, 185, .12) !important;
+    background: linear-gradient(145deg, #183029 0%, #142720 100%) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td:nth-child(7),
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td:last-child {
+    border-top-color: rgba(111, 189, 178, .11) !important;
+    background: linear-gradient(90deg, rgba(17, 35, 30, .86), rgba(20, 42, 36, .84)) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td::before,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td:not(:first-child)::before {
+    color: #8db1a8 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td:nth-child(1)::before {
+    color: #9ec1b8 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-publication-cell strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-reporter-cell strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-decision-cell strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-reason-cell>span {
+    color: #e6f2ee !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-publication-cell small,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-reporter-cell small,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-decision-cell small,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-reason-cell small,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-date-cell,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td:nth-child(6),
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td:nth-child(6) time,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table tbody>tr>td:nth-child(6) span {
+    color: #8fa8a0 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-publication-icon,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-reporter-avatar {
+    border-color: rgba(112, 194, 183, .15) !important;
+    color: #70cdc4 !important;
+    background: #1a332c !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-status-pill {
+    border-color: rgba(111, 189, 178, .16) !important;
+    color: #c7d9d3 !important;
+    background: #172b26 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-status-pill.is-pending {
+    color: #e6b1bd !important;
+    border-color: rgba(223, 166, 180, .19) !important;
+    background: rgba(101, 48, 62, .23) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-status-pill.is-reviewing {
+    color: #82d8d0 !important;
+    background: rgba(48, 120, 113, .20) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-status-pill.is-resolved {
+    color: #a7d8c8 !important;
+    background: rgba(67, 118, 100, .20) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-status-pill.is-dismissed {
+    color: #c7b4bc !important;
+    background: rgba(102, 75, 85, .22) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-row-actions button {
+    border-color: rgba(112, 194, 183, .16) !important;
+    color: #adc4bd !important;
+    background: #142823 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-row-actions button:hover,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-row-actions button.is-primary:hover {
+    border-color: rgba(103, 206, 196, .33) !important;
+    color: #f0f9f6 !important;
+    background: #1b3730 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-table .admin-report-row-actions button.is-primary {
+    border-color: rgba(99, 201, 191, .22) !important;
+    color: #8edbd4 !important;
+    background: rgba(47, 117, 110, .20) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-loading,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-empty,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-error,
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-pagination>span {
+    color: #9eb5ae !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-error {
+    border-color: rgba(213, 141, 158, .20) !important;
+    color: #e8b1be !important;
+    background: rgba(89, 42, 53, .18) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-publication-reports-toast {
+    border-color: rgba(104, 203, 193, .20) !important;
+    color: #dff3ed !important;
+    background: #132823 !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, .34) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-review-backdrop {
+    background: rgba(2, 8, 7, .72) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-review-drawer {
+    border-left-color: rgba(112, 194, 183, .18) !important;
+    border-right-color: rgba(112, 194, 183, .18) !important;
+    background: #091713 !important;
+    box-shadow: -24px 0 60px rgba(0, 0, 0, .42) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-review-drawer>header {
+    border-bottom-color: rgba(112, 194, 183, .11) !important;
+    background: #0d1d19 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-review-drawer>header span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-summary small,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-panel>header span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-history>header span {
+    color: #6cd0c7 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-review-drawer>header h3,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-summary strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-panel h4,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-history h4,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-idea-detail h4,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-publication-snapshot h4,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-feedback-preview h4 {
+    color: #ecf7f3 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-review-drawer>header p,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-summary p,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-people-grid p,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-history p,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-panel p,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-idea-detail p,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-publication-snapshot p,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-feedback-preview p {
+    color: #9db3ac !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-review-drawer>header>button,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-drawer-tabs button {
+    border-color: rgba(112, 194, 183, .14) !important;
+    color: #a6bdb6 !important;
+    background: #122520 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-drawer-tabs {
+    border-bottom-color: rgba(112, 194, 183, .10) !important;
+    background: #0b1916 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-drawer-tabs button:hover {
+    color: #dbeae5 !important;
+    background: #152b25 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-drawer-tabs button.is-active {
+    color: #8fddd6 !important;
+    background: rgba(53, 128, 120, .18) !important;
+    box-shadow: inset 0 -2px 0 #5fc6bd !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-review-drawer__body {
+    background: #091713 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-summary,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-history,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-panel,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-idea-detail>section,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-publication-snapshot,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-feedback-preview {
+    border-color: rgba(112, 194, 183, .13) !important;
+    background: #10211d !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-summary__icon,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-panel>header>div:first-child,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-idea-hero>div:first-child {
+    border-color: rgba(105, 199, 189, .15) !important;
+    color: #72d0c8 !important;
+    background: #19332c !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-people-grid>section,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-history__grid article,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-idea-meta>div,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-insight-strip>div,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-publication-snapshot dl>div,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-feedback-preview article {
+    border-color: rgba(112, 194, 183, .11) !important;
+    background: #132722 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-people-grid span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-history__grid span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-idea-meta span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-insight-strip span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-publication-snapshot dt {
+    color: #809b93 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-people-grid strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-history__grid strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-idea-meta strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-insight-strip strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-publication-snapshot dd,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-feedback-preview article strong {
+    color: #e3f0ec !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-history__badges span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-status-segments button {
+    border-color: rgba(112, 194, 183, .13) !important;
+    color: #a7beb7 !important;
+    background: #132621 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-actions-grid>button {
+    border-color: rgba(112, 194, 183, .13) !important;
+    color: #bfd1cb !important;
+    background: #12241f !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-actions-grid>button:hover {
+    border-color: rgba(104, 203, 193, .28) !important;
+    background: #172e28 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-actions-grid>button.is-selected {
+    border-color: rgba(101, 207, 196, .36) !important;
+    background: rgba(48, 119, 111, .22) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-actions-grid strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-toggle strong {
+    color: #e5f1ed !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-actions-grid small,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-toggle small {
+    color: #879f98 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-message>span {
+    color: #aac0b9 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-message textarea,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-reporter-notice textarea {
+    border-color: rgba(112, 194, 183, .14) !important;
+    color: #e6f1ed !important;
+    background: #0b1a17 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-message textarea::placeholder,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-reporter-notice textarea::placeholder {
+    color: #617d75 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-message textarea:focus,
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-reporter-notice textarea:focus {
+    border-color: rgba(102, 207, 196, .38) !important;
+    background: #0f211d !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-reporter-notice {
+    border-color: rgba(112, 194, 183, .11) !important;
+    background: #12241f !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-toggle {
+    color: #bfd1cb !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-toggle>span {
+    border-color: rgba(112, 194, 183, .17) !important;
+    background: #20332e !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-toggle.is-on>span {
+    background: #2f7774 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-status-segments {
+    border-color: rgba(112, 194, 183, .11) !important;
+    background: #0d1d19 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-status-segments button.is-active {
+    border-color: rgba(102, 205, 195, .26) !important;
+    color: #ecf8f4 !important;
+    background: #1b3932 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-footer {
+    border-top-color: rgba(112, 194, 183, .12) !important;
+    background: #0d1d19 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-footer small {
+    color: #78958d !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-footer strong {
+    color: #dcebe6 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-moderation-footer>button {
+    border-color: rgba(94, 198, 188, .30) !important;
+    color: #f6fbf9 !important;
+    background: linear-gradient(135deg, #347f79 0%, #2c6d68 100%) !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .20) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-context-loading {
+    color: #9fb7b0 !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-context-error {
+    border-color: rgba(217, 145, 161, .18) !important;
+    color: #e8b2be !important;
+    background: rgba(92, 43, 55, .18) !important;
+}
+
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-insight-strip>div svg {
+    color: #75d1c9 !important;
+}
+
+/* Keep the document preview paper light in dark mode. */
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper {
+    border-color: rgba(52, 93, 82, 0.16) !important;
+    background: #ffffff !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28) !important;
+    color-scheme: light !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper::before,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper::before {
+    border-color: rgba(47, 119, 116, 0.14) !important;
+    background: linear-gradient(180deg, #f7faf9, #edf3f1) !important;
+    box-shadow: inset 0 1px 0 #fff, 0 3px 8px rgba(44, 69, 62, 0.08) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper header,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper header {
+    border-bottom-color: rgba(47, 119, 116, 0.13) !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper header span,
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper footer strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper header span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper footer strong {
+    color: #24746f !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper header strong,
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__meta b,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper header strong,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__meta b {
+    color: #294842 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper header em,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper header em {
+    border-color: rgba(217, 154, 170, 0.30) !important;
+    color: #a35568 !important;
+    background: #fff6f8 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__meta div,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__meta div {
+    border-color: rgba(47, 119, 116, 0.08) !important;
+    background: rgba(247, 251, 249, 0.92) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__meta small,
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__section>span,
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper footer span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__meta small,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__section>span,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper footer span {
+    color: #647c75 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__section>i,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__section>i {
+    background: rgba(70, 98, 90, 0.10) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__checks b,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__checks b {
+    border-color: rgba(47, 119, 116, 0.16) !important;
+    background: #ffffff !important;
+    color: transparent !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__checks b:first-child,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__checks b:first-child {
+    border-color: #5cbdb9 !important;
+    color: #ffffff !important;
+    background: #5cbdb9 !important;
+    box-shadow: 0 4px 10px rgba(92, 189, 185, 0.22) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-report-template-preview__paper footer,
+html.vox-user-dark:not(.vox-user-rtl) .admin-report-template-preview__paper footer {
+    border-top-color: rgba(47, 119, 116, 0.17) !important;
+}
+
+/* ========================================================================== */
+/* Publication reports hero — creative moderation desk                        */
+/* Hero-only redesign. Everything below the hero keeps its existing styling.  */
+/* ========================================================================== */
+.admin-publication-reports-hero.admin-publication-reports-hero--creative {
+    min-height: 300px;
+    padding: 34px 38px;
+    display: grid;
+    grid-template-columns: minmax(0, .92fr) minmax(510px, 1.08fr);
+    align-items: center;
+    gap: 30px;
+    isolation: isolate;
+    border: 1px solid rgba(47, 119, 116, .10);
+    border-radius: 27px;
+    background:
+        radial-gradient(circle at 76% 44%, rgba(84, 201, 194, .18), transparent 29%),
+        radial-gradient(circle at 98% 8%, rgba(84, 201, 194, .09), transparent 22%),
+        radial-gradient(circle at 6% 100%, rgba(236, 174, 191, .10), transparent 26%),
+        linear-gradient(112deg, #fffefd 0%, #fbfdfd 44%, #effaf8 100%);
+    box-shadow: 0 18px 48px rgba(48, 91, 82, .07);
+}
+
+.admin-publication-reports-hero.admin-publication-reports-hero--creative::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    width: 480px;
+    height: 480px;
+    inset: -255px -145px auto auto;
+    border: 1px solid rgba(74, 184, 177, .10);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.admin-publication-reports-hero.admin-publication-reports-hero--creative::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    width: 315px;
+    height: 315px;
+    inset: auto 7% -245px auto;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(236, 174, 191, .13), transparent 68%);
+    pointer-events: none;
+}
+
+.admin-publication-reports-hero--creative .admin-publication-reports-hero__copy {
+    position: relative;
+    z-index: 4;
+    max-width: 700px;
+}
+
+.admin-publication-reports-hero--creative .admin-publication-reports-hero__copy>span {
+    margin: 0 0 13px;
+    color: #237a74;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .12em;
+}
+
+.admin-publication-reports-hero--creative .admin-publication-reports-hero__copy h2 {
+    margin: 0;
+    color: #173f39;
+    font-size: clamp(2.15rem, 3vw, 3rem);
+    font-weight: 780;
+    line-height: 1.02;
+    letter-spacing: -.045em;
+}
+
+.admin-publication-reports-hero--creative .admin-publication-reports-hero__copy>p {
+    max-width: 680px;
+    margin: 15px 0 0;
+    color: #56716a;
+    font-size: 13.5px;
+    font-weight: 560;
+    line-height: 1.72;
+}
+
+.admin-publication-reports-hero--creative .admin-report-template-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.admin-publication-reports-hero--creative .admin-report-template-legend span {
+    min-height: 34px;
+    padding: 0 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgba(47, 119, 116, .12);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .78);
+    color: #496b64;
+    font-size: 9.5px;
+    font-weight: 820;
+    box-shadow: 0 7px 18px rgba(47, 91, 81, .025);
+    backdrop-filter: blur(8px);
+}
+
+.admin-publication-reports-hero--creative .admin-report-template-legend i {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: #56bbb5;
+    box-shadow: 0 0 0 4px rgba(86, 187, 181, .10);
+}
+
+.admin-report-hero-scene {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    min-width: 510px;
+    height: 238px;
+    direction: ltr;
+    transform: translateX(4px);
+}
+
+.admin-report-hero-orbit {
+    position: absolute;
+    z-index: 0;
+    border: 1px solid rgba(54, 170, 164, .13);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.admin-report-hero-orbit--one {
+    width: 520px;
+    height: 168px;
+    left: 0;
+    top: 33px;
+    transform: rotate(-7deg);
+    animation: adminReportOrbitOne 18s linear infinite;
+}
+
+.admin-report-hero-orbit--two {
+    width: 405px;
+    height: 212px;
+    left: 86px;
+    top: 7px;
+    border-color: rgba(65, 181, 174, .09);
+    transform: rotate(12deg);
+    animation: adminReportOrbitTwo 23s linear infinite;
+}
+
+.admin-report-hero-dot {
+    position: absolute;
+    z-index: 1;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #54c7c0;
+    box-shadow: 0 0 0 5px rgba(84, 199, 192, .09);
+    animation: adminReportDotPulse 3.4s ease-in-out infinite;
+}
+
+.admin-report-hero-dot--one {
+    left: 52px;
+    top: 53px;
+}
+
+.admin-report-hero-dot--two {
+    right: 64px;
+    top: 43px;
+    animation-delay: -.8s;
+}
+
+.admin-report-hero-dot--three {
+    right: 30px;
+    bottom: 47px;
+    animation-delay: -1.7s;
+}
+
+.admin-report-hero-dot--four {
+    left: 135px;
+    bottom: 31px;
+    animation-delay: -2.3s;
+}
+
+.admin-report-hero-float {
+    position: absolute;
+    z-index: 5;
+    border: 1px solid rgba(54, 119, 110, .08);
+    background: rgba(255, 255, 255, .91);
+    box-shadow: 0 15px 35px rgba(52, 92, 83, .10);
+    backdrop-filter: blur(10px);
+    animation: adminReportFloat 5.6s ease-in-out infinite;
+}
+
+.admin-report-hero-trend {
+    width: 132px;
+    height: 71px;
+    left: 48px;
+    top: 32px;
+    padding: 10px 12px 8px;
+    border-radius: 13px;
+    rotate: -1.7deg;
+    animation-delay: -.6s;
+}
+
+.admin-report-hero-trend small,
+.admin-report-hero-priority small,
+.admin-report-hero-resolution small,
+.admin-report-hero-publication small {
+    display: block;
+    color: #496861;
+    font-size: 7px;
+    font-weight: 850;
+    line-height: 1;
+}
+
+.admin-report-hero-trend svg {
+    width: 100%;
+    height: 41px;
+    margin-top: 5px;
+    overflow: visible;
+}
+
+.admin-report-hero-trend path {
+    fill: none;
+    stroke: #58c6bf;
+    stroke-width: 2.25;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 145;
+    stroke-dashoffset: 145;
+    animation: adminReportTrendDraw 4.2s ease-in-out infinite;
+}
+
+.admin-report-hero-trend circle {
+    fill: #42b8b1;
+    animation: adminReportDotPulse 2.4s ease-in-out infinite;
+}
+
+.admin-report-hero-priority {
+    width: 88px;
+    min-height: 70px;
+    left: 40px;
+    bottom: 17px;
+    padding: 11px 12px;
+    border-radius: 12px;
+    animation-delay: -2.2s;
+}
+
+.admin-report-hero-priority__alert {
+    position: absolute;
+    width: 19px;
+    height: 19px;
+    right: -7px;
+    top: -7px;
+    display: grid;
+    place-items: center;
+    border: 2px solid rgba(255, 255, 255, .96);
+    border-radius: 50%;
+    color: #fff;
+    background: linear-gradient(145deg, #f2a0b5, #e96e8c);
+    font-size: 9px;
+    font-weight: 900;
+    box-shadow: 0 6px 13px rgba(221, 98, 129, .20);
+}
+
+.admin-report-hero-priority strong {
+    display: block;
+    margin-top: 5px;
+    color: #173f39;
+    font-size: 21px;
+    line-height: 1;
+}
+
+.admin-report-hero-priority em {
+    display: block;
+    margin-top: 4px;
+    color: #8b9b96;
+    font-size: 6.3px;
+    font-style: normal;
+    font-weight: 700;
+}
+
+.admin-report-hero-folder {
+    position: absolute;
+    z-index: 4;
+    width: 212px;
+    height: 168px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-43%, -47%);
+    animation: adminReportFolderFloat 6s ease-in-out infinite;
+    filter: drop-shadow(0 22px 19px rgba(39, 120, 113, .15));
+}
+
+.admin-report-hero-folder__tab {
+    position: absolute;
+    z-index: 1;
+    width: 92px;
+    height: 29px;
+    left: 17px;
+    top: 4px;
+    border-radius: 15px 15px 0 0;
+    background: linear-gradient(160deg, #77d6d1, #4ebbb5);
+}
+
+.admin-report-hero-folder__papers {
+    position: absolute;
+    z-index: 2;
+    left: 39px;
+    top: 2px;
+    display: grid;
+    gap: 3px;
+}
+
+.admin-report-hero-folder__papers span {
+    width: 55px;
+    height: 42px;
+    grid-area: 1 / 1;
+    border: 1px solid rgba(54, 119, 110, .08);
+    border-radius: 7px 7px 2px 2px;
+    background: rgba(255, 255, 255, .94);
+}
+
+.admin-report-hero-folder__papers span:nth-child(1) {
+    transform: translate(-4px, 8px);
+    opacity: .72;
+}
+
+.admin-report-hero-folder__papers span:nth-child(2) {
+    transform: translate(3px, 4px);
+    opacity: .88;
+}
+
+.admin-report-hero-folder__papers span:nth-child(3) {
+    transform: translate(10px, 0);
+}
+
+.admin-report-hero-folder__case {
+    position: absolute;
+    z-index: 6;
+    width: 133px;
+    height: 60px;
+    right: -13px;
+    top: 0;
+    padding: 12px 13px;
+    overflow: hidden;
+    border: 1px solid rgba(222, 141, 163, .15);
+    border-radius: 11px;
+    background: linear-gradient(140deg, rgba(255, 255, 255, .97), rgba(255, 246, 249, .94));
+    box-shadow: 0 11px 24px rgba(105, 81, 89, .08);
+    transform: rotate(1.7deg);
+    animation: adminReportCaseBob 4.8s ease-in-out infinite;
+}
+
+.admin-report-hero-folder__case small,
+.admin-report-hero-folder__case strong {
+    display: block;
+    position: relative;
+    z-index: 2;
+    color: #df6f91;
+    font-size: 7px;
+    font-weight: 850;
+    line-height: 1.3;
+}
+
+.admin-report-hero-folder__case strong {
+    margin-top: 2px;
+    font-size: 8px;
+}
+
+.admin-report-hero-folder__case i {
+    display: block;
+    width: 88px;
+    height: 4px;
+    margin-top: 7px;
+    border-radius: 999px;
+    background: #f3e8eb;
+}
+
+.admin-report-hero-folder__case i+i {
+    width: 58px;
+    margin-top: 4px;
+}
+
+.admin-report-hero-folder__front {
+    position: absolute;
+    z-index: 4;
+    inset: 27px 0 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid rgba(36, 133, 126, .11);
+    border-radius: 19px 19px 24px 24px;
+    color: rgba(255, 255, 255, .91);
+    background:
+        radial-gradient(circle at 76% 6%, rgba(255, 255, 255, .24), transparent 27%),
+        linear-gradient(145deg, #70d2cc 0%, #52c1ba 53%, #3eb0aa 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+
+.admin-report-hero-folder__front::before {
+    content: '';
+    position: absolute;
+    width: 86px;
+    height: 86px;
+    border: 1px solid rgba(255, 255, 255, .24);
+    border-radius: 27px;
+    transform: rotate(45deg);
+}
+
+.admin-report-hero-folder__front svg {
+    position: relative;
+    z-index: 2;
+    filter: drop-shadow(0 5px 8px rgba(25, 103, 98, .12));
+}
+
+.admin-report-hero-checklist {
+    z-index: 7;
+    width: 147px;
+    min-height: 105px;
+    left: 52%;
+    bottom: 7px;
+    padding: 12px 13px;
+    border-radius: 13px;
+    rotate: 3.5deg;
+    animation-delay: -1.25s;
+}
+
+.admin-report-hero-checklist strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #315c55;
+    font-size: 7.5px;
+    font-weight: 900;
+}
+
+.admin-report-hero-checklist>span {
+    min-height: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #78908a;
+    font-size: 6.5px;
+    font-weight: 720;
+}
+
+.admin-report-hero-checklist>span i {
+    width: 11px;
+    height: 11px;
+    display: grid;
+    place-items: center;
+    border-radius: 4px;
+    color: #3aa59f;
+    background: #e7f7f4;
+    font-size: 6px;
+    font-style: normal;
+    font-weight: 900;
+}
+
+.admin-report-hero-resolution {
+    width: 105px;
+    min-height: 81px;
+    right: 25px;
+    top: 34px;
+    padding: 11px 12px;
+    border-radius: 13px;
+    animation-delay: -3.1s;
+}
+
+.admin-report-hero-resolution__row {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-report-hero-resolution__row>strong {
+    color: #26928b;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.admin-report-hero-ring {
+    width: 39px;
+    height: 39px;
+    padding: 6px;
+    border-radius: 50%;
+    background: conic-gradient(#55c4bd 0 68%, #efadc0 68% 86%, #dff0ed 86% 100%);
+    animation: adminReportRingSpin 9s linear infinite;
+}
+
+.admin-report-hero-ring span {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, .96);
+}
+
+.admin-report-hero-publication {
+    width: 116px;
+    min-height: 76px;
+    right: 4px;
+    bottom: 17px;
+    padding: 9px 10px;
+    border-radius: 12px;
+    rotate: -4deg;
+    animation-delay: -1.8s;
+}
+
+.admin-report-hero-publication__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #6d837d;
+}
+
+.admin-report-hero-publication__body {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 7px;
+    align-items: center;
+}
+
+.admin-report-hero-publication__body>span {
+    position: relative;
+    height: 34px;
+    overflow: hidden;
+    display: block;
+    border-radius: 7px;
+    background: linear-gradient(150deg, #bfece7, #70d0c9);
+}
+
+.admin-report-hero-publication__body>span i:first-child {
+    position: absolute;
+    width: 25px;
+    height: 22px;
+    left: 4px;
+    bottom: -7px;
+    border-radius: 50% 50% 0 0;
+    background: rgba(42, 161, 153, .58);
+    transform: rotate(-10deg);
+}
+
+.admin-report-hero-publication__body>span i:last-child {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    right: 1px;
+    bottom: -8px;
+    border-radius: 50% 50% 0 0;
+    background: rgba(255, 255, 255, .52);
+    transform: rotate(12deg);
+}
+
+.admin-report-hero-publication__body>b {
+    display: grid;
+    gap: 4px;
+}
+
+.admin-report-hero-publication__body>b i {
+    width: 100%;
+    height: 4px;
+    display: block;
+    border-radius: 999px;
+    background: #dbeae7;
+}
+
+.admin-report-hero-publication__body>b i:nth-child(2) {
+    width: 78%;
+}
+
+.admin-report-hero-publication__body>b i:nth-child(3) {
+    width: 58%;
+}
+
+.admin-report-hero-ghost-shield {
+    position: absolute;
+    z-index: 1;
+    right: -4px;
+    top: 84px;
+    color: rgba(69, 188, 181, .13);
+    animation: adminReportGhostShield 5.8s ease-in-out infinite;
+}
+
+@keyframes adminReportFloat {
+
+    0%,
+    100% {
+        transform: translate3d(0, 0, 0);
+    }
+
+    50% {
+        transform: translate3d(0, -7px, 0);
+    }
+}
+
+@keyframes adminReportFolderFloat {
+
+    0%,
+    100% {
+        transform: translate(-43%, -47%) translateY(0) rotate(-.4deg);
+    }
+
+    50% {
+        transform: translate(-43%, -47%) translateY(-6px) rotate(.6deg);
+    }
+}
+
+@keyframes adminReportCaseBob {
+
+    0%,
+    100% {
+        transform: rotate(1.7deg) translateY(0);
+    }
+
+    50% {
+        transform: rotate(.6deg) translateY(-5px);
+    }
+}
+
+@keyframes adminReportOrbitOne {
+    from {
+        transform: rotate(-7deg);
+    }
+
+    to {
+        transform: rotate(353deg);
+    }
+}
+
+@keyframes adminReportOrbitTwo {
+    from {
+        transform: rotate(12deg);
+    }
+
+    to {
+        transform: rotate(-348deg);
+    }
+}
+
+@keyframes adminReportDotPulse {
+
+    0%,
+    100% {
+        opacity: .48;
+        transform: scale(.88);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.16);
+    }
+}
+
+@keyframes adminReportTrendDraw {
+    0% {
+        stroke-dashoffset: 145;
+        opacity: .28;
+    }
+
+    42%,
+    76% {
+        stroke-dashoffset: 0;
+        opacity: 1;
+    }
+
+    100% {
+        stroke-dashoffset: -145;
+        opacity: .28;
+    }
+}
+
+@keyframes adminReportRingSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes adminReportGhostShield {
+
+    0%,
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: .58;
+    }
+
+    50% {
+        transform: translateY(-5px) scale(1.035);
+        opacity: .9;
+    }
+}
+
+@media (max-width: 1180px) {
+    .admin-publication-reports-hero.admin-publication-reports-hero--creative {
+        grid-template-columns: minmax(0, .95fr) minmax(430px, 1.05fr);
+        padding-inline: 30px;
+    }
+
+    .admin-report-hero-scene {
+        min-width: 430px;
+        transform: scale(.9);
+        transform-origin: center right;
+    }
+}
+
+@media (max-width: 960px) {
+    .admin-publication-reports-hero.admin-publication-reports-hero--creative {
+        min-height: auto;
+        grid-template-columns: 1fr;
+        gap: 18px;
+        padding: 28px;
+    }
+
+    .admin-report-hero-scene {
+        width: min(100%, 620px);
+        min-width: 0;
+        margin-inline: auto;
+        transform: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .admin-publication-reports-hero.admin-publication-reports-hero--creative {
+        padding: 24px 20px;
+        border-radius: 22px;
+    }
+
+    .admin-publication-reports-hero--creative .admin-publication-reports-hero__copy h2 {
+        font-size: clamp(2rem, 11vw, 2.65rem);
+    }
+
+    .admin-report-hero-scene {
+        height: 205px;
+        transform: scale(.82);
+        transform-origin: center top;
+        margin-bottom: -33px;
+    }
+}
+
+/* Hero dark mode only. */
+html.vox-user-dark .admin-publication-reports-hero.admin-publication-reports-hero--creative {
+    border-color: rgba(103, 188, 177, .18);
+    background:
+        radial-gradient(circle at 76% 44%, rgba(74, 188, 179, .15), transparent 30%),
+        radial-gradient(circle at 4% 100%, rgba(196, 112, 136, .09), transparent 27%),
+        linear-gradient(120deg, #0d1c19 0%, #10231f 56%, #132925 100%);
+    box-shadow: 0 22px 54px rgba(0, 0, 0, .24);
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-publication-reports-hero__copy>span {
+    color: #68cbc3;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-publication-reports-hero__copy h2 {
+    color: #eef7f4;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-publication-reports-hero__copy>p {
+    color: #a6bbb4;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-template-legend span,
+html.vox-user-dark .admin-report-hero-float {
+    border-color: rgba(103, 188, 177, .16);
+    background: rgba(18, 39, 34, .88);
+    color: #b8cec7;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, .18);
+}
+
+html.vox-user-dark .admin-report-hero-trend small,
+html.vox-user-dark .admin-report-hero-priority small,
+html.vox-user-dark .admin-report-hero-resolution small,
+html.vox-user-dark .admin-report-hero-publication small,
+html.vox-user-dark .admin-report-hero-checklist>span,
+html.vox-user-dark .admin-report-hero-publication__head {
+    color: #92aaa3;
+}
+
+html.vox-user-dark .admin-report-hero-priority strong,
+html.vox-user-dark .admin-report-hero-checklist strong {
+    color: #e7f3ef;
+}
+
+html.vox-user-dark .admin-report-hero-folder__case {
+    border-color: rgba(215, 135, 158, .16);
+    background: linear-gradient(145deg, rgba(38, 43, 41, .96), rgba(50, 37, 42, .94));
+}
+
+html.vox-user-dark .admin-report-hero-folder__case i,
+html.vox-user-dark .admin-report-hero-publication__body>b i {
+    background: rgba(170, 204, 195, .14);
+}
+
+html.vox-user-dark .admin-report-hero-ring span {
+    background: #142a25;
+}
+
+html.vox-user-dark .admin-report-hero-orbit {
+    border-color: rgba(93, 197, 188, .12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .admin-report-hero-orbit,
+    .admin-report-hero-dot,
+    .admin-report-hero-float,
+    .admin-report-hero-folder,
+    .admin-report-hero-folder__case,
+    .admin-report-hero-trend path,
+    .admin-report-hero-ring,
+    .admin-report-hero-ghost-shield {
+        animation: none !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Publication report hero — small report template emerging from the folder.
+   This only changes the decorative hero artwork; the page below is untouched.
+   -------------------------------------------------------------------------- */
+.admin-report-hero-folder__report-sheet {
+    position: absolute;
+    z-index: 3;
+    width: 132px;
+    min-height: 112px;
+    right: -9px;
+    top: -35px;
+    padding: 10px 11px 13px;
+    overflow: hidden;
+    border: 1px solid rgba(42, 106, 99, .13);
+    border-radius: 10px 10px 7px 7px;
+    background: linear-gradient(180deg, rgba(90, 194, 187, .055), transparent 31%), #fffefd;
+    box-shadow: 0 13px 28px rgba(48, 78, 70, .11);
+    transform: rotate(1.8deg);
+    transform-origin: 50% 100%;
+    animation: adminReportSheetFloat 5s ease-in-out infinite;
+}
+
+.admin-report-hero-folder__report-sheet::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(47, 119, 116, .018) 0, rgba(47, 119, 116, .018) 1px, transparent 1px, transparent 17px);
+}
+
+.admin-report-hero-folder__report-head,
+.admin-report-hero-folder__report-id,
+.admin-report-hero-folder__report-row,
+.admin-report-hero-folder__report-status {
+    position: relative;
+    z-index: 1;
+}
+
+.admin-report-hero-folder__report-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 7px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(47, 119, 116, .12);
+    color: #347d77;
+}
+
+.admin-report-hero-folder__report-head span {
+    color: #347d77;
+    font-size: 6.1px;
+    font-weight: 950;
+    line-height: 1;
+    letter-spacing: .08em;
+    white-space: nowrap;
+}
+
+.admin-report-hero-folder__report-head svg {
+    flex: 0 0 auto;
+    color: #4ebbb5;
+}
+
+.admin-report-hero-folder__report-id {
+    margin-top: 6px;
+}
+
+.admin-report-hero-folder__report-id small,
+.admin-report-hero-folder__report-row small {
+    display: block;
+    color: #85968f;
+    font-size: 5.5px;
+    font-weight: 820;
+    line-height: 1.15;
+}
+
+.admin-report-hero-folder__report-id strong {
+    display: block;
+    margin-top: 2px;
+    color: #df6f91;
+    font-size: 7px;
+    font-weight: 950;
+    line-height: 1.15;
+}
+
+.admin-report-hero-folder__report-row {
+    margin-top: 6px;
+}
+
+.admin-report-hero-folder__report-row i {
+    display: block;
+    width: 100%;
+    height: 3px;
+    margin-top: 3px;
+    border-radius: 999px;
+    background: #e5efec;
+}
+
+.admin-report-hero-folder__report-row.is-short i {
+    width: 68%;
+}
+
+.admin-report-hero-folder__report-status {
+    width: max-content;
+    margin-top: 7px;
+    padding: 3px 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    color: #a85570;
+    background: #fff0f4;
+    font-size: 5.6px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.admin-report-hero-folder__report-status span {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #e47b99;
+    box-shadow: 0 0 0 2px rgba(228, 123, 153, .10);
+}
+
+.admin-report-hero-folder__front {
+    z-index: 4;
+}
+
+@keyframes adminReportSheetFloat {
+
+    0%,
+    100% {
+        transform: translate3d(0, 0, 0) rotate(1.8deg);
+    }
+
+    50% {
+        transform: translate3d(0, -4px, 0) rotate(.7deg);
+    }
+}
+
+html.vox-user-dark .admin-report-hero-folder__report-sheet {
+    border-color: rgba(80, 151, 143, .18);
+    background: linear-gradient(180deg, rgba(90, 194, 187, .055), transparent 31%), #fffefd;
+    box-shadow: 0 15px 30px rgba(0, 0, 0, .20);
+}
+
+html.vox-user-dark .admin-report-hero-folder__report-head {
+    border-bottom-color: rgba(47, 119, 116, .12);
+}
+
+html.vox-user-dark .admin-report-hero-folder__report-head span {
+    color: #347d77;
+}
+
+html.vox-user-dark .admin-report-hero-folder__report-id small,
+html.vox-user-dark .admin-report-hero-folder__report-row small {
+    color: #85968f;
+}
+
+html.vox-user-dark .admin-report-hero-folder__report-id strong {
+    color: #df6f91;
+}
+
+html.vox-user-dark .admin-report-hero-folder__report-row i {
+    background: #e5efec;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .admin-report-hero-folder__report-sheet {
+        animation: none !important;
+    }
+}
+
+/* ========================================================================== */
+/* Keep the decorative report artwork in its original light palette in dark   */
+/* mode. The hero container/copy still follows dark mode; only the floating    */
+/* report cards and paper illustration stay light, matching the light design.  */
+/* ========================================================================== */
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-float {
+    border-color: rgba(54, 119, 110, .08);
+    background: rgba(255, 255, 255, .91);
+    color: #496861;
+    box-shadow: 0 15px 35px rgba(52, 92, 83, .10);
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-trend small,
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-priority small,
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-resolution small,
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-publication small {
+    color: #496861;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-priority strong {
+    color: #173f39;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-priority em {
+    color: #8b9b96;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-checklist strong {
+    color: #315c55;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-checklist>span {
+    color: #78908a;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-checklist>span i {
+    color: #3aa59f;
+    background: #e7f7f4;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-resolution__row>strong {
+    color: #26928b;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-ring span {
+    background: rgba(255, 255, 255, .96);
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-publication__head {
+    color: #6d837d;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-publication__body>b i {
+    background: #dbeae7;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-sheet {
+    border-color: rgba(42, 106, 99, .13);
+    background: linear-gradient(180deg, rgba(90, 194, 187, .055), transparent 31%), #fffefd;
+    box-shadow: 0 13px 28px rgba(48, 78, 70, .11);
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-head {
+    border-bottom-color: rgba(47, 119, 116, .12);
+    color: #347d77;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-head span {
+    color: #347d77;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-head svg {
+    color: #4ebbb5;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-id small,
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-row small {
+    color: #85968f;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-id strong {
+    color: #df6f91;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-row i {
+    background: #e5efec;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-status {
+    color: #a85570;
+    background: #fff0f4;
+}
+
+html.vox-user-dark .admin-publication-reports-hero--creative .admin-report-hero-folder__report-status span {
+    background: #e47b99;
+    box-shadow: 0 0 0 2px rgba(228, 123, 153, .10);
+}
+
+/* ========================================================================== */
+/* Dark mode exception: keep the publication report paper itself LIGHT.       */
+/* user-dark-final.css treats every class ending in "-sheet" as a dark        */
+/* structural surface with !important, so this artwork needs an explicit      */
+/* higher-specificity override for its background and typography.             */
+/* ========================================================================== */
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-sheet {
+    color: #496861 !important;
+    border-color: rgba(42, 106, 99, .13) !important;
+    background-color: #fffefd !important;
+    background-image: linear-gradient(180deg, rgba(90, 194, 187, .055), transparent 31%) !important;
+    box-shadow: 0 13px 28px rgba(48, 78, 70, .11) !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-sheet::before {
+    background: repeating-linear-gradient(0deg, rgba(47, 119, 116, .018) 0, rgba(47, 119, 116, .018) 1px, transparent 1px, transparent 17px) !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-head {
+    color: #347d77 !important;
+    border-bottom-color: rgba(47, 119, 116, .12) !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-head span {
+    color: #347d77 !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-head svg {
+    color: #4ebbb5 !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-id small,
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-row small {
+    color: #85968f !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-id strong {
+    color: #df6f91 !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-row i {
+    background: #e5efec !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-status {
+    color: #a85570 !important;
+    background: #fff0f4 !important;
+}
+
+html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-hero-folder__report-status span {
+    background: #e47b99 !important;
+    box-shadow: 0 0 0 2px rgba(228, 123, 153, .10) !important;
 }

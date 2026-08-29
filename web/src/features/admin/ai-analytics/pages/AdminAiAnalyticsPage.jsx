@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-ai-analytics.css';
@@ -52,14 +53,104 @@ const SORT_OPTIONS = [
   { key: 'modelName', label: 'Model name' },
 ];
 
+const AI_ANALYTICS_AR = Object.freeze({
+  'All providers': 'جميع المزوّدين',
+  'Google AI': 'Google للذكاء الاصطناعي',
+  'OpenRouter': 'أوبن راوتر',
+  'Ollama (Local)': 'أولاما (محلي)',
+  'All request types': 'جميع أنواع الطلبات',
+  'Idea generation': 'توليد الأفكار',
+  'AI chat': 'محادثة الذكاء الاصطناعي',
+  'Comment analysis': 'تحليل التعليقات',
+  'NLP enhancement': 'تحسين معالجة اللغة الطبيعية',
+  'Data collection': 'جمع البيانات',
+  'Other': 'أخرى',
+  'Request volume': 'حجم الطلبات',
+  'Success rate': 'معدل النجاح',
+  'Average latency': 'متوسط زمن الاستجابة',
+  'Token usage': 'استخدام الرموز',
+  'Estimated cost': 'التكلفة التقديرية',
+  'Model name': 'اسم النموذج',
+  'Unmapped model': 'نموذج غير مربوط',
+  'Unknown provider': 'مزوّد غير معروف',
+  'All': 'الكل',
+  'AI': 'ذكاء',
+  'Provider attempts': 'محاولات المزوّد',
+  'Aggregated AI traffic': 'حركة الذكاء الاصطناعي المجمّعة',
+  'Model reliability': 'موثوقية النموذج',
+  'Success across attempts': 'النجاح عبر المحاولات',
+  'models': 'نماذج',
+  'Could not load AI usage analytics.': 'تعذر تحميل تحليلات استخدام الذكاء الاصطناعي.',
+  'From date must be earlier than or equal to To date.': 'يجب أن يكون تاريخ البداية أسبق من تاريخ النهاية أو مساويًا له.',
+  'AI intelligence': 'رؤى الذكاء الاصطناعي',
+  'AI analytics': 'تحليلات الذكاء الاصطناعي',
+  'Understand model reliability, provider traffic, latency, token consumption and estimated AI spend from one operational view.': 'افهم موثوقية النماذج وحركة المزوّدين وزمن الاستجابة واستهلاك الرموز والإنفاق التقديري على الذكاء الاصطناعي من عرض تشغيلي واحد.',
+  'Refresh analytics': 'تحديث التحليلات',
+  'Provider telemetry aggregated': 'تم تجميع قياسات المزوّدين',
+  'Usage, latency & cost in one view': 'الاستخدام وزمن الاستجابة والتكلفة في عرض واحد',
+  'Usage overview': 'نظرة عامة على الاستخدام',
+  'AI economics & performance': 'تكلفة وأداء الذكاء الاصطناعي',
+  'Aggregated provider attempts, including retries, repairs and fallbacks.': 'محاولات المزوّدين المجمّعة، بما فيها إعادة المحاولة والإصلاح والمسارات البديلة.',
+  'Aggregated metrics': 'المؤشرات المجمّعة',
+  'Refresh': 'تحديث',
+  'AI requests': 'طلبات الذكاء الاصطناعي',
+  'successful attempts': 'محاولات ناجحة',
+  'failed attempts': 'محاولات فاشلة',
+  'Across matching provider attempts': 'عبر محاولات المزوّد المطابقة',
+  'Estimated AI cost': 'تكلفة الذكاء الاصطناعي التقديرية',
+  'Backend-calculated usage estimate': 'تقدير استخدام محسوب من النظام الخلفي',
+  'input tokens': 'رموز الإدخال',
+  'output tokens': 'رموز الإخراج',
+  'fallback attempts': 'محاولات المسار البديل',
+  'models represented': 'نماذج ممثّلة',
+  'Analytics filters': 'فلاتر التحليلات',
+  'Filter the backend aggregation before comparing model performance.': 'صفِّ التجميع من النظام الخلفي قبل مقارنة أداء النماذج.',
+  'Clear': 'مسح',
+  'Apply filters': 'تطبيق الفلاتر',
+  'From date': 'من تاريخ',
+  'To date': 'إلى تاريخ',
+  'Provider': 'المزوّد',
+  'Request type': 'نوع الطلب',
+  'Model intelligence': 'رؤى النماذج',
+  'Model usage': 'استخدام النماذج',
+  'matching models': 'نماذج مطابقة',
+  'total tokens': 'إجمالي الرموز',
+  'Most used': 'الأكثر استخدامًا',
+  'Fastest': 'الأسرع',
+  'Sort models': 'ترتيب النماذج',
+  'Descending': 'تنازلي',
+  'Ascending': 'تصاعدي',
+  'Search model, API model or provider...': 'ابحث عن نموذج أو نموذج API أو مزوّد...',
+  'Legacy / unmapped': 'قديم / غير مربوط',
+  'Requests': 'الطلبات',
+  'success': 'ناجح',
+  'failed': 'فاشل',
+  'Latency': 'زمن الاستجابة',
+  'Average response time': 'متوسط وقت الاستجابة',
+  'Tokens': 'الرموز',
+  'in': 'إدخال',
+  'out': 'إخراج',
+  'Cost': 'التكلفة',
+  'Estimated usage cost': 'تكلفة الاستخدام التقديرية',
+  'Traffic share': 'حصة الحركة',
+  'No model usage found': 'لم يتم العثور على استخدام للنماذج',
+  'Try changing the analytics filters or model search.': 'جرّب تغيير فلاتر التحليلات أو البحث عن نموذج.',
+});
+
+function translateAiAnalytics(text, isArabic) {
+  if (!isArabic || text == null) return text;
+  return AI_ANALYTICS_AR[String(text)] || text;
+}
+
 function number(value) {
   return Number(value || 0).toLocaleString('en-US');
 }
 
-function compactNumber(value) {
+function compactNumber(value, isArabic = false) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) return '0';
-  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(numeric);
+  const locale = isArabic ? 'ar-EG-u-nu-latn' : 'en-US';
+  return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(numeric);
 }
 
 function money(value) {
@@ -69,11 +160,11 @@ function money(value) {
   return `$${numeric.toFixed(4)}`;
 }
 
-function latency(value) {
+function latency(value, isArabic = false) {
   const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric) || numeric <= 0) return '0 ms';
-  if (numeric >= 1000) return `${(numeric / 1000).toFixed(numeric >= 10000 ? 1 : 2)}s`;
-  return `${Math.round(numeric)} ms`;
+  if (!Number.isFinite(numeric) || numeric <= 0) return isArabic ? '0 مللي ثانية' : '0 ms';
+  if (numeric >= 1000) return `${(numeric / 1000).toFixed(numeric >= 10000 ? 1 : 2)}${isArabic ? ' ث' : 's'}`;
+  return `${Math.round(numeric)} ${isArabic ? 'مللي ثانية' : 'ms'}`;
 }
 
 function percent(part, whole) {
@@ -102,9 +193,14 @@ function modelName(item) {
   return item?.model?.modelName || item?.model?.apiModelId || 'Unmapped model';
 }
 
-function providerName(key) {
+function providerName(key, tr = (value) => value) {
   const normalized = String(key || '').toLowerCase();
-  return PROVIDER_OPTIONS.find((item) => item.key === normalized)?.label || (key || 'Unknown provider');
+  const label = PROVIDER_OPTIONS.find((item) => item.key === normalized)?.label || (key || 'Unknown provider');
+  return tr(label);
+}
+
+function displayModelName(item, tr = (value) => value) {
+  return item?.model?.modelName || item?.model?.apiModelId || tr('Unmapped model');
 }
 
 function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
@@ -121,7 +217,7 @@ function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
   );
 }
 
-function SelectMenu({ label, value, options, onChange, icon: Icon = ServerCog }) {
+function SelectMenu({ label, value, options, onChange, icon: Icon = ServerCog, tr = (text) => text }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const current = options.find((option) => option.key === value) || options[0];
@@ -145,8 +241,8 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = ServerCog })
       >
         <Icon size={16} />
         <span>
-          <small>{label}</small>
-          <strong>{current?.label || 'All'}</strong>
+          <small>{tr(label)}</small>
+          <strong>{tr(current?.label || 'All')}</strong>
         </span>
         <ChevronDown size={15} className="admin-ai-analytics-picker__chevron" />
       </button>
@@ -162,7 +258,7 @@ function SelectMenu({ label, value, options, onChange, icon: Icon = ServerCog })
                 setOpen(false);
               }}
             >
-              <span>{option.label}</span>
+              <span>{tr(option.label)}</span>
               {option.key === value && <Check size={14} />}
             </button>
           ))}
@@ -183,7 +279,7 @@ function ReliabilityBadge({ successRate }) {
   );
 }
 
-function AiAnalyticsHeroVisual({ totalRequests, successRate, modelCount, averageLatency, totalCost }) {
+function AiAnalyticsHeroVisual({ totalRequests, successRate, modelCount, averageLatency, totalCost, tr, isArabic }) {
   return (
     <div className="admin-ai-analytics-hero-visual" aria-hidden="true">
       <div className="admin-ai-analytics-hero-visual__grid" />
@@ -200,7 +296,7 @@ function AiAnalyticsHeroVisual({ totalRequests, successRate, modelCount, average
         <span className="admin-ai-analytics-core__ring is-inner" />
         <div className="admin-ai-analytics-core__chip">
           <BrainCircuit size={58} strokeWidth={1.55} />
-          <span>AI</span>
+          <span>{tr('AI')}</span>
         </div>
         <i className="admin-ai-analytics-core__node is-a" />
         <i className="admin-ai-analytics-core__node is-b" />
@@ -208,20 +304,20 @@ function AiAnalyticsHeroVisual({ totalRequests, successRate, modelCount, average
       </div>
 
       <article className="admin-ai-analytics-float-card is-requests">
-        <span>Provider attempts</span>
+        <span>{tr('Provider attempts')}</span>
         <strong>{number(totalRequests)}</strong>
-        <small><Activity size={12} /> Aggregated AI traffic</small>
+        <small><Activity size={12} /> {tr('Aggregated AI traffic')}</small>
       </article>
 
       <article className="admin-ai-analytics-float-card is-health">
-        <span>Model reliability</span>
+        <span>{tr('Model reliability')}</span>
         <strong>{Number(successRate || 0).toFixed(1)}%</strong>
-        <small><Gauge size={12} /> Success across attempts</small>
+        <small><Gauge size={12} /> {tr('Success across attempts')}</small>
       </article>
 
       <div className="admin-ai-analytics-hero-visual__stats">
-        <span><Cpu size={13} /> {number(modelCount)} models</span>
-        <span><Timer size={13} /> {latency(averageLatency)}</span>
+        <span><Cpu size={13} /> {number(modelCount)} {tr('models')}</span>
+        <span><Timer size={13} /> {latency(averageLatency, isArabic)}</span>
         <span><CircleDollarSign size={13} /> {money(totalCost)}</span>
       </div>
     </div>
@@ -229,6 +325,8 @@ function AiAnalyticsHeroVisual({ totalRequests, successRate, modelCount, average
 }
 
 export default function AdminAiAnalyticsPage() {
+  const { isArabic } = useUserExperience();
+  const tr = useCallback((text) => translateAiAnalytics(text, isArabic), [isArabic]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -263,12 +361,12 @@ export default function AdminAiAnalyticsPage() {
         : await adminApi.aiAnalytics.summary(params);
       setData(payload || {});
     } catch (e) {
-      setError(getApiErrorMessage(e, 'Could not load AI usage analytics.'));
+      setError(tr(getApiErrorMessage(e, 'Could not load AI usage analytics.')));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [appliedFilters, buildParams]);
+  }, [appliedFilters, buildParams, tr]);
 
   useEffect(() => {
     load(appliedFilters, false);
@@ -276,7 +374,7 @@ export default function AdminAiAnalyticsPage() {
 
   const applyFilters = () => {
     if (filters.fromDate && filters.toDate && filters.fromDate > filters.toDate) {
-      setError('From date must be earlier than or equal to To date.');
+      setError(tr('From date must be earlier than or equal to To date.'));
       return;
     }
     setAppliedFilters(filters);
@@ -334,20 +432,20 @@ export default function AdminAiAnalyticsPage() {
     <div className="admin-page admin-ai-analytics-page">
       <section className="admin-ai-analytics-hero">
         <div className="admin-ai-analytics-hero__content">
-          <div className="admin-ai-analytics-eyebrow"><Sparkles size={16} /> AI intelligence</div>
-          <h1>AI analytics</h1>
-          <p>Understand model reliability, provider traffic, latency, token consumption and estimated AI spend from one operational view.</p>
+          <div className="admin-ai-analytics-eyebrow"><Sparkles size={16} /> {tr('AI intelligence')}</div>
+          <h1>{tr('AI analytics')}</h1>
+          <p>{tr('Understand model reliability, provider traffic, latency, token consumption and estimated AI spend from one operational view.')}</p>
 
           <div className="admin-ai-analytics-hero__actions">
             <button type="button" className="admin-ai-analytics-hero-button" onClick={() => load(appliedFilters, true)} disabled={refreshing || loading}>
-              <RefreshCw size={16} className={refreshing ? 'is-spinning' : ''} /> Refresh analytics
+              <RefreshCw size={16} className={refreshing ? 'is-spinning' : ''} /> {tr('Refresh analytics')}
             </button>
           </div>
 
           <div className="admin-ai-analytics-hero__status">
-            <span><BrainCircuit size={14} /> Provider telemetry aggregated</span>
+            <span><BrainCircuit size={14} /> {tr('Provider telemetry aggregated')}</span>
             <i />
-            <span><Coins size={14} /> Usage, latency & cost in one view</span>
+            <span><Coins size={14} /> {tr('Usage, latency & cost in one view')}</span>
           </div>
         </div>
 
@@ -357,6 +455,8 @@ export default function AdminAiAnalyticsPage() {
           modelCount={rawModels.length}
           averageLatency={data?.averageResponseTimeMs}
           totalCost={data?.totalCost}
+          tr={tr}
+          isArabic={isArabic}
         />
       </section>
 
@@ -365,14 +465,14 @@ export default function AdminAiAnalyticsPage() {
       <section className="admin-ai-analytics-panel">
         <header className="admin-ai-analytics-panel__head">
           <div>
-            <span className="admin-ai-analytics-panel__kicker"><BarChart3 size={13} /> Usage overview</span>
-            <h3>AI economics & performance</h3>
-            <p>Aggregated provider attempts, including retries, repairs and fallbacks.</p>
+            <span className="admin-ai-analytics-panel__kicker"><BarChart3 size={13} /> {tr('Usage overview')}</span>
+            <h3>{tr('AI economics & performance')}</h3>
+            <p>{tr('Aggregated provider attempts, including retries, repairs and fallbacks.')}</p>
           </div>
           <div className="admin-ai-analytics-panel__actions">
-            <span className="admin-ai-analytics-live"><i /> Aggregated metrics</span>
+            <span className="admin-ai-analytics-live"><i /> {tr('Aggregated metrics')}</span>
             <button type="button" className="admin-ai-analytics-action" onClick={() => load(appliedFilters, true)} disabled={refreshing || loading}>
-              <RefreshCw size={15} className={refreshing ? 'is-spinning' : ''} /> Refresh
+              <RefreshCw size={15} className={refreshing ? 'is-spinning' : ''} /> {tr('Refresh')}
             </button>
           </div>
         </header>
@@ -382,31 +482,31 @@ export default function AdminAiAnalyticsPage() {
         ) : (
           <>
             <div className="admin-ai-analytics-metrics">
-              <MetricCard icon={BrainCircuit} label="AI requests" value={number(data?.totalRequests)} hint={`${number(data?.successfulRequests)} successful attempts`} tone="is-primary" />
-              <MetricCard icon={Gauge} label="Success rate" value={`${Number(data?.successRate || 0).toFixed(2)}%`} hint={`${number(data?.failedRequests)} failed attempts`} tone={Number(data?.successRate || 0) < 70 ? 'is-warning' : ''} />
-              <MetricCard icon={Timer} label="Average latency" value={latency(data?.averageResponseTimeMs)} hint="Across matching provider attempts" tone="is-latency" />
-              <MetricCard icon={CircleDollarSign} label="Estimated AI cost" value={money(data?.totalCost)} hint="Backend-calculated usage estimate" tone="is-cost" />
+              <MetricCard icon={BrainCircuit} label={tr('AI requests')} value={number(data?.totalRequests)} hint={`${number(data?.successfulRequests)} ${tr('successful attempts')}`} tone="is-primary" />
+              <MetricCard icon={Gauge} label={tr('Success rate')} value={`${Number(data?.successRate || 0).toFixed(2)}%`} hint={`${number(data?.failedRequests)} ${tr('failed attempts')}`} tone={Number(data?.successRate || 0) < 70 ? 'is-warning' : ''} />
+              <MetricCard icon={Timer} label={tr('Average latency')} value={latency(data?.averageResponseTimeMs, isArabic)} hint={tr('Across matching provider attempts')} tone="is-latency" />
+              <MetricCard icon={CircleDollarSign} label={tr('Estimated AI cost')} value={money(data?.totalCost)} hint={tr('Backend-calculated usage estimate')} tone="is-cost" />
             </div>
 
             <div className="admin-ai-analytics-signal-strip">
-              <span><Coins size={13} /><b>{compactNumber(data?.totalInputTokens)}</b> input tokens</span>
-              <span><Zap size={13} /><b>{compactNumber(data?.totalOutputTokens)}</b> output tokens</span>
-              <span><TriangleAlert size={13} /><b>{number(data?.fallbackAttempts)}</b> fallback attempts</span>
-              <span><Cpu size={13} /><b>{rawModels.length}</b> models represented</span>
+              <span><Coins size={13} /><b>{compactNumber(data?.totalInputTokens, isArabic)}</b> {tr('input tokens')}</span>
+              <span><Zap size={13} /><b>{compactNumber(data?.totalOutputTokens, isArabic)}</b> {tr('output tokens')}</span>
+              <span><TriangleAlert size={13} /><b>{number(data?.fallbackAttempts)}</b> {tr('fallback attempts')}</span>
+              <span><Cpu size={13} /><b>{rawModels.length}</b> {tr('models represented')}</span>
             </div>
 
             <div className="admin-ai-analytics-filterbar">
               <div className="admin-ai-analytics-filterbar__top">
                 <div>
-                  <span className="admin-ai-analytics-panel__kicker"><CalendarRange size={13} /> Analytics filters</span>
-                  <p>Filter the backend aggregation before comparing model performance.</p>
+                  <span className="admin-ai-analytics-panel__kicker"><CalendarRange size={13} /> {tr('Analytics filters')}</span>
+                  <p>{tr('Filter the backend aggregation before comparing model performance.')}</p>
                 </div>
                 <div className="admin-ai-analytics-filterbar__buttons">
                   {(filters.fromDate || filters.toDate || filters.providerKey || filters.requestType) && (
-                    <button type="button" className="admin-ai-analytics-clear" onClick={clearFilters}><X size={14} /> Clear</button>
+                    <button type="button" className="admin-ai-analytics-clear" onClick={clearFilters}><X size={14} /> {tr('Clear')}</button>
                   )}
                   <button type="button" className="admin-ai-analytics-apply" onClick={applyFilters} disabled={refreshing}>
-                    <RefreshCw size={14} /> Apply filters
+                    <RefreshCw size={14} /> {tr('Apply filters')}
                   </button>
                 </div>
               </div>
@@ -414,14 +514,14 @@ export default function AdminAiAnalyticsPage() {
               <div className="admin-ai-analytics-filter-grid">
                 <label className="admin-ai-analytics-date-field">
                   <CalendarRange size={16} />
-                  <span><small>From date</small><input type="date" value={filters.fromDate} max={filters.toDate || undefined} onChange={(event) => setFilters((old) => ({ ...old, fromDate: event.target.value }))} /></span>
+                  <span><small>{tr('From date')}</small><input type="date" value={filters.fromDate} max={filters.toDate || undefined} onChange={(event) => setFilters((old) => ({ ...old, fromDate: event.target.value }))} /></span>
                 </label>
                 <label className="admin-ai-analytics-date-field">
                   <CalendarRange size={16} />
-                  <span><small>To date</small><input type="date" value={filters.toDate} min={filters.fromDate || undefined} onChange={(event) => setFilters((old) => ({ ...old, toDate: event.target.value }))} /></span>
+                  <span><small>{tr('To date')}</small><input type="date" value={filters.toDate} min={filters.fromDate || undefined} onChange={(event) => setFilters((old) => ({ ...old, toDate: event.target.value }))} /></span>
                 </label>
-                <SelectMenu label="Provider" value={filters.providerKey} options={PROVIDER_OPTIONS} onChange={(value) => setFilters((old) => ({ ...old, providerKey: value }))} icon={ServerCog} />
-                <SelectMenu label="Request type" value={filters.requestType} options={REQUEST_TYPE_OPTIONS} onChange={(value) => setFilters((old) => ({ ...old, requestType: value }))} icon={Activity} />
+                <SelectMenu label="Provider" value={filters.providerKey} options={PROVIDER_OPTIONS} onChange={(value) => setFilters((old) => ({ ...old, providerKey: value }))} icon={ServerCog} tr={tr} />
+                <SelectMenu label="Request type" value={filters.requestType} options={REQUEST_TYPE_OPTIONS} onChange={(value) => setFilters((old) => ({ ...old, requestType: value }))} icon={Activity} tr={tr} />
               </div>
             </div>
           </>
@@ -432,24 +532,24 @@ export default function AdminAiAnalyticsPage() {
         <section className="admin-ai-analytics-model-panel">
           <header className="admin-ai-analytics-model-head">
             <div>
-              <span className="admin-ai-analytics-panel__kicker"><BrainCircuit size={13} /> Model intelligence</span>
-              <h3>Model usage</h3>
-              <p>{models.length} matching models · {compactNumber(totalTokens)} total tokens</p>
+              <span className="admin-ai-analytics-panel__kicker"><BrainCircuit size={13} /> {tr('Model intelligence')}</span>
+              <h3>{tr('Model usage')}</h3>
+              <p>{models.length} {tr('matching models')} · {compactNumber(totalTokens, isArabic)} {tr('total tokens')}</p>
             </div>
             <div className="admin-ai-analytics-highlights">
-              <span><small>Most used</small><strong>{topModel ? modelName(topModel) : '—'}</strong></span>
-              <span><small>Fastest</small><strong>{fastestModel ? modelName(fastestModel) : '—'}</strong></span>
+              <span><small>{tr('Most used')}</small><strong>{topModel ? displayModelName(topModel, tr) : '—'}</strong></span>
+              <span><small>{tr('Fastest')}</small><strong>{fastestModel ? displayModelName(fastestModel, tr) : '—'}</strong></span>
             </div>
           </header>
 
           <div className="admin-ai-analytics-controls">
-            <SelectMenu label="Sort models" value={sortBy} options={SORT_OPTIONS} onChange={setSortBy} icon={BarChart3} />
-            <button type="button" className="admin-ai-analytics-sort-direction" onClick={() => setSortOrder((old) => (old === 'desc' ? 'asc' : 'desc'))} title={sortOrder === 'desc' ? 'Descending' : 'Ascending'}>
+            <SelectMenu label="Sort models" value={sortBy} options={SORT_OPTIONS} onChange={setSortBy} icon={BarChart3} tr={tr} />
+            <button type="button" className="admin-ai-analytics-sort-direction" onClick={() => setSortOrder((old) => (old === 'desc' ? 'asc' : 'desc'))} title={tr(sortOrder === 'desc' ? 'Descending' : 'Ascending')}>
               {sortOrder === 'desc' ? <ArrowDown size={17} /> : <ArrowUp size={17} />}
             </button>
             <label className="admin-ai-analytics-search">
               <Search size={17} />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search model, API model or provider..." />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tr('Search model, API model or provider...')} />
               {search && <button type="button" onClick={() => setSearch('')}><X size={14} /></button>}
             </label>
           </div>
@@ -465,8 +565,8 @@ export default function AdminAiAnalyticsPage() {
                       <div className="admin-ai-analytics-model-cell">
                         <span className="admin-ai-analytics-model-icon"><BrainCircuit size={18} /></span>
                         <div>
-                          <strong>{modelName(item)}</strong>
-                          <span>{providerName(item?.model?.providerKey)} · {item?.model?.apiModelId || 'Legacy / unmapped'}</span>
+                          <strong>{displayModelName(item, tr)}</strong>
+                          <span>{providerName(item?.model?.providerKey, tr)} · {item?.model?.apiModelId || tr('Legacy / unmapped')}</span>
                         </div>
                       </div>
                       <ReliabilityBadge successRate={item.calculatedSuccessRate} />
@@ -474,33 +574,33 @@ export default function AdminAiAnalyticsPage() {
 
                     <div className="admin-ai-analytics-model-card__stats">
                       <div className="admin-ai-analytics-model-stat is-requests">
-                        <span>Requests</span>
+                        <span>{tr('Requests')}</span>
                         <strong>{number(requests)}</strong>
-                        <small>{number(item.successfulRequests)} success · {number(item.failedRequests)} failed</small>
+                        <small>{number(item.successfulRequests)} {tr('success')} · {number(item.failedRequests)} {tr('failed')}</small>
                       </div>
 
                       <div className="admin-ai-analytics-model-stat is-latency">
-                        <span>Latency</span>
-                        <strong><Timer size={14} /> {latency(item.averageResponseTimeMs)}</strong>
-                        <small>Average response time</small>
+                        <span>{tr('Latency')}</span>
+                        <strong><Timer size={14} /> {latency(item.averageResponseTimeMs, isArabic)}</strong>
+                        <small>{tr('Average response time')}</small>
                       </div>
 
                       <div className="admin-ai-analytics-model-stat is-tokens">
-                        <span>Tokens</span>
-                        <strong>{compactNumber(item.calculatedTokens)}</strong>
-                        <small>{compactNumber(item.inputTokens)} in · {compactNumber(item.outputTokens)} out</small>
+                        <span>{tr('Tokens')}</span>
+                        <strong>{compactNumber(item.calculatedTokens, isArabic)}</strong>
+                        <small>{compactNumber(item.inputTokens, isArabic)} {tr('in')} · {compactNumber(item.outputTokens, isArabic)} {tr('out')}</small>
                       </div>
 
                       <div className="admin-ai-analytics-model-stat is-cost">
-                        <span>Cost</span>
+                        <span>{tr('Cost')}</span>
                         <strong>{money(item.cost)}</strong>
-                        <small>Estimated usage cost</small>
+                        <small>{tr('Estimated usage cost')}</small>
                       </div>
                     </div>
 
                     <div className="admin-ai-analytics-model-card__traffic">
                       <div className="admin-ai-analytics-model-card__traffic-copy">
-                        <span>Traffic share</span>
+                        <span>{tr('Traffic share')}</span>
                         <strong>{traffic.toFixed(1)}%</strong>
                       </div>
                       <div className="admin-ai-analytics-share">
@@ -514,8 +614,8 @@ export default function AdminAiAnalyticsPage() {
           ) : (
             <div className="admin-ai-analytics-empty">
               <BrainCircuit size={28} />
-              <strong>No model usage found</strong>
-              <p>Try changing the analytics filters or model search.</p>
+              <strong>{tr('No model usage found')}</strong>
+              <p>{tr('Try changing the analytics filters or model search.')}</p>
             </div>
           )}
         </section>

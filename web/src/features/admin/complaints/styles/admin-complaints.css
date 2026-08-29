@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-support-page--complaints {
     --complaint-accent: #45aaa4;
     --complaint-accent-deep: #176c69;
@@ -994,5 +996,651 @@
         width: 46px;
         height: 46px;
         flex-basis: 46px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Complaints — dark mode
+   Applies the same complete dark palette in Arabic and English.
+   Light mode remains untouched.
+   -------------------------------------------------------------------------- */
+html.vox-user-dark .admin-support-page--complaints {
+    --complaint-accent: #69c9c1;
+    --complaint-accent-deep: #45aaa4;
+    --complaint-accent-dark: #17332f;
+    --complaint-soft: #172925;
+    --complaint-softer: #111e1b;
+    --complaint-line: rgba(126, 205, 195, .15);
+    --complaint-line-strong: rgba(126, 205, 195, .24);
+    --complaint-text: #edf5f2;
+    --complaint-muted: #9eb2ac;
+    color: #edf5f2;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero {
+    border-color: rgba(126, 205, 195, .16) !important;
+    background:
+        radial-gradient(circle at 78% 22%, rgba(84, 186, 177, .13), transparent 26%),
+        radial-gradient(circle at 25% 100%, rgba(89, 168, 156, .07), transparent 31%),
+        linear-gradient(118deg, #13211e 0%, #101b19 40%, #10221e 74%, #152622 100%) !important;
+    box-shadow: 0 20px 54px rgba(0, 0, 0, .26) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero::before,
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero::after {
+    border-color: rgba(112, 204, 195, .12) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero>div:first-child>span {
+    color: #70cec6 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero h2 {
+    color: #f0f7f5 !important;
+    text-shadow: 0 3px 16px rgba(0, 0, 0, .22);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero p {
+    color: #a9bbb5 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-complaint-hero__visual::before {
+    border-color: rgba(105, 201, 193, .18);
+    background: radial-gradient(ellipse, rgba(77, 170, 161, .14), rgba(18, 36, 32, .34) 62%, transparent 67%);
+    box-shadow: inset 0 -10px 18px rgba(58, 143, 135, .08);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-complaint-hero__visual::after {
+    border-color: rgba(105, 201, 193, .18);
+    background: rgba(19, 40, 35, .64);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-complaint-hero__orbit {
+    border-color: rgba(105, 201, 193, .15);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-complaint-hero__float {
+    border-color: rgba(112, 206, 198, .44);
+    box-shadow: 0 0 0 7px rgba(105, 201, 193, .07);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-complaint-hero__tile {
+    color: #6bc9c1;
+    border-color: rgba(126, 205, 195, .18);
+    background: linear-gradient(145deg, rgba(33, 53, 49, .92), rgba(20, 35, 32, .92));
+    box-shadow: 0 16px 34px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .045);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero__pulse {
+    color: #70cec6;
+    border-color: rgba(126, 205, 195, .18) !important;
+    background: linear-gradient(150deg, rgba(28, 47, 43, .94), rgba(18, 32, 29, .94)) !important;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, .27), inset 0 1px 0 rgba(255, 255, 255, .04) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero__pulse strong {
+    color: #f0f7f5 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-hero__pulse span {
+    color: #a6bab4 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric,
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric.is-featured,
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric.is-progress,
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric.is-success,
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric.is-danger {
+    border-color: rgba(126, 205, 195, .15) !important;
+    background: linear-gradient(145deg, rgba(22, 38, 34, .98), rgba(15, 28, 25, .98)) !important;
+    box-shadow: 0 13px 31px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric:hover,
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric.is-danger:hover {
+    border-color: rgba(116, 207, 198, .27) !important;
+    background: linear-gradient(145deg, rgba(27, 47, 42, .99), rgba(18, 33, 29, .99)) !important;
+    box-shadow: 0 19px 40px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric>i {
+    border-color: rgba(105, 201, 193, .08);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric__icon,
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric:hover .admin-support-metric__icon {
+    color: #70cec6 !important;
+    border-color: rgba(126, 205, 195, .16) !important;
+    background: linear-gradient(145deg, #1b302b 0%, #13231f 100%) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035), 0 8px 18px rgba(0, 0, 0, .14) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric small {
+    color: #a8bcb6 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric strong {
+    color: #eef7f4 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-summary-grid--five .admin-support-metric div>span {
+    color: #8fa49e !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-complaint-metric__signal b {
+    background: rgba(105, 201, 193, .58);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-complaint-metric__dot {
+    background: #69c9c1;
+    box-shadow: 0 0 0 5px rgba(105, 201, 193, .09);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-panel {
+    border-color: rgba(126, 205, 195, .15) !important;
+    background:
+        radial-gradient(circle at 4% 0%, rgba(87, 190, 181, .08), transparent 20%),
+        radial-gradient(circle at 97% 0%, rgba(87, 190, 181, .05), transparent 18%),
+        #111d1a !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, .22) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-panel::before {
+    background: linear-gradient(90deg, #65c6be 0%, #4faea7 52%, rgba(101, 198, 190, .15) 100%);
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-panel__header {
+    border-bottom-color: rgba(126, 205, 195, .11) !important;
+    background: linear-gradient(100deg, rgba(22, 39, 35, .98), rgba(17, 30, 27, .98) 48%, rgba(20, 35, 31, .98)) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-panel__header>div:first-child>span {
+    color: #6bc8c0 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-panel__header h3 {
+    color: #eef6f3 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-panel__header p {
+    color: #91a7a0 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-header-actions button,
+html.vox-user-dark .admin-support-page--complaints .admin-support-live-chip {
+    border-color: rgba(126, 205, 195, .15) !important;
+    color: #cfe0db !important;
+    background: rgba(13, 24, 21, .76) !important;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, .13) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-header-actions button:hover:not(:disabled) {
+    color: #f2f8f6 !important;
+    border-color: rgba(126, 205, 195, .26) !important;
+    background: rgba(34, 58, 52, .94) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-filters {
+    border-bottom-color: rgba(126, 205, 195, .11) !important;
+    background: #0f1a18 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-tabs {
+    border-color: rgba(126, 205, 195, .14) !important;
+    background: #0c1715 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-tabs button {
+    color: #9fb3ad !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-tabs button:hover:not(.is-active) {
+    color: #dbe9e5 !important;
+    background: rgba(105, 201, 193, .08) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-tabs button.is-active {
+    color: #8ddbd4 !important;
+    border-color: rgba(126, 205, 195, .24) !important;
+    background: rgba(77, 161, 153, .16) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-search,
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker,
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-direction {
+    border-color: rgba(126, 205, 195, .15) !important;
+    color: #c6d8d3 !important;
+    background: #0d1816 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-search input {
+    color: #e7f0ed !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-search input::placeholder {
+    color: #718780 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table tbody>tr {
+    border-color: rgba(126, 205, 195, .14) !important;
+    background: #13211e !important;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table tbody>tr:hover {
+    border-color: rgba(126, 205, 195, .25) !important;
+    background: #162722 !important;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, .25) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table tbody>tr>td,
+html.vox-user-dark .admin-support-page--complaints .admin-support-table tbody>tr:hover>td {
+    color: #b5c8c2 !important;
+    border-color: rgba(126, 205, 195, .10) !important;
+    background: #13211e !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table td::before {
+    color: #7f9891 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table td:nth-child(1),
+html.vox-user-dark .admin-support-page--complaints .admin-support-table tbody>tr:hover td:nth-child(1) {
+    border-color: rgba(126, 205, 195, .10) !important;
+    background: linear-gradient(105deg, #172a25 0%, #13231f 66%, #152823 100%) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table td:nth-child(1)::before {
+    color: #84aaa1 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table td:nth-child(1) .admin-support-row-icon,
+html.vox-user-dark .admin-support-page--complaints .admin-support-table tbody>tr:hover .admin-support-row-icon {
+    color: #74d0c8 !important;
+    border-color: rgba(126, 205, 195, .15) !important;
+    background: rgba(19, 38, 34, .94) !important;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table td:nth-child(1) .admin-support-primary-cell strong,
+html.vox-user-dark .admin-support-page--complaints .admin-support-person strong,
+html.vox-user-dark .admin-support-page--complaints .admin-support-date strong {
+    color: #e4efec !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table td:nth-child(1) .admin-support-primary-cell p,
+html.vox-user-dark .admin-support-page--complaints .admin-support-person span,
+html.vox-user-dark .admin-support-page--complaints .admin-support-date span,
+html.vox-user-dark .admin-support-page--complaints .admin-support-muted {
+    color: #8ea39d !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table td:nth-child(2),
+html.vox-user-dark .admin-support-page--complaints .admin-support-table tbody>tr:hover td:nth-child(2) {
+    background: linear-gradient(180deg, #14241f, #111e1b) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-table td:nth-child(7),
+html.vox-user-dark .admin-support-page--complaints .admin-support-table tbody>tr:hover td:nth-child(7) {
+    background: linear-gradient(90deg, #101c19, #14231f) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-status.is-open,
+html.vox-user-dark .admin-support-page--complaints .admin-support-status.is-success,
+html.vox-user-dark .admin-support-page--complaints .admin-support-status.is-progress {
+    color: #91ddd6 !important;
+    background: rgba(77, 168, 157, .13) !important;
+    border-color: rgba(112, 206, 198, .18) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-status.is-danger,
+html.vox-user-dark .admin-support-page--complaints .admin-support-priority.is-high {
+    color: #efb4c2 !important;
+    background: rgba(185, 105, 126, .11) !important;
+    border-color: rgba(227, 160, 177, .18) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-priority.is-medium {
+    color: #dbc99d !important;
+    background: rgba(166, 139, 77, .11) !important;
+    border-color: rgba(216, 190, 126, .17) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-priority.is-low {
+    color: #9ad9c8 !important;
+    background: rgba(70, 150, 128, .12) !important;
+    border-color: rgba(117, 199, 176, .17) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-view-button {
+    color: #8edbd4 !important;
+    border-color: rgba(126, 205, 195, .19) !important;
+    background: rgba(70, 155, 147, .12) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-view-button:hover:not(:disabled) {
+    color: #ecf7f4 !important;
+    border-color: rgba(126, 205, 195, .28) !important;
+    background: rgba(76, 165, 157, .2) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-pagination {
+    border-top-color: rgba(126, 205, 195, .10) !important;
+    background: #101c19 !important;
+    color: #9db1ab !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-pagination button {
+    color: #cfe0db !important;
+    border-color: rgba(126, 205, 195, .15) !important;
+    background: #14231f !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-pagination button:hover:not(:disabled) {
+    color: #eff8f5 !important;
+    border-color: rgba(126, 205, 195, .27) !important;
+    background: #1a302a !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-alert,
+html.vox-user-dark .admin-support-page--complaints .admin-support-toast {
+    border-color: rgba(126, 205, 195, .16) !important;
+    background: #15241f !important;
+    color: #dce9e5 !important;
+}
+
+/* Complaint modal is portalled to body, so it needs its own dark scope. */
+html.vox-user-dark .admin-support-modal-layer:has(.admin-support-modal--complaint) {
+    background: rgba(3, 9, 8, .72) !important;
+    backdrop-filter: blur(14px) saturate(.86);
+}
+
+html.vox-user-dark .admin-support-modal--complaint {
+    border-color: rgba(126, 205, 195, .19) !important;
+    background: #111d1a !important;
+    color: #edf5f2 !important;
+    box-shadow: 0 36px 100px rgba(0, 0, 0, .52) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-modal__header {
+    border-bottom-color: rgba(126, 205, 195, .13) !important;
+    background:
+        radial-gradient(circle at 91% 0%, rgba(95, 184, 174, .11), transparent 25%),
+        linear-gradient(100deg, #192b26, #12201d 64%) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-modal__mark,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-sender-card>span,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-action-pane__intro>span {
+    color: #75d0c8 !important;
+    background: #1a312b !important;
+    box-shadow: inset 0 0 0 1px rgba(126, 205, 195, .11) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-modal__heading small,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-action-pane__intro small,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-message-card>div {
+    color: #76cbc4 !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-modal__heading h2,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-action-pane__intro h3,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-sender-card strong,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-context-card strong {
+    color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-icon-button,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-secondary-button {
+    color: #cadbd6 !important;
+    border-color: rgba(126, 205, 195, .16) !important;
+    background: #14231f !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-case-pane {
+    border-right: 1px solid rgba(126, 205, 195, .10) !important;
+    background: linear-gradient(145deg, #13231f, #101c19) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-action-pane {
+    background: #111d1a !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-sender-card,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-message-card,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-context-card,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-previous-reply {
+    border-color: rgba(126, 205, 195, .13) !important;
+    background: #152620 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint :is(.admin-support-sender-card small, .admin-support-sender-card p, .admin-support-context-card small, .admin-support-context-card span, .admin-support-message-card p, .admin-support-timeline, .admin-support-timeline strong, .admin-support-action-pane__intro p, .admin-support-previous-reply span, .admin-support-previous-reply p, .admin-support-field>span, .admin-support-reply-field>span) {
+    color: #9eb2ac !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__trigger {
+    color: #dce9e5 !important;
+    border-color: rgba(126, 205, 195, .18) !important;
+    background: linear-gradient(180deg, #162722, #101c19) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__label,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__option-copy strong {
+    color: #e3eeeb !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__menu {
+    border-color: rgba(126, 205, 195, .18) !important;
+    background: rgba(17, 30, 27, .99) !important;
+    box-shadow: 0 26px 58px rgba(0, 0, 0, .42) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__option {
+    color: #b7cac4 !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__option:hover,
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__option.is-selected {
+    background: linear-gradient(90deg, rgba(77, 163, 154, .16), rgba(34, 57, 51, .72)) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__option-copy small {
+    color: #849b94 !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-reply-field textarea {
+    color: #edf5f2 !important;
+    border-color: rgba(126, 205, 195, .18) !important;
+    background: #0d1816 !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-reply-field textarea::placeholder {
+    color: #718780 !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-modal__actions {
+    border-top-color: rgba(126, 205, 195, .12) !important;
+    background: rgba(15, 27, 24, .96) !important;
+    box-shadow: 0 -12px 28px rgba(0, 0, 0, .15) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-primary-button {
+    color: #fff !important;
+    border-color: rgba(114, 210, 201, .30) !important;
+    background: linear-gradient(135deg, #58b9b2, #3f928b) !important;
+    box-shadow: 0 13px 28px rgba(34, 115, 108, .24) !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-modal__body,
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-case-pane,
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-action-pane,
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-modal__heading,
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-action-pane__intro,
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-sender-card,
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-timeline>div {
+    direction: rtl;
+    text-align: right;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-primary-cell,
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-person,
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-date,
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-panel__header,
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-filters,
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-pagination {
+    direction: rtl;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table--complaints td:nth-child(1)::before {
+    content: 'الشكوى';
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table--complaints td:nth-child(2)::before {
+    content: 'مقدم الشكوى';
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table--complaints td:nth-child(3)::before {
+    content: 'الفكرة المرتبطة';
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table--complaints td:nth-child(4)::before {
+    content: 'الأولوية';
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table--complaints td:nth-child(5)::before {
+    content: 'الحالة';
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table--complaints td:nth-child(6)::before {
+    content: 'آخر نشاط';
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table--complaints td:nth-child(7)::before {
+    content: 'الإجراء';
+}
+
+/* Keep shared complaint controls dark in hover, focus, open and menu states. */
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__trigger,
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__direction {
+    border-color: rgba(126, 205, 195, .16) !important;
+    color: #c6d8d3 !important;
+    background: #0d1816 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__trigger small {
+    color: #819890 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__trigger strong {
+    color: #e2eeea !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__trigger:hover,
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__direction:hover,
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker.is-open .admin-support-sort-picker__trigger {
+    border-color: rgba(126, 205, 195, .27) !important;
+    color: #edf6f3 !important;
+    background: #172924 !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__menu {
+    border-color: rgba(126, 205, 195, .18) !important;
+    background: rgba(13, 24, 22, .99) !important;
+    box-shadow: 0 22px 52px rgba(0, 0, 0, .42) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__menu button {
+    color: #aebfba !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__menu button:hover,
+html.vox-user-dark .admin-support-page--complaints .admin-support-sort-picker__menu button.is-active {
+    color: #8edbd4 !important;
+    background: rgba(77, 161, 153, .16) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice__trigger:hover:not(:disabled),
+html.vox-user-dark .admin-support-modal--complaint .admin-support-choice.is-open .admin-support-choice__trigger {
+    border-color: rgba(126, 205, 195, .27) !important;
+    background: linear-gradient(180deg, #1a2e29, #12211d) !important;
+    box-shadow: 0 0 0 3px rgba(105, 201, 193, .07), 0 12px 28px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-reply-field textarea:focus {
+    border-color: rgba(126, 205, 195, .35) !important;
+    background: #0d1816 !important;
+    box-shadow: 0 0 0 3px rgba(105, 201, 193, .07) !important;
+}
+
+html.vox-user-dark .admin-support-modal--complaint .admin-support-secondary-button:hover:not(:disabled),
+html.vox-user-dark .admin-support-modal--complaint .admin-support-icon-button:hover:not(:disabled) {
+    color: #edf6f3 !important;
+    border-color: rgba(126, 205, 195, .27) !important;
+    background: #1a2d28 !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-support-page--complaints .admin-support-search:focus-within {
+    border-color: rgba(126, 205, 195, .30) !important;
+    background: #0d1816 !important;
+    box-shadow: 0 0 0 3px rgba(105, 201, 193, .06) !important;
+}
+
+/* Arabic-only RTL details; dark English stays LTR. */
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table tbody>tr>td,
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table tbody>tr:hover>td {
+    text-align: right !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-table td:nth-child(1)::before {
+    right: 88px;
+    left: auto;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-case-pane {
+    border-left: 1px solid rgba(126, 205, 195, .10) !important;
+    border-right: 0 !important;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-choice__label,
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-choice__option,
+html.vox-user-dark.vox-user-rtl .admin-support-modal--complaint .admin-support-choice__option-copy strong,
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-sort-picker__trigger,
+html.vox-user-dark.vox-user-rtl .admin-support-page--complaints .admin-support-sort-picker__menu button {
+    text-align: right !important;
+}
+
+/* Mirror the complaint hero illustration whenever the document is RTL (Arabic), in light and dark mode. */
+html[dir="rtl"] .admin-support-page--complaints .admin-complaint-hero__visual,
+html.vox-user-rtl .admin-support-page--complaints .admin-complaint-hero__visual,
+.admin-support-page--complaints:dir(rtl) .admin-complaint-hero__visual {
+    left: 190px !important;
+    right: auto !important;
+}
+
+@media (max-width: 1500px) {
+
+    html[dir="rtl"] .admin-support-page--complaints .admin-complaint-hero__visual,
+    html.vox-user-rtl .admin-support-page--complaints .admin-complaint-hero__visual,
+    .admin-support-page--complaints:dir(rtl) .admin-complaint-hero__visual {
+        left: 170px !important;
+        right: auto !important;
+        transform-origin: center left !important;
+    }
+}
+
+@media (max-width: 1260px) {
+
+    html[dir="rtl"] .admin-support-page--complaints .admin-complaint-hero__visual,
+    html.vox-user-rtl .admin-support-page--complaints .admin-complaint-hero__visual,
+    .admin-support-page--complaints:dir(rtl) .admin-complaint-hero__visual {
+        left: 125px !important;
+        right: auto !important;
     }
 }

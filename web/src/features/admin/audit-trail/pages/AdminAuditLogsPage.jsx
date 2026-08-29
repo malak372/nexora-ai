@@ -288,7 +288,7 @@ function SnapshotValue({ value }) {
           </span>
         ))}
         {safeValue.length > 8 ? (
-          <small>+{safeValue.length - 8} more</small>
+          <small>{`+${safeValue.length - 8} more`}</small>
         ) : null}
       </div>
     );
@@ -346,7 +346,9 @@ function SnapshotCard({
           <FileText size={18} />
           <strong>No snapshot stored</strong>
           <span>
-            This event did not persist a {tone === 'before' ? 'previous' : 'new'} state.
+            {tone === 'before'
+              ? 'This event did not persist a previous state.'
+              : 'This event did not persist a new state.'}
           </span>
         </div>
       ) : entries.length ? (
@@ -464,9 +466,9 @@ function AuditHeroVisual({ totalLogs, adminActions, systemEvents, uniqueActors }
       </article>
 
       <div className="admin-audit-hero-visual__stats">
-        <span><ShieldCheck size={13} /> {Number(adminActions || 0).toLocaleString()} admin</span>
-        <span><TerminalSquare size={13} /> {Number(systemEvents || 0).toLocaleString()} system</span>
-        <span><UsersRound size={13} /> {Number(uniqueActors || 0).toLocaleString()} actors</span>
+        <span><ShieldCheck size={13} /> {`${Number(adminActions || 0).toLocaleString()} admin`}</span>
+        <span><TerminalSquare size={13} /> {`${Number(systemEvents || 0).toLocaleString()} system`}</span>
+        <span><UsersRound size={13} /> {`${Number(uniqueActors || 0).toLocaleString()} actors`}</span>
       </div>
     </div>
   );
@@ -906,7 +908,7 @@ export default function AdminAuditLogsPage() {
             <div>
               <small>IMMUTABLE EVENT LEDGER</small>
               <h2>Audit activity</h2>
-              <p>{meta.total.toLocaleString()} matching {meta.total === 1 ? 'record' : 'records'} across the current filters.</p>
+              <p>{`${meta.total.toLocaleString()} matching ${meta.total === 1 ? 'record' : 'records'} across the current filters.`}</p>
             </div>
           </div>
 
@@ -1119,9 +1121,7 @@ export default function AdminAuditLogsPage() {
 
         <footer className="admin-audit-pagination">
           <span>
-            Showing {rows.length ? (meta.page - 1) * meta.limit + 1 : 0}
-            {'–'}
-            {Math.min(meta.page * meta.limit, meta.total)} of {meta.total}
+            {`Showing ${rows.length ? (meta.page - 1) * meta.limit + 1 : 0}–${Math.min(meta.page * meta.limit, meta.total)} of ${meta.total}`}
           </span>
 
           <div>
@@ -1133,7 +1133,7 @@ export default function AdminAuditLogsPage() {
               Previous
             </button>
 
-            <span>Page {meta.page} of {meta.totalPages}</span>
+            <span>{`Page ${meta.page} of ${meta.totalPages}`}</span>
 
             <button
               type="button"

@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../api/adminApi';
 import '../styles/admin-sensitive-access.css';
 
@@ -25,6 +26,7 @@ export default function AdminSensitiveAccessGate({
   const [error, setError] = useState('');
   const inputRef = useRef(null);
   const cardRef = useRef(null);
+  const { isArabic, t } = useUserExperience();
 
   useEffect(() => {
     const timer = window.setTimeout(() => inputRef.current?.focus(), 80);
@@ -77,7 +79,7 @@ export default function AdminSensitiveAccessGate({
 
   return createPortal(
     <div
-      className={`admin-sensitive-access-layer ${onClose ? 'is-dismissible' : ''}`}
+      className={`admin-sensitive-access-layer ${onClose ? 'is-dismissible' : ''} ${isArabic ? 'is-rtl' : 'is-ltr'}`}
       aria-live="polite"
       onPointerDown={(event) => {
         if (
@@ -107,18 +109,18 @@ export default function AdminSensitiveAccessGate({
             <LockKeyhole size={24} />
           </span>
           <span className="admin-sensitive-access-card__badge">
-            <ShieldCheck size={12} /> Protected admin workspace
+            <ShieldCheck size={12} /> {t('Protected admin workspace')}
           </span>
         </header>
 
         <div className="admin-sensitive-access-card__copy">
-          <small>IDENTITY CONFIRMATION</small>
-          <h2 id="admin-sensitive-access-title">{title}</h2>
-          <p>{description}</p>
+          <small>{t('IDENTITY CONFIRMATION')}</small>
+          <h2 id="admin-sensitive-access-title">{t(title)}</h2>
+          <p>{t(description)}</p>
         </div>
 
         <label className={`admin-sensitive-access-field ${error ? 'is-error' : ''}`}>
-          <span>Administrator password</span>
+          <span>{t('Administrator password')}</span>
           <div>
             <KeyRound size={17} />
             <input
@@ -130,14 +132,14 @@ export default function AdminSensitiveAccessGate({
                 setPassword(event.target.value);
                 if (error) setError('');
               }}
-              placeholder="Enter your account password"
+              placeholder={t('Enter your account password')}
               disabled={busy}
               required
             />
             <button
               type="button"
               onClick={() => setShowPassword((current) => !current)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={t(showPassword ? 'Hide password' : 'Show password')}
               disabled={busy}
             >
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -146,10 +148,10 @@ export default function AdminSensitiveAccessGate({
         </label>
 
         {error ? (
-          <div className="admin-sensitive-access-error">{error}</div>
+          <div className="admin-sensitive-access-error">{t(error)}</div>
         ) : (
           <div className="admin-sensitive-access-hint">
-            This verification unlocks only this page. Other admin sections remain available from the sidebar.
+            {t('This verification unlocks only this page. Other admin sections remain available from the sidebar.')}
           </div>
         )}
 
@@ -159,7 +161,7 @@ export default function AdminSensitiveAccessGate({
           disabled={busy || !password}
         >
           {busy ? <LoaderCircle className="admin-sensitive-access-spin" size={17} /> : <ShieldCheck size={17} />}
-          {busy ? 'Verifying…' : 'Unlock workspace'}
+          {t(busy ? 'Verifying…' : 'Unlock workspace')}
         </button>
       </form>
     </div>,

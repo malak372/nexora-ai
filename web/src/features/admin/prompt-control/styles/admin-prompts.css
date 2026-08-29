@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-prompt-page {
   --prompt-ink: #38504b;
   --prompt-muted: #80928d;
@@ -2344,7 +2346,7 @@
 .admin-prompt-hero h1 {
   margin: 18px 0 13px !important;
   color: #153d38 !important;
-  font-size: clamp(44px, 4.25vw, 62px) !important;
+  font-size: clamp(40px, 3.75vw, 56px) !important;
   line-height: .98 !important;
   font-weight: 790 !important;
   letter-spacing: -.05em !important;
@@ -3128,7 +3130,7 @@
   }
 
   .admin-prompt-hero h1 {
-    font-size: 40px !important;
+    font-size: 36px !important;
   }
 
   .admin-prompt-hero p {
@@ -3183,4 +3185,416 @@
   .admin-prompt-metric__sparkline {
     display: none !important;
   }
+}
+
+/* Dark mode — prompt control only. Light mode remains unchanged. */
+html.vox-user-dark .admin-shell .admin-prompt-page {
+  --prompt-ink: #e7f3f0;
+  --prompt-muted: #91aaa5;
+  --prompt-line: #29423d;
+  --prompt-mint: #18302c;
+  color: #e7f3f0 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-hero {
+  border-color: #29433e !important;
+  background:
+    radial-gradient(circle at 86% 11%, rgba(81, 190, 181, .10) 0 78px, transparent 79px),
+    radial-gradient(circle at 94% 6%, rgba(89, 169, 160, .035) 0 126px, transparent 127px),
+    linear-gradient(106deg, #111d1a 0%, #13211e 46%, #10201d 76%, #18201e 100%) !important;
+  box-shadow: 0 22px 50px rgba(0, 0, 0, .22) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-hero::before {
+  background:
+    linear-gradient(120deg, transparent 0 58%, rgba(76, 180, 171, .07) 58.2% 58.35%, transparent 58.5%),
+    linear-gradient(164deg, transparent 0 68%, rgba(209, 103, 135, .045) 68.2% 68.35%, transparent 68.5%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-hero::after {
+  border-color: rgba(76, 183, 174, .055) !important;
+  box-shadow: 0 0 0 28px rgba(76, 183, 174, .025) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-hero h1,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-workspace__header h2,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-history__header h2,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder-panel h3,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-record strong,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-requester strong,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-context strong,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-created strong,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-token strong {
+  color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-hero p,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-workspace__header p,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-history__header p,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder-panel p,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-record span,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-requester span,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-context span,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-created span,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-record small,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-token span,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-pagination,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table-state span {
+  color: #91a9a4 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-eyebrow,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-workspace__header small,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-history__header small,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor header small,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder-panel header small {
+  color: #71cfc6 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric:nth-child(1),
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric:nth-child(2),
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric:nth-child(3),
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric:nth-child(4),
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-workspace,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-history {
+  border-color: #29413c !important;
+  background: #131f1c !important;
+  background-color: #131f1c !important;
+  box-shadow: 0 15px 36px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric:nth-child(3) {
+  background: linear-gradient(135deg, #1c1d1d 0%, #151f1d 76%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric>div small,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric>div span {
+  color: #8fa7a2 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric>div strong {
+  color: #e8f4f1 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric__icon,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor__icon,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder-panel>header>span,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-record__icon {
+  border-color: #31504a !important;
+  background: #18302c !important;
+  color: #69c9c0 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-metric:nth-child(3) .admin-prompt-metric__icon {
+  border-color: #57343d !important;
+  background: #302126 !important;
+  color: #e8849f !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-workspace__header,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-history__header {
+  border-bottom-color: #29413c !important;
+  background: linear-gradient(135deg, #172522, #13201d) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder-panel {
+  border-color: #2b433e !important;
+  background: #101a18 !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .13) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor>header,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor>footer {
+  border-color: #29413c !important;
+  background: #14211e !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor header strong,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor__count,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor>footer>div:first-child,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-loading {
+  color: #9bb0ab !important;
+}
+
+/* Keep the editable prompt sheet white in every theme. */
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-editor__textarea {
+  color: #244c46 !important;
+  background:
+    linear-gradient(90deg, rgba(224, 240, 236, .36) 1px, transparent 1px),
+    linear-gradient(rgba(224, 240, 236, .26) 1px, transparent 1px),
+    #ffffff !important;
+  caret-color: #1f7770 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder {
+  border-color: #2d4842 !important;
+  background: #162521 !important;
+  color: #a7bbb6 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder.is-valid {
+  border-color: #315c53 !important;
+  background: #17312c !important;
+  color: #7ed2c9 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder.is-missing,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-placeholder.is-duplicate,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-validation-note {
+  border-color: #5b3841 !important;
+  background: #2a1d22 !important;
+  color: #ef9eb2 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-status,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-readonly {
+  border-color: #31504a !important;
+  background: #172723 !important;
+  color: #a9bbb7 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-status.is-valid {
+  border-color: #326056 !important;
+  background: #18342e !important;
+  color: #7bd1c7 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-status.is-invalid {
+  border-color: #61404a !important;
+  background: #2c2024 !important;
+  color: #ed9db0 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-unsaved {
+  border-color: #5a4f34 !important;
+  background: #2b281d !important;
+  color: #dcc47f !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-history__toolbar {
+  border-bottom-color: #29413c !important;
+  background: #111c19 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-dropdown__trigger,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-sort__main,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-sort__direction,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-search,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-date-range,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-pagination button,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-inspect {
+  border-color: #2d4842 !important;
+  background: #162320 !important;
+  color: #a7bbb6 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-dropdown__trigger small,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-sort__main small,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-date-range label small,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-dropdown__trigger strong,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-sort__main strong,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-date-range input,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-search input {
+  color: #b2c2be !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-search input::placeholder {
+  color: #718a84 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-date-range label+label {
+  border-color: #2d4842 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-dropdown__menu,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-sort__menu {
+  border-color: #2c4842 !important;
+  background: #14211e !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-dropdown__menu button,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-sort__menu button {
+  color: #a9bcb7 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-dropdown__menu button:hover,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-dropdown__menu button.is-active,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-sort__menu button:hover,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-sort__menu button.is-active {
+  background: #1b302b !important;
+  color: #76d0c7 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table-wrap,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table tbody,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table tr,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table td {
+  background: #111c19 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table thead th {
+  border-color: #29413c !important;
+  background: #15231f !important;
+  color: #91aaa5 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table tbody>tr>td,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table tbody>tr:hover>td,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table tbody>tr:focus-within>td {
+  border-color: #223833 !important;
+  background: #111c19 !important;
+  color: #a8bbb6 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table tbody>tr:hover>td {
+  background: #152520 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-table-state {
+  color: #9cb1ac !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-alert.is-error {
+  border-color: #603d47 !important;
+  background: #2a1d22 !important;
+  color: #efa0b4 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-alert.is-success {
+  border-color: #31554e !important;
+  background: #17302b !important;
+  color: #81cdc4 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-button.is-quiet {
+  border-color: #31504a !important;
+  background: #172622 !important;
+  color: #b6c6c2 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-button.is-quiet:hover:not(:disabled) {
+  border-color: #3d6a62 !important;
+  background: #1b302b !important;
+  color: #7bd2ca !important;
+}
+
+/* The decorative document in the hero stays white in dark mode. */
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-visual-card {
+  border-color: rgba(117, 175, 166, .22) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .99), rgba(244, 251, 249, .98)) !important;
+  box-shadow: 0 22px 42px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .96) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-visual-card__spark,
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-visual-sliders {
+  border-color: rgba(96, 164, 155, .22) !important;
+  background: #ffffff !important;
+  color: #19847d !important;
+}
+
+html.vox-user-dark .admin-shell .admin-prompt-page .admin-prompt-visual-sliders>span {
+  background: #e3efec !important;
+}
+
+/* Dark-mode modal lives in a portal outside .admin-shell. */
+html.vox-user-dark .admin-prompt-inspector {
+  border-color: #2b4640 !important;
+  background: #111b19 !important;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .5) !important;
+}
+
+html.vox-user-dark .admin-prompt-inspector__header {
+  border-color: #29413c !important;
+  background:
+    radial-gradient(circle at 94% -20%, rgba(86, 190, 182, .08) 0 70px, transparent 71px),
+    linear-gradient(110deg, #162622, #111b19 58%, #21191c) !important;
+}
+
+html.vox-user-dark .admin-prompt-inspector__header h2,
+html.vox-user-dark .admin-prompt-inspector__prompt h3,
+html.vox-user-dark .admin-prompt-inspector__context h3,
+html.vox-user-dark .admin-prompt-inspector__summary strong,
+html.vox-user-dark .admin-prompt-inspector__details strong,
+html.vox-user-dark .admin-prompt-inspector__context-grid strong {
+  color: #edf6f3 !important;
+}
+
+html.vox-user-dark .admin-prompt-inspector__header p,
+html.vox-user-dark .admin-prompt-inspector__summary p,
+html.vox-user-dark .admin-prompt-inspector__summary small,
+html.vox-user-dark .admin-prompt-inspector__details small,
+html.vox-user-dark .admin-prompt-inspector__context-grid small {
+  color: #91a7a2 !important;
+}
+
+html.vox-user-dark .admin-prompt-inspector__mark,
+html.vox-user-dark .admin-prompt-inspector__summary article>span,
+html.vox-user-dark .admin-prompt-inspector__context>header>span {
+  background: #18302c !important;
+  color: #6dcac1 !important;
+}
+
+html.vox-user-dark .admin-prompt-icon-button,
+html.vox-user-dark .admin-prompt-inspector__summary article,
+html.vox-user-dark .admin-prompt-inspector__details article,
+html.vox-user-dark .admin-prompt-inspector__context-grid>span,
+html.vox-user-dark .admin-prompt-source-list span {
+  border-color: #2b4640 !important;
+  background: #162320 !important;
+  color: #a8bbb6 !important;
+}
+
+html.vox-user-dark .admin-prompt-inspector__prompt,
+html.vox-user-dark .admin-prompt-inspector__context {
+  border-color: #2b4640 !important;
+  background: #14211e !important;
+}
+
+html.vox-user-dark .admin-prompt-inspector__prompt>header {
+  border-color: #2b4640 !important;
+  background: #14211e !important;
+}
+
+html.vox-user-dark .admin-prompt-inspector__prompt header button {
+  border-color: #31544d !important;
+  background: #18302c !important;
+  color: #7ed2c9 !important;
+}
+
+/* Rendered prompt content is also a white paper surface. */
+html.vox-user-dark .admin-prompt-inspector__prompt pre {
+  color: #294d47 !important;
+  background: #ffffff !important;
+}
+
+html.vox-user-dark[dir="rtl"] .admin-shell .admin-prompt-page :is(.admin-prompt-hero__copy,
+  .admin-prompt-workspace__header,
+  .admin-prompt-history__header,
+  .admin-prompt-editor,
+  .admin-prompt-placeholder-panel,
+  .admin-prompt-history,
+  .admin-prompt-table,
+  .admin-prompt-pagination) {
+  text-align: right;
+}
+
+html.vox-user-dark[dir="rtl"] .admin-shell .admin-prompt-page .admin-prompt-dropdown__trigger,
+html.vox-user-dark[dir="rtl"] .admin-shell .admin-prompt-page .admin-prompt-sort__main {
+  text-align: right !important;
+}
+
+html.vox-user-dark[dir="rtl"] .admin-shell .admin-prompt-page .admin-prompt-table th,
+html.vox-user-dark[dir="rtl"] .admin-shell .admin-prompt-page .admin-prompt-table td {
+  text-align: right !important;
+}
+
+html.vox-user-dark[dir="rtl"] .admin-shell .admin-prompt-page .admin-prompt-table th.is-actions,
+html.vox-user-dark[dir="rtl"] .admin-shell .admin-prompt-page .admin-prompt-table td.is-actions {
+  text-align: left !important;
 }

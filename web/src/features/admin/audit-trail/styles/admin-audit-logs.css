@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-audit-page {
   --audit-ink: #27423d;
   --audit-ink-strong: #193934;
@@ -2085,5 +2087,523 @@
   .admin-audit-date-range>button {
     width: 100%;
     height: 36px;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Dark mode — audit trail only. Light mode remains unchanged.                */
+/* -------------------------------------------------------------------------- */
+
+html.vox-user-dark .admin-audit-page {
+  --audit-ink: #d5e5e0;
+  --audit-ink-strong: #f0f7f4;
+  --audit-text: #b8c9c4;
+  --audit-muted: #8fa39d;
+  --audit-teal: #6fc7be;
+  --audit-teal-strong: #79d0c7;
+  --audit-teal-deep: #9be2db;
+  --audit-mint: #17302b;
+  --audit-mint-2: #13231f;
+  --audit-rose: #d68fa2;
+  --audit-rose-strong: #efa7b8;
+  --audit-rose-soft: #2b1c21;
+  --audit-line: rgba(138, 199, 189, 0.15);
+  --audit-line-strong: rgba(138, 199, 189, 0.24);
+  --audit-paper: rgba(19, 29, 27, 0.98);
+  --audit-shadow: 0 24px 58px rgba(0, 0, 0, 0.28);
+  color: var(--audit-ink);
+}
+
+html.vox-user-dark .admin-audit-hero {
+  border-color: rgba(136, 198, 188, 0.14) !important;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(82, 178, 168, 0.14), transparent 22rem),
+    radial-gradient(circle at 8% 96%, rgba(203, 119, 141, 0.08), transparent 20rem),
+    linear-gradient(125deg, #111b19, #13221f 61%, #171d1b) !important;
+  box-shadow: var(--audit-shadow) !important;
+}
+
+html.vox-user-dark .admin-audit-hero::after {
+  border-color: rgba(91, 183, 173, 0.06);
+  box-shadow: 0 0 0 34px rgba(202, 127, 146, 0.025);
+}
+
+html.vox-user-dark .admin-audit-hero h1,
+html.vox-user-dark .admin-audit-directory__header h2,
+html.vox-user-dark .admin-audit-metric__copy strong,
+html.vox-user-dark .admin-audit-event-card__title h3,
+html.vox-user-dark .admin-audit-feed-state strong,
+html.vox-user-dark .admin-audit-inspector__header h2,
+html.vox-user-dark .admin-audit-inspector__summary strong,
+html.vox-user-dark .admin-audit-change-list h3,
+html.vox-user-dark .admin-audit-snapshot-card header h3,
+html.vox-user-dark .admin-audit-snapshot-empty strong,
+html.vox-user-dark .admin-audit-value-object strong,
+html.vox-user-dark .admin-audit-inspector__meta strong {
+  color: var(--audit-ink-strong) !important;
+}
+
+html.vox-user-dark .admin-audit-hero p,
+html.vox-user-dark .admin-audit-hero__status,
+html.vox-user-dark .admin-audit-directory__header p,
+html.vox-user-dark .admin-audit-metric__copy small,
+html.vox-user-dark .admin-audit-metric__copy>span,
+html.vox-user-dark .admin-audit-dropdown__trigger small,
+html.vox-user-dark .admin-audit-sort__main small,
+html.vox-user-dark .admin-audit-date-range small,
+html.vox-user-dark .admin-audit-feed-state,
+html.vox-user-dark .admin-audit-feed-state>span:not(.admin-audit-feed-state__icon),
+html.vox-user-dark .admin-audit-event-card__meta small,
+html.vox-user-dark .admin-audit-event-card__change small,
+html.vox-user-dark .admin-audit-event-card__meta p,
+html.vox-user-dark .admin-audit-event-card__change p,
+html.vox-user-dark .admin-audit-event-card__id,
+html.vox-user-dark .admin-audit-pagination,
+html.vox-user-dark .admin-audit-inspector__header p,
+html.vox-user-dark .admin-audit-inspector__summary small,
+html.vox-user-dark .admin-audit-inspector__summary p,
+html.vox-user-dark .admin-audit-inspector__meta small,
+html.vox-user-dark .admin-audit-snapshot-card header small,
+html.vox-user-dark .admin-audit-value-object small,
+html.vox-user-dark .admin-audit-snapshot-empty,
+html.vox-user-dark .admin-audit-snapshot-field__label,
+html.vox-user-dark .admin-audit-value-empty,
+html.vox-user-dark .admin-audit-value-list>small {
+  color: var(--audit-muted) !important;
+}
+
+html.vox-user-dark .admin-audit-button:not(.is-primary) {
+  color: #c9dad5 !important;
+  border-color: rgba(139, 200, 191, 0.16) !important;
+  background: rgba(20, 31, 28, 0.95) !important;
+  box-shadow: 0 9px 24px rgba(0, 0, 0, 0.2) !important;
+}
+
+html.vox-user-dark .admin-audit-button:not(.is-primary):hover:not(:disabled) {
+  border-color: rgba(121, 208, 199, 0.34) !important;
+  background: #192724 !important;
+}
+
+html.vox-user-dark .admin-audit-orbit,
+html.vox-user-dark .admin-audit-hero-visual__stats span,
+html.vox-user-dark .admin-audit-float-card {
+  color: #c7d9d4 !important;
+  border-color: rgba(126, 198, 188, 0.16) !important;
+  background: rgba(18, 31, 28, 0.9) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.26) !important;
+}
+
+html.vox-user-dark .admin-audit-orbit {
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.25), inset 0 0 0 5px rgba(40, 75, 68, 0.4) !important;
+}
+
+html.vox-user-dark .admin-audit-ledger-stack__layer {
+  border-color: rgba(103, 191, 181, 0.19);
+  background: linear-gradient(145deg, rgba(26, 47, 42, 0.94), rgba(25, 61, 54, 0.85));
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(161, 224, 215, 0.08);
+}
+
+html.vox-user-dark .admin-audit-ledger-stack__layer.is-middle {
+  background: linear-gradient(145deg, rgba(29, 52, 47, 0.96), rgba(29, 72, 64, 0.88));
+}
+
+html.vox-user-dark .admin-audit-ledger-stack__layer.is-front {
+  background: linear-gradient(145deg, rgba(32, 58, 52, 0.98), rgba(34, 83, 74, 0.9));
+}
+
+html.vox-user-dark .admin-audit-ledger-stack__shield>span {
+  color: #9ee3dc;
+  border-color: rgba(167, 229, 220, 0.22);
+  background: rgba(17, 35, 31, 0.93);
+}
+
+html.vox-user-dark .admin-audit-float-card>span,
+html.vox-user-dark .admin-audit-float-card>strong {
+  color: #d9e7e3 !important;
+}
+
+html.vox-user-dark .admin-audit-float-card>small,
+html.vox-user-dark .admin-audit-float-card.is-integrity>strong,
+html.vox-user-dark .admin-audit-hero-visual__stats span svg {
+  color: var(--audit-teal-strong) !important;
+}
+
+html.vox-user-dark .admin-audit-feedback {
+  color: #f0b1c0;
+  border-color: rgba(219, 136, 156, 0.24);
+  background: #25191d;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+}
+
+html.vox-user-dark .admin-audit-directory {
+  border-color: rgba(137, 199, 190, 0.14) !important;
+  background: #111a18 !important;
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.28) !important;
+}
+
+html.vox-user-dark .admin-audit-directory__header {
+  border-bottom-color: rgba(137, 199, 190, 0.1) !important;
+  background: linear-gradient(120deg, #16221f, #171f1d) !important;
+}
+
+html.vox-user-dark .admin-audit-directory__mark,
+html.vox-user-dark .admin-audit-readonly,
+html.vox-user-dark .admin-audit-metric__icon,
+html.vox-user-dark .admin-audit-feed-state__icon,
+html.vox-user-dark .admin-audit-event__icon,
+html.vox-user-dark .admin-audit-event-card__meta>article>span,
+html.vox-user-dark .admin-audit-event-card__change-icon,
+html.vox-user-dark .admin-audit-inspector__mark,
+html.vox-user-dark .admin-audit-inspector__summary article>span,
+html.vox-user-dark .admin-audit-change-list header>span {
+  color: var(--audit-teal-strong) !important;
+  border-color: rgba(120, 203, 194, 0.16) !important;
+  background: #17302b !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-audit-event__icon.is-system,
+html.vox-user-dark .admin-audit-inspector__mark.is-system,
+html.vox-user-dark .admin-audit-metric.is-rose .admin-audit-metric__icon {
+  color: var(--audit-rose-strong) !important;
+  border-color: rgba(222, 145, 164, 0.18) !important;
+  background: #2b1c21 !important;
+}
+
+html.vox-user-dark .admin-audit-readonly {
+  color: #a7c6bf !important;
+}
+
+html.vox-user-dark .admin-audit-metrics {
+  border-bottom-color: rgba(137, 199, 190, 0.09);
+  background: #111a18;
+}
+
+html.vox-user-dark .admin-audit-metric,
+html.vox-user-dark .admin-audit-metric.is-mint,
+html.vox-user-dark .admin-audit-metric.is-aqua {
+  border-color: rgba(137, 199, 190, 0.12) !important;
+  background:
+    radial-gradient(circle at 92% -6%, rgba(91, 183, 173, 0.07) 0 58px, transparent 59px),
+    linear-gradient(145deg, #16211f, #121b19) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.2) !important;
+}
+
+html.vox-user-dark .admin-audit-metric.is-rose {
+  border-color: rgba(213, 137, 156, 0.14) !important;
+  background:
+    radial-gradient(circle at 92% -6%, rgba(213, 137, 156, 0.08) 0 58px, transparent 59px),
+    linear-gradient(145deg, #1b201e, #21191c) !important;
+}
+
+html.vox-user-dark .admin-audit-toolbar {
+  border-bottom-color: rgba(137, 199, 190, 0.09);
+  background: #0f1715 !important;
+}
+
+html.vox-user-dark .admin-audit-dropdown__trigger,
+html.vox-user-dark .admin-audit-sort__main,
+html.vox-user-dark .admin-audit-sort__direction,
+html.vox-user-dark .admin-audit-date-range,
+html.vox-user-dark .admin-audit-search {
+  color: #c8d9d4 !important;
+  border-color: rgba(137, 199, 190, 0.15) !important;
+  background: #16211f !important;
+}
+
+html.vox-user-dark .admin-audit-dropdown__trigger:hover,
+html.vox-user-dark .admin-audit-sort__main:hover,
+html.vox-user-dark .admin-audit-dropdown.is-open .admin-audit-dropdown__trigger,
+html.vox-user-dark .admin-audit-sort.is-open .admin-audit-sort__main,
+html.vox-user-dark .admin-audit-sort__direction:hover {
+  border-color: rgba(121, 208, 199, 0.3) !important;
+  background: #1a2925 !important;
+}
+
+html.vox-user-dark .admin-audit-dropdown__trigger strong,
+html.vox-user-dark .admin-audit-sort__main strong,
+html.vox-user-dark .admin-audit-date-range input,
+html.vox-user-dark .admin-audit-search input,
+html.vox-user-dark .admin-audit-dropdown__search input {
+  color: #e7f0ed !important;
+}
+
+html.vox-user-dark .admin-audit-dropdown__menu,
+html.vox-user-dark .admin-audit-sort__menu {
+  color: #dce9e5 !important;
+  border-color: rgba(137, 199, 190, 0.16) !important;
+  background: #151f1d !important;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.38) !important;
+}
+
+html.vox-user-dark .admin-audit-dropdown__search {
+  color: #9bb1aa !important;
+  border-color: rgba(137, 199, 190, 0.14) !important;
+  background: #101916 !important;
+}
+
+html.vox-user-dark .admin-audit-dropdown__menu button,
+html.vox-user-dark .admin-audit-sort__menu button {
+  color: #b9cbc5 !important;
+}
+
+html.vox-user-dark .admin-audit-dropdown__menu button:hover,
+html.vox-user-dark .admin-audit-dropdown__menu button.is-active,
+html.vox-user-dark .admin-audit-sort__menu button:hover,
+html.vox-user-dark .admin-audit-sort__menu button.is-active {
+  color: var(--audit-teal-strong) !important;
+  background: #1b302b !important;
+}
+
+html.vox-user-dark .admin-audit-date-range label+label,
+html.vox-user-dark .admin-audit-date-range>button {
+  border-color: rgba(137, 199, 190, 0.1) !important;
+}
+
+html.vox-user-dark .admin-audit-date-range>button {
+  color: #e3a0b0 !important;
+  background: #271b1f !important;
+}
+
+html.vox-user-dark .admin-audit-feed-wrap {
+  background:
+    radial-gradient(circle at 7% 0%, rgba(79, 169, 164, 0.04), transparent 20rem),
+    linear-gradient(180deg, #101816, #0f1715) !important;
+}
+
+html.vox-user-dark .admin-audit-event-card__rail>i {
+  background: #101816;
+}
+
+html.vox-user-dark .admin-audit-event-card__body,
+html.vox-user-dark .admin-audit-event-card.is-system .admin-audit-event-card__body {
+  border-color: rgba(137, 199, 190, 0.12) !important;
+  background: #16211f !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22) !important;
+}
+
+html.vox-user-dark .admin-audit-event-card.is-system .admin-audit-event-card__body {
+  border-color: rgba(214, 139, 157, 0.14) !important;
+  background: linear-gradient(110deg, #181f1d, #21191c) !important;
+}
+
+html.vox-user-dark .admin-audit-target-badge,
+html.vox-user-dark .admin-audit-view {
+  color: #9fd3cb !important;
+  border-color: rgba(137, 199, 190, 0.16) !important;
+  background: #18302b !important;
+}
+
+html.vox-user-dark .admin-audit-target-badge.is-finance {
+  color: #bacb9e !important;
+  border-color: rgba(156, 177, 118, 0.17) !important;
+  background: #20291d !important;
+}
+
+html.vox-user-dark .admin-audit-target-badge.is-ai {
+  color: #b4bce2 !important;
+  border-color: rgba(132, 145, 195, 0.17) !important;
+  background: #1d2130 !important;
+}
+
+html.vox-user-dark .admin-audit-target-badge.is-safety {
+  color: #e4a3b3 !important;
+  border-color: rgba(211, 137, 156, 0.18) !important;
+  background: #2a1d21 !important;
+}
+
+html.vox-user-dark .admin-audit-view:hover {
+  color: #fff !important;
+  border-color: transparent !important;
+  background: linear-gradient(135deg, #4da9a2, #347d79) !important;
+}
+
+html.vox-user-dark .admin-audit-event-card__meta>article,
+html.vox-user-dark .admin-audit-event-card__change {
+  border-color: rgba(137, 199, 190, 0.09) !important;
+  background: #111a18 !important;
+}
+
+html.vox-user-dark .admin-audit-event-card__change {
+  background: linear-gradient(100deg, #13231f, #1c191a) !important;
+}
+
+html.vox-user-dark .admin-audit-event-card__meta strong,
+html.vox-user-dark .admin-audit-event-card__change strong {
+  color: #dce9e5 !important;
+}
+
+html.vox-user-dark .admin-audit-pagination {
+  border-top-color: rgba(137, 199, 190, 0.09) !important;
+  background: #111a18 !important;
+}
+
+html.vox-user-dark .admin-audit-pagination button {
+  color: #bfd0cb !important;
+  border-color: rgba(137, 199, 190, 0.15) !important;
+  background: #16211f !important;
+}
+
+html.vox-user-dark .admin-audit-pagination button:hover:not(:disabled) {
+  color: var(--audit-teal-strong) !important;
+  border-color: rgba(121, 208, 199, 0.3) !important;
+  background: #1b2926 !important;
+}
+
+/* Inspector is rendered through a portal, so it needs direct html dark selectors. */
+html.vox-user-dark .admin-audit-modal-backdrop {
+  background: rgba(2, 7, 6, 0.72) !important;
+}
+
+html.vox-user-dark .admin-audit-inspector {
+  color: #d7e5e1 !important;
+  border-left-color: rgba(137, 199, 190, 0.14) !important;
+  background: #101816 !important;
+  box-shadow: -24px 0 70px rgba(0, 0, 0, 0.5) !important;
+}
+
+html.vox-user-dark .admin-audit-inspector__header {
+  border-bottom-color: rgba(137, 199, 190, 0.11) !important;
+  background:
+    radial-gradient(circle at 96% -8%, rgba(79, 169, 164, 0.08), transparent 12rem),
+    linear-gradient(120deg, #16211f, #13201d 72%, #21191c) !important;
+}
+
+html.vox-user-dark .admin-audit-icon-button {
+  color: #a8bdb7 !important;
+  border-color: rgba(137, 199, 190, 0.14) !important;
+  background: #17221f !important;
+}
+
+html.vox-user-dark .admin-audit-icon-button:hover {
+  color: #efa7b8 !important;
+  border-color: rgba(222, 145, 164, 0.23) !important;
+  background: #281b20 !important;
+}
+
+html.vox-user-dark .admin-audit-inspector__summary article,
+html.vox-user-dark .admin-audit-inspector__meta article,
+html.vox-user-dark .admin-audit-snapshot-card,
+html.vox-user-dark .admin-audit-change-list {
+  border-color: rgba(137, 199, 190, 0.11) !important;
+  background: #16211f !important;
+}
+
+html.vox-user-dark .admin-audit-change-list {
+  background: linear-gradient(105deg, #14231f, #21191c) !important;
+}
+
+html.vox-user-dark .admin-audit-change-list>div>span,
+html.vox-user-dark .admin-audit-change-list header>span {
+  color: #a9d9d1 !important;
+  border-color: rgba(137, 199, 190, 0.13) !important;
+  background: #111b18 !important;
+}
+
+html.vox-user-dark .admin-audit-snapshot-card>header {
+  border-bottom-color: rgba(137, 199, 190, 0.09) !important;
+  background: #111b18 !important;
+}
+
+html.vox-user-dark .admin-audit-snapshot-card.is-before>header {
+  background: #21191c !important;
+}
+
+html.vox-user-dark .admin-audit-snapshot-card header>span.is-stored {
+  color: #94d6cc !important;
+  background: #18312b !important;
+}
+
+html.vox-user-dark .admin-audit-snapshot-card header>span.is-empty,
+html.vox-user-dark .admin-audit-snapshot-field__label i {
+  color: #d9a0ae !important;
+  background: #2b1f22 !important;
+}
+
+html.vox-user-dark .admin-audit-snapshot-field {
+  border-bottom-color: rgba(137, 199, 190, 0.07) !important;
+}
+
+html.vox-user-dark .admin-audit-snapshot-field.is-changed {
+  background: linear-gradient(90deg, rgba(33, 69, 61, 0.52), rgba(65, 34, 42, 0.34)) !important;
+}
+
+html.vox-user-dark .admin-audit-value-primitive {
+  color: #c8d8d3 !important;
+}
+
+html.vox-user-dark .admin-audit-value-list>span,
+html.vox-user-dark .admin-audit-value-object>div {
+  color: #c4d5d0 !important;
+  border-color: rgba(137, 199, 190, 0.09) !important;
+  background: #111a18 !important;
+}
+
+/* RTL adjustments for the page and its portal inspector. */
+html.vox-user-rtl .admin-audit-page,
+html.vox-user-rtl .admin-audit-modal-layer {
+  direction: rtl;
+}
+
+html.vox-user-rtl .admin-audit-page :is(h1, h2, h3, p, small, strong, span, label),
+html.vox-user-rtl .admin-audit-inspector :is(h2, h3, p, small, strong, span, label) {
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-audit-dropdown__trigger,
+html.vox-user-rtl .admin-audit-sort__main,
+html.vox-user-rtl .admin-audit-dropdown__menu button,
+html.vox-user-rtl .admin-audit-sort__menu button {
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-audit-dropdown__menu,
+html.vox-user-rtl .admin-audit-sort__menu {
+  left: auto;
+  right: 0;
+}
+
+html.vox-user-rtl .admin-audit-sort__main {
+  border-radius: 0 13px 13px 0;
+}
+
+html.vox-user-rtl .admin-audit-sort__direction {
+  border-left: 1px solid rgba(47, 119, 116, 0.16);
+  border-right: 0;
+  border-radius: 13px 0 0 13px;
+}
+
+html.vox-user-rtl .admin-audit-date-range label+label {
+  border-left: 0;
+  border-right: 1px solid rgba(47, 119, 116, 0.1);
+}
+
+html.vox-user-rtl .admin-audit-date-range>button {
+  border-left: 0;
+  border-right: 1px solid rgba(47, 119, 116, 0.1);
+}
+
+html.vox-user-rtl .admin-audit-feed::before {
+  left: auto;
+  right: 24px;
+}
+
+html.vox-user-rtl .admin-audit-inspector {
+  margin-left: auto;
+  margin-right: 0;
+  border-left: 0;
+  border-right: 1px solid rgba(137, 199, 190, 0.14);
+  animation-name: adminAuditSlideInRtl;
+}
+
+@keyframes adminAuditSlideInRtl {
+  from {
+    transform: translateX(-28px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }

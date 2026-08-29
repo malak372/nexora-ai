@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-settings-page {
     --ink: #38504b;
     --teal: #2f8984;
@@ -2205,4 +2207,495 @@
     background: #eaf4f1;
     color: #2b5d56;
     font-weight: 900;
+}
+
+/* ========================================================================== */
+/* Dark theme only — System settings                                          */
+/* Keeps the existing light theme untouched while making every dark surface   */
+/* consistently dark in both English and Arabic.                              */
+/* ========================================================================== */
+html.vox-user-dark .admin-shell .admin-settings-page {
+    --settings-dark-bg: #0d1715;
+    --settings-dark-surface: #14201d;
+    --settings-dark-surface-2: #182723;
+    --settings-dark-surface-3: #1d2e29;
+    --settings-dark-field: #101a18;
+    --settings-dark-border: rgba(144, 202, 190, .15);
+    --settings-dark-border-strong: rgba(144, 202, 190, .24);
+    --settings-dark-text: #eef7f4;
+    --settings-dark-copy: #c7d6d1;
+    --settings-dark-muted: #93a8a1;
+    --settings-dark-accent: #6fc9bf;
+    --settings-dark-pink: #e98ca2;
+    color: var(--settings-dark-text) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-panel,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-overview,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-footerbar {
+    border-color: var(--settings-dark-border) !important;
+    background: var(--settings-dark-surface) !important;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .23) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero {
+    background:
+        radial-gradient(circle at 16% 12%, rgba(201, 95, 122, .09), transparent 28%),
+        radial-gradient(circle at 84% 18%, rgba(83, 184, 172, .11), transparent 31%),
+        linear-gradient(118deg, #111b19 0%, #14211e 48%, #13231f 100%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero::before {
+    opacity: .38;
+    background:
+        linear-gradient(28deg, transparent 0 48%, rgba(104, 199, 188, .08) 49% 50%, transparent 51%) 0 0 / 120px 90px,
+        linear-gradient(-28deg, transparent 0 48%, rgba(232, 133, 157, .055) 49% 50%, transparent 51%) 0 0 / 140px 110px !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-eyebrow,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-panel__copy small,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-overview>header small,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card header small {
+    color: var(--settings-dark-accent) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero h1,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-panel__copy h2,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-overview>header h2,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card header h2,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field__label strong,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-locked-field strong,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-footerbar strong,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__selected strong,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__option-copy strong {
+    color: var(--settings-dark-text) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero p,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-panel__copy p,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-overview>header p,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card header p,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field__label small,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-locked-field small,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-footerbar small,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__selected small,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__option-copy small {
+    color: var(--settings-dark-copy) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-button.is-quiet {
+    color: #d9e6e2 !important;
+    border-color: var(--settings-dark-border) !important;
+    background: #172521 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-button.is-quiet:hover:not(:disabled) {
+    color: #f4fbf9 !important;
+    border-color: var(--settings-dark-border-strong) !important;
+    background: #1c2d29 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-button.is-primary {
+    color: #f8fffd !important;
+    border-color: rgba(103, 199, 190, .34) !important;
+    background: linear-gradient(145deg, #4ca99f, #347d76) !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-button.is-primary:disabled {
+    color: #78928b !important;
+    border-color: rgba(144, 202, 190, .08) !important;
+    background: #17221f !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-feedback.is-success {
+    color: #9ed9d0 !important;
+    border-color: rgba(91, 190, 178, .22) !important;
+    background: #14241f !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-feedback.is-error {
+    color: #f0a4b5 !important;
+    border-color: rgba(219, 119, 143, .23) !important;
+    background: #28191e !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-panel {
+    background: linear-gradient(110deg, #14211e 0%, #172521 62%, #1a2221 100%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-panel__copy>span,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card>header>span,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article>span {
+    color: var(--settings-dark-accent) !important;
+    border-color: rgba(111, 201, 191, .13) !important;
+    background: #20332e !important;
+    box-shadow: inset 0 0 0 1px rgba(111, 201, 191, .10) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-panel>label>span {
+    color: #d7e5e0 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__trigger,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__menu {
+    color: var(--settings-dark-text) !important;
+    border-color: var(--settings-dark-border) !important;
+    background: #101a18 !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .28) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__trigger:hover:not(:disabled),
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker.is-open .admin-settings-currency-picker__trigger {
+    border-color: rgba(111, 201, 191, .34) !important;
+    background: #15231f !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__symbol,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__option-symbol {
+    color: #8ed9d0 !important;
+    background: #21342f !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__trigger>svg,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__option>svg {
+    color: #89aaa2 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__option {
+    color: #d9e6e2 !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__option:hover,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-currency-picker__option.is-selected {
+    background: #1b2c28 !important;
+    transform: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-overview {
+    background: #14201d !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-overview>header {
+    border-color: var(--settings-dark-border) !important;
+    background: #14201d !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-overview>header>span {
+    color: #bcd0ca !important;
+    border-color: var(--settings-dark-border) !important;
+    background: #1a2925 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-overview>header>span.is-dirty {
+    color: #e0c789 !important;
+    border-color: rgba(205, 170, 90, .20) !important;
+    background: #292417 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics {
+    background: transparent !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(1),
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(2),
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(3),
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(4),
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(5) {
+    border-color: var(--settings-dark-border) !important;
+    background: linear-gradient(145deg, #182622 0%, #121d1a 100%) !important;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(3),
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(5) {
+    border-color: rgba(225, 134, 157, .16) !important;
+    background: linear-gradient(145deg, #211b1d 0%, #151d1b 100%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(3)>span,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article:nth-child(5)>span {
+    color: #efa2b4 !important;
+    background: #352229 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article small {
+    color: #a8beb7 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article strong {
+    color: #f2f8f6 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-metrics article p {
+    color: #8fa49d !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card {
+    border-color: var(--settings-dark-border) !important;
+    background: #14201d !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card::after {
+    opacity: .22;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card>header {
+    border-bottom-color: var(--settings-dark-border) !important;
+    background: linear-gradient(120deg, #192824 0%, #16231f 58%, #211d1e 100%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card.is-bonus>header>span {
+    color: #eaa0b2 !important;
+    background: #342229 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-card__fields {
+    background: linear-gradient(180deg, #131f1c 0%, #111b19 100%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-locked-field {
+    color: var(--settings-dark-text) !important;
+    border-color: var(--settings-dark-border) !important;
+    background: #172420 !important;
+    box-shadow: 0 5px 16px rgba(0, 0, 0, .12) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field:hover,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field:focus-within {
+    border-color: rgba(111, 201, 191, .28) !important;
+    background: #1a2925 !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field.is-error {
+    border-color: rgba(225, 134, 157, .28) !important;
+    background: #261b1f !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field__input {
+    border-color: var(--settings-dark-border) !important;
+    background: #0f1917 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field__input input {
+    color: #f1f7f5 !important;
+    background: transparent !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-field__input em {
+    color: #9db2ab !important;
+    border-color: var(--settings-dark-border) !important;
+    background: #1b2925 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-locked-field i {
+    color: #9db2ab !important;
+    border-color: var(--settings-dark-border) !important;
+    background: #101a18 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-footerbar {
+    background: #14201d !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-footerbar>div:first-child {
+    color: #9db2ab !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-loading {
+    color: #a8bcb6 !important;
+}
+
+/* Keep the illustration coherent with dark mode instead of leaving white tiles. */
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__platform {
+    border-color: rgba(111, 201, 191, .16) !important;
+    background: linear-gradient(180deg, #22342f 0%, #192824 64%, #14211e 100%) !important;
+    box-shadow: 0 18px 28px rgba(0, 0, 0, .28), 0 8px 0 #25322f, 0 13px 0 rgba(121, 77, 88, .24) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__platform-ring {
+    border-color: rgba(111, 201, 191, .24) !important;
+    background: radial-gradient(circle, #21332e 0 34%, #28433d 35% 57%, #182622 58% 100%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__gear {
+    color: #0f6059 !important;
+    border-color: rgba(39, 60, 55, .9) !important;
+    background: linear-gradient(145deg, #80d5cb 0%, #55bfb5 48%, #318f87 100%) !important;
+    box-shadow: inset 0 0 0 1px rgba(12, 91, 83, .26), 0 19px 34px rgba(0, 0, 0, .28), 0 0 0 14px rgba(61, 114, 105, .24) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__chip {
+    border-color: var(--settings-dark-border) !important;
+    background: #1a2925 !important;
+    box-shadow: 0 13px 30px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__chip.is-money {
+    color: #ef9db0 !important;
+    background: #271d21 !important;
+}
+
+/* Review modal is rendered through a portal, so it needs dark selectors outside .admin-settings-page. */
+html.vox-user-dark .admin-settings-review {
+    color: #edf6f3 !important;
+    border-color: rgba(144, 202, 190, .15) !important;
+    background: #14201d !important;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, .55) !important;
+}
+
+html.vox-user-dark .admin-settings-review>header {
+    border-color: rgba(144, 202, 190, .13) !important;
+    background: linear-gradient(110deg, #1a2a26, #14201d 58%, #251c20) !important;
+}
+
+html.vox-user-dark .admin-settings-review>header>span {
+    color: #79cfc5 !important;
+    background: #21352f !important;
+}
+
+html.vox-user-dark .admin-settings-review h2,
+html.vox-user-dark .admin-settings-review__notice strong,
+html.vox-user-dark .admin-settings-review__changes strong {
+    color: #edf6f3 !important;
+}
+
+html.vox-user-dark .admin-settings-review header small {
+    color: #79cfc5 !important;
+}
+
+html.vox-user-dark .admin-settings-review header p,
+html.vox-user-dark .admin-settings-review__notice small,
+html.vox-user-dark .admin-settings-review__changes small,
+html.vox-user-dark .admin-settings-review__changes strong span {
+    color: #9fb3ac !important;
+}
+
+html.vox-user-dark .admin-settings-review header button,
+html.vox-user-dark .admin-settings-review>footer button {
+    color: #d8e5e1 !important;
+    border-color: rgba(144, 202, 190, .15) !important;
+    background: #182622 !important;
+}
+
+html.vox-user-dark .admin-settings-review__body {
+    background: #121d1a !important;
+}
+
+html.vox-user-dark .admin-settings-review__notice {
+    color: #dec58a !important;
+    border-color: rgba(208, 171, 86, .19) !important;
+    background: #292416 !important;
+}
+
+html.vox-user-dark .admin-settings-review__changes article {
+    border-color: rgba(144, 202, 190, .13) !important;
+    background: #182622 !important;
+}
+
+html.vox-user-dark .admin-settings-review>footer {
+    border-color: rgba(144, 202, 190, .13) !important;
+    background: #101a18 !important;
+}
+
+html.vox-user-dark .admin-settings-review>footer button.is-primary {
+    color: #f8fffd !important;
+    border-color: rgba(103, 199, 190, .34) !important;
+    background: linear-gradient(145deg, #4ca99f, #347d76) !important;
+}
+
+html.vox-user-dark .admin-settings-modal-backdrop {
+    background: rgba(2, 7, 6, .74) !important;
+}
+
+/* Arabic alignment refinements for this page only. */
+html.vox-user-rtl .admin-shell .admin-settings-page :is(.admin-settings-hero__copy,
+    .admin-settings-currency-panel__copy,
+    .admin-settings-overview>header>div,
+    .admin-settings-card>header>div,
+    .admin-settings-field__label,
+    .admin-settings-footerbar>div:first-child) {
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-shell .admin-settings-page .admin-settings-currency-picker__trigger,
+html.vox-user-rtl .admin-shell .admin-settings-page .admin-settings-currency-picker__option {
+    text-align: right;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-shell .admin-settings-page .admin-settings-field__input em {
+    border-left: 0 !important;
+    border-right: 1px solid var(--settings-dark-border) !important;
+}
+
+html.vox-user-rtl .admin-settings-review__changes article>div:last-child {
+    text-align: left;
+}
+
+
+/* Preserve the original light-mode hero illustration colors in dark mode. */
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__platform {
+    border-color: rgba(60, 155, 144, .18) !important;
+    background: linear-gradient(180deg, #fdfefd 0%, #e8f7f3 64%, #d8eee8 100%) !important;
+    box-shadow:
+        0 18px 28px rgba(32, 116, 106, .16),
+        0 8px 0 #fff2f5,
+        0 13px 0 rgba(236, 166, 183, .22) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__platform-ring {
+    border-color: rgba(51, 170, 158, .22) !important;
+    background: radial-gradient(circle, rgba(255, 255, 255, .96) 0 34%, rgba(199, 239, 232, .76) 35% 57%, rgba(255, 255, 255, .92) 58% 100%) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__gear {
+    color: #127d72 !important;
+    border-color: rgba(255, 255, 255, .82) !important;
+    background: linear-gradient(145deg, #95ded3 0%, #58c8ba 48%, #2fa89b 100%) !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(20, 122, 113, .14),
+        0 19px 34px rgba(40, 143, 131, .24),
+        0 0 0 14px rgba(207, 243, 237, .52) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__chip {
+    border-color: rgba(53, 146, 136, .14) !important;
+    background: rgba(255, 255, 255, .91) !important;
+    box-shadow: 0 13px 30px rgba(38, 95, 87, .11) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__chip.is-sliders,
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__chip.is-chart {
+    color: #2aa294 !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__chip.is-money {
+    color: #ee6f8b !important;
+    background: rgba(255, 249, 250, .94) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__orbit {
+    border-color: rgba(38, 157, 145, .18) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__orbit.is-two {
+    border-color: rgba(222, 102, 130, .12) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__node {
+    background: #72c8be !important;
+    box-shadow: 0 0 0 5px rgba(114, 200, 190, .12) !important;
+}
+
+html.vox-user-dark .admin-shell .admin-settings-page .admin-settings-hero-visual__node.is-three {
+    background: #ef8ba0 !important;
 }

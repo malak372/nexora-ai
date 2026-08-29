@@ -1470,7 +1470,8 @@ body:has(.admin-shell),
 .admin-category-menu__head small {
     position: absolute;
     top: 10px;
-    right: 8px;
+    right: auto;
+    inset-inline-end: 8px;
     color: #9aa7a2;
     font-size: 7.5px;
 }
@@ -1572,14 +1573,6 @@ body:has(.admin-shell),
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/* User-workspace visual alignment                                            */
-/* -------------------------------------------------------------------------- */
-/*
- * Keep the admin information architecture and behavior unchanged, while
- * matching the normal-user workspace shell: pearl surface, rose/mint aurora,
- * rounded glass header, eucalyptus navigation, and the same interaction feel.
- */
 html:has(.admin-shell),
 body:has(.admin-shell),
 #root:has(.admin-shell) {
@@ -2066,10 +2059,6 @@ body:has(.admin-shell),
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Readability pass — admin category dropdown                                 */
-/* Keeps the existing layout/behaviour intact and only strengthens typography. */
-/* -------------------------------------------------------------------------- */
 .admin-topnav__link,
 .admin-topnav__category {
     color: #405b54;
@@ -2110,4 +2099,688 @@ body:has(.admin-shell),
 
 .admin-category-menu__icon {
     color: color-mix(in srgb, var(--nav-tone) 86%, #244943);
+}
+
+.admin-experience-switches {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
+}
+
+.admin-experience-switch {
+    min-width: 38px;
+    height: 38px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid rgba(47, 119, 116, .14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .78);
+    color: #4a625c;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 850;
+    cursor: pointer;
+    transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+}
+
+.admin-experience-switch:hover {
+    color: var(--admin-page-accent-strong);
+    border-color: rgba(var(--admin-page-rgb), .38);
+    background: var(--admin-page-soft-2);
+    transform: translateY(-1px);
+}
+
+.admin-experience-switch--theme {
+    width: 38px;
+    min-width: 38px;
+    padding: 0;
+}
+
+.admin-mobile-panel__experience {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 14px 4px;
+}
+
+.admin-mobile-experience-button {
+    min-height: 39px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid rgba(47, 119, 116, .13);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .8);
+    color: #4d625c;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+html.vox-user-dark:has(.admin-shell),
+html.vox-user-dark body:has(.admin-shell),
+html.vox-user-dark #root:has(.admin-shell) {
+    background: #0b1211 !important;
+    color-scheme: dark;
+}
+
+html.vox-user-dark .admin-shell {
+    --ad-bg: #0b1211;
+    --ad-paper: #111c1a;
+    --ad-ink: #e8f1ee;
+    --ad-muted: #9eb0aa;
+    --ad-line: rgba(145, 198, 190, .16);
+    --ad-mint: #172724;
+    --ad-shadow: 0 18px 48px rgba(0, 0, 0, .28);
+    color: var(--ad-ink);
+    background:
+        radial-gradient(circle at 82% 7%, rgba(var(--admin-page-rgb), .12), transparent 31rem),
+        radial-gradient(circle at 16% 94%, rgba(185, 137, 152, .07), transparent 29rem),
+        linear-gradient(145deg, #0c1413 0%, #0b1211 52%, #0e1816 100%);
+}
+
+html.vox-user-dark .admin-shell__backdrop {
+    background:
+        radial-gradient(circle at 80% 3%, rgba(var(--admin-page-rgb), .12), transparent 26%),
+        radial-gradient(circle at 22% 97%, rgba(185, 137, 152, .07), transparent 24%),
+        linear-gradient(145deg, rgba(12, 20, 19, .99), rgba(10, 17, 16, .98) 55%, rgba(13, 23, 21, .99));
+}
+
+html.vox-user-dark .admin-header__bar,
+html.vox-user-dark .admin-category-menu,
+html.vox-user-dark .admin-profile-menu__dropdown,
+html.vox-user-dark .admin-mobile-panel {
+    border-color: rgba(145, 198, 190, .15);
+    background: linear-gradient(155deg, rgba(19, 31, 29, .98), rgba(15, 25, 23, .98) 58%, rgba(17, 29, 27, .98));
+    box-shadow: 0 24px 68px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .03);
+}
+
+html.vox-user-dark .admin-global-search,
+html.vox-user-dark .admin-mobile-search,
+html.vox-user-dark .admin-profile-pill,
+html.vox-user-dark .admin-experience-switch,
+html.vox-user-dark .admin-mobile-experience-button {
+    border-color: rgba(145, 198, 190, .15);
+    background: rgba(10, 19, 17, .72);
+    color: #dce9e5;
+}
+
+html.vox-user-dark .admin-global-search input,
+html.vox-user-dark .admin-mobile-search input {
+    color: #e8f1ee;
+}
+
+html.vox-user-dark .admin-global-search input::placeholder,
+html.vox-user-dark .admin-mobile-search input::placeholder {
+    color: #83958f;
+}
+
+html.vox-user-dark .admin-header__alert {
+    border: 1px solid rgba(120, 208, 200, .18);
+    color: #87d8d0;
+    background:
+        radial-gradient(circle at 35% 25%, rgba(141, 216, 209, .13), transparent 46%),
+        linear-gradient(145deg, rgba(20, 36, 32, .96), rgba(10, 20, 18, .96));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .045),
+        0 8px 20px rgba(0, 0, 0, .20);
+}
+
+html.vox-user-dark .admin-header__alert svg {
+    filter: drop-shadow(0 0 5px rgba(120, 208, 200, .18));
+}
+
+html.vox-user-dark .admin-header__alert:hover,
+html.vox-user-dark .admin-header__alert.is-active {
+    color: #b8f0ea;
+    border-color: rgba(120, 208, 200, .34);
+    background:
+        radial-gradient(circle at 32% 24%, rgba(141, 216, 209, .20), transparent 48%),
+        linear-gradient(145deg, rgba(28, 49, 44, .98), rgba(14, 29, 26, .98));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .06),
+        0 10px 24px rgba(0, 0, 0, .25),
+        0 0 0 3px rgba(120, 208, 200, .055);
+}
+
+html.vox-user-dark .admin-topnav__link,
+html.vox-user-dark .admin-topnav__category,
+html.vox-user-dark .admin-brand__copy strong,
+html.vox-user-dark .admin-profile-pill__copy strong,
+html.vox-user-dark .admin-category-menu__head strong,
+html.vox-user-dark .admin-category-menu__copy strong,
+html.vox-user-dark .admin-profile-menu__summary strong,
+html.vox-user-dark .admin-mobile-group h3,
+html.vox-user-dark .admin-mobile-link,
+html.vox-user-dark .admin-mobile-footer-link {
+    color: #dce9e5;
+}
+
+html.vox-user-dark .admin-profile-pill__copy small,
+html.vox-user-dark .admin-category-menu__head span,
+html.vox-user-dark .admin-category-menu__head small,
+html.vox-user-dark .admin-category-menu__copy small,
+html.vox-user-dark .admin-profile-menu__summary small {
+    color: #91a59f;
+}
+
+html.vox-user-dark .admin-category-menu__link:hover,
+html.vox-user-dark .admin-category-menu__link.is-active,
+html.vox-user-dark .admin-profile-menu__item:hover,
+html.vox-user-dark .admin-profile-menu__item.is-active,
+html.vox-user-dark .admin-mobile-link:hover,
+html.vox-user-dark .admin-mobile-link.is-active {
+    color: #edf7f3;
+    border-color: rgba(var(--admin-page-rgb), .18);
+    background: rgba(var(--admin-page-rgb), .12);
+}
+
+html.vox-user-rtl .admin-shell {
+    direction: rtl;
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-header__bar,
+html.vox-user-rtl .admin-topnav,
+html.vox-user-rtl .admin-category-menu__link,
+html.vox-user-rtl .admin-profile-pill,
+html.vox-user-rtl .admin-profile-menu__item,
+html.vox-user-rtl .admin-mobile-link,
+html.vox-user-rtl .admin-mobile-footer-link,
+html.vox-user-rtl .admin-team-chat-notice__content {
+    direction: rtl;
+}
+
+html.vox-user-rtl .admin-brand {
+    margin-left: 0;
+    margin-right: 0;
+}
+
+html.vox-user-rtl .admin-category-menu,
+html.vox-user-rtl .admin-profile-menu__dropdown {
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-global-search input,
+html.vox-user-rtl .admin-mobile-search input {
+    text-align: right;
+}
+
+@media (max-width: 1180px) {
+    .admin-experience-switches {
+        gap: 5px;
+    }
+
+    .admin-experience-switch {
+        min-width: 34px;
+        height: 34px;
+        padding-inline: 8px;
+    }
+
+    .admin-experience-switch--theme {
+        width: 34px;
+        min-width: 34px;
+        padding: 0;
+    }
+}
+
+@media (max-width: 940px) {
+    .admin-experience-switches {
+        margin-inline-start: auto;
+    }
+}
+
+html.vox-user-dark .admin-main {
+    --admin-dark-bg: #0b1211;
+    --admin-dark-surface: #111d1a;
+    --admin-dark-surface-2: #162521;
+    --admin-dark-surface-3: #1a2c27;
+    --admin-dark-text: #edf5f2;
+    --admin-dark-muted: #a8bbb5;
+    --admin-dark-faint: #7f958e;
+    --admin-dark-line: rgba(137, 199, 190, .16);
+    --admin-dark-line-strong: rgba(137, 199, 190, .25);
+    --admin-dark-teal: #78d0c8;
+    --admin-dark-teal-deep: #4fb2aa;
+    --admin-dark-rose: #e3a0b1;
+    color: var(--admin-dark-text);
+    color-scheme: dark;
+}
+
+html.vox-user-dark .admin-main :where(.admin-page,
+    .admin-account-host,
+    .admin-administrators-page,
+    .admin-ai-analytics-page,
+    .admin-model-page,
+    .admin-ai-monitor-page,
+    .admin-alert-page,
+    .admin-audit-page,
+    .admin-auth-page,
+    .admin-support-page,
+    .admin-support-page--complaints,
+    .admin-support-page--contact,
+    .admin-credit-page,
+    .admin-dashboard-page,
+    .admin-cr-page,
+    .admin-ds-page,
+    .admin-domain-page,
+    .admin-evidence-page,
+    .admin-ideas-page,
+    .admin-payment-page,
+    .admin-prompt-page,
+    .admin-publication-reports-page,
+    .admin-settings-page,
+    .admin-team-chat-page,
+    .admin-users-page) {
+    color: var(--admin-dark-text) !important;
+}
+
+html.vox-user-dark .admin-main :where([class$='-hero'],
+    [class*='-hero '],
+    [class$='-panel'],
+    [class*='-panel '],
+    [class$='-card'],
+    [class*='-card '],
+    [class$='-workspace'],
+    [class*='-workspace '],
+    [class$='-directory'],
+    [class*='-directory '],
+    [class$='-toolbar'],
+    [class*='-toolbar '],
+    [class$='-filterbar'],
+    [class*='-filterbar '],
+    [class$='-filters'],
+    [class*='-filters '],
+    [class$='-sidebar'],
+    [class*='-sidebar '],
+    [class$='-overview'],
+    [class*='-overview '],
+    [class$='-metrics'],
+    [class*='-metrics '],
+    [class$='-metric'],
+    [class*='-metric '],
+    [class$='-history'],
+    [class*='-history '],
+    [class$='-feed'],
+    [class*='-feed '],
+    [class$='-inspector'],
+    [class*='-inspector '],
+    [class$='-drawer'],
+    [class*='-drawer '],
+    [class$='-modal'],
+    [class*='-modal '],
+    [class$='-section'],
+    [class*='-section '],
+    [class$='-shell'],
+    [class*='-shell ']):not(button):not(a) {
+    border-color: var(--admin-dark-line) !important;
+}
+
+html.vox-user-dark .admin-main :where(.admin-hero,
+    [class$='-hero'],
+    [class*='-hero ']):not(button):not(a) {
+    background:
+        radial-gradient(circle at 84% 6%, rgba(var(--admin-page-rgb), .15), transparent 31%),
+        radial-gradient(circle at 10% 100%, rgba(213, 139, 157, .08), transparent 28%),
+        linear-gradient(145deg, rgba(23, 39, 35, .98), rgba(15, 27, 24, .98) 64%, rgba(18, 31, 28, .98)) !important;
+    box-shadow: 0 20px 52px rgba(0, 0, 0, .25) !important;
+}
+
+html.vox-user-dark .admin-main :where(.admin-panel,
+    .admin-stat,
+    .admin-table-wrap,
+    .admin-filterbar,
+    [class$='-panel'],
+    [class*='-panel '],
+    [class$='-card'],
+    [class*='-card '],
+    [class$='-workspace'],
+    [class*='-workspace '],
+    [class$='-directory'],
+    [class*='-directory '],
+    [class$='-sidebar'],
+    [class*='-sidebar '],
+    [class$='-overview'],
+    [class*='-overview '],
+    [class$='-history'],
+    [class*='-history '],
+    [class$='-feed'],
+    [class*='-feed '],
+    [class$='-inspector'],
+    [class*='-inspector '],
+    [class$='-drawer'],
+    [class*='-drawer '],
+    [class$='-section'],
+    [class*='-section ']):not(button):not(a) {
+    background-color: rgba(17, 29, 26, .94) !important;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-main :where([class$='-modal'],
+    [class*='-modal '],
+    [class$='__menu'],
+    [class*='__menu '],
+    [class$='__dropdown'],
+    [class*='__dropdown '],
+    [class$='__popover'],
+    [class*='__popover ']):not(button):not(a) {
+    border-color: var(--admin-dark-line-strong) !important;
+    background: linear-gradient(150deg, #182824 0%, #111d1a 72%, #14231f 100%) !important;
+    color: var(--admin-dark-text) !important;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, .48) !important;
+}
+
+html.vox-user-dark body> :where(.admin-user-modal-layer,
+    .admin-alert-modal-layer,
+    .admin-alert-compose-layer,
+    .admin-audit-modal-layer,
+    .admin-model-modal-layer,
+    .admin-publication-insights-backdrop,
+    .admin-admin-invite-layer) {
+    color-scheme: dark;
+}
+
+html.vox-user-dark body> :where(.admin-user-modal-layer,
+    .admin-alert-modal-layer,
+    .admin-alert-compose-layer,
+    .admin-audit-modal-layer,
+    .admin-model-modal-layer,
+    .admin-publication-insights-backdrop,
+    .admin-admin-invite-layer) :where([class$='-modal'],
+    [class*='-modal '],
+    [class$='-drawer'],
+    [class*='-drawer '],
+    [class$='-card'],
+    [class*='-card '],
+    [class$='-panel'],
+    [class*='-panel ']) {
+    border-color: var(--admin-dark-line, rgba(137, 199, 190, .16)) !important;
+    background-color: #14231f !important;
+    color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-main :where(input, textarea, select),
+html.vox-user-dark body> :where(.admin-user-modal-layer,
+    .admin-alert-modal-layer,
+    .admin-alert-compose-layer,
+    .admin-audit-modal-layer,
+    .admin-model-modal-layer,
+    .admin-publication-insights-backdrop,
+    .admin-admin-invite-layer) :where(input, textarea, select) {
+    border-color: var(--admin-dark-line-strong, rgba(137, 199, 190, .25)) !important;
+    background: #0d1816 !important;
+    color: #edf5f2 !important;
+    box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-main :where(input, textarea)::placeholder,
+html.vox-user-dark body> :where(.admin-user-modal-layer,
+    .admin-alert-modal-layer,
+    .admin-alert-compose-layer,
+    .admin-audit-modal-layer,
+    .admin-model-modal-layer,
+    .admin-publication-insights-backdrop,
+    .admin-admin-invite-layer) :where(input, textarea)::placeholder {
+    color: #718780 !important;
+    opacity: 1;
+}
+
+html.vox-user-dark .admin-main :where(table, thead, tbody, tr, th, td) {
+    border-color: var(--admin-dark-line) !important;
+}
+
+html.vox-user-dark .admin-main :where(thead, th) {
+    background-color: rgba(25, 42, 37, .9) !important;
+    color: #cfe0db !important;
+}
+
+html.vox-user-dark .admin-main :where(tbody tr) {
+    background-color: rgba(15, 26, 23, .6) !important;
+}
+
+html.vox-user-dark .admin-main :where(tbody tr:hover) {
+    background-color: rgba(91, 184, 176, .08) !important;
+}
+
+html.vox-user-dark .admin-main :where(h1, h2, h3, h4, h5, h6, strong, b, label, legend) {
+    color: var(--admin-dark-text) !important;
+}
+
+html.vox-user-dark .admin-main :where(p, small, time, dd, dt) {
+    color: var(--admin-dark-muted) !important;
+}
+
+html.vox-user-dark .admin-main :where(.admin-btn, button:not([class*='primary']):not([class*='danger']):not([class*='success'])) {
+    border-color: var(--admin-dark-line) !important;
+}
+
+html.vox-user-dark .admin-main :where(.admin-btn):not(.admin-btn--primary):not(.admin-btn--danger),
+html.vox-user-dark .admin-main :where([class*='button']):not([class*='primary']):not([class*='danger']):not([class*='submit']):not([class*='send']) {
+    background-color: rgba(18, 32, 28, .9) !important;
+    color: #d8e7e2 !important;
+}
+
+html.vox-user-dark .admin-main :where(.admin-btn):not(.admin-btn--primary):not(.admin-btn--danger):hover,
+html.vox-user-dark .admin-main :where([class*='button']):not([class*='primary']):not([class*='danger']):not([class*='submit']):not([class*='send']):hover {
+    background-color: rgba(91, 184, 176, .12) !important;
+    border-color: rgba(120, 208, 200, .3) !important;
+    color: #f0f8f5 !important;
+}
+
+html.vox-user-dark .admin-main :where(hr) {
+    border-color: var(--admin-dark-line) !important;
+}
+
+html.vox-user-dark .admin-main :where(code, pre, kbd) {
+    border-color: var(--admin-dark-line) !important;
+    background: #0b1513 !important;
+    color: #cbe3dc !important;
+}
+
+html.vox-user-dark .admin-main :where(a) {
+    color: #8dd8d1;
+}
+
+html.vox-user-dark .admin-main :where(.admin-empty, [class*='-empty'], [class*='-loading']) {
+    color: var(--admin-dark-muted) !important;
+}
+
+html.vox-user-dark .admin-main :where([class*='backdrop'], [class*='scrim']) {
+    background-color: rgba(2, 8, 7, .7) !important;
+}
+
+html.vox-user-dark .admin-main :where([class*='selected'], [class*='is-active']) {
+    border-color: rgba(120, 208, 200, .28);
+}
+
+html.vox-user-rtl .admin-main,
+html.vox-user-rtl body> :where(.admin-user-modal-layer,
+    .admin-alert-modal-layer,
+    .admin-alert-compose-layer,
+    .admin-audit-modal-layer,
+    .admin-model-modal-layer,
+    .admin-publication-insights-backdrop,
+    .admin-admin-invite-layer) {
+    direction: rtl;
+    text-align: right;
+}
+
+html.vox-user-rtl .admin-main :where(h1, h2, h3, h4, h5, h6, p, small, label, legend, th, td, li, dt, dd),
+html.vox-user-rtl body> :where(.admin-user-modal-layer,
+    .admin-alert-modal-layer,
+    .admin-alert-compose-layer,
+    .admin-audit-modal-layer,
+    .admin-model-modal-layer,
+    .admin-publication-insights-backdrop,
+    .admin-admin-invite-layer) :where(h1, h2, h3, h4, h5, h6, p, small, label, legend, th, td, li, dt, dd) {
+    text-align: start !important;
+    unicode-bidi: plaintext;
+}
+
+html.vox-user-rtl .admin-main :where(input, textarea, select) {
+    direction: rtl;
+    text-align: right !important;
+}
+
+html.vox-user-rtl .admin-main :where(input[type='email'], input[type='url'], input[type='tel'], [data-ltr='true'], [dir='ltr'], code, pre),
+html.vox-user-rtl body> :where(.admin-user-modal-layer,
+    .admin-alert-modal-layer,
+    .admin-alert-compose-layer,
+    .admin-audit-modal-layer,
+    .admin-model-modal-layer,
+    .admin-publication-insights-backdrop,
+    .admin-admin-invite-layer) :where(input[type='email'], input[type='url'], input[type='tel'], [data-ltr='true'], [dir='ltr'], code, pre) {
+    direction: ltr !important;
+    text-align: left !important;
+    unicode-bidi: isolate !important;
+}
+
+html.vox-user-rtl .admin-main :where(table) {
+    direction: rtl;
+}
+
+html.vox-user-rtl .admin-main :where([class*='pagination'], [class*='actions'], [class*='toolbar'], [class*='filter']) {
+    direction: rtl;
+}
+
+/* ===== Arabic admin header fit fix ===== */
+html.vox-user-rtl .admin-header__bar {
+    gap: 6px;
+}
+
+html.vox-user-rtl .admin-brand {
+    min-width: 154px;
+    gap: 9px;
+}
+
+html.vox-user-rtl .admin-topnav {
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 1px;
+}
+
+html.vox-user-rtl .admin-topnav__link,
+html.vox-user-rtl .admin-topnav__category {
+    min-width: 0;
+    flex: 0 1 auto;
+    padding-inline: 7px;
+    gap: 5px;
+    overflow: visible;
+    font-size: 11.5px;
+    line-height: 1;
+}
+
+html.vox-user-rtl .admin-topnav__category .admin-topnav__chevron {
+    flex: 0 0 auto;
+    margin-inline-start: 0;
+}
+
+html.vox-user-rtl .admin-global-search {
+    width: clamp(155px, 12vw, 205px);
+    min-width: 155px;
+    flex: 0 1 205px;
+}
+
+html.vox-user-rtl .admin-experience-switches {
+    gap: 4px;
+}
+
+html.vox-user-rtl .admin-experience-switch {
+    min-width: 34px;
+    height: 36px;
+    padding-inline: 7px;
+}
+
+html.vox-user-rtl .admin-experience-switch--theme {
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+}
+
+html.vox-user-rtl .admin-header__alert,
+html.vox-user-rtl .admin-icon-btn {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+}
+
+html.vox-user-rtl .admin-profile-pill {
+    min-width: 156px;
+    max-width: 185px;
+}
+
+@media (max-width: 1650px) and (min-width: 941px) {
+    html.vox-user-rtl .admin-brand {
+        min-width: 142px;
+    }
+
+    html.vox-user-rtl .admin-brand__copy strong {
+        font-size: 15px;
+    }
+
+    html.vox-user-rtl .admin-topnav__link,
+    html.vox-user-rtl .admin-topnav__category {
+        padding-inline: 6px;
+        gap: 4px;
+        font-size: 10.5px;
+    }
+
+    html.vox-user-rtl .admin-global-search {
+        width: clamp(145px, 11vw, 185px);
+        min-width: 145px;
+        flex-basis: 185px;
+    }
+
+    html.vox-user-rtl .admin-profile-pill {
+        min-width: 145px;
+        max-width: 160px;
+    }
+
+    html.vox-user-rtl .admin-profile-pill__copy strong {
+        max-width: 88px;
+        font-size: 11.5px;
+    }
+}
+
+@media (max-width: 1480px) and (min-width: 941px) {
+    html.vox-user-rtl .admin-brand {
+        min-width: 46px;
+    }
+
+    html.vox-user-rtl .admin-brand__copy {
+        display: none;
+    }
+
+    html.vox-user-rtl .admin-topnav__link,
+    html.vox-user-rtl .admin-topnav__category {
+        padding-inline: 5px;
+        gap: 3px;
+        font-size: 10px;
+    }
+
+    html.vox-user-rtl .admin-global-search {
+        width: 145px;
+        min-width: 130px;
+        flex-basis: 145px;
+    }
+}
+
+@media (max-width: 1280px) and (min-width: 941px) {
+    html.vox-user-rtl .admin-profile-pill {
+        min-width: 48px;
+        width: 48px;
+        padding: 5px;
+        justify-content: center;
+    }
+
+    html.vox-user-rtl .admin-profile-pill__copy,
+    html.vox-user-rtl .admin-profile-pill>.admin-profile-pill__chevron {
+        display: none;
+    }
 }

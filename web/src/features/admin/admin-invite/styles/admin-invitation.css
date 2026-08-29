@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-invite-auth {
   min-height: 100vh;
   padding: clamp(14px, 2vw, 24px);
@@ -30,15 +32,13 @@
   flex-direction: column;
   justify-content: center;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(232, 248, 243, 0.94),
       rgba(255, 255, 255, 0.95) 58%,
-      rgba(255, 245, 248, 0.72)
-    );
+      rgba(255, 245, 248, 0.72));
 }
 
-.admin-invite-auth__intro > :first-child {
+.admin-invite-auth__intro> :first-child {
   filter: drop-shadow(0 8px 18px rgba(72, 149, 140, 0.12));
 }
 
@@ -67,7 +67,7 @@
   line-height: 0.98;
 }
 
-.admin-invite-auth__intro > p {
+.admin-invite-auth__intro>p {
   max-width: 430px;
   margin: 12px 0 0;
   color: #72857e;
@@ -94,7 +94,7 @@
   box-shadow: 0 6px 18px rgba(59, 101, 93, 0.035);
 }
 
-.admin-invite-auth__rules article > svg {
+.admin-invite-auth__rules article>svg {
   color: #478f87;
 }
 
@@ -129,7 +129,7 @@
   line-height: 1.06;
 }
 
-.admin-invite-auth__form > p {
+.admin-invite-auth__form>p {
   margin: 7px 0 17px;
   color: #7d8e88;
   font-size: 13px;
@@ -142,13 +142,13 @@
   gap: 5px;
 }
 
-.admin-invite-auth__form label > span {
+.admin-invite-auth__form label>span {
   color: #526a62;
   font-size: 9.5px;
   font-weight: 800;
 }
 
-.admin-invite-auth__form label > div {
+.admin-invite-auth__form label>div {
   min-height: 44px;
   padding: 0 12px;
   display: grid;
@@ -164,7 +164,7 @@
     transform 160ms ease;
 }
 
-.admin-invite-auth__form label > div:focus-within {
+.admin-invite-auth__form label>div:focus-within {
   border-color: rgba(64, 155, 145, 0.42);
   box-shadow: 0 0 0 4px rgba(73, 166, 156, 0.07);
 }
@@ -299,7 +299,7 @@
   text-align: center;
 }
 
-.admin-invite-auth__success > span {
+.admin-invite-auth__success>span {
   width: 50px;
   height: 50px;
   display: grid;
@@ -419,7 +419,7 @@
     padding-block: 8px;
   }
 
-  .admin-invite-auth__form > p {
+  .admin-invite-auth__form>p {
     margin-bottom: 13px;
   }
 
@@ -427,7 +427,51 @@
     margin-top: 8px;
   }
 
-  .admin-invite-auth__form label > div {
+  .admin-invite-auth__form label>div {
     min-height: 42px;
   }
+}
+
+html.vox-user-dark .admin-invite-auth {
+  color: #e7f0ed;
+}
+
+html.vox-user-dark .admin-invite-auth {
+  border-color: rgba(145, 198, 190, .16) !important;
+  background-color: #111d1b !important;
+  color: #e7f0ed !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .20);
+}
+
+html.vox-user-dark .admin-invite-auth :is(h1, h2, h3, h4, h5, strong, label, th) {
+  color: #eaf3f0 !important;
+}
+
+html.vox-user-dark .admin-invite-auth :is(p, small, td) {
+  color: #a5b7b1;
+}
+
+html.vox-user-dark .admin-invite-auth :is(input, select, textarea) {
+  border-color: rgba(145, 198, 190, .18) !important;
+  background: #0e1917 !important;
+  color: #e8f1ee !important;
+  caret-color: #8fd2c9;
+}
+
+html.vox-user-dark .admin-invite-auth :is(input, textarea)::placeholder {
+  color: #7f928b !important;
+}
+
+html.vox-user-dark .admin-invite-auth :is(table, thead, tbody, tr) {
+  border-color: rgba(145, 198, 190, .12);
+}
+
+html.vox-user-rtl .admin-invite-auth {
+  direction: rtl;
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-invite-auth :is(input, select, textarea, table) {
+  direction: rtl;
+  text-align: right;
 }

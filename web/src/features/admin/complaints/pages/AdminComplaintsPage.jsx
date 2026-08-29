@@ -24,6 +24,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import AdminSupportSelect from '../../shared/components/AdminSupportSelect';
 import AdminSupportSortPicker from '../../shared/components/AdminSupportSortPicker';
@@ -32,6 +33,96 @@ import '../../shared/styles/admin-support-workspaces.css';
 import '../styles/admin-complaints.css';
 
 const PAGE_SIZE = 20;
+
+const COMPLAINT_DARK_ARABIC_COPY = {
+  'All cases': 'كل الحالات',
+  'Open': 'مفتوحة',
+  'In progress': 'قيد المعالجة',
+  'Resolved': 'تم الحل',
+  'Rejected': 'مرفوضة',
+  'Submitted date': 'تاريخ الإرسال',
+  'Last activity': 'آخر نشاط',
+  'Status': 'الحالة',
+  'Priority': 'الأولوية',
+  'Resolution date': 'تاريخ الحل',
+  'Waiting for administrator review': 'بانتظار مراجعة المشرف',
+  'The case is currently being handled': 'تتم معالجة الحالة حاليًا',
+  'The issue has been completed': 'تم إكمال معالجة المشكلة',
+  'No further action will be taken': 'لن يتم اتخاذ إجراء إضافي',
+  'Low': 'منخفضة',
+  'Medium': 'متوسطة',
+  'High': 'مرتفعة',
+  'Routine follow-up': 'متابعة اعتيادية',
+  'Normal review priority': 'أولوية مراجعة عادية',
+  'Requires quicker attention': 'تتطلب اهتمامًا أسرع',
+  'Trust & safety': 'الثقة والسلامة',
+  'Complaints center': 'مركز الشكاوى',
+  'Review user complaints, prioritize cases, reply directly and keep every resolution state clear.': 'راجع شكاوى المستخدمين، وحدد أولوية الحالات، ورد مباشرة، وحافظ على وضوح حالة كل معالجة.',
+  'open cases': 'حالات مفتوحة',
+  'Total': 'الإجمالي',
+  'All active complaints': 'جميع الشكاوى النشطة',
+  'Awaiting review': 'بانتظار المراجعة',
+  'Currently being handled': 'قيد المعالجة حاليًا',
+  'Successfully completed': 'تم إكمالها بنجاح',
+  'High priority': 'أولوية مرتفعة',
+  'Needs closer attention': 'تحتاج اهتمامًا أكبر',
+  'Case management': 'إدارة الحالات',
+  'Complaint directory': 'دليل الشكاوى',
+  'records available': 'سجلات متاحة',
+  'Live queue': 'قائمة مباشرة',
+  'Refresh': 'تحديث',
+  'Export CSV': 'تصدير CSV',
+  'Sort complaints': 'ترتيب الشكاوى',
+  'Search subject, user, idea or reply…': 'ابحث في الموضوع أو المستخدم أو الفكرة أو الرد…',
+  'Complaint': 'الشكوى',
+  'Submitter': 'مقدم الشكوى',
+  'Related idea': 'الفكرة المرتبطة',
+  'Action': 'الإجراء',
+  'Loading complaints…': 'جارٍ تحميل الشكاوى…',
+  'No complaints match these filters.': 'لا توجد شكاوى تطابق هذه الفلاتر.',
+  'Try another status or search term.': 'جرّب حالة أخرى أو عبارة بحث مختلفة.',
+  'Untitled complaint': 'شكوى بلا عنوان',
+  'User': 'المستخدم',
+  'Linked idea': 'فكرة مرتبطة',
+  'General': 'عام',
+  'Created': 'أُنشئت',
+  'Review': 'مراجعة',
+  'Previous': 'السابق',
+  'Next': 'التالي',
+  'Complaint resolution workspace': 'مساحة معالجة الشكاوى',
+  'Close complaint': 'إغلاق الشكوى',
+  'Submitted by': 'مقدمة من',
+  'Registered user': 'مستخدم مسجل',
+  'Email unavailable': 'البريد الإلكتروني غير متاح',
+  'Untitled idea': 'فكرة بلا عنوان',
+  'Idea': 'الفكرة',
+  'Original complaint': 'الشكوى الأصلية',
+  'Submitted': 'تم الإرسال',
+  'Administrative action': 'إجراء إداري',
+  'Resolve, reply and keep the user informed.': 'عالج الحالة، ورد على المستخدم، وأبقِه على اطلاع.',
+  'Status and response changes are saved together. User-visible complaint updates are also delivered as an in-app notification.': 'تُحفظ تغييرات الحالة والرد معًا، وتصل تحديثات الشكوى الظاهرة للمستخدم أيضًا كإشعار داخل التطبيق.',
+  'Complaint status': 'حالة الشكوى',
+  'Complaint priority': 'أولوية الشكوى',
+  'Reply to user': 'الرد على المستخدم',
+  'Write a clear response explaining what was reviewed, what action was taken, and what happens next…': 'اكتب ردًا واضحًا يشرح ما تمت مراجعته، والإجراء الذي تم اتخاذه، وما الذي سيحدث بعد ذلك…',
+  'Current saved response': 'الرد المحفوظ حاليًا',
+  'Cancel': 'إلغاء',
+  'Saving…': 'جارٍ الحفظ…',
+  'Save case update': 'حفظ تحديث الحالة',
+  'Applying changes': 'جارٍ تطبيق التغييرات',
+  'Update status, priority and reply': 'تحديث الحالة والأولوية والرد',
+  'Complaint updated successfully.': 'تم تحديث الشكوى بنجاح.',
+  'Unable to load complaints.': 'تعذر تحميل الشكاوى.',
+  'Unable to update the complaint.': 'تعذر تحديث الشكوى.',
+  'Unable to export complaints.': 'تعذر تصدير الشكاوى.',
+};
+
+function useComplaintDarkArabicCopy() {
+  const { isArabic, isDark, t } = useUserExperience();
+  const enabled = isArabic && isDark;
+  const tr = (value) => (enabled ? (COMPLAINT_DARK_ARABIC_COPY[value] ?? t(value)) : value);
+  return { enabled, tr };
+}
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All cases' },
@@ -84,11 +175,11 @@ function summaryFrom(payload) {
   return payload?.data && !Array.isArray(payload.data) ? payload.data : payload ?? {};
 }
 
-function formatDate(value) {
+function formatDate(value, darkArabic = false) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(darkArabic ? 'ar-u-nu-latn' : undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -128,14 +219,16 @@ function priorityTone(priority) {
 }
 
 function Metric({ icon: Icon, label, value, hint, tone = '' }) {
+  const { tr } = useComplaintDarkArabicCopy();
+
   return (
     <article className={`admin-support-metric ${tone}`}>
       <i aria-hidden="true" />
       <span className="admin-support-metric__icon"><Icon size={20} /></span>
       <div>
-        <small>{label}</small>
+        <small>{tr(label)}</small>
         <strong>{Number(value || 0).toLocaleString()}</strong>
-        <span>{hint}</span>
+        <span>{tr(hint)}</span>
       </div>
       <span className="admin-complaint-metric__signal" aria-hidden="true">
         <b />
@@ -148,14 +241,17 @@ function Metric({ icon: Icon, label, value, hint, tone = '' }) {
 }
 
 function StatusPill({ value }) {
-  return <span className={`admin-support-status ${statusTone(value)}`}>{readable(value || 'OPEN')}</span>;
+  const { tr } = useComplaintDarkArabicCopy();
+  return <span className={`admin-support-status ${statusTone(value)}`}>{tr(readable(value || 'OPEN'))}</span>;
 }
 
 function PriorityPill({ value }) {
-  return <span className={`admin-support-priority ${priorityTone(value)}`}><Flag size={11} />{readable(value || 'MEDIUM')}</span>;
+  const { tr } = useComplaintDarkArabicCopy();
+  return <span className={`admin-support-priority ${priorityTone(value)}`}><Flag size={11} />{tr(readable(value || 'MEDIUM'))}</span>;
 }
 
 function ComplaintModal({ complaint, saving, onClose, onSave }) {
+  const { enabled: darkArabic, tr } = useComplaintDarkArabicCopy();
   const [status, setStatus] = useState(complaint.status || 'OPEN');
   const [priority, setPriority] = useState(complaint.priority || 'MEDIUM');
   const [reply, setReply] = useState(complaint.adminReply || '');
@@ -191,11 +287,11 @@ function ComplaintModal({ complaint, saving, onClose, onSave }) {
           <div className="admin-support-modal__heading">
             <span className="admin-support-modal__mark"><ShieldCheck size={20} /></span>
             <div>
-              <small>Complaint resolution workspace</small>
+              <small>{tr('Complaint resolution workspace')}</small>
               <h2 id="complaint-dialog-title">{complaint.subject}</h2>
             </div>
           </div>
-          <button type="button" className="admin-support-icon-button" onClick={onClose} disabled={saving} aria-label="Close complaint"><X size={19} /></button>
+          <button type="button" className="admin-support-icon-button" onClick={onClose} disabled={saving} aria-label={tr('Close complaint')}><X size={19} /></button>
         </header>
 
         <div className="admin-support-modal__body">
@@ -208,29 +304,29 @@ function ComplaintModal({ complaint, saving, onClose, onSave }) {
             <div className="admin-support-sender-card">
               <span><UserRound size={18} /></span>
               <div>
-                <small>Submitted by</small>
-                <strong>{complaint.user?.fullName || 'Registered user'}</strong>
-                <p>{complaint.user?.email || 'Email unavailable'}</p>
+                <small>{tr('Submitted by')}</small>
+                <strong>{complaint.user?.fullName || tr('Registered user')}</strong>
+                <p>{complaint.user?.email || tr('Email unavailable')}</p>
               </div>
             </div>
 
             {complaint.idea ? (
               <div className="admin-support-context-card">
-                <small>Related idea</small>
-                <strong>{complaint.idea.title || 'Untitled idea'}</strong>
-                <span>Idea #{String(complaint.idea.id || '').slice(0, 8).toUpperCase()}</span>
+                <small>{tr('Related idea')}</small>
+                <strong>{complaint.idea.title || tr('Untitled idea')}</strong>
+                <span>{tr('Idea')} #{String(complaint.idea.id || '').slice(0, 8).toUpperCase()}</span>
               </div>
             ) : null}
 
             <article className="admin-support-message-card">
-              <div><Inbox size={16} /><span>Original complaint</span></div>
+              <div><Inbox size={16} /><span>{tr('Original complaint')}</span></div>
               <p>{complaint.message}</p>
             </article>
 
             <div className="admin-support-timeline">
-              <div><CircleDot size={14} /><span>Submitted</span><strong>{formatDate(complaint.createdAt)}</strong></div>
-              <div><Clock3 size={14} /><span>Last activity</span><strong>{formatDate(complaint.updatedAt)}</strong></div>
-              {complaint.resolvedAt ? <div><CheckCircle2 size={14} /><span>Resolved</span><strong>{formatDate(complaint.resolvedAt)}</strong></div> : null}
+              <div><CircleDot size={14} /><span>{tr('Submitted')}</span><strong>{formatDate(complaint.createdAt, darkArabic)}</strong></div>
+              <div><Clock3 size={14} /><span>{tr('Last activity')}</span><strong>{formatDate(complaint.updatedAt, darkArabic)}</strong></div>
+              {complaint.resolvedAt ? <div><CheckCircle2 size={14} /><span>{tr('Resolved')}</span><strong>{formatDate(complaint.resolvedAt, darkArabic)}</strong></div> : null}
             </div>
           </div>
 
@@ -238,41 +334,41 @@ function ComplaintModal({ complaint, saving, onClose, onSave }) {
             <div className="admin-support-action-pane__intro">
               <span><MessageSquareReply size={19} /></span>
               <div>
-                <small>Administrative action</small>
-                <h3>Resolve, reply and keep the user informed.</h3>
-                <p>Status and response changes are saved together. User-visible complaint updates are also delivered as an in-app notification.</p>
+                <small>{tr('Administrative action')}</small>
+                <h3>{tr('Resolve, reply and keep the user informed.')}</h3>
+                <p>{tr('Status and response changes are saved together. User-visible complaint updates are also delivered as an in-app notification.')}</p>
               </div>
             </div>
 
             <div className="admin-support-form-grid">
               <div className="admin-support-field">
-                <span>Status</span>
+                <span>{tr('Status')}</span>
                 <AdminSupportSelect
                   value={status}
-                  options={COMPLAINT_STATUS_CHOICES}
+                  options={COMPLAINT_STATUS_CHOICES.map((option) => ({ ...option, label: tr(option.label), description: tr(option.description) }))}
                   onChange={setStatus}
                   disabled={saving}
-                  ariaLabel="Complaint status"
+                  ariaLabel={tr('Complaint status')}
                 />
               </div>
               <div className="admin-support-field">
-                <span>Priority</span>
+                <span>{tr('Priority')}</span>
                 <AdminSupportSelect
                   value={priority}
-                  options={COMPLAINT_PRIORITY_CHOICES}
+                  options={COMPLAINT_PRIORITY_CHOICES.map((option) => ({ ...option, label: tr(option.label), description: tr(option.description) }))}
                   onChange={setPriority}
                   disabled={saving}
-                  ariaLabel="Complaint priority"
+                  ariaLabel={tr('Complaint priority')}
                 />
               </div>
             </div>
 
             <label className="admin-support-reply-field">
-              <span>Reply to user</span>
+              <span>{tr('Reply to user')}</span>
               <textarea
                 value={reply}
                 onChange={(event) => setReply(event.target.value)}
-                placeholder="Write a clear response explaining what was reviewed, what action was taken, and what happens next…"
+                placeholder={tr('Write a clear response explaining what was reviewed, what action was taken, and what happens next…')}
                 maxLength={1000}
                 disabled={saving}
               />
@@ -281,7 +377,7 @@ function ComplaintModal({ complaint, saving, onClose, onSave }) {
 
             {complaint.adminReply ? (
               <div className="admin-support-previous-reply">
-                <span>Current saved response</span>
+                <span>{tr('Current saved response')}</span>
                 <p>{complaint.adminReply}</p>
               </div>
             ) : null}
@@ -289,15 +385,15 @@ function ComplaintModal({ complaint, saving, onClose, onSave }) {
             <footer className="admin-support-modal__actions">
               <button type="button" className="admin-support-secondary-button" onClick={onClose} disabled={saving}>
                 <X size={16} />
-                Cancel
+                {tr('Cancel')}
               </button>
               <button type="submit" className="admin-support-primary-button" disabled={saving || (reply.trim().length > 0 && reply.trim().length < 5)}>
                 <span className="admin-support-primary-button__icon">
                   {saving ? <LoaderCircle className="is-spinning" size={16} /> : <CheckCircle2 size={16} />}
                 </span>
                 <span className="admin-support-primary-button__copy">
-                  <strong>{saving ? 'Saving…' : 'Save case update'}</strong>
-                  <small>{saving ? 'Applying changes' : 'Update status, priority and reply'}</small>
+                  <strong>{tr(saving ? 'Saving…' : 'Save case update')}</strong>
+                  <small>{tr(saving ? 'Applying changes' : 'Update status, priority and reply')}</small>
                 </span>
               </button>
             </footer>
@@ -310,6 +406,7 @@ function ComplaintModal({ complaint, saving, onClose, onSave }) {
 }
 
 export default function AdminComplaintsPage() {
+  const { enabled: darkArabic, tr } = useComplaintDarkArabicCopy();
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState({});
   const [meta, setMeta] = useState({ page: 1, total: 0, totalPages: 1, limit: PAGE_SIZE });
@@ -419,9 +516,9 @@ export default function AdminComplaintsPage() {
     <div className="admin-page admin-support-page admin-support-page--complaints">
       <section className="admin-support-hero">
         <div className="admin-complaint-hero__copy">
-          <span><ShieldCheck size={16} /> Trust & safety</span>
-          <h2>Complaints center</h2>
-          <p>Review user complaints, prioritize cases, reply directly and keep every resolution state clear.</p>
+          <span><ShieldCheck size={16} /> {tr('Trust & safety')}</span>
+          <h2>{tr('Complaints center')}</h2>
+          <p>{tr('Review user complaints, prioritize cases, reply directly and keep every resolution state clear.')}</p>
         </div>
 
         <div className="admin-complaint-hero__visual" aria-hidden="true">
@@ -437,7 +534,7 @@ export default function AdminComplaintsPage() {
         <div className="admin-support-hero__pulse">
           <AlertCircle size={24} />
           <strong>{Number(summary.openComplaints || 0).toLocaleString()}</strong>
-          <span>open cases</span>
+          <span>{tr('open cases')}</span>
         </div>
       </section>
 
@@ -452,57 +549,57 @@ export default function AdminComplaintsPage() {
       <section className="admin-support-panel">
         <header className="admin-support-panel__header">
           <div>
-            <span>Case management</span>
-            <h3>Complaint directory</h3>
-            <p>{meta.total.toLocaleString()} records available</p>
+            <span>{tr('Case management')}</span>
+            <h3>{tr('Complaint directory')}</h3>
+            <p>{meta.total.toLocaleString()} {tr('records available')}</p>
           </div>
           <div className="admin-support-header-actions">
-            <span className="admin-support-live-chip"><i /> Live queue</span>
-            <button type="button" onClick={() => load({ fresh: true })} disabled={loading}><RefreshCw size={15} /> Refresh</button>
-            <button type="button" onClick={exportCsv} disabled={exporting}>{exporting ? <LoaderCircle className="is-spinning" size={15} /> : <Download size={15} />} Export CSV</button>
+            <span className="admin-support-live-chip"><i /> {tr('Live queue')}</span>
+            <button type="button" onClick={() => load({ fresh: true })} disabled={loading}><RefreshCw size={15} /> {tr('Refresh')}</button>
+            <button type="button" onClick={exportCsv} disabled={exporting}>{exporting ? <LoaderCircle className="is-spinning" size={15} /> : <Download size={15} />} {tr('Export CSV')}</button>
           </div>
         </header>
 
         <div className="admin-support-filters">
           <div className="admin-support-tabs">
             {STATUS_OPTIONS.map((option) => (
-              <button key={option.value || 'ALL'} type="button" className={status === option.value ? 'is-active' : ''} onClick={() => { setStatus(option.value); setPage(1); }}>{option.label}</button>
+              <button key={option.value || 'ALL'} type="button" className={status === option.value ? 'is-active' : ''} onClick={() => { setStatus(option.value); setPage(1); }}>{tr(option.label)}</button>
             ))}
           </div>
 
           <div className="admin-support-tools">
             <AdminSupportSortPicker
-              label="Sort complaints"
+              label={tr('Sort complaints')}
               value={sortBy}
               order={sortOrder}
-              options={SORT_OPTIONS}
+              options={SORT_OPTIONS.map((option) => ({ ...option, label: tr(option.label) }))}
               onChange={(nextSortBy) => { setSortBy(nextSortBy); setPage(1); }}
               onToggleOrder={() => setSortOrder((value) => value === 'asc' ? 'desc' : 'asc')}
             />
-            <label className="admin-support-search"><Search size={17} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search subject, user, idea or reply…" /></label>
+            <label className="admin-support-search"><Search size={17} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder={tr('Search subject, user, idea or reply…')} /></label>
           </div>
         </div>
 
-        {error ? <div className="admin-support-alert is-error"><XCircle size={16} />{error}</div> : null}
-        {notice ? <div className="admin-support-toast"><CheckCircle2 size={16} />{notice}</div> : null}
+        {error ? <div className="admin-support-alert is-error"><XCircle size={16} />{tr(error)}</div> : null}
+        {notice ? <div className="admin-support-toast"><CheckCircle2 size={16} />{tr(notice)}</div> : null}
 
         <div className="admin-support-table-wrap">
           <table className="admin-support-table admin-support-table--complaints">
-            <thead><tr><th>Complaint</th><th>Submitter</th><th>Related idea</th><th>Priority</th><th>Status</th><th>Last activity</th><th>Action</th></tr></thead>
+            <thead><tr><th>{tr('Complaint')}</th><th>{tr('Submitter')}</th><th>{tr('Related idea')}</th><th>{tr('Priority')}</th><th>{tr('Status')}</th><th>{tr('Last activity')}</th><th>{tr('Action')}</th></tr></thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7"><div className="admin-support-empty"><LoaderCircle className="is-spinning" size={23} /><strong>Loading complaints…</strong></div></td></tr>
+                <tr><td colSpan="7"><div className="admin-support-empty"><LoaderCircle className="is-spinning" size={23} /><strong>{tr('Loading complaints…')}</strong></div></td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan="7"><div className="admin-support-empty"><Inbox size={25} /><strong>No complaints match these filters.</strong><span>Try another status or search term.</span></div></td></tr>
+                <tr><td colSpan="7"><div className="admin-support-empty"><Inbox size={25} /><strong>{tr('No complaints match these filters.')}</strong><span>{tr('Try another status or search term.')}</span></div></td></tr>
               ) : items.map((complaint) => (
                 <tr key={complaint.id}>
-                  <td><div className="admin-support-primary-cell"><span className="admin-support-row-icon"><AlertCircle size={16} /></span><div><strong>{complaint.subject || 'Untitled complaint'}</strong><p>{compact(complaint.message)}</p></div></div></td>
-                  <td><div className="admin-support-person"><strong>{complaint.user?.fullName || 'User'}</strong><span>{complaint.user?.email || '—'}</span></div></td>
-                  <td>{complaint.idea ? <div className="admin-support-person"><strong>{compact(complaint.idea.title, 44)}</strong><span>Linked idea</span></div> : <span className="admin-support-muted">General</span>}</td>
+                  <td><div className="admin-support-primary-cell"><span className="admin-support-row-icon"><AlertCircle size={16} /></span><div><strong>{complaint.subject || tr('Untitled complaint')}</strong><p>{compact(complaint.message)}</p></div></div></td>
+                  <td><div className="admin-support-person"><strong>{complaint.user?.fullName || tr('User')}</strong><span>{complaint.user?.email || '—'}</span></div></td>
+                  <td>{complaint.idea ? <div className="admin-support-person"><strong>{compact(complaint.idea.title, 44)}</strong><span>{tr('Linked idea')}</span></div> : <span className="admin-support-muted">{tr('General')}</span>}</td>
                   <td><PriorityPill value={complaint.priority} /></td>
                   <td><StatusPill value={complaint.status} /></td>
-                  <td><div className="admin-support-date"><strong>{formatDate(complaint.updatedAt || complaint.createdAt)}</strong><span>Created {formatDate(complaint.createdAt)}</span></div></td>
-                  <td><button type="button" className="admin-support-view-button" onClick={() => setSelected(complaint)}><Eye size={15} /> Review</button></td>
+                  <td><div className="admin-support-date"><strong>{formatDate(complaint.updatedAt || complaint.createdAt, darkArabic)}</strong><span>{tr('Created')} {formatDate(complaint.createdAt, darkArabic)}</span></div></td>
+                  <td><button type="button" className="admin-support-view-button" onClick={() => setSelected(complaint)}><Eye size={15} /> {tr('Review')}</button></td>
                 </tr>
               ))}
             </tbody>
@@ -510,8 +607,8 @@ export default function AdminComplaintsPage() {
         </div>
 
         <footer className="admin-support-pagination">
-          <span>Page {meta.page} of {meta.totalPages}</span>
-          <div><button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1 || loading}><ChevronLeft size={16} /> Previous</button><button type="button" onClick={() => setPage((value) => Math.min(meta.totalPages, value + 1))} disabled={page >= meta.totalPages || loading}>Next <ChevronRight size={16} /></button></div>
+          <span>{darkArabic ? `الصفحة ${meta.page} من ${meta.totalPages}` : `Page ${meta.page} of ${meta.totalPages}`}</span>
+          <div><button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1 || loading}><ChevronLeft size={16} /> {tr('Previous')}</button><button type="button" onClick={() => setPage((value) => Math.min(meta.totalPages, value + 1))} disabled={page >= meta.totalPages || loading}>{tr('Next')} <ChevronRight size={16} /></button></div>
         </footer>
       </section>
 

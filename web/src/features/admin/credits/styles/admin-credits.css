@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-credit-page {
   --credit-teal: #2f7774;
   --credit-teal-2: #5cbdb9;
@@ -3257,4 +3259,881 @@
   .admin-credit-scene__movement--minus {
     right: -4px;
   }
+}
+
+/* Dark theme hardening for the credit ledger only. */
+.admin-shell--dark .admin-credit-page,
+html.vox-user-dark .admin-shell .admin-credit-page {
+  --credit-teal: #79d2c9;
+  --credit-teal-2: #58bcb3;
+  --credit-teal-3: #91ddd5;
+  --credit-ink: #edf6f3;
+  --credit-text: #c2d3ce;
+  --credit-muted: #91a8a1;
+  --credit-pink: #e3a0b1;
+  --credit-pink-deep: #cf7f96;
+  --credit-soft: #152622;
+  --credit-line: rgba(139, 202, 191, .16);
+  color: #edf6f3;
+}
+
+.admin-shell--dark .admin-credit-hero,
+html.vox-user-dark .admin-shell .admin-credit-hero {
+  border-color: rgba(136, 205, 193, .18) !important;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(78, 176, 165, .16), transparent 28%),
+    radial-gradient(circle at 12% 112%, rgba(205, 113, 139, .10), transparent 34%),
+    linear-gradient(118deg, #0f1917 0%, #12201d 45%, #142923 74%, #172d28 100%) !important;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .02) !important;
+}
+
+.admin-shell--dark .admin-credit-hero::before,
+html.vox-user-dark .admin-shell .admin-credit-hero::before {
+  background:
+    linear-gradient(24deg, transparent 48%, rgba(100, 208, 196, .11) 48.35%, rgba(100, 208, 196, .11) 48.7%, transparent 49%) 76% 28% / 230px 100px no-repeat,
+    linear-gradient(-15deg, transparent 48%, rgba(227, 160, 177, .09) 48.3%, rgba(227, 160, 177, .09) 48.65%, transparent 49%) 62% 78% / 260px 105px no-repeat;
+}
+
+.admin-shell--dark .admin-credit-hero::after,
+html.vox-user-dark .admin-shell .admin-credit-hero::after {
+  border-color: rgba(221, 238, 233, .12);
+  box-shadow: 0 0 0 18px rgba(88, 188, 179, .035);
+}
+
+.admin-shell--dark .admin-credit-hero .admin-hero__eyebrow,
+html.vox-user-dark .admin-shell .admin-credit-hero .admin-hero__eyebrow {
+  color: #8bd8d0 !important;
+}
+
+.admin-shell--dark .admin-credit-hero h2,
+html.vox-user-dark .admin-shell .admin-credit-hero h2 {
+  color: #f3faf7 !important;
+  text-shadow: 0 6px 24px rgba(0, 0, 0, .24);
+}
+
+.admin-shell--dark .admin-credit-hero h2 span,
+html.vox-user-dark .admin-shell .admin-credit-hero h2 span {
+  color: #74cdc4 !important;
+}
+
+.admin-shell--dark .admin-credit-hero p,
+html.vox-user-dark .admin-shell .admin-credit-hero p {
+  color: #afc3bd !important;
+}
+
+.admin-shell--dark .admin-credit-hero__signals>span,
+html.vox-user-dark .admin-shell .admin-credit-hero__signals>span {
+  color: #d8e9e4 !important;
+  border-color: rgba(133, 202, 191, .20) !important;
+  background: rgba(19, 38, 34, .82) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .18) !important;
+}
+
+.admin-shell--dark .admin-credit-hero__signals>span:nth-child(2),
+html.vox-user-dark .admin-shell .admin-credit-hero__signals>span:nth-child(2) {
+  color: #f0bdc9 !important;
+  border-color: rgba(227, 160, 177, .22) !important;
+  background: rgba(45, 28, 34, .74) !important;
+}
+
+.admin-shell--dark .admin-credit-scene__orbit,
+html.vox-user-dark .admin-shell .admin-credit-scene__orbit {
+  border-color: rgba(111, 207, 195, .18);
+}
+
+.admin-shell--dark .admin-credit-scene__orbit--inner,
+html.vox-user-dark .admin-shell .admin-credit-scene__orbit--inner {
+  border-color: rgba(227, 160, 177, .15);
+}
+
+.admin-shell--dark .admin-credit-scene__node,
+html.vox-user-dark .admin-shell .admin-credit-scene__node {
+  background: #72cdc3;
+  box-shadow: 0 0 0 6px rgba(114, 205, 195, .10);
+}
+
+.admin-shell--dark .admin-credit-scene__node--three,
+html.vox-user-dark .admin-shell .admin-credit-scene__node--three {
+  background: #df94a8;
+  box-shadow: 0 0 0 6px rgba(223, 148, 168, .09);
+}
+
+.admin-shell--dark .admin-credit-scene__coin,
+html.vox-user-dark .admin-shell .admin-credit-scene__coin {
+  border-color: rgba(186, 232, 224, .15);
+}
+
+.admin-shell--dark .admin-credit-scene__coin--back,
+html.vox-user-dark .admin-shell .admin-credit-scene__coin--back {
+  background: linear-gradient(145deg, #4c9f97, #286b65) !important;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, .22) !important;
+}
+
+.admin-shell--dark .admin-credit-scene__coin--middle,
+html.vox-user-dark .admin-shell .admin-credit-scene__coin--middle {
+  background: linear-gradient(145deg, #58b6ad, #327f77) !important;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, .24) !important;
+}
+
+.admin-shell--dark .admin-credit-scene__coin--front,
+html.vox-user-dark .admin-shell .admin-credit-scene__coin--front {
+  color: #fff !important;
+  background:
+    radial-gradient(circle at 72% 22%, rgba(255, 255, 255, .22), transparent 24%),
+    linear-gradient(145deg, #2e8179 0%, #4eaaa1 52%, #72c8be 100%) !important;
+  box-shadow: 0 25px 48px rgba(0, 0, 0, .30), inset 0 1px 0 rgba(255, 255, 255, .18) !important;
+}
+
+/* Keep the small hero callouts light on purpose so the illustration still reads cleanly. */
+.admin-shell--dark .admin-credit-scene__movement,
+html.vox-user-dark .admin-shell .admin-credit-scene__movement {
+  color: #244c45 !important;
+  border-color: rgba(216, 235, 230, .78) !important;
+  background: rgba(244, 249, 247, .96) !important;
+  box-shadow: 0 15px 34px rgba(0, 0, 0, .24) !important;
+}
+
+.admin-shell--dark .admin-credit-scene__movement small,
+html.vox-user-dark .admin-shell .admin-credit-scene__movement small {
+  color: #6d827c !important;
+}
+
+.admin-shell--dark .admin-credit-scene__movement strong,
+html.vox-user-dark .admin-shell .admin-credit-scene__movement strong {
+  color: #284f48 !important;
+}
+
+.admin-shell--dark .admin-credit-scene__movement--minus,
+html.vox-user-dark .admin-shell .admin-credit-scene__movement--minus {
+  border-color: rgba(243, 210, 219, .82) !important;
+  background: rgba(252, 246, 248, .97) !important;
+}
+
+.admin-shell--dark .admin-credit-scene__seal,
+html.vox-user-dark .admin-shell .admin-credit-scene__seal {
+  color: #315f57 !important;
+  border-color: rgba(215, 235, 229, .82) !important;
+  background: rgba(239, 248, 245, .97) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .20) !important;
+}
+
+.admin-shell--dark .admin-credit-panel,
+html.vox-user-dark .admin-shell .admin-credit-panel {
+  border-color: rgba(137, 201, 190, .16) !important;
+  background:
+    radial-gradient(circle at 4% 0%, rgba(92, 189, 185, .055), transparent 24%),
+    radial-gradient(circle at 98% 0%, rgba(217, 143, 160, .045), transparent 21%),
+    #101a18 !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .24) !important;
+}
+
+.admin-shell--dark .admin-credit-panel__head,
+html.vox-user-dark .admin-shell .admin-credit-panel__head,
+.admin-shell--dark .admin-credit-metrics,
+html.vox-user-dark .admin-shell .admin-credit-metrics,
+.admin-shell--dark .admin-credit-type-tabs,
+html.vox-user-dark .admin-shell .admin-credit-type-tabs,
+.admin-shell--dark .admin-credit-controls,
+html.vox-user-dark .admin-shell .admin-credit-controls {
+  border-color: rgba(137, 201, 190, .12) !important;
+}
+
+.admin-shell--dark .admin-credit-panel__kicker,
+html.vox-user-dark .admin-shell .admin-credit-panel__kicker {
+  color: #7fd2c9 !important;
+}
+
+.admin-shell--dark .admin-credit-panel__head h3,
+html.vox-user-dark .admin-shell .admin-credit-panel__head h3 {
+  color: #edf6f3 !important;
+}
+
+.admin-shell--dark .admin-credit-panel__head p,
+html.vox-user-dark .admin-shell .admin-credit-panel__head p {
+  color: #91a8a1 !important;
+}
+
+.admin-shell--dark .admin-credit-live,
+.admin-shell--dark .admin-credit-action,
+html.vox-user-dark .admin-shell .admin-credit-live,
+html.vox-user-dark .admin-shell .admin-credit-action {
+  color: #c5d8d2 !important;
+  border-color: rgba(137, 201, 190, .16) !important;
+  background: #16221f !important;
+}
+
+.admin-shell--dark .admin-credit-action:hover:not(:disabled),
+html.vox-user-dark .admin-shell .admin-credit-action:hover:not(:disabled) {
+  color: #8edbd3 !important;
+  border-color: rgba(126, 211, 201, .32) !important;
+  background: #1a2a26 !important;
+}
+
+.admin-shell--dark .admin-credit-action.is-primary,
+html.vox-user-dark .admin-shell .admin-credit-action.is-primary {
+  color: #f8fffd !important;
+  border-color: rgba(125, 211, 201, .24) !important;
+  background: linear-gradient(135deg, #347f78, #4faea5) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .22) !important;
+}
+
+.admin-shell--dark .admin-credit-metric,
+html.vox-user-dark .admin-shell .admin-credit-metric {
+  border-color: rgba(137, 201, 190, .14) !important;
+  background: linear-gradient(145deg, #16231f, #131f1c) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .17) !important;
+}
+
+.admin-shell--dark .admin-credit-metric.is-primary,
+html.vox-user-dark .admin-shell .admin-credit-metric.is-primary {
+  border-color: rgba(104, 200, 190, .25) !important;
+  background: linear-gradient(145deg, #18302a, #14231f) !important;
+}
+
+.admin-shell--dark .admin-credit-metric>i,
+html.vox-user-dark .admin-shell .admin-credit-metric>i {
+  border-color: rgba(111, 207, 195, .07) !important;
+}
+
+.admin-shell--dark .admin-credit-metric__icon,
+html.vox-user-dark .admin-shell .admin-credit-metric__icon {
+  color: #80d4cc !important;
+  border-color: rgba(137, 201, 190, .16) !important;
+  background: linear-gradient(145deg, #1c312c, #14231f) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .16) !important;
+}
+
+.admin-shell--dark .admin-credit-metric.is-bonus .admin-credit-metric__icon,
+html.vox-user-dark .admin-shell .admin-credit-metric.is-bonus .admin-credit-metric__icon {
+  color: #e0c985 !important;
+  background: #2b291d !important;
+}
+
+.admin-shell--dark .admin-credit-metric.is-admin .admin-credit-metric__icon,
+html.vox-user-dark .admin-shell .admin-credit-metric.is-admin .admin-credit-metric__icon {
+  color: #eba8ba !important;
+  background: #302027 !important;
+}
+
+.admin-shell--dark .admin-credit-metric>div small,
+html.vox-user-dark .admin-shell .admin-credit-metric>div small {
+  color: #a8bdb6 !important;
+}
+
+.admin-shell--dark .admin-credit-metric>div strong,
+html.vox-user-dark .admin-shell .admin-credit-metric>div strong {
+  color: #f0f7f4 !important;
+}
+
+.admin-shell--dark .admin-credit-metric>div span,
+html.vox-user-dark .admin-shell .admin-credit-metric>div span {
+  color: #849a93 !important;
+}
+
+.admin-shell--dark .admin-credit-type-tabs,
+html.vox-user-dark .admin-shell .admin-credit-type-tabs {
+  background: #111c19 !important;
+}
+
+.admin-shell--dark .admin-credit-type-tabs button,
+html.vox-user-dark .admin-shell .admin-credit-type-tabs button {
+  color: #9eb2ac !important;
+  background: transparent !important;
+}
+
+.admin-shell--dark .admin-credit-type-tabs button em,
+html.vox-user-dark .admin-shell .admin-credit-type-tabs button em {
+  color: #91a6a0 !important;
+  background: #1a2824 !important;
+}
+
+.admin-shell--dark .admin-credit-type-tabs button:hover,
+.admin-shell--dark .admin-credit-type-tabs button.is-active,
+html.vox-user-dark .admin-shell .admin-credit-type-tabs button:hover,
+html.vox-user-dark .admin-shell .admin-credit-type-tabs button.is-active {
+  color: #83d6ce !important;
+  border-color: rgba(126, 211, 201, .23) !important;
+  background: #18302a !important;
+}
+
+.admin-shell--dark .admin-credit-type-tabs button.is-active em,
+html.vox-user-dark .admin-shell .admin-credit-type-tabs button.is-active em {
+  color: #91ded6 !important;
+  background: #203b35 !important;
+}
+
+.admin-shell--dark .admin-credit-controls,
+html.vox-user-dark .admin-shell .admin-credit-controls {
+  background: #101a18 !important;
+}
+
+.admin-shell--dark .admin-credit-sort__trigger,
+.admin-shell--dark .admin-credit-sort__direction,
+.admin-shell--dark .admin-credit-date-range,
+.admin-shell--dark .admin-credit-search,
+html.vox-user-dark .admin-shell .admin-credit-sort__trigger,
+html.vox-user-dark .admin-shell .admin-credit-sort__direction,
+html.vox-user-dark .admin-shell .admin-credit-date-range,
+html.vox-user-dark .admin-shell .admin-credit-search {
+  color: #b6cac4 !important;
+  border-color: rgba(137, 201, 190, .16) !important;
+  background: #14201d !important;
+  box-shadow: none !important;
+}
+
+.admin-shell--dark .admin-credit-date-range.is-active,
+html.vox-user-dark .admin-shell .admin-credit-date-range.is-active {
+  border-color: rgba(126, 211, 201, .34) !important;
+  background: #172a25 !important;
+}
+
+.admin-shell--dark .admin-credit-sort__trigger:hover,
+.admin-shell--dark .admin-credit-sort__direction:hover,
+html.vox-user-dark .admin-shell .admin-credit-sort__trigger:hover,
+html.vox-user-dark .admin-shell .admin-credit-sort__direction:hover {
+  border-color: rgba(126, 211, 201, .30) !important;
+  background: #192824 !important;
+}
+
+.admin-shell--dark .admin-credit-sort__trigger small,
+.admin-shell--dark .admin-credit-date-range label small,
+html.vox-user-dark .admin-shell .admin-credit-sort__trigger small,
+html.vox-user-dark .admin-shell .admin-credit-date-range label small {
+  color: #81978f !important;
+}
+
+.admin-shell--dark .admin-credit-sort__trigger strong,
+.admin-shell--dark .admin-credit-date-range input,
+.admin-shell--dark .admin-credit-search input,
+html.vox-user-dark .admin-shell .admin-credit-sort__trigger strong,
+html.vox-user-dark .admin-shell .admin-credit-date-range input,
+html.vox-user-dark .admin-shell .admin-credit-search input {
+  color: #d9e8e4 !important;
+  background: transparent !important;
+}
+
+.admin-shell--dark .admin-credit-date-range>i,
+html.vox-user-dark .admin-shell .admin-credit-date-range>i {
+  background: rgba(137, 201, 190, .13) !important;
+}
+
+.admin-shell--dark .admin-credit-date-range>button,
+.admin-shell--dark .admin-credit-search button,
+html.vox-user-dark .admin-shell .admin-credit-date-range>button,
+html.vox-user-dark .admin-shell .admin-credit-search button {
+  color: #93aaa3 !important;
+  background: #1a2824 !important;
+}
+
+.admin-shell--dark .admin-credit-sort__menu,
+html.vox-user-dark .admin-shell .admin-credit-sort__menu {
+  color: #d7e6e2 !important;
+  border-color: rgba(137, 201, 190, .16) !important;
+  background: #17231f !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .34) !important;
+}
+
+.admin-shell--dark .admin-credit-sort__menu button,
+html.vox-user-dark .admin-shell .admin-credit-sort__menu button {
+  color: #b7cac4 !important;
+  background: transparent !important;
+}
+
+.admin-shell--dark .admin-credit-sort__menu button:hover,
+.admin-shell--dark .admin-credit-sort__menu button.is-active,
+html.vox-user-dark .admin-shell .admin-credit-sort__menu button:hover,
+html.vox-user-dark .admin-shell .admin-credit-sort__menu button.is-active {
+  color: #86d7cf !important;
+  background: #1d302b !important;
+}
+
+.admin-shell--dark .admin-credit-table-wrap,
+html.vox-user-dark .admin-shell .admin-credit-table-wrap {
+  background: #101a18 !important;
+}
+
+.admin-shell--dark .admin-credit-table th,
+html.vox-user-dark .admin-shell .admin-credit-table th {
+  color: #99ada7 !important;
+  border-color: rgba(137, 201, 190, .10) !important;
+  background: #121e1b !important;
+}
+
+.admin-shell--dark .admin-credit-table td,
+html.vox-user-dark .admin-shell .admin-credit-table td {
+  color: #bdcec9 !important;
+  border-color: rgba(137, 201, 190, .09) !important;
+  background: #101a18 !important;
+}
+
+.admin-shell--dark .admin-credit-table tbody tr:hover td,
+html.vox-user-dark .admin-shell .admin-credit-table tbody tr:hover td {
+  background: #14231f !important;
+}
+
+.admin-shell--dark .admin-credit-transaction-icon,
+html.vox-user-dark .admin-shell .admin-credit-transaction-icon {
+  color: #9eb6af !important;
+  border-color: rgba(137, 201, 190, .15) !important;
+  background: linear-gradient(145deg, #1a2a26, #14211e) !important;
+}
+
+.admin-shell--dark .admin-credit-transaction-icon>i,
+html.vox-user-dark .admin-shell .admin-credit-transaction-icon>i {
+  border-color: #101a18 !important;
+}
+
+.admin-shell--dark .admin-credit-transaction-icon.is-negative,
+html.vox-user-dark .admin-shell .admin-credit-transaction-icon.is-negative {
+  color: #e6a0b2 !important;
+  background: linear-gradient(145deg, #2b2024, #20191c) !important;
+}
+
+.admin-shell--dark .admin-credit-transaction-cell strong,
+.admin-shell--dark .admin-credit-user-cell strong,
+.admin-shell--dark .admin-credit-context-cell strong,
+.admin-shell--dark .admin-credit-balance-cell strong,
+html.vox-user-dark .admin-shell .admin-credit-transaction-cell strong,
+html.vox-user-dark .admin-shell .admin-credit-user-cell strong,
+html.vox-user-dark .admin-shell .admin-credit-context-cell strong,
+html.vox-user-dark .admin-shell .admin-credit-balance-cell strong {
+  color: #e6f0ed !important;
+}
+
+.admin-shell--dark .admin-credit-transaction-cell small,
+.admin-shell--dark .admin-credit-user-cell small,
+.admin-shell--dark .admin-credit-context-cell small,
+.admin-shell--dark .admin-credit-balance-cell small,
+.admin-shell--dark .admin-credit-movement-cell small,
+html.vox-user-dark .admin-shell .admin-credit-transaction-cell small,
+html.vox-user-dark .admin-shell .admin-credit-user-cell small,
+html.vox-user-dark .admin-shell .admin-credit-context-cell small,
+html.vox-user-dark .admin-shell .admin-credit-balance-cell small,
+html.vox-user-dark .admin-shell .admin-credit-movement-cell small {
+  color: #849a93 !important;
+}
+
+.admin-shell--dark .admin-credit-movement-cell.is-positive strong,
+html.vox-user-dark .admin-shell .admin-credit-movement-cell.is-positive strong {
+  color: #7dd5cc !important;
+}
+
+.admin-shell--dark .admin-credit-movement-cell.is-negative strong,
+html.vox-user-dark .admin-shell .admin-credit-movement-cell.is-negative strong {
+  color: #e5a0b2 !important;
+}
+
+.admin-shell--dark .admin-credit-context-icon,
+html.vox-user-dark .admin-shell .admin-credit-context-icon {
+  color: #7fd2c9 !important;
+  background: #18302a !important;
+}
+
+.admin-shell--dark .admin-credit-context-icon.is-bonus,
+html.vox-user-dark .admin-shell .admin-credit-context-icon.is-bonus {
+  color: #dbc77f !important;
+  background: #2b291d !important;
+}
+
+.admin-shell--dark .admin-credit-context-icon.is-deduction,
+html.vox-user-dark .admin-shell .admin-credit-context-icon.is-deduction {
+  color: #e5a1b2 !important;
+  background: #302027 !important;
+}
+
+.admin-shell--dark .admin-credit-context-icon.is-refund,
+html.vox-user-dark .admin-shell .admin-credit-context-icon.is-refund {
+  color: #abc0dc !important;
+  background: #202833 !important;
+}
+
+.admin-shell--dark .admin-credit-context-icon.is-admin,
+html.vox-user-dark .admin-shell .admin-credit-context-icon.is-admin {
+  color: #c3a9dc !important;
+  background: #292233 !important;
+}
+
+.admin-shell--dark .admin-credit-type-badge,
+html.vox-user-dark .admin-shell .admin-credit-type-badge {
+  color: #9fddd6 !important;
+  border-color: rgba(126, 211, 201, .15) !important;
+  background: #18302a !important;
+}
+
+.admin-shell--dark .admin-credit-type-badge.is-bonus,
+html.vox-user-dark .admin-shell .admin-credit-type-badge.is-bonus {
+  color: #dbc77f !important;
+  border-color: rgba(219, 199, 127, .14) !important;
+  background: #2b291d !important;
+}
+
+.admin-shell--dark .admin-credit-type-badge.is-deduction,
+html.vox-user-dark .admin-shell .admin-credit-type-badge.is-deduction {
+  color: #e4a0b1 !important;
+  border-color: rgba(228, 160, 177, .16) !important;
+  background: #302027 !important;
+}
+
+.admin-shell--dark .admin-credit-type-badge.is-refund,
+html.vox-user-dark .admin-shell .admin-credit-type-badge.is-refund {
+  color: #abc0dc !important;
+  border-color: rgba(171, 192, 220, .14) !important;
+  background: #202833 !important;
+}
+
+.admin-shell--dark .admin-credit-type-badge.is-admin,
+html.vox-user-dark .admin-shell .admin-credit-type-badge.is-admin {
+  color: #c3a9dc !important;
+  border-color: rgba(195, 169, 220, .14) !important;
+  background: #292233 !important;
+}
+
+.admin-shell--dark .admin-credit-row-actions button,
+html.vox-user-dark .admin-shell .admin-credit-row-actions button {
+  color: #8bd9d1 !important;
+  border-color: rgba(126, 211, 201, .18) !important;
+  background: #18302a !important;
+}
+
+.admin-shell--dark .admin-credit-row-actions button:hover,
+html.vox-user-dark .admin-shell .admin-credit-row-actions button:hover {
+  background: #1d3932 !important;
+}
+
+.admin-shell--dark .admin-credit-row-actions button.is-adjust,
+html.vox-user-dark .admin-shell .admin-credit-row-actions button.is-adjust {
+  color: #c7a8df !important;
+  border-color: rgba(199, 168, 223, .16) !important;
+  background: #292233 !important;
+}
+
+.admin-shell--dark .admin-credit-table-state,
+html.vox-user-dark .admin-shell .admin-credit-table-state {
+  color: #93a8a1 !important;
+  background: #101a18 !important;
+}
+
+.admin-shell--dark .admin-credit-pagination,
+html.vox-user-dark .admin-shell .admin-credit-pagination {
+  color: #8fa49d !important;
+  border-color: rgba(137, 201, 190, .10) !important;
+  background: #111c19 !important;
+}
+
+.admin-shell--dark .admin-credit-pagination strong,
+html.vox-user-dark .admin-shell .admin-credit-pagination strong {
+  color: #c4d5d0 !important;
+}
+
+.admin-shell--dark .admin-credit-pagination button,
+html.vox-user-dark .admin-shell .admin-credit-pagination button {
+  color: #aec2bc !important;
+  border-color: rgba(137, 201, 190, .15) !important;
+  background: #17231f !important;
+}
+
+.admin-shell--dark .admin-credit-pagination button:hover:not(:disabled),
+html.vox-user-dark .admin-shell .admin-credit-pagination button:hover:not(:disabled) {
+  color: #86d7cf !important;
+  background: #1b2c27 !important;
+}
+
+.admin-shell--dark .admin-credit-error,
+html.vox-user-dark .admin-shell .admin-credit-error {
+  color: #f0adbd !important;
+  border-color: rgba(227, 160, 177, .20) !important;
+  background: #2a1d22 !important;
+}
+
+.admin-shell--dark .admin-credit-notice,
+html.vox-user-dark .admin-shell .admin-credit-notice {
+  color: #91ded6 !important;
+  border-color: rgba(126, 211, 201, .20) !important;
+  background: #17302a !important;
+}
+
+/* Credit modals are portaled to body, so dark mode is keyed off the html class. */
+html.vox-user-dark .admin-credit-modal,
+html.vox-user-dark .admin-credit-adjust-modal {
+  color: #edf6f3 !important;
+  border-color: rgba(137, 201, 190, .17) !important;
+  background: #121e1b !important;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .52) !important;
+}
+
+html.vox-user-dark .admin-credit-modal__head,
+html.vox-user-dark .admin-credit-adjust-modal__head,
+html.vox-user-dark .admin-credit-modal__footer,
+html.vox-user-dark .admin-credit-adjust-modal__footer {
+  border-color: rgba(137, 201, 190, .12) !important;
+  background: #14211e !important;
+}
+
+html.vox-user-dark .admin-credit-modal__summary,
+html.vox-user-dark .admin-credit-modal__details,
+html.vox-user-dark .admin-credit-adjust-user,
+html.vox-user-dark .admin-credit-adjust-fields {
+  border-color: rgba(137, 201, 190, .12) !important;
+  background: #101a18 !important;
+}
+
+html.vox-user-dark :is(.admin-credit-modal__movement-card,
+  .admin-credit-user-card,
+  .admin-credit-balance-card,
+  .admin-credit-audit-note,
+  .admin-credit-detail,
+  .admin-credit-selected-user,
+  .admin-credit-user-search,
+  .admin-credit-user-results,
+  .admin-credit-adjust-input > div) {
+  color: #d7e5e1 !important;
+  border-color: rgba(137, 201, 190, .14) !important;
+  background: #17231f !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-credit-modal__section-head>span,
+html.vox-user-dark .admin-credit-adjust-section-title>span,
+html.vox-user-dark .admin-credit-adjust-modal__mark,
+html.vox-user-dark .admin-credit-modal__mark {
+  color: #83d6ce !important;
+  border-color: rgba(126, 211, 201, .15) !important;
+  background: #19312b !important;
+}
+
+html.vox-user-dark :is(.admin-credit-modal strong,
+  .admin-credit-adjust-modal strong,
+  .admin-credit-detail strong,
+  .admin-credit-modal h3,
+  .admin-credit-modal h4,
+  .admin-credit-adjust-modal h3) {
+  color: #edf6f3 !important;
+}
+
+html.vox-user-dark :is(.admin-credit-modal small,
+  .admin-credit-modal p,
+  .admin-credit-modal span,
+  .admin-credit-adjust-modal small,
+  .admin-credit-adjust-modal p,
+  .admin-credit-adjust-fields label > span) {
+  color: #97aca5 !important;
+}
+
+html.vox-user-dark .admin-credit-modal__close,
+html.vox-user-dark .admin-credit-adjust-modal__head>button,
+html.vox-user-dark .admin-credit-selected-user>button {
+  color: #a9bdb7 !important;
+  border-color: rgba(137, 201, 190, .15) !important;
+  background: #1a2824 !important;
+}
+
+html.vox-user-dark .admin-credit-user-results button {
+  color: #d8e6e2 !important;
+  border-color: rgba(137, 201, 190, .11) !important;
+  background: #17231f !important;
+}
+
+html.vox-user-dark .admin-credit-user-results button:hover {
+  background: #1b2d28 !important;
+}
+
+html.vox-user-dark .admin-credit-user-empty {
+  color: #8fa49d !important;
+  background: #141f1c !important;
+}
+
+html.vox-user-dark .admin-credit-adjust-amounts button {
+  color: #b7cac4 !important;
+  border-color: rgba(137, 201, 190, .15) !important;
+  background: #17231f !important;
+}
+
+html.vox-user-dark .admin-credit-adjust-amounts button.is-active.is-add {
+  color: #92ded6 !important;
+  border-color: rgba(126, 211, 201, .32) !important;
+  background: #19362f !important;
+}
+
+html.vox-user-dark .admin-credit-adjust-amounts button.is-active.is-deduct {
+  color: #efadbd !important;
+  border-color: rgba(227, 160, 177, .28) !important;
+  background: #312027 !important;
+}
+
+html.vox-user-dark .admin-credit-adjust-input input,
+html.vox-user-dark .admin-credit-adjust-input textarea,
+html.vox-user-dark .admin-credit-user-search input {
+  color: #edf6f3 !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark .admin-credit-adjust-error {
+  color: #f0adbd !important;
+  border-color: rgba(227, 160, 177, .20) !important;
+  background: #2a1d22 !important;
+}
+
+html.vox-user-dark .admin-credit-modal__secondary,
+html.vox-user-dark .admin-credit-adjust-modal__actions .is-cancel {
+  color: #b9cbc6 !important;
+  border-color: rgba(137, 201, 190, .16) !important;
+  background: #1a2824 !important;
+}
+
+html.vox-user-dark .admin-credit-modal__primary,
+html.vox-user-dark .admin-credit-adjust-modal__actions .is-save {
+  color: #f8fffd !important;
+  border-color: rgba(126, 211, 201, .20) !important;
+  background: linear-gradient(135deg, #347f78, #4faea5) !important;
+}
+
+html.vox-user-dark .admin-credit-audit-note {
+  color: #b3e4dd !important;
+  border-color: rgba(126, 211, 201, .15) !important;
+  background: #17302a !important;
+}
+
+/* Arabic layout fixes for this page and its portaled modals. */
+.admin-shell--rtl .admin-credit-hero__content,
+.admin-shell--rtl .admin-credit-panel__head,
+.admin-shell--rtl .admin-credit-table th,
+.admin-shell--rtl .admin-credit-table td,
+.admin-shell--rtl .admin-credit-metric,
+.admin-shell--rtl .admin-credit-sort__trigger>span,
+html.vox-user-rtl .admin-credit-modal,
+html.vox-user-rtl .admin-credit-adjust-modal {
+  text-align: right !important;
+}
+
+.admin-shell--rtl .admin-credit-sort__trigger>span {
+  text-align: right !important;
+}
+
+.admin-shell--rtl .admin-credit-hero__signals,
+.admin-shell--rtl .admin-credit-panel__actions,
+.admin-shell--rtl .admin-credit-row-actions,
+html.vox-user-rtl .admin-credit-modal__footer,
+html.vox-user-rtl .admin-credit-adjust-modal__actions {
+  direction: rtl;
+}
+
+.admin-shell--rtl .admin-credit-scene__movement,
+html.vox-user-rtl .admin-credit-modal,
+html.vox-user-rtl .admin-credit-adjust-modal,
+html.vox-user-rtl .admin-credit-user-results,
+html.vox-user-rtl .admin-credit-selected-user,
+html.vox-user-rtl .admin-credit-adjust-input {
+  direction: rtl;
+}
+
+html.vox-user-rtl .admin-credit-modal input,
+html.vox-user-rtl .admin-credit-modal textarea,
+html.vox-user-rtl .admin-credit-adjust-modal input,
+html.vox-user-rtl .admin-credit-adjust-modal textarea {
+  text-align: right !important;
+}
+
+.admin-shell--rtl .admin-credit-pagination svg[data-lucide="chevron-left"],
+.admin-shell--rtl .admin-credit-pagination svg[data-lucide="chevron-right"] {
+  transform: rotate(180deg);
+}
+
+html.vox-user-dark .admin-credit-modal__type-icon,
+html.vox-user-dark .admin-credit-user-card>span,
+html.vox-user-dark .admin-credit-selected-user>span,
+html.vox-user-dark .admin-credit-user-results button>span {
+  color: #83d6ce !important;
+  border-color: rgba(126, 211, 201, .14) !important;
+  background: #19312b !important;
+}
+
+html.vox-user-dark .admin-credit-modal__type-icon.is-bonus {
+  color: #dbc77f !important;
+  background: #2b291d !important;
+}
+
+html.vox-user-dark .admin-credit-modal__type-icon.is-deduction,
+html.vox-user-dark .admin-credit-modal__mark.is-negative {
+  color: #e4a0b1 !important;
+  background: #302027 !important;
+}
+
+html.vox-user-dark .admin-credit-modal__type-icon.is-refund {
+  color: #abc0dc !important;
+  background: #202833 !important;
+}
+
+html.vox-user-dark .admin-credit-modal__type-icon.is-admin {
+  color: #c3a9dc !important;
+  background: #292233 !important;
+}
+
+html.vox-user-dark .admin-credit-selected-user {
+  border-color: rgba(126, 211, 201, .20) !important;
+  background: #17302a !important;
+}
+
+html.vox-user-dark .admin-credit-adjust-input textarea {
+  border-color: rgba(137, 201, 190, .15) !important;
+  background: #17231f !important;
+}
+
+.admin-shell--rtl .admin-credit-pagination .lucide-chevron-left,
+.admin-shell--rtl .admin-credit-pagination .lucide-chevron-right {
+  transform: rotate(180deg);
+}
+
+/* Dark-mode credit ledger table header: keep the header as one clean bar. */
+.admin-shell--dark .admin-credit-table thead tr,
+html.vox-user-dark .admin-shell .admin-credit-table thead tr {
+  gap: 0 !important;
+  padding: 0 8px !important;
+  min-height: 46px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(137, 201, 190, .12) !important;
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, #182722 0%, #14211e 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(197, 232, 224, .035), 0 7px 18px rgba(0, 0, 0, .12) !important;
+}
+
+.admin-shell--dark .admin-credit-table thead th,
+html.vox-user-dark .admin-shell .admin-credit-table thead th {
+  min-height: 44px !important;
+  padding: 0 13px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #a9bbb6 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.admin-shell--dark .admin-credit-table thead th+th,
+html.vox-user-dark .admin-shell .admin-credit-table thead th+th {
+  border-inline-start: 1px solid rgba(137, 201, 190, .07) !important;
+}
+
+.admin-shell--dark .admin-credit-table thead th:hover,
+html.vox-user-dark .admin-shell .admin-credit-table thead th:hover {
+  color: #d6e7e2 !important;
+  background: rgba(126, 211, 201, .045) !important;
+}
+
+html.vox-user-rtl .admin-shell .admin-credit-table tbody>tr>td:nth-child(2) {
+  --record-label: 'المستخدم';
+}
+
+html.vox-user-rtl .admin-shell .admin-credit-table tbody>tr>td:nth-child(3) {
+  --record-label: 'الحركة';
+}
+
+html.vox-user-rtl .admin-shell .admin-credit-table tbody>tr>td:nth-child(4) {
+  --record-label: 'السياق';
+}
+
+html.vox-user-rtl .admin-shell .admin-credit-table tbody>tr>td:nth-child(5) {
+  --record-label: 'الرصيد بعد الحركة';
+}
+
+html.vox-user-rtl .admin-shell .admin-credit-table tbody>tr>td:nth-child(6) {
+  --record-label: 'الإجراءات';
 }

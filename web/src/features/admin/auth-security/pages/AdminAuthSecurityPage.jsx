@@ -24,11 +24,193 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-auth-security.css';
 
 const PAGE_SIZE = 20;
+
+const AUTH_SECURITY_DARK_ARABIC_COPY = {
+  'All authentication events': 'كل أحداث المصادقة',
+  'Register': 'تسجيل حساب',
+  'Login success': 'نجاح تسجيل الدخول',
+  'Login failed': 'فشل تسجيل الدخول',
+  'Logout': 'تسجيل الخروج',
+  'Refresh token': 'تحديث رمز الجلسة',
+  'Change password': 'تغيير كلمة المرور',
+  'Forgot password': 'طلب استعادة كلمة المرور',
+  'Reset password': 'إعادة تعيين كلمة المرور',
+  'Resend verification email': 'إعادة إرسال رسالة التحقق',
+  'Account locked': 'تم قفل الحساب',
+  'Account deactivated': 'تم تعطيل الحساب',
+  'Email changed': 'تم تغيير البريد الإلكتروني',
+  'Verification email sent': 'تم إرسال رسالة التحقق',
+  'Verify email failed': 'فشل التحقق من البريد الإلكتروني',
+  'Reset password failed': 'فشل إعادة تعيين كلمة المرور',
+  'Refresh token failed': 'فشل تحديث رمز الجلسة',
+  'All results': 'كل النتائج',
+  'Successful': 'ناجحة',
+  'Failed': 'فاشلة',
+  'Event date': 'تاريخ الحدث',
+  'Event type': 'نوع الحدث',
+  'Email': 'البريد الإلكتروني',
+  'Result': 'النتيجة',
+  'Sort': 'الترتيب',
+  'Toggle sort direction': 'تبديل اتجاه الترتيب',
+  'AUTHENTICATION EVENT': 'حدث مصادقة',
+  'Close security event details': 'إغلاق تفاصيل حدث الأمان',
+  'Account': 'الحساب',
+  'Unknown account': 'حساب غير معروف',
+  'Network': 'الشبكة',
+  'Unknown IP': 'عنوان IP غير معروف',
+  'Recorded request address': 'عنوان الشبكة المسجل للطلب',
+  'Device': 'الجهاز',
+  'Unknown device': 'جهاز غير معروف',
+  'No user agent stored': 'لا توجد معلومات جهاز محفوظة',
+  'SECURITY RESULT': 'نتيجة الأمان',
+  'Authentication event completed successfully': 'اكتمل حدث المصادقة بنجاح',
+  'Authentication event failed': 'فشل حدث المصادقة',
+  'No additional security message was recorded for this event.': 'لم يتم تسجيل رسالة أمان إضافية لهذا الحدث.',
+  'Log ID': 'معرّف السجل',
+  'User ID': 'معرّف المستخدم',
+  'Role': 'الدور',
+  'Account active': 'الحساب نشط',
+  'Email verified': 'البريد موثّق',
+  'Event result': 'نتيجة الحدث',
+  'Yes': 'نعم',
+  'No': 'لا',
+  'Could not load authentication security activity.': 'تعذر تحميل نشاط أمان المصادقة.',
+  'IDENTITY SECURITY': 'أمن الهوية',
+  'Authentication': 'أمان',
+  'security': 'المصادقة',
+  'Inspect login, password, verification and token activity with account, device and network context.': 'افحص نشاط تسجيل الدخول وكلمات المرور والتحقق ورموز الجلسات ضمن سياق الحساب والجهاز والشبكة.',
+  'View security insights': 'عرض مؤشرات الأمان',
+  'Explore activity': 'استكشاف النشاط',
+  'Refresh': 'تحديث',
+  'Authentication security metrics': 'مقاييس أمان المصادقة',
+  'Total events': 'مجموع الأحداث',
+  'Current audit scope': 'نطاق التدقيق الحالي',
+  'Verified activity': 'نشاط تم التحقق منه',
+  'Risky attempts': 'محاولات محفوفة بالمخاطر',
+  'Network sources': 'مصادر الشبكة',
+  'network sources': 'مصادر شبكة',
+  'successful': 'ناجح',
+  'of activity': 'من النشاط',
+  'identified users': 'مستخدمون محددون',
+  'Authentication activity filters': 'مرشحات نشاط المصادقة',
+  'ACTIVITY CONTROLS': 'عناصر التحكم بالنشاط',
+  'Search and refine the security feed': 'ابحث وخصص سجل نشاط الأمان',
+  'Close filters': 'إغلاق المرشحات',
+  'Event': 'الحدث',
+  'From': 'من',
+  'To': 'إلى',
+  'Search account, email, IP or device...': 'ابحث عن حساب أو بريد إلكتروني أو IP أو جهاز...',
+  'Clear filters': 'مسح المرشحات',
+  'Security overview': 'نظرة عامة على الأمان',
+  'Security score': 'درجة الأمان',
+  'Strong': 'قوي',
+  'verified events': 'أحداث تم التحقق منها',
+  'Good': 'جيد',
+  'Monitoring': 'قيد المراقبة',
+  'Active': 'نشط',
+  'Attention': 'يتطلب الانتباه',
+  'failed events': 'أحداث فاشلة',
+  'Review': 'مراجعة',
+  'Low': 'منخفض',
+  'Recent activity': 'النشاط الأخير',
+  'Filters': 'المرشحات',
+  'Loading security activity…': 'جارٍ تحميل نشاط الأمان…',
+  'No authentication events match these filters.': 'لا توجد أحداث مصادقة تطابق هذه المرشحات.',
+  'Previous': 'السابق',
+  'Next': 'التالي',
+  'events': 'أحداث',
+  'Risk map': 'خريطة المخاطر',
+  'Dynamic authentication risk map': 'خريطة ديناميكية لمخاطر المصادقة',
+  'risky sources': 'مصادر خطرة',
+  'failed': 'فاشلة',
+  'locked': 'مقفلة',
+  'No network sources in this scope': 'لا توجد مصادر شبكة ضمن هذا النطاق',
+  'NETWORK SOURCES': 'مصادر الشبكة',
+  'FAILED EVENTS': 'الأحداث الفاشلة',
+  'LOCK EVENTS': 'أحداث القفل',
+  'Quick actions': 'إجراءات سريعة',
+  'Review failed logins': 'مراجعة محاولات الدخول الفاشلة',
+  'Account lock events': 'أحداث قفل الحساب',
+  'Advanced filters': 'مرشحات متقدمة',
+  'Reset activity view': 'إعادة ضبط عرض النشاط',
+  'All security tools': 'كل أدوات الأمان',
+  'Just now': 'الآن',
+  'Unknown OS': 'نظام تشغيل غير معروف',
+  'Unknown browser': 'متصفح غير معروف',
+  'Android': 'أندرويد',
+  'Windows': 'ويندوز',
+  'Linux': 'لينكس',
+  'Chrome': 'كروم',
+  'Firefox': 'فايرفوكس',
+  'Safari': 'سفاري',
+  'Edge': 'إيدج',
+  'macOS': 'ماك أو إس',
+  'iOS': 'آي أو إس',
+  'ADMIN': 'مشرف',
+  'USER': 'مستخدم',
+  'NORMAL_USER': 'مستخدم',
+  'PREMIUM': 'مميز',
+};
+
+function useAuthSecurityCopy() {
+  const { isArabic, isDark, t } = useUserExperience();
+  const darkArabic = isArabic && isDark;
+  const tr = (value) => {
+    if (!darkArabic || typeof value !== 'string') return value;
+    return AUTH_SECURITY_DARK_ARABIC_COPY[value] ?? t(value);
+  };
+  return { darkArabic, tr };
+}
+
+const RISK_MAP_SLOTS = [
+  [54, 67], [78, 57], [101, 68], [124, 59], [71, 84], [108, 88],
+  [135, 74], [165, 73], [188, 84], [181, 103], [198, 122], [211, 96],
+  [278, 49], [306, 42], [333, 53], [360, 46], [389, 55], [416, 64],
+  [298, 70], [326, 82], [352, 75], [381, 88], [411, 79], [357, 121],
+  [376, 134], [392, 124],
+];
+
+function hashString(value) {
+  let hash = 2166136261;
+  const text = String(value || 'unknown');
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function buildRiskMapPoints(sources) {
+  const occupied = new Map();
+
+  return (Array.isArray(sources) ? sources : []).map((source, index) => {
+    const seed = hashString(source.ipAddress || index);
+    const baseIndex = seed % RISK_MAP_SLOTS.length;
+    const collisionCount = occupied.get(baseIndex) || 0;
+    occupied.set(baseIndex, collisionCount + 1);
+
+    const [baseX, baseY] = RISK_MAP_SLOTS[baseIndex];
+    const angle = ((seed >>> 8) % 360) * (Math.PI / 180);
+    const offset = Math.min(collisionCount, 3) * 4.5;
+    const x = Math.max(20, Math.min(450, baseX + (Math.cos(angle) * offset)));
+    const y = Math.max(24, Math.min(172, baseY + (Math.sin(angle) * offset)));
+    const totalEvents = Number(source.totalEvents || 0);
+    const radius = Math.max(4.2, Math.min(9.5, 4.2 + (Math.log2(totalEvents + 1) * 1.2)));
+
+    return {
+      ...source,
+      x,
+      y,
+      radius,
+    };
+  });
+}
 
 const ACTION_OPTIONS = [
   { key: '', label: 'All authentication events' },
@@ -63,6 +245,12 @@ const SORT_OPTIONS = [
   { key: 'email', label: 'Email' },
   { key: 'isSuccess', label: 'Result' },
 ];
+
+
+function authenticationActionLabel(value, tr) {
+  const option = ACTION_OPTIONS.find((item) => item.key === value);
+  return tr(option?.label || humanize(value));
+}
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -99,11 +287,11 @@ function humanize(value) {
     .join(' ');
 }
 
-function formatDate(value) {
+function formatDate(value, darkArabic = false) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(darkArabic ? 'ar-u-nu-latn' : undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -112,7 +300,7 @@ function formatDate(value) {
   });
 }
 
-function formatTimeAgo(value) {
+function formatTimeAgo(value, darkArabic = false) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
@@ -121,6 +309,14 @@ function formatTimeAgo(value) {
   const minute = 60 * 1000;
   const hour = 60 * minute;
   const day = 24 * hour;
+
+  if (darkArabic) {
+    if (diff < minute) return 'الآن';
+    if (diff < hour) return `قبل ${Math.max(1, Math.floor(diff / minute))} د`;
+    if (diff < day) return `قبل ${Math.max(1, Math.floor(diff / hour))} س`;
+    if (diff < 7 * day) return `قبل ${Math.max(1, Math.floor(diff / day))} ي`;
+    return date.toLocaleDateString('ar-u-nu-latn', { month: 'short', day: 'numeric' });
+  }
 
   if (diff < minute) return 'Just now';
   if (diff < hour) return `${Math.max(1, Math.floor(diff / minute))} min ago`;
@@ -140,31 +336,31 @@ function toEndOfDayIso(value) {
   return new Date(`${value}T23:59:59.999`).toISOString();
 }
 
-function deviceLabel(userAgent) {
-  if (!userAgent) return 'Unknown device';
+function deviceLabel(userAgent, darkArabic = false) {
+  if (!userAgent) return darkArabic ? 'جهاز غير معروف' : 'Unknown device';
   const platform = /Android/i.test(userAgent)
-    ? 'Android'
+    ? (darkArabic ? 'أندرويد' : 'Android')
     : /iPhone|iPad|iPod/i.test(userAgent)
-      ? 'iOS'
+      ? (darkArabic ? 'آي أو إس' : 'iOS')
       : /Windows/i.test(userAgent)
-        ? 'Windows'
+        ? (darkArabic ? 'ويندوز' : 'Windows')
         : /Macintosh|Mac OS X/i.test(userAgent)
-          ? 'macOS'
+          ? (darkArabic ? 'ماك أو إس' : 'macOS')
           : /Linux/i.test(userAgent)
-            ? 'Linux'
-            : 'Unknown OS';
+            ? (darkArabic ? 'لينكس' : 'Linux')
+            : (darkArabic ? 'نظام تشغيل غير معروف' : 'Unknown OS');
 
   const browser = /Edg\//i.test(userAgent)
-    ? 'Edge'
+    ? (darkArabic ? 'إيدج' : 'Edge')
     : /Chrome\//i.test(userAgent)
-      ? 'Chrome'
+      ? (darkArabic ? 'كروم' : 'Chrome')
       : /Firefox\//i.test(userAgent)
-        ? 'Firefox'
+        ? (darkArabic ? 'فايرفوكس' : 'Firefox')
         : /Safari\//i.test(userAgent)
-          ? 'Safari'
-          : 'Unknown browser';
+          ? (darkArabic ? 'سفاري' : 'Safari')
+          : (darkArabic ? 'متصفح غير معروف' : 'Unknown browser');
 
-  return `${browser} on ${platform}`;
+  return darkArabic ? `${browser} على ${platform}` : `${browser} on ${platform}`;
 }
 
 function Sparkline({ variant = 'mint' }) {
@@ -180,13 +376,15 @@ function Sparkline({ variant = 'mint' }) {
 }
 
 function MetricCard({ icon: Icon, label, value, hint, tone = 'mint' }) {
+  const { tr } = useAuthSecurityCopy();
+
   return (
     <article className={`admin-auth-stat is-${tone}`}>
       <span className="admin-auth-stat__icon"><Icon size={18} /></span>
       <div className="admin-auth-stat__copy">
-        <small>{label}</small>
+        <small>{tr(label)}</small>
         <strong>{Number(value || 0).toLocaleString()}</strong>
-        <span>{hint}</span>
+        <span>{tr(hint)}</span>
       </div>
       <Sparkline variant={tone === 'rose' ? 'rose' : 'mint'} />
     </article>
@@ -194,6 +392,7 @@ function MetricCard({ icon: Icon, label, value, hint, tone = 'mint' }) {
 }
 
 function Dropdown({ label, value, options, onChange, icon: Icon }) {
+  const { tr } = useAuthSecurityCopy();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const current = options.find((item) => item.key === value) || options[0];
@@ -211,7 +410,7 @@ function Dropdown({ label, value, options, onChange, icon: Icon }) {
     <div className={`admin-auth-dropdown ${open ? 'is-open' : ''}`} ref={ref}>
       <button type="button" className="admin-auth-dropdown__trigger" onClick={() => setOpen((state) => !state)}>
         <Icon size={14} />
-        <span><small>{label}</small><strong>{current.label}</strong></span>
+        <span><small>{tr(label)}</small><strong>{tr(current.label)}</strong></span>
         <ChevronDown size={13} />
       </button>
       {open && (
@@ -226,7 +425,7 @@ function Dropdown({ label, value, options, onChange, icon: Icon }) {
                 setOpen(false);
               }}
             >
-              {item.label}
+              {tr(item.label)}
               {item.key === value && <Check size={13} />}
             </button>
           ))}
@@ -237,6 +436,7 @@ function Dropdown({ label, value, options, onChange, icon: Icon }) {
 }
 
 function SortControl({ value, order, onChange, onToggle }) {
+  const { tr } = useAuthSecurityCopy();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const current = SORT_OPTIONS.find((item) => item.key === value) || SORT_OPTIONS[0];
@@ -254,10 +454,10 @@ function SortControl({ value, order, onChange, onToggle }) {
     <div className="admin-auth-sort" ref={ref}>
       <button type="button" className="admin-auth-sort__main" onClick={() => setOpen((state) => !state)}>
         <Clock3 size={14} />
-        <span><small>Sort</small><strong>{current.label}</strong></span>
+        <span><small>{tr('Sort')}</small><strong>{tr(current.label)}</strong></span>
         <ChevronDown size={13} />
       </button>
-      <button type="button" className="admin-auth-sort__direction" onClick={onToggle} aria-label="Toggle sort direction">
+      <button type="button" className="admin-auth-sort__direction" onClick={onToggle} aria-label={tr('Toggle sort direction')}>
         {order === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
       </button>
       {open && (
@@ -272,7 +472,7 @@ function SortControl({ value, order, onChange, onToggle }) {
                 setOpen(false);
               }}
             >
-              {item.label}
+              {tr(item.label)}
               {item.key === value && <Check size={13} />}
             </button>
           ))}
@@ -283,6 +483,7 @@ function SortControl({ value, order, onChange, onToggle }) {
 }
 
 function SecurityInspector({ row, onClose }) {
+  const { darkArabic, tr } = useAuthSecurityCopy();
   if (!row || typeof document === 'undefined') return null;
 
   return createPortal(
@@ -294,11 +495,11 @@ function SecurityInspector({ row, onClose }) {
             {row.isSuccess ? <ShieldCheck size={21} /> : <ShieldX size={21} />}
           </span>
           <div>
-            <small>AUTHENTICATION EVENT</small>
-            <h2>{humanize(row.action)}</h2>
-            <p>{formatDate(row.createdAt)}</p>
+            <small>{tr('AUTHENTICATION EVENT')}</small>
+            <h2>{authenticationActionLabel(row.action, tr)}</h2>
+            <p>{formatDate(row.createdAt, darkArabic)}</p>
           </div>
-          <button type="button" className="admin-auth-icon-button" onClick={onClose} aria-label="Close security event details"><X size={18} /></button>
+          <button type="button" className="admin-auth-icon-button" onClick={onClose} aria-label={tr('Close security event details')}><X size={18} /></button>
         </header>
 
         <div className="admin-auth-inspector__body">
@@ -306,25 +507,25 @@ function SecurityInspector({ row, onClose }) {
             <article>
               <span><UserRound size={15} /></span>
               <div>
-                <small>Account</small>
-                <strong>{row.user?.fullName || row.email || 'Unknown account'}</strong>
+                <small>{tr('Account')}</small>
+                <strong>{row.user?.fullName || row.email || tr('Unknown account')}</strong>
                 <p>{row.user?.email || row.email || '—'}</p>
               </div>
             </article>
             <article>
               <span><Fingerprint size={15} /></span>
               <div>
-                <small>Network</small>
-                <strong>{row.ipAddress || 'Unknown IP'}</strong>
-                <p>Recorded request address</p>
+                <small>{tr('Network')}</small>
+                <strong>{row.ipAddress || tr('Unknown IP')}</strong>
+                <p>{tr('Recorded request address')}</p>
               </div>
             </article>
             <article>
               <span><Smartphone size={15} /></span>
               <div>
-                <small>Device</small>
-                <strong>{deviceLabel(row.userAgent)}</strong>
-                <p>{row.userAgent || 'No user agent stored'}</p>
+                <small>{tr('Device')}</small>
+                <strong>{deviceLabel(row.userAgent, darkArabic)}</strong>
+                <p>{row.userAgent || tr('No user agent stored')}</p>
               </div>
             </article>
           </section>
@@ -333,20 +534,20 @@ function SecurityInspector({ row, onClose }) {
             <header>
               <span>{row.isSuccess ? <CheckCircle2 size={15} /> : <CircleAlert size={15} />}</span>
               <div>
-                <small>SECURITY RESULT</small>
-                <h3>{row.isSuccess ? 'Authentication event completed successfully' : 'Authentication event failed'}</h3>
+                <small>{tr('SECURITY RESULT')}</small>
+                <h3>{tr(row.isSuccess ? 'Authentication event completed successfully' : 'Authentication event failed')}</h3>
               </div>
             </header>
-            <p>{row.message || 'No additional security message was recorded for this event.'}</p>
+            <p>{tr(row.message || 'No additional security message was recorded for this event.')}</p>
           </section>
 
           <section className="admin-auth-inspector__meta">
-            <article><small>Log ID</small><strong>{row.id}</strong></article>
-            <article><small>User ID</small><strong>{row.userId || row.user?.id || '—'}</strong></article>
-            <article><small>Role</small><strong>{row.user?.role || '—'}</strong></article>
-            <article><small>Account active</small><strong>{row.user ? (row.user.isActive ? 'Yes' : 'No') : '—'}</strong></article>
-            <article><small>Email verified</small><strong>{row.user ? (row.user.isVerified ? 'Yes' : 'No') : '—'}</strong></article>
-            <article><small>Event result</small><strong>{row.isSuccess ? 'Successful' : 'Failed'}</strong></article>
+            <article><small>{tr('Log ID')}</small><strong>{row.id}</strong></article>
+            <article><small>{tr('User ID')}</small><strong>{row.userId || row.user?.id || '—'}</strong></article>
+            <article><small>{tr('Role')}</small><strong>{row.user?.role ? tr(row.user.role) : '—'}</strong></article>
+            <article><small>{tr('Account active')}</small><strong>{row.user ? tr(row.user.isActive ? 'Yes' : 'No') : '—'}</strong></article>
+            <article><small>{tr('Email verified')}</small><strong>{row.user ? tr(row.user.isVerified ? 'Yes' : 'No') : '—'}</strong></article>
+            <article><small>{tr('Event result')}</small><strong>{tr(row.isSuccess ? 'Successful' : 'Failed')}</strong></article>
           </section>
         </div>
       </section>
@@ -356,6 +557,7 @@ function SecurityInspector({ row, onClose }) {
 }
 
 export default function AdminAuthSecurityPage() {
+  const { darkArabic, tr } = useAuthSecurityCopy();
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
   const [summary, setSummary] = useState({});
@@ -415,12 +617,12 @@ export default function AdminAuthSecurityPage() {
       setMeta(unwrapMeta(listResult, nextRows.length));
       setSummary(unwrapSummary(summaryResult));
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Could not load authentication security activity.'));
+      setError(getApiErrorMessage(requestError, darkArabic ? 'تعذر تحميل نشاط أمان المصادقة.' : 'Could not load authentication security activity.'));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [listParams, commonParams]);
+  }, [listParams, commonParams, darkArabic]);
 
   useEffect(() => {
     load();
@@ -449,6 +651,8 @@ export default function AdminAuthSecurityPage() {
   const uniqueIps = Number(summary.uniqueIpAddresses ?? 0);
   const uniqueUsers = Number(summary.uniqueUsers ?? 0);
   const lockEvents = Number(summary.accountLockEvents ?? 0);
+  const riskMapPoints = useMemo(() => buildRiskMapPoints(summary.riskSources), [summary.riskSources]);
+  const riskyNetworkSources = riskMapPoints.filter((source) => source.failedEvents > 0 || source.lockEvents > 0).length;
   const securityScore = total > 0 ? Math.max(0, Math.min(100, Math.round((success / total) * 100))) : 0;
   const riskPercent = total > 0 ? Math.max(0, Math.min(100, Math.round((failed / total) * 100))) : 0;
 
@@ -469,19 +673,19 @@ export default function AdminAuthSecurityPage() {
   };
 
   return (
-    <div className="admin-auth-page">
+    <div className={`admin-auth-page${darkArabic ? ' admin-auth-page--dark-arabic' : ''}`}>
       <section className="admin-auth-hero">
         <div className="admin-auth-hero__content">
-          <span className="admin-auth-eyebrow"><ShieldCheck size={14} /> IDENTITY SECURITY</span>
-          <h1>Authentication <span>security</span></h1>
-          <p>Inspect login, password, verification and token activity with account, device and network context.</p>
+          <span className="admin-auth-eyebrow"><ShieldCheck size={14} /> {tr('IDENTITY SECURITY')}</span>
+          <h1>{tr('Authentication')} <span>{tr('security')}</span></h1>
+          <p>{tr('Inspect login, password, verification and token activity with account, device and network context.')}</p>
 
           <div className="admin-auth-hero__actions">
             <button type="button" className="admin-auth-primary" onClick={() => insightsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-              View security insights <span>→</span>
+              {tr('View security insights')} <span>→</span>
             </button>
             <button type="button" className="admin-auth-text-link" onClick={() => activityRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-              Explore activity <span>ⓘ</span>
+              {tr('Explore activity')} <span>ⓘ</span>
             </button>
           </div>
         </div>
@@ -579,7 +783,7 @@ export default function AdminAuthSecurityPage() {
 
         <button type="button" className="admin-auth-refresh" onClick={refresh} disabled={refreshing}>
           <RefreshCw className={refreshing ? 'admin-auth-spin' : ''} size={13} />
-          Refresh
+          {tr('Refresh')}
         </button>
       </section>
 
@@ -591,26 +795,26 @@ export default function AdminAuthSecurityPage() {
         </div>
       )}
 
-      <section className="admin-auth-stats" aria-label="Authentication security metrics">
-        <MetricCard icon={ShieldCheck} label="Total events" value={total} hint="Current audit scope" />
-        <MetricCard icon={LockKeyhole} label="Verified activity" value={success} hint={`${securityScore}% successful`} />
-        <MetricCard icon={ShieldAlert} label="Risky attempts" value={failed} hint={`${riskPercent}% of activity`} tone="rose" />
-        <MetricCard icon={Smartphone} label="Network sources" value={uniqueIps} hint={`${uniqueUsers} identified users`} />
+      <section className="admin-auth-stats" aria-label={tr('Authentication security metrics')}>
+        <MetricCard icon={ShieldCheck} label={tr('Total events')} value={total} hint={tr('Current audit scope')} />
+        <MetricCard icon={LockKeyhole} label={tr('Verified activity')} value={success} hint={darkArabic ? `${securityScore}% ناجح` : `${securityScore}% successful`} />
+        <MetricCard icon={ShieldAlert} label={tr('Risky attempts')} value={failed} hint={darkArabic ? `${riskPercent}% من النشاط` : `${riskPercent}% of activity`} tone="rose" />
+        <MetricCard icon={Smartphone} label={tr('Network sources')} value={uniqueIps} hint={darkArabic ? `${uniqueUsers} مستخدمون محددون` : `${uniqueUsers} identified users`} />
       </section>
 
       {controlsOpen && (
-        <section className="admin-auth-controls" aria-label="Authentication activity filters">
+        <section className="admin-auth-controls" aria-label={tr('Authentication activity filters')}>
           <div className="admin-auth-controls__topline">
             <div>
-              <small>ACTIVITY CONTROLS</small>
-              <strong>Search and refine the security feed</strong>
+              <small>{tr('ACTIVITY CONTROLS')}</small>
+              <strong>{tr('Search and refine the security feed')}</strong>
             </div>
-            <button type="button" onClick={() => setControlsOpen(false)} aria-label="Close filters"><X size={15} /></button>
+            <button type="button" onClick={() => setControlsOpen(false)} aria-label={tr('Close filters')}><X size={15} /></button>
           </div>
 
           <div className="admin-auth-controls__grid">
-            <Dropdown label="Event" value={action} options={ACTION_OPTIONS} onChange={(value) => { setAction(value); setPage(1); }} icon={KeyRound} />
-            <Dropdown label="Result" value={result} options={RESULT_OPTIONS} onChange={(value) => { setResult(value); setPage(1); }} icon={ShieldCheck} />
+            <Dropdown label={tr('Event')} value={action} options={ACTION_OPTIONS} onChange={(value) => { setAction(value); setPage(1); }} icon={KeyRound} />
+            <Dropdown label={tr('Result')} value={result} options={RESULT_OPTIONS} onChange={(value) => { setResult(value); setPage(1); }} icon={ShieldCheck} />
             <SortControl
               value={sortBy}
               order={sortOrder}
@@ -619,17 +823,17 @@ export default function AdminAuthSecurityPage() {
             />
 
             <div className="admin-auth-date-range">
-              <label><CalendarDays size={13} /><span><small>From</small><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} /></span></label>
-              <label><CalendarDays size={13} /><span><small>To</small><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setPage(1); }} /></span></label>
+              <label><CalendarDays size={13} /><span><small>{tr('From')}</small><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} /></span></label>
+              <label><CalendarDays size={13} /><span><small>{tr('To')}</small><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setPage(1); }} /></span></label>
             </div>
 
             <label className="admin-auth-search">
               <Search size={15} />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search account, email, IP or device..." />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tr('Search account, email, IP or device...')} />
               {search && <button type="button" onClick={() => setSearch('')}><X size={13} /></button>}
             </label>
 
-            <button type="button" className="admin-auth-clear" onClick={clearFilters}>Clear filters</button>
+            <button type="button" className="admin-auth-clear" onClick={clearFilters}>{tr('Clear filters')}</button>
           </div>
         </section>
       )}
@@ -637,48 +841,48 @@ export default function AdminAuthSecurityPage() {
       <section className="admin-auth-dashboard" ref={insightsRef}>
         <article className="admin-auth-panel admin-auth-score-card">
           <header className="admin-auth-panel__header">
-            <div><ShieldCheck size={13} /><strong>Security overview</strong></div>
+            <div><ShieldCheck size={13} /><strong>{tr('Security overview')}</strong></div>
           </header>
 
           <div className="admin-auth-score-card__body">
             <div className="admin-auth-score-ring" style={{ '--score': `${securityScore * 3.6}deg` }}>
               <div>
                 <strong>{securityScore}</strong>
-                <span>Security score</span>
+                <span>{tr('Security score')}</span>
               </div>
             </div>
 
             <div className="admin-auth-score-legend">
-              <div><i className="is-strong" /><span><strong>Strong</strong><small>{success.toLocaleString()} verified events</small></span><b>Good</b></div>
-              <div><i className="is-monitor" /><span><strong>Monitoring</strong><small>{uniqueIps.toLocaleString()} network sources</small></span><b>Active</b></div>
-              <div><i className="is-alert" /><span><strong>Attention</strong><small>{failed.toLocaleString()} failed events</small></span><b>{failed > 0 ? 'Review' : 'Low'}</b></div>
+              <div><i className="is-strong" /><span><strong>{tr('Strong')}</strong><small>{success.toLocaleString()} {tr('verified events')}</small></span><b>{tr('Good')}</b></div>
+              <div><i className="is-monitor" /><span><strong>{tr('Monitoring')}</strong><small>{uniqueIps.toLocaleString()} {tr('network sources')}</small></span><b>{tr('Active')}</b></div>
+              <div><i className="is-alert" /><span><strong>{tr('Attention')}</strong><small>{failed.toLocaleString()} {tr('failed events')}</small></span><b>{tr(failed > 0 ? 'Review' : 'Low')}</b></div>
             </div>
           </div>
         </article>
 
         <article className="admin-auth-panel admin-auth-activity-card" ref={activityRef}>
           <header className="admin-auth-panel__header">
-            <div><CircleAlert size={13} /><strong>Recent activity</strong></div>
+            <div><CircleAlert size={13} /><strong>{tr('Recent activity')}</strong></div>
             <button type="button" className="admin-auth-filter-button" onClick={() => setControlsOpen((current) => !current)}>
-              <SlidersHorizontal size={13} /> Filters
+              <SlidersHorizontal size={13} /> {tr('Filters')}
             </button>
           </header>
 
           <div className="admin-auth-activity-list">
             {loading ? (
-              <div className="admin-auth-state"><LoaderCircle className="admin-auth-spin" size={22} /><strong>Loading security activity…</strong></div>
+              <div className="admin-auth-state"><LoaderCircle className="admin-auth-spin" size={22} /><strong>{tr('Loading security activity…')}</strong></div>
             ) : rows.length === 0 ? (
-              <div className="admin-auth-state"><LockKeyhole size={24} /><strong>No authentication events match these filters.</strong></div>
+              <div className="admin-auth-state"><LockKeyhole size={24} /><strong>{tr('No authentication events match these filters.')}</strong></div>
             ) : rows.map((row) => (
               <button type="button" className="admin-auth-activity-row" key={row.id} onClick={() => setSelected(row)}>
                 <span className={`admin-auth-activity-dot ${row.isSuccess ? 'is-success' : 'is-failed'}`} />
                 <span className="admin-auth-activity-copy">
-                  <strong>{humanize(row.action)}</strong>
-                  <small>{row.user?.email || row.email || row.ipAddress || 'Unknown account'}</small>
+                  <strong>{authenticationActionLabel(row.action, tr)}</strong>
+                  <small>{row.user?.email || row.email || row.ipAddress || tr('Unknown account')}</small>
                 </span>
                 <span className="admin-auth-activity-meta">
-                  <small>{formatTimeAgo(row.createdAt)}</small>
-                  <b>{deviceLabel(row.userAgent).split(' on ')[0]}</b>
+                  <small>{formatTimeAgo(row.createdAt, darkArabic)}</small>
+                  <b>{darkArabic ? deviceLabel(row.userAgent, true).split(' على ')[0] : deviceLabel(row.userAgent).split(' on ')[0]}</b>
                 </span>
               </button>
             ))}
@@ -690,26 +894,28 @@ export default function AdminAuthSecurityPage() {
               disabled={loading || page <= 1}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
-              Previous
+              {tr('Previous')}
             </button>
-            <span>{paginationTotal ? `${paginationStart}–${paginationEnd} of ${paginationTotal}` : '0 events'}</span>
+            <span>{paginationTotal ? darkArabic ? `${paginationStart}–${paginationEnd} من ${paginationTotal}` : `${paginationStart}–${paginationEnd} of ${paginationTotal}` : darkArabic ? '0 أحداث' : '0 events'}</span>
             <button
               type="button"
               disabled={loading || page >= paginationTotalPages}
               onClick={() => setPage((current) => Math.min(paginationTotalPages, current + 1))}
             >
-              Next
+              {tr('Next')}
             </button>
           </footer>
         </article>
 
         <article className="admin-auth-panel admin-auth-risk-card">
           <header className="admin-auth-panel__header">
-            <div><Fingerprint size={13} /><strong>Risk map</strong></div>
+            <div><Fingerprint size={13} /><strong>{tr('Risk map')}</strong></div>
           </header>
 
-          <div className="admin-auth-map" aria-label="Decorative security network map">
-            <svg viewBox="0 0 470 210" role="img" aria-hidden="true">
+          <div className="admin-auth-map" aria-label={tr('Dynamic authentication risk map')}>
+            <svg viewBox="0 0 470 210" role="img" aria-label={darkArabic
+              ? `${riskMapPoints.length} مصادر شبكة، ${riskyNetworkSources} مصادر خطرة`
+              : `${riskMapPoints.length} network sources, ${riskyNetworkSources} risky sources`}>
               <defs>
                 <pattern id="auth-dot-pattern" width="8" height="8" patternUnits="userSpaceOnUse">
                   <circle cx="2" cy="2" r="1.35" />
@@ -717,36 +923,53 @@ export default function AdminAuthSecurityPage() {
               </defs>
               <path className="admin-auth-map__land" d="M29 71l22-22 34-7 25 10 15-5 20 9 3 17-13 11-17 1-8 12-18-3-10 8-14-4-9-12-17-3-13-12zm119 5 18-17 25-3 11 11 15 4 7 16-12 16-1 23-16 11-11-15-9-21-16-10-11-15zm112-30 24-17 36 1 25 8 21-5 20 10 27 3 26 16-7 16-18 4-16 13-22-2-11 13-18-1-12-13-27 6-21-10-17-3-12-13-4-14 5-12zm91 70 22-8 19 7 10 15-8 14-20 9-17-8-12-15 6-14z" />
               <path className="admin-auth-map__outline" d="M29 71l22-22 34-7 25 10 15-5 20 9 3 17-13 11-17 1-8 12-18-3-10 8-14-4-9-12-17-3-13-12zm119 5 18-17 25-3 11 11 15 4 7 16-12 16-1 23-16 11-11-15-9-21-16-10-11-15zm112-30 24-17 36 1 25 8 21-5 20 10 27 3 26 16-7 16-18 4-16 13-22-2-11 13-18-1-12-13-27 6-21-10-17-3-12-13-4-14 5-12zm91 70 22-8 19 7 10 15-8 14-20 9-17-8-12-15 6-14z" />
+
+              {riskMapPoints.map((source) => (
+                <g
+                  key={source.ipAddress}
+                  className={`admin-auth-map__source is-${source.riskLevel || 'low'}`}
+                  transform={`translate(${source.x} ${source.y})`}
+                >
+                  <title>{darkArabic
+                    ? `${source.ipAddress} • ${Number(source.totalEvents || 0).toLocaleString()} أحداث • ${Number(source.failedEvents || 0).toLocaleString()} فاشلة • ${Number(source.lockEvents || 0).toLocaleString()} مقفلة`
+                    : `${source.ipAddress} • ${Number(source.totalEvents || 0).toLocaleString()} events • ${Number(source.failedEvents || 0).toLocaleString()} failed • ${Number(source.lockEvents || 0).toLocaleString()} locked`}</title>
+                  <circle className="admin-auth-map__source-halo" r={source.radius + 7} />
+                  <circle className="admin-auth-map__source-ring" r={source.radius + 2.5} />
+                  <circle className="admin-auth-map__source-dot" r={source.radius} />
+                </g>
+              ))}
             </svg>
 
-            <span className="admin-auth-map__pulse is-one"><i /></span>
-            <span className="admin-auth-map__pulse is-two"><i /></span>
-            <span className="admin-auth-map__pulse is-three"><i /></span>
-            {failed > 0 && <span className="admin-auth-map__pulse is-alert"><i /></span>}
+            {!loading && riskMapPoints.length === 0 && (
+              <div className="admin-auth-map__empty">
+                <Fingerprint size={18} />
+                <span>{tr('No network sources in this scope')}</span>
+              </div>
+            )}
           </div>
 
           <div className="admin-auth-risk-summary">
-            <div><small>NETWORK SOURCES</small><strong>{uniqueIps.toLocaleString()}</strong></div>
-            <div><small>FAILED EVENTS</small><strong>{failed.toLocaleString()}</strong></div>
-            <div><small>LOCK EVENTS</small><strong>{lockEvents.toLocaleString()}</strong></div>
+            <div><small>{tr('NETWORK SOURCES')}</small><strong>{uniqueIps.toLocaleString()}</strong></div>
+            <div><small>{tr('FAILED EVENTS')}</small><strong>{failed.toLocaleString()}</strong></div>
+            <div><small>{tr('LOCK EVENTS')}</small><strong>{lockEvents.toLocaleString()}</strong></div>
           </div>
         </article>
 
         <article className="admin-auth-panel admin-auth-actions-card">
           <header className="admin-auth-panel__header">
-            <div><KeyRound size={13} /><strong>Quick actions</strong></div>
+            <div><KeyRound size={13} /><strong>{tr('Quick actions')}</strong></div>
           </header>
 
           <div className="admin-auth-quick-actions">
-            <button type="button" onClick={() => setQuickFilter('LOGIN_FAILED', 'false')}><ShieldAlert size={14} /><span>Review failed logins</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
-            <button type="button" onClick={() => setQuickFilter('', 'true')}><CheckCircle2 size={14} /><span>Verified activity</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
-            <button type="button" onClick={() => setQuickFilter('ACCOUNT_LOCKED', '')}><LockKeyhole size={14} /><span>Account lock events</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
-            <button type="button" onClick={() => setControlsOpen(true)}><SlidersHorizontal size={14} /><span>Advanced filters</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
-            <button type="button" onClick={clearFilters}><RefreshCw size={14} /><span>Reset activity view</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
+            <button type="button" onClick={() => setQuickFilter('LOGIN_FAILED', 'false')}><ShieldAlert size={14} /><span>{tr('Review failed logins')}</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
+            <button type="button" onClick={() => setQuickFilter('', 'true')}><CheckCircle2 size={14} /><span>{tr('Verified activity')}</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
+            <button type="button" onClick={() => setQuickFilter('ACCOUNT_LOCKED', '')}><LockKeyhole size={14} /><span>{tr('Account lock events')}</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
+            <button type="button" onClick={() => setControlsOpen(true)}><SlidersHorizontal size={14} /><span>{tr('Advanced filters')}</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
+            <button type="button" onClick={clearFilters}><RefreshCw size={14} /><span>{tr('Reset activity view')}</span><ChevronDown size={12} className="admin-auth-action-chevron" /></button>
           </div>
 
           <button type="button" className="admin-auth-security-link" onClick={() => setControlsOpen(true)}>
-            All security tools <span>→</span>
+            {tr('All security tools')} <span>→</span>
           </button>
         </article>
       </section>

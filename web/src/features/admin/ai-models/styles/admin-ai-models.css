@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-model-page {
   --model-ink: #294f49;
   --model-ink-soft: #496761;
@@ -2751,4 +2753,605 @@
     width: 250px;
     margin-left: -125px;
   }
+}
+
+html.vox-user-dark .admin-model-page {
+  color: #e7f0ed;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-card-grid,
+html.vox-user-dark .admin-model-page .admin-model-card-shell,
+html.vox-user-dark .admin-model-page .admin-model-directory,
+html.vox-user-dark .admin-model-page .admin-model-hero,
+html.vox-user-dark .admin-model-page .admin-model-metric,
+html.vox-user-dark .admin-model-page .admin-model-metrics,
+html.vox-user-dark .admin-model-page .admin-model-modal,
+html.vox-user-dark .admin-model-page .admin-model-modal-backdrop,
+html.vox-user-dark .admin-model-page .admin-model-modal-layer,
+html.vox-user-dark .admin-model-page .admin-model-registry-card,
+html.vox-user-dark .admin-model-page .admin-model-scene-card,
+html.vox-user-dark .admin-model-page .admin-model-scene-card--data,
+html.vox-user-dark .admin-model-page .admin-model-scene-card--route,
+html.vox-user-dark .admin-model-page .admin-model-scene-card--speed,
+html.vox-user-dark .admin-model-page .admin-model-state,
+html.vox-user-dark .admin-model-page .admin-model-status-tabs,
+html.vox-user-dark .admin-model-page .admin-model-toolbar {
+  border-color: rgba(145, 198, 190, .16) !important;
+  background-color: #111d1b !important;
+  color: #e7f0ed !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .20);
+}
+
+html.vox-user-dark .admin-model-page :is(h1, h2, h3, h4, h5, strong, label, th) {
+  color: #eaf3f0 !important;
+}
+
+html.vox-user-dark .admin-model-page :is(p, small, td) {
+  color: #a5b7b1;
+}
+
+html.vox-user-dark .admin-model-page :is(input, select, textarea) {
+  border-color: rgba(145, 198, 190, .18) !important;
+  background: #0e1917 !important;
+  color: #e8f1ee !important;
+  caret-color: #8fd2c9;
+}
+
+html.vox-user-dark .admin-model-page :is(input, textarea)::placeholder {
+  color: #7f928b !important;
+}
+
+html.vox-user-dark .admin-model-page :is(table, thead, tbody, tr) {
+  border-color: rgba(145, 198, 190, .12);
+}
+
+html.vox-user-rtl .admin-model-page {
+  direction: rtl;
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-model-page :is(input, select, textarea, table) {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Dark-mode finish for the AI model workspace. Kept fully scoped so Light + English stays untouched. */
+html.vox-user-dark .admin-model-page {
+  --model-ink: #e8f2ef;
+  --model-ink-soft: #bed0ca;
+  --model-muted: #92aaa3;
+  --model-muted-soft: #789089;
+  --model-line: rgba(133, 198, 188, .14);
+  --model-line-strong: rgba(133, 198, 188, .22);
+  --model-paper: #0d1715;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-hero {
+  border-color: rgba(123, 190, 181, .17) !important;
+  background:
+    radial-gradient(circle at 86% 30%, rgba(72, 157, 147, .13), transparent 31%),
+    radial-gradient(circle at 17% 92%, rgba(184, 92, 117, .055), transparent 25%),
+    linear-gradient(112deg, #0c1715 0%, #0d1b18 52%, #10231f 100%) !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-hero::after {
+  border-color: rgba(89, 180, 169, .055);
+}
+
+html.vox-user-dark .admin-model-page .admin-model-hero h1 {
+  color: #edf7f4 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-hero h1 span,
+html.vox-user-dark .admin-model-page .admin-model-eyebrow {
+  color: #67c3ba !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-hero p {
+  color: #a8bbb5 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-button:not(.is-primary) {
+  border-color: rgba(125, 192, 182, .18) !important;
+  background: #101d1a !important;
+  color: #dce9e5 !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-button:not(.is-primary):hover:not(:disabled) {
+  border-color: rgba(111, 204, 193, .34) !important;
+  background: #142522 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-button.is-danger,
+html.vox-user-dark .admin-model-confirm .admin-model-button.is-danger {
+  border-color: rgba(221, 116, 140, .30) !important;
+  background: #28171c !important;
+  color: #f1a4b5 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-scene-card {
+  border-color: rgba(115, 200, 190, .18) !important;
+  background: linear-gradient(145deg, #132421, #0b1715) !important;
+  color: #6cc8be !important;
+  box-shadow:
+    5px 7px 0 rgba(0, 0, 0, .11),
+    0 14px 28px rgba(0, 0, 0, .28),
+    inset 1px 1px 0 rgba(159, 220, 210, .055) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-scene-card--speed {
+  color: #d98fa0 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-core__base--bottom {
+  border-color: rgba(111, 196, 185, .22) !important;
+  background: linear-gradient(180deg, #1d4d47 0%, #163c37 58%, #0f2925 100%) !important;
+  box-shadow: 0 16px 30px rgba(0, 0, 0, .25) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-core__base--top {
+  border-color: rgba(117, 203, 191, .22) !important;
+  background: radial-gradient(circle at 50% 38%, #285a53 0 20%, #1b4741 45%, #143630 72%, #0d2420 100%) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-core__chip {
+  border-color: rgba(161, 229, 220, .24) !important;
+  background: linear-gradient(145deg, #4faea6, #347f79 58%, #245a55) !important;
+  box-shadow:
+    9px 11px 0 rgba(0, 0, 0, .16),
+    0 24px 36px rgba(0, 0, 0, .28),
+    inset 0 1px 0 rgba(218, 255, 250, .16) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-core__chip::before,
+html.vox-user-dark .admin-model-page .admin-model-core__chip-face {
+  border-color: rgba(198, 243, 236, .16) !important;
+  background: linear-gradient(145deg, rgba(207, 255, 247, .10), rgba(4, 21, 18, .09)) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-alert.is-error {
+  border-color: rgba(218, 113, 136, .24) !important;
+  background: #25171b !important;
+  color: #f0a1b2 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-alert.is-success {
+  border-color: rgba(83, 190, 177, .22) !important;
+  background: #10221e !important;
+  color: #8bd4ca !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-metric,
+html.vox-user-dark .admin-model-page .admin-model-directory {
+  border-color: rgba(125, 190, 181, .15) !important;
+  background: #0e1917 !important;
+  box-shadow: 0 15px 38px rgba(0, 0, 0, .19) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-metric__icon {
+  background: linear-gradient(145deg, #17312d, #112622) !important;
+  color: #69c7bd !important;
+  box-shadow: inset 0 0 0 1px rgba(105, 199, 189, .12) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-metric.is-rose .admin-model-metric__icon {
+  background: linear-gradient(145deg, #2a191e, #211519) !important;
+  color: #e091a4 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-metric small,
+html.vox-user-dark .admin-model-page .admin-model-directory__header p,
+html.vox-user-dark .admin-model-page .admin-model-registry-card__head>div>small,
+html.vox-user-dark .admin-model-page .admin-model-registry-card__status>small,
+html.vox-user-dark .admin-model-page .admin-model-registry-card__metrics small,
+html.vox-user-dark .admin-model-page .admin-model-registry-card__metrics span,
+html.vox-user-dark .admin-model-page .admin-model-registry-card__capabilities>small,
+html.vox-user-dark .admin-model-page .admin-model-state span,
+html.vox-user-dark .admin-model-page .admin-model-pagination {
+  color: #91a59f !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-metric strong,
+html.vox-user-dark .admin-model-page .admin-model-directory__header h2,
+html.vox-user-dark .admin-model-page .admin-model-registry-card__head>div>span,
+html.vox-user-dark .admin-model-page .admin-model-registry-card__metrics strong,
+html.vox-user-dark .admin-model-page .admin-model-state strong {
+  color: #e8f2ef !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-directory__header,
+html.vox-user-dark .admin-model-page .admin-model-status-tabs,
+html.vox-user-dark .admin-model-page .admin-model-toolbar,
+html.vox-user-dark .admin-model-page .admin-model-pagination {
+  border-color: rgba(127, 190, 181, .11) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-live {
+  border-color: rgba(91, 191, 180, .18) !important;
+  background: #10211e !important;
+  color: #c4d7d1 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-status-tabs button {
+  color: #9eb1ab !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-status-tabs button:hover {
+  background: #132522 !important;
+  color: #7bd0c6 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-status-tabs button.is-active {
+  border-color: rgba(102, 199, 188, .23) !important;
+  background: #15302b !important;
+  color: #77cbc2 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-status-tabs button span {
+  background: #0b1715 !important;
+  color: #b5c8c2 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-toolbar,
+html.vox-user-dark .admin-model-page .admin-model-card-shell {
+  background: #0b1614 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-select__trigger,
+html.vox-user-dark .admin-model-page .admin-model-sort__trigger,
+html.vox-user-dark .admin-model-page .admin-model-sort__direction,
+html.vox-user-dark .admin-model-page .admin-model-search {
+  border-color: rgba(123, 188, 179, .17) !important;
+  background: #101d1a !important;
+  color: #bfd1cb !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-select__trigger small,
+html.vox-user-dark .admin-model-page .admin-model-sort__trigger small {
+  color: #7f9690 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-select__trigger strong,
+html.vox-user-dark .admin-model-page .admin-model-sort__trigger strong,
+html.vox-user-dark .admin-model-page .admin-model-search input {
+  color: #dce9e5 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-search input::placeholder {
+  color: #718780 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-search button {
+  background: #162824 !important;
+  color: #91aaa3 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-select__menu,
+html.vox-user-dark .admin-model-page .admin-model-sort__menu {
+  border-color: rgba(124, 190, 180, .18) !important;
+  background: #0d1a17 !important;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, .42) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-select__menu button,
+html.vox-user-dark .admin-model-page .admin-model-sort__menu button {
+  color: #b8cbc5 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-select__menu button:hover,
+html.vox-user-dark .admin-model-page .admin-model-sort__menu button:hover,
+html.vox-user-dark .admin-model-page .admin-model-select__menu button.is-active,
+html.vox-user-dark .admin-model-page .admin-model-sort__menu button.is-active {
+  background: #17302b !important;
+  color: #77cbc1 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-registry-card {
+  border-color: rgba(123, 190, 180, .14) !important;
+  background: #0f1b19 !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-registry-card__visual {
+  background: linear-gradient(155deg, #245852 0%, #2f7770 58%, #438f87 100%) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-registry-card.is-inactive .admin-model-registry-card__visual {
+  background: linear-gradient(155deg, #293b37 0%, #344a45 60%, #425b55 100%) !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-registry-card__body {
+  background: #0f1b19 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-manage {
+  border-color: rgba(89, 188, 177, .21) !important;
+  background: #15302b !important;
+  color: #86d2c9 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-manage:hover {
+  background: #1a3b35 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-health__badge.is-healthy {
+  background: #12312b !important;
+  color: #7cd0c5 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-health__badge.is-degraded {
+  background: #2b2516 !important;
+  color: #d8c179 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-health__badge.is-unavailable {
+  background: #2a181d !important;
+  color: #e298a9 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-health__badge.is-unknown {
+  background: #182522 !important;
+  color: #a1b2ad !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-default-badge {
+  border-color: rgba(199, 171, 92, .22) !important;
+  background: #2b2517 !important;
+  color: #dbc47d !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-registry-card__metrics>div,
+html.vox-user-dark .admin-model-page .admin-model-registry-card__capabilities {
+  border-color: rgba(123, 190, 180, .10) !important;
+  background: #0c1715 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-capability {
+  border-color: rgba(86, 188, 176, .18) !important;
+  background: #15302b !important;
+  color: #7bcac1 !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-capability.is-off {
+  border-color: rgba(133, 151, 145, .12) !important;
+  background: #17211f !important;
+  color: #7f918c !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-pagination button {
+  border-color: rgba(123, 188, 179, .16) !important;
+  background: #101e1b !important;
+  color: #c1d2cd !important;
+}
+
+html.vox-user-dark .admin-model-page .admin-model-pagination button:hover:not(:disabled) {
+  background: #17302b !important;
+  color: #7ed0c7 !important;
+}
+
+/* The editor and delete confirmation render through portals, so they need root-level dark selectors. */
+html.vox-user-dark .admin-model-modal-backdrop,
+html.vox-user-dark .admin-model-confirm-backdrop {
+  background: rgba(2, 9, 8, .72) !important;
+}
+
+html.vox-user-dark .admin-model-modal {
+  border-color: rgba(128, 193, 184, .18) !important;
+  background: #0b1513 !important;
+  color: #e6f0ed !important;
+  box-shadow: 0 34px 100px rgba(0, 0, 0, .56) !important;
+}
+
+html.vox-user-dark .admin-model-modal__header {
+  border-color: rgba(124, 190, 181, .13) !important;
+  background:
+    radial-gradient(circle at 92% -18%, rgba(71, 166, 155, .12) 0 78px, transparent 79px),
+    linear-gradient(110deg, #10221e, #0d1917 58%, #1b1216) !important;
+}
+
+html.vox-user-dark .admin-model-modal__mark,
+html.vox-user-dark .admin-model-form-section__heading>span {
+  background: #17312c !important;
+  color: #70c9bf !important;
+  box-shadow: inset 0 0 0 1px rgba(101, 197, 186, .11) !important;
+}
+
+html.vox-user-dark .admin-model-modal__header h2,
+html.vox-user-dark .admin-model-form-section__heading h3,
+html.vox-user-dark .admin-model-field,
+html.vox-user-dark .admin-model-switch__copy strong,
+html.vox-user-dark .admin-model-operation strong,
+html.vox-user-dark .admin-model-confirm h3 {
+  color: #e7f1ee !important;
+}
+
+html.vox-user-dark .admin-model-modal__header p,
+html.vox-user-dark .admin-model-field>small,
+html.vox-user-dark .admin-model-switch__copy small,
+html.vox-user-dark .admin-model-operation small,
+html.vox-user-dark .admin-model-modal__updated,
+html.vox-user-dark .admin-model-confirm p {
+  color: #93a7a1 !important;
+}
+
+html.vox-user-dark .admin-model-modal__close {
+  border-color: rgba(123, 188, 179, .17) !important;
+  background: #111f1c !important;
+  color: #b8cbc5 !important;
+}
+
+html.vox-user-dark .admin-model-modal__close:hover {
+  background: #17302b !important;
+  color: #78cec4 !important;
+}
+
+html.vox-user-dark .admin-model-form-section {
+  border-color: rgba(124, 189, 180, .13) !important;
+  background: #0e1a18 !important;
+}
+
+html.vox-user-dark .admin-model-form-section--operations {
+  background: linear-gradient(135deg, #0e1b18, #171115) !important;
+}
+
+html.vox-user-dark .admin-model-field>input,
+html.vox-user-dark .admin-model-money-input,
+html.vox-user-dark .admin-model-select.is-compact .admin-model-select__trigger {
+  border-color: rgba(123, 188, 179, .17) !important;
+  background: #0b1614 !important;
+  color: #dce9e5 !important;
+}
+
+html.vox-user-dark .admin-model-field>input::placeholder,
+html.vox-user-dark .admin-model-money-input input::placeholder {
+  color: #6f847e !important;
+}
+
+html.vox-user-dark .admin-model-money-input input {
+  color: #dce9e5 !important;
+}
+
+html.vox-user-dark .admin-model-switch,
+html.vox-user-dark .admin-model-operation {
+  border-color: rgba(123, 188, 179, .13) !important;
+  background: #0c1715 !important;
+  color: #a7bbb5 !important;
+}
+
+html.vox-user-dark .admin-model-switch.is-on {
+  border-color: rgba(93, 198, 186, .27) !important;
+  background: #122925 !important;
+}
+
+html.vox-user-dark .admin-model-switch__icon,
+html.vox-user-dark .admin-model-operation__icon {
+  background: #162b27 !important;
+  color: #72c9bf !important;
+  box-shadow: inset 0 0 0 1px rgba(104, 194, 184, .09) !important;
+}
+
+html.vox-user-dark .admin-model-switch__track {
+  background: #31423e !important;
+}
+
+html.vox-user-dark .admin-model-switch__track i {
+  background: #d8e6e2 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .25) !important;
+}
+
+html.vox-user-dark .admin-model-switch.is-on .admin-model-switch__track {
+  background: #4ea69e !important;
+}
+
+html.vox-user-dark .admin-model-operation__button {
+  border-color: rgba(89, 189, 177, .20) !important;
+  background: #15302b !important;
+  color: #80cec5 !important;
+}
+
+html.vox-user-dark .admin-model-operation.is-danger {
+  border-color: rgba(218, 112, 136, .22) !important;
+  background: #1d1316 !important;
+}
+
+html.vox-user-dark .admin-model-operation.is-danger .admin-model-operation__icon {
+  background: #2a181d !important;
+  color: #e093a5 !important;
+}
+
+html.vox-user-dark .admin-model-operation__button.is-danger {
+  border-color: rgba(218, 112, 136, .28) !important;
+  background: #2a181d !important;
+  color: #ec9caf !important;
+}
+
+html.vox-user-dark .admin-model-modal__footer {
+  border-color: rgba(123, 188, 179, .13) !important;
+  background: rgba(10, 21, 18, .98) !important;
+}
+
+html.vox-user-dark .admin-model-modal .admin-model-button:not(.is-primary),
+html.vox-user-dark .admin-model-confirm .admin-model-button:not(.is-primary):not(.is-danger) {
+  border-color: rgba(123, 188, 179, .18) !important;
+  background: #111f1c !important;
+  color: #d7e5e1 !important;
+}
+
+html.vox-user-dark .admin-model-confirm {
+  border-color: rgba(218, 112, 136, .25) !important;
+  background: #0f1715 !important;
+  color: #e7f1ee !important;
+  box-shadow: 0 34px 100px rgba(0, 0, 0, .58) !important;
+}
+
+html.vox-user-dark .admin-model-confirm__icon {
+  background: #2a181d !important;
+  color: #e296a8 !important;
+}
+
+html.vox-user-dark .admin-model-confirm__note {
+  background: #12231f !important;
+  color: #b4c7c1 !important;
+}
+
+/* RTL polish for Arabic; English layout remains byte-for-byte unchanged. */
+html.vox-user-rtl .admin-model-page .admin-model-hero__content,
+html.vox-user-rtl .admin-model-page .admin-model-directory__header,
+html.vox-user-rtl .admin-model-page .admin-model-registry-card__body,
+html.vox-user-rtl .admin-model-page .admin-model-state,
+html.vox-user-rtl .admin-model-page .admin-model-pagination,
+html.vox-user-rtl .admin-model-modal,
+html.vox-user-rtl .admin-model-confirm {
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-model-page .admin-model-button>span,
+html.vox-user-rtl .admin-model-page .admin-model-select__trigger,
+html.vox-user-rtl .admin-model-page .admin-model-sort__trigger,
+html.vox-user-rtl .admin-model-page .admin-model-select__menu button,
+html.vox-user-rtl .admin-model-page .admin-model-sort__menu button,
+html.vox-user-rtl .admin-model-modal .admin-model-select__trigger,
+html.vox-user-rtl .admin-model-modal .admin-model-select__menu button,
+html.vox-user-rtl .admin-model-switch,
+html.vox-user-rtl .admin-model-confirm__note {
+  text-align: right;
+}
+
+html.vox-user-rtl .admin-model-page .admin-model-select__menu,
+html.vox-user-rtl .admin-model-page .admin-model-sort__menu,
+html.vox-user-rtl .admin-model-modal .admin-model-select__menu {
+  right: 0;
+  left: auto;
+}
+
+html.vox-user-rtl .admin-model-page .admin-model-sort__trigger {
+  border-radius: 0 13px 13px 0;
+}
+
+html.vox-user-rtl .admin-model-page .admin-model-sort__direction {
+  border-right: 0;
+  border-left: 1px solid rgba(64, 121, 112, .15);
+  border-radius: 13px 0 0 13px;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-model-page .admin-model-sort__direction {
+  border-left-color: rgba(123, 188, 179, .17);
+}
+
+html.vox-user-rtl .admin-model-page .admin-model-registry-card__provider-initial {
+  right: auto;
+  left: 14px;
+}
+
+html.vox-user-rtl .admin-model-modal__header,
+html.vox-user-rtl .admin-model-form-section__heading,
+html.vox-user-rtl .admin-model-operation>div:first-child,
+html.vox-user-rtl .admin-model-confirm__note {
+  direction: rtl;
+}
+
+html.vox-user-rtl .admin-model-switch__track {
+  direction: ltr;
 }

@@ -22,6 +22,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-evidence-library.css';
@@ -172,14 +173,14 @@ function sourceUrl(row) {
   return firstNestedValue(row, ['post.url', 'sourcePost.url', 'url', 'sourceUrl', 'permalink', 'link'], '');
 }
 
-function formatDate(value, compact = false) {
+function formatDate(value, compact = false, locale = undefined) {
   if (!value) return '—';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return String(value);
 
   return compact
-    ? parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-    : parsed.toLocaleString(undefined, {
+    ? parsed.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
+    : parsed.toLocaleString(locale, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -256,6 +257,7 @@ function MetricCard({ icon: Icon, label, value, hint, tone = '' }) {
 }
 
 function EvidenceSortPicker({ value, order, onChange, onToggleOrder }) {
+  const { t } = useUserExperience();
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const current = EVIDENCE_SORT_OPTIONS.find((option) => option.key === value) || EVIDENCE_SORT_OPTIONS[0];
@@ -281,12 +283,12 @@ function EvidenceSortPicker({ value, order, onChange, onToggleOrder }) {
         aria-expanded={open}
       >
         <SlidersHorizontal size={15} />
-        <span><small>Sort evidence</small><strong>{current.label}</strong></span>
+        <span><small>{t('Sort evidence')}</small><strong>{t(current.label)}</strong></span>
         <ChevronDown size={14} />
       </button>
 
       {open && (
-        <div className="admin-evidence-sort__menu" role="listbox" aria-label="Sort evidence">
+        <div className="admin-evidence-sort__menu" role="listbox" aria-label={t('Sort evidence')}>
           {EVIDENCE_SORT_OPTIONS.map((option) => (
             <button
               type="button"
@@ -299,7 +301,7 @@ function EvidenceSortPicker({ value, order, onChange, onToggleOrder }) {
                 setOpen(false);
               }}
             >
-              <span>{option.label}</span>
+              <span>{t(option.label)}</span>
               {option.key === value && <CheckCircle2 size={14} />}
             </button>
           ))}
@@ -310,8 +312,8 @@ function EvidenceSortPicker({ value, order, onChange, onToggleOrder }) {
         type="button"
         className="admin-evidence-sort__direction"
         onClick={onToggleOrder}
-        title={order === 'asc' ? 'Ascending order' : 'Descending order'}
-        aria-label={order === 'asc' ? 'Switch to descending order' : 'Switch to ascending order'}
+        title={t(order === 'asc' ? 'Ascending order' : 'Descending order')}
+        aria-label={t(order === 'asc' ? 'Switch to descending order' : 'Switch to ascending order')}
       >
         {order === 'asc' ? <ArrowUp size={15} /> : <ArrowDown size={15} />}
       </button>
@@ -320,6 +322,7 @@ function EvidenceSortPicker({ value, order, onChange, onToggleOrder }) {
 }
 
 function EvidenceSourceFilter({ value, options, loading, onChange }) {
+  const { isArabic, t } = useUserExperience();
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const current = options.find((option) => option.id === value);
@@ -350,14 +353,14 @@ function EvidenceSourceFilter({ value, options, loading, onChange }) {
       >
         <span className="admin-evidence-source-filter__icon"><Database size={15} /></span>
         <span className="admin-evidence-source-filter__copy">
-          <small>Data source</small>
-          <strong>{loading && options.length === 0 ? 'Loading sources…' : current?.label || 'All data sources'}</strong>
+          <small>{t('Data source')}</small>
+          <strong>{loading && options.length === 0 ? t('Loading sources…') : current?.label || t('All data sources')}</strong>
         </span>
         <ChevronDown size={14} className="admin-evidence-source-filter__chevron" />
       </button>
 
       {open && (
-        <div className="admin-evidence-source-filter__menu" role="listbox" aria-label="Filter evidence by data source">
+        <div className="admin-evidence-source-filter__menu" role="listbox" aria-label={t('Filter evidence by data source')}>
           <button
             type="button"
             role="option"
@@ -368,10 +371,10 @@ function EvidenceSourceFilter({ value, options, loading, onChange }) {
               setOpen(false);
             }}
           >
-            <span className="admin-evidence-source-filter__option-mark">A</span>
+            <span className="admin-evidence-source-filter__option-mark">{isArabic ? 'ك' : 'A'}</span>
             <span className="admin-evidence-source-filter__option-copy">
-              <strong>All data sources</strong>
-              <small>Show evidence from every source</small>
+              <strong>{t('All data sources')}</strong>
+              <small>{t('Show evidence from every source')}</small>
             </span>
             {!value && <CheckCircle2 size={14} />}
           </button>
@@ -393,14 +396,14 @@ function EvidenceSourceFilter({ value, options, loading, onChange }) {
               <span className="admin-evidence-source-filter__option-mark">{sourceInitial(option.label)}</span>
               <span className="admin-evidence-source-filter__option-copy">
                 <strong>{option.label}</strong>
-                <small>{option.count.toLocaleString()} evidence records</small>
+                <small>{isArabic ? `${option.count.toLocaleString()} سجل دليل` : `${option.count.toLocaleString()} evidence records`}</small>
               </span>
               {option.id === value && <CheckCircle2 size={14} />}
             </button>
           ))}
 
           {!loading && options.length === 0 && (
-            <div className="admin-evidence-source-filter__empty">No evidence sources available.</div>
+            <div className="admin-evidence-source-filter__empty">{t('No evidence sources available.')}</div>
           )}
         </div>
       )}
@@ -409,6 +412,9 @@ function EvidenceSourceFilter({ value, options, loading, onChange }) {
 }
 
 function EvidenceDrawer({ item, onClose }) {
+  const { isArabic, t } = useUserExperience();
+  const dateLocale = isArabic ? 'ar' : undefined;
+
   useEffect(() => {
     if (!item) return undefined;
 
@@ -434,49 +440,49 @@ function EvidenceDrawer({ item, onClose }) {
         className="admin-evidence-drawer"
         role="dialog"
         aria-modal="true"
-        aria-label="Evidence inspector"
+        aria-label={t('Evidence inspector')}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="admin-evidence-drawer__head">
           <div className="admin-evidence-drawer__identity">
             <span className="admin-evidence-drawer__source-mark">{sourceInitial(source)}</span>
             <div>
-              <small>Evidence inspector</small>
+              <small>{t('Evidence inspector')}</small>
               <h3>{source}</h3>
-              <p>Read-only record captured by the evidence pipeline.</p>
+              <p>{t('Read-only record captured by the evidence pipeline.')}</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close evidence inspector"><X size={18} /></button>
+          <button type="button" onClick={onClose} aria-label={t('Close evidence inspector')}><X size={18} /></button>
         </header>
 
         <div className="admin-evidence-drawer__body">
           <section className="admin-evidence-copy-card">
-            <span className="admin-evidence-copy-card__label"><FileText size={14} /> Collected text</span>
+            <span className="admin-evidence-copy-card__label"><FileText size={14} /> {t('Collected text')}</span>
             <p>{content}</p>
           </section>
 
           <section className="admin-evidence-readonly-note">
             <ShieldCheck size={18} />
             <div>
-              <strong>Evidence, not a platform comment</strong>
-              <span>This text is kept for collection transparency, NLP review and debugging. It has no moderation action.</span>
+              <strong>{t('Evidence, not a platform comment')}</strong>
+              <span>{t('This text is kept for collection transparency, NLP review and debugging. It has no moderation action.')}</span>
             </div>
           </section>
 
           <div className="admin-evidence-detail-grid">
-            <div><small>Source</small><strong>{source}</strong></div>
-            <div><small>Author</small><strong>{evidenceAuthor(item)}</strong></div>
-            <div><small>Language</small><strong>{evidenceLanguage(item)}</strong></div>
-            <div><small>Engagement</small><strong>{evidenceEngagement(item).toLocaleString()}</strong></div>
-            <div><small>Sentiment</small><strong>{sentiment || 'Not analyzed'}</strong></div>
-            <div><small>Published</small><strong>{formatDate(publishedAt(item))}</strong></div>
-            <div><small>Collected</small><strong>{formatDate(collectedAt(item))}</strong></div>
-            <div className="is-wide"><small>External ID</small><strong className="is-code">{String(externalId)}</strong></div>
+            <div><small>{t('Source')}</small><strong>{source}</strong></div>
+            <div><small>{t('Author')}</small><strong>{evidenceAuthor(item)}</strong></div>
+            <div><small>{t('Language')}</small><strong>{evidenceLanguage(item)}</strong></div>
+            <div><small>{t('Engagement')}</small><strong>{evidenceEngagement(item).toLocaleString()}</strong></div>
+            <div><small>{t('Sentiment')}</small><strong>{sentiment || t('Not analyzed')}</strong></div>
+            <div><small>{t('Published')}</small><strong>{formatDate(publishedAt(item), false, dateLocale)}</strong></div>
+            <div><small>{t('Collected')}</small><strong>{formatDate(collectedAt(item), false, dateLocale)}</strong></div>
+            <div className="is-wide"><small>{t('External ID')}</small><strong className="is-code">{String(externalId)}</strong></div>
           </div>
 
           {url && /^https?:\/\//i.test(String(url)) && (
             <a className="admin-evidence-source-link" href={url} target="_blank" rel="noreferrer">
-              <ExternalLink size={15} /> Open original source
+              <ExternalLink size={15} /> {t('Open original source')}
             </a>
           )}
         </div>
@@ -487,6 +493,8 @@ function EvidenceDrawer({ item, onClose }) {
 }
 
 export default function AdminEvidenceLibraryPage() {
+  const { isArabic, t } = useUserExperience();
+  const dateLocale = isArabic ? 'ar' : undefined;
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({});
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
@@ -644,10 +652,10 @@ export default function AdminEvidenceLibraryPage() {
     <div className="admin-page admin-evidence-page">
       <section className="admin-hero admin-evidence-hero">
         <div className="admin-evidence-hero__content">
-          <div className="admin-hero__eyebrow"><BookOpenCheck size={14} /> Data & evidence</div>
-          <h2>Evidence Library</h2>
+          <div className="admin-hero__eyebrow"><BookOpenCheck size={14} /> {t('Data & evidence')}</div>
+          <h2>{t('Evidence Library')}</h2>
           <p>
-            Inspect external text collected for discovery, NLP analysis and evidence-backed idea generation. These records are read-only evidence from external sources, not comments written inside Voxidence.
+            {t('Inspect external text collected for discovery, NLP analysis and evidence-backed idea generation. These records are read-only evidence from external sources, not comments written inside Voxidence.')}
           </p>
         </div>
 
@@ -703,20 +711,20 @@ export default function AdminEvidenceLibraryPage() {
       <section className="admin-evidence-panel">
         <div className="admin-evidence-panel__head">
           <div>
-            <span className="admin-evidence-panel__kicker"><Database size={13} /> Evidence index</span>
-            <h3>Collected evidence directory</h3>
-            <p>{meta.total.toLocaleString()} records available</p>
+            <span className="admin-evidence-panel__kicker"><Database size={13} /> {t('Evidence index')}</span>
+            <h3>{t('Collected evidence directory')}</h3>
+            <p>{meta.total.toLocaleString()} {t('records available')}</p>
           </div>
 
           <div className="admin-evidence-panel__actions">
-            <span className="admin-evidence-live-chip"><i /> Live evidence</span>
+            <span className="admin-evidence-live-chip"><i /> {t('Live evidence')}</span>
             <button
               type="button"
               className="admin-btn"
               disabled={refreshing}
               onClick={() => loadData({ quiet: true, fresh: true })}
             >
-              <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} /> Refresh
+              <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} /> {t('Refresh')}
             </button>
           </div>
         </div>
@@ -725,28 +733,28 @@ export default function AdminEvidenceLibraryPage() {
           <div className="admin-evidence-metrics">
             <MetricCard
               icon={FileText}
-              label="Total evidence"
+              label={t('Total evidence')}
               value={metrics.total.toLocaleString()}
-              hint="Collected text records"
+              hint={t('Collected text records')}
               tone="is-primary"
             />
             <MetricCard
               icon={Database}
-              label="Data sources"
+              label={t('Data sources')}
               value={metrics.sourceCount.toLocaleString()}
-              hint="Sources represented"
+              hint={t('Sources represented')}
             />
             <MetricCard
               icon={Languages}
-              label="Languages"
+              label={t('Languages')}
               value={metrics.languagesCount.toLocaleString()}
-              hint="Languages represented"
+              hint={t('Languages represented')}
             />
             <MetricCard
               icon={CalendarClock}
-              label="Last collection"
-              value={formatDate(metrics.lastCollected, true)}
-              hint={metrics.lastCollected ? formatDate(metrics.lastCollected) : 'No collection date available'}
+              label={t('Last collection')}
+              value={formatDate(metrics.lastCollected, true, dateLocale)}
+              hint={metrics.lastCollected ? formatDate(metrics.lastCollected, false, dateLocale) : t('No collection date available')}
               tone="is-date"
             />
           </div>
@@ -779,39 +787,39 @@ export default function AdminEvidenceLibraryPage() {
               type="search"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search collected evidence text..."
-              aria-label="Search evidence library"
+              placeholder={t('Search collected evidence text...')}
+              aria-label={t('Search evidence library')}
             />
             {searchInput && (
-              <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"><X size={14} /></button>
+              <button type="button" onClick={() => setSearchInput('')} aria-label={t('Clear search')}><X size={14} /></button>
             )}
           </label>
 
-          <div className="admin-evidence-tools__hint"><ShieldCheck size={14} /> Read-only · no moderation actions</div>
+          <div className="admin-evidence-tools__hint"><ShieldCheck size={14} /> {t('Read-only · no moderation actions')}</div>
         </div>
 
         {error && (
           <div className="admin-evidence-error">
             <ShieldCheck size={18} />
-            <span>{error}</span>
-            <button type="button" className="admin-btn" onClick={() => loadData()}>Try again</button>
+            <span>{t(error)}</span>
+            <button type="button" className="admin-btn" onClick={() => loadData()}>{t('Try again')}</button>
           </div>
         )}
 
         {loading ? (
           <div className="admin-evidence-loading">
             <LoaderCircle size={26} className="admin-spin" />
-            <strong>Loading evidence library…</strong>
-            <span>Reading the latest collected records.</span>
+            <strong>{t('Loading evidence library…')}</strong>
+            <span>{t('Reading the latest collected records.')}</span>
           </div>
         ) : !error && rows.length === 0 ? (
           <div className="admin-evidence-empty">
             <Search size={26} />
-            <strong>{search || dataSourceId ? 'No matching evidence' : 'No collected evidence yet'}</strong>
+            <strong>{t(search || dataSourceId ? 'No matching evidence' : 'No collected evidence yet')}</strong>
             <span>
               {search || dataSourceId
-                ? 'Try a different search phrase or data source.'
-                : 'Evidence records will appear after data collection runs.'}
+                ? t('Try a different search phrase or data source.')
+                : t('Evidence records will appear after data collection runs.')}
             </span>
           </div>
         ) : !error ? (
@@ -840,9 +848,9 @@ export default function AdminEvidenceLibraryPage() {
                       <div className="admin-evidence-card__identity">
                         <span className="admin-evidence-card__icon"><FileText size={18} /></span>
                         <div className="admin-evidence-card__headline">
-                          <small>Evidence</small>
+                          <small>{t('Evidence')}</small>
                           <strong>{evidenceContent(item)}</strong>
-                          <span>{sentiment ? `Sentiment: ${sentiment}` : 'Pipeline evidence record'}</span>
+                          <span>{sentiment ? `${t('Sentiment')}: ${sentiment}` : t('Pipeline evidence record')}</span>
                         </div>
                       </div>
                       <i className="admin-evidence-card__dots" aria-hidden="true" />
@@ -850,38 +858,38 @@ export default function AdminEvidenceLibraryPage() {
 
                     <div className="admin-evidence-card__meta-grid">
                       <div className="admin-evidence-card__meta-item">
-                        <small>Source</small>
+                        <small>{t('Source')}</small>
                         <div className="admin-evidence-source-pill"><i>{sourceInitial(source)}</i>{source}</div>
                       </div>
 
                       <div className="admin-evidence-card__meta-item">
-                        <small>Author</small>
+                        <small>{t('Author')}</small>
                         <strong className="admin-evidence-card__text">{evidenceAuthor(item)}</strong>
                       </div>
 
                       <div className="admin-evidence-card__meta-item">
-                        <small>Language</small>
+                        <small>{t('Language')}</small>
                         <div className="admin-evidence-language-pill">{evidenceLanguage(item)}</div>
                       </div>
 
                       <div className="admin-evidence-card__meta-item">
-                        <small>Engagement</small>
+                        <small>{t('Engagement')}</small>
                         <div className="admin-evidence-engagement"><Heart size={13} /> {evidenceEngagement(item).toLocaleString()}</div>
                       </div>
 
                       <div className="admin-evidence-card__meta-item admin-evidence-card__meta-item--wide">
-                        <small>Published</small>
-                        <strong className="admin-evidence-card__text">{formatDate(publishedAt(item), true)}</strong>
+                        <small>{t('Published')}</small>
+                        <strong className="admin-evidence-card__text">{formatDate(publishedAt(item), true, dateLocale)}</strong>
                       </div>
 
                       <div className="admin-evidence-card__meta-item admin-evidence-card__meta-item--wide">
-                        <small>Collected</small>
-                        <strong className="admin-evidence-card__text">{formatDate(collectedAt(item), true)}</strong>
+                        <small>{t('Collected')}</small>
+                        <strong className="admin-evidence-card__text">{formatDate(collectedAt(item), true, dateLocale)}</strong>
                       </div>
                     </div>
 
                     <div className="admin-evidence-card__footer">
-                      <span className="admin-evidence-card__actions-label">Actions</span>
+                      <span className="admin-evidence-card__actions-label">{t('Actions')}</span>
                       <button
                         type="button"
                         className="admin-evidence-inspect-btn"
@@ -891,7 +899,7 @@ export default function AdminEvidenceLibraryPage() {
                         }}
                       >
                         <Search size={15} />
-                        <span>Inspect</span>
+                        <span>{t('Inspect')}</span>
                       </button>
                     </div>
                   </article>
@@ -901,8 +909,8 @@ export default function AdminEvidenceLibraryPage() {
 
             <div className="admin-evidence-pagination">
               <div>
-                <strong>Showing {start.toLocaleString()}–{end.toLocaleString()} of {meta.total.toLocaleString()}</strong>
-                <span>Page {meta.page} of {meta.totalPages}</span>
+                <strong>{isArabic ? `عرض ${start.toLocaleString()}–${end.toLocaleString()} من ${meta.total.toLocaleString()}` : `Showing ${start.toLocaleString()}–${end.toLocaleString()} of ${meta.total.toLocaleString()}`}</strong>
+                <span>{isArabic ? `الصفحة ${meta.page} من ${meta.totalPages}` : `Page ${meta.page} of ${meta.totalPages}`}</span>
               </div>
               <div>
                 <button
@@ -910,14 +918,14 @@ export default function AdminEvidenceLibraryPage() {
                   disabled={page <= 1 || loading}
                   onClick={() => setPage((value) => Math.max(1, value - 1))}
                 >
-                  <ChevronLeft size={15} /> Previous
+                  <ChevronLeft size={15} /> {t('Previous')}
                 </button>
                 <button
                   type="button"
                   disabled={page >= meta.totalPages || loading}
                   onClick={() => setPage((value) => value + 1)}
                 >
-                  Next <ChevronRight size={15} />
+                  {t('Next')} <ChevronRight size={15} />
                 </button>
               </div>
             </div>

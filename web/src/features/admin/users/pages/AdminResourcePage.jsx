@@ -39,11 +39,164 @@ import { createPortal } from 'react-dom';
 
 import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import { resolveMediaUrl } from '../../../../utils/mediaUrl';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-users.css';
 import '../styles/admin-user-modals.css';
 
 const PAGE_SIZE = 20;
+
+const ADMIN_USERS_AR = Object.freeze({
+  'Users': 'المستخدمون',
+  'Identity & access': 'الهوية والوصول',
+  'Search and manage Normal/Premium customer accounts. Administrator staff are managed separately in Administrators.':
+    'ابحث عن حسابات العملاء العادية والمميزة وأدِرها. تتم إدارة حسابات المشرفين بشكل منفصل من قسم المشرفين.',
+  'Users directory': 'دليل المستخدمين',
+  'records available': 'سجل متاح',
+  'Live administrative data': 'بيانات إدارية مباشرة',
+  'Live directory': 'دليل مباشر',
+  'Refresh': 'تحديث',
+  'Export CSV': 'تصدير CSV',
+  'Total users': 'إجمالي المستخدمين',
+  'Active users': 'المستخدمون النشطون',
+  'Inactive users': 'المستخدمون غير النشطين',
+  'Verified': 'تم التحقق',
+  'Verified users': 'المستخدمون الموثقون',
+  'Premium': 'مميز',
+  'Premium users': 'المستخدمون المميزون',
+  'Current platform snapshot': 'لقطة المنصة الحالية',
+  'Filter users': 'تصفية المستخدمين',
+  'All users': 'كل المستخدمين',
+  'Active': 'نشط',
+  'Inactive': 'غير نشط',
+  'Deleted': 'محذوف',
+  'Sort users': 'ترتيب المستخدمين',
+  'Sort': 'ترتيب',
+  'Joined date': 'تاريخ الانضمام',
+  'Name': 'الاسم',
+  'Email': 'البريد الإلكتروني',
+  'Plan': 'الخطة',
+  'User type': 'نوع المستخدم',
+  'Credits': 'الرصيد',
+  'Free usage': 'الاستخدام المجاني',
+  'Active status': 'حالة النشاط',
+  'Verification': 'التحقق',
+  'Search users...': 'ابحث عن مستخدم...',
+  'Search Users': 'البحث في المستخدمين',
+  'User sorting controls': 'عناصر ترتيب المستخدمين',
+  'User': 'المستخدم',
+  'Usage': 'الاستخدام',
+  'Account': 'الحساب',
+  'Type': 'النوع',
+  'Joined': 'الانضمام',
+  'Actions': 'الإجراءات',
+  'User profile': 'ملف المستخدم',
+  'No matching records': 'لا توجد سجلات مطابقة',
+  'No records yet': 'لا توجد سجلات بعد',
+  'Try a different search phrase.': 'جرّب عبارة بحث مختلفة.',
+  'There is currently nothing to display here.': 'لا يوجد شيء لعرضه حاليًا.',
+  'Try again': 'إعادة المحاولة',
+  'Loading users…': 'جارٍ تحميل المستخدمين…',
+  'Email sent successfully': 'تم إرسال البريد الإلكتروني بنجاح',
+  'Dismiss success message': 'إغلاق رسالة النجاح',
+  'View user': 'عرض المستخدم',
+  'View': 'عرض',
+  'Edit user': 'تعديل المستخدم',
+  'Edit': 'تعديل',
+  'Deactivate user': 'تعطيل المستخدم',
+  'Activate user': 'تفعيل المستخدم',
+  'More actions': 'إجراءات إضافية',
+  'More user actions': 'إجراءات إضافية للمستخدم',
+  'User account': 'حساب المستخدم',
+  'Send password recovery': 'إرسال رابط استعادة كلمة المرور',
+  'Email a secure reset link': 'إرسال رابط آمن لإعادة التعيين بالبريد',
+  'Delete user': 'حذف المستخدم',
+  'Remove the customer account': 'إزالة حساب العميل',
+  'Delete this user account? This action may be irreversible.': 'هل تريد حذف حساب هذا المستخدم؟ قد لا يمكن التراجع عن هذا الإجراء.',
+  'Password reset email sent successfully.': 'تم إرسال رسالة إعادة تعيين كلمة المرور بنجاح.',
+  'Unnamed user': 'مستخدم بلا اسم',
+  'No email': 'لا يوجد بريد إلكتروني',
+  'Normal': 'عادي',
+  'Unverified': 'غير موثّق',
+  'Not verified': 'غير موثّق',
+  'credits': 'رصيد',
+  'free': 'مجاني',
+  'Student': 'طالب',
+  'Developer': 'مطوّر',
+  'Company': 'شركة',
+  'Researcher': 'باحث',
+  'Other': 'أخرى',
+  'Page': 'الصفحة',
+  'of': 'من',
+  'Previous': 'السابق',
+  'Next': 'التالي',
+  'Account editor': 'محرر الحساب',
+  'Member intelligence': 'ملف العضو',
+  'Update account identity and access without leaving this workspace.': 'حدّث هوية الحساب وصلاحيات الوصول دون مغادرة مساحة العمل.',
+  'A focused snapshot of identity, access and platform activity.': 'لقطة مركزة لهوية المستخدم ووصوله ونشاطه على المنصة.',
+  'Close': 'إغلاق',
+  'Voxidence member': 'عضو في فوكسيدنس',
+  'Edit profile': 'تعديل الملف',
+  'Credit balance': 'رصيد الحساب',
+  'Ideas': 'الأفكار',
+  'Free generations': 'التوليدات المجانية',
+  'Member since': 'عضو منذ',
+  'Core account details and current permissions.': 'تفاصيل الحساب الأساسية والصلاحيات الحالية.',
+  'Full name': 'الاسم الكامل',
+  'Email address': 'البريد الإلكتروني',
+  'Role': 'الدور',
+  'Account state': 'حالة الحساب',
+  'Email state': 'حالة البريد',
+  'Record ID': 'معرّف السجل',
+  'Last updated': 'آخر تحديث',
+  'Editing member': 'تعديل العضو',
+  'Account inactive': 'الحساب غير نشط',
+  'Account active': 'الحساب نشط',
+  'Protected editor': 'محرر محمي',
+  'Changes are applied through the administrative API and saved immediately.': 'تُطبّق التغييرات عبر واجهة الإدارة وتُحفظ مباشرة.',
+  'PROFILE SETTINGS': 'إعدادات الملف',
+  'Account configuration': 'إعدادات الحساب',
+  'Live editor': 'محرر مباشر',
+  'User name': 'اسم المستخدم',
+  'Account plan': 'خطة الحساب',
+  'Plan follows the committed credit balance automatically.': 'تتحدد الخطة تلقائيًا وفق الرصيد المعتمد في الحساب.',
+  'Changing credits creates an audited ADMIN_ADJUSTMENT ledger entry.': 'يؤدي تغيير الرصيد إلى إنشاء حركة ADMIN_ADJUSTMENT موثقة في سجل الرصيد.',
+  'Free generations used': 'التوليدات المجانية المستخدمة',
+  'Free generation limit': 'حد التوليدات المجانية',
+  'Credit adjustment reason': 'سبب تعديل الرصيد',
+  'Example: Manual correction approved by support': 'مثال: تصحيح يدوي معتمد من فريق الدعم',
+  'This note is stored in the credit ledger and audit log.': 'تُحفظ هذه الملاحظة في سجل الرصيد وسجل التدقيق.',
+  'Email verification': 'التحقق من البريد الإلكتروني',
+  'Control the verified state stored on this account.': 'تحكّم بحالة التحقق المحفوظة لهذا الحساب.',
+  'Protected email': 'بريد محمي',
+  'Protected role': 'دور محمي',
+  'Protected': 'محمي',
+  'Cancel': 'إلغاء',
+  'Saving…': 'جارٍ الحفظ…',
+  'Save changes': 'حفظ التغييرات',
+  'Could not update this user.': 'تعذر تحديث هذا المستخدم.',
+  'The requested action could not be completed.': 'تعذر إكمال الإجراء المطلوب.',
+  'CSV export failed.': 'فشل تصدير ملف CSV.',
+  'Free generations used must be a whole number greater than or equal to 0.': 'يجب أن يكون عدد التوليدات المجانية المستخدمة عددًا صحيحًا أكبر من أو يساوي 0.',
+  'Free generation limit must be a whole number greater than or equal to 0.': 'يجب أن يكون حد التوليدات المجانية عددًا صحيحًا أكبر من أو يساوي 0.',
+  'Free generations used cannot be greater than the free generation limit.': 'لا يمكن أن يتجاوز عدد التوليدات المجانية المستخدمة الحد المجاني.',
+  'Credit balance must be a whole number greater than or equal to 0.': 'يجب أن يكون الرصيد عددًا صحيحًا أكبر من أو يساوي 0.',
+  'Write a short reason for the credit adjustment (at least 5 characters).': 'اكتب سببًا مختصرًا لتعديل الرصيد (5 أحرف على الأقل).',
+});
+
+function translateAdminUsers(text, isArabic) {
+  if (!isArabic || text == null) return text;
+  return ADMIN_USERS_AR[String(text)] || text;
+}
+
+function localizeUserEnum(value, isArabic) {
+  if (value == null) return value;
+  const source = String(value);
+  const readable = /^[A-Z0-9_ -]+$/.test(source)
+    ? toReadableLabel(source.toLowerCase())
+    : toReadableLabel(source);
+  return translateAdminUsers(readable, isArabic);
+}
 
 const RESOURCE_CONFIG = {
   users: {
@@ -437,7 +590,7 @@ function UserAvatar({ user, name, className = 'admin-user-identity-cell__avatar'
   );
 }
 
-function AdminUserStatusPicker({ value, onChange }) {
+function AdminUserStatusPicker({ value, onChange, tr = (text) => text }) {
   const [open, setOpen] = useState(false);
   const current = USER_STATUS_OPTIONS.find((option) => option.key === value) || USER_STATUS_OPTIONS[0];
   const CurrentIcon = current.icon;
@@ -451,8 +604,8 @@ function AdminUserStatusPicker({ value, onChange }) {
       >
         <CurrentIcon size={14} />
         <span>
-          <small>Filter users</small>
-          <strong>{current.label}</strong>
+          <small>{tr('Filter users')}</small>
+          <strong>{tr(current.label)}</strong>
         </span>
         <ChevronDown size={14} />
       </button>
@@ -471,7 +624,7 @@ function AdminUserStatusPicker({ value, onChange }) {
                 }}
               >
                 <OptionIcon size={14} />
-                <span>{option.label}</span>
+                <span>{tr(option.label)}</span>
                 {option.key === value ? <CheckCircle2 size={13} /> : null}
               </button>
             );
@@ -482,7 +635,7 @@ function AdminUserStatusPicker({ value, onChange }) {
   );
 }
 
-function AdminSortPicker({ options, value, order, onChange, onToggleOrder, label = 'Sort' }) {
+function AdminSortPicker({ options, value, order, onChange, onToggleOrder, label = 'Sort', tr = (text) => text }) {
   const [open, setOpen] = useState(false);
   const current = options.find((option) => option.key === value) || options[0];
 
@@ -490,7 +643,7 @@ function AdminSortPicker({ options, value, order, onChange, onToggleOrder, label
     <div className={`admin-modern-sort ${open ? 'is-open' : ''}`}>
       <button type="button" className="admin-modern-sort__trigger" onClick={() => setOpen((v) => !v)}>
         <SlidersHorizontal size={14} />
-        <span><small>{label}</small><strong>{current?.label || 'Sort'}</strong></span>
+        <span><small>{tr(label)}</small><strong>{tr(current?.label || 'Sort')}</strong></span>
         <ChevronDown size={14} />
       </button>
       {open ? (
@@ -502,7 +655,7 @@ function AdminSortPicker({ options, value, order, onChange, onToggleOrder, label
               className={option.key === value ? 'is-active' : ''}
               onClick={() => { onChange(option.key); setOpen(false); }}
             >
-              <span>{option.label}</span>
+              <span>{tr(option.label)}</span>
               {option.key === value ? <CheckCircle2 size={13} /> : null}
             </button>
           ))}
@@ -515,12 +668,12 @@ function AdminSortPicker({ options, value, order, onChange, onToggleOrder, label
   );
 }
 
-function EmptyState({ search }) {
+function EmptyState({ search, tr = (text) => text }) {
   return (
     <div className="admin-resource-empty">
       <Search size={26} />
-      <strong>{search ? 'No matching records' : 'No records yet'}</strong>
-      <span>{search ? 'Try a different search phrase.' : 'There is currently nothing to display here.'}</span>
+      <strong>{tr(search ? 'No matching records' : 'No records yet')}</strong>
+      <span>{tr(search ? 'Try a different search phrase.' : 'There is currently nothing to display here.')}</span>
     </div>
   );
 }
@@ -528,6 +681,11 @@ function EmptyState({ search }) {
 export default function AdminResourcePage({ section }) {
   const config = RESOURCE_CONFIG[section] || RESOURCE_CONFIG.users;
   const Icon = config.icon;
+  const { isArabic } = useUserExperience();
+  const tr = useCallback(
+    (text) => (section === 'users' ? translateAdminUsers(text, isArabic) : text),
+    [isArabic, section],
+  );
 
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -916,30 +1074,30 @@ export default function AdminResourcePage({ section }) {
         <button
           type="button"
           className="admin-user-action-btn is-primary-action"
-          title="View user"
-          aria-label="View user"
+          title={tr('View user')}
+          aria-label={tr('View user')}
           onClick={() => {
             setOpenUserActionMenu(null);
             openUserModal(item, 'view');
           }}
         >
           <Eye size={14} />
-          <span>View</span>
+          <span>{tr('View')}</span>
         </button>
 
         {!isDeleted && config.api?.update ? (
           <button
             type="button"
             className="admin-user-action-btn"
-            title="Edit user"
-            aria-label="Edit user"
+            title={tr('Edit user')}
+            aria-label={tr('Edit user')}
             onClick={() => {
               setOpenUserActionMenu(null);
               openUserModal(item, 'edit');
             }}
           >
             <Pencil size={14} />
-            <span>Edit</span>
+            <span>{tr('Edit')}</span>
           </button>
         ) : null}
 
@@ -947,8 +1105,8 @@ export default function AdminResourcePage({ section }) {
           <button
             type="button"
             className={`admin-user-action-icon ${active ? 'is-deactivate' : 'is-activate'}`}
-            title={active ? 'Deactivate user' : 'Activate user'}
-            aria-label={active ? 'Deactivate user' : 'Activate user'}
+            title={tr(active ? 'Deactivate user' : 'Activate user')}
+            aria-label={tr(active ? 'Deactivate user' : 'Activate user')}
             disabled={busyId === id}
             onClick={() => {
               setOpenUserActionMenu(null);
@@ -969,15 +1127,15 @@ export default function AdminResourcePage({ section }) {
           <button
             type="button"
             className={`admin-user-more__trigger ${menuOpen ? 'is-active' : ''}`}
-            title="More actions"
-            aria-label="More user actions"
+            title={tr('More actions')}
+            aria-label={tr('More user actions')}
             aria-expanded={menuOpen}
             onClick={openMoreMenu}
           >
             <MoreHorizontal size={16} />
           </button>
         ) : (
-          <span className="admin-user-deleted-action">Deleted</span>
+          <span className="admin-user-deleted-action">{tr('Deleted')}</span>
         )}
       </div>
     );
@@ -994,14 +1152,15 @@ export default function AdminResourcePage({ section }) {
         firstDefined(item, ['fullName', 'name', 'displayName'], 'Unnamed user') ||
         'Unnamed user',
       );
+      const localizedName = name === 'Unnamed user' ? tr(name) : name;
       const email = String(firstDefined(item, ['email'], '') || '');
 
       return (
         <div className="admin-user-identity-cell">
-          <UserAvatar user={item} name={name} />
+          <UserAvatar user={item} name={localizedName} />
           <div>
-            <strong>{name}</strong>
-            <small>{email || 'No email'}</small>
+            <strong>{localizedName}</strong>
+            <small>{email || tr('No email')}</small>
           </div>
         </div>
       );
@@ -1012,7 +1171,7 @@ export default function AdminResourcePage({ section }) {
       return (
         <span className={`admin-user-plan-badge is-${plan.toLowerCase()}`}>
           <Crown size={11} />
-          {toReadableLabel(plan)}
+          {localizeUserEnum(plan, isArabic)}
         </span>
       );
     }
@@ -1023,11 +1182,11 @@ export default function AdminResourcePage({ section }) {
           <span className="admin-user-credit-cell">
             <Coins size={11} />
             <strong>{Number(item?.creditBalance || 0).toLocaleString()}</strong>
-            <small>credits</small>
+            <small>{tr('credits')}</small>
           </span>
           <span className="admin-user-free-cell">
             <strong>{Number(item?.freeGenerationsUsed || 0)}</strong>
-            <small>/ {Number(item?.freeGenerationLimit ?? 3)} free</small>
+            <small>/ {Number(item?.freeGenerationLimit ?? 3)} {tr('free')}</small>
           </span>
         </div>
       );
@@ -1042,11 +1201,11 @@ export default function AdminResourcePage({ section }) {
         <div className="admin-user-health-cell">
           <span className={isDeleted ? 'is-muted' : active ? 'is-positive' : 'is-negative'}>
             {isDeleted ? <Trash2 size={12} /> : active ? <BadgeCheck size={12} /> : <XCircle size={12} />}
-            {isDeleted ? 'Deleted' : active ? 'Active' : 'Inactive'}
+            {tr(isDeleted ? 'Deleted' : active ? 'Active' : 'Inactive')}
           </span>
           <span className={verified ? 'is-positive' : 'is-muted'}>
             {verified ? <BadgeCheck size={12} /> : <XCircle size={12} />}
-            {verified ? 'Verified' : 'Unverified'}
+            {tr(verified ? 'Verified' : 'Unverified')}
           </span>
         </div>
       );
@@ -1055,7 +1214,7 @@ export default function AdminResourcePage({ section }) {
     if (column === 'userType') {
       return (
         <span className="admin-user-type-cell">
-          {toReadableLabel(item?.userType || 'OTHER')}
+          {localizeUserEnum(item?.userType || 'OTHER', isArabic)}
         </span>
       );
     }
@@ -1068,7 +1227,7 @@ export default function AdminResourcePage({ section }) {
         <span className="admin-user-date-cell">
           {Number.isNaN(date.getTime())
             ? String(value)
-            : date.toLocaleDateString(undefined, {
+            : date.toLocaleDateString(isArabic ? 'ar-JO' : undefined, {
               month: 'short',
               day: 'numeric',
               year: 'numeric',
@@ -1087,10 +1246,10 @@ export default function AdminResourcePage({ section }) {
         <div className={section === 'users' ? 'admin-users-hero__copy' : undefined}>
           <div className="admin-hero__eyebrow">
             <Icon size={14} />
-            {config.eyebrow}
+            {tr(config.eyebrow)}
           </div>
-          <h2>{config.title}</h2>
-          <p>{config.description}</p>
+          <h2>{tr(config.title)}</h2>
+          <p>{tr(config.description)}</p>
           {section === 'users' && (
             <span className="admin-users-hero__rule" aria-hidden="true">
               <i />
@@ -1129,13 +1288,15 @@ export default function AdminResourcePage({ section }) {
       <section className={`admin-panel ${section === 'users' ? 'admin-panel--users' : ''}`}>
         <div className="admin-panel__head">
           <div>
-            <h3>{config.title} directory</h3>
-            <p>{meta.total ? `${meta.total.toLocaleString()} records available` : 'Live administrative data'}</p>
+            <h3>{section === 'users' ? tr('Users directory') : `${config.title} directory`}</h3>
+            <p>{meta.total
+              ? `${meta.total.toLocaleString(isArabic ? 'ar-JO' : undefined)} ${tr('records available')}`
+              : tr('Live administrative data')}</p>
           </div>
 
           <div className="admin-toolbar">
             {section === 'users' && (
-              <span className="admin-users-live-chip"><i /> Live directory</span>
+              <span className="admin-users-live-chip"><i /> {tr('Live directory')}</span>
             )}
             <button
               type="button"
@@ -1144,12 +1305,12 @@ export default function AdminResourcePage({ section }) {
               onClick={() => loadData({ quiet: true, fresh: true })}
             >
               <RefreshCw size={14} className={refreshing ? 'admin-spin' : ''} />
-              Refresh
+              {tr('Refresh')}
             </button>
             {config.exportable && config.api?.exportCsv && (
               <button type="button" className="admin-btn" onClick={handleExport} disabled={refreshing}>
                 <Download size={14} />
-                Export CSV
+                {tr('Export CSV')}
               </button>
             )}
           </div>
@@ -1183,6 +1344,15 @@ export default function AdminResourcePage({ section }) {
                       : premium
                         ? 'premium'
                         : 'total';
+                const displayLabel = tone === 'inactive'
+                  ? 'Inactive users'
+                  : tone === 'active'
+                    ? 'Active users'
+                    : tone === 'verified'
+                      ? 'Verified users'
+                      : tone === 'premium'
+                        ? 'Premium users'
+                        : 'Total users';
 
                 return (
                   <article
@@ -1202,9 +1372,9 @@ export default function AdminResourcePage({ section }) {
                               : <UsersRound size={22} />}
                     </span>
                     <span className="admin-user-stat__copy">
-                      <small>{stat.label}</small>
-                      <strong>{Number(stat.value || 0).toLocaleString()}</strong>
-                      <span>Current platform snapshot</span>
+                      <small>{tr(displayLabel)}</small>
+                      <strong>{Number(stat.value || 0).toLocaleString(isArabic ? 'ar-JO' : undefined)}</strong>
+                      <span>{tr('Current platform snapshot')}</span>
                     </span>
                     <span className="admin-user-stat__signal" aria-hidden="true">
                       <i />
@@ -1222,6 +1392,7 @@ export default function AdminResourcePage({ section }) {
           {section === 'users' && (
             <AdminUserStatusPicker
               value={userStatus}
+              tr={tr}
               onChange={(value) => {
                 setPage(1);
                 setUserStatus(value);
@@ -1234,6 +1405,7 @@ export default function AdminResourcePage({ section }) {
               value={userSortBy}
               order={userSortOrder}
               label="Sort users"
+              tr={tr}
               onChange={(field) => {
                 setPage(1);
                 setUserSortBy(field);
@@ -1252,8 +1424,8 @@ export default function AdminResourcePage({ section }) {
                 type="search"
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                placeholder={`Search ${config.title.toLowerCase()}...`}
-                aria-label={`Search ${config.title}`}
+                placeholder={section === 'users' ? tr('Search users...') : `Search ${config.title.toLowerCase()}...`}
+                aria-label={section === 'users' ? tr('Search Users') : `Search ${config.title}`}
               />
             </label>
           )}
@@ -1265,14 +1437,14 @@ export default function AdminResourcePage({ section }) {
               <CheckCircle2 size={18} />
             </span>
             <div className="admin-users-success-toast__content">
-              <strong>Email sent successfully</strong>
-              <span>{notice}</span>
+              <strong>{tr('Email sent successfully')}</strong>
+              <span>{tr(notice)}</span>
             </div>
             <button
               type="button"
               className="admin-users-success-toast__close"
               onClick={() => setNotice('')}
-              aria-label="Dismiss success message"
+              aria-label={tr('Dismiss success message')}
             >
               <XCircle size={17} />
             </button>
@@ -1282,35 +1454,35 @@ export default function AdminResourcePage({ section }) {
         {error && (
           <div className="admin-resource-error">
             <AlertCircle size={18} />
-            <span>{error}</span>
-            <button type="button" className="admin-btn" onClick={() => loadData()}>Try again</button>
+            <span>{tr(error)}</span>
+            <button type="button" className="admin-btn" onClick={() => loadData()}>{tr('Try again')}</button>
           </div>
         )}
 
         {loading ? (
           <div className="admin-resource-loading">
             <LoaderCircle size={25} className="admin-spin" />
-            <strong>Loading {config.title.toLowerCase()}…</strong>
+            <strong>{section === 'users' ? tr('Loading users…') : `Loading ${config.title.toLowerCase()}…`}</strong>
           </div>
         ) : !error && rows.length === 0 ? (
-          <EmptyState search={search} />
+          <EmptyState search={search} tr={tr} />
         ) : !error ? (
           <>
             {section === 'users' ? (
               <div className="admin-users-cards-shell">
-                <div className="admin-users-card-sortbar" aria-label="User sorting controls">
+                <div className="admin-users-card-sortbar" aria-label={tr('User sorting controls')}>
                   {columns.map((column) => {
                     const field = USER_COLUMN_SORT_FIELD[column];
                     const active = Boolean(field && userSortBy === field);
                     const SortIcon = !active ? ArrowUpDown : userSortOrder === 'asc' ? ArrowUp : ArrowDown;
-                    const label = {
+                    const label = tr({
                       identity: 'User',
                       accountStatus: 'Plan',
                       usage: 'Usage',
                       accountHealth: 'Account',
                       userType: 'Type',
                       createdAt: 'Joined',
-                    }[column] || toReadableLabel(column);
+                    }[column] || toReadableLabel(column));
 
                     return (
                       <button
@@ -1320,14 +1492,14 @@ export default function AdminResourcePage({ section }) {
                         onClick={() => field && applyUserSort(field)}
                         disabled={!field}
                         aria-pressed={active}
-                        title={field ? `Sort by ${label}` : label}
+                        title={field ? `${tr('Sort')} · ${label}` : label}
                       >
                         <span>{label}</span>
                         {field ? <SortIcon size={12} /> : null}
                       </button>
                     );
                   })}
-                  <span className="admin-users-card-sortbar__item admin-users-card-sortbar__item--actions">Actions</span>
+                  <span className="admin-users-card-sortbar__item admin-users-card-sortbar__item--actions">{tr('Actions')}</span>
                 </div>
 
                 <div className="admin-users-card-grid">
@@ -1341,32 +1513,32 @@ export default function AdminResourcePage({ section }) {
                       >
                         <div className="admin-user-directory-card__profile">
                           {renderUserCell(item, 'identity')}
-                          <span className="admin-user-directory-card__profile-chip">User profile</span>
+                          <span className="admin-user-directory-card__profile-chip">{tr('User profile')}</span>
                         </div>
 
                         <div className="admin-user-directory-card__details">
                           <div className="admin-user-directory-card__detail">
-                            <span className="admin-user-directory-card__label">Plan</span>
+                            <span className="admin-user-directory-card__label">{tr('Plan')}</span>
                             {renderUserCell(item, 'accountStatus')}
                           </div>
                           <div className="admin-user-directory-card__detail">
-                            <span className="admin-user-directory-card__label">Usage</span>
+                            <span className="admin-user-directory-card__label">{tr('Usage')}</span>
                             {renderUserCell(item, 'usage')}
                           </div>
                           <div className="admin-user-directory-card__detail">
-                            <span className="admin-user-directory-card__label">Account</span>
+                            <span className="admin-user-directory-card__label">{tr('Account')}</span>
                             {renderUserCell(item, 'accountHealth')}
                           </div>
                           <div className="admin-user-directory-card__detail">
-                            <span className="admin-user-directory-card__label">Type</span>
+                            <span className="admin-user-directory-card__label">{tr('Type')}</span>
                             {renderUserCell(item, 'userType')}
                           </div>
                           <div className="admin-user-directory-card__detail">
-                            <span className="admin-user-directory-card__label">Joined</span>
+                            <span className="admin-user-directory-card__label">{tr('Joined')}</span>
                             {renderUserCell(item, 'createdAt')}
                           </div>
                           <div className="admin-user-directory-card__detail admin-user-directory-card__detail--actions">
-                            <span className="admin-user-directory-card__label">Actions</span>
+                            <span className="admin-user-directory-card__label">{tr('Actions')}</span>
                             {renderUserActions(item)}
                           </div>
                         </div>
@@ -1404,7 +1576,7 @@ export default function AdminResourcePage({ section }) {
             )}
 
             <div className="admin-resource-pagination">
-              <span>Page {meta.page} of {meta.totalPages}</span>
+              <span>{tr('Page')} {meta.page} {tr('of')} {meta.totalPages}</span>
               <div>
                 <button
                   type="button"
@@ -1412,7 +1584,7 @@ export default function AdminResourcePage({ section }) {
                   disabled={page <= 1 || loading}
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
                 >
-                  <ChevronLeft size={14} /> Previous
+                  <ChevronLeft size={14} /> {tr('Previous')}
                 </button>
                 <button
                   type="button"
@@ -1420,7 +1592,7 @@ export default function AdminResourcePage({ section }) {
                   disabled={page >= meta.totalPages || loading}
                   onClick={() => setPage((current) => current + 1)}
                 >
-                  Next <ChevronRight size={14} />
+                  {tr('Next')} <ChevronRight size={14} />
                 </button>
               </div>
             </div>
@@ -1430,9 +1602,9 @@ export default function AdminResourcePage({ section }) {
 
       {section === 'users' && openUserActionMenu && typeof document !== 'undefined' && createPortal(
         <div
-          className="admin-user-actions-popover"
+          className={`admin-user-actions-popover ${isArabic ? 'is-rtl' : ''}`}
           role="menu"
-          aria-label="More user actions"
+          aria-label={tr('More user actions')}
           style={{
             top: `${openUserActionMenu.top}px`,
             left: `${openUserActionMenu.left}px`,
@@ -1451,12 +1623,12 @@ export default function AdminResourcePage({ section }) {
               className="admin-user-actions-popover__avatar"
             />
             <span>
-              <small>More actions</small>
+              <small>{tr('More actions')}</small>
               <strong>
                 {firstDefined(
                   openUserActionMenu.item,
                   ['fullName', 'name', 'displayName'],
-                  'User account',
+                  tr('User account'),
                 )}
               </strong>
             </span>
@@ -1474,7 +1646,7 @@ export default function AdminResourcePage({ section }) {
                   runMutation(
                     id,
                     () => config.api.resetPassword(id),
-                    'Password reset email sent successfully.',
+                    tr('Password reset email sent successfully.'),
                   );
                 }}
               >
@@ -1482,8 +1654,8 @@ export default function AdminResourcePage({ section }) {
                   <Mail size={14} />
                 </span>
                 <span>
-                  <strong>Send password recovery</strong>
-                  <small>Email a secure reset link</small>
+                  <strong>{tr('Send password recovery')}</strong>
+                  <small>{tr('Email a secure reset link')}</small>
                 </span>
               </button>
             ) : null}
@@ -1499,7 +1671,7 @@ export default function AdminResourcePage({ section }) {
                   setOpenUserActionMenu(null);
                   if (
                     window.confirm(
-                      'Delete this user account? This action may be irreversible.',
+                      tr('Delete this user account? This action may be irreversible.'),
                     )
                   ) {
                     runMutation(id, () => config.api.remove(id));
@@ -1510,8 +1682,8 @@ export default function AdminResourcePage({ section }) {
                   <Trash2 size={14} />
                 </span>
                 <span>
-                  <strong>Delete user</strong>
-                  <small>Remove the customer account</small>
+                  <strong>{tr('Delete user')}</strong>
+                  <small>{tr('Remove the customer account')}</small>
                 </span>
               </button>
             ) : null}
@@ -1521,12 +1693,12 @@ export default function AdminResourcePage({ section }) {
       )}
 
       {selected && section === 'users' && createPortal(
-        <div className="admin-user-modal-layer" role="presentation" onMouseDown={closeUserModal}>
+        <div className={`admin-user-modal-layer ${isArabic ? 'is-rtl' : ''}`} role="presentation" onMouseDown={closeUserModal}>
           <section
             className={`admin-user-modal admin-user-modal--${userModalMode}`}
             role="dialog"
             aria-modal="true"
-            aria-label={userModalMode === 'edit' ? 'Edit user' : 'User profile'}
+            aria-label={tr(userModalMode === 'edit' ? 'Edit user' : 'User profile')}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="admin-user-modal__glow" aria-hidden="true" />
@@ -1534,12 +1706,12 @@ export default function AdminResourcePage({ section }) {
               <div className="admin-user-modal__heading">
                 <span className="admin-user-modal__eyebrow">
                   {userModalMode === 'edit' ? <UserRoundCog size={14} /> : <Sparkles size={14} />}
-                  {userModalMode === 'edit' ? 'Account editor' : 'Member intelligence'}
+                  {tr(userModalMode === 'edit' ? 'Account editor' : 'Member intelligence')}
                 </span>
-                <h3>{userModalMode === 'edit' ? 'Edit user' : 'User profile'}</h3>
-                <p>{userModalMode === 'edit' ? 'Update account identity and access without leaving this workspace.' : 'A focused snapshot of identity, access and platform activity.'}</p>
+                <h3>{tr(userModalMode === 'edit' ? 'Edit user' : 'User profile')}</h3>
+                <p>{tr(userModalMode === 'edit' ? 'Update account identity and access without leaving this workspace.' : 'A focused snapshot of identity, access and platform activity.')}</p>
               </div>
-              <button className="admin-user-modal__close" type="button" onClick={closeUserModal} aria-label="Close" disabled={savingUser}>
+              <button className="admin-user-modal__close" type="button" onClick={closeUserModal} aria-label={tr('Close')} disabled={savingUser}>
                 <XCircle size={20} />
               </button>
             </header>
@@ -1556,44 +1728,44 @@ export default function AdminResourcePage({ section }) {
                     <i className={selectedIsDeleted || selected?.isActive === false ? 'is-offline' : ''} />
                   </div>
                   <div className="admin-user-view__identity">
-                    <small>Voxidence member</small>
-                    <h4>{firstDefined(selected, ['name', 'fullName', 'displayName'], 'Unnamed user')}</h4>
-                    <p><Mail size={13} /> {firstDefined(selected, ['email'], 'No email')}</p>
+                    <small>{tr('Voxidence member')}</small>
+                    <h4>{firstDefined(selected, ['name', 'fullName', 'displayName'], tr('Unnamed user'))}</h4>
+                    <p><Mail size={13} /> {firstDefined(selected, ['email'], tr('No email'))}</p>
                     <div className="admin-user-view__chips">
-                      <span>{firstDefined(selected, ['role'], 'User')}</span>
-                      <span>{firstDefined(selected, ['plan', 'tier', 'accountPlan'], 'Normal')}</span>
-                      <span className={selectedIsDeleted || selected?.isActive === false ? 'is-danger' : 'is-success'}>{selectedIsDeleted ? 'Deleted' : selected?.isActive === false ? 'Inactive' : 'Active'}</span>
-                      <span className={(selected?.isVerified || selected?.emailVerified) ? 'is-success' : ''}>{(selected?.isVerified || selected?.emailVerified) ? 'Verified' : 'Unverified'}</span>
+                      <span>{localizeUserEnum(firstDefined(selected, ['role'], 'User'), isArabic)}</span>
+                      <span>{localizeUserEnum(firstDefined(selected, ['plan', 'tier', 'accountPlan'], 'Normal'), isArabic)}</span>
+                      <span className={selectedIsDeleted || selected?.isActive === false ? 'is-danger' : 'is-success'}>{tr(selectedIsDeleted ? 'Deleted' : selected?.isActive === false ? 'Inactive' : 'Active')}</span>
+                      <span className={(selected?.isVerified || selected?.emailVerified) ? 'is-success' : ''}>{tr((selected?.isVerified || selected?.emailVerified) ? 'Verified' : 'Unverified')}</span>
                     </div>
                   </div>
                   {!selectedIsDeleted ? (
                     <button type="button" className="admin-user-view__edit-cta" onClick={() => setUserModalMode('edit')}>
-                      <Pencil size={15} /> Edit profile
+                      <Pencil size={15} /> {tr('Edit profile')}
                     </button>
                   ) : null}
                 </section>
 
                 <section className="admin-user-view__metrics">
-                  <article><span><Coins size={17} /></span><div><small>Credit balance</small><strong>{Number(firstDefined(selected, ['creditBalance', 'credits'], 0) || 0).toLocaleString()}</strong></div></article>
-                  <article><span><Sparkles size={17} /></span><div><small>Ideas</small><strong>{Number(firstDefined(selected, ['ideasCount', 'generatedIdeasCount', '_count.ideas'], 0) || 0).toLocaleString()}</strong></div></article>
-                  <article><span><KeyRound size={17} /></span><div><small>Free generations</small><strong>{Number(firstDefined(selected, ['freeGenerationsUsed'], 0) || 0)} / {Number(firstDefined(selected, ['freeGenerationLimit'], 3) || 3)}</strong></div></article>
-                  <article><span><CalendarDays size={17} /></span><div><small>Member since</small><strong>{(() => { const d = new Date(selected?.createdAt); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }); })()}</strong></div></article>
+                  <article><span><Coins size={17} /></span><div><small>{tr('Credit balance')}</small><strong>{Number(firstDefined(selected, ['creditBalance', 'credits'], 0) || 0).toLocaleString(isArabic ? 'ar-JO' : undefined)}</strong></div></article>
+                  <article><span><Sparkles size={17} /></span><div><small>{tr('Ideas')}</small><strong>{Number(firstDefined(selected, ['ideasCount', 'generatedIdeasCount', '_count.ideas'], 0) || 0).toLocaleString(isArabic ? 'ar-JO' : undefined)}</strong></div></article>
+                  <article><span><KeyRound size={17} /></span><div><small>{tr('Free generations')}</small><strong>{Number(firstDefined(selected, ['freeGenerationsUsed'], 0) || 0)} / {Number(firstDefined(selected, ['freeGenerationLimit'], 3) || 3)}</strong></div></article>
+                  <article><span><CalendarDays size={17} /></span><div><small>{tr('Member since')}</small><strong>{(() => { const d = new Date(selected?.createdAt); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(isArabic ? 'ar-JO' : undefined, { month: 'short', year: 'numeric' }); })()}</strong></div></article>
                 </section>
 
                 <section className="admin-user-view__details-card">
                   <div className="admin-user-view__section-title">
                     <span><ShieldCheck size={16} /></span>
-                    <div><h5>Identity & access</h5><p>Core account details and current permissions.</p></div>
+                    <div><h5>{tr('Identity & access')}</h5><p>{tr('Core account details and current permissions.')}</p></div>
                   </div>
                   <div className="admin-user-view__detail-grid">
-                    <div><small>Full name</small><strong>{firstDefined(selected, ['name', 'fullName', 'displayName'], '—')}</strong></div>
-                    <div><small>Email address</small><strong>{firstDefined(selected, ['email'], '—')}</strong></div>
-                    <div><small>User type</small><strong>{firstDefined(selected, ['userType', 'type'], '—')}</strong></div>
-                    <div><small>Role</small><strong>{firstDefined(selected, ['role'], '—')}</strong></div>
-                    <div><small>Account state</small><strong>{selected?.isActive === false ? 'Inactive' : 'Active'}</strong></div>
-                    <div><small>Email state</small><strong>{(selected?.isVerified || selected?.emailVerified) ? 'Verified' : 'Not verified'}</strong></div>
-                    <div className="is-wide"><small>Record ID</small><strong className="is-code">{selected?.id || selected?.userId || '—'}</strong></div>
-                    <div><small>Last updated</small><strong>{selected?.updatedAt ? new Date(selected.updatedAt).toLocaleString() : '—'}</strong></div>
+                    <div><small>{tr('Full name')}</small><strong>{firstDefined(selected, ['name', 'fullName', 'displayName'], '—')}</strong></div>
+                    <div><small>{tr('Email address')}</small><strong>{firstDefined(selected, ['email'], '—')}</strong></div>
+                    <div><small>{tr('User type')}</small><strong>{localizeUserEnum(firstDefined(selected, ['userType', 'type'], '—'), isArabic)}</strong></div>
+                    <div><small>{tr('Role')}</small><strong>{localizeUserEnum(firstDefined(selected, ['role'], '—'), isArabic)}</strong></div>
+                    <div><small>{tr('Account state')}</small><strong>{tr(selected?.isActive === false ? 'Inactive' : 'Active')}</strong></div>
+                    <div><small>{tr('Email state')}</small><strong>{tr((selected?.isVerified || selected?.emailVerified) ? 'Verified' : 'Not verified')}</strong></div>
+                    <div className="is-wide"><small>{tr('Record ID')}</small><strong className="is-code">{selected?.id || selected?.userId || '—'}</strong></div>
+                    <div><small>{tr('Last updated')}</small><strong>{selected?.updatedAt ? new Date(selected.updatedAt).toLocaleString(isArabic ? 'ar-JO' : undefined) : '—'}</strong></div>
                   </div>
                 </section>
               </div>
@@ -1601,43 +1773,43 @@ export default function AdminResourcePage({ section }) {
               <div className="admin-user-modal__content admin-user-edit">
                 <aside className="admin-user-edit__profile">
                   <div className="admin-user-edit__avatar">{String(firstDefined(selected, ['name', 'fullName', 'displayName', 'email'], 'U')).trim().charAt(0).toUpperCase()}</div>
-                  <span className="admin-user-edit__kicker">Editing member</span>
-                  <h4>{firstDefined(selected, ['name', 'fullName', 'displayName'], 'User')}</h4>
-                  <p>{firstDefined(selected, ['email'], 'No email')}</p>
-                  <div className="admin-user-edit__status"><i className={selected?.isActive === false ? 'is-off' : ''} /> {selected?.isActive === false ? 'Account inactive' : 'Account active'}</div>
-                  <div className="admin-user-edit__note"><ShieldCheck size={16} /><span><strong>Protected editor</strong><small>Changes are applied through the administrative API and saved immediately.</small></span></div>
+                  <span className="admin-user-edit__kicker">{tr('Editing member')}</span>
+                  <h4>{firstDefined(selected, ['name', 'fullName', 'displayName'], tr('User'))}</h4>
+                  <p>{firstDefined(selected, ['email'], tr('No email'))}</p>
+                  <div className="admin-user-edit__status"><i className={selected?.isActive === false ? 'is-off' : ''} /> {tr(selected?.isActive === false ? 'Account inactive' : 'Account active')}</div>
+                  <div className="admin-user-edit__note"><ShieldCheck size={16} /><span><strong>{tr('Protected editor')}</strong><small>{tr('Changes are applied through the administrative API and saved immediately.')}</small></span></div>
                 </aside>
 
                 <div className="admin-user-edit__workspace">
                   <div className="admin-user-edit__workspace-head">
-                    <div><small>PROFILE SETTINGS</small><h4>Account configuration</h4></div>
-                    <span><Sparkles size={13} /> Live editor</span>
+                    <div><small>{tr('PROFILE SETTINGS')}</small><h4>{tr('Account configuration')}</h4></div>
+                    <span><Sparkles size={13} /> {tr('Live editor')}</span>
                   </div>
-                  {modalError && <div className="admin-user-edit__error"><AlertCircle size={15} /> {modalError}</div>}
+                  {modalError && <div className="admin-user-edit__error"><AlertCircle size={15} /> {tr(modalError)}</div>}
                   <div className="admin-user-edit__form">
                     <label className="admin-user-edit__field admin-user-edit__field--wide">
-                      <span>Full name</span>
-                      <input value={userForm.fullName} onChange={(e) => setUserForm((v) => ({ ...v, fullName: e.target.value }))} maxLength={120} placeholder="User name" autoFocus />
+                      <span>{tr('Full name')}</span>
+                      <input value={userForm.fullName} onChange={(e) => setUserForm((v) => ({ ...v, fullName: e.target.value }))} maxLength={120} placeholder={tr('User name')} autoFocus />
                     </label>
                     <label className="admin-user-edit__field">
-                      <span>User type</span>
+                      <span>{tr('User type')}</span>
                       <select value={userForm.userType} onChange={(e) => setUserForm((v) => ({ ...v, userType: e.target.value }))}>
-                        {['STUDENT', 'DEVELOPER', 'COMPANY', 'RESEARCHER', 'OTHER'].map((value) => <option key={value} value={value}>{toReadableLabel(value)}</option>)}
+                        {['STUDENT', 'DEVELOPER', 'COMPANY', 'RESEARCHER', 'OTHER'].map((value) => <option key={value} value={value}>{localizeUserEnum(value, isArabic)}</option>)}
                       </select>
                     </label>
                     <div className="admin-user-edit__plan-card">
-                      <span>Account plan</span>
+                      <span>{tr('Account plan')}</span>
                       <div>
                         <strong className={`admin-user-plan-badge is-${String(userForm.accountStatus || 'NORMAL').toLowerCase()}`}>
                           <Crown size={14} />
-                          {toReadableLabel(userForm.accountStatus)}
+                          {localizeUserEnum(userForm.accountStatus, isArabic)}
                         </strong>
-                        <small>Plan follows the committed credit balance automatically.</small>
+                        <small>{tr('Plan follows the committed credit balance automatically.')}</small>
                       </div>
                     </div>
 
                     <label className="admin-user-edit__field">
-                      <span>Credit balance</span>
+                      <span>{tr('Credit balance')}</span>
                       <input
                         type="number"
                         min="0"
@@ -1652,11 +1824,11 @@ export default function AdminResourcePage({ section }) {
                           }));
                         }}
                       />
-                      <small>Changing credits creates an audited ADMIN_ADJUSTMENT ledger entry.</small>
+                      <small>{tr('Changing credits creates an audited ADMIN_ADJUSTMENT ledger entry.')}</small>
                     </label>
 
                     <label className="admin-user-edit__field">
-                      <span>Free generations used</span>
+                      <span>{tr('Free generations used')}</span>
                       <input
                         type="number"
                         min="0"
@@ -1668,7 +1840,7 @@ export default function AdminResourcePage({ section }) {
                     </label>
 
                     <label className="admin-user-edit__field">
-                      <span>Free generation limit</span>
+                      <span>{tr('Free generation limit')}</span>
                       <input
                         type="number"
                         min="0"
@@ -1681,26 +1853,26 @@ export default function AdminResourcePage({ section }) {
 
                     {Number(userForm.creditBalance) !== Number(firstDefined(selected, ['creditBalance', 'credits'], 0) ?? 0) ? (
                       <label className="admin-user-edit__field admin-user-edit__field--wide admin-user-edit__credit-reason">
-                        <span>Credit adjustment reason</span>
+                        <span>{tr('Credit adjustment reason')}</span>
                         <input
                           value={userForm.creditReason}
                           onChange={(e) => setUserForm((v) => ({ ...v, creditReason: e.target.value }))}
                           maxLength={500}
-                          placeholder="Example: Manual correction approved by support"
+                          placeholder={tr('Example: Manual correction approved by support')}
                         />
-                        <small>This note is stored in the credit ledger and audit log.</small>
+                        <small>{tr('This note is stored in the credit ledger and audit log.')}</small>
                       </label>
                     ) : null}
                     <label className="admin-user-edit__switch">
-                      <span><strong>Email verification</strong><small>Control the verified state stored on this account.</small></span>
+                      <span><strong>{tr('Email verification')}</strong><small>{tr('Control the verified state stored on this account.')}</small></span>
                       <input type="checkbox" checked={userForm.isVerified} onChange={(e) => setUserForm((v) => ({ ...v, isVerified: e.target.checked }))} />
                       <i />
                     </label>
-                    <div className="admin-user-edit__locked admin-user-edit__field--wide"><Mail size={16} /><span><small>Protected email</small><strong>{firstDefined(selected, ['email'], '—')}</strong></span><em>Protected</em></div>
-                    <div className="admin-user-edit__locked admin-user-edit__field--wide"><ShieldCheck size={16} /><span><small>Protected role</small><strong>{firstDefined(selected, ['role'], 'USER')}</strong></span><em>Protected</em></div>
+                    <div className="admin-user-edit__locked admin-user-edit__field--wide"><Mail size={16} /><span><small>{tr('Protected email')}</small><strong>{firstDefined(selected, ['email'], '—')}</strong></span><em>{tr('Protected')}</em></div>
+                    <div className="admin-user-edit__locked admin-user-edit__field--wide"><ShieldCheck size={16} /><span><small>{tr('Protected role')}</small><strong>{localizeUserEnum(firstDefined(selected, ['role'], 'USER'), isArabic)}</strong></span><em>{tr('Protected')}</em></div>
                   </div>
                   <div className="admin-user-edit__actions">
-                    <button type="button" className="admin-user-edit__cancel" onClick={() => setUserModalMode('view')} disabled={savingUser}>Cancel</button>
+                    <button type="button" className="admin-user-edit__cancel" onClick={() => setUserModalMode('view')} disabled={savingUser}>{tr('Cancel')}</button>
                     <button type="button" className="admin-user-edit__save" onClick={handleSaveUser} disabled={
                       savingUser ||
                       !userForm.fullName.trim() ||
@@ -1709,7 +1881,7 @@ export default function AdminResourcePage({ section }) {
                       Number(userForm.creditBalance) < 0
                     }>
                       {savingUser ? <LoaderCircle size={16} className="admin-spin" /> : <Save size={16} />}
-                      {savingUser ? 'Saving…' : 'Save changes'}
+                      {tr(savingUser ? 'Saving…' : 'Save changes')}
                     </button>
                   </div>
                 </div>

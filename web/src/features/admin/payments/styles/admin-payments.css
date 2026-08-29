@@ -1,3 +1,5 @@
+@import "../../shared/styles/admin-feature-theme.css";
+
 .admin-payment-page {
   --pay-ink: #294943;
   --pay-text: #4f6861;
@@ -181,7 +183,7 @@
   top: 47px;
 }
 
-.admin-payment-hero-card {
+.admin-payment-hero-visual {
   position: absolute;
   z-index: 5;
   left: 50%;
@@ -199,7 +201,7 @@
   box-shadow: 0 22px 40px rgba(51, 126, 117, .20);
 }
 
-.admin-payment-hero-card::before {
+.admin-payment-hero-visual::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -208,8 +210,8 @@
   background: linear-gradient(120deg, rgba(255, 255, 255, .10), transparent 38%, rgba(255, 255, 255, .08));
 }
 
-.admin-payment-hero-card__top,
-.admin-payment-hero-card__bottom {
+.admin-payment-hero-visual__top,
+.admin-payment-hero-visual__bottom {
   position: relative;
   z-index: 2;
   display: flex;
@@ -217,7 +219,7 @@
   justify-content: space-between;
 }
 
-.admin-payment-hero-card__chip {
+.admin-payment-hero-visual__chip {
   width: 30px;
   height: 22px;
   border-radius: 6px;
@@ -228,7 +230,7 @@
     rgba(255, 255, 255, .19);
 }
 
-.admin-payment-hero-card__number {
+.admin-payment-hero-visual__number {
   position: relative;
   z-index: 2;
   display: block;
@@ -239,7 +241,7 @@
   letter-spacing: .07em;
 }
 
-.admin-payment-hero-card__bottom small {
+.admin-payment-hero-visual__bottom small {
   display: block;
   color: rgba(255, 255, 255, .72);
   font-size: 7.5px;
@@ -247,14 +249,14 @@
   letter-spacing: .10em;
 }
 
-.admin-payment-hero-card__bottom strong {
+.admin-payment-hero-visual__bottom strong {
   display: block;
   margin-top: 2px;
   font-size: 11px;
   font-weight: 850;
 }
 
-.admin-payment-hero-card__badge {
+.admin-payment-hero-visual__badge {
   min-height: 25px;
   padding: 0 8px;
   display: inline-flex;
@@ -1893,4 +1895,829 @@
   .admin-payment-modal__footer>span {
     line-height: 1.5;
   }
+}
+
+/* =========================
+   DARK PAYMENT EXPERIENCE
+   Keeps the hero illustration white while the operational UI is fully dark.
+   ========================= */
+html.vox-user-dark .admin-payment-page,
+.admin-shell--dark .admin-payment-page {
+  --pay-ink: #e7f1ee;
+  --pay-text: #c1d1cc;
+  --pay-muted: #9cafaa;
+  --pay-subtle: #81958f;
+  --pay-line: rgba(132, 205, 194, .13);
+  --pay-line-strong: rgba(132, 205, 194, .20);
+  --pay-green: #70c8bf;
+  --pay-green-deep: #8adbd3;
+  --pay-green-mid: #6fc5bc;
+  --pay-green-soft: #17302b;
+  --pay-rose: #e390a7;
+  --pay-rose-deep: #f0a0b5;
+  --pay-rose-soft: #2c1d23;
+  --pay-gold: #c8a563;
+  --pay-gold-soft: #2a2418;
+  --pay-white: #13201d;
+  --pay-shadow: 0 18px 44px rgba(0, 0, 0, .20);
+  color: #e7f1ee !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero,
+.admin-shell--dark .admin-payment-page .admin-payment-hero {
+  border-color: rgba(132, 205, 194, .13) !important;
+  background:
+    radial-gradient(circle at 91% 11%, rgba(84, 173, 163, .12), transparent 28%),
+    radial-gradient(circle at 14% 112%, rgba(217, 135, 157, .055), transparent 35%),
+    linear-gradient(116deg, #0d1715 0%, #0f1c19 42%, #11231f 70%, #132923 100%) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero::before,
+.admin-shell--dark .admin-payment-page .admin-payment-hero::before {
+  opacity: .58 !important;
+  background:
+    linear-gradient(24deg, transparent 48%, rgba(96, 188, 177, .10) 48.35%, rgba(96, 188, 177, .10) 48.7%, transparent 49%) 76% 29% / 230px 100px no-repeat,
+    linear-gradient(-16deg, transparent 48%, rgba(222, 141, 162, .07) 48.3%, rgba(222, 141, 162, .07) 48.65%, transparent 49%) 61% 75% / 260px 105px no-repeat !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero__eyebrow,
+.admin-shell--dark .admin-payment-page .admin-payment-hero__eyebrow,
+html.vox-user-dark .admin-payment-page .admin-payment-panel__kicker,
+.admin-shell--dark .admin-payment-page .admin-payment-panel__kicker {
+  color: #78d3ca !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero h1,
+.admin-shell--dark .admin-payment-page .admin-payment-hero h1,
+html.vox-user-dark .admin-payment-page .admin-payment-panel__head h3,
+.admin-shell--dark .admin-payment-page .admin-payment-panel__head h3 {
+  color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero h1 span,
+.admin-shell--dark .admin-payment-page .admin-payment-hero h1 span {
+  color: #66bfb7 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero p,
+.admin-shell--dark .admin-payment-page .admin-payment-hero p,
+html.vox-user-dark .admin-payment-page .admin-payment-panel__head p,
+.admin-shell--dark .admin-payment-page .admin-payment-panel__head p {
+  color: #9fb2ac !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero__trust>span,
+.admin-shell--dark .admin-payment-page .admin-payment-hero__trust>span {
+  color: #bed0ca !important;
+  border-color: rgba(132, 205, 194, .13) !important;
+  background: rgba(18, 31, 28, .88) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero__trust>span:nth-child(2),
+.admin-shell--dark .admin-payment-page .admin-payment-hero__trust>span:nth-child(2) {
+  color: #e2acbb !important;
+  border-color: rgba(226, 149, 170, .15) !important;
+  background: rgba(37, 27, 31, .90) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-scene-line,
+.admin-shell--dark .admin-payment-page .admin-payment-scene-line {
+  border-color: rgba(113, 201, 193, .18) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-scene-line--two,
+.admin-shell--dark .admin-payment-page .admin-payment-scene-line--two {
+  border-color: rgba(226, 149, 170, .14) !important;
+}
+
+/* The hero illustration itself stays white in dark mode. */
+html.vox-user-dark .admin-payment-page .admin-payment-hero-visual,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-visual,
+html.vox-user-dark .admin-payment-page .admin-payment-hero-receipt,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-receipt,
+html.vox-user-dark .admin-payment-page .admin-payment-hero-coins,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-coins {
+  color: #294943 !important;
+  border-color: rgba(86, 143, 134, .17) !important;
+  background: #ffffff !important;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, .24) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero-receipt small,
+html.vox-user-dark .admin-payment-page .admin-payment-hero-coins small,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-receipt small,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-coins small {
+  color: #71867f !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero-receipt strong,
+html.vox-user-dark .admin-payment-page .admin-payment-hero-coins strong,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-receipt strong,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-coins strong {
+  color: #385951 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero-receipt__icon,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-receipt__icon {
+  color: #398c84 !important;
+  background: #eaf7f4 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-hero-coins>span,
+.admin-shell--dark .admin-payment-page .admin-payment-hero-coins>span {
+  color: #b4687b !important;
+  background: #fff1f5 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-scene-platform--one,
+.admin-shell--dark .admin-payment-page .admin-payment-scene-platform--one {
+  border-color: rgba(255, 255, 255, .20) !important;
+  background: rgba(255, 255, 255, .48) !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-scene-platform--two,
+.admin-shell--dark .admin-payment-page .admin-payment-scene-platform--two {
+  border-color: rgba(255, 255, 255, .15) !important;
+  background: rgba(234, 244, 241, .68) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-panel,
+.admin-shell--dark .admin-payment-page .admin-payment-panel {
+  border-color: rgba(132, 205, 194, .12) !important;
+  background:
+    radial-gradient(circle at 4% 0%, rgba(91, 176, 166, .055), transparent 21%),
+    radial-gradient(circle at 97% 0%, rgba(217, 135, 157, .04), transparent 18%),
+    #0e1816 !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-panel__head,
+html.vox-user-dark .admin-payment-page .admin-payment-metrics,
+html.vox-user-dark .admin-payment-page .admin-payment-status-tabs,
+html.vox-user-dark .admin-payment-page .admin-payment-controls,
+.admin-shell--dark .admin-payment-page .admin-payment-panel__head,
+.admin-shell--dark .admin-payment-page .admin-payment-metrics,
+.admin-shell--dark .admin-payment-page .admin-payment-status-tabs,
+.admin-shell--dark .admin-payment-page .admin-payment-controls {
+  border-color: rgba(132, 205, 194, .09) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-live,
+html.vox-user-dark .admin-payment-page .admin-payment-action,
+.admin-shell--dark .admin-payment-page .admin-payment-live,
+.admin-shell--dark .admin-payment-page .admin-payment-action {
+  color: #c4d5d0 !important;
+  border-color: rgba(132, 205, 194, .14) !important;
+  background: #15231f !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-action:hover:not(:disabled),
+.admin-shell--dark .admin-payment-page .admin-payment-action:hover:not(:disabled) {
+  color: #8fe0d8 !important;
+  border-color: rgba(113, 201, 193, .28) !important;
+  background: #1a2d28 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric,
+.admin-shell--dark .admin-payment-page .admin-payment-metric {
+  color: #e5efec !important;
+  border-color: rgba(132, 205, 194, .12) !important;
+  background: linear-gradient(145deg, #14211e, #111d1a) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .16) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric.is-primary,
+.admin-shell--dark .admin-payment-page .admin-payment-metric.is-primary {
+  border-color: rgba(113, 201, 193, .18) !important;
+  background: linear-gradient(135deg, #16302a, #121f1c 74%) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric.is-pending,
+.admin-shell--dark .admin-payment-page .admin-payment-metric.is-pending {
+  border-color: rgba(200, 165, 99, .15) !important;
+  background: linear-gradient(135deg, #211e17, #141e1b) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric.is-failed,
+.admin-shell--dark .admin-payment-page .admin-payment-metric.is-failed {
+  border-color: rgba(227, 144, 167, .15) !important;
+  background: linear-gradient(135deg, #24191e, #151d1b) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric small,
+.admin-shell--dark .admin-payment-page .admin-payment-metric small {
+  color: #a7bbb5 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric strong,
+.admin-shell--dark .admin-payment-page .admin-payment-metric strong {
+  color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric span:not(.admin-payment-metric__icon),
+.admin-shell--dark .admin-payment-page .admin-payment-metric span:not(.admin-payment-metric__icon) {
+  color: #8fa49e !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric__icon,
+.admin-shell--dark .admin-payment-page .admin-payment-metric__icon {
+  color: #79d1c9 !important;
+  border-color: rgba(113, 201, 193, .14) !important;
+  background: #18302a !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric.is-pending .admin-payment-metric__icon,
+.admin-shell--dark .admin-payment-page .admin-payment-metric.is-pending .admin-payment-metric__icon {
+  color: #d3b16e !important;
+  border-color: rgba(200, 165, 99, .17) !important;
+  background: #2a2418 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-metric.is-failed .admin-payment-metric__icon,
+.admin-shell--dark .admin-payment-page .admin-payment-metric.is-failed .admin-payment-metric__icon {
+  color: #f0a0b5 !important;
+  border-color: rgba(227, 144, 167, .16) !important;
+  background: #2c1d23 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status-tabs,
+.admin-shell--dark .admin-payment-page .admin-payment-status-tabs {
+  background: #101b18 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status-tabs button,
+.admin-shell--dark .admin-payment-page .admin-payment-status-tabs button {
+  color: #adbfba !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status-tabs button em,
+.admin-shell--dark .admin-payment-page .admin-payment-status-tabs button em {
+  color: #b7c8c3 !important;
+  background: #1a2824 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status-tabs button:hover,
+html.vox-user-dark .admin-payment-page .admin-payment-status-tabs button.is-active,
+.admin-shell--dark .admin-payment-page .admin-payment-status-tabs button:hover,
+.admin-shell--dark .admin-payment-page .admin-payment-status-tabs button.is-active {
+  color: #8fe0d8 !important;
+  border-color: rgba(113, 201, 193, .20) !important;
+  background: #1a2d28 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status-tabs button.is-active em,
+.admin-shell--dark .admin-payment-page .admin-payment-status-tabs button.is-active em {
+  color: #95e2da !important;
+  background: #223833 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-controls,
+.admin-shell--dark .admin-payment-page .admin-payment-controls {
+  background: #101a18 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-picker__trigger,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__trigger,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__direction,
+html.vox-user-dark .admin-payment-page .admin-payment-date-range,
+html.vox-user-dark .admin-payment-page .admin-payment-search,
+.admin-shell--dark .admin-payment-page .admin-payment-picker__trigger,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__trigger,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__direction,
+.admin-shell--dark .admin-payment-page .admin-payment-date-range,
+.admin-shell--dark .admin-payment-page .admin-payment-search {
+  color: #dce8e4 !important;
+  border-color: rgba(132, 205, 194, .13) !important;
+  background: #151f1d !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-picker__trigger:hover,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__trigger:hover,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__direction:hover,
+html.vox-user-dark .admin-payment-page .admin-payment-date-range:hover,
+html.vox-user-dark .admin-payment-page .admin-payment-date-range:focus-within,
+html.vox-user-dark .admin-payment-page .admin-payment-date-range.is-active,
+.admin-shell--dark .admin-payment-page .admin-payment-picker__trigger:hover,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__trigger:hover,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__direction:hover,
+.admin-shell--dark .admin-payment-page .admin-payment-date-range:hover,
+.admin-shell--dark .admin-payment-page .admin-payment-date-range:focus-within,
+.admin-shell--dark .admin-payment-page .admin-payment-date-range.is-active {
+  border-color: rgba(113, 201, 193, .26) !important;
+  background: #1a2925 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-picker__trigger small,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__trigger small,
+html.vox-user-dark .admin-payment-page .admin-payment-date-range__field small,
+.admin-shell--dark .admin-payment-page .admin-payment-picker__trigger small,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__trigger small,
+.admin-shell--dark .admin-payment-page .admin-payment-date-range__field small {
+  color: #849991 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-picker__trigger strong,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__trigger strong,
+html.vox-user-dark .admin-payment-page .admin-payment-date-range__field input,
+html.vox-user-dark .admin-payment-page .admin-payment-search input,
+.admin-shell--dark .admin-payment-page .admin-payment-picker__trigger strong,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__trigger strong,
+.admin-shell--dark .admin-payment-page .admin-payment-date-range__field input,
+.admin-shell--dark .admin-payment-page .admin-payment-search input {
+  color: #e5efec !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-search input::placeholder,
+.admin-shell--dark .admin-payment-page .admin-payment-search input::placeholder {
+  color: #71847e !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-date-range__divider,
+.admin-shell--dark .admin-payment-page .admin-payment-date-range__divider {
+  background: rgba(132, 205, 194, .11) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-date-range__clear,
+html.vox-user-dark .admin-payment-page .admin-payment-search button,
+.admin-shell--dark .admin-payment-page .admin-payment-date-range__clear,
+.admin-shell--dark .admin-payment-page .admin-payment-search button {
+  color: #9eb1ab !important;
+  background: #1c2a26 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-picker__menu,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__menu,
+.admin-shell--dark .admin-payment-page .admin-payment-picker__menu,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__menu {
+  color: #e5efec !important;
+  border-color: rgba(132, 205, 194, .13) !important;
+  background: #17221f !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .32) !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-picker__menu button,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__menu button,
+.admin-shell--dark .admin-payment-page .admin-payment-picker__menu button,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__menu button {
+  color: #becfc9 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-picker__menu button:hover,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__menu button:hover,
+html.vox-user-dark .admin-payment-page .admin-payment-picker__menu button.is-active,
+html.vox-user-dark .admin-payment-page .admin-payment-sort__menu button.is-active,
+.admin-shell--dark .admin-payment-page .admin-payment-picker__menu button:hover,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__menu button:hover,
+.admin-shell--dark .admin-payment-page .admin-payment-picker__menu button.is-active,
+.admin-shell--dark .admin-payment-page .admin-payment-sort__menu button.is-active {
+  color: #8bd8d0 !important;
+  background: #1d302b !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-error,
+.admin-shell--dark .admin-payment-page .admin-payment-error {
+  color: #f0a8b6 !important;
+  border-color: rgba(240, 160, 177, .16) !important;
+  background: #281b20 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-table-shell,
+.admin-shell--dark .admin-payment-page .admin-payment-table-shell {
+  background: #101917 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-table th,
+.admin-shell--dark .admin-payment-page .admin-payment-table th {
+  color: #9fb2ac !important;
+  border-bottom-color: rgba(132, 205, 194, .10) !important;
+  background: #121f1c !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-table td,
+.admin-shell--dark .admin-payment-page .admin-payment-table td {
+  color: #b9cac5 !important;
+  border-bottom-color: rgba(132, 205, 194, .08) !important;
+  background: #101917 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-table tbody tr:hover td,
+.admin-shell--dark .admin-payment-page .admin-payment-table tbody tr:hover td {
+  background: #15241f !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-row-icon,
+.admin-shell--dark .admin-payment-page .admin-payment-row-icon {
+  color: #e49aaf !important;
+  border-color: rgba(227, 144, 167, .14) !important;
+  background: #251a1f !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-row-icon__status,
+.admin-shell--dark .admin-payment-page .admin-payment-row-icon__status {
+  border-color: #101917 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-transaction-cell strong,
+html.vox-user-dark .admin-payment-page .admin-payment-customer-cell strong,
+html.vox-user-dark .admin-payment-page .admin-payment-purpose-cell strong,
+html.vox-user-dark .admin-payment-page .admin-payment-gateway-cell strong,
+html.vox-user-dark .admin-payment-page .admin-payment-value-cell>strong,
+.admin-shell--dark .admin-payment-page .admin-payment-transaction-cell strong,
+.admin-shell--dark .admin-payment-page .admin-payment-customer-cell strong,
+.admin-shell--dark .admin-payment-page .admin-payment-purpose-cell strong,
+.admin-shell--dark .admin-payment-page .admin-payment-gateway-cell strong,
+.admin-shell--dark .admin-payment-page .admin-payment-value-cell>strong {
+  color: #e7f1ee !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-transaction-cell small,
+html.vox-user-dark .admin-payment-page .admin-payment-customer-cell small,
+html.vox-user-dark .admin-payment-page .admin-payment-purpose-cell small,
+html.vox-user-dark .admin-payment-page .admin-payment-gateway-cell small,
+html.vox-user-dark .admin-payment-page .admin-payment-transaction-date,
+.admin-shell--dark .admin-payment-page .admin-payment-transaction-cell small,
+.admin-shell--dark .admin-payment-page .admin-payment-customer-cell small,
+.admin-shell--dark .admin-payment-page .admin-payment-purpose-cell small,
+.admin-shell--dark .admin-payment-page .admin-payment-gateway-cell small,
+.admin-shell--dark .admin-payment-page .admin-payment-transaction-date {
+  color: #8fa49e !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-purpose-symbol,
+.admin-shell--dark .admin-payment-page .admin-payment-purpose-symbol {
+  color: #78d1c8 !important;
+  border-color: rgba(113, 201, 193, .13) !important;
+  background: #17302b !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-purpose-symbol.is-credits,
+html.vox-user-dark .admin-payment-page .admin-payment-purpose-symbol.is-advanced,
+.admin-shell--dark .admin-payment-page .admin-payment-purpose-symbol.is-credits,
+.admin-shell--dark .admin-payment-page .admin-payment-purpose-symbol.is-advanced {
+  color: #f0a0b5 !important;
+  border-color: rgba(227, 144, 167, .15) !important;
+  background: #2c1d23 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-purpose-symbol.is-accept,
+.admin-shell--dark .admin-payment-page .admin-payment-purpose-symbol.is-accept {
+  color: #d3b16e !important;
+  border-color: rgba(200, 165, 99, .15) !important;
+  background: #2a2418 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status,
+.admin-shell--dark .admin-payment-page .admin-payment-status {
+  color: #85ddd4 !important;
+  background: #18332d !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status.is-pending,
+.admin-shell--dark .admin-payment-page .admin-payment-status.is-pending {
+  color: #d3b16e !important;
+  background: #2a2418 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status.is-failed,
+.admin-shell--dark .admin-payment-page .admin-payment-status.is-failed {
+  color: #f0a0b5 !important;
+  background: #2c1d23 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-status.is-refunded,
+.admin-shell--dark .admin-payment-page .admin-payment-status.is-refunded {
+  color: #c4b5cc !important;
+  background: #27212a !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-inspect,
+.admin-shell--dark .admin-payment-page .admin-payment-inspect {
+  color: #83d8d0 !important;
+  border-color: rgba(113, 201, 193, .16) !important;
+  background: #172b26 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-inspect:hover,
+.admin-shell--dark .admin-payment-page .admin-payment-inspect:hover {
+  color: #ef9db2 !important;
+  border-color: rgba(227, 144, 167, .22) !important;
+  background: #2a1d22 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-table-state td,
+.admin-shell--dark .admin-payment-page .admin-payment-table-state td {
+  color: #8fa49e !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-pagination,
+.admin-shell--dark .admin-payment-page .admin-payment-pagination {
+  color: #9eb1ab !important;
+  border-top-color: rgba(132, 205, 194, .08) !important;
+  background: #0f1816 !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-pagination button,
+.admin-shell--dark .admin-payment-page .admin-payment-pagination button {
+  color: #c0d0cb !important;
+  border-color: rgba(132, 205, 194, .13) !important;
+  background: #17221f !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-pagination button:hover:not(:disabled),
+.admin-shell--dark .admin-payment-page .admin-payment-pagination button:hover:not(:disabled) {
+  color: #8bd8d0 !important;
+  background: #1d2f2a !important;
+}
+
+html.vox-user-dark .admin-payment-page .admin-payment-pagination em,
+.admin-shell--dark .admin-payment-page .admin-payment-pagination em {
+  color: #a6b9b3 !important;
+}
+
+html.vox-user-dark .admin-payment-modal-backdrop {
+  background: rgba(3, 8, 7, .78) !important;
+}
+
+html.vox-user-dark .admin-payment-modal {
+  color: #edf5f2 !important;
+  border-color: rgba(132, 205, 194, .15) !important;
+  background: #111b18 !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .52) !important;
+}
+
+html.vox-user-dark .admin-payment-modal__head {
+  border-bottom-color: rgba(132, 205, 194, .10) !important;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(88, 170, 162, .08), transparent 28%),
+    #121e1a !important;
+}
+
+html.vox-user-dark .admin-payment-modal__summary,
+html.vox-user-dark .admin-payment-modal__details,
+html.vox-user-dark .admin-payment-modal__footer {
+  border-color: rgba(132, 205, 194, .09) !important;
+  background: #101917 !important;
+}
+
+html.vox-user-dark .admin-payment-modal__status-card,
+html.vox-user-dark .admin-payment-customer-card,
+html.vox-user-dark .admin-payment-amount-card,
+html.vox-user-dark .admin-payment-readonly-note,
+html.vox-user-dark .admin-payment-detail-item {
+  color: #dfeae7 !important;
+  border-color: rgba(132, 205, 194, .12) !important;
+  background: #16211e !important;
+}
+
+html.vox-user-dark .admin-payment-modal__mark,
+html.vox-user-dark .admin-payment-modal__section-head>span,
+html.vox-user-dark .admin-payment-detail-item__icon,
+html.vox-user-dark .admin-payment-customer-card>span,
+html.vox-user-dark .admin-payment-modal__close {
+  color: #7ed3cb !important;
+  border-color: rgba(113, 201, 193, .16) !important;
+  background: #1a302b !important;
+}
+
+html.vox-user-dark .admin-payment-modal__status-icon {
+  color: #7ed3cb !important;
+  background: #1a302b !important;
+}
+
+html.vox-user-dark .admin-payment-modal__status-icon.is-credits,
+html.vox-user-dark .admin-payment-modal__status-icon.is-advanced {
+  color: #f0a0b5 !important;
+  background: #2c1d23 !important;
+}
+
+html.vox-user-dark .admin-payment-modal__status-icon.is-accept {
+  color: #d3b16e !important;
+  background: #2a2418 !important;
+}
+
+html.vox-user-dark .admin-payment-modal__identity small,
+html.vox-user-dark .admin-payment-modal__section-head small,
+html.vox-user-dark .admin-payment-modal__status-card small,
+html.vox-user-dark .admin-payment-customer-card small,
+html.vox-user-dark .admin-payment-amount-card small,
+html.vox-user-dark .admin-payment-detail-item small,
+html.vox-user-dark .admin-payment-readonly-note span {
+  color: #91a59f !important;
+}
+
+html.vox-user-dark .admin-payment-modal__identity h3,
+html.vox-user-dark .admin-payment-modal__section-head h4,
+html.vox-user-dark .admin-payment-modal__status-card strong,
+html.vox-user-dark .admin-payment-customer-card strong,
+html.vox-user-dark .admin-payment-amount-card strong,
+html.vox-user-dark .admin-payment-detail-item strong,
+html.vox-user-dark .admin-payment-readonly-note strong,
+html.vox-user-dark .admin-payment-modal__subsection-title span {
+  color: #edf5f2 !important;
+}
+
+html.vox-user-dark .admin-payment-modal__identity p,
+html.vox-user-dark .admin-payment-customer-card p,
+html.vox-user-dark .admin-payment-amount-card p,
+html.vox-user-dark .admin-payment-modal__footer {
+  color: #9aada7 !important;
+}
+
+html.vox-user-dark .admin-payment-modal__subsection {
+  border-top-color: rgba(132, 205, 194, .09) !important;
+}
+
+html.vox-user-dark .admin-payment-failure-box {
+  color: #f0a8b6 !important;
+  border-color: rgba(240, 160, 177, .16) !important;
+  background: #281b20 !important;
+}
+
+html.vox-user-dark .admin-payment-failure-box strong,
+html.vox-user-dark .admin-payment-failure-box p {
+  color: #efabb9 !important;
+}
+
+html.vox-user-dark .admin-payment-modal__footer button {
+  color: #c8d8d3 !important;
+  border-color: rgba(132, 205, 194, .14) !important;
+  background: #17221f !important;
+}
+
+/* Dark Arabic: translate only in dark mode and align the whole payment surface RTL. */
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-hero__content,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-panel__head,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-controls,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-table,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-pagination,
+html.vox-user-dark.vox-user-rtl .admin-payment-modal {
+  text-align: right;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-hero__content,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-hero__trust,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-panel__head,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-panel__actions,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-status-tabs,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-controls,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-transaction-cell,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-purpose-cell,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-gateway-cell strong,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-pagination,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-pagination>div,
+html.vox-user-dark.vox-user-rtl .admin-payment-modal__head,
+html.vox-user-dark.vox-user-rtl .admin-payment-modal__identity,
+html.vox-user-dark.vox-user-rtl .admin-payment-modal__status-card,
+html.vox-user-dark.vox-user-rtl .admin-payment-customer-card,
+html.vox-user-dark.vox-user-rtl .admin-payment-readonly-note,
+html.vox-user-dark.vox-user-rtl .admin-payment-modal__section-head,
+html.vox-user-dark.vox-user-rtl .admin-payment-modal__subsection-title,
+html.vox-user-dark.vox-user-rtl .admin-payment-modal__footer {
+  direction: rtl;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-picker__trigger>span,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-sort__trigger>span,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-picker__menu button,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-sort__menu button,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-table th,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-table td {
+  text-align: right;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-table th:last-child,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-table td:last-child {
+  text-align: left;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-value-cell {
+  align-items: flex-end;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-sort {
+  padding-right: 0;
+  padding-left: 56px;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-sort__direction {
+  right: auto;
+  left: 0;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-picker__menu,
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-sort__menu {
+  left: auto;
+  right: 0;
+}
+
+html.vox-user-dark.vox-user-rtl .admin-payment-page .admin-payment-row-icon__status {
+  right: auto;
+  left: -2px;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual,
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-receipt,
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-coins {
+  color: #294943 !important;
+  border-color: rgba(86, 143, 134, .17) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, .24) !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual::before {
+  background: linear-gradient(120deg, rgba(85, 173, 163, .08), transparent 38%, rgba(217, 135, 157, .05)) !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__chip {
+  border-color: rgba(51, 112, 103, .24) !important;
+  background:
+    linear-gradient(90deg, transparent 47%, rgba(51, 112, 103, .22) 48%, rgba(51, 112, 103, .22) 52%, transparent 53%),
+    linear-gradient(0deg, transparent 47%, rgba(51, 112, 103, .22) 48%, rgba(51, 112, 103, .22) 52%, transparent 53%),
+    rgba(91, 177, 167, .10) !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__number {
+  color: #35564f !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__bottom small {
+  color: #71867f !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__bottom strong {
+  color: #294943 !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__badge {
+  color: #356e66 !important;
+  border-color: rgba(57, 140, 132, .20) !important;
+  background: #edf8f5 !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-receipt small,
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-coins small {
+  color: #71867f !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-receipt strong,
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-coins strong {
+  color: #385951 !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-receipt__icon {
+  color: #398c84 !important;
+  background: #eaf7f4 !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-coins>span {
+  color: #b4687b !important;
+  background: #fff1f5 !important;
+}
+
+/* Keep the hero payment card in its original light-mode aqua color even in dark mode. */
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual {
+  color: #fff !important;
+  border-color: rgba(49, 126, 117, .17) !important;
+  background:
+    radial-gradient(circle at 86% 9%, rgba(255, 255, 255, .23), transparent 25%),
+    linear-gradient(145deg, #3a8e86 0%, #58aaa2 52%, #82c9c1 100%) !important;
+  box-shadow: 0 22px 40px rgba(51, 126, 117, .20) !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual::before {
+  background: linear-gradient(120deg, rgba(255, 255, 255, .10), transparent 38%, rgba(255, 255, 255, .08)) !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__chip {
+  border-color: rgba(255, 255, 255, .30) !important;
+  background:
+    linear-gradient(90deg, transparent 47%, rgba(255, 255, 255, .34) 48%, rgba(255, 255, 255, .34) 52%, transparent 53%),
+    linear-gradient(0deg, transparent 47%, rgba(255, 255, 255, .34) 48%, rgba(255, 255, 255, .34) 52%, transparent 53%),
+    rgba(255, 255, 255, .19) !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__number {
+  color: rgba(255, 255, 255, .95) !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__bottom small {
+  color: rgba(255, 255, 255, .72) !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__bottom strong {
+  color: #fff !important;
+}
+
+.admin-payment-page .admin-payment-hero__scene.admin-payment-hero__scene--dark .admin-payment-hero-visual__badge {
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, .23) !important;
+  background: rgba(255, 255, 255, .13) !important;
 }

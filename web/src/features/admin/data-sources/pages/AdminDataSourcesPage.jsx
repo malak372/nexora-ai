@@ -107,13 +107,21 @@ function formatDate(value) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
+  const locale = typeof document !== 'undefined' && document.documentElement.lang === 'ar' ? 'ar' : undefined;
+  return date.toLocaleString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function deleteConfirmation(sourceName) {
+  if (typeof document !== 'undefined' && document.documentElement.lang === 'ar') {
+    return `حذف «${sourceName}»؟ يُسمح بذلك فقط عندما لا يرتبط المصدر بأي مهام جمع تاريخية أو منشورات أدلة.`;
+  }
+  return `Delete "${sourceName}"? This is only allowed when the source has no historical collection jobs or evidence posts.`;
 }
 
 function compactText(value, max = 72) {
@@ -368,9 +376,7 @@ function DataSourceModal({ mode, source, onClose, onSaved }) {
     if (!editing || saving) return;
 
     const sourceName = source?.displayName || source?.key || 'this data source';
-    const confirmed = window.confirm(
-      `Delete "${sourceName}"? This is only allowed when the source has no historical collection jobs or evidence posts.`,
-    );
+    const confirmed = window.confirm(deleteConfirmation(sourceName));
 
     if (!confirmed) return;
 
@@ -712,9 +718,7 @@ export default function AdminDataSourcesPage() {
     if (!row?.id || deletingId) return;
 
     const sourceName = row.displayName || row.key || 'this data source';
-    const confirmed = window.confirm(
-      `Delete "${sourceName}"? This is only allowed when the source has no historical collection jobs or evidence posts.`,
-    );
+    const confirmed = window.confirm(deleteConfirmation(sourceName));
 
     if (!confirmed) return;
 
