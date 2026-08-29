@@ -12,6 +12,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getStoredUser } from '../../../auth/shared/auth.storage';
+import { useUserExperience } from '../../../../system/user-experience';
 import './premium-welcome-celebration.css';
 
 const PREMIUM_WELCOME_KEY = 'voxidence:premium-welcome-pending';
@@ -59,6 +60,7 @@ export function markPremiumWelcomePending(user) {
 
 export default function PremiumWelcomeCelebration() {
     const shouldReduceMotion = useReducedMotion();
+    const { t, isArabic } = useUserExperience();
     const [isVisible, setIsVisible] = useState(false);
     const user = useMemo(() => getStoredUser() || {}, []);
     const displayName = useMemo(() => getDisplayName(user), [user]);
@@ -147,7 +149,7 @@ export default function PremiumWelcomeCelebration() {
                     transition={{ duration: 0.28 }}
                     role="dialog"
                     aria-modal="true"
-                    aria-label={`Welcome back${displayName ? `, ${displayName}` : ''}`}
+                    aria-label={`${t('Welcome Back')}${displayName ? `, ${displayName}` : ''}`}
                     onClick={() => setIsVisible(false)}
                 >
                     <div className="premium-welcome__backdrop" />
@@ -184,7 +186,7 @@ export default function PremiumWelcomeCelebration() {
                             type="button"
                             className="premium-welcome__close"
                             onClick={() => setIsVisible(false)}
-                            aria-label="Close welcome"
+                            aria-label={t('Close welcome')}
                         >
                             <X size={20} strokeWidth={2.15} />
                         </button>
@@ -201,7 +203,7 @@ export default function PremiumWelcomeCelebration() {
                             transition={{ duration: 0.35, delay: 0.15 }}
                         >
                             <Crown size={15} strokeWidth={1.9} />
-                            <span>Premium workspace</span>
+                            <span>{t('Premium workspace')}</span>
                             <Sparkles size={14} strokeWidth={1.9} />
                         </motion.div>
 
@@ -226,8 +228,17 @@ export default function PremiumWelcomeCelebration() {
                             ))}
                         </div>
 
-                        <h2 className="premium-welcome__title" aria-label={WELCOME_TEXT}>
-                            {Array.from(WELCOME_TEXT).map((character, index) => (
+                        <h2 className={`premium-welcome__title ${isArabic ? 'is-arabic' : ''}`} aria-label={t(WELCOME_TEXT)}>
+                            {isArabic ? (
+                                <motion.span
+                                    className="premium-welcome__title-arabic"
+                                    initial={{ opacity: 0, y: 18 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.58, delay: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                                >
+                                    {t(WELCOME_TEXT)}
+                                </motion.span>
+                            ) : Array.from(WELCOME_TEXT).map((character, index) => (
                                 <span
                                     key={`${character}-${index}`}
                                     className={`premium-welcome__character-window${character === ' ' ? ' premium-welcome__space' : ''}`}
@@ -264,7 +275,7 @@ export default function PremiumWelcomeCelebration() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.42, delay: 1.1 }}
                         >
-                            Your premium workspace is ready.
+                            {t('Your premium workspace is ready.')}
                         </motion.p>
 
                         {displayName && (
@@ -275,7 +286,7 @@ export default function PremiumWelcomeCelebration() {
                                 transition={{ duration: 0.42, delay: 1.22 }}
                             >
                                 <span className="premium-welcome__name-deco">✦</span>
-                                {displayName}
+                                <bdi dir="auto" data-no-auto-translate="true">{displayName}</bdi>
                                 <span className="premium-welcome__name-deco">✦</span>
                             </motion.p>
                         )}

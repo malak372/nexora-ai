@@ -9,9 +9,8 @@ import type { CollectorInput, CollectorPost } from '../base/collector.types';
 import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
 import { CollectorAbortContextUtil } from '../base/collector-abort-context.util';
 import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
-import { RequestNicheCustomCraftUtil } from '../../ideas/generation/utils/request-niche-custom-craft.util';
-import { RequestOnlinePharmacyFraudUtil } from '../../ideas/generation/utils/request-online-pharmacy-fraud.util';
-import { RequestOperationalCostAttributionUtil } from '../../ideas/generation/utils/request-operational-cost-attribution.util';
+import { CanonicalRequestUnderstandingUtil } from '../../ideas/generation/utils/canonical-request-understanding.util';
+import { SourceSpecificEvidenceQueryUtil } from '../../ideas/generation/utils/source-specific-evidence-query.util';
 
 type CrossrefWork = {
   DOI?: string;
@@ -66,15 +65,27 @@ export class CrossrefCollector extends BaseCollector implements SocialCollector 
       return [];
     }
 
-    const queryBudget = input.collectionMode === 'TARGETED_RECOVERY' ? 1 : 4;
-    const queries = ProblemFirstCollectorQueryUtil.build({
+    const queryBudget = input.collectionMode === 'TARGETED_RECOVERY' ? 2 : 4;
+    const baseQueries = ProblemFirstCollectorQueryUtil.build({
       sourceKey: this.sourceKey,
       domainName: input.domainName,
       requestDescription: input.requestDescription,
       plannedQueries: input.plannedQueries,
       keywords: input.keywords,
       authoritativePlannedQueries: input.authoritativePlannedQueries,
-    }).slice(0, queryBudget);
+    });
+    const problemProfile = input.requestDescription?.trim()
+      ? CanonicalRequestUnderstandingUtil.resolve(input.requestDescription)
+      : null;
+    const queries = SourceSpecificEvidenceQueryUtil.compile({
+      sourceKey: this.sourceKey,
+      baseQueries,
+      requestDescription: input.requestDescription,
+      problemProfile,
+      discoveryDomainName: input.domainName,
+      maxQueries: queryBudget,
+      preserveBaseQueries: false,
+    });
 
     if (queries.length === 0) return [];
 
@@ -194,103 +205,37 @@ export class CrossrefCollector extends BaseCollector implements SocialCollector 
     const request = this.cleanPlainText(input.requestDescription).toLocaleLowerCase();
     if (!request) return true;
 
-    const constraint = RequestVerticalConstraintUtil.resolve({
-      requestDescription: input.requestDescription,
-      domainName: input.domainName,
-      plannedQueries: input.plannedQueries,
-    });
     const evidence = this.cleanPlainText(
       `${this.titleOf(work)} ${work.abstract ?? ''}`,
     ).toLocaleLowerCase();
     if (!evidence) return false;
 
-    if (constraint.kind === 'ONLINE_PHARMACY_FRAUD') {
-      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(
-        input.requestDescription,
-        evidence,
-      );
-    }
+    /*
+     * Crossref's bibliographic matcher is lexical. Reject well-known sense
+     * collisions only when the requester context clearly points to the other
+     * meaning. These are lexical disambiguation guards, not business verticals.
+     */
+    const computationalRuntime =
+      /\b(?:runtime complexity|computational complexity|time complexity|algorithm(?:ic)? complexity|asymptotic complexity)\b/iu.test(evidence);
+    const requesterIsComputational =
+      /\b(?:algorithm|software|code|programming|computational|complexity|compiler|data structure)\b/iu.test(request);
+    if (computationalRuntime && !requesterIsComputational) return false;
 
-    if (constraint.kind === 'HEALTHCARE_SUPPLY_COST_EFFICIENCY') {
-      const healthcare = /\b(?:healthcare|health system|hospital|hospitals|clinic|medical center|hospital pharmacy)\b/iu.test(evidence);
-      const supply = /\b(?:procurement|purchasing|emergency purchase|emergency order|medical suppl(?:y|ies)|inventory|stockout|overstock|expired|expiration|expiry|inter[- ]facility transfer|stock redistribution|supplier invoice|transportation cost|delivery cost|logistics cost)\w*\b/iu.test(evidence);
-      const impact = /\b(?:cost|expense|spend|budget|financial|waste|loss|avoidable|inefficien|overstock|expired|stockout|emergency)\w*\b/iu.test(evidence);
-      const collision = /\b(?:stock market|asset pricing|securities|portfolio return|hydrogen|energy storage|vehicle pricing|rail market)\b/iu.test(evidence) && !healthcare;
-      return healthcare && supply && impact && !collision;
-    }
+    const soapProtocol =
+      /\b(?:soap web services?|soap api|soap protocol|wsdl|simple object access protocol)\b/iu.test(evidence);
+    const requesterIsSoftwareSoap =
+      /\b(?:soap web services?|soap api|soap protocol|wsdl|software|api|integration)\b/iu.test(request);
+    if (soapProtocol && !requesterIsSoftwareSoap) return false;
 
-    if (constraint.kind === 'OPERATIONAL_COST_ATTRIBUTION') {
-      return RequestOperationalCostAttributionUtil.isPlausibleRetrievalCandidate(
-        input.requestDescription ?? '',
-        evidence,
-      );
-    }
-
-    if (constraint.kind === 'RESTORATION_CONSERVATION') {
-      /*
-       * Crossref's lexical search can satisfy a compound query with only the
-       * object words (for example "violin" + "bow") and return performance or
-       * history papers. Preserve the selected Crossref source, but require the
-       * returned work itself to contain both the physical restoration identity
-       * and a treatment/condition workflow signal before it enters raw triage.
-       */
-      return (
-        RequestVerticalConstraintUtil.matchesVertical(evidence, constraint) &&
-        RequestVerticalConstraintUtil.matchesWorkflow(evidence, constraint)
-      );
-    }
-
-    if (constraint.kind === 'PUBLIC_PROGRAM_COST_ATTRIBUTION') {
-      const publicContext = /\b(?:government|public sector|public agency|government agency|government department|public program|government program|public administration)\b/iu.test(evidence);
-      const costDriver = /\b(?:staffing|payroll|procurement|purchasing|contractor|vendor payment|service usage|departmental spending|program expenditure|operating expense|operating cost|public expenditure)\w*\b/iu.test(evidence);
-      const budgetPressure = /\b(?:budget overrun|overspend|cost overrun|cost pressure|cost driver|cost attribution|budget variance|spending analysis|expenditure analysis|financial oversight|inefficien|waste|cost growth|cost reduction)\w*\b/iu.test(evidence);
-      const collision = /\b(?:personal finance|stock market|investment portfolio|auction format|combinatorial auction|road resurfacing)\b/iu.test(evidence) && !/\b(?:program budget|departmental budget|staffing|contractor payment|service usage|cost attribution)\b/iu.test(evidence);
-      return publicContext && costDriver && budgetPressure && !collision;
-    }
-
-    const nicheCraftProfile = RequestNicheCustomCraftUtil.resolve(
-      input.requestDescription,
+    const constraint = RequestVerticalConstraintUtil.resolve({
+      requestDescription: input.requestDescription,
+      domainName: input.domainName,
+      plannedQueries: input.plannedQueries,
+    });
+    return (
+      RequestVerticalConstraintUtil.matchesVertical(evidence, constraint) &&
+      RequestVerticalConstraintUtil.matchesWorkflow(evidence, constraint)
     );
-    if (constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' && nicheCraftProfile) {
-      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(
-        input.requestDescription,
-        evidence,
-      );
-    }
-
-    if (
-      constraint.kind === 'CUSTOM_SPECIFICATION_SERVICE' &&
-      constraint.label === 'custom watch strap specification sizing and approval operations'
-    ) {
-      const objectIdentity =
-        /\b(?:watch straps?|watch bands?|wristwatch straps?|wristwatch bands?|leather watch straps?|leather watch bands?|bespoke watch straps?|custom watch straps?)\b/iu.test(evidence);
-      const workflow =
-        /\b(?:wrist measurements?|wrist sizes?|anthropometr|sizing|fit|fitting|strap lengths?|strap widths?|lug widths?|leather|materials?|stitching|buckles?|customization|customisation|design|dimensions?)\w*\b/iu.test(evidence);
-      const collision =
-        /\b(?:custom workflow forms?|workflow engine|workflow designer|android widgets?|custom widgets?|visual studio workflow|rf connectors?|radio frequency connectors?|software|source code)\b/iu.test(evidence) &&
-        !objectIdentity;
-      return objectIdentity && workflow && !collision;
-    }
-
-    if (
-      constraint.kind === 'TRANSACTION_ACCOUNT_ABUSE' &&
-      /\b(?:smart cit(?:y|ies)|cities|city governments?|municipalit(?:y|ies)|municipal governments?|local authorities?|public services?|parking services?|utility services?)\b/iu.test(request)
-    ) {
-      const paymentAxis =
-        /\b(?:payments?|payment transactions?|transactions?|parking payments?|parking fees?|transit payments?|fare payments?|utility payments?|utility bills?|municipal fees?)\b/iu.test(evidence);
-      const municipalIdentity =
-        /\b(?:smart cit(?:y|ies)|city government|municipal|municipality|local authority|public service|public transit|parking|public utility|utility provider)\w*\b/iu.test(evidence);
-      const genericPaymentSystem =
-        /\b(?:payment systems?|electronic payments?|digital payments?|online payments?|payment fraud|transaction fraud|payment security|fraud detection)\b/iu.test(evidence);
-      const abuseFacet =
-        /\b(?:fraud|fraudulent|unauthorized|account compromise|compromised account|account takeover|false positive|suspicious payment|security alert|fraud detection|fraud investigation)\w*\b/iu.test(evidence);
-      const financeCollision =
-        /\b(?:tax deferred|retirement accounts?|pension accounts?|investment portfolio|securities trading|stock market)\b/iu.test(evidence) &&
-        !municipalIdentity;
-      return !financeCollision && abuseFacet && (paymentAxis && municipalIdentity || genericPaymentSystem);
-    }
-
-    return true;
   }
 
   private mapWork(work: CrossrefWork, input: CollectorInput): CollectorPost {

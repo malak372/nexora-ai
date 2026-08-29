@@ -157,6 +157,8 @@ export type IntelligentTextInput = {
   /** Search provenance preserved for evidence verification and auditability. */
   discoveryDomainId?: string | null;
   discoveryDomainName?: string | null;
+  discoveryDomainIds?: readonly string[];
+  discoveryDomainNames?: readonly string[];
   queryIntentId?: string | null;
   queryText?: string | null;
   problemFacetIds?: readonly string[];

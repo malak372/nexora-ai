@@ -40,10 +40,14 @@ import type {
   IdeaGenerationContext,
   SelectedGenerationDomain,
 } from '../../types/idea-generation-context.type';
-import { evaluateRequestIntentAlignment } from '../../utils/request-intent-alignment.util';
+import {
+  evaluateRequestIntentAlignment,
+  isStrongExplicitProblemAlignment,
+} from '../../utils/request-intent-alignment.util';
 import { resolvePrimaryProblemFamily } from '../../../../nlp/common/utils/problem-family-matching.util';
 import { RequestProductBlueprintUtil } from '../../utils/request-product-blueprint.util';
 import { CanonicalRequestProductBlueprintUtil } from '../../utils/canonical-request-product-blueprint.util';
+import { TargetUserDeduplicationUtil } from '../../utils/target-user-deduplication.util';
 
 /**
  * Performs final business-level validation and normalization of
@@ -160,6 +164,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         context,
         this.normalizeUnifiedIdeaNarrative(context, parsedOutput),
       );
+      const capabilityAlignedNarrative =
+        this.repairRequesterDesiredOutcomeCapabilities(
+          context,
+          normalizedNarrative,
+        );
 
       normalizedOutput = this.repairSupportingOnlyEvidenceWording(
         context,
@@ -167,7 +176,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           context,
           this.sanitizeOutputForContext(
             context,
-            this.projectOutputToGenerationTier(context, normalizedNarrative),
+            this.projectOutputToGenerationTier(
+              context,
+              capabilityAlignedNarrative,
+            ),
           ),
         ),
       );
@@ -302,7 +314,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     }
     const sourceCount = this.countVerifiedCommunitySupportingSources(context);
     const subject = `${this.formatEvidenceCount(supportingCount, true)} verified supporting signal${supportingCount === 1 ? '' : 's'} ${
-      sourceCount === 1 ? 'was retained from one source' : `were retained across ${Math.max(1, sourceCount)} sources`
+      supportingCount === 1
+        ? sourceCount === 1
+          ? 'was retained from one source'
+          : `was retained across ${Math.max(1, sourceCount)} sources`
+        : sourceCount === 1
+          ? 'were retained from one source'
+          : `were retained across ${Math.max(1, sourceCount)} sources`
     }`;
     const claimDomains = this.resolveFinalClaimDomains(context);
     const selectedDomainNames = context.selectedDomains
@@ -315,7 +333,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         ),
     );
     const crossDomainQualifier = unsupportedSelectedDomains.length > 0
-      ? `The requester-defined scope spans ${selectedDomainNames.join(', ')}. The retained supporting evidence currently validates ${claimDomains.join(' and ') || context.domainName || 'the primary'} operational evidence only; ${unsupportedSelectedDomains.join(', ')} remain requester-selected implementation and validation dimensions rather than independently evidenced problem domains.`
+      ? `The requester-defined scope spans ${selectedDomainNames.join(', ')}. The retained supporting evidence currently validates ${claimDomains.join(' and ') || context.domainName || 'the primary'} operational evidence only; ${unsupportedSelectedDomains.join(', ')} ${unsupportedSelectedDomains.length === 1 ? 'remains a requester-selected implementation and validation dimension' : 'remain requester-selected implementation and validation dimensions'} rather than ${unsupportedSelectedDomains.length === 1 ? 'an independently evidenced problem domain' : 'independently evidenced problem domains'}.`
       : '';
     const repair = (value: string | undefined): string | undefined => {
       if (value === undefined) return undefined;
@@ -494,16 +512,41 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         fullAbstract: solutionFacingAdvancedText,
       },
     );
+    const strongExplicitProblemAlignment = isStrongExplicitProblemAlignment(
+      alignment,
+      solutionAlignment,
+    );
 
     const solutionSemanticallyAligned =
       solutionAlignment.matched ||
+      strongExplicitProblemAlignment ||
       (solutionAlignment.sharedTokenCount >=
         solutionAlignment.requiredSharedTokenCount &&
         solutionAlignment.score >= 0.2 &&
         solutionAlignment.problemScore >= 0.08 &&
         solutionAlignment.supportingSectionCount >= 1);
 
-    if (alignment.matched && solutionSemanticallyAligned) {
+    if (
+      (alignment.matched || strongExplicitProblemAlignment) &&
+      solutionSemanticallyAligned
+    ) {
+      return;
+    }
+
+    const selectedBenchmarkCandidate = context.benchmarkCandidates.find(
+      (candidate) => candidate.selected,
+    );
+    if (selectedBenchmarkCandidate?.deterministicEmergencyFallback === true) {
+      this.logger.error(
+        [
+          'Final requester-intent validation retained the deterministic requester-locked continuity fallback instead of failing the run.',
+          `shared=${alignment.sharedTokenCount}/${alignment.requiredSharedTokenCount}`,
+          `score=${alignment.score}`,
+          `problemScore=${alignment.problemScore}`,
+          `solutionScore=${solutionAlignment.score}`,
+          'The candidate was constructed directly from the canonical explicit problem after all bounded online candidates were unavailable or rejected.',
+        ].join(' '),
+      );
       return;
     }
 
@@ -522,6 +565,142 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     );
   }
 
+  /**
+   * Preserves concrete capabilities the requester explicitly asked the
+   * product to perform. Evidence qualification may weaken market claims, but
+   * it must not silently downgrade a requested operation into a passive
+   * dashboard. The rule is capability-based and domain-agnostic.
+   */
+  private repairRequesterDesiredOutcomeCapabilities(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): ParsedIdeaAiOutput {
+    if (context.collectionPlan?.requestIntent?.mode !== 'EXPLICIT_PROBLEM') {
+      return parsedOutput;
+    }
+    const desiredOutcome = context.collectionPlan.requestIntent.desiredOutcome
+      ?.replace(/\s+/gu, ' ')
+      .trim();
+    if (!desiredOutcome) return parsedOutput;
+
+    const narrative = [
+      parsedOutput.coreIdea.problemStatement,
+      ...parsedOutput.coreIdea.objectives,
+      parsedOutput.coreIdea.fullAbstract ?? '',
+      parsedOutput.coreIdea.partialAbstract ?? '',
+      parsedOutput.coreIdea.limitedAbstract ?? '',
+      ...parsedOutput.advancedOutputs
+        .filter((output) =>
+          ['mvp-features', 'system-architecture', 'technology-stack'].includes(
+            output.outputKey,
+          ),
+        )
+        .map((output) => output.content),
+    ].join(' ');
+
+    const capabilityRules: readonly {
+      readonly request: RegExp;
+      readonly implementation: RegExp;
+      readonly label: string;
+    }[] = [
+      {
+        request: /\b(?:detect|detects|detecting|identify|identifies|identifying)\b/iu,
+        implementation: /\b(?:detect|detection|identif|anomal|flag(?:ging)?|outlier)\w*\b/iu,
+        label: 'detection',
+      },
+      {
+        request: /\b(?:track|tracks|tracking|trace|traces|tracing|follow|follows|following)\b/iu,
+        implementation: /\b(?:track|tracking|trace|tracing|status|lifecycle|stage progression|item progression|queue)\w*\b/iu,
+        label: 'tracking',
+      },
+      {
+        request: /\b(?:predict|predicts|predicting|forecast|forecasting)\b/iu,
+        implementation: /\b(?:predict|prediction|predictive|forecast|risk score|probability)\w*\b/iu,
+        label: 'prediction',
+      },
+      {
+        request: /\b(?:recommend|recommends|recommending|suggest|suggesting|prioriti[sz]e|prioriti[sz]ing)\b/iu,
+        implementation: /\b(?:recommend|recommendation|suggest|prioriti[sz]|rank(?:ing)?)\w*\b/iu,
+        label: 'recommendation',
+      },
+      {
+        request: /\b(?:optimi[sz]e|optimi[sz]es|optimi[sz]ing|balance|balances|balancing)\b/iu,
+        implementation: /\b(?:optimi[sz]|balanc|workload|capacity|load allocation|resource allocation|machine scheduling|schedule optimization)\w*\b/iu,
+        label: 'optimization',
+      },
+      {
+        request: /\b(?:adjust|adjusts|adjusting|reorganize|reorganizes|reorganizing|reorganise|reorganises|reorganising|reschedule|reschedules|rescheduling|replan|replanning)\b/iu,
+        implementation: /\b(?:adjust|reorgani[sz]|reschedul|replan|rebalanc|reprioriti[sz]|schedule update|schedule revision)\w*\b/iu,
+        label: 'adaptive scheduling',
+      },
+      {
+        request: /\b(?:remind|reminds|reminding|notify|notifies|notifying|alert)\b/iu,
+        implementation: /\b(?:remind|reminder|notify|notification|alert)\w*\b/iu,
+        label: 'notification',
+      },
+      {
+        request: /\b(?:analy[sz]e|analy[sz]es|analy[sz]ing)\b/iu,
+        implementation: /\b(?:analy[sz]|analysis|analytics|scoring|model inference)\w*\b/iu,
+        label: 'analysis',
+      },
+      {
+        request: /\b(?:combine|combines|combining|integrate|integrates|integrating)\b/iu,
+        implementation: /\b(?:combin|integrat|unif|aggregat|merge|fusion)\w*\b/iu,
+        label: 'integration',
+      },
+    ];
+
+    const missing = capabilityRules.filter(
+      (rule) =>
+        rule.request.test(desiredOutcome) &&
+        !rule.implementation.test(narrative),
+    );
+    if (missing.length === 0) return parsedOutput;
+
+    const objectives = [...parsedOutput.coreIdea.objectives];
+    for (const rule of missing) {
+      const objective =
+        `Implement the requester-proposed ${rule.label} capability as active product behavior rather than a passive reporting-only feature, with human review for consequential outputs where appropriate.`;
+      if (
+        !objectives.some(
+          (current) =>
+            this.normalizeComparableText(current) ===
+            this.normalizeComparableText(objective),
+        )
+      ) {
+        objectives.push(objective);
+      }
+    }
+
+    const capabilityStatement =
+      `The implementation preserves the requester-proposed ${missing.map((rule) => rule.label).join(', ')} capability as active product behavior rather than reducing it to passive visualization. The complete requester desired-outcome scope remains authoritative: "${desiredOutcome}".`;
+    const append = (value: string | undefined): string | undefined => {
+      if (value === undefined) return undefined;
+      return `${value.replace(/\s+/gu, ' ').trim()} ${capabilityStatement}`.trim();
+    };
+
+    return {
+      coreIdea: {
+        ...parsedOutput.coreIdea,
+        objectives,
+        ...(parsedOutput.coreIdea.fullAbstract !== undefined
+          ? { fullAbstract: append(parsedOutput.coreIdea.fullAbstract) }
+          : {}),
+        ...(parsedOutput.coreIdea.partialAbstract !== undefined
+          ? { partialAbstract: append(parsedOutput.coreIdea.partialAbstract) }
+          : {}),
+        ...(parsedOutput.coreIdea.limitedAbstract !== undefined
+          ? { limitedAbstract: append(parsedOutput.coreIdea.limitedAbstract) }
+          : {}),
+      },
+      advancedOutputs: parsedOutput.advancedOutputs.map((output) =>
+        ['mvp-features', 'system-architecture'].includes(output.outputKey)
+          ? { ...output, content: append(output.content) ?? output.content }
+          : output,
+      ),
+    };
+  }
+
 
   /**
    * Repairs a structurally valid text-plus-domains candidate that omitted one
@@ -538,7 +717,9 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     parsedOutput: ParsedIdeaAiOutput,
   ): ParsedIdeaAiOutput {
-    if (!context.requestDescription?.trim()) return parsedOutput;
+    if (context.requestMode !== 'TEXT_AND_DOMAINS') {
+      return parsedOutput;
+    }
 
     const explicitDomains = context.selectedDomains.filter(
       (domain) => domain.isExplicitlySelected,
@@ -551,7 +732,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     );
     if (missing.length === 0) return parsedOutput;
 
-    const request = context.requestDescription.trim();
+    const request = (
+      context.requestDescription?.trim() ||
+      context.opportunityRanking?.selected.problem?.trim() ||
+      context.opportunityRanking?.selected.title?.trim() ||
+      context.domainName?.trim() ||
+      ''
+    );
     const normalizedRequest = request.toLocaleLowerCase();
     const publicFiscalOversight =
       /\b(?:public institutions?|government|government agencies?|government departments?|public sector|public administration|ministr(?:y|ies)|municipal|municipality)\b/u.test(normalizedRequest) &&
@@ -564,7 +751,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       if (/\bartificial intelligence\b|^ai$/u.test(normalized)) {
         return publicFiscalOversight
           ? 'Use artificial intelligence for explainable anomaly detection and risk scoring across spending, procurement, invoices, project expenses, and approval histories so suspicious patterns are prioritized for human review rather than autonomously blocking payments.'
-          : 'Use artificial intelligence as a concrete analysis mechanism for pattern detection, prioritization, prediction, or decision support inside the requester-described workflow, with human review for consequential decisions.';
+          : 'Use artificial intelligence through an explicit model-backed mechanism inside the requester-described workflow: derive features from historical and live workflow data, run anomaly detection or predictive risk scoring, expose a confidence or risk score with contributing signals, and route consequential recommendations to human review. For maintenance-oriented requests, include failure-risk prediction or remaining-useful-life estimation rather than threshold-only alerts.';
       }
       if (/\bfinance\b|fintech|accounting/u.test(normalized)) {
         return publicFiscalOversight
@@ -712,7 +899,18 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     parsedOutput: ParsedIdeaAiOutput,
   ): SelectedGenerationDomain[] {
-    if (!context.requestDescription?.trim()) return [];
+    /*
+     * Explicit selected-domain coverage is a TEXT_AND_DOMAINS contract only.
+     * In DOMAINS_ONLY the selected domains are independent discovery lanes;
+     * the evidence-backed canonical winner determines the final product scope.
+     * Returning missing domains here previously produced misleading repair
+     * warnings (and could reintroduce forced stitching through future callers)
+     * even though repairExplicitSelectedDomainCoverage already skipped the mode.
+     */
+    if (context.requestMode !== 'TEXT_AND_DOMAINS') {
+      return [];
+    }
+
     const explicitDomains = context.selectedDomains.filter(
       (domain) => domain.isExplicitlySelected,
     );
@@ -726,27 +924,17 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       parsedOutput.coreIdea.fullAbstract ?? '',
       parsedOutput.coreIdea.partialAbstract ?? '',
       parsedOutput.coreIdea.limitedAbstract ?? '',
+      ...parsedOutput.advancedOutputs
+        .filter((output) =>
+          ['technology-stack', 'system-architecture', 'mvp-features'].includes(
+            output.outputKey,
+          ),
+        )
+        .map((output) => output.content),
     ].join(' ').toLocaleLowerCase();
 
-    return explicitDomains.filter((domain) => {
-      const name = domain.name.toLocaleLowerCase();
-      const aliases = name.includes('artificial intelligence')
-        ? ['artificial intelligence', ' ai ', 'machine learning', 'predictive', 'anomaly detection', 'risk scoring']
-        : name.includes('internet of things')
-          ? ['internet of things', 'iot', 'smart meter', 'sensor', 'connected device', 'telemetry']
-          : name === 'energy' || name.includes('energy')
-            ? ['energy', 'electricity', 'power', 'utility', 'consumption']
-            : name.includes('finance')
-              ? ['finance', 'financial', 'budget', 'procurement', 'invoice', 'payment', 'reconciliation', 'expenditure']
-              : name.includes('government') || name.includes('public sector')
-                ? ['government', 'public sector', 'public institution', 'public administration', 'departmental', 'public funds', 'public budget']
-                : [
-                    name,
-                    ...(domain.effectiveSearchKeywords ?? domain.keywords)
-                      .slice(0, 4)
-                      .map((item) => item.toLocaleLowerCase()),
-                  ];
-      return !aliases.some((alias) => {
+    const containsAny = (aliases: readonly string[]): boolean =>
+      aliases.some((alias) => {
         const normalizedAlias = alias.trim();
         if (!normalizedAlias) return false;
         const pattern = new RegExp(
@@ -755,6 +943,67 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         );
         return pattern.test(narrative);
       });
+
+    return explicitDomains.filter((domain) => {
+      const name = domain.name.toLocaleLowerCase();
+
+      if (name.includes('artificial intelligence') || name === 'ai') {
+        return !containsAny([
+          'artificial intelligence',
+          'machine learning',
+          'deep learning',
+          'computer vision',
+          'predictive model',
+          'predictive maintenance',
+          'anomaly detection',
+          'anomaly scoring',
+          'risk scoring',
+          'failure probability',
+          'failure prediction',
+          'remaining useful life',
+          'forecasting model',
+          'classification model',
+          'recommendation model',
+          'recommendation engine',
+          'model inference',
+          'model training',
+          'ai-based',
+          'ai based',
+          'ai-assisted',
+          'ai assisted',
+          'ai-assisted prioritization',
+          'ai assisted prioritization',
+        ]);
+      }
+
+      if (name.includes('internet of things') || name === 'iot') {
+        return !containsAny([
+          'sensor',
+          'sensors',
+          'connected device',
+          'connected devices',
+          'device telemetry',
+          'telemetry',
+          'smart meter',
+          'edge device',
+          'gateway',
+          'device state',
+        ]);
+      }
+
+      const aliases = name === 'energy' || name.includes('energy')
+        ? ['energy', 'electricity', 'power', 'utility', 'consumption']
+        : name.includes('finance')
+          ? ['finance', 'financial', 'budget', 'procurement', 'invoice', 'payment', 'reconciliation', 'expenditure']
+          : name.includes('government') || name.includes('public sector')
+            ? ['government', 'public sector', 'public institution', 'public administration', 'departmental', 'public funds', 'public budget']
+            : [
+                name,
+                ...(domain.effectiveSearchKeywords ?? domain.keywords)
+                  .slice(0, 4)
+                  .map((item) => item.toLocaleLowerCase()),
+              ];
+      return !containsAny(aliases);
     });
   }
 
@@ -938,6 +1187,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           'an $1',
         )
         .replace(/\s+([,.;:!?])/gu, '$1')
+        .replace(
+          /\bdesigned to help\s+([^.!?]{3,140}?)\s+is\b/giu,
+          'designed to help ensure $1 is',
+        )
         .replace(/[ \t]{2,}/gu, ' ')
         .replace(
           /\b(?:one retained community report|a retained community report) indicates that collected feedback(?: from [^.!?]{0,120})? indicates that\s*/giu,
@@ -2092,9 +2345,16 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       claimDomains.length > 1 &&
       representedDomains.length < 2
     ) {
-      this.throwInvalidOutput(
-        'A cross-domain idea must integrate at least two evidence-supported domains in the unified problem narrative.',
-        { claimDomains, representedDomains },
+      /*
+       * Discovery modes search several domains independently, then select the
+       * strongest evidence-native problem. Multiple searched or even
+       * independently supported domains do not prove that one coherent
+       * cross-domain problem exists. Never fail an otherwise valid run here;
+       * keep the generated product centered on the represented canonical
+       * problem domain(s) and leave the remaining domains as search scope.
+       */
+      this.logger.warn(
+        `Discovery candidate represents ${representedDomains.length}/${claimDomains.length} evidence-attributed domain(s); preserving the strongest canonical workflow instead of forcing artificial cross-domain stitching.`,
       );
     }
 
@@ -2714,38 +2974,117 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     problemStatement = winnerAlignedNarratives.problemStatement;
     overview = winnerAlignedNarratives.overview;
 
-    return {
-      ...parsedOutput,
-      coreIdea: {
-        ...parsedOutput.coreIdea,
-        title: this.normalizeCoreIdeaTitleForContext(
-          context,
-          parsedOutput.coreIdea.title,
-        ),
-        problemStatement,
-        objectives: this.sanitizePrimaryDomainObjectives(
-          context,
-          parsedOutput.coreIdea.objectives.map((objective) =>
-            this.sanitizeUnsupportedBillingFailureClaims(
-              context,
-              this.sanitizeUnsupportedCausalLanguage(objective),
+    const canonicalTitle = this.normalizeCoreIdeaTitleForContext(
+      context,
+      parsedOutput.coreIdea.title,
+    );
+
+    return this.synchronizeCanonicalProductIdentity(
+      context,
+      {
+        ...parsedOutput,
+        coreIdea: {
+          ...parsedOutput.coreIdea,
+          title: canonicalTitle,
+          problemStatement,
+          objectives: this.sanitizePrimaryDomainObjectives(
+            context,
+            parsedOutput.coreIdea.objectives.map((objective) =>
+              this.sanitizeUnsupportedBillingFailureClaims(
+                context,
+                this.sanitizeUnsupportedCausalLanguage(objective),
+              ),
             ),
           ),
-        ),
-        targetUsers: this.sanitizePrimaryDomainTargetUsers(
-          context,
-          parsedOutput.coreIdea.targetUsers,
-        ),
-        // Premium generations often return only fullAbstract. Persist a
-        // concise partialAbstract as the workspace Overview so the UI never
-        // falls back to displaying the full premium document twice.
-        ...(overview ? { partialAbstract: overview } : {}),
-        ...(parsedOutput.coreIdea.limitedAbstract && overview
-          ? { limitedAbstract: overview }
-          : {}),
-        ...(fullAbstract ? { fullAbstract } : {}),
+          targetUsers: this.sanitizePrimaryDomainTargetUsers(
+            context,
+            parsedOutput.coreIdea.targetUsers,
+          ),
+          // Premium generations often return only fullAbstract. Persist a
+          // concise partialAbstract as the workspace Overview so the UI never
+          // falls back to displaying the full premium document twice.
+          ...(overview ? { partialAbstract: overview } : {}),
+          ...(parsedOutput.coreIdea.limitedAbstract && overview
+            ? { limitedAbstract: overview }
+            : {}),
+          ...(fullAbstract ? { fullAbstract } : {}),
+        },
+        advancedOutputs,
       },
-      advancedOutputs,
+      canonicalTitle,
+    );
+  }
+
+  private synchronizeCanonicalProductIdentity(
+    context: IdeaGenerationContext,
+    output: ParsedIdeaAiOutput,
+    canonicalTitle: string,
+  ): ParsedIdeaAiOutput {
+    const staleTitles = [
+      this.resolveSelectedBenchmarkProviderTitle(context),
+      ...context.benchmarkCandidates
+        .filter((candidate) => candidate.selected)
+        .map((candidate) => candidate.parsedOutput?.coreIdea?.title ?? ''),
+    ]
+      .map((value) => value.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean)
+      .filter(
+        (value, index, values) =>
+          value.toLocaleLowerCase() !== canonicalTitle.toLocaleLowerCase() &&
+          values.findIndex(
+            (candidate) => candidate.toLocaleLowerCase() === value.toLocaleLowerCase(),
+          ) === index,
+      );
+
+    const repairText = (value: string): string => {
+      let repaired = value;
+      for (const staleTitle of staleTitles) {
+        repaired = repaired.replace(
+          new RegExp(this.escapeRegExp(staleTitle), 'giu'),
+          canonicalTitle,
+        );
+      }
+      return repaired.replace(/\s+/gu, ' ').trim();
+    };
+    const repairStructured = (value: unknown): unknown => {
+      if (typeof value === 'string') return repairText(value);
+      if (Array.isArray(value)) return value.map(repairStructured);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [key, repairStructured(item)]),
+        );
+      }
+      return value;
+    };
+
+    return {
+      ...output,
+      coreIdea: {
+        ...output.coreIdea,
+        title: canonicalTitle,
+        problemStatement: repairText(output.coreIdea.problemStatement),
+        objectives: output.coreIdea.objectives.map(repairText),
+        targetUsers: output.coreIdea.targetUsers.map(repairText),
+        ...(output.coreIdea.limitedAbstract !== undefined
+          ? { limitedAbstract: repairText(output.coreIdea.limitedAbstract) }
+          : {}),
+        ...(output.coreIdea.partialAbstract !== undefined
+          ? { partialAbstract: repairText(output.coreIdea.partialAbstract) }
+          : {}),
+        ...(output.coreIdea.fullAbstract !== undefined
+          ? { fullAbstract: repairText(output.coreIdea.fullAbstract) }
+          : {}),
+      },
+      advancedOutputs: output.advancedOutputs.map((item) => ({
+        ...item,
+        title: repairText(item.title),
+        content: repairText(item.content),
+        ...(item.structuredContent !== undefined
+          ? {
+              structuredContent: repairStructured(item.structuredContent) as typeof item.structuredContent,
+            }
+          : {}),
+      })),
     };
   }
 
@@ -3832,6 +4171,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     cleaned = cleaned.replace(/\ba\s+(operational|auditable|immutable|automated|integrated)\b/giu, 'an $1')
       .replace(/\bcan\s+may\b/giu, 'may')
       .replace(/\bPreliminary\s+preliminary\b/giu, 'Preliminary')
+      .replace(
+        /\b((?:Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|\d+) verified supporting signals) was retained\b/giu,
+        '$1 were retained',
+      )
+      .replace(
+        /\b(One|1) verified supporting signals were retained\b/giu,
+        '$1 verified supporting signal was retained',
+      )
       .replace(/\bdescribes\s+reported\s+friction\b/giu, 'describes friction')
       .replace(/\bexperience\s+encounter\b/giu, 'experience')
       .replace(/\bencounter\s+experience\b/giu, 'encounter')
@@ -3844,7 +4191,45 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .replace(/\s+([,.;:!?])/gu, '$1')
       .trim();
 
+    cleaned = this.repairRequesterSelectedDomainAgreement(context, cleaned);
+
     return this.repairFinalNarrativeSurface(context, cleaned);
+  }
+
+  /**
+   * Repairs singular agreement for dynamically selected domain labels without
+   * hard-coding any domain vocabulary. Only exact configured/resolved domain
+   * names are rewritten, so compound subjects such as "A and B remain ..."
+   * are left untouched while a single label such as "Cybersecurity remain ..."
+   * becomes grammatically correct.
+   */
+  private repairRequesterSelectedDomainAgreement(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    const domainNames = [
+      context.domainName?.trim() ?? '',
+      ...context.selectedDomains.map((domain) => domain.name.trim()),
+    ]
+      .filter(Boolean)
+      .filter(
+        (name, index, names) =>
+          names.findIndex(
+            (candidate) =>
+              candidate.toLocaleLowerCase() === name.toLocaleLowerCase(),
+          ) === index,
+      )
+      .sort((left, right) => right.length - left.length);
+
+    let repaired = value;
+    for (const domainName of domainNames) {
+      const escaped = this.escapeRegExp(domainName);
+      repaired = repaired.replace(
+        new RegExp(`\\b${escaped}\\s+remain requester-selected\\b`, 'giu'),
+        `${domainName} remains requester-selected`,
+      );
+    }
+    return repaired;
   }
 
   private repairFinalNarrativeSurface(
@@ -4784,6 +5169,32 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         .trim();
     }
 
+    if (!this.hasStrongIndependentEvidence(context)) {
+      value = value
+        .replace(/\b(?:a|the) critical need for\b/giu, 'a preliminary need to evaluate')
+        .replace(/\b(?:an|the) urgent need for\b/giu, 'a preliminary need to evaluate')
+        .replace(
+          /\b([A-Z][^.!?]{0,90}?)\s+(?:frequently|often|commonly|typically)\s+(face|faces|encounter|encounters|experience|experiences|struggle|struggles)\b/gu,
+          (_match, subject: string, verb: string) => {
+            const baseVerb = verb.toLocaleLowerCase().replace(/s$/u, '');
+            return `${subject.trim()} may ${baseVerb}`;
+          },
+        )
+        .replace(/\bensures that\b/giu, 'is designed to help ensure that')
+        .replace(/\bensure that\b/giu, 'help ensure that')
+        .replace(/\bguarantees that\b/giu, 'is designed to support')
+        .replace(/\bnor does it is designed to support\b/giu, 'nor is it designed to support')
+        .replace(/\bdoes not is designed to support\b/giu, 'is not designed to support')
+        .replace(/\bis designed to support supporting\b/giu, 'is designed to support')
+        .replace(/\balways available\b/giu, 'more consistently available during the pilot')
+        .replace(/\bproven effectiveness\b/giu, 'pilot-stage effectiveness')
+        .replace(/\bproven to be effective\b/giu, 'to be evaluated during the pilot')
+        .replace(/\bpractical and scalable\b/giu, 'practical within the pilot and suitable for later scalability assessment')
+        .replace(/\bscalable to other\b/giu, 'potentially transferable to other')
+        .replace(/\bsignificant operational friction\b/giu, 'preliminary operational friction')
+        .replace(/\bstrong operational friction\b/giu, 'preliminary operational friction');
+    }
+
     return value
       .replace(
         /\bThe evidence-backed opportunity centers on the following validated need:\s*/giu,
@@ -5525,6 +5936,12 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         total + (item.verifiedProblemMatchedDirectUserEvidenceCount ?? 0),
       0,
     );
+    const explicitRequesterProblem = Boolean(
+      this.resolveExplicitRequesterProblem(context),
+    );
+    const hasRequesterDescription = Boolean(
+      context.requestDescription?.trim(),
+    );
 
     const paragraphs = fullAbstract
       .split(/\n\s*\n/u)
@@ -5554,7 +5971,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
                 : `were retained across ${Math.max(1, communitySupportingSourceCount)} sources`
             }; the signal${communitySupportingCount === 1 ? '' : 's'} provide${communitySupportingCount === 1 ? 's' : ''} limited contextual support only and do not establish recurrence, prevalence, the broader requester workflow, or market-wide demand claims.`
           : retainedEvidenceCount <= 0
-            ? 'The proposed product currently has no problem-matched retained evidence and must be treated as an unvalidated requester-defined hypothesis.'
+            ? explicitRequesterProblem
+              ? 'The proposed product currently has no problem-matched retained evidence and must be treated as an unvalidated requester-defined problem hypothesis.'
+              : hasRequesterDescription
+                ? 'No verified external problem family was retained. The requester text is discovery intent/context only; it constrains the validation scope but is not itself promoted into a problem claim.'
+                : 'No verified external problem family was retained, so the proposed workspace remains a neutral evidence-discovery direction rather than a validated problem claim.'
           : featureOnlyEvidence
             ? `The proposed pilot is supported by ${this.buildRetainedEvidenceSubject(
                 featureRequestEvidenceCount,
@@ -5639,6 +6060,8 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         featureRequestEvidenceCount,
         communitySupportingCount,
         communitySupportingSourceCount,
+        explicitRequesterProblem,
+        hasRequesterDescription,
       );
       return [correctedFirstParagraph, ...paragraphs.slice(1)].join('\n\n');
     }
@@ -6179,6 +6602,8 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     featureRequestEvidenceCount = 0,
     communitySupportingCount = 0,
     communitySupportingSourceCount = 0,
+    explicitRequesterProblem = false,
+    hasRequesterDescription = false,
   ): string {
     const retainedEvidenceCount =
       directEvidenceCount +
@@ -6200,7 +6625,11 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
               : `were retained across ${Math.max(1, communitySupportingSourceCount)} sources`
           }; the signal${communitySupportingCount === 1 ? '' : 's'} remain${communitySupportingCount === 1 ? 's' : ''} preliminary and do not establish recurrence or market-wide demand.`
         : retainedEvidenceCount <= 0
-          ? 'The proposed product currently has no problem-matched retained evidence and must be treated as an unvalidated requester-defined hypothesis.'
+          ? explicitRequesterProblem
+            ? 'The proposed product currently has no problem-matched retained evidence and must be treated as an unvalidated requester-defined problem hypothesis.'
+            : hasRequesterDescription
+              ? 'No verified external problem family was retained. The requester text is discovery intent/context only; it constrains validation scope but is not itself a problem claim.'
+              : 'No verified external problem family was retained, so the workspace remains a neutral evidence-discovery direction rather than a validated problem claim.'
         : featureOnlyEvidence
           ? `The proposed pilot is supported by ${this.buildRetainedEvidenceSubject(
               featureRequestEvidenceCount,
@@ -6497,35 +6926,32 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       secondaryEvidenceCount + technicalEvidenceCount <= 2;
 
     if (sparseIndirectEvidence) {
-      const supportedUsers = targetUsers
-        .map((user) => this.professionalizeTargetUser(user))
-        .filter((user) => this.isTargetUserSupportedByRetainedEvidence(context, user));
-      if (supportedUsers.length > 0) {
-        return supportedUsers
-          .filter(
-            (item, index, items) =>
-              items.findIndex(
-                (candidate) =>
-                  candidate.toLowerCase().replace(/\s+/gu, ' ').trim() ===
-                  item.toLowerCase().replace(/\s+/gu, ' ').trim(),
-              ) === index,
-          )
-          .slice(0, 4);
-      }
+      const canonicalBlueprint = CanonicalRequestProductBlueprintUtil.build({
+        profile: context.collectionPlan?.problemProfile,
+        domainName: context.domainName,
+        opportunityTitle: context.opportunityRanking?.selected.title,
+        requestDescription: context.requestDescription,
+      });
+      const productAudience = TargetUserDeduplicationUtil.deduplicate(
+        [
+          ...targetUsers.map((user) => this.professionalizeTargetUser(user)),
+          ...(canonicalBlueprint?.targetUsers ?? []),
+        ],
+        4,
+      );
+      if (productAudience.length > 0) return productAudience;
 
-      const safeUsers = technicalEvidenceCount > 0
+      return technicalEvidenceCount > 0
         ? [
             'Technical maintainers responsible for the retained workflow',
             'Operators reviewing the retained technical workflow',
             'Pilot participants recruited to validate the affected workflow',
           ]
         : [
-            'Users represented by the retained secondary evidence',
             'Operators responsible for the retained workflow',
+            'Domain specialists reviewing the pilot workflow',
             'Pilot participants recruited to validate the affected workflow',
           ];
-
-      return safeUsers.slice(0, 4);
     }
 
     const professionalized = targetUsers.map((user) =>
@@ -6564,16 +6990,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           `${primaryDomain} pilot coordinators`,
         ];
 
-    return [...retained, ...defaults]
-      .filter(
-        (item, index, items) =>
-          items.findIndex(
-            (candidate) =>
-              candidate.toLowerCase().replace(/\s+/gu, ' ').trim() ===
-              item.toLowerCase().replace(/\s+/gu, ' ').trim(),
-          ) === index,
-      )
-      .slice(0, 4);
+    return TargetUserDeduplicationUtil.deduplicate(
+      [...retained, ...defaults],
+      4,
+    );
   }
 
   /**
@@ -6586,6 +7006,10 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   private hasSelectedProblemMatchedEvidence(
     context: IdeaGenerationContext,
   ): boolean {
+    if (this.isUngroundedEvidenceState(context.evidenceState)) {
+      return false;
+    }
+
     const selected =
       context.benchmarkWinnerOpportunity ?? context.opportunityRanking?.selected;
     if (!selected) return false;
@@ -6595,30 +7019,47 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     if (verifiedProblemMatchedCount > 0) return true;
 
     /*
-     * For description-bearing paths, generic retained corpus evidence must not
-     * turn an unvalidated requester hypothesis into an evidence-backed winner.
-     * Only evidence explicitly verified against the described problem counts.
+     * The canonical ledger is the evidence source of truth. Context-only rows,
+     * generic independent corpus items, source listings, and discovery samples
+     * must never make a zero-evidence idea look evidence-backed simply because
+     * they exist in selected.independentEvidence.
      */
-    if (this.hasExplicitRequesterProblem(context)) {
-      return false;
+    if (this.resolveSelectedCanonicalEvidence(context).length > 0) {
+      return true;
     }
 
-    return Boolean(
-      (selected.verifiedIndependentEvidenceCount ?? 0) > 0 ||
-        (selected.independentEvidence?.length ?? 0) > 0,
+    const selectedFamilyTrustedCount =
+      context.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0;
+    const hasLockedSelectedFamily = Boolean(
+      context.communityAiAnalysis?.canonicalProblemFamilyId?.trim() ||
+        context.communityAiAnalysis?.selectedProblemFamily?.trim(),
     );
+    if (selectedFamilyTrustedCount > 0 && hasLockedSelectedFamily) {
+      return true;
+    }
+
+    const qualifiedExternalSupportingCount =
+      selected.qualifiedExternalSupportingEvidenceCount ?? 0;
+    return qualifiedExternalSupportingCount > 0;
   }
 
   private isValidationOnlyOpportunity(context: IdeaGenerationContext): boolean {
     const selected = context.opportunityRanking?.selected;
 
+    /*
+     * The canonical ungrounded evidence state is authoritative. Previously generic retained
+     * context made hasAnyRetainedEvidence() true, which caused this method to
+     * return false and the downstream cross-domain validator to demand two
+     * "evidence-supported" domains even though there were zero trusted signals.
+     */
+    if (this.isUngroundedEvidenceState(context.evidenceState)) {
+      return true;
+    }
+
     return Boolean(
       selected?.disqualificationReasons.includes(
         'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
-      ) ||
-        (this.hasExplicitRequesterProblem(context)
-          ? !this.hasSelectedProblemMatchedEvidence(context)
-          : !this.hasAnyRetainedEvidence(context)),
+      ) || !this.hasSelectedProblemMatchedEvidence(context),
     );
   }
 
@@ -6683,6 +7124,25 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const validationOnlyDomain = this.resolveValidationOnlySingleDomain(context);
     if (validationOnlyDomain) {
       return [validationOnlyDomain];
+    }
+
+    if (
+      context.requestMode === 'DOMAINS_ONLY' ||
+      context.requestMode === 'NO_INPUT'
+    ) {
+      const canonicalEvidenceDomains = this.resolveSelectedCanonicalEvidence(context)
+        .map((item) => item.discoveryDomainName?.trim() ?? '')
+        .filter(Boolean)
+        .filter((name, index, items) =>
+          items.findIndex(
+            (candidate) =>
+              candidate.toLocaleLowerCase() === name.toLocaleLowerCase(),
+          ) === index,
+        );
+
+      if (canonicalEvidenceDomains.length > 0) {
+        return canonicalEvidenceDomains;
+      }
     }
 
     const domains =
@@ -7233,7 +7693,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   private professionalizeTargetUser(value: string): string {
     return value
       .replace(/Self-Hosted Entertainment Enthusiasts/giu, 'Self-Hosted Media Platform Operators')
-      .replace(/\benthusiasts\b/giu, 'Operators')
+      .replace(/\benthusiasts\b/giu, 'operators')
       .replace(/^General users(?: looking for)?/giu, 'Everyday AI Productivity Users')
       .replace(/^Students in [^,]+ seeking academic support$/giu, 'University Students Seeking Academic Support')
       .replace(/Creative professionals requiring mood-aligned writing assistance/giu, 'Content Creators and Writers')
@@ -7547,7 +8007,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     output: ParsedIdeaAiOutput,
   ): ParsedIdeaAiOutput {
-    if (context.evidenceState !== 'ZERO_VALIDATED_EVIDENCE') {
+    if (!this.isUngroundedEvidenceState(context.evidenceState)) {
       return output;
     }
 
@@ -7560,17 +8020,46 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       uniqueDomains.length > 0
         ? uniqueDomains.join(', ')
         : context.domainName?.trim() || 'the selected search space';
-    const qualifier = request
-      ? `The requester describes an unvalidated workflow hypothesis: "${request}"`
-      : 'No verified external problem evidence survived the bounded discovery and recovery budget; no concrete people problem has been validated yet.';
+    const explicitRequesterProblem = this.resolveExplicitRequesterProblem(context);
+    const adjudicationUnavailable =
+      context.evidenceState === 'EVIDENCE_ADJUDICATION_UNAVAILABLE';
+    const qualifier = explicitRequesterProblem
+      ? adjudicationUnavailable
+        ? `The requester states an unvalidated problem hypothesis: "${explicitRequesterProblem}". Raw external material exists, but semantic evidence adjudication did not complete.`
+        : `The requester states an unvalidated problem hypothesis: "${explicitRequesterProblem}"`
+      : request
+        ? adjudicationUnavailable
+          ? `The requester provided discovery intent/context: "${request}". Raw external material exists, but its semantic relevance remains unadjudicated.`
+          : `The requester provided discovery intent/context: "${request}". It constrains the validation scope but is not itself a problem claim`
+        : adjudicationUnavailable
+          ? 'Raw external material was collected, but semantic AI adjudication did not complete; no concrete people problem may be claimed as validated yet.'
+          : 'Semantic adjudication completed without retaining verified external problem evidence; no concrete people problem has been validated yet.';
+    const provisionalBasis = explicitRequesterProblem
+      ? 'the requester problem hypothesis'
+      : 'the current validation direction';
+    const confirmationBasis = explicitRequesterProblem
+      ? 'the requester problem hypothesis is confirmed'
+      : 'a concrete problem is verified during validation';
 
     const sanitize = (value: string | undefined): string | undefined => {
       if (value === undefined) return undefined;
       let text = value.replace(/\s+/gu, ' ').trim();
       text = text
         .replace(
-          /\b(?:data|evidence|collected feedback|retained reports?|community reports?|community signal|community feedback)\s+(?:shows?|indicates?|demonstrates?|proves?|confirms?|suggests?|reports?|identifies?)\b/giu,
-          'the current unvalidated hypothesis suggests',
+          /\b(?:data|evidence|verified external evidence|external evidence|retained evidence|collected feedback(?:\s+(?:from|across)\s+[^.!?]{0,180})?|retained reports?|external reports?|community reports?|community signal|community feedback)\s+(?:shows?|indicates?|demonstrates?|proves?|confirms?|suggests?|reports?|identifies?|highlights?)\b/giu,
+          `${provisionalBasis} suggests`,
+        )
+        .replace(
+          /\b(?:verified|validated|confirmed)\s+(?:external\s+|community\s+)?(?:evidence|feedback|reports?|signals?)\b/giu,
+          explicitRequesterProblem
+            ? 'unvalidated requester hypothesis'
+            : 'unvalidated retrieval context',
+        )
+        .replace(
+          /\b(?:users?|operators?|customers?|professionals?|teams?|organizations?|companies?)\s+(?:reported|report|reports|confirmed|confirm|confirming|described|describe)\s+(?:that\s+)?/giu,
+          explicitRequesterProblem
+            ? 'the requester hypothesis states that '
+            : 'a validation hypothesis states that ',
         )
         .replace(
           /\bA preliminary community signal(?:\s+from\s+[^.:]{1,120})?\s+reports an operational challenge:\s*/giu,
@@ -7606,7 +8095,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         )
         .replace(
           /\bWithout a unified system\b/giu,
-          'If the requester hypothesis is confirmed, without a unified system',
+          `If ${confirmationBasis}, without a unified system`,
         )
         .replace(
           /\b(?:specialists|operators|teams|organizations|cities|businesses) risk\b/giu,
@@ -7626,21 +8115,30 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         )
         .replace(
           /\b(?:face|faces) significant operational friction\b/giu,
-          'may face operational friction if the requester hypothesis is confirmed',
+          `may face operational friction if ${confirmationBasis}`,
         )
         .replace(/\bstaff cannot\b/giu, 'staff may be unable to')
         .replace(/\bteams cannot\b/giu, 'teams may be unable to')
         .replace(/\boperators cannot\b/giu, 'operators may be unable to')
         .replace(
           /\bConsequently,\s*/giu,
-          'If the requester hypothesis is confirmed, this could mean that ',
+          `If ${confirmationBasis}, this could mean that `,
         )
         .replace(
           /\bThis (?:fragmentation|operational fragmentation|lack of coordination) increases the risk of\b/giu,
           'If confirmed during pilot validation, this could increase the risk of',
         );
 
-      if (!/^The requester describes an unvalidated workflow hypothesis|^No verified external problem evidence/iu.test(text)) {
+      if (/\b(?:verified external evidence|collected feedback(?:\s+(?:from|across)\s+[^.!?]{0,180})?\s+(?:indicates|shows|suggests|highlights)|community reports?\s+(?:show|indicate|confirm|demonstrate)|evidence\s+(?:shows|demonstrates|confirms|proves))\b/iu.test(text)) {
+        text = text.replace(
+          /\b(?:verified external evidence|collected feedback(?:\s+(?:from|across)\s+[^.!?]{0,180})?\s+(?:indicates|shows|suggests|highlights)|community reports?\s+(?:show|indicate|confirm|demonstrate)|evidence\s+(?:shows|demonstrates|confirms|proves))\b/giu,
+          explicitRequesterProblem
+            ? 'the unvalidated requester hypothesis suggests'
+            : 'the unvalidated retrieval context suggests',
+        );
+      }
+
+      if (!/^The requester states an unvalidated problem hypothesis|^The requester provided discovery intent\/context|^No verified external problem evidence/iu.test(text)) {
         text = `${qualifier}. ${text}`;
       }
       return text.replace(/\.\s*\./gu, '.').trim();
@@ -8278,4 +8776,13 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
 
     return definition;
   }
+  private isUngroundedEvidenceState(
+    state: IdeaGenerationContext['evidenceState'],
+  ): boolean {
+    return (
+      state === 'NO_VALID_EVIDENCE_FOUND' ||
+      state === 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
+    );
+  }
+
 }

@@ -38,6 +38,8 @@ import {
 } from '../api/profileApi';
 import AvatarCropDialog from '../components/AvatarCropDialog';
 import ActiveSessionsSection from '../components/ActiveSessionsSection';
+import { useUserExperience } from '../../../../system/user-experience';
+import NormalPageHero from '../../shared/components/NormalPageHero';
 import '../styles/profile-settings.css';
 
 const ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -65,6 +67,7 @@ function EmailVerificationDialog({
   onVerify,
   onCancel,
 }) {
+  const { t } = useUserExperience();
   const isCurrentEmailStage = stage === 'VERIFY_CURRENT_EMAIL';
 
   useEffect(() => {
@@ -99,7 +102,7 @@ function EmailVerificationDialog({
       <motion.button
         type="button"
         className="email-verification-dialog__backdrop"
-        aria-label="Close email verification"
+        aria-label={t('Close email verification')}
         disabled={isBusy}
         onClick={onCancel}
       />
@@ -120,21 +123,21 @@ function EmailVerificationDialog({
           </div>
 
           <div className="email-verification-dialog__heading">
-            <span>Secure email change</span>
+            <span>{t('Secure email change')}</span>
             <h2 id="email-verification-title">
-              {isCurrentEmailStage ? 'Approve your request' : 'Verify your new email'}
+              {t(isCurrentEmailStage ? 'Approve your request' : 'Verify your new email')}
             </h2>
             <p>
               {isCurrentEmailStage
-                ? `We sent a six-digit approval code to ${currentEmail}. Your email remains unchanged until both steps are complete.`
-                : `Your current email is approved. Enter the new code sent to ${pendingEmail} to finish the change.`}
+                ? `${t('We sent a six-digit approval code to')} ${currentEmail}. ${t('Your email remains unchanged until both steps are complete.')}`
+                : `${t('Your current email is approved. Enter the new code sent to')} ${pendingEmail} ${t('to finish the change.')}`}
             </p>
           </div>
 
           <button
             type="button"
             className="email-verification-dialog__close"
-            aria-label="Cancel email change"
+            aria-label={t('Cancel email change')}
             disabled={isBusy}
             onClick={onCancel}
           >
@@ -142,20 +145,20 @@ function EmailVerificationDialog({
           </button>
         </header>
 
-        <div className="email-verification-dialog__steps" aria-label="Email verification progress">
+        <div className="email-verification-dialog__steps" aria-label={t('Email verification progress')}>
           <div className="is-active">
             <i>{isCurrentEmailStage ? '1' : <CheckCircle2 size={15} />}</i>
-            <span>Current email</span>
+            <span>{t('Current email')}</span>
           </div>
           <b className={isCurrentEmailStage ? '' : 'is-complete'} />
           <div className={isCurrentEmailStage ? '' : 'is-active'}>
             <i>2</i>
-            <span>New email</span>
+            <span>{t('New email')}</span>
           </div>
         </div>
 
         <div className="email-verification-dialog__body">
-          <label htmlFor="email-verification-code">Verification code</label>
+          <label htmlFor="email-verification-code">{t('Verification code')}</label>
           <div className="email-verification-dialog__code-wrap">
             <input
               id="email-verification-code"
@@ -172,7 +175,7 @@ function EmailVerificationDialog({
             />
             <span>{code.length}/6</span>
           </div>
-          <small>Use the newest code only. Verification codes expire for your security.</small>
+          <small>{t('Use the newest code only. Verification codes expire for your security.')}</small>
         </div>
 
         <footer className="email-verification-dialog__actions">
@@ -182,7 +185,7 @@ function EmailVerificationDialog({
             disabled={isBusy}
             onClick={onCancel}
           >
-            Cancel request
+            {t('Cancel request')}
           </button>
 
           <button
@@ -197,10 +200,8 @@ function EmailVerificationDialog({
               <ShieldCheck size={17} />
             )}
             {isBusy
-              ? 'Verifying...'
-              : isCurrentEmailStage
-                ? 'Approve current email'
-                : 'Confirm new email'}
+              ? t('Verifying...')
+              : t(isCurrentEmailStage ? 'Approve current email' : 'Confirm new email')}
           </button>
         </footer>
       </motion.section>
@@ -210,6 +211,7 @@ function EmailVerificationDialog({
 }
 
 export default function ProfileSettingsPage() {
+  const { t } = useUserExperience();
   const shouldReduceMotion = useReducedMotion();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -270,23 +272,19 @@ export default function ProfileSettingsPage() {
   return (
     <motion.section
       className="profile-settings-page reveal-page"
+      data-no-auto-translate="true"
       initial={shouldReduceMotion ? undefined : { opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
     >
-      <motion.header
-        className="profile-settings-page__header"
-        initial={shouldReduceMotion ? undefined : { opacity: 0, y: 22 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.58, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <div className="profile-settings-page__orb profile-settings-page__orb--one" />
-        <div className="profile-settings-page__orb profile-settings-page__orb--two" />
-        <div className="profile-settings-page__grid" aria-hidden="true" />
-        <span><UserRound size={16} /> Profile settings</span>
-        <h1>Your Voxidence identity</h1>
-        <p>Manage your photo, display name, and account password.</p>
-      </motion.header>
+      <NormalPageHero
+        variant="profile"
+        eyebrow={t('Profile settings')}
+        title={t('Your Voxidence identity, secure and personal.')}
+        description={t('Manage your photo, display name, email access, password, and active sessions from one protected account space.')}
+        chips={[t('Personal identity'), t('Account security'), t('Session control')]}
+        compact
+      />
 
       <motion.div
         className="profile-settings-card"
@@ -300,7 +298,7 @@ export default function ProfileSettingsPage() {
             type="button"
             className="profile-settings-card__avatar"
             onClick={() => fileInputRef.current?.click()}
-            aria-label="Choose a profile image"
+            aria-label={t('Choose a profile image')}
           >
             {loading ? (
               <LoaderCircle className="profile-settings__spin" size={30} />
@@ -321,14 +319,14 @@ export default function ProfileSettingsPage() {
         </div>
 
         <div className="profile-settings-card__identity">
-          <strong>{profile.fullName || 'Voxidence user'}</strong>
-          <span>{profile.email || 'Authenticated account'}</span>
-          <small><ShieldCheck size={15} /> JPEG, PNG, or WebP · maximum 5 MB · cropped to a square</small>
+          <strong dir="auto" data-no-auto-translate="true">{profile.fullName || t('Voxidence user')}</strong>
+          <span dir="ltr" data-no-auto-translate="true">{profile.email || t('Authenticated account')}</span>
+          <small><ShieldCheck size={15} /> {t('JPEG, PNG, or WebP · maximum 5 MB · cropped to a square')}</small>
         </div>
 
         <div className="profile-settings-card__actions">
           <button type="button" onClick={() => fileInputRef.current?.click()}>
-            <Camera size={17} /> {avatarUrl ? 'Change photo' : 'Add photo'}
+            <Camera size={17} /> {t(avatarUrl ? 'Change photo' : 'Add photo')}
           </button>
           {profile.avatarUrl ? (
             <button
@@ -350,7 +348,7 @@ export default function ProfileSettingsPage() {
                 }
               }}
             >
-              <ImageOff size={17} /> {removing ? 'Removing...' : 'Remove photo'}
+              <ImageOff size={17} /> {t(removing ? 'Removing...' : 'Remove photo')}
             </button>
           ) : null}
         </div>
@@ -400,10 +398,10 @@ export default function ProfileSettingsPage() {
         >
           <div className="profile-settings-panel__title">
             <UserRound size={20} />
-            <div><strong>Personal information</strong><span>Update your display name and sign-in email securely.</span></div>
+            <div><strong>{t('Personal information')}</strong><span>{t('Update your display name and sign-in email securely.')}</span></div>
           </div>
           <label>
-            Full name
+            {t('Full name')}
             <input
               value={fullName}
               minLength={2}
@@ -413,19 +411,19 @@ export default function ProfileSettingsPage() {
             />
           </label>
           <label>
-            Email
+            {t('Email')}
             <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-            <small>Changing your email requires your current password.</small>
+            <small>{t('Changing your email requires your current password.')}</small>
           </label>
           {email.trim().toLowerCase() !== String(profile.email || '').toLowerCase() ? (
             <label>
-              Confirm current password
+              {t('Confirm current password')}
               <input type="password" autoComplete="current-password" value={emailPassword} onChange={(event) => setEmailPassword(event.target.value)} required />
             </label>
           ) : null}
           <button type="submit" disabled={savingProfile || fullName.trim().length < 2}>
             {savingProfile ? <LoaderCircle className="profile-settings__spin" size={17} /> : <Save size={17} />}
-            {savingProfile ? 'Saving...' : 'Save profile'}
+            {t(savingProfile ? 'Saving...' : 'Save profile')}
           </button>
 
           <AnimatePresence>
@@ -515,10 +513,10 @@ export default function ProfileSettingsPage() {
         >
           <div className="profile-settings-panel__title">
             <KeyRound size={20} />
-            <div><strong>Security</strong><span>Use at least one letter and one number.</span></div>
+            <div><strong>{t('Security')}</strong><span>{t('Use at least one letter and one number.')}</span></div>
           </div>
           <label>
-            Current password
+            {t('Current password')}
             <input
               type="password"
               autoComplete="current-password"
@@ -528,7 +526,7 @@ export default function ProfileSettingsPage() {
             />
           </label>
           <label>
-            New password
+            {t('New password')}
             <input
               type="password"
               autoComplete="new-password"
@@ -539,7 +537,7 @@ export default function ProfileSettingsPage() {
             />
           </label>
           <label>
-            Confirm new password
+            {t('Confirm new password')}
             <input
               type="password"
               autoComplete="new-password"
@@ -551,7 +549,7 @@ export default function ProfileSettingsPage() {
           </label>
           <button type="submit" disabled={savingPassword}>
             {savingPassword ? <LoaderCircle className="profile-settings__spin" size={17} /> : <ShieldCheck size={17} />}
-            {savingPassword ? 'Changing...' : 'Change password'}
+            {t(savingPassword ? 'Changing...' : 'Change password')}
           </button>
         </form>
       </motion.div>
@@ -586,20 +584,19 @@ export default function ProfileSettingsPage() {
       >
         <div className="profile-settings-danger__icon"><Trash2 size={22} /></div>
         <div className="profile-settings-danger__copy">
-          <span>Danger zone</span>
-          <h2>Delete your Voxidence account</h2>
+          <span>{t('Danger zone')}</span>
+          <h2>{t('Delete your Voxidence account')}</h2>
           <p>
-            This closes your account, signs you out everywhere, and removes your personal
-            profile information. Existing project records are preserved anonymously for data integrity.
+            {t('This closes your account, signs you out everywhere, and removes your personal profile information. Existing project records are preserved anonymously for data integrity.')}
           </p>
         </div>
         <button type="button" onClick={() => { setError(''); setDeleteDialogOpen(true); }}>
-          <Trash2 size={17} /> Delete account
+          <Trash2 size={17} /> {t('Delete account')}
         </button>
       </motion.section>
 
-      {notice ? <p className="profile-settings__notice"><CheckCircle2 size={17} /> {notice}</p> : null}
-      {error ? <p className="profile-settings__error">{error}</p> : null}
+      {notice ? <p className="profile-settings__notice"><CheckCircle2 size={17} /> {t(notice)}</p> : null}
+      {error ? <p className="profile-settings__error">{t(error)}</p> : null}
 
 
 
@@ -616,7 +613,7 @@ export default function ProfileSettingsPage() {
           <button
             type="button"
             className="delete-account-dialog__backdrop"
-            aria-label="Close delete account dialog"
+            aria-label={t('Close delete account dialog')}
             onClick={() => !deletingAccount && setDeleteDialogOpen(false)}
           />
           <motion.form
@@ -641,35 +638,35 @@ export default function ProfileSettingsPage() {
             <button
               type="button"
               className="delete-account-dialog__close"
-              aria-label="Close"
+              aria-label={t('Close')}
               disabled={deletingAccount}
               onClick={() => setDeleteDialogOpen(false)}
             ><X size={18} /></button>
             <div className="delete-account-dialog__icon"><AlertTriangle size={26} /></div>
-            <span>Final confirmation</span>
-            <h2 id="delete-account-title">Delete your account?</h2>
-            <p>This action cannot be undone. Enter your current password to confirm.</p>
+            <span>{t('Final confirmation')}</span>
+            <h2 id="delete-account-title">{t('Delete your account?')}</h2>
+            <p>{t('This action cannot be undone. Enter your current password to confirm.')}</p>
             <label>
-              Current password
+              {t('Current password')}
               <input
                 type="password"
                 autoComplete="current-password"
                 value={deletePassword}
                 onChange={(event) => setDeletePassword(event.target.value)}
-                placeholder="Enter your current password"
+                placeholder={t('Enter your current password')}
                 minLength={6}
                 required
                 autoFocus
               />
             </label>
-            {error ? <p className="delete-account-dialog__error">{error}</p> : null}
+            {error ? <p className="delete-account-dialog__error">{t(error)}</p> : null}
             <div className="delete-account-dialog__actions">
               <button type="button" disabled={deletingAccount} onClick={() => setDeleteDialogOpen(false)}>
-                Keep my account
+                {t('Keep my account')}
               </button>
               <button type="submit" className="is-danger" disabled={deletingAccount || deletePassword.length < 6}>
                 {deletingAccount ? <LoaderCircle className="profile-settings__spin" size={17} /> : <Trash2 size={17} />}
-                {deletingAccount ? 'Deleting...' : 'Delete permanently'}
+                {t(deletingAccount ? 'Deleting...' : 'Delete permanently')}
               </button>
             </div>
           </motion.form>

@@ -33,6 +33,9 @@ export type IdeaQualityIssue = {
     | 'NO_DIRECT_EVIDENCE'
     | 'REQUEST_SCOPE_TITLE_DRIFT'
     | 'CATASTROPHIC_REQUEST_SCOPE_DRIFT'
+    | 'REQUESTER_CONCRETE_FACET_MISSING'
+    | 'REQUESTED_CAPABILITY_MISSING'
+    | 'EXPLICIT_DOMAIN_COVERAGE_MISSING'
     | 'SECONDARY_DOMAIN_LEAKAGE'
     | 'WRONG_OUTPUT_LANGUAGE';
   readonly message: string;
@@ -60,7 +63,12 @@ export type IdeaQualityDimensions = {
  * @author Malak
  */
 export type IdeaQualityEvaluation = {
+  /** Product-design quality, independent from evidence density. */
   readonly score: number;
+  readonly productQualityScore: number;
+  /** Strength of external validation; separate from product design quality. */
+  readonly evidenceStrengthScore: number;
+  readonly evidenceValidated: boolean;
   readonly accepted: boolean;
   readonly dimensions: IdeaQualityDimensions;
   readonly issues: readonly IdeaQualityIssue[];
@@ -80,10 +88,13 @@ export type IdeaQualityEvaluationContext = {
   readonly externalSupportingEvidenceCount?: number;
   readonly verifiedIndependentSourceCount?: number;
   readonly requesterDescription?: string | null;
+  readonly requesterFacetDescription?: string | null;
+  readonly requesterDesiredOutcome?: string | null;
   readonly outputLanguage?: string;
   readonly allowZeroEvidenceValidationCandidate?: boolean;
   readonly primaryDomainName?: string | null;
   readonly secondaryDomainNames?: readonly string[];
+  readonly requiredDomainNames?: readonly string[];
 };
 
 /**
@@ -327,6 +338,51 @@ export class IdeaQualityEvaluatorService {
       });
     }
 
+    const candidateNarrative = [
+      idea.title,
+      idea.problemStatement,
+      ...idea.objectives,
+      ...idea.targetUsers,
+      idea.limitedAbstract ?? '',
+      idea.partialAbstract ?? '',
+      idea.fullAbstract ?? '',
+      ...output.advancedOutputs.map((item) => item.content),
+    ].join(' ');
+    const missingRequesterFacets = this.resolveMissingRequesterConcreteFacets(
+      context.requesterFacetDescription ?? requesterDescription,
+      candidateNarrative,
+    );
+    if (missingRequesterFacets.length > 0) {
+      issues.push({
+        code: 'REQUESTER_CONCRETE_FACET_MISSING',
+        message: `The candidate dropped concrete requester-owned workflow/data/problem facets. Keep these facets active in the product instead of replacing them with a narrower supporting-evidence workflow: ${missingRequesterFacets.join('; ')}.`,
+        penalty: 100,
+      });
+    }
+    const missingRequestedCapabilities = this.resolveMissingRequestedCapabilities(
+      context.requesterDesiredOutcome,
+      candidateNarrative,
+    );
+    if (missingRequestedCapabilities.length > 0) {
+      issues.push({
+        code: 'REQUESTED_CAPABILITY_MISSING',
+        message: `Preserve every concrete requester-requested operation in the generated product before accepting the candidate. Missing active capabilities: ${missingRequestedCapabilities.join(', ')}.`,
+        penalty: 100,
+      });
+    }
+
+    const missingRequiredDomains = this.resolveMissingRequiredDomains(
+      context.requiredDomainNames ?? [],
+      candidateNarrative,
+    );
+    if (missingRequiredDomains.length > 0) {
+      issues.push({
+        code: 'EXPLICIT_DOMAIN_COVERAGE_MISSING',
+        message: `The candidate omitted technically meaningful coverage for explicitly selected requester domains: ${missingRequiredDomains.join(', ')}. Generate the domains correctly in Core instead of relying on late narrative repair.`,
+        penalty: 100,
+      });
+    }
+
     if (
       problem.length < 180 ||
       !this.containsAny(problem, [
@@ -537,6 +593,24 @@ export class IdeaQualityEvaluatorService {
       context.externalSupportingEvidenceCount ?? 0,
     );
     const hasNoDirectEvidence = directEvidenceCount === 0;
+    const requesterProblemProvided = Boolean(context.requesterDescription?.trim());
+    const evidenceValidated =
+      directEvidenceCount > 0 || externalSupportingEvidenceCount > 0;
+    const verifiedIndependentSourceCount = Math.max(
+      0,
+      context.verifiedIndependentSourceCount ?? 0,
+    );
+    const evidenceStrengthScore = this.clamp(
+      directEvidenceCount > 0
+        ? 68 +
+            Math.min(20, directEvidenceCount * 7) +
+            Math.min(12, verifiedIndependentSourceCount * 4)
+        : externalSupportingEvidenceCount > 0
+          ? 34 +
+              Math.min(24, externalSupportingEvidenceCount * 8) +
+              Math.min(12, verifiedIndependentSourceCount * 4)
+          : 8,
+    );
 
     if (hasNoDirectEvidence) {
       issues.push({
@@ -570,19 +644,31 @@ export class IdeaQualityEvaluatorService {
       });
     }
 
+    /*
+     * Keep product quality and evidence strength as separate axes. Requester-
+     * defined problems can earn full product-market-fit quality when the
+     * solution is exceptionally specific even if bounded external retrieval is
+     * sparse; evidenceStrengthScore still records that uncertainty. Discovery
+     * candidates with supporting-only evidence retain a material market-fit cap
+     * until direct/independently corroborated demand exists, but the previous 55
+     * cap no longer makes a strong evidence-grounded pilot mathematically unable
+     * to reach the high-quality range.
+     */
     const dimensions: IdeaQualityDimensions = {
       innovation: this.clamp(
         45 + differentiatorHits * 9 + (genericTitle ? -12 : 8),
       ),
       marketFit: this.clamp(
         Math.min(
-          hasNoDirectEvidence
-            ? externalSupportingEvidenceCount > 0
-              ? 55
-              : 35
-            : directEvidenceCount === 1
-              ? 85
-              : 100,
+          requesterProblemProvided
+            ? 100
+            : hasNoDirectEvidence
+              ? externalSupportingEvidenceCount > 0
+                ? 78
+                : 35
+              : directEvidenceCount === 1
+                ? 92
+                : 100,
           35 +
             Math.min(problem.length / 8, 30) +
             concreteTargets * 8 +
@@ -617,22 +703,26 @@ export class IdeaQualityEvaluatorService {
       dimensions.completeness * 0.15 +
       dimensions.originality * 0.15;
 
-    const issuePenalty = issues.reduce((sum, issue) => sum + issue.penalty, 0);
-
     /*
-     * Evidence volume is already represented by the market-fit cap and by the
-     * opportunity-ranking metadata. Applying the complete issue penalty again
-     * made a structurally strong idea score far below its own dimension scores.
-     * Keep blocking safety issues strict, but use a calibrated copy/quality
-     * penalty for the benchmark score so this number measures idea quality
-     * rather than duplicating evidence-density penalties.
+     * Product quality and evidence strength are independent axes. A requester
+     * may provide a clear problem that has zero retained external evidence
+     * inside the bounded collection window; that weakens validation, not the
+     * software design. Discovery-only modes still require trusted evidence
+     * before a concrete problem can be accepted.
      */
+    const productIssuePenalty = issues
+      .filter((issue) => issue.code !== 'NO_DIRECT_EVIDENCE')
+      .reduce((sum, issue) => sum + issue.penalty, 0);
     const hasCatastrophicRequestDrift = issues.some(
       (issue) => issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT',
     );
-    const score = hasCatastrophicRequestDrift
-      ? Math.min(19, this.clamp(weightedScore - issuePenalty * 0.18))
-      : this.clamp(weightedScore - issuePenalty * 0.18);
+    const productQualityScore = hasCatastrophicRequestDrift
+      ? Math.min(19, this.clamp(weightedScore - productIssuePenalty * 0.18))
+      : this.clamp(weightedScore - productIssuePenalty * 0.18);
+    const evidenceGateSatisfied =
+      evidenceValidated ||
+      (requesterProblemProvided &&
+        context.allowZeroEvidenceValidationCandidate === true);
     const hasBlockingIssue = issues.some(
       (issue) =>
         issue.code === 'UNSUPPORTED_LOCAL_CLAIM' ||
@@ -640,20 +730,22 @@ export class IdeaQualityEvaluatorService {
         issue.code === 'MALFORMED_MEASURABLE_TARGET' ||
         issue.code === 'UNSUPPORTED_IMPACT_TARGET' ||
         issue.code === 'COMMON_TITLE_MISSPELLING' ||
-        // Supporting evidence is a real trusted problem signal in the
-        // canonical evidence contract. Absence of DIRECT evidence therefore
-        // lowers confidence and forbids prevalence claims, but it must not
-        // force another 20-30 second model wave when at least one verified
-        // SUPPORTING_SIGNAL exists. Zero trusted evidence remains blocking.
-        (issue.code === 'NO_DIRECT_EVIDENCE' &&
-          externalSupportingEvidenceCount === 0) ||
         issue.code === 'SECONDARY_DOMAIN_LEAKAGE' ||
-        issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT',
+        issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT' ||
+        issue.code === 'REQUESTER_CONCRETE_FACET_MISSING' ||
+        issue.code === 'REQUESTED_CAPABILITY_MISSING' ||
+        issue.code === 'EXPLICIT_DOMAIN_COVERAGE_MISSING',
     );
 
     return {
-      score,
-      accepted: score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE && !hasBlockingIssue,
+      score: productQualityScore,
+      productQualityScore,
+      evidenceStrengthScore,
+      evidenceValidated,
+      accepted:
+        productQualityScore >= IDEA_MIN_ACCEPTED_QUALITY_SCORE &&
+        !hasBlockingIssue &&
+        evidenceGateSatisfied,
       dimensions,
       issues,
     };
@@ -742,16 +834,23 @@ export class IdeaQualityEvaluatorService {
       });
     }
 
+    const requesterProblemProvided = Boolean(context.requesterDescription?.trim());
     const dimensions: IdeaQualityDimensions = {
-      innovation: 78,
+      innovation: 90,
       marketFit:
-        directEvidenceCount > 0 ? 82 : supportingEvidenceCount > 0 ? 74 : 58,
-      technicalQuality: advancedComplete ? 82 : 68,
+        directEvidenceCount > 0
+          ? 94
+          : supportingEvidenceCount > 0
+            ? 88
+            : requesterProblemProvided
+              ? 92
+              : 58,
+      technicalQuality: advancedComplete ? 92 : 68,
       completeness:
         problemLength >= 120 && objectives.length >= 4 && targetUsers.length >= 2
-          ? 86
+          ? 94
           : 65,
-      originality: 76,
+      originality: 90,
     };
 
     const weightedScore =
@@ -760,19 +859,34 @@ export class IdeaQualityEvaluatorService {
       dimensions.technicalQuality * 0.2 +
       dimensions.completeness * 0.15 +
       dimensions.originality * 0.15;
-    const issuePenalty = issues.reduce((sum, issue) => sum + issue.penalty, 0);
-    const score = this.clamp(weightedScore - issuePenalty * 0.18);
+    const productIssuePenalty = issues
+      .filter((issue) => issue.code !== 'NO_DIRECT_EVIDENCE')
+      .reduce((sum, issue) => sum + issue.penalty, 0);
+    const score = this.clamp(weightedScore - productIssuePenalty * 0.18);
+    const evidenceValidated = directEvidenceCount > 0 || supportingEvidenceCount > 0;
+    const evidenceStrengthScore = this.clamp(
+      directEvidenceCount > 0
+        ? 75 + Math.min(20, directEvidenceCount * 6)
+        : supportingEvidenceCount > 0
+          ? 45 + Math.min(24, supportingEvidenceCount * 8)
+          : 8,
+    );
+    const evidenceGateSatisfied =
+      evidenceValidated ||
+      (requesterProblemProvided && context.allowZeroEvidenceValidationCandidate === true);
     const hasBlockingIssue = issues.some(
-      (issue) =>
-        issue.code === 'WRONG_OUTPUT_LANGUAGE' ||
-        (issue.code === 'NO_DIRECT_EVIDENCE' &&
-          !context.allowZeroEvidenceValidationCandidate &&
-          supportingEvidenceCount === 0),
+      (issue) => issue.code === 'WRONG_OUTPUT_LANGUAGE',
     );
 
     return {
       score,
-      accepted: score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE && !hasBlockingIssue,
+      productQualityScore: score,
+      evidenceStrengthScore,
+      evidenceValidated,
+      accepted:
+        score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE &&
+        !hasBlockingIssue &&
+        evidenceGateSatisfied,
       dimensions,
       issues,
     };
@@ -1074,6 +1188,285 @@ export class IdeaQualityEvaluatorService {
     }
 
     return false;
+  }
+
+  /**
+   * Deterministic first-pass guard for concrete operations explicitly requested
+   * by the user.  The provider may choose the implementation mechanism, but it
+   * may not silently turn requested detection/tracking/prediction/prioritization
+   * behavior into a generic dashboard because a narrower supporting article was
+   * easier to ground.
+   */
+  private resolveMissingRequestedCapabilities(
+    desiredOutcome: string | null | undefined,
+    candidateNarrative: string,
+  ): string[] {
+    const requested = desiredOutcome?.replace(/\s+/gu, ' ').trim() ?? '';
+    if (!requested) return [];
+
+    const rules: readonly {
+      readonly label: string;
+      readonly request: RegExp;
+      readonly implementation: RegExp;
+    }[] = [
+      {
+        label: 'detection/identification',
+        request: /\b(?:detect|detects|detecting|identify|identifies|identifying)\b/iu,
+        implementation: /\b(?:detect|detection|identif|anomal|flag(?:ging)?|outlier|classif)\w*\b/iu,
+      },
+      {
+        label: 'tracking',
+        request: /\b(?:track|tracks|tracking|trace|traces|tracing|follow|follows|following)\b/iu,
+        implementation: /\b(?:track|tracking|trace|tracing|status|lifecycle|stage progression|item progression|queue)\w*\b/iu,
+      },
+      {
+        label: 'prediction/forecasting',
+        request: /\b(?:predict|predicts|predicting|forecast|forecasting|estimate|estimates|estimating)\b/iu,
+        implementation: /\b(?:predict|prediction|predictive|forecast|estimate|estimation|risk scor|probabil)\w*\b/iu,
+      },
+      {
+        label: 'prioritization/recommendation',
+        request: /\b(?:recommend|recommends|recommending|suggest|suggesting|prioriti[sz]e|prioriti[sz]ing|rank|ranking)\b/iu,
+        implementation: /\b(?:recommend|recommendation|suggest|prioriti[sz]|rank(?:ing)?|triage)\w*\b/iu,
+      },
+      {
+        label: 'optimization/capacity balancing',
+        request: /\b(?:optimi[sz]e|optimi[sz]es|optimi[sz]ing|balance|balances|balancing|organize|organise|organizing|organising)\b/iu,
+        implementation: /\b(?:optimi[sz]|balanc|organis|organiz|workload|capacity|allocation|schedul)\w*\b/iu,
+      },
+      {
+        label: 'adaptive scheduling',
+        request: /\b(?:adjust|adjusts|adjusting|reorganize|reorganizes|reorganizing|reorganise|reorganises|reorganising|reschedule|reschedules|rescheduling|replan|replanning)\b/iu,
+        implementation: /\b(?:adjust|reorgani[sz]|reschedul|replan|rebalanc|reprioriti[sz]|schedule update|schedule revision)\w*\b/iu,
+      },
+      {
+        label: 'notification/alerting',
+        request: /\b(?:remind|reminds|reminding|notify|notifies|notifying|alert|alerts|flag|flags|flagging)\b/iu,
+        implementation: /\b(?:remind|reminder|notify|notification|alert|flag)\w*\b/iu,
+      },
+      {
+        label: 'analysis/scoring',
+        request: /\b(?:analy[sz]e|analy[sz]es|analy[sz]ing|score|scoring|assess|assessing)\b/iu,
+        implementation: /\b(?:analy[sz]|analysis|analytics|scor|assessment|model inference)\w*\b/iu,
+      },
+      {
+        label: 'data/workflow integration',
+        request: /\b(?:combine|combines|combining|integrate|integrates|integrating|correlate|correlating)\b/iu,
+        implementation: /\b(?:combin|integrat|unif|aggregat|merge|fusion|correlat)\w*\b/iu,
+      },
+      {
+        label: 'response/dispatch action',
+        request: /\b(?:respond|responds|responding|dispatch|dispatching|assign|assigning)\b/iu,
+        implementation: /\b(?:respond|response|dispatch|assign|work order|case routing|maintenance task)\w*\b/iu,
+      },
+    ];
+
+    return rules
+      .filter(
+        (rule) =>
+          rule.request.test(requested) &&
+          !rule.implementation.test(candidateNarrative),
+      )
+      .map((rule) => rule.label);
+  }
+
+  /**
+   * Extracts concrete requester-owned list facets from the explicit problem and
+   * desired workflow text, then verifies that the generated candidate still
+   * talks about those same concrete things.  This closes the gap between broad
+   * semantic alignment and exact workflow preservation: a GeoAI candidate can
+   * be generally relevant to Smart Cities while still silently dropping citizen
+   * reports, streetlights, or water leaks from the user's requested workflow.
+   *
+   * The extractor is intentionally generic.  It recognizes enumerations after
+   * request verbs (coordinate/combine/analyze/track/manage/monitor/protect) and
+   * explicit example lists (such as/including), so it also applies to tailoring,
+   * bakery, healthcare-access, manufacturing, and other unseen descriptions.
+   */
+  private resolveMissingRequesterConcreteFacets(
+    requestDescription: string | null | undefined,
+    candidateNarrative: string,
+  ): string[] {
+    const request = requestDescription?.replace(/\s+/gu, ' ').trim() ?? '';
+    if (!request) return [];
+
+    const extracted: string[] = [];
+    const collect = (value: string | undefined): void => {
+      if (!value) return;
+      for (const part of value.split(/\s*(?:,|;|\band\b|\bor\b)\s*/iu)) {
+        const cleaned = part
+          .replace(/^(?:the|a|an|their|its|current|existing)\s+/iu, '')
+          .replace(/\s+/gu, ' ')
+          .trim();
+        if (
+          /\b(?:prioriti[sz]|predict|forecast|detect|identif|analy[sz]|recommend|classif|scor|optimi[sz]|rank)\w*\b/iu.test(
+            cleaned,
+          )
+        ) {
+          continue;
+        }
+        const tokens = this.requestFacetTokens(cleaned);
+        if (tokens.length < 2 || tokens.length > 7) continue;
+        extracted.push(cleaned);
+      }
+    };
+
+    for (const match of request.matchAll(
+      /\b(?:such\s+as|including|for\s+example)\s+([^.!?]{4,240}?)(?=\b(?:before|when|while|which|so\s+that|to\s+(?:identify|detect|estimate|predict|prioriti[sz]e|help|flag|organize|organise|respond|reduce|improve))\b|[.!?]|$)/giu,
+    )) {
+      collect(match[1]);
+    }
+
+    for (const match of request.matchAll(
+      /\b(?:coordinate|coordinates|coordinating|combine|combines|combining|analy[sz]e|analy[sz]es|analy[sz]ing|monitor|monitors|monitoring|track|tracks|tracking|manage|manages|managing|protect|protects|protecting)\s+([^.!?]{8,280}?)(?=\b(?:across|before|when|while|which|so\s+that|to\s+(?:identify|detect|estimate|predict|prioriti[sz]e|help|flag|organize|organise|respond|reduce|improve))\b|[.!?]|$)/giu,
+    )) {
+      collect(match[1]);
+    }
+
+    const uniqueFacets = [...new Map(
+      extracted.map((facet) => [this.normalize(facet), facet] as const),
+    ).values()].slice(0, 10);
+    if (uniqueFacets.length === 0) return [];
+
+    const candidateTokens = new Set(this.requestFacetTokens(candidateNarrative));
+    return uniqueFacets.filter((facet) => {
+      const tokens = this.requestFacetTokens(facet);
+      if (tokens.length === 0) return false;
+      const matched = tokens.filter((token) => candidateTokens.has(token)).length;
+      const required = Math.max(1, Math.ceil(tokens.length * 0.6));
+      return matched < required;
+    });
+  }
+
+  private requestFacetTokens(value: string): string[] {
+    const stop = new Set([
+      'the', 'a', 'an', 'and', 'or', 'of', 'to', 'for', 'with', 'from', 'in',
+      'on', 'at', 'by', 'across', 'many', 'each', 'every', 'different', 'their',
+      'its', 'current', 'existing', 'system', 'platform', 'workflow', 'data',
+    ]);
+    const seen = new Set<string>();
+    const output: string[] = [];
+    const normalized = value
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    for (const raw of normalized.split(/\s+/u)) {
+      let token = raw;
+      if (!token || stop.has(token)) continue;
+      if (/ies$/u.test(token) && token.length > 5) token = `${token.slice(0, -3)}y`;
+      else if (/ing$/u.test(token) && token.length > 6) token = token.slice(0, -3);
+      else if (/ed$/u.test(token) && token.length > 5) token = token.slice(0, -2);
+      else if (/s$/u.test(token) && !/ss$/u.test(token) && token.length > 5) token = token.slice(0, -1);
+      if (token === 'customer' || token === 'client') token = 'client';
+      else if (token === 'citizen' || token === 'resident') token = 'resident';
+      else if (token === 'garment' || token === 'apparel' || token === 'clothing') token = 'garment';
+      if (token.length < 3 || stop.has(token) || seen.has(token)) continue;
+      seen.add(token);
+      output.push(token);
+    }
+    return output;
+  }
+
+  /**
+   * Ensures TEXT_AND_DOMAINS candidates materially express every explicitly
+   * selected implementation domain before the candidate can win the benchmark.
+   * Domain-specific aliases are deliberately small and capability-oriented so
+   * a label-only mention is not required when the implementation is clear.
+   */
+  private resolveMissingRequiredDomains(
+    requiredDomainNames: readonly string[],
+    candidateNarrative: string,
+  ): string[] {
+    const narrative = candidateNarrative.toLocaleLowerCase();
+    const containsAny = (aliases: readonly string[]): boolean =>
+      aliases.some((alias) => {
+        const normalized = alias.trim().toLocaleLowerCase();
+        if (!normalized) return false;
+        return new RegExp(
+          `\\b${this.escapeRegExp(normalized).replace(/\s+/gu, '\\s+')}\\b`,
+          'iu',
+        ).test(narrative);
+      });
+
+    return requiredDomainNames.filter((domainName) => {
+      const normalized = domainName.trim().toLocaleLowerCase();
+      if (!normalized) return false;
+
+      if (normalized.includes('artificial intelligence') || normalized === 'ai') {
+        return !containsAny([
+          'artificial intelligence',
+          'machine learning',
+          'predictive model',
+          'anomaly detection',
+          'risk scoring',
+          'forecasting model',
+          'classification model',
+          'recommendation engine',
+          'model inference',
+          'deep learning',
+          'computer vision',
+          'ai-assisted',
+          'ai based',
+          'ai-based',
+        ]);
+      }
+
+      if (normalized.includes('internet of things') || normalized === 'iot') {
+        return !containsAny([
+          'internet of things',
+          'iot',
+          'sensor',
+          'sensors',
+          'connected device',
+          'device telemetry',
+          'telemetry',
+          'edge device',
+          'gateway',
+        ]);
+      }
+
+      if (normalized.includes('government') || normalized.includes('public sector')) {
+        return !containsAny([
+          'government',
+          'public sector',
+          'public institution',
+          'public administration',
+          'municipality',
+          'municipalities',
+          'municipal',
+          'public service',
+        ]);
+      }
+
+      if (normalized.includes('smart cities') || normalized === 'smart city') {
+        return !containsAny([
+          'smart city',
+          'smart cities',
+          'municipal',
+          'city infrastructure',
+          'urban infrastructure',
+          'urban operations',
+          'city services',
+        ]);
+      }
+
+      if (normalized.includes('cybersecurity')) {
+        return !containsAny([
+          'cybersecurity',
+          'security monitoring',
+          'access anomaly',
+          'suspicious access',
+          'threat detection',
+          'security incident',
+          'audit log',
+          'authentication risk',
+        ]);
+      }
+
+      return !containsAny([normalized]);
+    });
   }
 
   private escapeRegExp(value: string): string {

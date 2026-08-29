@@ -39,7 +39,8 @@ export type IdeaGenerationCanonicalProblemSpec = {
 export type IdeaGenerationEvidenceState =
   | 'DIRECT_VALIDATED'
   | 'SUPPORTING_VALIDATED'
-  | 'ZERO_VALIDATED_EVIDENCE';
+  | 'NO_VALID_EVIDENCE_FOUND'
+  | 'EVIDENCE_ADJUDICATION_UNAVAILABLE';
 
 export type IdeaGenerationCollectorTier =
   | 'PRIMARY'

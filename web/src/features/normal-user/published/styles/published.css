@@ -2771,3 +2771,169 @@ html.vox-user-dark .published-page .published-card__actions button:hover {
 
 html.vox-user-dark .published-page .published-card :is(h2,strong,b) { color: #f1f8f6 !important; }
 html.vox-user-dark .published-page .published-card p { color: #aec1bb !important; }
+
+/* Keep publication actions floating directly on the card body. */
+.published-page .published-card__actions {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .published-page .published-card__actions {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .published-page .published-card__actions button {
+  color:#dcebe7 !important;
+  border:1px solid rgba(112,205,198,.16) !important;
+  background:#20372f !important;
+}
+
+html.vox-user-dark .published-status-filter {
+  border-color: rgba(112, 205, 198, .16) !important;
+  background: #10231d !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .published-status-filter button {
+  color: #b7cbc5 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .published-status-filter button:hover {
+  color: #eff9f6 !important;
+  background: #183029 !important;
+}
+
+html.vox-user-dark .published-status-filter button.active {
+  color: #f6fffd !important;
+  border: 1px solid rgba(112, 205, 198, .30) !important;
+  background: #21453b !important;
+  box-shadow: inset 0 0 0 1px rgba(112, 205, 198, .05) !important;
+}
+
+html.vox-user-rtl .published-toolbar,
+html.vox-user-rtl .published-status-filter {
+  direction: rtl !important;
+}
+
+html.vox-user-rtl .published-search input {
+  text-align: right !important;
+}
+
+
+/* FINAL_20260828_AUDIENCE_LEDGER_DARK_PALETTE
+   Dark-safe semantic tones for rating, votes, feedback, and acceptance. */
+html.vox-user-dark body .insights-panel {
+  color: #edf8f5 !important;
+  border-color: rgba(116, 205, 197, .18) !important;
+  background:
+    radial-gradient(circle at 88% 4%, rgba(112,205,198,.10), transparent 26%),
+    radial-gradient(circle at 7% 96%, rgba(222,153,171,.065), transparent 28%),
+    linear-gradient(145deg, #13271f, #0f201a) !important;
+  box-shadow: -28px 0 72px rgba(0,0,0,.30) !important;
+}
+
+html.vox-user-dark body .insights-panel .insights-panel__header,
+html.vox-user-dark body .insights-panel .insights-panel__section-title {
+  border-color: rgba(116,205,197,.12) !important;
+  background: transparent !important;
+}
+
+html.vox-user-dark body .insights-panel :is(.insights-panel__header h2,.insights-panel__section-title h3,.publication-acceptors__heading h3,.audience-response-item__body header strong,.publication-acceptors__list article strong) {
+  color: #f0faf7 !important;
+}
+
+html.vox-user-dark body .insights-panel :is(.insights-panel__header p,.insights-panel__section-title p,.insights-panel__section-title small,.publication-acceptors__heading p,.publication-acceptors__empty,.audience-response-item__body header small,.audience-response-item__body time,.publication-acceptors__list article small) {
+  color: #a9beb7 !important;
+}
+
+html.vox-user-dark body .insights-panel .insights-summary article,
+html.vox-user-dark body .insights-panel .publication-acceptors,
+html.vox-user-dark body .insights-panel .publication-acceptors__list article,
+html.vox-user-dark body .insights-panel .audience-response-item {
+  border-color: rgba(116,205,197,.14) !important;
+  background: #142a23 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .insights-panel .insights-summary strong {
+  color: #f2faf8 !important;
+}
+html.vox-user-dark body .insights-panel .insights-summary small {
+  color: #9fb4ad !important;
+}
+
+html.vox-user-dark body .insights-panel .insights-summary__rating > span,
+html.vox-user-dark body .insights-panel .audience-response-item__signals .has-value {
+  color: #f1d187 !important;
+  background: rgba(211,165,77,.14) !important;
+  background-image: none !important;
+}
+html.vox-user-dark body .insights-panel .insights-summary__up > span,
+html.vox-user-dark body .insights-panel .audience-response-item__signals .is-up {
+  color: #8be2bf !important;
+  background: rgba(72,181,143,.15) !important;
+  background-image: none !important;
+}
+html.vox-user-dark body .insights-panel .insights-summary__down > span,
+html.vox-user-dark body .insights-panel .audience-response-item__signals .is-down {
+  color: #f0a8b9 !important;
+  background: rgba(214,111,139,.14) !important;
+  background-image: none !important;
+}
+html.vox-user-dark body .insights-panel .insights-summary__feedback > span {
+  color: #9ce3dd !important;
+  background: rgba(112,205,198,.14) !important;
+  background-image: none !important;
+}
+html.vox-user-dark body .insights-panel .insights-summary__accepted > span,
+html.vox-user-dark body .insights-panel .insights-panel__section-title > div > span,
+html.vox-user-dark body .insights-panel .publication-acceptors__heading > div > span {
+  color: #9ce3dd !important;
+  background: rgba(112,205,198,.14) !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark body .insights-panel .publication-acceptors__heading > strong {
+  color: #f4fffc !important;
+  background: linear-gradient(135deg,#3f968f,#5bbeb7) !important;
+  box-shadow: 0 8px 20px rgba(58,157,149,.16) !important;
+}
+html.vox-user-dark body .insights-panel .publication-acceptors__list article > span {
+  color: #f7fffd !important;
+  background: linear-gradient(145deg,#397f79,#52aaa4) !important;
+}
+html.vox-user-dark body .insights-panel .publication-acceptors__list article em {
+  color: #9ce3dd !important;
+  background: rgba(112,205,198,.10) !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark body .insights-panel .feedback-item__avatar {
+  color: #a9e8e2 !important;
+  background: linear-gradient(145deg,#1d3c32,#2c3540) !important;
+}
+
+html.vox-user-dark body .insights-panel .audience-response-item__signals span {
+  color: #bdcec9 !important;
+  background: #1b332b !important;
+}
+
+html.vox-user-dark body .insights-panel .audience-response-item blockquote {
+  color: #c7d8d2 !important;
+  border-left-color: #d992a5 !important;
+  background: rgba(217,146,165,.075) !important;
+}
+
+html.vox-user-dark body .insights-panel .insights-pagination button,
+html.vox-user-dark body .insights-panel .insights-panel__header button {
+  color: #a5e5df !important;
+  border-color: rgba(116,205,197,.16) !important;
+  background: #1b332b !important;
+  background-image: none !important;
+}

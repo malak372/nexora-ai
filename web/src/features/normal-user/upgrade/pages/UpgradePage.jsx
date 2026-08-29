@@ -82,7 +82,7 @@ const PAYMENT_METHODS = [
 ];
 
 export default function UpgradePage() {
-  const { t } = useUserExperience();
+  const { t, isArabic } = useUserExperience();
   const shouldReduceMotion = useReducedMotion();
   const storedUser = getStoredUser() || {};
 
@@ -301,18 +301,18 @@ export default function UpgradePage() {
         <div className="upgrade-story__content">
           <span className="upgrade-story__eyebrow">
             <Crown size={16} />
-            Voxidence premium credits
+            {t('Voxidence premium credits')}
           </span>
 
           <h1>
-            Unlock premium capabilities
-            <em>only when you need them.</em>
+            {t('Unlock premium capabilities')}
+            <em>{t('only when you need them.')}</em>
           </h1>
 
           <p>
             {isAlreadyPremium
-              ? 'Add more credits to keep using your Premium generation and advanced idea capabilities.'
-              : 'Activate your Premium account and add credits for complete idea generation and advanced outputs.'}
+              ? t('Add more credits to keep using your Premium generation and advanced idea capabilities.')
+              : t('Activate your Premium account and add credits for complete idea generation and advanced outputs.')}
           </p>
 
           <div className="upgrade-benefits">
@@ -352,8 +352,8 @@ export default function UpgradePage() {
                         '0',
                       )}
                     </small>
-                    <strong>{benefit.title}</strong>
-                    <p>{benefit.description}</p>
+                    <strong>{t(benefit.title)}</strong>
+                    <p>{t(benefit.description)}</p>
                   </div>
                 </motion.article>
               );
@@ -364,12 +364,12 @@ export default function UpgradePage() {
         <div className="upgrade-story__trust">
           <span>
             <ShieldCheck size={15} />
-            Verified provider webhook
+            {t('Verified provider webhook')}
           </span>
 
           <span>
             <Sparkles size={15} />
-            Permanent unlocked access
+            {t('Permanent unlocked access')}
           </span>
         </div>
       </motion.section>
@@ -397,15 +397,15 @@ export default function UpgradePage() {
         }}
       >
         <span className="upgrade-summary-kicker">
-          {isAlreadyPremium ? 'Additional premium purchase' : 'Premium activation'}
+          {t(isAlreadyPremium ? 'Additional premium purchase' : 'Premium activation')}
         </span>
 
         <h2>{t(isAlreadyPremium ? 'Choose your credit amount' : 'Activate Premium')}</h2>
 
         <p className="upgrade-summary-copy">
           {isAlreadyPremium
-            ? 'Select a shortcut or enter the exact quantity you want to add.'
-            : 'Choose your starting credit balance. The backend will activate Premium automatically after the payment is verified.'}
+            ? t('Select a shortcut or enter the exact quantity you want to add.')
+            : t('Choose your starting credit balance. The backend will activate Premium automatically after the payment is verified.')}
         </p>
 
         <div className="upgrade-quantity">
@@ -438,7 +438,7 @@ export default function UpgradePage() {
                 <strong>{amount}</strong>
 
                 <small>
-                  credit{amount > 1 ? 's' : ''}
+                  {t(amount > 1 ? 'credits' : 'credit')}
                 </small>
               </motion.button>
             );
@@ -447,11 +447,11 @@ export default function UpgradePage() {
 
         <div className="upgrade-custom-quantity">
           <div className="upgrade-custom-quantity__heading">
-            <span>Custom quantity</span>
+            <span>{t('Custom quantity')}</span>
             <small>
               {isAlreadyPremium
-                ? 'No minimum beyond 1 credit'
-                : `Minimum ${minimumCredits} credits to activate Premium`}
+                ? t('No minimum beyond 1 credit')
+                : `${t('Minimum')} ${minimumCredits} ${t('credits to activate Premium')}`}
             </small>
           </div>
 
@@ -461,7 +461,7 @@ export default function UpgradePage() {
               onClick={() =>
                 updateCredits(credits - 1)
               }
-              aria-label="Decrease credits"
+              aria-label={t('Decrease credits')}
               disabled={credits <= minimumCredits}
             >
               <Minus size={16} />
@@ -481,7 +481,7 @@ export default function UpgradePage() {
               onClick={() =>
                 updateCredits(credits + 1)
               }
-              aria-label="Increase credits"
+              aria-label={t('Increase credits')}
             >
               <Plus size={16} />
             </button>
@@ -489,8 +489,8 @@ export default function UpgradePage() {
         </div>
 
         <div className="upgrade-section-title">
-          <span>Payment method</span>
-          <small>Provider-hosted checkout</small>
+          <span>{t('Payment method')}</span>
+          <small>{t('Provider-hosted checkout')}</small>
         </div>
 
         <div className="upgrade-payment-stack">
@@ -500,9 +500,9 @@ export default function UpgradePage() {
             </span>
 
             <div>
-              <small>Saved payment currency</small>
-              <strong>{currency}</strong>
-              <p>Used automatically for every checkout.</p>
+              <small>{t('Saved payment currency')}</small>
+              <strong dir="ltr" data-no-auto-translate="true">{currency}</strong>
+              <p>{t('Used automatically for every checkout.')}</p>
             </div>
 
             <Link
@@ -512,7 +512,7 @@ export default function UpgradePage() {
                 returnLabel: 'Back to Premium credits',
               }}
             >
-              Change
+              {t('Change')}
             </Link>
           </div>
 
@@ -550,11 +550,11 @@ export default function UpgradePage() {
 
                     <span className="upgrade-methods__copy">
                       <span>
-                        <b>{paymentMethod.title}</b>
-                        <small>{paymentMethod.badge}</small>
+                        <b>{t(paymentMethod.title)}</b>
+                        <small>{t(paymentMethod.badge)}</small>
                       </span>
 
-                      <em>{paymentMethod.description}</em>
+                      <em>{t(paymentMethod.description)}</em>
                     </span>
 
                     <span className="upgrade-methods__check">
@@ -570,15 +570,15 @@ export default function UpgradePage() {
         <div className="upgrade-pricing-grid">
           <div className="upgrade-credit-price">
             <div>
-              <span>Credit price</span>
-              <small>Current backend price in your saved currency</small>
+              <span>{t('Credit price')}</span>
+              <small>{t('Current backend price in your saved currency')}</small>
             </div>
 
             <strong>
               {pricingLoading
                 ? 'Updating…'
                 : pricing
-                  ? `1 credit = ${pricing.creditPrice} ${pricing.currency}`
+                  ? (isArabic ? `رصيد واحد = ${pricing.creditPrice} ${pricing.currency}` : `1 credit = ${pricing.creditPrice} ${pricing.currency}`)
                   : 'Loading…'}
             </strong>
           </div>
@@ -594,16 +594,16 @@ export default function UpgradePage() {
             <div>
               <strong>
                 {isAlreadyPremium
-                  ? 'No Premium activation fee'
-                  : 'Premium activation fee'}
+                  ? t('No Premium activation fee')
+                  : t('Premium activation fee')}
               </strong>
 
               <small>
                 {isAlreadyPremium
-                  ? 'Already Premium, so this fee is not charged again.'
+                  ? t('Already Premium, so this fee is not charged again.')
                   : pricing
-                    ? `${pricing.activationFeeApplied} ${pricing.currency} applies when a Normal account activates Premium.`
-                    : 'Loading the current activation fee…'}
+                    ? (isArabic ? `تُطبق رسوم بقيمة ${pricing.activationFeeApplied} ${pricing.currency} عند ترقية الحساب العادي إلى بريميوم.` : `${pricing.activationFeeApplied} ${pricing.currency} applies when a Normal account activates Premium.`)
+                    : t('Loading the current activation fee…')}
               </small>
             </div>
           </div>
@@ -611,9 +611,9 @@ export default function UpgradePage() {
 
         <div className="upgrade-order-summary">
           <div>
-            <span>Selected package</span>
+            <span>{t('Selected package')}</span>
             <small>
-              {pricing ? `${credits} credits subtotal: ${pricing.creditPurchaseSubtotal ?? '—'} ${pricing.currency}.` : 'Final amount is calculated by the backend from current database pricing.'}
+              {pricing ? (isArabic ? `${credits} رصيدًا، المجموع الفرعي: ${pricing.creditPurchaseSubtotal ?? '—'} ${pricing.currency}.` : `${credits} credits subtotal: ${pricing.creditPurchaseSubtotal ?? '—'} ${pricing.currency}.`) : t('Final amount is calculated by the backend from current database pricing.')}
             </small>
           </div>
 
@@ -639,7 +639,7 @@ export default function UpgradePage() {
               disabled={pricingLoading}
             >
               <RefreshCw size={13} />
-              Retry
+              {t('Retry')}
             </button>
           </div>
         ) : null}
@@ -666,11 +666,11 @@ export default function UpgradePage() {
                 className="upgrade-spin"
                 size={18}
               />
-              Creating secure checkout…
+              {t('Creating secure checkout…')}
             </>
           ) : (
             <>
-              Continue to secure payment
+              {t('Continue to secure payment')}
               <CreditCard size={18} />
             </>
           )}
@@ -681,13 +681,13 @@ export default function UpgradePage() {
 
           <span>
             <strong>
-              Protected payment flow
+              {t('Protected payment flow')}
             </strong>
 
             <small>
               {isAlreadyPremium
-                ? 'Credits are added only after a verified provider webhook.'
-                : 'Premium is activated and credits are added only after a verified provider webhook.'}
+                ? t('Credits are added only after a verified provider webhook.')
+                : t('Premium is activated and credits are added only after a verified provider webhook.')}
             </small>
           </span>
         </div>

@@ -43,6 +43,50 @@ export class SelectedDomainEvidenceAlignmentUtil {
     return this.matchStrictDomainNames(evidenceText, domains).length > 0;
   }
 
+  /**
+   * Discovery evidence must bind the actual failure/workflow to the domain.
+   * Merely mentioning a persona, employer, school, country, or incidental
+   * domain noun elsewhere in the document is not enough to turn an unrelated
+   * problem into trusted evidence for that domain.
+   *
+   * This is intentionally generic: it looks for problem-bearing clauses and
+   * checks their local semantic neighborhood against the same strict domain
+   * matcher used elsewhere. It does not contain test/domain-specific allow or
+   * deny lists.
+   */
+  static isProblemBoundToDomain(
+    evidenceText: string,
+    domain: SelectedDomainEvidenceDescriptor,
+  ): boolean {
+    const normalized = this.normalize(evidenceText);
+    if (!normalized) return false;
+
+    const clauses = evidenceText
+      .split(/(?<=[.!?;])\s+|\s+[—–-]\s+/u)
+      .map((value) => this.normalize(value))
+      .map((value) => value.trim())
+      .filter((value) => value.length >= 8);
+    const problemBearing = /\b(?:problem|issue|error|bug|fail(?:ed|ure|ing|s)?|cannot|can['’]?t|unable|missing|lack(?:ed|ing|s)?|insufficient|wrong|delay(?:ed|s)?|slow|blocked|unavailable|outage|downtime|risk|breach|unsafe|friction|difficult|struggle|overload|backlog|shortage|inefficien\w*|loss|rework|conflict|disruption|bottleneck|breakdown)\b/iu;
+
+    for (const clause of clauses) {
+      if (!problemBearing.test(clause)) continue;
+      if (this.matchesDomainStrictly(clause, domain)) {
+        return true;
+      }
+    }
+
+    /*
+     * For a one-clause title/snippet the complete text is necessarily the
+     * local problem context. For multi-sentence documents, never use a remote
+     * persona/domain mention to validate a different failure later in the text.
+     */
+    return (
+      clauses.length <= 1 &&
+      problemBearing.test(normalized) &&
+      this.matchesDomainStrictly(normalized, domain)
+    );
+  }
+
   private static matchesDomainStrictly(
     normalizedEvidence: string,
     domain: SelectedDomainEvidenceDescriptor,

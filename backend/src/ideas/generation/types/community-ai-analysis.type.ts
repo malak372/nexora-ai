@@ -1,17 +1,75 @@
+import {
+  COMMUNITY_AI_EVIDENCE_NATURES,
+  COMMUNITY_AI_PROBLEM_FAMILY_BASES,
+  COMMUNITY_AI_PROVIDER_EVIDENCE_CLASSIFICATIONS,
+  COMMUNITY_AI_SEMANTIC_ALIGNMENTS,
+} from '../constants/community-ai-analysis.constants';
+
+export type CommunityAiEvidenceKind =
+  | 'USER_COMPLAINT'
+  | 'OPERATIONAL_INCIDENT'
+  | 'ACADEMIC_TECHNICAL_SIGNAL'
+  | 'NEWS_REPORT'
+  | 'MARKET_REPORT'
+  | 'COMMUNITY_DISCUSSION'
+  | 'UNKNOWN';
+
+export type CommunityAiProviderEvidenceClassification =
+  (typeof COMMUNITY_AI_PROVIDER_EVIDENCE_CLASSIFICATIONS)[number];
+
 export type CommunityAiEvidenceClassification =
-  | 'DIRECT_PROBLEM'
-  | 'SUPPORTING_SIGNAL'
+  | CommunityAiProviderEvidenceClassification
   | 'ANALOGOUS_WORKFLOW_SIGNAL'
-  | 'CONTEXT_ONLY'
-  | 'UNRELATED';
+  | 'UNADJUDICATED';
+
+export type CommunityAiEvidenceVerdictState =
+  | 'VALID_EVIDENCE_FOUND'
+  | 'NO_VALID_EVIDENCE_FOUND'
+  | 'EVIDENCE_ADJUDICATION_UNAVAILABLE';
+
+export type CommunityAiAdjudicationFailureReason =
+  | 'AI_TIMEOUT'
+  | 'AI_EXECUTION_FAILED'
+  | 'AI_VALIDATION_REJECTED'
+  | 'AI_UNAVAILABLE'
+  | 'AI_ABORTED'
+  | 'AI_MISSING_VERDICT';
+
+export type CommunityAiEvidenceNature =
+  (typeof COMMUNITY_AI_EVIDENCE_NATURES)[number];
+
+export type CommunityAiSemanticAlignment =
+  (typeof COMMUNITY_AI_SEMANTIC_ALIGNMENTS)[number];
+
+export type CommunityAiProblemFamilyBasis =
+  (typeof COMMUNITY_AI_PROBLEM_FAMILY_BASES)[number];
 
 export type CommunityAiEvidenceTriage = {
   readonly evidenceId: string;
   readonly classification: CommunityAiEvidenceClassification;
   readonly confidence: number;
   readonly reason: string;
+  /** Neutral, evidence-native observed problem label. Never an editorial cause. */
   readonly problemFamily: string | null;
+  /** AI-owned semantic decomposition used by the structural canonical guard. */
+  readonly evidenceNature?: CommunityAiEvidenceNature;
+  readonly domainAlignment?: CommunityAiSemanticAlignment;
+  readonly problemAlignment?: CommunityAiSemanticAlignment;
+  readonly familyBasis?: CommunityAiProblemFamilyBasis;
+  readonly observedProblem?: string | null;
+  readonly causalExplanation?: string | null;
+  readonly matchedDomainNames?: readonly string[];
+  /**
+   * Historical field name retained for persistence/telemetry compatibility.
+   * It now means the AI verdict passed non-semantic structural/provenance checks;
+   * deterministic code no longer re-classifies the meaning of the evidence.
+   */
   readonly verifiedByDeterministicGuard: boolean;
+  /** Explicitly distinguishes a semantic verdict from transport/provider failure. */
+  readonly adjudicationStatus?: 'ADJUDICATED' | 'UNADJUDICATED';
+  readonly adjudicationFailureReason?: CommunityAiAdjudicationFailureReason | null;
+  /** Provenance/claim kind kept separate from relevance classification. */
+  readonly evidenceKind?: CommunityAiEvidenceKind;
 };
 
 /**
@@ -88,6 +146,12 @@ export type CommunityAiAnalysis = {
   readonly overallConfidence: number;
   readonly qualityWarnings: readonly string[];
 
+  /**
+   * Distinguishes a real semantic "no evidence" verdict from a provider
+   * outage/timeout where the raw corpus could not be adjudicated at all.
+   */
+  readonly evidenceVerdictState?: CommunityAiEvidenceVerdictState;
+
   /** AiModel database identifier that produced the accepted response. */
   readonly modelId: string | null;
 
@@ -144,4 +208,9 @@ export type CommunityAiAnalysis = {
 
   /** Canonical evidence ids that belong to the selected family. */
   readonly selectedProblemFamilyEvidenceIds?: readonly string[];
+
+  /** Immutable family lock created after canonical evidence verification. */
+  readonly canonicalProblemFamilyId?: string | null;
+  readonly canonicalProblemFamilyLabel?: string | null;
+  readonly canonicalProblemFamilyEvidenceIds?: readonly string[];
 };

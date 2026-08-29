@@ -39,7 +39,9 @@ import {
 } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
+import useVoiceTyping from '../../shared/components/useVoiceTyping';
 import { getIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
 import { getDiscoveryById } from '../../discoveries/api/discoveriesApi';
 import {
@@ -73,6 +75,9 @@ const STARTER_PROMPTS = [
         prompt: 'Help me define the strongest MVP for this idea and prioritize the features that should be built first.',
     },
 ];
+
+const getTextDirection = (value = '') =>
+    /[\u0600-\u06FF]/u.test(String(value)) ? 'rtl' : 'ltr';
 
 
 const isIdentityQuestion = (value = '') => {
@@ -134,7 +139,9 @@ const mergeMessage = (items, message) => {
     return next;
 };
 
+
 export default function AiChatPage() {
+    const { language: uiLanguage, t } = useUserExperience();
     const { ideaId } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
@@ -164,8 +171,6 @@ export default function AiChatPage() {
     const messagesRef = useRef(null);
     const bottomRef = useRef(null);
     const shouldAutoScrollRef = useRef(true);
-    const recognitionRef = useRef(null);
-    const voiceBaseDraftRef = useRef('');
     const sessionRequestRef = useRef(0);
     const pendingMessageRef = useRef(null);
     const titleRefreshTimerRef = useRef(null);
@@ -187,9 +192,6 @@ export default function AiChatPage() {
     const [deletingSessionId, setDeletingSessionId] = useState('');
     const [confirmDeleteId, setConfirmDeleteId] = useState('');
     const [error, setError] = useState('');
-    const [isListening, setIsListening] = useState(false);
-    const [voiceSupported, setVoiceSupported] = useState(true);
-    const [voiceHint, setVoiceHint] = useState('');
 
     const activeSession = useMemo(
         () => sessions.find((session) => session.id === sessionId),
@@ -591,113 +593,19 @@ export default function AiChatPage() {
         }
     }, [messages, scrollMessagesToBottom]);
 
-    useEffect(() => {
-        const SpeechRecognition =
-            window.SpeechRecognition || window.webkitSpeechRecognition;
-
-        setVoiceSupported(Boolean(SpeechRecognition));
-
-        return () => {
-            try {
-                recognitionRef.current?.abort();
-            } catch {
-            }
-            recognitionRef.current = null;
-        };
-    }, []);
-
-    const toggleVoiceInput = () => {
-        if (sending) return;
-
-        setError('');
-        setVoiceHint('');
-
-        if (isListening) {
-            recognitionRef.current?.stop();
-            return;
-        }
-
-        const SpeechRecognition =
-            window.SpeechRecognition || window.webkitSpeechRecognition;
-
-        if (!SpeechRecognition) {
-            setVoiceSupported(false);
-            setVoiceHint('Voice typing is unavailable in this browser');
-            setError('Voice typing is not supported here. Use Chrome or Edge.');
-            return;
-        }
-
-        setVoiceSupported(true);
-
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.maxAlternatives = 1;
-
-        const pageLanguage = document.documentElement.lang?.trim().toLowerCase();
-        recognition.lang = pageLanguage?.startsWith('ar')
-            ? 'ar'
-            : pageLanguage?.startsWith('en')
-                ? 'en-US'
-                : navigator.language || 'en-US';
-
-        let committed = draft;
-        voiceBaseDraftRef.current = draft;
-
-        recognition.onstart = () => {
-            setIsListening(true);
-            setVoiceHint('Listening… speak naturally');
-        };
-
-        recognition.onresult = (event) => {
-            let interim = '';
-
-            for (let index = event.resultIndex; index < event.results.length; index += 1) {
-                const transcript = event.results[index][0]?.transcript || '';
-
-                if (event.results[index].isFinal) {
-                    committed = `${committed} ${transcript}`.trim();
-                } else {
-                    interim += transcript;
-                }
-            }
-
-            setDraft(`${committed} ${interim}`.trim());
-        };
-
-        recognition.onerror = (event) => {
-            setIsListening(false);
-
-            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                setVoiceHint('Microphone permission is required');
-                setError('Please allow microphone access to use voice typing.');
-                return;
-            }
-
-            if (event.error === 'no-speech') {
-                setVoiceHint('No speech detected — tap the microphone to try again');
-                return;
-            }
-
-            setVoiceHint('Voice typing stopped');
-            setError('Voice typing stopped. Please try again.');
-        };
-
-        recognition.onend = () => {
-            setIsListening(false);
-            recognitionRef.current = null;
-        };
-
-        recognitionRef.current = recognition;
-
-        try {
-            recognition.start();
-        } catch {
-            recognitionRef.current = null;
-            setIsListening(false);
-            setError('The microphone could not start. Please try again.');
-        }
-    };
+    const {
+        isListening,
+        isSupported: voiceSupported,
+        error: voiceError,
+        toggle: toggleVoiceInput,
+        stop: stopVoiceInput,
+    } = useVoiceTyping({
+        value: draft,
+        onChange: setDraft,
+        preferredLanguage: uiLanguage === 'ar' ? 'AR' : 'EN',
+        maxLength: 4000,
+        disabled: sending,
+    });
 
     const buildConversationTitle = (message = '') => {
         const normalized = String(message)
@@ -736,7 +644,7 @@ export default function AiChatPage() {
                 sessionId: targetSessionId,
                 sender: 'AI',
                 status: 'PENDING',
-                message: 'Generating response…',
+                message: '',
                 createdAt: now,
                 updatedAt: now,
                 completedAt: null,
@@ -871,7 +779,7 @@ export default function AiChatPage() {
         setError('');
 
         if (isListening) {
-            recognitionRef.current?.stop();
+            stopVoiceInput();
         }
 
         setDraft('');
@@ -953,13 +861,11 @@ export default function AiChatPage() {
                     <Crown size={30} />
                 </div>
 
-                <span>Premium workspace</span>
-                <h1>AI Chat is a Premium feature</h1>
+                <span>{t('Premium workspace')}</span>
+                <h1>{t('AI Chat is a Premium feature')}</h1>
 
                 <p>
-                    Activate Premium credits to discuss architecture,
-                    features, feasibility, and implementation with an
-                    assistant that understands this idea.
+                    {t('Activate Premium credits to discuss architecture, features, feasibility, and implementation with an assistant that understands this idea.')}
                 </p>
 
                 <button
@@ -967,7 +873,7 @@ export default function AiChatPage() {
                     onClick={() => navigate('/normal/credits')}
                 >
                     <Sparkles size={17} />
-                    View Premium credits
+                    {t('View Premium credits')}
                 </button>
             </section>
         );
@@ -998,10 +904,10 @@ export default function AiChatPage() {
                         }
                     >
                         <ArrowLeft size={17} />
-                        <span>{returnLabel}</span>
+                        <span>{t(returnLabel)}</span>
                     </button>
 
-                    <div className="ai-chat-premium-mark" title="Premium AI workspace">
+                    <div className="ai-chat-premium-mark" title={t('Premium AI workspace')}>
                         <Crown size={15} />
                     </div>
                 </div>
@@ -1016,21 +922,21 @@ export default function AiChatPage() {
                         </div>
 
                         <div className="ai-chat-idea-card__heading">
-                            <span>Connected idea</span>
-                            <b><Sparkles size={11} /> Live context</b>
+                            <span>{t('Connected idea')}</span>
+                            <b><Sparkles size={11} /> {t('Live context')}</b>
                         </div>
                     </div>
 
                     <div className="ai-chat-idea-card__title-wrap">
-                        <small>Voxidence is exploring</small>
-                        <h2 title={idea?.title || 'Idea assistant'}>
-                            {idea?.title || 'Idea assistant'}
+                        <small>{t('Voxidence is exploring')}</small>
+                        <h2 title={idea?.title || t('Idea assistant')}>
+                            {idea?.title || t('Idea assistant')}
                         </h2>
                     </div>
 
                     <div className="ai-chat-idea-card__status">
                         <CheckCircle2 size={13} />
-                        <span>Idea knowledge synced</span>
+                        <span>{t('Idea knowledge synced')}</span>
                     </div>
                 </div>
 
@@ -1045,16 +951,16 @@ export default function AiChatPage() {
                     ) : (
                         <MessageSquarePlus size={18} />
                     )}
-                    <span>{creatingSession ? 'Creating…' : 'New conversation'}</span>
+                    <span>{t(creatingSession ? 'Creating…' : 'New conversation')}</span>
                     <Sparkles size={14} />
                 </button>
 
                 <div className="ai-chat-history-heading">
-                    <span>Conversation history</span>
+                    <span>{t('Conversation history')}</span>
                     <b>{sessions.length}</b>
                 </div>
 
-                <nav aria-label="AI chat conversations">
+                <nav aria-label={t('AI chat conversations')}>
                     {sessions.map((session, index) => (
                         <div
                             key={session.id}
@@ -1072,14 +978,14 @@ export default function AiChatPage() {
                                 </span>
 
                                 <span className="ai-chat-session-copy">
-                                    <strong data-idea-content="true" dir="auto">{session.title}</strong>
+                                    <strong data-idea-content="true" dir="auto">{session.title === 'New conversation' ? t('New conversation') : session.title}</strong>
                                     <small className={loadingSessionId === session.id ? 'is-loading' : ''}>
                                         {loadingSessionId === session.id ? (
-                                            <><LoaderCircle className="is-spinning" size={12} /> Loading chat…</>
+                                            <><LoaderCircle className="is-spinning" size={12} /> {t('Loading chat…')}</>
                                         ) : (
                                             <>
                                                 {session._count?.messages ?? 0}{' '}
-                                                {(session._count?.messages ?? 0) === 1 ? 'message' : 'messages'}
+                                                {t((session._count?.messages ?? 0) === 1 ? 'message' : 'messages')}
                                             </>
                                         )}
                                     </small>
@@ -1090,20 +996,20 @@ export default function AiChatPage() {
                                 className="ai-chat-session__delete"
                                 type="button"
                                 onClick={() => setConfirmDeleteId(session.id)}
-                                aria-label="Delete conversation"
-                                title="Delete conversation"
+                                aria-label={t('Delete conversation')}
+                                title={t('Delete conversation')}
                             >
                                 <Trash2 size={15} />
                             </button>
 
                             {confirmDeleteId === session.id ? (
                                 <div className="ai-chat-session__confirm">
-                                    <span>Delete this chat?</span>
+                                    <span>{t('Delete this chat?')}</span>
                                     <button
                                         type="button"
                                         onClick={() => setConfirmDeleteId('')}
                                     >
-                                        Cancel
+                                        {t('Cancel')}
                                     </button>
                                     <button
                                         type="button"
@@ -1111,7 +1017,7 @@ export default function AiChatPage() {
                                         onClick={() => removeSession(session.id)}
                                         disabled={deletingSessionId === session.id}
                                     >
-                                        {deletingSessionId === session.id ? 'Deleting…' : 'Delete'}
+                                        {t(deletingSessionId === session.id ? 'Deleting…' : 'Delete')}
                                     </button>
                                 </div>
                             ) : null}
@@ -1122,7 +1028,7 @@ export default function AiChatPage() {
                 <div className="ai-chat-sidebar__footer">
                     <WandSparkles size={17} />
                     <p>
-                        Voxidence keeps every conversation connected to this idea and its generated outputs.
+                        {t('Voxidence keeps every conversation connected to this idea and its generated outputs.')}
                     </p>
                 </div>
             </aside>
@@ -1137,16 +1043,16 @@ export default function AiChatPage() {
 
                         <div>
                             <span className="ai-chat-eyebrow">
-                                Voxidence AI Chat
+                                {t('Voxidence AI Chat')}
                             </span>
 
-                            <h1>{activeSession?.title || 'Voxidence Chat'}</h1>
+                            <h1>{activeSession?.title === 'New conversation' ? t('New conversation') : (activeSession?.title || t('Voxidence Chat'))}</h1>
                         </div>
                     </div>
 
                     <div className="ai-chat-live-status">
                         <i />
-                        Ready to explore
+                        {t('Ready to explore')}
                     </div>
                 </header>
 
@@ -1169,11 +1075,10 @@ export default function AiChatPage() {
                                 </div>
                             </div>
 
-                            <span className="ai-chat-eyebrow">Turn evidence into decisions</span>
-                            <h2>Where should we take this idea next?</h2>
+                            <span className="ai-chat-eyebrow">{t('Turn evidence into decisions')}</span>
+                            <h2>{t('Where should we take this idea next?')}</h2>
                             <p>
-                                Ask AI Chat to challenge assumptions, shape the
-                                product, or translate the idea into an actionable plan.
+                                {t('Ask AI Chat to challenge assumptions, shape the product, or translate the idea into an actionable plan.')}
                             </p>
 
                             <div className="ai-chat-starters">
@@ -1184,10 +1089,10 @@ export default function AiChatPage() {
                                         <button
                                             key={starter.label}
                                             type="button"
-                                            onClick={() => setDraft(starter.prompt)}
+                                            onClick={() => setDraft(t(starter.prompt))}
                                         >
                                             <span><StarterIcon size={17} /></span>
-                                            {starter.label}
+                                            {t(starter.label)}
                                         </button>
                                     );
                                 })}
@@ -1200,6 +1105,17 @@ export default function AiChatPage() {
                         const isThinking =
                             !message.message &&
                             ['PENDING', 'STREAMING'].includes(message.status);
+                        const previousUserMessage = [...messages]
+                            .slice(0, messageIndex)
+                            .reverse()
+                            .find((item) => item.sender === 'USER')
+                            ?.message || '';
+                        const cleanedMessage = isThinking
+                            ? ''
+                            : cleanAssistantMessage(
+                                message.message,
+                                isUser || isIdentityQuestion(previousUserMessage),
+                            );
 
                         return (
                             <motion.article
@@ -1209,39 +1125,35 @@ export default function AiChatPage() {
                                 animate={{ opacity: 1, y: 0 }}
                             >
                                 <span className="ai-chat-message__avatar">
-                                    {isUser ? 'You' : <Bot size={17} />}
+                                    {isUser ? t('You') : <Bot size={17} />}
                                 </span>
 
                                 <div className="ai-chat-message__content">
                                     {!isUser ? (
                                         <small className="ai-chat-message__label">
-                                            AI Chat
+                                            {t('AI Chat')}
                                         </small>
                                     ) : null}
 
                                     {isThinking ? (
-                                        <span className="ai-chat-thinking" aria-label="AI is thinking">
+                                        <span className="ai-chat-thinking" aria-label={t('AI is thinking')}>
                                             <i />
                                             <i />
                                             <i />
                                         </span>
                                     ) : (
                                         <div
-                                            className="ai-chat-message__body" data-idea-content="true" dir="auto"
+                                            className="ai-chat-message__body"
+                                            data-idea-content="true"
+                                            dir={getTextDirection(cleanedMessage)}
                                         >
-                                            {cleanAssistantMessage(
-                                                message.message,
-                                                isUser || isIdentityQuestion(
-                                                    [...messages]
-                                                        .slice(0, messageIndex)
-                                                        .reverse()
-                                                        .find((item) => item.sender === 'USER')
-                                                        ?.message || '',
-                                                ),
-                                            )
+                                            {cleanedMessage
                                                 ?.split('\n')
                                                 .map((line, lineIndex) => {
                                                     const trimmed = line.trim();
+                                                    const lineDirection = getTextDirection(
+                                                        trimmed || cleanedMessage,
+                                                    );
                                                     const bulletMatch = trimmed.match(/^[-*•]\s+(.+)/);
                                                     const numberedMatch = trimmed.match(/^(\d+)[.)]\s+(.+)/);
                                                     const headingMatch = trimmed.match(/^#{1,3}\s+(.+)/);
@@ -1263,7 +1175,7 @@ export default function AiChatPage() {
 
                                                     if (headingMatch) {
                                                         return (
-                                                            <h3 key={lineIndex}>
+                                                            <h3 key={lineIndex} dir={lineDirection}>
                                                                 {parts(headingMatch[1])}
                                                             </h3>
                                                         );
@@ -1271,7 +1183,11 @@ export default function AiChatPage() {
 
                                                     if (bulletMatch) {
                                                         return (
-                                                            <div className="ai-chat-message__list-row" key={lineIndex}>
+                                                            <div
+                                                                className="ai-chat-message__list-row"
+                                                                key={lineIndex}
+                                                                dir={lineDirection}
+                                                            >
                                                                 <i aria-hidden="true" />
                                                                 <span>{parts(bulletMatch[1])}</span>
                                                             </div>
@@ -1280,21 +1196,29 @@ export default function AiChatPage() {
 
                                                     if (numberedMatch) {
                                                         return (
-                                                            <div className="ai-chat-message__list-row is-numbered" key={lineIndex}>
+                                                            <div
+                                                                className="ai-chat-message__list-row is-numbered"
+                                                                key={lineIndex}
+                                                                dir={lineDirection}
+                                                            >
                                                                 <b>{numberedMatch[1]}</b>
                                                                 <span>{parts(numberedMatch[2])}</span>
                                                             </div>
                                                         );
                                                     }
 
-                                                    return <p key={lineIndex}>{parts(line)}</p>;
+                                                    return (
+                                                        <p key={lineIndex} dir={lineDirection}>
+                                                            {parts(line)}
+                                                        </p>
+                                                    );
                                                 })}
                                         </div>
                                     )}
 
                                     {message.status === 'FAILED' ? (
                                         <small className="ai-chat-message__failure">
-                                            {message.errorMessage || 'Response failed.'}
+                                            {message.errorMessage ? t(message.errorMessage) : t('Response failed.')}
                                         </small>
                                     ) : null}
                                 </div>
@@ -1307,7 +1231,7 @@ export default function AiChatPage() {
 
                 {error ? (
                     <p className="ai-chat-error" role="alert">
-                        {error}
+                        {t(error)}
                     </p>
                 ) : null}
 
@@ -1321,10 +1245,12 @@ export default function AiChatPage() {
                         </div>
 
                         <textarea
-                            dir="auto"
+                            dir={draft.trim()
+                                ? getTextDirection(draft)
+                                : (uiLanguage === 'ar' ? 'rtl' : 'ltr')}
                             value={draft}
                             onChange={(event) => setDraft(event.target.value)}
-                            placeholder="Ask Voxidence anything about this idea…"
+                            placeholder={t('Ask Voxidence anything about this idea…')}
                             maxLength={4000}
                             rows={1}
                             onKeyDown={(event) => {
@@ -1341,15 +1267,15 @@ export default function AiChatPage() {
                             className={`ai-chat-voice ${isListening ? 'is-listening' : ''}`}
                             type="button"
                             onClick={toggleVoiceInput}
-                            disabled={!voiceSupported || sending}
-                            aria-label={isListening ? 'Stop voice typing' : 'Start voice typing'}
+                            disabled={sending}
+                            aria-label={t(isListening ? 'Stop voice typing' : 'Start voice typing')}
                             aria-pressed={isListening}
                             title={
                                 voiceSupported
                                     ? isListening
-                                        ? 'Stop voice typing'
-                                        : 'Speak and convert your voice to text'
-                                    : 'Voice typing is not supported in this browser'
+                                        ? t('Stop voice typing')
+                                        : t('Speak and convert your voice to text')
+                                    : t('Voice typing is unavailable in this browser')
                             }
                         >
                             {isListening ? <MicOff size={18} /> : <Mic size={18} />}
@@ -1360,7 +1286,7 @@ export default function AiChatPage() {
                             className="ai-chat-send"
                             type="submit"
                             disabled={!draft.trim() || sending}
-                            aria-label="Send message"
+                            aria-label={t('Send message')}
                         >
                             {sending ? (
                                 <LoaderCircle className="is-spinning" size={18} />
@@ -1371,19 +1297,8 @@ export default function AiChatPage() {
                     </form>
 
                     <div className="ai-chat-composer-note">
-                        <span className={isListening ? 'is-listening' : ''}>
-                            {isListening ? (
-                                <>
-                                    <i />
-                                    {voiceHint || 'Listening… your speech appears as text'}
-                                </>
-                            ) : (
-                                voiceSupported
-                                    ? 'Tap the microphone to type with your voice'
-                                    : 'Voice typing is unavailable in this browser'
-                            )}
-                        </span>
-                        <span>Enter to send · Shift + Enter for a new line</span>
+                        {voiceError ? <span>{t(voiceError)}</span> : <span />}
+                        <span>{t('Enter to send · Shift + Enter for a new line')}</span>
                     </div>
                 </div>
             </section>

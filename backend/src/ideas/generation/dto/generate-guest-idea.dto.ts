@@ -110,9 +110,10 @@ export class GenerateGuestIdeaDto {
    * Language of the generated idea content.
    *
    * This is intentionally separate from `language`, which controls collection
-   * and community-evidence language metadata. The frontend should send its
-   * active interface language here so evidence may be collected in one
-   * language while the generated idea is written in another.
+   * and community-evidence language metadata. When a requester description is
+   * present, the backend resolves the generated-content language from that
+   * description. This field is only a fallback for requests with no usable
+   * text-language signal and must not be treated as the UI locale.
    */
   @IsOptional()
   @IsEnum(LanguageCode)

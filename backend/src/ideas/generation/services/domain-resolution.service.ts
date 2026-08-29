@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import {
@@ -407,23 +408,23 @@ export class DomainResolutionService {
     }
 
     /*
-     * Personalization is intentionally hierarchical rather than blended.
-     * A saved preference is the strongest durable statement of intent. Only
-     * when no usable saved preference exists do favorites become the selector;
-     * recent generated-idea history is used only when neither explicit signal
-     * exists. The three reads still execute in parallel so this stricter policy
-     * does not add database latency.
+     * No-input personalization used to fan out into four independent remote
+     * reads (legacy preference JSON, structured selections, favorites, and
+     * generated history). Supabase network latency made that tail larger than
+     * the AI discovery planner itself. Read the same hierarchy as one compact
+     * snapshot first. `undefined` means the optimized query failed and falls
+     * back to the existing Prisma path; `null` means it succeeded but found no
+     * usable personalization signal.
      */
-    /*
-     * Start every personalization read in parallel, but do not wait for
-     * lower-priority history when the saved-preference query has already
-     * produced the authoritative answer. The old Promise.all paid for the
-     * slowest favorites/history query even though hierarchy rules guaranteed
-     * those results could not override a preference. Attach observers so an
-     * early preference return never leaves a rejected background promise
-     * unhandled; if preference is absent we still await and surface the same
-     * lower-priority errors as before.
-     */
+    const fastPersonalization = await this.resolvePersonalizationSnapshot(
+      input.userId,
+      domains,
+    );
+    if (fastPersonalization !== undefined) {
+      if (fastPersonalization) return fastPersonalization;
+      return this.resolveSystemFallback(domains);
+    }
+
     const preferredDomainPromise = this.resolveOptionalPersonalizationRead(
       'saved domain preference',
       () => this.resolvePreferredDomain(input.userId, domains),
@@ -686,14 +687,15 @@ export class DomainResolutionService {
       ]),
     ];
 
-    const matchedDomain = this.findFirstMatchingDomain(
-      domains,
-      preferredValues,
-    );
+    return this.buildPreferenceResolution(domains, preferredValues);
+  }
 
-    if (!matchedDomain) {
-      return null;
-    }
+  private buildPreferenceResolution(
+    domains: readonly DomainCandidate[],
+    preferredValues: readonly string[],
+  ): DomainResolutionResult | null {
+    const matchedDomain = this.findFirstMatchingDomain(domains, preferredValues);
+    if (!matchedDomain) return null;
 
     const matchedInterests = preferredValues.filter((value) => {
       const normalizedValue = this.normalizeComparableValue(value);
@@ -702,7 +704,6 @@ export class DomainResolutionService {
         this.normalizeComparableValue(matchedDomain.name) === normalizedValue
       );
     });
-
     const preferenceCandidates = domains
       .map((domain) => {
         const matchingValues = preferredValues.filter((value) => {
@@ -712,7 +713,6 @@ export class DomainResolutionService {
             this.normalizeComparableValue(domain.name) === normalizedValue
           );
         });
-
         return {
           domainId: domain.id,
           domainName: domain.name,
@@ -743,6 +743,131 @@ export class DomainResolutionService {
         candidates: preferenceCandidates,
       },
     };
+  }
+
+  private async resolvePersonalizationSnapshot(
+    userId: string | undefined,
+    domains: readonly DomainCandidate[],
+  ): Promise<DomainResolutionResult | null | undefined> {
+    if (!userId) return null;
+
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{
+        preferredDomains: Prisma.JsonValue | null;
+        structuredPreferences: Prisma.JsonValue | null;
+        favoriteDomainIds: Prisma.JsonValue | null;
+        generatedDomainIds: Prisma.JsonValue | null;
+      }>>(Prisma.sql`
+        SELECT
+          (
+            SELECT preference."preferred_domains"
+            FROM "user_preferences" AS preference
+            WHERE preference."user_id" = ${userId}
+            LIMIT 1
+          ) AS "preferredDomains",
+          COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_object('key', option."key", 'name', option."name")
+              ORDER BY selection."selected_at" ASC
+            )
+            FROM "user_preference_selections" AS selection
+            INNER JOIN "preference_options" AS option
+              ON option."id" = selection."preference_option_id"
+            WHERE selection."user_id" = ${userId}
+              AND option."category"::text = ${PreferenceCategory.DOMAIN}
+              AND option."is_active" = TRUE
+          ), '[]'::jsonb) AS "structuredPreferences",
+          COALESCE((
+            SELECT jsonb_agg(recent."domain_id" ORDER BY recent."created_at" DESC)
+            FROM (
+              SELECT idea."domain_id", favorite."created_at"
+              FROM "favorite_ideas" AS favorite
+              INNER JOIN "ideas" AS idea ON idea."id" = favorite."idea_id"
+              WHERE favorite."user_id" = ${userId}
+                AND idea."deleted_at" IS NULL
+              ORDER BY favorite."created_at" DESC
+              LIMIT ${DomainResolutionService.MAX_HISTORY_RECORDS_PER_SIGNAL}
+            ) AS recent
+          ), '[]'::jsonb) AS "favoriteDomainIds",
+          COALESCE((
+            SELECT jsonb_agg(recent."domain_id" ORDER BY recent."created_at" DESC)
+            FROM (
+              SELECT idea."domain_id", idea."created_at"
+              FROM "ideas" AS idea
+              WHERE idea."user_id" = ${userId}
+                AND idea."deleted_at" IS NULL
+              ORDER BY idea."created_at" DESC
+              LIMIT ${DomainResolutionService.MAX_HISTORY_RECORDS_PER_SIGNAL}
+            ) AS recent
+          ), '[]'::jsonb) AS "generatedDomainIds"
+      `);
+
+      const snapshot = rows[0];
+      if (!snapshot) return null;
+      const structuredValues = Array.isArray(snapshot.structuredPreferences)
+        ? snapshot.structuredPreferences.flatMap((item) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+            const record = item as Record<string, Prisma.JsonValue>;
+            return [record.key, record.name].filter(
+              (value): value is string =>
+                typeof value === 'string' && value.trim().length > 0,
+            );
+          })
+        : [];
+      const preferredValues = [
+        ...this.readStringArray(snapshot.preferredDomains),
+        ...structuredValues,
+      ];
+      const preference = this.buildPreferenceResolution(domains, preferredValues);
+      if (preference) {
+        return this.withPersonalizationFallbackTrace(preference, 'saved preference');
+      }
+
+      const buildScores = (value: Prisma.JsonValue | null, weight: number) => {
+        const scores = new Map<string, HistoricalDomainScore>();
+        for (const domainId of this.readStringArray(value)) {
+          this.addHistoricalScore(scores, domainId, weight);
+        }
+        return scores;
+      };
+      const favorite = this.buildHistoryResolution(
+        domains,
+        buildScores(
+          snapshot.favoriteDomainIds,
+          DomainResolutionService.FAVORITE_IDEA_WEIGHT,
+        ),
+        0.84,
+        'The user did not provide a current problem/domain, so favorite-idea history selected the most explicitly preferred domain.',
+        'Favorite idea history',
+      );
+      if (favorite) {
+        return this.withPersonalizationFallbackTrace(favorite, 'favorite ideas');
+      }
+
+      const historical = this.buildHistoryResolution(
+        domains,
+        buildScores(
+          snapshot.generatedDomainIds,
+          DomainResolutionService.GENERATED_IDEA_WEIGHT,
+        ),
+        0.72,
+        "No current request, saved preference, or favorite-domain signal was available, so the most frequently generated domain in the user's recent idea history was selected.",
+        'Most frequently generated domain in recent history',
+      );
+      return historical
+        ? this.withPersonalizationFallbackTrace(
+            historical,
+            'most frequently generated domains from recent history',
+          )
+        : null;
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Combined personalization snapshot failed non-fatally; falling back to the existing Prisma reads. error=${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return undefined;
+    }
   }
 
   /**
@@ -1971,47 +2096,72 @@ export class DomainResolutionService {
     readonly isVisible: boolean;
     readonly isAutoGenerated: boolean;
   } | null> {
-    const select = {
-      id: true,
-      name: true,
-      isActive: true,
-      isVisible: true,
-      isAutoGenerated: true,
-    } as const;
+    /*
+     * Resolve-or-create in one PostgreSQL round trip. The old findFirst ->
+     * create sequence paid two remote Supabase hops on every genuinely new
+     * Text Only domain. The CTE first reuses a case-insensitive active row,
+     * otherwise inserts the hidden domain, with ON CONFLICT protecting a
+     * concurrent exact-name race. A rare conflict that was invisible to the
+     * statement is retried once through the ordinary lookup path.
+     */
+    const rows = await this.prisma.$queryRaw<Array<{
+      id: string;
+      name: string;
+      isActive: boolean;
+      isVisible: boolean;
+      isAutoGenerated: boolean;
+    }>>(Prisma.sql`
+      WITH existing AS (
+        SELECT
+          domain."id",
+          domain."name",
+          domain."is_active" AS "isActive",
+          domain."is_visible" AS "isVisible",
+          domain."is_auto_generated" AS "isAutoGenerated"
+        FROM "domains" AS domain
+        WHERE lower(domain."name") = lower(${input.domainName})
+        LIMIT 1
+      ),
+      inserted AS (
+        INSERT INTO "domains" (
+          "id", "name", "is_active", "is_visible", "is_auto_generated", "created_at", "updated_at"
+        )
+        SELECT ${randomUUID()}, ${input.domainName}, TRUE, FALSE, TRUE, NOW(), NOW()
+        WHERE NOT EXISTS (SELECT 1 FROM existing)
+        ON CONFLICT ("name") DO NOTHING
+        RETURNING
+          "id",
+          "name",
+          "is_active" AS "isActive",
+          "is_visible" AS "isVisible",
+          "is_auto_generated" AS "isAutoGenerated"
+      )
+      SELECT * FROM existing
+      UNION ALL
+      SELECT * FROM inserted
+      LIMIT 1
+    `);
 
-    let domain = await this.prisma.domain.findFirst({
-      where: { name: { equals: input.domainName, mode: 'insensitive' } },
-      select,
-    });
-    if (domain && !domain.isActive) return null;
-
+    let domain: {
+      id: string;
+      name: string;
+      isActive: boolean;
+      isVisible: boolean;
+      isAutoGenerated: boolean;
+    } | null = rows[0] ?? null;
     if (!domain) {
-      try {
-        domain = await this.prisma.domain.create({
-          data: {
-            name: input.domainName,
-            isActive: true,
-            isVisible: false,
-            isAutoGenerated: true,
-          },
-          select,
-        });
-      } catch (error: unknown) {
-        if (
-          !(
-            error instanceof Prisma.PrismaClientKnownRequestError &&
-            error.code === 'P2002'
-          )
-        ) {
-          throw error;
-        }
-        domain = await this.prisma.domain.findFirst({
-          where: { name: { equals: input.domainName, mode: 'insensitive' } },
-          select,
-        });
-        if (!domain || !domain.isActive) return null;
-      }
+      domain = await this.prisma.domain.findFirst({
+        where: { name: { equals: input.domainName, mode: 'insensitive' } },
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          isVisible: true,
+          isAutoGenerated: true,
+        },
+      });
     }
+    if (!domain || !domain.isActive) return null;
 
     if (
       domain.isAutoGenerated &&
@@ -2442,10 +2592,6 @@ export class DomainResolutionService {
       input.domainName,
       ...input.keywordCandidates,
     ]);
-    const requestedWorkflowFamily = this.autoDomainWorkflowFamily([
-      input.domainName,
-      ...input.keywordCandidates,
-    ]);
     const requestedObjectIdentity = new Set(
       RequestQueryProvenanceUtil.extractObjectIdentityTokens([
         input.domainName,
@@ -2459,10 +2605,6 @@ export class DomainResolutionService {
           candidate.name,
         ]);
         const candidateCorpusTokens = this.autoDomainIdentityTokens([
-          candidate.name,
-          ...candidate.domainKeywords.map((item) => item.keyword),
-        ]);
-        const candidateWorkflowFamily = this.autoDomainWorkflowFamily([
           candidate.name,
           ...candidate.domainKeywords.map((item) => item.keyword),
         ]);
@@ -2480,11 +2622,7 @@ export class DomainResolutionService {
           requestedObjectIdentity.size === 0 ||
           candidateObjectIdentity.size === 0 ||
           objectIdentityOverlap >= 1;
-        const workflowCompatible =
-          this.autoDomainWorkflowFamiliesCompatible(
-            requestedWorkflowFamily,
-            candidateWorkflowFamily,
-          );
+        const workflowCompatible = true;
         const nameOverlap = this.tokenIntersectionSize(
           requestedNameTokens,
           candidateNameTokens,
@@ -3101,7 +3239,9 @@ export class DomainResolutionService {
     const normalized = [
       ...(plannedKeywords ?? []),
       domainName,
-      ...this.getDomainIntentAliases(domainName),
+      ...(plannedKeywords && plannedKeywords.length > 0
+        ? []
+        : this.getDomainIntentAliases(domainName)),
       ...(keywords ?? []),
       ...(description ? [description] : []),
     ]

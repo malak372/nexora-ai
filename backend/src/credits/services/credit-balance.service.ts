@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   BadRequestException,
   Injectable,
@@ -95,33 +97,109 @@ export class CreditBalanceService {
        */
       if (input.amount < 0) {
         /*
-         * One guarded UPDATE ... RETURNING replaces the previous successful
-         * updateMany + findUnique pair. Remote PostgreSQL latency made that
-         * redundant post-decrement read visible in every Premium persistence
-         * transaction. The predicate remains atomic, role-restricted, and
-         * balance-safe; the detailed lookup is still performed only when the
-         * guarded mutation fails.
+         * Premium generation is the hottest credit path. Lock the target row,
+         * apply the guarded decrement, and insert its immutable transaction
+         * record in one PostgreSQL round trip. A second write is needed only
+         * when the final credit deactivates PREMIUM, which is the rare path.
          */
-        const deducted = await tx.$queryRaw<Array<{
-          id: string;
+        const transactionId = randomUUID();
+        const rows = await tx.$queryRaw<Array<{
+          previousBalance: number;
           balanceAfter: number;
-          accountStatus: AccountStatus;
+          previousAccountStatus: AccountStatus;
+          transactionId: string;
+          transactionUserId: string;
+          transactionPaymentId: string | null;
+          transactionIdeaId: string | null;
+          transactionPublicationAcceptanceId: string | null;
+          transactionType: CreditTransactionType;
+          transactionAmount: number;
+          transactionBalanceAfter: number;
+          transactionDescription: string | null;
+          transactionCreatedAt: Date;
         }>>(Prisma.sql`
-          UPDATE "users"
-          SET
-            "credit_balance" = "credit_balance" - ${absoluteAmount},
-            "updated_at" = NOW()
-          WHERE "id" = ${input.userId}
-            AND "role"::text = ${UserRole.USER}
-            AND "credit_balance" >= ${absoluteAmount}
-          RETURNING
-            "id",
-            "credit_balance" AS "balanceAfter",
-            "account_status" AS "accountStatus"
+          WITH candidate AS (
+            SELECT
+              "id",
+              "credit_balance",
+              "account_status"
+            FROM "users"
+            WHERE "id" = ${input.userId}
+              AND "role"::text = ${UserRole.USER}
+            FOR UPDATE
+          ),
+          updated AS (
+            UPDATE "users" AS user_row
+            SET
+              "credit_balance" = candidate."credit_balance" - ${absoluteAmount},
+              "updated_at" = NOW()
+            FROM candidate
+            WHERE user_row."id" = candidate."id"
+              AND candidate."credit_balance" >= ${absoluteAmount}
+            RETURNING
+              user_row."id",
+              candidate."credit_balance" AS "previousBalance",
+              user_row."credit_balance" AS "balanceAfter",
+              candidate."account_status" AS "previousAccountStatus"
+          ),
+          inserted AS (
+            INSERT INTO "credit_transactions" (
+              "id",
+              "user_id",
+              "payment_id",
+              "idea_id",
+              "publication_acceptance_id",
+              "type",
+              "amount",
+              "balance_after",
+              "description",
+              "created_at"
+            )
+            SELECT
+              ${transactionId},
+              updated."id",
+              ${input.paymentId ?? null},
+              ${input.ideaId ?? null},
+              ${input.publicationAcceptanceId ?? null},
+              CAST(${input.type} AS "CreditTransactionType"),
+              ${input.amount},
+              updated."balanceAfter",
+              ${description},
+              NOW()
+            FROM updated
+            RETURNING
+              "id",
+              "user_id",
+              "payment_id",
+              "idea_id",
+              "publication_acceptance_id",
+              "type",
+              "amount",
+              "balance_after",
+              "description",
+              "created_at"
+          )
+          SELECT
+            updated."previousBalance",
+            updated."balanceAfter",
+            updated."previousAccountStatus",
+            inserted."id" AS "transactionId",
+            inserted."user_id" AS "transactionUserId",
+            inserted."payment_id" AS "transactionPaymentId",
+            inserted."idea_id" AS "transactionIdeaId",
+            inserted."publication_acceptance_id" AS "transactionPublicationAcceptanceId",
+            inserted."type" AS "transactionType",
+            inserted."amount" AS "transactionAmount",
+            inserted."balance_after" AS "transactionBalanceAfter",
+            inserted."description" AS "transactionDescription",
+            inserted."created_at" AS "transactionCreatedAt"
+          FROM updated
+          INNER JOIN inserted ON inserted."user_id" = updated."id"
+          LIMIT 1
         `);
 
-        const user = deducted[0];
-        if (!user) {
+        const row = rows[0];
+        if (!row) {
           const failedUser = await tx.user.findUnique({
             where: { id: input.userId },
             select: { id: true, role: true },
@@ -138,40 +216,35 @@ export class CreditBalanceService {
           throw new BadRequestException('Insufficient credit balance.');
         }
 
-        const balanceAfter = user.balanceAfter;
-        const previousBalance = balanceAfter + absoluteAmount;
-        const accountStatus = this.resolveAccountStatus({
-          previousStatus: user.accountStatus,
-          balanceAfter,
-          activatePremium: input.activatePremium === true,
-        });
-
-        if (user.accountStatus !== accountStatus) {
+        let accountStatus = row.previousAccountStatus;
+        if (
+          row.balanceAfter === 0 &&
+          row.previousAccountStatus === AccountStatus.PREMIUM
+        ) {
           await tx.user.update({
-            where: { id: user.id },
-            data: { accountStatus },
+            where: { id: input.userId },
+            data: { accountStatus: AccountStatus.NORMAL },
           });
+          accountStatus = AccountStatus.NORMAL;
         }
 
-        const transaction = await tx.creditTransaction.create({
-          data: {
-            userId: user.id,
-            paymentId: input.paymentId ?? null,
-            ideaId: input.ideaId ?? null,
-            publicationAcceptanceId: input.publicationAcceptanceId ?? null,
-            type: input.type,
-            amount: input.amount,
-            balanceAfter,
-            description,
-          },
-        });
-
         return {
-          previousBalance,
-          balanceAfter,
-          previousAccountStatus: user.accountStatus,
+          previousBalance: row.previousBalance,
+          balanceAfter: row.balanceAfter,
+          previousAccountStatus: row.previousAccountStatus,
           accountStatus,
-          transaction,
+          transaction: {
+            id: row.transactionId,
+            userId: row.transactionUserId,
+            paymentId: row.transactionPaymentId,
+            ideaId: row.transactionIdeaId,
+            publicationAcceptanceId: row.transactionPublicationAcceptanceId,
+            type: row.transactionType,
+            amount: row.transactionAmount,
+            balanceAfter: row.transactionBalanceAfter,
+            description: row.transactionDescription,
+            createdAt: row.transactionCreatedAt,
+          },
         };
       }
 

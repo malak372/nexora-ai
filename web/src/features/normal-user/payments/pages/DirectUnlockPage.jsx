@@ -20,6 +20,8 @@ import {
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
+
 import {
   createDirectUnlockCheckout,
   unlockIdeaWithCredit,
@@ -54,6 +56,7 @@ export default function DirectUnlockPage() {
   const { ideaId } = useParams();
   const navigate = useNavigate();
   const shouldReduceMotion = useReducedMotion();
+  const { t, isArabic } = useUserExperience();
   const { isPremium, creditBalance, refresh } = useAccountAccess();
 
   const [method, setMethod] = useState('card');
@@ -89,8 +92,8 @@ export default function DirectUnlockPage() {
   const requiredCredits = Number(pricing?.premiumIdeaCreditCost);
   const hasCreditCost = Number.isInteger(requiredCredits) && requiredCredits > 0;
   const creditLabel = hasCreditCost
-    ? `${requiredCredits} ${requiredCredits === 1 ? 'credit' : 'credits'}`
-    : 'Loading credit cost…';
+    ? `${requiredCredits} ${t(requiredCredits === 1 ? 'credit' : 'credits')}`
+    : t('Loading credit cost…');
 
   const checkout = async () => {
     setBusy(true);
@@ -166,7 +169,7 @@ export default function DirectUnlockPage() {
         }
       >
         <ArrowLeft size={17} />
-        Back to idea
+        {t('Back to idea')}
       </button>
 
       <section className="unlock-shell">
@@ -198,20 +201,20 @@ export default function DirectUnlockPage() {
           <div className="unlock-story__content">
             <span className="unlock-story__eyebrow">
               <Sparkles size={15} />
-              {isPremium ? 'Unlock idea' : 'Direct unlock'}
+              {t(isPremium ? 'Unlock idea' : 'Direct unlock')}
             </span>
 
             <h1>
-              Turn one promising idea into a
-              <em>complete execution workspace.</em>
+              {t('Turn one promising idea into a')}
+              <em>{t('complete execution workspace.')}</em>
             </h1>
 
             <p>
               {isPremium
                 ? hasCreditCost
-                  ? `Spend ${creditLabel} to unlock the advanced features and AI Chat for this free idea.`
+                  ? (isArabic ? `استخدم ${creditLabel} لفتح الميزات المتقدمة ومحادثة الذكاء الاصطناعي لهذه الفكرة المجانية.` : `Spend ${creditLabel} to unlock the advanced features and AI Chat for this free idea.`)
                   : 'Loading the required credit amount from your workspace settings…'
-                : 'Unlock the full execution package for this idea through a secure, provider-hosted checkout.'}
+                : t('Unlock the full execution package for this idea through a secure, provider-hosted checkout.')}
             </p>
 
             <div className="unlock-benefits">
@@ -245,7 +248,7 @@ export default function DirectUnlockPage() {
                     <small>
                       {String(index + 1).padStart(2, '0')}
                     </small>
-                    <strong>{benefit}</strong>
+                    <strong>{t(benefit)}</strong>
                   </div>
                 </motion.div>
               ))}
@@ -255,12 +258,12 @@ export default function DirectUnlockPage() {
           <div className="unlock-story__trust">
             <span>
               <ShieldCheck size={15} />
-              {isPremium ? 'No direct payment' : 'Provider verified'}
+              {t(isPremium ? 'No direct payment' : 'Provider verified')}
             </span>
 
             <span>
               <LockKeyhole size={15} />
-              {isPremium ? (hasCreditCost ? `${creditLabel} only` : 'Database-priced credits') : 'Secure redirect'}
+              {isPremium ? (hasCreditCost ? `${creditLabel} ${t('only')}` : t('Database-priced credits')) : t('Secure redirect')}
             </span>
           </div>
         </motion.article>
@@ -292,35 +295,35 @@ export default function DirectUnlockPage() {
           </div>
 
           <span className="unlock-checkout__eyebrow">
-            {isPremium ? 'Premium credit access' : 'Secure checkout'}
+            {t(isPremium ? 'Premium credit access' : 'Secure checkout')}
           </span>
 
-          <h2>Unlock this idea</h2>
+          <h2>{t('Unlock this idea')}</h2>
           <div className="unlock-backend-price">
             {isPremium
               ? hasCreditCost
                 ? `${creditLabel} · ${creditBalance} available`
-                : 'Loading credit cost…'
+                : t('Loading credit cost…')
               : pricing
                 ? `${pricing.directUnlockPrice} ${pricing.currency}`
-                : 'Loading price…'}
+                : t('Loading price…')}
           </div>
 
           <p>
             {isPremium
               ? hasCreditCost
-                ? `Premium users do not pay directly here. Confirming will deduct ${creditLabel} and generate the advanced workspace.`
+                ? (isArabic ? `مستخدمو بريميوم لا يدفعون مباشرة هنا. عند التأكيد سيتم خصم ${creditLabel} وتجهيز مساحة العمل المتقدمة.` : `Premium users do not pay directly here. Confirming will deduct ${creditLabel} and generate the advanced workspace.`)
                 : 'Loading the required credit amount from the database…'
-              : "Choose a payment method. Voxidence sends you to the provider's secure checkout and unlocks access only after verified confirmation."}
+              : t("Choose a payment method. Voxidence sends you to the provider's secure checkout and unlocks access only after verified confirmation.")}
           </p>
 
           {!isPremium ? (
             <div className="unlock-currency-preference">
               <span><CreditCard size={16} /></span>
               <div>
-                <small>Payment currency</small>
-                <strong>{currency}</strong>
-                <p>Saved once and used automatically for checkout.</p>
+                <small>{t('Payment currency')}</small>
+                <strong dir="ltr" data-no-auto-translate="true">{currency}</strong>
+                <p>{t('Saved once and used automatically for checkout.')}</p>
               </div>
               <Link
                 to="/normal/preferences"
@@ -329,7 +332,7 @@ export default function DirectUnlockPage() {
                   returnLabel: 'Back to direct unlock',
                 }}
               >
-                Change in Preferences
+                {t('Change in Preferences')}
               </Link>
             </div>
           ) : null}

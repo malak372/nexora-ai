@@ -19,8 +19,10 @@ import PipelineStage from '../components/PipelineStage';
 import { COMPLETED_RUN_STATUSES, TERMINAL_RUN_STATUSES } from '../constants/generation.constants';
 import { useIdeaGenerationSocket } from '../hooks/useIdeaGenerationSocket';
 import { clearActiveGenerationRunId } from '../store/activeGenerationRun.storage';
+import { useGenerationDraftStore } from '../store/generationDraft.store';
 import { getVisualPipeline } from '../utils/pipeline.utils';
 import { invalidatePaymentPricingCache } from '../../payments/api/paymentFlowApi';
+import { useUserExperience } from '../../../../system/user-experience';
 import '../styles/generation.css';
 
 
@@ -31,6 +33,8 @@ export default function GenerationProgressPage() {
   const initialRun = location.state?.initialRun ?? null;
   const { run, connectionState, error, errorStatus, refresh } = useIdeaGenerationSocket(runId, initialRun);
   const syncedPremiumRunRef = useRef(null);
+  const { isArabic, t } = useUserExperience();
+  const resetDraft = useGenerationDraftStore((state) => state.resetDraft);
   const cancelInitiatedHereRef = useRef(false);
   const displayedProgress = Math.max(
     0,
@@ -55,6 +59,7 @@ export default function GenerationProgressPage() {
   const ideaId = run?.ideaId ?? run?.idea?.id ?? run?.idea?.ideaId ?? null;
   const isComplete = COMPLETED_RUN_STATUSES.has(run?.status) && Boolean(ideaId);
   const isTerminal = TERMINAL_RUN_STATUSES.has(run?.status);
+  const hasRunFailed = String(run?.status ?? '').toUpperCase() === 'FAILED' || Boolean(run?.errorMessage);
   const activeStage = pipeline.find((stage) => stage.status === 'active') ?? null;
   const canCancel = Boolean(runId) && !isTerminal;
 
@@ -83,11 +88,16 @@ export default function GenerationProgressPage() {
     window.dispatchEvent(new CustomEvent('nexora:credits-updated'));
   }, [isComplete, run?.generationType, runId]);
 
+  useEffect(() => {
+    if (!isComplete) return;
+    resetDraft();
+  }, [isComplete, resetDraft]);
+
   const handleCancel = async () => {
     if (isCancelling || cancelRequested || isTerminal || !canCancel) return;
 
     const confirmed = window.confirm(
-      'Cancel this generation now? Active AI and collection work will be interrupted where supported.',
+      t('Cancel this generation now? Active AI and collection work will be interrupted where supported.'),
     );
     if (!confirmed) return;
 
@@ -104,17 +114,14 @@ export default function GenerationProgressPage() {
        */
       await cancelGenerationRun(
         runId,
-        'Cancelled from the generation progress screen.',
+        t('Cancelled from the generation progress screen.'),
       );
     } catch (requestError) {
       const backendAlreadyAccepted = Boolean(run?.cancelRequestedAt);
       setCancelRequested(backendAlreadyAccepted);
       if (!backendAlreadyAccepted) cancelInitiatedHereRef.current = false;
-      setCancelError(
-        requestError?.response?.data?.message ||
-          requestError?.message ||
-          'Could not request cancellation.',
-      );
+      // Do not expose backend transport/error text directly.
+      setCancelError(t('Could not request cancellation. Please try again.'));
     } finally {
       setIsCancelling(false);
     }
@@ -128,11 +135,11 @@ export default function GenerationProgressPage() {
     return (
       <div className="nx-generation-loading nx-generation-loading--error">
         <AlertCircle size={34} />
-        <strong>{isMissing ? 'Generation run not found' : isForbidden ? 'Access denied' : 'Could not load this generation run'}</strong>
-        <p>{error}</p>
+        <strong>{isMissing ? t('Generation run not found') : isForbidden ? t('Access denied') : t('Could not load this generation run')}</strong>
+        <p>{t('We could not load this generation right now. Please try again.')}</p>
         <div className="nx-generation-error-actions">
-          <button type="button" onClick={() => navigate('/normal/dashboard')}><ArrowLeft size={16} />Back to dashboard</button>
-          {!isMissing && !isForbidden ? <button type="button" onClick={refresh}><RefreshCw size={16} />Try again</button> : null}
+          <button type="button" onClick={() => navigate('/normal/dashboard')}><ArrowLeft className={isArabic ? 'is-rtl' : ''} size={16} /><span>{t('Back to dashboard')}</span></button>
+          {!isMissing && !isForbidden ? <button type="button" onClick={refresh}><RefreshCw size={16} /><span>{t('Try Again')}</span></button> : null}
         </div>
       </div>
     );
@@ -142,7 +149,7 @@ export default function GenerationProgressPage() {
     return (
       <div className="nx-generation-loading">
         <RefreshCw className="nx-spin" />
-        <strong>Connecting to your generation run...</strong>
+        <strong>{t('Connecting to your generation run...')}</strong>
       </div>
     );
   }
@@ -151,37 +158,37 @@ export default function GenerationProgressPage() {
     <main className="nx-generation-progress nx-generation-progress--horizontal">
       <div className="nx-generation-progress__toolbar">
         <button type="button" className="nx-dashboard-return" onClick={() => navigate('/normal/dashboard')}>
-          <ArrowLeft size={17} />
+          <ArrowLeft className={isArabic ? 'is-rtl' : ''} size={17} />
           <LayoutDashboard size={17} />
-          <span>Back to dashboard</span>
+          <span>{t('Back to dashboard')}</span>
         </button>
-        <span className="nx-run-reference">Run <b>{String(runId).slice(0, 8)}</b></span>
+        <span className="nx-run-reference">{t('Run')} <b>{String(runId).slice(0, 8)}</b></span>
       </div>
 
       <section className="nx-generation-progress__hero nx-generation-progress__hero--compact">
         <div className="nx-progress-compact-main">
           <div className="nx-progress-compact-kicker">
             <Sparkles size={14} />
-            <span>Evidence-led generation</span>
+            <span>{t('Evidence-led generation')}</span>
           </div>
 
-          <h1>Building your idea.</h1>
-          <p>Voxidence is moving through the evidence pipeline automatically. You can leave this page and come back anytime.</p>
+          <h1>{t('Building your idea.')}</h1>
+          <p>{t('Voxidence is moving through the evidence pipeline automatically. You can leave this page and come back anytime.')}</p>
         </div>
 
-        <div className="nx-progress-compact-status" aria-label="Current generation status">
+        <div className="nx-progress-compact-status" aria-label={t('Current generation status')}>
           <span className="nx-progress-compact-spinner" aria-hidden="true">
             <RefreshCw className="nx-spin" size={22} />
           </span>
 
           <div className="nx-progress-compact-stage">
-            <small>Now working on</small>
-            <strong>{cancelRequested && !isTerminal ? 'Cancelling generation...' : (activeStage?.title ?? 'Waiting for backend start')}</strong>
+            <small>{t('Now working on')}</small>
+            <strong>{cancelRequested && !isTerminal ? t('Cancelling generation...') : (activeStage?.title ?? t('Waiting for backend start'))}</strong>
           </div>
 
           <span className={`nx-progress-compact-live ${connectionState === 'connected' ? 'is-live' : 'is-reconnecting'}`}>
             <i />
-            {connectionState === 'connected' ? 'Live' : 'Reconnecting'}
+            {connectionState === 'connected' ? t('Live') : t('Reconnecting')}
           </span>
         </div>
       </section>
@@ -189,25 +196,30 @@ export default function GenerationProgressPage() {
       <section className="nx-horizontal-pipeline-card">
         <div className="nx-horizontal-pipeline-card__head">
           <div>
-            <span>LIVE PIPELINE</span>
-            <h2>Generation progress</h2>
+            <span>{t('Live pipeline')}</span>
+            <h2>{t('Generation progress')}</h2>
           </div>
 
 
         </div>
 
-        <div className="nx-horizontal-pipeline" role="list" aria-label="Idea-generation milestones">
+        <div
+          className="nx-horizontal-pipeline"
+          role="list"
+          dir={isArabic ? 'rtl' : 'ltr'}
+          aria-label={t('Idea-generation milestones')}
+        >
           {pipeline.map((stage, index) => (
             <PipelineStage key={stage.key} stage={stage} index={index} isLast={index === pipeline.length - 1} />
           ))}
         </div>
 
-        <div className="nx-progress-track" aria-label={`Generation ${Math.round(displayedProgress)} percent complete`}>
+        <div className="nx-progress-track" aria-label={`${t('Generation')} ${Math.round(displayedProgress)} ${t('percent complete')}`}>
           <motion.span animate={{ width: `${displayedProgress}%` }} transition={{ duration: 0.28, ease: 'easeOut' }} />
         </div>
 
         <div className="nx-pipeline-meta">
-          <p><Radio size={17} />You can leave this page while generation continues. The backend keeps the run durable.</p>
+          <p><Radio size={17} />{t('You can leave this page while generation continues. The backend keeps the run durable.')}</p>
           {!isTerminal ? (
             <button
               className={`nx-cancel-run ${cancelRequested ? 'is-requested' : ''}`}
@@ -216,7 +228,7 @@ export default function GenerationProgressPage() {
               disabled={isCancelling || cancelRequested || isTerminal || !canCancel}
             >
               {isCancelling || cancelRequested ? <RefreshCw className="nx-spin" size={16} /> : <X size={16} />}
-              {isCancelling || cancelRequested ? 'Cancelling generation...' : 'Cancel generation'}
+              {isCancelling || cancelRequested ? t('Cancelling generation...') : t('Cancel generation')}
             </button>
           ) : null}
         </div>
@@ -224,11 +236,23 @@ export default function GenerationProgressPage() {
         {cancelError ? <div className="nx-cancel-error"><AlertCircle size={17} /><span>{cancelError}</span></div> : null}
       </section>
 
-      {run.errorMessage ? (
-        <div className="nx-run-error">
-          <strong>{run.errorCode ?? 'Generation failed'}</strong>
-          <p>{run.errorMessage}</p>
-          <button type="button" onClick={refresh}>Retry status check</button>
+      {hasRunFailed ? (
+        <div className="nx-run-error nx-run-error--friendly" role="alert">
+          <AlertCircle size={22} />
+          <div className="nx-run-error__copy">
+            <strong>{t("We couldn't generate your idea this time. Please try again.")}</strong>
+            <p>{t('Your previous inputs are still saved. Try again to return to Generate without entering them again.')}</p>
+          </div>
+          <div className="nx-run-error__actions">
+            <button type="button" className="nx-run-error__retry" onClick={() => navigate('/normal/generate', { replace: true })}>
+              <RefreshCw size={16} />
+              <span>{t('Try Again')}</span>
+            </button>
+            <button type="button" className="nx-run-error__dashboard" onClick={() => navigate('/normal/dashboard')}>
+              <LayoutDashboard size={16} />
+              <span>{t('Back to dashboard')}</span>
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -253,9 +277,9 @@ export default function GenerationProgressPage() {
                 <span className="nx-cancel-success__icon" aria-hidden="true">
                   <CheckCircle2 size={30} />
                 </span>
-                <span className="nx-cancel-success__eyebrow">Generation stopped safely</span>
-                <h2 id="nx-cancel-success-title">Cancellation completed</h2>
-                <p>The active generation run has been cancelled and no further idea-generation stages will continue.</p>
+                <span className="nx-cancel-success__eyebrow">{t('Generation stopped safely')}</span>
+                <h2 id="nx-cancel-success-title">{t('Cancellation completed')}</h2>
+                <p>{t('The active generation run has been cancelled and no further idea-generation stages will continue.')}</p>
                 <button
                   type="button"
                   onClick={() => {
@@ -264,7 +288,7 @@ export default function GenerationProgressPage() {
                   }}
                 >
                   <Sparkles size={17} />
-                  Back to Generate Idea
+                  {t('Back to Generate Idea')}
                 </button>
               </div>
             </div>,

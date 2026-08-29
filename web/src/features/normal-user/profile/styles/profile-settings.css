@@ -1806,10 +1806,9 @@
   --vox-line: rgba(92, 189, 185, .18);
   --vox-card: rgba(255, 253, 252, .82);
   color: var(--vox-ink);
-  background:
-    radial-gradient(circle at 8% 4%, rgba(243, 201, 211, .22), transparent 27%),
-    radial-gradient(circle at 92% 8%, rgba(183, 221, 216, .34), transparent 28%),
-    linear-gradient(145deg, #fffdfc 0%, #faf9f6 52%, #f3f8f6 100%);
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
 }
 
 :where(.discover-page, .publication-detail-page, .accepted-workspace-page, .unlock-page, .notifications-page, .preferences-page, .compliance-page, .profile-settings-page) :where(button, a, input, select, textarea) {
@@ -2089,5 +2088,152 @@
     max-height: calc(100dvh - 24px);
     padding: 18px;
     border-radius: 24px;
+  }
+}
+
+
+/* FINAL_PROFILE_DARK_RTL_POLISH */
+html.vox-user-dark :is(
+  .profile-settings-card,.profile-settings-section,.profile-session-card,
+  .profile-sessions,.active-sessions,.active-sessions__toolbar,
+  .profile-security-banner,.profile-settings__toolbar
+) {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark :is(.profile-session-card [class*='icon'],.active-sessions [class*='icon']) { background:#20382f !important; color:#8edbd4 !important; }
+html.vox-user-rtl .profile-settings-page { direction:rtl; }
+
+
+/* FINAL_PROFILE_SESSIONS_DARK_RTL_FIX */
+html.vox-user-dark :is(
+  .profile-settings-page__header,
+  .profile-sessions__header,
+  .profile-sessions__summary,
+  .profile-sessions__trust,
+  .profile-sessions__footer,
+  .profile-sessions__state
+) {
+  color: #edf7f4 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #172a24 !important;
+  background-image: linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .profile-sessions__trust > span,
+html.vox-user-dark .profile-sessions__header p,
+html.vox-user-dark .profile-sessions__summary span,
+html.vox-user-dark .profile-session-card__copy > span,
+html.vox-user-dark .profile-session-card__copy p,
+html.vox-user-dark .profile-sessions__footer small {
+  color: #aec1bb !important;
+}
+html.vox-user-dark .profile-sessions__header h2,
+html.vox-user-dark .profile-session-card__copy strong,
+html.vox-user-dark .profile-sessions__footer strong {
+  color: #eef8f5 !important;
+}
+html.vox-user-dark .profile-sessions__trust button,
+html.vox-user-dark .profile-sessions__summary,
+html.vox-user-dark .profile-session-card__device {
+  color: #dcebe7 !important;
+  border-color: rgba(112,205,198,.18) !important;
+  background: #20382f !important;
+}
+html.vox-user-rtl .profile-sessions__header,
+html.vox-user-rtl .profile-session-card {
+  direction: rtl;
+  text-align: right;
+}
+html.vox-user-rtl .profile-sessions__trust button {
+  margin-left: 0;
+  margin-right: auto;
+}
+html.vox-user-rtl .profile-session-card > button {
+  justify-self: start;
+}
+
+/* Final profile avatar + dark pagination polish */
+.profile-settings-card__avatar img {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center;
+  border-radius:30px;
+}
+.profile-settings-card__avatar i { z-index:3; }
+html.vox-user-dark .profile-sessions__pagination {
+  color:#edf7f4 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#172a24 !important;
+  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
+  box-shadow:none !important;
+}
+html.vox-user-dark .profile-sessions__pagination button {
+  color:#dcebe7 !important;
+  border-color:rgba(112,205,198,.18) !important;
+  background:#20382f !important;
+}
+html.vox-user-dark .profile-sessions__pagination button:disabled { color:#82958f !important; background:#1a2e27 !important; }
+html.vox-user-dark .profile-sessions__pagination span { color:#a9bbb5 !important; }
+html.vox-user-dark .profile-sessions__pagination strong { color:#9fe2dc !important; }
+
+/* FINAL_20260827_AVATAR_CROP_DARK_TRANSLATION_V2 */
+html.vox-user-dark .avatar-crop-dialog {
+  background: rgba(5, 14, 11, .78) !important;
+}
+html.vox-user-dark .avatar-crop-dialog__card,
+html.vox-user-dark .avatar-crop-dialog__stage,
+html.vox-user-dark .avatar-crop-dialog__zoom {
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .18) !important;
+  background: #12261f !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .avatar-crop-dialog__title strong,
+html.vox-user-dark .avatar-crop-dialog__zoom strong {
+  color: #eef8f5 !important;
+}
+html.vox-user-dark .avatar-crop-dialog__title small,
+html.vox-user-dark .avatar-crop-dialog__zoom span {
+  color: #abc0ba !important;
+}
+html.vox-user-rtl .avatar-crop-dialog__card,
+html.vox-user-rtl .avatar-crop-dialog__title,
+html.vox-user-rtl .avatar-crop-dialog__zoom {
+  direction: rtl !important;
+  text-align: right !important;
+}
+
+/* Profile settings should sit directly on the normal-user canvas, not inside a page-sized card. */
+.profile-settings-page {
+  width: min(100%, 1480px) !important;
+  max-width: 1480px !important;
+  margin-inline: auto !important;
+  padding: 34px clamp(18px, 3vw, 44px) 88px !important;
+  border: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .profile-settings-page,
+html.vox-user-rtl body .profile-settings-page {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 720px) {
+  .profile-settings-page {
+    padding: 22px 14px 64px !important;
   }
 }

@@ -579,3 +579,61 @@ html.vox-user-rtl .vox-public-header .vox-navbar-brand {
 html.vox-user-rtl .vox-public-header .vox-navbar-brand__name {
   unicode-bidi: isolate;
 }
+
+
+/* FINAL_PUBLIC_HEADER_DARK_POLISH */
+html.vox-user-dark .vox-public-shell {
+  color: #edf7f4 !important;
+  background: #0b1512 !important;
+}
+html.vox-user-dark .vox-public-header,
+html.vox-user-dark .vox-public-header__inner,
+html.vox-user-dark .vox-public-shell > header > div:first-child {
+  border-color: rgba(112,205,198,.20) !important;
+  background: linear-gradient(120deg, rgba(24,43,37,.97), rgba(17,31,26,.96)) !important;
+  box-shadow: 0 18px 55px rgba(0,0,0,.24) !important;
+}
+html.vox-user-dark .vox-public-header__inner :is(a,button):not(.vox-navbar-cta) {
+  color: #d8e8e3 !important;
+}
+html.vox-user-dark .vox-public-nav-link:is(:hover,.is-active),
+html.vox-user-dark .vox-public-header__inner :is(a,button):not(.vox-navbar-cta):hover {
+  color: #8bd9d2 !important;
+  background: #213a32 !important;
+}
+html.vox-user-dark .vox-public-header__mobile-menu {
+  border-color: rgba(112,205,198,.20) !important;
+  background: #172a24 !important;
+  box-shadow: 0 22px 58px rgba(0,0,0,.32) !important;
+}
+html.vox-user-dark .vox-footer {
+  color: #d8e8e3 !important;
+  border-color: rgba(112,205,198,.14) !important;
+  background: #0e1b17 !important;
+}
+
+/* FINAL_20260828_PUBLIC_HEADER_AND_FOOTER_REFINEMENTS */
+html.vox-user-dark .vox-public-header .vox-navbar-brand,
+html.vox-user-dark .vox-public-header .vox-navbar-brand:hover,
+html.vox-user-dark .vox-public-header .vox-navbar-brand:focus-visible {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vox-public-header .vox-navbar-brand:hover .vox-navbar-logo,
+html.vox-user-dark .vox-public-header .vox-navbar-brand:focus-visible .vox-navbar-logo {
+  background: transparent !important;
+}
+
+html.vox-user-dark .vox-footer .vox-footer__email {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+html.vox-user-dark .vox-footer .vox-footer__email:hover,
+html.vox-user-dark .vox-footer .vox-footer__email:focus-visible {
+  background: transparent !important;
+  box-shadow: none !important;
+}

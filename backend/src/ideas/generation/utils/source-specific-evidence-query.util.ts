@@ -1,15 +1,9 @@
 import type { RequestCanonicalProblemProfile } from '../types/request-collection-plan.type';
 
 /**
- * Converts PREPARING-stage retrieval seeds into source-shaped queries without
- * destroying the semantic wording authored by the AI planner.
- *
- * Query policy:
- * - planner/base queries are the strongest lane and are preserved verbatim;
- * - source-shaped variants are supporting-recall lanes;
- * - broader domain/object variants are last-resort recall lanes;
- * - source vocabulary must never manufacture a software/developer problem for
- *   a non-technical request merely because the destination is GitHub/HN/etc.
+ * Adapts request-grounded search seeds to the retrieval semantics of each
+ * source. The adaptation is generic (academic/community/editorial), never a
+ * named business vertical.
  */
 export class SourceSpecificEvidenceQueryUtil {
   private static readonly forbiddenInternalLabels = [
@@ -28,241 +22,338 @@ export class SourceSpecificEvidenceQueryUtil {
     readonly problemProfile?: RequestCanonicalProblemProfile | null;
     readonly discoveryDomainName?: string | null;
     readonly maxQueries?: number;
-    /**
-     * Preserve planner-authored semantic queries ahead of mechanical source
-     * adaptation. PRIMARY/SECONDARY lanes should normally enable this.
-     */
     readonly preserveBaseQueries?: boolean;
   }): string[] {
-    const sourceKey = input.sourceKey.toLocaleLowerCase();
-    // PRIMARY lanes intentionally have room for one strong, one supporting and
-    // one broad query. The old hard cap of 2 silently discarded the third query
-    // even when the planner/runtime explicitly budgeted three.
-    const maxQueries = Math.max(1, Math.min(4, input.maxQueries ?? 2));
-    const baseQueries = this.unique(
-      input.baseQueries
-        .map((query) => this.sanitize(query))
-        .filter((query) => this.isSafe(query)),
-    );
-    const anchor = this.buildAnchor(input);
-    const workflow = this.buildWorkflowAnchor(input);
-    const pain = this.buildPainAnchor(input);
-    const domain = this.compactNouns(input.discoveryDomainName ?? '', 5);
-    const technicalRequest = this.isTechnicalRequest(input);
-
-    const supportingVariants = (() => {
-      if (sourceKey === 'app-store' || sourceKey === 'google-play') {
-        return [
-          `${anchor} ${workflow || 'management'}`,
-          `${anchor} tracker`,
-          `${domain || anchor} management app`,
-        ];
-      }
-
-      if (sourceKey === 'github' || sourceKey === 'stackoverflow') {
-        if (technicalRequest) {
-          return sourceKey === 'github'
-            ? [
-                `${anchor} ${pain || 'software issue'}`,
-                `${anchor} ${workflow || 'workflow'} bug`,
-                `${domain || anchor} integration failure`,
-              ]
-            : [
-                `${anchor} ${pain || 'integration error'}`,
-                `${anchor} ${workflow || 'software problem'}`,
-                `${domain || anchor} implementation issue`,
-              ];
-        }
-        // Non-technical professional requests are allowed to probe these
-        // sources, but the query must remain about the real object/workflow.
-        return [
-          `${anchor} ${pain || workflow || 'problems'}`,
-          `${domain || anchor} ${workflow || 'workflow challenges'}`,
-        ];
-      }
-
-      if (sourceKey === 'dev-to' || sourceKey === 'hacker-news') {
-        return technicalRequest
-          ? [
-              `${anchor} ${pain || 'developer problem'}`,
-              `${anchor} ${workflow || 'production workflow'} issue`,
-              `${domain || anchor} implementation pain`,
-            ]
-          : [
-              `${anchor} ${pain || workflow || 'workflow problems'}`,
-              `${domain || anchor} practitioner workflow challenges`,
-            ];
-      }
-
-      if (sourceKey === 'product-hunt') {
-        return [
-          `${anchor} ${workflow || 'workflow'} tool`,
-          `${domain || anchor} operations workflow`,
-        ];
-      }
-
-      if (sourceKey === 'crossref') {
-        return [
-          `${anchor} ${workflow || 'workflow'} challenges study`,
-          `${anchor} ${pain || 'operational challenges'}`,
-          `${domain || anchor} ${workflow || 'management'} research`,
-        ];
-      }
-
-      if (sourceKey === 'news' || sourceKey === 'gdelt') {
-        return [
-          `${anchor} ${pain || 'operational problems'}`,
-          `${domain || anchor} ${workflow || 'operations'} failures`,
-          `${anchor} ${pain || 'inefficiency'} report`,
-        ];
-      }
-
-      if (sourceKey === 'youtube' || sourceKey === 'blog') {
-        return [
-          `${anchor} ${workflow || 'workflow'} problems`,
-          `${anchor} ${pain || 'practitioner challenges'}`,
-          `${domain || anchor} ${workflow || 'practice'} experience`,
-        ];
-      }
-
-      // Reddit/forums benefit from direct problem/friction wording while still
-      // keeping the planner's exact query available as the strongest lane.
-      return [
-        `${anchor} ${pain || 'problems'}`,
-        `${anchor} ${workflow || 'workflow'} frustrations`,
-        `${domain || anchor} practitioner issues`,
-      ];
-    })();
-
-    const broadVariants = [
-      `${domain || anchor} ${workflow || 'workflow'}`,
-      `${anchor} ${pain || 'challenges'}`,
-      `${domain || anchor} ${pain || 'operational issues'}`,
-    ];
-
-    const transformed = this.unique([...supportingVariants, ...broadVariants])
+    const maxQueries = Math.max(1, Math.min(6, input.maxQueries ?? 3));
+    const base = this.unique(input.baseQueries)
       .map((query) => this.sanitize(query))
       .filter((query) => this.isSafe(query));
+    const sourceKey = input.sourceKey.trim().toLocaleLowerCase();
 
-    const orderedCandidates: string[] = [];
-    if (input.preserveBaseQueries) {
-      // Interleave instead of appending every base query first. This guarantees
-      // that a PRIMARY budget of three normally contains: strong planner query,
-      // supporting source-shaped query, then another planner/broad query.
-      const span = Math.max(baseQueries.length, transformed.length);
-      for (let index = 0; index < span; index += 1) {
-        if (baseQueries[index]) orderedCandidates.push(baseQueries[index]);
-        if (transformed[index]) orderedCandidates.push(transformed[index]);
-      }
-    } else {
-      orderedCandidates.push(...transformed, ...baseQueries);
-    }
+    const candidates = sourceKey === 'crossref'
+      ? this.buildAcademicQueries(input, base)
+      : sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'blog'
+        ? this.buildReportQueries(input, base)
+        : sourceKey === 'reddit' || sourceKey === 'forum' || sourceKey === 'youtube' || sourceKey === 'hacker-news'
+          ? this.buildCommunityPainQueries(input, base)
+          : sourceKey === 'app-store' || sourceKey === 'google-play'
+            ? this.buildReviewQueries(input, base)
+            : sourceKey === 'github' || sourceKey === 'stackoverflow' || sourceKey === 'dev-to'
+              ? this.buildTechnicalPainQueries(input, base)
+              : base;
 
-    return this.unique(orderedCandidates)
+    const prioritizedCandidates = input.preserveBaseQueries
+      ? this.interleavePreservingBase(candidates, base)
+      : candidates;
+
+    return this.unique(prioritizedCandidates)
       .map((query) => this.sanitize(query))
       .filter((query) => this.isSafe(query))
-      .filter((query) => query.length >= 8 && query.length <= 140)
+      .filter((query) => query.length >= 8 && query.length <= 180)
       .slice(0, maxQueries);
   }
 
   static isSafe(query: string): boolean {
     const normalized = this.sanitize(query);
-    if (!normalized || normalized.length > 140) return false;
-    return !this.forbiddenInternalLabels.some((pattern) => pattern.test(normalized));
-  }
-
-  private static isTechnicalRequest(input: {
-    readonly requestDescription?: string | null;
-    readonly problemProfile?: RequestCanonicalProblemProfile | null;
-  }): boolean {
-    const text = [
-      input.requestDescription ?? '',
-      input.problemProfile?.actor ?? '',
-      input.problemProfile?.object ?? '',
-      input.problemProfile?.workflow ?? '',
-      input.problemProfile?.friction ?? '',
-      ...(input.problemProfile?.failureModes ?? []),
-    ]
-      .join(' ')
-      .toLocaleLowerCase();
-    return /\b(?:api|sdk|repository|github|source code|programming|developer|deployment|server|database|docker|kubernetes|container|runtime|library|dependency|integration error|http|endpoint|webhook|firmware|software engineering)\b/u.test(
-      text,
-    );
-  }
-
-  private static buildAnchor(input: {
-    readonly requestDescription?: string | null;
-    readonly problemProfile?: RequestCanonicalProblemProfile | null;
-    readonly discoveryDomainName?: string | null;
-  }): string {
-    const profile = input.problemProfile;
-    const candidates = [
-      profile?.object,
-      profile?.actor,
-      input.discoveryDomainName,
-      profile?.workflow,
-      input.requestDescription,
-    ];
-    for (const candidate of candidates) {
-      const compact = this.compactNouns(candidate ?? '', 6);
-      if (compact) return compact;
+    if (!normalized || normalized.length > 180) return false;
+    if (this.forbiddenInternalLabels.some((pattern) => pattern.test(normalized))) {
+      return false;
     }
-    return 'software workflow';
+    const tail = normalized.toLocaleLowerCase().split(/\s+/u).at(-1) ?? '';
+    return !['and', 'or', 'about', 'with', 'for', 'to', 'of', 'in', 'on', 'by'].includes(tail);
   }
 
-  private static buildWorkflowAnchor(input: {
-    readonly problemProfile?: RequestCanonicalProblemProfile | null;
-  }): string {
-    return this.compactNouns(input.problemProfile?.workflow ?? '', 5);
-  }
-
-  private static buildPainAnchor(input: {
-    readonly problemProfile?: RequestCanonicalProblemProfile | null;
-  }): string {
+  private static buildAcademicQueries(
+    input: {
+      readonly problemProfile?: RequestCanonicalProblemProfile | null;
+      readonly discoveryDomainName?: string | null;
+      readonly preserveBaseQueries?: boolean;
+    },
+    baseQueries: readonly string[],
+  ): string[] {
     const profile = input.problemProfile;
-    return this.compactNouns(
-      profile?.friction ||
-        profile?.failureModes?.[0] ||
-        profile?.consequences?.[0] ||
-        '',
-      6,
+    if (!profile) {
+      const domain = this.compact(input.discoveryDomainName ?? '', 3);
+      const adaptedBase = baseQueries.map((query, index) => {
+        const seed = this.compact(query, 12);
+        if (index % 3 === 0) return this.join(seed, 'study research');
+        if (index % 3 === 1) return this.join(seed, 'failure risk analysis');
+        return this.join(seed, 'operational challenges evidence');
+      });
+      return domain
+        ? [
+            ...adaptedBase,
+            this.join(domain, 'operational failures barriers study'),
+            this.join(domain, 'risk delays breakdown research'),
+            ...baseQueries,
+          ]
+        : [...adaptedBase, ...baseQueries];
+    }
+
+    const identity = this.join(
+      this.compact(profile.actor, 3),
+      this.compact(profile.object, 3),
     );
+    const alternateIdentity = this.join(
+      this.compact(profile.actorAliases?.[0] ?? profile.actor, 3),
+      this.compact(profile.objectAliases?.[0] ?? profile.object, 3),
+    );
+    const workflow = this.compact(profile.workflow, 4);
+    const failures = [
+      profile.friction ?? '',
+      ...profile.failureModes,
+      ...profile.consequences,
+    ]
+      .map((value) => this.compact(value, 4))
+      .filter(Boolean);
+    const domain = this.compact(input.discoveryDomainName ?? '', 2);
+
+    const profileQueries = [
+      this.join(identity, workflow, 'challenges'),
+      this.join(identity, failures[0], 'study'),
+      this.join(alternateIdentity, workflow, failures[0]),
+      this.join(profile.object, failures[1] ?? failures[0], domain),
+      this.join(profile.object, profile.consequences[0], 'intervention'),
+    ];
+
+    // Crossref lexical search is especially sensitive to ambiguous isolated
+    // words such as "runtime" and "soap". Prefixing every retained AI query
+    // with request-native identity terms keeps those words in the correct
+    // sense without a domain-specific dictionary.
+    const groundedBase = baseQueries.map((query) =>
+      this.join(identity, this.compact(query, 6)),
+    );
+
+    return input.preserveBaseQueries
+      ? [...profileQueries, ...groundedBase, ...baseQueries]
+      : [...profileQueries, ...groundedBase];
   }
 
-  private static compactNouns(value: string, maxTokens: number): string {
+  private static buildReportQueries(
+    input: {
+      readonly problemProfile?: RequestCanonicalProblemProfile | null;
+      readonly discoveryDomainName?: string | null;
+    },
+    baseQueries: readonly string[],
+  ): string[] {
+    const profile = input.problemProfile;
+    if (!profile) {
+      const domain = this.compact(input.discoveryDomainName ?? '', 3);
+      const adaptedBase = baseQueries.map((query, index) => {
+        const seed = this.compact(query, 12);
+        if (index % 3 === 0) return this.join(seed, 'reported incident');
+        if (index % 3 === 1) return this.join(seed, 'affected users case');
+        return this.join(seed, 'failure disruption report');
+      });
+      return domain
+        ? [
+            ...adaptedBase,
+            this.join(domain, 'operational failure affected users'),
+            this.join(domain, 'recurring disruption incident report'),
+            ...baseQueries,
+          ]
+        : [...adaptedBase, ...baseQueries];
+    }
+    const identity = this.join(
+      this.compact(profile.actor, 3),
+      this.compact(profile.object, 3),
+      this.compact(input.discoveryDomainName ?? '', 2),
+    );
+    const failure = this.compact(
+      profile.friction ?? profile.failureModes[0] ?? profile.coreProblem,
+      4,
+    );
+    return [
+      this.join(identity, failure, 'reported'),
+      this.join(profile.object, profile.workflow, 'challenge'),
+      this.join(profile.actor, failure, 'case'),
+      ...baseQueries.map((query) => this.join(identity, this.compact(query, 6))),
+      ...baseQueries,
+    ];
+  }
+
+  /**
+   * Community sources are strongest when the query resembles the language an
+   * affected person would actually use.  These probes remain fully derived
+   * from the requester-owned actor/object/workflow/failure axes; the added
+   * terms only express pain/experience and never introduce a new domain or
+   * solution.  This improves direct-evidence recall without weakening later
+   * deterministic verification.
+   */
+  private static buildCommunityPainQueries(
+    input: {
+      readonly problemProfile?: RequestCanonicalProblemProfile | null;
+      readonly discoveryDomainName?: string | null;
+    },
+    baseQueries: readonly string[],
+  ): string[] {
+    const profile = input.problemProfile;
+    if (!profile) {
+      const domain = this.compact(input.discoveryDomainName ?? '', 3);
+      const adaptedBase = baseQueries.map((query, index) => {
+        const seed = this.compact(query, 12);
+        if (index % 4 === 0) return this.join(seed, 'user complaint');
+        if (index % 4 === 1) return this.join(seed, 'struggling frustrating');
+        if (index % 4 === 2) return this.join(seed, 'operator failure issue');
+        return this.join(seed, 'real experience problem');
+      });
+      return domain
+        ? [
+            ...adaptedBase,
+            this.join(domain, 'real user complaint operational failure'),
+            ...baseQueries,
+          ]
+        : [...adaptedBase, ...baseQueries];
+    }
+
+    const actor = this.compact(profile.actor, 3);
+    const alternateActor = this.compact(
+      profile.actorAliases?.[0] ?? profile.actor,
+      3,
+    );
+    const object = this.compact(
+      [profile.object, ...(profile.objectAliases ?? []).slice(0, 1)].join(' '),
+      4,
+    );
+    const workflow = this.compact(profile.workflow, 4);
+    const failures = [
+      profile.friction ?? '',
+      ...profile.failureModes,
+      ...profile.consequences,
+    ].map((value) => this.compact(value, 4)).filter(Boolean);
+
+    return [
+      this.join(actor, object, failures[0], 'problem'),
+      this.join(actor, workflow, failures[0], 'struggle'),
+      this.join(alternateActor, object, failures[1] ?? failures[0], 'difficulty'),
+      this.join(object, workflow, failures[0], 'help'),
+      ...baseQueries,
+    ];
+  }
+
+  /** App-store search benefits from product/workflow nouns plus failure terms. */
+  private static buildReviewQueries(
+    input: {
+      readonly problemProfile?: RequestCanonicalProblemProfile | null;
+      readonly discoveryDomainName?: string | null;
+    },
+    baseQueries: readonly string[],
+  ): string[] {
+    const profile = input.problemProfile;
+    if (!profile) {
+      const domain = this.compact(input.discoveryDomainName ?? '', 3);
+      const adaptedBase = baseQueries.map((query, index) =>
+        this.join(this.compact(query, 11), index % 2 === 0 ? 'review complaint' : 'users report problem'),
+      );
+      return domain
+        ? [...adaptedBase, this.join(domain, 'app review complaint failure'), ...baseQueries]
+        : [...adaptedBase, ...baseQueries];
+    }
+    const object = this.compact(profile.object, 4);
+    const workflow = this.compact(profile.workflow, 4);
+    const failure = this.compact(
+      profile.friction ?? profile.failureModes[0] ?? profile.coreProblem,
+      4,
+    );
+    return [
+      this.join(object, workflow),
+      this.join(object, failure),
+      this.join(profile.actor, workflow, failure),
+      ...baseQueries,
+    ];
+  }
+
+  /** Developer sources should receive implementation-failure wording only when
+   * the requester problem itself contains a technical workflow. */
+  private static buildTechnicalPainQueries(
+    input: {
+      readonly requestDescription?: string | null;
+      readonly problemProfile?: RequestCanonicalProblemProfile | null;
+    },
+    baseQueries: readonly string[],
+  ): string[] {
+    const description = this.sanitize(input.requestDescription ?? '').toLocaleLowerCase();
+    const technical = /\b(?:api|sdk|database|runtime|deployment|endpoint|integration|webhook|code|developer|software|server|client|authentication|network|model|inference)\b/u.test(description);
+    if (!technical || !input.problemProfile) return [...baseQueries];
+    const profile = input.problemProfile;
+    const failure = this.compact(
+      profile.friction ?? profile.failureModes[0] ?? profile.coreProblem,
+      5,
+    );
+    return [
+      this.join(profile.object, profile.workflow, failure),
+      this.join(profile.workflow, failure, 'error'),
+      ...baseQueries,
+    ];
+  }
+
+  private static interleavePreservingBase(
+    candidates: readonly string[],
+    baseQueries: readonly string[],
+  ): string[] {
+    const safeBase = this.unique(baseQueries);
+    const adapted = this.unique(candidates).filter(
+      (candidate) =>
+        !safeBase.some(
+          (base) =>
+            this.sanitize(base).toLocaleLowerCase() ===
+            this.sanitize(candidate).toLocaleLowerCase(),
+        ),
+    );
+
+    /*
+     * The planner's base queries carry the highest-fidelity semantic intent.
+     * A small source query budget must therefore never be consumed entirely by
+     * source-native rewrites. Interleave from the original seed first so a
+     * maxQueries=2/3 plan still preserves atomic problem tokens, then add one
+     * source-native formulation for recall. This is generic across domains and
+     * avoids the old regression where good AI queries were replaced by broad
+     * phrases such as "users struggle problem".
+     */
+    const interleaved: string[] = [];
+    const width = Math.max(safeBase.length, adapted.length);
+    for (let index = 0; index < width; index += 1) {
+      if (safeBase[index]) interleaved.push(safeBase[index]!);
+      if (adapted[index]) interleaved.push(adapted[index]!);
+    }
+    return interleaved;
+  }
+
+  private static compact(value: string, maxWords: number): string {
     const stop = new Set([
-      'the',
-      'and',
-      'for',
-      'with',
-      'from',
-      'into',
-      'while',
-      'often',
-      'struggle',
-      'struggles',
-      'information',
-      'frequently',
-      'through',
-      'across',
-      'their',
-      'each',
-      'this',
-      'that',
-      'making',
-      'difficult',
-      'used',
-      'using',
-      'manage',
-      'managing',
-      'large',
-      'amounts',
+      'the', 'a', 'an', 'and', 'or', 'of', 'to', 'for', 'with', 'from',
+      'often', 'frequently', 'usually', 'commonly', 'making', 'difficult',
+      'difficulty',
+      'smarter', 'smart', 'platform', 'system', 'solution', 'could',
     ]);
-    const tokens = this.sanitize(value)
-      .toLocaleLowerCase()
-      .split(/[^\p{L}\p{N}-]+/u)
-      .filter((token) => token.length >= 3 && !stop.has(token));
-    return [...new Set(tokens)].slice(0, maxTokens).join(' ');
+    return this.sanitize(value)
+      .split(/\s+/u)
+      .filter((word) => word.length >= 2 && !stop.has(word.toLocaleLowerCase()))
+      .slice(0, maxWords)
+      .join(' ');
+  }
+
+  private static join(...values: Array<string | null | undefined>): string {
+    const combined = this.sanitize(values.filter(Boolean).join(' '));
+    if (!combined) return '';
+
+    /*
+     * AI/profile fragments often repeat the same domain or actor token at the
+     * boundary between components ("delivery ... Delivery ...", "jewelry ...
+     * Jewelry ..."). Search engines treat those repeats as wasted query budget.
+     * Collapse exact repeated tokens while preserving the original order and all
+     * distinct atomic workflow terms.
+     */
+    const seen = new Set<string>();
+    return combined
+      .split(/\s+/u)
+      .filter((token) => {
+        const key = token.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .join(' ');
   }
 
   private static sanitize(value: string): string {
@@ -271,6 +362,7 @@ export class SourceSpecificEvidenceQueryUtil {
       .replace(/[\r\n\t]+/gu, ' ')
       .replace(/\s+/gu, ' ')
       .replace(/^[\s|,:;.-]+|[\s|,:;.-]+$/gu, '')
+      .replace(/(?:\s+\b(?:and|or|about|with|for|to|of|in|on|by)\b\s*)+$/iu, '')
       .trim();
   }
 

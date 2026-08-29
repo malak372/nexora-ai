@@ -270,6 +270,11 @@ function resolveTemplateKey(model, templates, selected) {
   );
 }
 
+function getCanonicalTemplateName(template) {
+  const key = template?.key;
+  return TEMPLATE_LAYOUTS[key]?.label || template?.name || 'Business Model';
+}
+
 function buildSections(content, templateKey) {
   const entries = Object.entries(content || {}).map(
     ([originalKey, value]) => ({
@@ -370,7 +375,7 @@ footer{margin-top:5mm;padding-top:3mm;border-top:1px solid ${theme === 'dark' ? 
   <div>
     <span>Voxidence · ${escapeHtml(translate('Business model studio'))}</span>
     <h1>${escapeHtml(
-      translate(TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model'),
+      TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model',
     )}</h1>
     <p class="idea-title"><strong>${escapeHtml(translate('Idea'))}:</strong> <bdi dir="auto">${escapeHtml(
       ideaTitle || translate('Untitled idea'),
@@ -587,7 +592,7 @@ export default function BusinessModelPage() {
         <div className="bm-hero__summary">
           <article>
             <small>{t('Active layout')}</small>
-            <strong>{t(layout.label)}</strong>
+            <strong dir="ltr" data-no-auto-translate="true">{layout.label}</strong>
           </article>
 
           <article>
@@ -626,7 +631,7 @@ export default function BusinessModelPage() {
                 </span>
 
                 <div>
-                  <strong>{t(template.name)}</strong>
+                  <strong dir="ltr" data-no-auto-translate="true">{getCanonicalTemplateName(template)}</strong>
                   <small>{t(template.description)}</small>
                 </div>
 
@@ -671,7 +676,7 @@ export default function BusinessModelPage() {
                   : t('Generate model')}
               </strong>
               <small>
-                {selectedTemplate?.name ? t(selectedTemplate.name) : t('Choose a framework')}
+                {selectedTemplate ? <bdi dir="ltr" data-no-auto-translate="true">{getCanonicalTemplateName(selectedTemplate)}</bdi> : t('Choose a framework')}
               </small>
             </span>
 
@@ -692,7 +697,7 @@ export default function BusinessModelPage() {
               <span className="bm-empty__eyebrow">{t('Ready to build')}</span>
               <h2>
                 {selectedTemplate?.name
-                  ? `${t(selectedTemplate.name)} ${t('is ready to generate.')}`
+                  ? <><bdi dir="ltr" data-no-auto-translate="true">{selectedTemplate.name}</bdi>{' '}{t('is ready to generate.')}</>
                   : t('Your business model will appear here.')}
               </h2>
               <p>
@@ -717,7 +722,7 @@ export default function BusinessModelPage() {
 
                 <span className="bm-action__copy">
                   <strong>{busy ? t('Generating…') : t('Generate now')}</strong>
-                  <small>{selectedTemplate?.name ? t(selectedTemplate.name) : t('Business model')}</small>
+                  <small>{selectedTemplate?.name ? <bdi dir="ltr" data-no-auto-translate="true">{selectedTemplate.name}</bdi> : t('Business model')}</small>
                 </span>
 
                 <ArrowRight className="bm-action__arrow" size={17} aria-hidden="true" />
@@ -727,11 +732,11 @@ export default function BusinessModelPage() {
             <>
               <header>
                 <div>
-                  <span>{t(layout.label)}</span>
+                  <span dir="ltr" data-no-auto-translate="true">{layout.label}</span>
                   <h2>
                     {visibleModel.businessModelTemplate?.name
-                      ? t(visibleModel.businessModelTemplate.name)
-                      : t(layout.label)}
+                      ? <bdi dir="ltr" data-no-auto-translate="true">{visibleModel.businessModelTemplate.name}</bdi>
+                      : <bdi dir="ltr" data-no-auto-translate="true">{layout.label}</bdi>}
                   </h2>
                   <p>
                     {t('Template-specific structure · presentation ready')}
@@ -866,10 +871,10 @@ export default function BusinessModelPage() {
                                 {idea.title}
                               </bdi>
                               <span aria-hidden="true"> · </span>
-                              <span>{t(layout.label)}</span>
+                              <span dir="ltr" data-no-auto-translate="true">{layout.label}</span>
                             </>
                           ) : (
-                            t(layout.label)
+                            <span dir="ltr" data-no-auto-translate="true">{layout.label}</span>
                           )}
                         </small>
                       </div>

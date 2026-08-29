@@ -38,6 +38,12 @@ export function buildRequestCollectionPlanSchema(): AiJsonSchema {
         type: 'string',
         maxLength: 180,
       },
+      secondaryScopes: {
+        type: 'array',
+        maxItems: 4,
+        uniqueItems: true,
+        items: { type: 'string', minLength: 2, maxLength: 80 },
+      },
       requestIntent: {
         type: 'object',
         additionalProperties: false,
@@ -67,13 +73,19 @@ export function buildRequestCollectionPlanSchema(): AiJsonSchema {
         // RequestCollectionPlanningService enrich missing lanes locally instead
         // of throwing away the AI plan and marking the whole stage as fallback.
         minItems: 1,
-        maxItems: 8,
+        maxItems: 10,
         items: { type: 'string', minLength: 8, maxLength: 140 },
       },
       selectedSourceKeys: {
         type: 'array',
         minItems: 1,
         maxItems: 8,
+        uniqueItems: true,
+        items: { type: 'string', minLength: 2, maxLength: 80 },
+      },
+      retrievalVocabulary: {
+        type: 'array',
+        maxItems: 12,
         uniqueItems: true,
         items: { type: 'string', minLength: 2, maxLength: 80 },
       },

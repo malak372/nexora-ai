@@ -27,10 +27,20 @@ export class CollectorSourceHealthService {
     state.successes += 1;
     state.yieldedItems += Math.max(0, itemCount);
     state.latencyMsTotal += Math.max(0, latencyMs);
-    if (itemCount === 0) state.emptyRuns += 1;
-    else state.emptyRuns = Math.max(0, state.emptyRuns - 1);
+    if (itemCount === 0) {
+      state.emptyRuns += 1;
+      /*
+       * Empty yield is query-scoped, not proof that the source is globally
+       * unhealthy. Keep it as a ranking penalty, but do not open a global
+       * cooldown that could suppress the same source for the next unrelated
+       * domain. The current-run recovery layer already excludes sources that
+       * returned zero for this exact request.
+       */
+    } else {
+      state.emptyRuns = Math.max(0, state.emptyRuns - 1);
+      state.cooldownUntil = 0;
+    }
     state.failures = Math.max(0, state.failures - 1);
-    state.cooldownUntil = 0;
   }
 
   recordFailure(sourceKey: string, latencyMs: number): void {
@@ -56,6 +66,11 @@ export class CollectorSourceHealthService {
     const failurePenalty = Math.min(0.5, state.failures * 0.16);
     const yieldBoost = Math.min(0.35, averageYield / 30);
     return Math.max(0.1, Math.min(1.25, 0.55 + successRate * 0.35 + yieldBoost - emptyPenalty - failurePenalty));
+  }
+
+
+  isHealthy(sourceKey: string, minimumScore = 0.35): boolean {
+    return !this.isTemporarilyDegraded(sourceKey) && this.score(sourceKey) >= minimumScore;
   }
 
   isTemporarilyDegraded(sourceKey: string): boolean {

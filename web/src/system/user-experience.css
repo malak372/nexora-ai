@@ -1,3 +1,4 @@
+
 :root {
   --vox-dark-bg: #111a17;
   --vox-dark-surface: #192722;
@@ -41,7 +42,10 @@
   font-size: 12px;
   font-weight: 850;
   cursor: pointer;
-  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .vox-experience-button:hover {
@@ -49,6 +53,10 @@
   border-color: rgba(82, 185, 181, .42);
   background: #eef9f7;
 }
+
+/* =========================================================
+   USER DARK MODE
+   ========================================================= */
 
 html.vox-user-dark .vox-experience-controls {
   border-color: var(--vox-dark-border);
@@ -62,12 +70,17 @@ html.vox-user-dark .vox-experience-button {
   background: var(--vox-dark-surface-2);
 }
 
+/* =========================================================
+   GLOBAL USER RTL
+   ========================================================= */
+
 html.vox-user-rtl body {
   overflow-x: hidden;
   font-family: 'Cairo', 'Inter', Arial, sans-serif;
 }
 
-html.vox-user-rtl body :is(.vox-public-shell,
+html.vox-user-rtl body :is(
+  .vox-public-shell,
   .vox-home-page,
   .normal-app-shell,
   .nx-login,
@@ -78,21 +91,58 @@ html.vox-user-rtl body :is(.vox-public-shell,
   .guest-generator-page,
   .guest-progress-page,
   .guest-publication-page,
-  .nx-generation-page) {
+  .nx-generation-page
+) {
   direction: rtl;
 }
 
-html.vox-user-rtl body :is(h1, h2, h3, h4, h5, h6, p, small, label, li, dt, dd, blockquote) {
+html.vox-user-rtl body :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  small,
+  label,
+  li,
+  dt,
+  dd,
+  blockquote
+) {
   text-align: start;
   unicode-bidi: plaintext;
 }
 
-html.vox-user-rtl body :is(input, textarea, select) {
+/* Normal RTL fields */
+html.vox-user-rtl body :is(
+  input,
+  textarea,
+  select
+):not([dir='auto']):not([dir='ltr']) {
   direction: rtl;
   text-align: right;
 }
 
-html.vox-user-rtl body :is(input[type='email'],
+/*
+ * Keep automatic-direction fields automatic.
+ * This is important for mixed Arabic/English idea text,
+ * prompts, search text and other user-generated content.
+ */
+html.vox-user-rtl body :is(
+  input,
+  textarea
+)[dir='auto'] {
+  text-align: start;
+  unicode-bidi: plaintext;
+}
+
+/*
+ * Content that must ALWAYS stay LTR even when the UI is Arabic.
+ */
+html.vox-user-rtl body :is(
+  input[type='email'],
   input[type='url'],
   input[type='tel'],
   [data-ltr='true'],
@@ -100,57 +150,109 @@ html.vox-user-rtl body :is(input[type='email'],
   code,
   pre,
   a[href^='mailto:'],
-  a[href^='http']) {
+  a[href^='http']
+) {
   direction: ltr !important;
   text-align: left !important;
   unicode-bidi: isolate !important;
 }
 
-html.vox-user-rtl body :is(table, thead, tbody, tr, th, td) {
+html.vox-user-rtl body :is(
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td
+) {
   text-align: start;
 }
 
-html.vox-user-rtl body :is(input[type='number'], input[type='date'], input[type='time']) {
+html.vox-user-rtl body :is(
+  input[type='number'],
+  input[type='date'],
+  input[type='time']
+) {
   direction: ltr;
   text-align: right;
 }
 
-html.vox-user-rtl body :is(.vox-public-nav,
+/* =========================================================
+   NAVIGATION / HEADER RTL
+   ========================================================= */
+
+html.vox-user-rtl body :is(
+  .vox-public-nav,
   .normal-header__nav,
   .normal-sidebar__nav,
   .normal-header__actions,
   .normal-header__profile,
-  .normal-header__search) {
+  .normal-header__search
+) {
   direction: rtl;
 }
 
-html.vox-user-rtl body :is([class$='-header'], [class*='-header '],
-  [class$='-toolbar'], [class*='-toolbar '],
-  [class$='-actions'], [class*='-actions '],
-  [class$='-controls'], [class*='-controls ']) {
+html.vox-user-rtl body :is(
+  [class$='-header'],
+  [class*='-header '],
+  [class$='-toolbar'],
+  [class*='-toolbar '],
+  [class$='-actions'],
+  [class*='-actions '],
+  [class$='-controls'],
+  [class*='-controls ']
+) {
   text-align: start;
 }
 
-html.vox-user-rtl body :is(.nx-domain-shortcut svg:last-child,
+/* Flip navigation arrows in RTL */
+html.vox-user-rtl body :is(
+  .nx-domain-shortcut svg:last-child,
   .nx-next-button svg,
   .nx-back-button svg,
   .vox-discovery-card__link svg,
-  .vox-footer__contact-action svg) {
+  .vox-footer__contact-action svg
+) {
   transform: rotate(180deg);
 }
 
+/* Move floating experience controls to the left in RTL */
 html.vox-user-rtl .vox-experience-controls {
   right: auto;
   left: 18px;
 }
 
-html.vox-user-rtl body> :is([role='dialog'], [role='menu'], [role='listbox']) {
+/* =========================================================
+   PORTALS / DIALOGS / MENUS RTL
+   ========================================================= */
+
+html.vox-user-rtl body > :is(
+  [role='dialog'],
+  [role='menu'],
+  [role='listbox']
+) {
   direction: rtl;
 }
 
-html.vox-user-rtl body> :is([role='dialog'], [role='menu'], [role='listbox']) :is(h1, h2, h3, h4, p, label, button) {
+html.vox-user-rtl body > :is(
+  [role='dialog'],
+  [role='menu'],
+  [role='listbox']
+) :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  p,
+  label,
+  button
+) {
   text-align: start;
 }
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
 
 @media (max-width: 720px) {
   .vox-experience-controls {
@@ -176,6 +278,10 @@ html.vox-user-rtl body> :is([role='dialog'], [role='menu'], [role='listbox']) :i
   }
 }
 
+/* =========================================================
+   ADMIN RTL
+   ========================================================= */
+
 html.vox-user-rtl .admin-shell,
 html.vox-user-rtl .admin-mobile-panel,
 html.vox-user-rtl .admin-more-menu,
@@ -191,11 +297,74 @@ html.vox-user-rtl .admin-mobile-panel__nav {
   direction: rtl;
 }
 
-html.vox-user-rtl .admin-shell :is(input, textarea, select) {
+/*
+ * Regular admin form fields remain RTL.
+ * dir="auto" and explicit LTR fields are handled by the
+ * stronger rules below.
+ */
+html.vox-user-rtl .admin-shell :is(
+  input,
+  textarea,
+  select
+) {
   text-align: right;
 }
 
-html.vox-user-rtl .admin-shell :is(input[type='email'], input[type='url'], input[type='tel'], [dir='ltr'], [data-ltr='true']) {
+/* Preserve automatic text direction inside admin inputs as well */
+html.vox-user-rtl .admin-shell :is(
+  input,
+  textarea
+)[dir='auto'] {
+  text-align: start;
+  unicode-bidi: plaintext;
+}
+
+/* Technical/admin values must remain LTR */
+html.vox-user-rtl .admin-shell :is(
+  input[type='email'],
+  input[type='url'],
+  input[type='tel'],
+  [dir='ltr'],
+  [data-ltr='true']
+) {
   direction: ltr !important;
   text-align: left !important;
+  unicode-bidi: isolate !important;
 }
+
+
+html.vox-user-dark body :is(
+  [role='dialog'].nx-active-run-conflict__dialog,
+  [role='dialog'].nx-cancel-success__dialog,
+  [role='dialog'].notification-detail,
+  [role='dialog'].invoice-sheet,
+  [role='dialog'].bm-modal__shell,
+  [role='dialog'].premium-welcome__card
+) {
+  color: #edf7f4 !important;
+  border-color: rgba(112, 205, 198, .20) !important;
+  background-color: #172a24 !important;
+}
+
+/*
+ * Keep direction:auto working in dark mode too.
+ */
+html.vox-user-dark body :is(
+  input,
+  textarea
+)[dir='auto'] {
+  text-align: start !important;
+  unicode-bidi: plaintext;
+}
+
+/*
+ * Never auto-translate or flip generated idea/content that has
+ * explicitly been marked LTR.
+ */
+html.vox-user-rtl body [data-no-auto-translate='true'][dir='ltr'],
+html.vox-user-rtl body [data-idea-content='true'][dir='ltr'] {
+  direction: ltr !important;
+  text-align: left !important;
+  unicode-bidi: isolate;
+}
+

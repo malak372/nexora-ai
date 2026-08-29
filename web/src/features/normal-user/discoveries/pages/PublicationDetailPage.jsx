@@ -32,6 +32,7 @@ import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
+import { useUserExperience } from '../../../../system/user-experience';
 
 import {
   acceptPublication,
@@ -117,6 +118,7 @@ export default function PublicationDetailPage() {
   const { publicationId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useUserExperience();
   const publicationSeed = location.state?.publicationSeed ?? null;
 
   const [publication, setPublication] = useState(() => publicationSeed);
@@ -615,7 +617,7 @@ export default function PublicationDetailPage() {
     return (
       <section className="publication-detail-state">
         <LoaderCircle className="publication-spin" />
-        Opening discovery…
+        {t('Opening discovery…')}
       </section>
     );
   }
@@ -624,10 +626,10 @@ export default function PublicationDetailPage() {
     return (
       <section className="publication-detail-state publication-detail-state--error">
         <ShieldCheck size={30} />
-        <h1>Discovery unavailable</h1>
+        <h1>{t('Discovery unavailable')}</h1>
         <p>{errorMessage}</p>
         <button type="button" onClick={() => navigate('/normal/discover')}>
-          Back to Discover
+          {t('Back to Discover')}
         </button>
       </section>
     );
@@ -640,7 +642,7 @@ export default function PublicationDetailPage() {
         className="publication-detail-back"
         onClick={() => navigate('/normal/discover')}
       >
-        <ArrowLeft size={17} /> Discover
+        <ArrowLeft size={17} /> {t('Discover')}
       </button>
 
       <section className="publication-detail-hero">
@@ -652,34 +654,34 @@ export default function PublicationDetailPage() {
 
         <div className="publication-detail-copy">
           <span className="publication-detail-label">
-            <Sparkles size={14} /> Community discovery
+            <Sparkles size={14} /> {t('Community discovery')}
           </span>
-          <h1 dir="auto" data-idea-content="true">{publication.publicTitle || 'Untitled discovery'}</h1>
+          <h1 dir="auto" data-idea-content="true">{publication.publicTitle || t('Untitled discovery')}</h1>
           <div data-idea-content="true" dir="auto"><ContentBlock
             value={publication.publicAbstract}
-            fallback="No public abstract was provided."
+            fallback={t('No public abstract was provided.')}
           /></div>
           <div className="publication-detail-author-row">
             <div className="publication-detail-author">
-              <UserRound size={17} /> Published by{' '}
-              <strong dir="auto" data-no-auto-translate="true">{publication?.publisher?.fullName || 'Voxidence creator'}</strong>
+              <UserRound size={17} /> {t('Published by')}{' '}
+              <strong dir="auto" data-no-auto-translate="true">{publication?.publisher?.fullName || t('Voxidence creator')}</strong>
             </div>
             {publication?.publisher?.id !== getStoredUser()?.id ? (
               <button type="button" className="publication-report-trigger" onClick={() => setReportOpen(true)}>
-                <Flag size={15} /> Report publication
+                <Flag size={15} /> {t('Report publication')}
               </button>
             ) : null}
           </div>
           {hasPublicEngagement ? (
             <div className="publication-detail-metrics">
               {ratingsEnabled ? (
-                <span><Star size={16} />{Number(publication.averageRating ?? 0).toFixed(1)} rating</span>
+                <span><Star size={16} />{Number(publication.averageRating ?? 0).toFixed(1)} {t('rating')}</span>
               ) : null}
               {votingEnabled ? (
-                <span><ThumbsUp size={16} />{publication.upvotesCount ?? 0} upvotes</span>
+                <span><ThumbsUp size={16} />{publication.upvotesCount ?? 0} {t('upvotes')}</span>
               ) : null}
               {feedbackEnabled ? (
-                <span><MessageCircleMore size={16} />{publication.feedbackCount ?? 0} feedback</span>
+                <span><MessageCircleMore size={16} />{publication.feedbackCount ?? 0} {t('feedback')}</span>
               ) : null}
             </div>
           ) : null}
@@ -690,9 +692,9 @@ export default function PublicationDetailPage() {
         <section className={engagementLayoutClass}>
           {ratingsEnabled ? (
             <article className="publication-engagement-card publication-engagement-card--rating">
-              <span className="publication-engagement__eyebrow">COMMUNITY SIGNAL</span>
-              <h2>Rate this opportunity</h2>
-              <p>You can rate the public concept before deciding whether to accept it.</p>
+              <span className="publication-engagement__eyebrow">{t('COMMUNITY SIGNAL')}</span>
+              <h2>{t('Rate this opportunity')}</h2>
+              <p>{t('You can rate the public concept before deciding whether to accept it.')}</p>
               <div className="rating-row">
                 {[1, 2, 3, 4, 5].map((value) => (
                   <button
@@ -705,8 +707,8 @@ export default function PublicationDetailPage() {
                     onClick={() => handleRating(value)}
                     aria-label={
                       rating === value
-                        ? `Remove ${value} star rating`
-                        : `Rate ${value} out of 5`
+                        ? t(`Remove ${value} star rating`)
+                        : t(`Rate ${value} out of 5`)
                     }
                   >
                     <Star size={22} />
@@ -722,7 +724,7 @@ export default function PublicationDetailPage() {
                   onClick={handleRemoveRating}
                 >
                   <X size={15} />
-                  Remove rating
+                  {t('Remove rating')}
                 </button>
               ) : null}
             </article>
@@ -730,9 +732,9 @@ export default function PublicationDetailPage() {
 
           {votingEnabled ? (
             <article className="publication-engagement-card publication-engagement-card--vote">
-              <span className="publication-engagement__eyebrow">YOUR SIGNAL</span>
-              <h2>Vote on the direction</h2>
-              <p>Upvote promising opportunities or flag weak directions.</p>
+              <span className="publication-engagement__eyebrow">{t('YOUR SIGNAL')}</span>
+              <h2>{t('Vote on the direction')}</h2>
+              <p>{t('Upvote promising opportunities or flag weak directions.')}</p>
               <div className="vote-row">
                 <button
                   type="button"
@@ -742,7 +744,7 @@ export default function PublicationDetailPage() {
                   onClick={() => handleVote('UP')}
                 >
                   <ThumbsUp />
-                  {vote === 'UP' ? 'Upvoted' : 'Upvote'}
+                  {t(vote === 'UP' ? 'Upvoted' : 'Upvote')}
                 </button>
                 <button
                   type="button"
@@ -752,7 +754,7 @@ export default function PublicationDetailPage() {
                   onClick={() => handleVote('DOWN')}
                 >
                   <ThumbsDown />
-                  {vote === 'DOWN' ? 'Downvoted' : 'Downvote'}
+                  {t(vote === 'DOWN' ? 'Downvoted' : 'Downvote')}
                 </button>
               </div>
 
@@ -764,7 +766,7 @@ export default function PublicationDetailPage() {
                   onClick={() => handleVote(vote)}
                 >
                   <X size={15} />
-                  Remove my vote
+                  {t('Remove my vote')}
                 </button>
               ) : null}
             </article>
@@ -772,15 +774,15 @@ export default function PublicationDetailPage() {
 
           {feedbackEnabled ? (
             <form className="publication-engagement-card publication-engagement-card--feedback" onSubmit={handleFeedback}>
-              <span className="publication-engagement__eyebrow">CONSTRUCTIVE REVIEW</span>
-              <h2>Written feedback</h2>
-              <p>Share useful feedback before or after acceptance.</p>
+              <span className="publication-engagement__eyebrow">{t('CONSTRUCTIVE REVIEW')}</span>
+              <h2>{t('Written feedback')}</h2>
+              <p>{t('Share useful feedback before or after acceptance.')}</p>
               <textarea
                 dir="auto"
                 value={feedback}
                 maxLength={2000}
                 onChange={(event) => setFeedbackValue(event.target.value)}
-                placeholder="What is strong, unclear, or worth validating?"
+                placeholder={t('What is strong, unclear, or worth validating?')}
               />
               <div className="publication-feedback-actions">
                 <button
@@ -793,7 +795,7 @@ export default function PublicationDetailPage() {
                   ) : (
                     <MessageCircleMore />
                   )}
-                  {feedbackSaved ? 'Update feedback' : 'Save feedback'}
+                  {t(feedbackSaved ? 'Update feedback' : 'Save feedback')}
                 </button>
 
                 {feedbackSaved ? (
@@ -808,7 +810,7 @@ export default function PublicationDetailPage() {
                     ) : (
                       <Trash2 size={16} />
                     )}
-                    Delete my feedback
+                    {t('Delete my feedback')}
                   </button>
                 ) : null}
               </div>
@@ -820,27 +822,24 @@ export default function PublicationDetailPage() {
       {!accepted && acceptanceEnabled && !isPremiumUser ? (
         <section className="publication-access-card">
           <div>
-            <span><LockKeyhole size={16} /> PROTECTED OPPORTUNITY BRIEF</span>
-            <h2>Accept the opportunity to open the complete public brief.</h2>
+            <span><LockKeyhole size={16} /> {t('PROTECTED OPPORTUNITY BRIEF')}</span>
+            <h2>{t('Accept the opportunity to open the complete public brief.')}</h2>
             <p>
-              The public title and abstract stay available before acceptance.
-              Accepting opens the public problem, objectives, and target users.
-              Continue through secure sandbox checkout to open the protected
-              problem, objectives, and target-user brief.
+              {t('The public title and abstract stay available before acceptance. Accepting opens the public problem, objectives, and target users. Continue through secure sandbox checkout to open the protected problem, objectives, and target-user brief.')}
             </p>
           </div>
 
           <div className="publication-access-action">
             <div className="publication-access-action__price">
-              <small>One-time protected access</small>
+              <small>{t('One-time protected access')}</small>
               <strong>
                 {paymentPricing
                   ? `${paymentPricing.publicationAcceptancePrice} ${paymentPricing.currency}`
-                  : 'Open the complete opportunity'}
+                  : t('Open the complete opportunity')}
               </strong>
               <span>
                 <ShieldCheck size={15} />
-                Secure sandbox checkout
+                {t('Secure sandbox checkout')}
               </span>
             </div>
             <button
@@ -854,16 +853,16 @@ export default function PublicationDetailPage() {
               ) : (
                 <LockKeyhole />
               )}
-              Unlock protected brief
+              {t('Unlock protected brief')}
             </button>
           </div>
         </section>
       ) : !accepted && !isPremiumUser ? (
         <section className="publication-access-card">
           <div>
-            <span><ShieldCheck size={16} /> ACCEPTANCE PAUSED BY PUBLISHER</span>
-            <h2>This idea is currently open for discovery only.</h2>
-            <p>The publisher disabled new acceptances. Existing accepted users keep their access.</p>
+            <span><ShieldCheck size={16} /> {t('ACCEPTANCE PAUSED BY PUBLISHER')}</span>
+            <h2>{t('This idea is currently open for discovery only.')}</h2>
+            <p>{t('The publisher disabled new acceptances. Existing accepted users keep their access.')}</p>
           </div>
         </section>
       ) : (
@@ -871,8 +870,8 @@ export default function PublicationDetailPage() {
           <section className="publication-accepted-banner publication-accepted-banner--clean">
             <CheckCircle2 size={24} />
             <div>
-              <strong>Accepted opportunity</strong>
-              <span>The protected basic brief is available below.</span>
+              <strong>{t('Accepted opportunity')}</strong>
+              <span>{t('The protected basic brief is available below.')}</span>
             </div>
           </section>
 
@@ -880,18 +879,18 @@ export default function PublicationDetailPage() {
           <section className="publication-detail-grid">
             <article>
               <span>01</span>
-              <h2>Problem overview</h2>
-              <ContentBlock value={publication.publicProblem} fallback="No problem statement was provided." />
+              <h2>{t('Problem overview')}</h2>
+              <ContentBlock value={publication.publicProblem} fallback={t('No problem statement was provided.')} />
             </article>
             <article>
               <span>02</span>
-              <h2>Objectives</h2>
-              <ContentBlock value={publication.publicObjectives} fallback="No objectives were provided." />
+              <h2>{t('Objectives')}</h2>
+              <ContentBlock value={publication.publicObjectives} fallback={t('No objectives were provided.')} />
             </article>
             <article>
               <span>03</span>
-              <h2>Target users</h2>
-              <ContentBlock value={publication.publicTargetUsers} fallback="No target-user description was provided." />
+              <h2>{t('Target users')}</h2>
+              <ContentBlock value={publication.publicTargetUsers} fallback={t('No target-user description was provided.')} />
             </article>
           </section>
 
@@ -904,22 +903,22 @@ export default function PublicationDetailPage() {
                   <VoxidenceMark
                     size={58}
                     className="publication-advanced-card__brand-mark"
-                    title="Voxidence advanced evidence mark"
+                    title={t('Voxidence advanced evidence mark')}
                   />
                 )}
               </div>
 
               <div className="publication-advanced-card__copy">
-                <span>{hasAdvancedAccess ? 'ADVANCED ACCESS READY' : 'ADVANCED EXECUTION LAYER'}</span>
+                <span>{t(hasAdvancedAccess ? 'ADVANCED ACCESS READY' : 'ADVANCED EXECUTION LAYER')}</span>
                 <h2>
                   {hasAdvancedAccess
-                    ? 'Your complete accepted-idea workspace is ready.'
-                    : 'Unlock the complete execution package.'}
+                    ? t('Your complete accepted-idea workspace is ready.')
+                    : t('Unlock the complete execution package.')}
                 </h2>
                 <p>
                   {hasAdvancedAccess
-                    ? `Open ${publication.advancedOutputsCount ?? 'all'} available advanced outputs in one premium workspace.`
-                    : 'This opportunity contains completed premium outputs, including architecture, technology, feasibility, implementation, and business planning.'}
+                    ? t(`Open ${publication.advancedOutputsCount ?? 'all'} available advanced outputs in one premium workspace.`)
+                    : t('This opportunity contains completed premium outputs, including architecture, technology, feasibility, implementation, and business planning.')}
                 </p>
               </div>
 
@@ -934,18 +933,18 @@ export default function PublicationDetailPage() {
                       })
                     }
                   >
-                    Open premium workspace <ArrowUpRight size={18} />
+                    {t('Open premium workspace')} <ArrowUpRight size={18} />
                   </button>
                 ) : isPremiumUser ? (
                   <>
                     <div>
-                      <small>Premium advanced unlock</small>
+                      <small>{t('Premium advanced unlock')}</small>
                       <strong>
                         {paymentPricing?.publicationAdvancedCreditCost
-                          ? `${paymentPricing.publicationAdvancedCreditCost} credits`
-                          : 'Loading credit cost…'}
+                          ? t(`${paymentPricing.publicationAdvancedCreditCost} credits`)
+                          : t('Loading credit cost…')}
                       </strong>
-                      <span><ShieldCheck size={15} /> Price loaded from backend settings</span>
+                      <span><ShieldCheck size={15} /> {t('Price loaded from backend settings')}</span>
                     </div>
                     <button
                       type="button"
@@ -958,19 +957,19 @@ export default function PublicationDetailPage() {
                       ) : (
                         <Sparkles size={18} />
                       )}
-                      Unlock advanced outputs
+                      {t('Unlock advanced outputs')}
                     </button>
                   </>
                 ) : (
                   <>
                     <div>
-                      <small>One-time advanced access</small>
+                      <small>{t('One-time advanced access')}</small>
                       <strong>
                         {paymentPricing
                           ? `${paymentPricing.normalPublicationAdvancedPrice} ${paymentPricing.currency}`
-                          : 'Loading price…'}
+                          : t('Loading price…')}
                       </strong>
-                      <span><ShieldCheck size={15} /> Backend-controlled pricing</span>
+                      <span><ShieldCheck size={15} /> {t('Backend-controlled pricing')}</span>
                     </div>
                     <button
                       type="button"
@@ -978,7 +977,7 @@ export default function PublicationDetailPage() {
                       disabled={!paymentPricing}
                       onClick={() => setAdvancedPaymentOpen(true)}
                     >
-                      <Sparkles size={18} /> Unlock advanced outputs
+                      <Sparkles size={18} /> {t('Unlock advanced outputs')}
                     </button>
                   </>
                 )}
@@ -994,32 +993,32 @@ export default function PublicationDetailPage() {
 
       {paymentOpen && acceptanceEnabled
         ? createPortal(
-          <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose payment method">
-            <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setPaymentOpen(false)} />
+          <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label={t('Choose payment method')}>
+            <button className="publication-payment-modal__backdrop" type="button" aria-label={t('Close payment')} onClick={() => setPaymentOpen(false)} />
             <section className="publication-payment-modal__panel">
               <header>
                 <div className="publication-payment-modal__icon"><LockKeyhole size={24} /></div>
-                <div><span>PROTECTED ACCESS</span><h2>Unlock the complete opportunity brief</h2><p>Choose a secure test payment method. Access is granted only after verified provider confirmation.</p></div>
+                <div><span>{t('PROTECTED ACCESS')}</span><h2>{t('Unlock the complete opportunity brief')}</h2><p>{t('Choose a secure test payment method. Access is granted only after verified provider confirmation.')}</p></div>
                 <button type="button" className="publication-payment-modal__close" onClick={() => setPaymentOpen(false)}><X size={20} /></button>
               </header>
               <div className="publication-payment-modal__benefits">
-                <span><CheckCircle2 size={16} /> Problem statement</span>
-                <span><CheckCircle2 size={16} /> Objectives</span>
-                <span><CheckCircle2 size={16} /> Target users</span>
-                <span><CheckCircle2 size={16} /> Accepted ideas library</span>
+                <span><CheckCircle2 size={16} /> {t('Problem statement')}</span>
+                <span><CheckCircle2 size={16} /> {t('Objectives')}</span>
+                <span><CheckCircle2 size={16} /> {t('Target users')}</span>
+                <span><CheckCircle2 size={16} /> {t('Accepted ideas library')}</span>
               </div>
               <div className="publication-payment-modal__currency publication-payment-modal__currency--saved">
                 <div>
-                  <small>Saved payment currency</small>
+                  <small>{t('Saved payment currency')}</small>
                   <strong>{paymentCurrency}</strong>
-                  <span>Used automatically from your Preferences.</span>
+                  <span>{t('Used automatically from your Preferences.')}</span>
                 </div>
                 <div>
-                  <small>Acceptance price</small>
+                  <small>{t('Acceptance price')}</small>
                   <strong>
                     {paymentPricing
                       ? `${paymentPricing.publicationAcceptancePrice} ${paymentPricing.currency}`
-                      : 'Loading price…'}
+                      : t('Loading price…')}
                   </strong>
                   <Link
                     to="/normal/preferences"
@@ -1028,20 +1027,20 @@ export default function PublicationDetailPage() {
                       returnLabel: 'Back to publication',
                     }}
                   >
-                    Change in Preferences
+                    {t('Change in Preferences')}
                   </Link>
                 </div>
               </div>
               <div className="publication-payment-modal__methods">
                 <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
-                  <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
+                  <i><CreditCard size={22} /></i><span><strong>{t('Card checkout')}</strong><small>{t('Visa or Mastercard · Stripe test mode')}</small></span><b>{t(paymentMethod === 'card' ? 'Selected' : 'Choose')}</b>
                 </button>
               </div>
               <footer>
-                <div><ShieldCheck size={17} /><span><strong>Secure provider checkout</strong><small>Access is granted only after verified payment confirmation.</small></span></div>
+                <div><ShieldCheck size={17} /><span><strong>{t('Secure provider checkout')}</strong><small>{t('Access is granted only after verified payment confirmation.')}</small></span></div>
                 <button type="button" disabled={busyAction === 'accept'} onClick={handleAccept}>
                   {busyAction === 'accept' ? <LoaderCircle className="publication-spin" /> : <LockKeyhole />}
-                  {busyAction === 'accept' ? 'Creating checkout…' : 'Continue securely'}
+                  {t(busyAction === 'accept' ? 'Creating checkout…' : 'Continue securely')}
                 </button>
               </footer>
             </section>
@@ -1053,39 +1052,39 @@ export default function PublicationDetailPage() {
 
       {advancedPaymentOpen
         ? createPortal(
-          <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose advanced-output payment method">
-            <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setAdvancedPaymentOpen(false)} />
+          <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label={t('Choose advanced-output payment method')}>
+            <button className="publication-payment-modal__backdrop" type="button" aria-label={t('Close payment')} onClick={() => setAdvancedPaymentOpen(false)} />
             <section className="publication-payment-modal__panel publication-payment-modal__panel--advanced">
               <header>
                 <div className="publication-payment-modal__icon"><LockKeyhole size={24} /></div>
                 <div>
-                  <span>ADVANCED OPPORTUNITY ACCESS</span>
-                  <h2>Open the complete idea workspace</h2>
-                  <p>The backend determines the price and grants access only after the provider payment is verified.</p>
+                  <span>{t('ADVANCED OPPORTUNITY ACCESS')}</span>
+                  <h2>{t('Open the complete idea workspace')}</h2>
+                  <p>{t('The backend determines the price and grants access only after the provider payment is verified.')}</p>
                 </div>
                 <button type="button" className="publication-payment-modal__close" onClick={() => setAdvancedPaymentOpen(false)}><X size={20} /></button>
               </header>
 
               <div className="publication-payment-modal__price">
-                <small>Advanced outputs · one-time payment</small>
+                <small>{t('Advanced outputs · one-time payment')}</small>
                 <strong>{paymentPricing?.normalPublicationAdvancedPrice} {paymentPricing?.currency}</strong>
               </div>
 
               <div className="publication-payment-modal__benefits">
-                <span><CheckCircle2 size={16} /> Full abstract</span>
-                <span><CheckCircle2 size={16} /> Technology and architecture</span>
-                <span><CheckCircle2 size={16} /> Feasibility and implementation</span>
-                <span><CheckCircle2 size={16} /> Business and market outputs</span>
+                <span><CheckCircle2 size={16} /> {t('Full abstract')}</span>
+                <span><CheckCircle2 size={16} /> {t('Technology and architecture')}</span>
+                <span><CheckCircle2 size={16} /> {t('Feasibility and implementation')}</span>
+                <span><CheckCircle2 size={16} /> {t('Business and market outputs')}</span>
               </div>
 
               <div className="publication-payment-modal__currency publication-payment-modal__currency--saved">
                 <div>
-                  <small>Saved payment currency</small>
+                  <small>{t('Saved payment currency')}</small>
                   <strong>{paymentCurrency}</strong>
-                  <span>Used automatically from your Preferences.</span>
+                  <span>{t('Used automatically from your Preferences.')}</span>
                 </div>
                 <div>
-                  <small>Advanced workspace price</small>
+                  <small>{t('Advanced workspace price')}</small>
                   <strong>{paymentPricing?.normalPublicationAdvancedPrice} {paymentPricing?.currency}</strong>
                   <Link
                     to="/normal/preferences"
@@ -1094,21 +1093,21 @@ export default function PublicationDetailPage() {
                       returnLabel: 'Back to publication',
                     }}
                   >
-                    Change in Preferences
+                    {t('Change in Preferences')}
                   </Link>
                 </div>
               </div>
               <div className="publication-payment-modal__methods">
                 <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
-                  <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
+                  <i><CreditCard size={22} /></i><span><strong>{t('Card checkout')}</strong><small>{t('Visa or Mastercard · Stripe test mode')}</small></span><b>{t(paymentMethod === 'card' ? 'Selected' : 'Choose')}</b>
                 </button>
               </div>
 
               <footer>
-                <div><ShieldCheck size={17} /><span><strong>Verified fulfillment</strong><small>The workspace opens only after backend reconciliation succeeds.</small></span></div>
+                <div><ShieldCheck size={17} /><span><strong>{t('Verified fulfillment')}</strong><small>{t('The workspace opens only after backend reconciliation succeeds.')}</small></span></div>
                 <button type="button" disabled={busyAction === 'advanced-unlock'} onClick={handleAdvancedUnlock}>
                   {busyAction === 'advanced-unlock' ? <LoaderCircle className="publication-spin" /> : <LockKeyhole />}
-                  {busyAction === 'advanced-unlock' ? 'Creating checkout…' : 'Continue to payment'}
+                  {t(busyAction === 'advanced-unlock' ? 'Creating checkout…' : 'Continue to payment')}
                 </button>
               </footer>
             </section>
@@ -1119,15 +1118,15 @@ export default function PublicationDetailPage() {
 
       {reportOpen
         ? createPortal(
-          <div className="publication-report-modal" role="dialog" aria-modal="true" aria-label="Report publication">
-            <button type="button" className="publication-report-modal__backdrop" aria-label="Close report" onClick={() => setReportOpen(false)} />
+          <div className="publication-report-modal" role="dialog" aria-modal="true" aria-label={t('Report publication')}>
+            <button type="button" className="publication-report-modal__backdrop" aria-label={t('Close report')} onClick={() => setReportOpen(false)} />
             <form onSubmit={handleReport}>
               <header>
                 <div className="publication-report-modal__icon"><Flag size={22} /></div>
                 <div className="publication-report-modal__heading">
-                  <span>TRUST & SAFETY</span>
-                  <h2>Report this publication</h2>
-                  <p>Your report stays private and goes directly to the moderation team.</p>
+                  <span>{t('TRUST & SAFETY')}</span>
+                  <h2>{t('Report this publication')}</h2>
+                  <p>{t('Your report stays private and goes directly to the moderation team.')}</p>
                 </div>
                 <button
                   type="button"
@@ -1141,7 +1140,7 @@ export default function PublicationDetailPage() {
                 </button>
               </header>
               <label>
-                <span>Reason</span>
+                <span>{t('Reason')}</span>
                 <div className={`publication-report-reason ${reportReasonOpen ? 'is-open' : ''}`}>
                   <button
                     type="button"
@@ -1151,16 +1150,14 @@ export default function PublicationDetailPage() {
                     onClick={() => setReportReasonOpen((open) => !open)}
                   >
                     <span>
-                      {
-                        {
-                          MISLEADING: 'Misleading information',
-                          SPAM: 'Spam or manipulation',
-                          OFFENSIVE: 'Offensive content',
-                          COPYRIGHT: 'Copyright concern',
-                          PRIVACY: 'Privacy concern',
-                          OTHER: 'Other',
-                        }[reportReason]
-                      }
+                      {t({
+                        MISLEADING: 'Misleading information',
+                        SPAM: 'Spam or manipulation',
+                        OFFENSIVE: 'Offensive content',
+                        COPYRIGHT: 'Copyright concern',
+                        PRIVACY: 'Privacy concern',
+                        OTHER: 'Other',
+                      }[reportReason])}
                     </span>
                     <ChevronDown size={18} />
                   </button>
@@ -1186,7 +1183,7 @@ export default function PublicationDetailPage() {
                             setReportReasonOpen(false);
                           }}
                         >
-                          <span>{label}</span>
+                          <span>{t(label)}</span>
                           {reportReason === value ? <Check size={16} /> : null}
                         </button>
                       ))}
@@ -1195,8 +1192,8 @@ export default function PublicationDetailPage() {
                 </div>
               </label>
               <label>
-                <span>Additional details</span>
-                <textarea value={reportDetails} minLength={5} maxLength={1000} onChange={(event) => setReportDetails(event.target.value)} placeholder="Explain what the moderation team should review." />
+                <span>{t('Additional details')}</span>
+                <textarea value={reportDetails} minLength={5} maxLength={1000} onChange={(event) => setReportDetails(event.target.value)} placeholder={t('Explain what the moderation team should review.')} />
               </label>
               <footer className="publication-report-actions">
                 <button
@@ -1208,7 +1205,7 @@ export default function PublicationDetailPage() {
                   }}
                 >
                   <X size={16} />
-                  Cancel
+                  {t('Cancel')}
                 </button>
 
                 <button
@@ -1221,7 +1218,7 @@ export default function PublicationDetailPage() {
                   ) : (
                     <Flag size={17} />
                   )}
-                  Submit report
+                  {t('Submit report')}
                 </button>
               </footer>
             </form>
@@ -1235,12 +1232,12 @@ export default function PublicationDetailPage() {
             className="publication-credit-success"
             role="dialog"
             aria-modal="true"
-            aria-label="Advanced outputs unlocked"
+            aria-label={t('Advanced outputs unlocked')}
           >
             <button
               type="button"
               className="publication-credit-success__backdrop"
-              aria-label="Close success message"
+              aria-label={t('Close success message')}
               onClick={() => setCreditUnlockReceipt(null)}
             />
             <section className="publication-credit-success__panel">
@@ -1252,29 +1249,29 @@ export default function PublicationDetailPage() {
               <div className="publication-credit-success__icon">
                 <CheckCircle2 size={34} />
               </div>
-              <span className="publication-credit-success__eyebrow">ADVANCED ACCESS UNLOCKED</span>
-              <h2>Done — your credits were deducted successfully.</h2>
+              <span className="publication-credit-success__eyebrow">{t('ADVANCED ACCESS UNLOCKED')}</span>
+              <h2>{t('Done — your credits were deducted successfully.')}</h2>
               <p>
-                The complete advanced-output workspace is now available for this idea.
+                {t('The complete advanced-output workspace is now available for this idea.')}
               </p>
 
               <div className="publication-credit-success__receipt">
                 <div>
-                  <small>Credits used</small>
+                  <small>{t('Credits used')}</small>
                   <strong>
                     {creditUnlockReceipt.spent ?? paymentPricing?.publicationAdvancedCreditCost ?? '—'}
                   </strong>
                 </div>
                 <i />
                 <div>
-                  <small>Remaining balance</small>
+                  <small>{t('Remaining balance')}</small>
                   <strong>{creditUnlockReceipt.balance ?? '—'}</strong>
                 </div>
               </div>
 
               <div className="publication-credit-success__actions">
                 <button type="button" onClick={() => setCreditUnlockReceipt(null)}>
-                  Stay here
+                  {t('Stay here')}
                 </button>
                 <button
                   type="button"
@@ -1286,7 +1283,7 @@ export default function PublicationDetailPage() {
                     });
                   }}
                 >
-                  Open advanced workspace <ArrowUpRight size={18} />
+                  {t('Open advanced workspace')} <ArrowUpRight size={18} />
                 </button>
               </div>
             </section>

@@ -15,6 +15,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
+import { useUserExperience } from '../../../../system/user-experience';
+
 import { updateStoredUser } from '../../../auth/shared/auth.storage';
 import { getPaymentState, reconcilePayment } from '../api/paymentFlowApi';
 import { refreshPaymentDestination } from '../utils/paymentCacheInvalidation';
@@ -72,6 +74,7 @@ function getProcessingMessage(payment) {
 export default function PaymentResultPage() {
   const [query] = useSearchParams();
   const navigate = useNavigate();
+  const { t } = useUserExperience();
   const storedReference = useMemo(() => readPaymentReturnReference(), []);
   const confirmationRunRef = useRef(0);
 
@@ -334,27 +337,27 @@ export default function PaymentResultPage() {
               <LoaderCircle className="payment-result-spin" />
             </div>
             <span>
-              <Clock3 /> SECURE CONFIRMATION
+              <Clock3 /> {t('SECURE CONFIRMATION')}
             </span>
-            <h1>Completing your access…</h1>
-            <p>{state.processingMessage}</p>
+            <h1>{t('Completing your access…')}</h1>
+            <p>{t(state.processingMessage)}</p>
           </>
         ) : state.error ? (
           <>
             <div className="payment-result-icon">
               <XCircle />
             </div>
-            <span>PAYMENT NEEDS ATTENTION</span>
-            <h1>We could not finish the confirmation yet.</h1>
+            <span>{t('PAYMENT NEEDS ATTENTION')}</span>
+            <h1>{t('We could not finish the confirmation yet.')}</h1>
             <p>{state.error}</p>
 
             {paymentId ? (
               <button type="button" onClick={() => setRetryToken((value) => value + 1)}>
-                Check again
+                {t('Check again')}
               </button>
             ) : (
               <button type="button" onClick={returnToRelevantPage}>
-                Return safely
+                {t('Return safely')}
               </button>
             )}
           </>
@@ -364,31 +367,30 @@ export default function PaymentResultPage() {
               <CheckCircle2 />
             </div>
             <span>
-              <Sparkles /> PAYMENT CONFIRMED
+              <Sparkles /> {t('PAYMENT CONFIRMED')}
             </span>
             <h1>
               {payment.paymentPurpose === 'BUY_CREDITS'
-                ? 'Welcome to Premium.'
+                ? t('Welcome to Premium.')
                 : payment.paymentPurpose === 'DIRECT_UNLOCK'
-                  ? 'Your advanced workspace is open.'
+                  ? t('Your advanced workspace is open.')
                   : payment.paymentPurpose === 'UNLOCK_PUBLICATION_ADVANCED'
-                    ? 'Your accepted idea workspace is ready.'
-                    : 'The opportunity brief is unlocked.'}
+                    ? t('Your accepted idea workspace is ready.')
+                    : t('The opportunity brief is unlocked.')}
             </h1>
             <p>
-              The backend verified the provider payment and completed the related
-              Voxidence access.
+              {t('The backend verified the provider payment and completed the related Voxidence access.')}
             </p>
             <div className="payment-result-facts">
               <b>
                 <ShieldCheck /> {payment.amount} {payment.currency}
               </b>
-              <b>{payment.accountStatus} account</b>
+              <b>{t(payment.accountStatus)} {t('account')}</b>
             </div>
             <button type="button" onClick={goToDestination}>
               {payment.paymentPurpose === 'UNLOCK_PUBLICATION_ADVANCED'
-                ? 'Go to idea workspace'
-                : 'Continue to your workspace'}
+                ? t('Go to idea workspace')
+                : t('Continue to your workspace')}
             </button>
           </>
         )}

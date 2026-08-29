@@ -130,6 +130,8 @@ export type ResolveCollectionJobInput = {
     readonly routingHints: readonly string[];
     readonly discoveryDomainId?: string | null;
     readonly discoveryDomainName?: string | null;
+    readonly discoveryDomainIds?: readonly string[];
+    readonly discoveryDomainNames?: readonly string[];
     readonly queryIntentId?: string | null;
     readonly sourceTier?: 'PRIMARY' | 'SECONDARY' | 'MICRO_PROBE';
     readonly problemFacetIds?: readonly string[];
@@ -349,6 +351,8 @@ export class CollectionJobResolverService {
             routingHints: [...plan.routingHints],
             discoveryDomainId: plan.discoveryDomainId ?? null,
             discoveryDomainName: plan.discoveryDomainName ?? null,
+            discoveryDomainIds: [...(plan.discoveryDomainIds ?? [])],
+            discoveryDomainNames: [...(plan.discoveryDomainNames ?? [])],
             queryIntentId: plan.queryIntentId ?? null,
             sourceTier: plan.sourceTier,
             problemFacetIds: [...(plan.problemFacetIds ?? [])],
@@ -530,6 +534,8 @@ export class CollectionJobResolverService {
           routingHints: [...plan.routingHints].sort(),
           discoveryDomainId: plan.discoveryDomainId ?? null,
           discoveryDomainName: plan.discoveryDomainName ?? null,
+          discoveryDomainIds: [...(plan.discoveryDomainIds ?? [])].sort(),
+          discoveryDomainNames: [...(plan.discoveryDomainNames ?? [])].sort(),
           queryIntentId: plan.queryIntentId ?? null,
           sourceTier: plan.sourceTier ?? null,
           problemFacetIds: [...(plan.problemFacetIds ?? [])].sort(),
@@ -994,6 +1000,8 @@ export class CollectionJobResolverService {
           routingHints: this.normalizeKeywords(plan.routingHints) ?? [],
           discoveryDomainId: this.normalizeOptionalText(plan.discoveryDomainId ?? undefined) ?? null,
           discoveryDomainName: this.normalizeOptionalText(plan.discoveryDomainName ?? undefined) ?? null,
+          discoveryDomainIds: this.normalizeKeywords(plan.discoveryDomainIds) ?? [],
+          discoveryDomainNames: this.normalizeKeywords(plan.discoveryDomainNames) ?? [],
           queryIntentId: this.normalizeOptionalText(plan.queryIntentId ?? undefined) ?? null,
           sourceTier: plan.sourceTier,
           problemFacetIds: this.normalizeKeywords(plan.problemFacetIds) ?? [],

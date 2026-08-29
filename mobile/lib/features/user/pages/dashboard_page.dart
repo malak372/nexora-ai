@@ -29,7 +29,6 @@ import '../api/user_api.dart';
 import '../models/user_models.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
-import 'generate_idea_page.dart';
 import 'generation_progress_page.dart';
 import 'idea_workspace_page.dart';
 
@@ -37,11 +36,13 @@ class DashboardPage extends StatefulWidget {
   const DashboardPage({
     super.key,
     required this.onOpenGenerate,
+    required this.onOpenGenerateWithProblem,
     required this.onOpenLibrary,
     required this.onOpenDiscover,
   });
 
   final VoidCallback onOpenGenerate;
+  final ValueChanged<String> onOpenGenerateWithProblem;
   final VoidCallback onOpenLibrary;
   final VoidCallback onOpenDiscover;
 
@@ -96,22 +97,6 @@ class _DashboardPageState extends State<DashboardPage> {
     await _loadSecondary(force: true);
   }
 
-  Future<void> _openProblem(String problem) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        settings: const RouteSettings(name: '/normal/generate'),
-        builder: (_) => GenerateIdeaPage(
-          initialProblem: problem.trim().isEmpty ? null : problem.trim(),
-          onGenerationStarted: () => _session.load(force: true),
-        ),
-      ),
-    );
-
-    if (mounted) {
-      await _refresh();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -161,7 +146,10 @@ class _DashboardPageState extends State<DashboardPage> {
 
                   _Reveal(
                     delay: 70,
-                    child: _IdeaLauncher(onStart: _openProblem),
+                    child: _IdeaLauncher(
+                      onOpenGenerate: widget.onOpenGenerate,
+                      onStart: widget.onOpenGenerateWithProblem,
+                    ),
                   ),
 
                   const SizedBox(height: 19),
@@ -1015,8 +1003,12 @@ class _SignalPathPainter extends CustomPainter {
 }
 
 class _IdeaLauncher extends StatefulWidget {
-  const _IdeaLauncher({required this.onStart});
+  const _IdeaLauncher({
+    required this.onOpenGenerate,
+    required this.onStart,
+  });
 
+  final VoidCallback onOpenGenerate;
   final ValueChanged<String> onStart;
 
   @override
@@ -1146,8 +1138,7 @@ class _IdeaLauncherState extends State<_IdeaLauncher> {
                           width: 42,
                           height: 42,
                           child: OutlinedButton(
-                            onPressed: () =>
-                                widget.onStart(_controller.text.trim()),
+                            onPressed: widget.onOpenGenerate,
                             style: OutlinedButton.styleFrom(
                               padding: EdgeInsets.zero,
                               backgroundColor: Colors.white.withValues(
@@ -1162,8 +1153,9 @@ class _IdeaLauncherState extends State<_IdeaLauncher> {
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
-                          onPressed: () =>
-                              widget.onStart(_controller.text.trim()),
+                          onPressed: hasText
+                              ? () => widget.onStart(_controller.text.trim())
+                              : widget.onOpenGenerate,
                           icon: const Icon(
                             Icons.arrow_forward_rounded,
                             size: 16,

@@ -345,30 +345,15 @@ export class IdeaOpportunityRankingService {
       return ranking;
     }
 
-    const relatedOpportunityBundle = this.buildRelatedOpportunityBundle(
-      selected,
-      alternatives,
-      selectedDomains,
-    );
-    const selectedWithBundle =
-      relatedOpportunityBundle.length > 0
-        ? {
-            ...selected,
-            relatedOpportunityBundle,
-            matchedDomainNames: [
-              ...new Set([
-                ...(selected.matchedDomainNames ?? []),
-                ...relatedOpportunityBundle.flatMap(
-                  (item) => item.matchedDomainNames,
-                ),
-              ]),
-            ],
-          }
-        : selected;
-
+    /*
+     * A ranking winner is one problem, not a synthetic bundle of separate
+     * opportunity families. If one retained problem genuinely spans multiple
+     * domains, that fact must already be present in the winner's own verified
+     * evidence attribution. Alternatives never expand final product scope.
+     */
     return {
       ...ranking,
-      selected: selectedWithBundle,
+      selected,
       alternatives,
       selectionReason:
         selected.title === previousSelectedTitle
@@ -377,190 +362,6 @@ export class IdeaOpportunityRankingService {
     };
   }
 
-  private buildRelatedOpportunityBundle(
-    selected: RankedIdeaOpportunity,
-    alternatives: readonly RankedIdeaOpportunity[],
-    selectedDomains: readonly SelectedDomainRankingInput[],
-  ): NonNullable<RankedIdeaOpportunity['relatedOpportunityBundle']> {
-    const selectedFamily = this.readRankedFamilyKey(selected);
-    const complementaryFamilies: Readonly<Record<string, readonly string[]>> = {
-      'hr-candidate-pooling': ['hr-client-outreach'],
-      'hr-client-outreach': ['hr-candidate-pooling'],
-    };
-    const allowed = complementaryFamilies[selectedFamily ?? ''] ?? [];
-    const selectedMatchedDomains = new Set(
-      (selected.matchedDomainNames ?? []).map((name) => name.toLocaleLowerCase()),
-    );
-    const allowedSelectedDomains = new Set(
-      selectedDomains.map((domain) => domain.name.toLocaleLowerCase()),
-    );
-
-    const sameDomainComplements = alternatives.filter((candidate) => {
-      if (candidate.disqualificationReasons.includes('OFF_SELECTED_DOMAIN')) {
-        return false;
-      }
-      const family = this.readRankedFamilyKey(candidate);
-      if (!family || !allowed.includes(family)) return false;
-      if ((candidate.verifiedProblemMatchedEvidenceCount ?? 0) < 1) return false;
-      if (
-        candidate.evidenceReliabilityScore < 0.45 ||
-        candidate.supportScore < 0.3
-      ) {
-        return false;
-      }
-      return (candidate.matchedDomainNames ?? []).some((name) =>
-        selectedMatchedDomains.has(name.toLocaleLowerCase()),
-      );
-    });
-
-    const crossDomainComplements = alternatives.filter((candidate) => {
-      if (candidate.disqualificationReasons.includes('OFF_SELECTED_DOMAIN')) {
-        return false;
-      }
-      if ((candidate.verifiedProblemMatchedEvidenceCount ?? 0) < 1) {
-        return false;
-      }
-      if (
-        candidate.evidenceReliabilityScore < 0.45 ||
-        candidate.supportScore < 0.3
-      ) {
-        return false;
-      }
-
-      const candidateDomains = (candidate.matchedDomainNames ?? []).map((name) =>
-        name.toLocaleLowerCase(),
-      );
-      if (
-        candidateDomains.length === 0 ||
-        !candidateDomains.some((name) => allowedSelectedDomains.has(name)) ||
-        candidateDomains.some((name) => selectedMatchedDomains.has(name))
-      ) {
-        return false;
-      }
-
-      /*
-       * Cross-domain bundle synthesis is allowed only when the winning
-       * opportunity itself verified that the other domain is part of the same
-       * operational workflow. Lexical similarity between two unrelated
-       * problems is not workflow evidence and must never broaden the final
-       * claim space.
-       */
-      const verifiedWorkflowDomains = new Set(
-        (selected.workflowDomainNames ?? []).map((name) =>
-          name.toLocaleLowerCase(),
-        ),
-      );
-      if (
-        verifiedWorkflowDomains.size === 0 ||
-        !candidateDomains.some((name) => verifiedWorkflowDomains.has(name))
-      ) {
-        return false;
-      }
-
-      return this.calculateOpportunityCoherence(selected, candidate) >= 0.18;
-    });
-
-    const combined = [...sameDomainComplements, ...crossDomainComplements]
-      .filter(
-        (candidate, index, candidates) =>
-          candidates.findIndex((item) => item.title === candidate.title) ===
-          index,
-      )
-      .sort(
-        (first, second) =>
-          this.calculateOpportunityCoherence(selected, second) -
-            this.calculateOpportunityCoherence(selected, first) ||
-          (second.verifiedProblemMatchedEvidenceCount ?? 0) -
-            (first.verifiedProblemMatchedEvidenceCount ?? 0) ||
-          second.finalScore - first.finalScore,
-      )
-      .slice(0, 2);
-
-    return combined.map((candidate) => ({
-      rank: candidate.rank,
-      title: candidate.title,
-      problem: candidate.problem,
-      need: candidate.need,
-      solutionArea: candidate.solutionArea,
-      evidenceType: candidate.evidenceType,
-      evidenceSamples: candidate.evidenceSamples.slice(0, 2),
-      matchedDomainNames: candidate.matchedDomainNames ?? [],
-      verifiedProblemMatchedEvidenceCount:
-        candidate.verifiedProblemMatchedEvidenceCount ?? 0,
-      verifiedProblemMatchedDirectUserEvidenceCount:
-        candidate.verifiedProblemMatchedDirectUserEvidenceCount ?? 0,
-      verifiedProblemMatchedComplaintEvidenceCount:
-        candidate.verifiedProblemMatchedComplaintEvidenceCount ?? 0,
-      verifiedProblemMatchedFeatureRequestEvidenceCount:
-        candidate.verifiedProblemMatchedFeatureRequestEvidenceCount ?? 0,
-    }));
-  }
-
-  private calculateOpportunityCoherence(
-    first: RankedIdeaOpportunity,
-    second: RankedIdeaOpportunity,
-  ): number {
-    const normalize = (value: string): Set<string> => {
-      const stopWords = new Set([
-        'about',
-        'application',
-        'business',
-        'company',
-        'domain',
-        'help',
-        'issue',
-        'management',
-        'need',
-        'needs',
-        'operation',
-        'operations',
-        'platform',
-        'problem',
-        'software',
-        'system',
-        'user',
-        'users',
-        'workflow',
-      ]);
-
-      return new Set(
-        value
-          .normalize('NFKC')
-          .toLocaleLowerCase()
-          .replace(/[^\p{L}\p{N}]+/gu, ' ')
-          .split(/\s+/u)
-          .filter((token) => token.length >= 4 && !stopWords.has(token)),
-      );
-    };
-
-    const firstTokens = normalize(
-      [
-        first.title,
-        first.problem ?? '',
-        first.need ?? '',
-        first.solutionArea ?? '',
-      ].join(' '),
-    );
-    const secondTokens = normalize(
-      [
-        second.title,
-        second.problem ?? '',
-        second.need ?? '',
-        second.solutionArea ?? '',
-      ].join(' '),
-    );
-
-    if (firstTokens.size === 0 || secondTokens.size === 0) {
-      return 0;
-    }
-
-    const intersection = [...firstTokens].filter((token) =>
-      secondTokens.has(token),
-    ).length;
-    const smaller = Math.min(firstTokens.size, secondTokens.size);
-
-    return intersection / Math.max(1, smaller);
-  }
 
   private readRankedFamilyKey(candidate: RankedIdeaOpportunity): string | null {
     if (!this.isJsonObject(candidate.raw)) return null;

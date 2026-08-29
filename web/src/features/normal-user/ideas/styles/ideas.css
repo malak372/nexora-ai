@@ -3454,3 +3454,734 @@ html.vox-user-rtl .idea-tile footer button svg,
 html.vox-user-rtl .idea-tile__popover button:first-child svg {
   transform: scaleX(-1);
 }
+
+
+/* FINAL_20260827_MY_IDEAS_CLEAN_DARK_HEADER */
+html.vox-user-dark .ideas-page__header {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .ideas-page__count {
+  min-width: auto !important;
+  padding: 10px 13px !important;
+  border-radius: 16px !important;
+  background: #142820 !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .ideas-page__toolbar {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .ideas-filters {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .ideas-filters button {
+  min-height: 42px !important;
+  padding: 9px 14px !important;
+  border: 1px solid rgba(112,205,198,.17) !important;
+  border-radius: 999px !important;
+  background: #142820 !important;
+  color: #d7e8e3 !important;
+  box-shadow: none !important;
+}
+html.vox-user-dark .ideas-filters button:hover,
+html.vox-user-dark .ideas-filters button.is-active {
+  border-color: rgba(112,205,198,.40) !important;
+  background: #1d3a31 !important;
+  color: #f1fbf8 !important;
+}
+html.vox-user-dark .ideas-page::before {
+  opacity: .10 !important;
+}
+
+/* FINAL_20260827_MY_IDEAS_FLAT_HEADER_FILTERS_V2 */
+html.vox-user-dark .ideas-page__header {
+  padding: 12px 0 22px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .ideas-page__count,
+html.vox-user-dark .ideas-page__count--accepted,
+html.vox-user-dark .ideas-page__count--published,
+html.vox-user-dark .ideas-page__count--favorites {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .ideas-page__count strong {
+  font-size: 1.1rem !important;
+}
+
+html.vox-user-dark .ideas-page__toolbar,
+html.vox-user-dark .ideas-filters {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .ideas-filters {
+  gap: 8px !important;
+}
+
+html.vox-user-dark .ideas-filters button {
+  min-height: 40px !important;
+  padding: 8px 13px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(112, 205, 198, .18) !important;
+  background: #12251f !important;
+  color: #c9ddd7 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .ideas-filters button:hover,
+html.vox-user-dark .ideas-filters button.is-active,
+html.vox-user-dark .ideas-filters button.is-accepted-filter.is-active,
+html.vox-user-dark .ideas-filters button.is-published-filter.is-active,
+html.vox-user-dark .ideas-filters button.is-favorites-filter.is-active {
+  color: #f0faf7 !important;
+  border-color: rgba(112, 205, 198, .38) !important;
+  background: #1c3a30 !important;
+  box-shadow: none !important;
+}
+
+/* 2026-08-27 My Ideas hero refresh */
+.ideas-page__header {
+  position: relative;
+  isolation: isolate;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 210px auto !important;
+  align-items: center !important;
+  gap: clamp(18px, 3vw, 38px) !important;
+  min-height: 188px;
+  overflow: hidden;
+  margin-bottom: 24px !important;
+  padding: clamp(24px, 3vw, 36px);
+  border: 1px solid rgba(69, 129, 119, .13);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 79% 18%, rgba(112, 205, 198, .22), transparent 28%),
+    radial-gradient(circle at 18% 100%, rgba(235, 170, 187, .18), transparent 30%),
+    linear-gradient(135deg, #fbfefd 0%, #f5fbf9 58%, #fff9fb 100%);
+  box-shadow: 0 20px 54px rgba(48, 91, 84, .08);
+}
+
+.ideas-page__header::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  opacity: .38;
+  background-image:
+    linear-gradient(rgba(63, 137, 128, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(63, 137, 128, .045) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 35%, #000 100%);
+}
+
+.ideas-page__header > div:first-child {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+
+.ideas-page__header h1 {
+  font-size: clamp(2.25rem, 4.3vw, 4.4rem) !important;
+  letter-spacing: -.055em !important;
+}
+
+.ideas-page__header p {
+  max-width: 650px;
+  font-size: .96rem !important;
+  line-height: 1.65;
+}
+
+.ideas-page__hero-art {
+  position: relative;
+  width: 190px;
+  height: 138px;
+  justify-self: center;
+}
+
+.ideas-page__hero-orbit,
+.ideas-page__hero-node,
+.ideas-page__hero-path {
+  position: absolute;
+}
+
+.ideas-page__hero-orbit {
+  inset: 50% auto auto 50%;
+  border: 1px solid rgba(68, 153, 143, .22);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ideas-page__hero-orbit--one { width: 132px; height: 88px; transform: translate(-50%, -50%) rotate(-13deg); }
+.ideas-page__hero-orbit--two { width: 170px; height: 116px; border-color: rgba(221, 147, 166, .20); transform: translate(-50%, -50%) rotate(19deg); }
+
+.ideas-page__hero-node {
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(78, 153, 144, .18);
+  background: rgba(255, 255, 255, .86);
+  color: #3b8d85;
+  box-shadow: 0 12px 30px rgba(44, 102, 94, .10);
+  backdrop-filter: blur(12px);
+}
+
+.ideas-page__hero-node--main {
+  left: 50%;
+  top: 50%;
+  width: 70px;
+  height: 70px;
+  border-radius: 24px;
+  transform: translate(-50%, -50%) rotate(-7deg);
+  color: #438f88;
+  background: linear-gradient(145deg, rgba(237, 250, 247, .96), rgba(255, 247, 250, .94));
+}
+
+.ideas-page__hero-node--spark { right: 7px; top: 14px; width: 38px; height: 38px; border-radius: 13px; color: #c8768d; }
+.ideas-page__hero-node--layers { left: 5px; bottom: 12px; width: 42px; height: 42px; border-radius: 14px; }
+.ideas-page__hero-path { left: 27px; right: 24px; top: 68px; height: 1px; border-top: 1px dashed rgba(69, 139, 130, .32); transform: rotate(-8deg); }
+
+.ideas-page__count {
+  position: relative;
+  z-index: 2;
+  justify-self: end;
+  min-width: 122px !important;
+  background: rgba(255, 255, 255, .70) !important;
+  backdrop-filter: blur(16px);
+}
+
+@media (max-width: 900px) {
+  .ideas-page__header {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+  }
+  .ideas-page__hero-art { display: none; }
+}
+
+@media (max-width: 620px) {
+  .ideas-page__header {
+    grid-template-columns: 1fr !important;
+    align-items: start !important;
+    padding: 22px !important;
+  }
+  .ideas-page__count { justify-self: start; }
+}
+
+.ideas-page__header {
+  grid-template-columns: minmax(0, 1fr) 220px minmax(150px, auto) !important;
+  min-height: 202px;
+  padding: clamp(28px, 3.2vw, 40px) clamp(28px, 3.4vw, 44px) !important;
+  border-radius: 34px !important;
+  background:
+    radial-gradient(circle at 78% 20%, rgba(104, 196, 188, .22), transparent 28%),
+    radial-gradient(circle at 10% 92%, rgba(228, 157, 176, .17), transparent 30%),
+    linear-gradient(135deg, #fbfefd 0%, #f4faf8 56%, #fff8fa 100%) !important;
+  box-shadow: 0 24px 62px rgba(47, 93, 86, .09) !important;
+}
+
+.ideas-page__header::after {
+  opacity: .26;
+  border-radius: inherit;
+}
+
+.ideas-page__hero-art {
+  width: 204px;
+  height: 150px;
+}
+
+.ideas-page__hero-node--main {
+  width: 78px;
+  height: 78px;
+  border-radius: 26px;
+  box-shadow: 0 16px 34px rgba(44, 102, 94, .12);
+}
+
+.ideas-page__hero-node--spark {
+  right: 5px;
+  top: 12px;
+  width: 42px;
+  height: 42px;
+}
+
+.ideas-page__hero-node--layers {
+  left: 4px;
+  bottom: 10px;
+  width: 46px;
+  height: 46px;
+}
+
+.ideas-page__count,
+.ideas-page__count--accepted,
+.ideas-page__count--published,
+.ideas-page__count--favorites {
+  min-width: 150px !important;
+  width: max-content;
+  max-width: 190px;
+  min-height: 58px;
+  padding: 11px 16px !important;
+  border: 1px solid rgba(78, 153, 144, .17) !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, .74) !important;
+  box-shadow: 0 14px 34px rgba(51, 100, 93, .08) !important;
+  white-space: nowrap;
+}
+
+.ideas-page__count span {
+  white-space: nowrap;
+}
+
+html.vox-user-rtl .ideas-page__count {
+  justify-self: start !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__header {
+  min-height: 202px !important;
+  padding: clamp(28px, 3.2vw, 40px) clamp(28px, 3.4vw, 44px) !important;
+  border: 1px solid rgba(116, 205, 197, .17) !important;
+  border-radius: 34px !important;
+  background:
+    radial-gradient(circle at 78% 20%, rgba(97, 190, 181, .15), transparent 29%),
+    radial-gradient(circle at 10% 92%, rgba(218, 139, 160, .10), transparent 31%),
+    linear-gradient(135deg, #142820 0%, #10231c 58%, #172621 100%) !important;
+  box-shadow: 0 22px 58px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__header::after {
+  opacity: .12 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__hero-node {
+  border-color: rgba(116, 205, 197, .20) !important;
+  background: linear-gradient(145deg, #1d3a31, #173027) !important;
+  color: #91ded8 !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .18) !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__hero-node--spark {
+  color: #e8a5b7 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__count,
+html.vox-user-dark body .ideas-page .ideas-page__count--accepted,
+html.vox-user-dark body .ideas-page .ideas-page__count--published,
+html.vox-user-dark body .ideas-page .ideas-page__count--favorites {
+  min-width: 150px !important;
+  padding: 11px 16px !important;
+  border: 1px solid rgba(116, 205, 197, .18) !important;
+  border-radius: 18px !important;
+  background: rgba(22, 49, 40, .86) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__count strong {
+  color: #f2faf7 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__count span {
+  color: #a9beb7 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__toolbar,
+html.vox-user-dark body .ideas-page .ideas-page__toolbar::before,
+html.vox-user-dark body .ideas-page .ideas-page__toolbar::after,
+html.vox-user-dark body .ideas-page .ideas-filters,
+html.vox-user-dark body .ideas-page .ideas-filters::before,
+html.vox-user-dark body .ideas-page .ideas-filters::after {
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-filters {
+  padding: 0 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-filters button {
+  min-height: 42px !important;
+  border: 1px solid rgba(116, 205, 197, .17) !important;
+  border-radius: 999px !important;
+  background: #132820 !important;
+  color: #cfe0da !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-filters button:hover,
+html.vox-user-dark body .ideas-page .ideas-filters button.is-active,
+html.vox-user-dark body .ideas-page .ideas-filters button.is-accepted-filter.is-active,
+html.vox-user-dark body .ideas-page .ideas-filters button.is-published-filter.is-active,
+html.vox-user-dark body .ideas-page .ideas-filters button.is-favorites-filter.is-active {
+  border-color: rgba(116, 205, 197, .38) !important;
+  background: #214238 !important;
+  color: #f3fbf8 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter__heading > span {
+  color: #96aaa3 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter__fields {
+  border: 1px solid rgba(116, 205, 197, .17) !important;
+  border-radius: 17px !important;
+  background: #132820 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter input {
+  color: #f0f7f4 !important;
+  background: #0f211b !important;
+  border-color: transparent !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label + label::before {
+  background: rgba(116, 205, 197, .12) !important;
+}
+
+@media (max-width: 900px) {
+  .ideas-page__header {
+    grid-template-columns: minmax(0, 1fr) minmax(140px, auto) !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .ideas-page__header {
+    grid-template-columns: 1fr !important;
+  }
+
+  html.vox-user-rtl .ideas-page__count,
+  .ideas-page__count {
+    justify-self: start !important;
+  }
+}
+
+
+/* FINAL_20260828_MY_IDEAS_INTEGRATED_FILTERS
+   Remove the outer filter/date slabs while preserving clear individual controls. */
+html.vox-user-dark body .ideas-page .ideas-page__toolbar,
+html.vox-user-dark body .ideas-page .ideas-date-filter,
+html.vox-user-dark body .ideas-page .ideas-date-filter__fields,
+html.vox-user-dark body .ideas-page .ideas-filters {
+  border: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter__fields {
+  gap: 8px !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label {
+  border: 1px solid rgba(116, 205, 197, .16) !important;
+  border-radius: 13px !important;
+  background: #132820 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label + label::before {
+  display: none !important;
+}
+
+/* FINAL_20260828_DARK_FILTER_SURFACE_REMOVAL */
+html.vox-user-dark body .ideas-page .ideas-page__toolbar,
+html.vox-user-dark body .ideas-page .ideas-page__toolbar::before,
+html.vox-user-dark body .ideas-page .ideas-page__toolbar::after,
+html.vox-user-dark body .ideas-page .ideas-date-filter,
+html.vox-user-dark body .ideas-page .ideas-date-filter::before,
+html.vox-user-dark body .ideas-page .ideas-date-filter::after,
+html.vox-user-dark body .ideas-page .ideas-date-filter__heading,
+html.vox-user-dark body .ideas-page .ideas-date-filter__fields,
+html.vox-user-dark body .ideas-page .ideas-filters,
+html.vox-user-dark body .ideas-page .ideas-filters::before,
+html.vox-user-dark body .ideas-page .ideas-filters::after {
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__toolbar {
+  gap: 14px !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-filters {
+  padding: 0 !important;
+}
+
+
+/* FINAL_20260828_MY_IDEAS_DARK_FILTER_CANVAS
+   The filter pills sit directly on the page in dark mode. No parent slab,
+   pseudo-element, blur layer, outline, or inherited surface is allowed. */
+html.vox-user-dark body .ideas-page .ideas-page__toolbar,
+html.vox-user-dark body .ideas-page .ideas-page__toolbar::before,
+html.vox-user-dark body .ideas-page .ideas-page__toolbar::after,
+html.vox-user-dark body .ideas-page .ideas-filters,
+html.vox-user-dark body .ideas-page .ideas-filters::before,
+html.vox-user-dark body .ideas-page .ideas-filters::after {
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-page__toolbar::before,
+html.vox-user-dark body .ideas-page .ideas-page__toolbar::after,
+html.vox-user-dark body .ideas-page .ideas-filters::before,
+html.vox-user-dark body .ideas-page .ideas-filters::after {
+  content: none !important;
+  display: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-filters {
+  padding: 0 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-filters button {
+  box-shadow: none !important;
+}
+
+/* ========================================================================== */
+/* 2026-08-28 — My Ideas date range + dynamic pagination final refinement     */
+/* ========================================================================== */
+
+.ideas-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 34px;
+}
+
+.ideas-pagination__pages {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.ideas-pagination .ideas-pagination__page {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ideas-pagination .ideas-pagination__page.is-active {
+  border-color: rgba(52, 145, 119, 0.44) !important;
+  background: linear-gradient(145deg, #e8f7f1, #f6fcf9) !important;
+  color: #1e7458 !important;
+  box-shadow:
+    0 10px 24px rgba(34, 112, 84, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+.ideas-pagination .ideas-pagination__nav {
+  min-height: 42px;
+  padding-inline: 15px;
+}
+
+/* Keep the dark date-range control structurally identical to the light one:
+   one outer capsule, two inset fields, and one central divider. */
+html.vox-user-dark body .ideas-page .ideas-date-filter {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter__heading {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter__heading > span {
+  color: #93aaa2 !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter__fields {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 5px !important;
+  width: 100% !important;
+  height: 50px !important;
+  min-height: 50px !important;
+  padding: 4px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(112, 205, 198, 0.19) !important;
+  border-radius: 16px !important;
+  background: #12261f !important;
+  background-image: none !important;
+  box-shadow:
+    0 11px 28px rgba(2, 10, 8, 0.14),
+    inset 0 1px 0 rgba(185, 229, 222, 0.035) !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter.has-value .ideas-date-filter__fields {
+  border-color: rgba(112, 205, 198, 0.36) !important;
+  box-shadow:
+    0 13px 30px rgba(2, 10, 8, 0.17),
+    0 0 0 3px rgba(112, 205, 198, 0.055),
+    inset 0 1px 0 rgba(185, 229, 222, 0.04) !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label {
+  position: relative !important;
+  height: 42px !important;
+  margin: 0 !important;
+  padding: 5px 9px 4px !important;
+  border: 0 !important;
+  border-radius: 11px !important;
+  background: linear-gradient(145deg, #153129, #10261f) !important;
+  background-image: linear-gradient(145deg, #153129, #10261f) !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label + label::before {
+  display: block !important;
+  content: '' !important;
+  position: absolute !important;
+  left: -3px !important;
+  top: 8px !important;
+  bottom: 8px !important;
+  width: 1px !important;
+  background: rgba(137, 202, 192, 0.15) !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter label > span {
+  color: #8ca49c !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter input {
+  width: 100% !important;
+  height: 23px !important;
+  min-height: 23px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #edf7f3 !important;
+  color-scheme: dark;
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter input::-webkit-calendar-picker-indicator {
+  opacity: 0.76 !important;
+  filter: invert(88%) sepia(8%) saturate(330%) hue-rotate(107deg) brightness(104%) contrast(92%);
+}
+
+html.vox-user-dark body .ideas-page .ideas-pagination__pages {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark body .ideas-page .ideas-pagination .ideas-pagination__page.is-active {
+  border-color: rgba(112, 205, 198, 0.42) !important;
+  background: #25483d !important;
+  background-image: none !important;
+  color: #f2fffb !important;
+  box-shadow: 0 8px 22px rgba(2, 10, 8, 0.14) !important;
+}
+
+@media (max-width: 620px) {
+  .ideas-pagination {
+    gap: 8px;
+  }
+
+  .ideas-pagination__pages {
+    order: 3;
+    width: 100%;
+  }
+
+  .ideas-pagination .ideas-pagination__nav {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+
+/* ========================================================================== */
+/* 2026-08-28 — Date picker icon: deterministic in light + dark mode.          */
+/* The native calendar glyph varies by browser/theme and became nearly black  */
+/* on the dark field. Keep its hit target but draw our own visible icon.       */
+/* ========================================================================== */
+.ideas-page .ideas-date-filter__input-wrap {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+}
+
+.ideas-page .ideas-date-filter__input-wrap input[type='date'] {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding-inline-end: 23px !important;
+  cursor: pointer;
+}
+
+.ideas-page .ideas-date-filter__input-wrap input[type='date']::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset-inline-end: 0;
+  width: 22px !important;
+  height: 22px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+  cursor: pointer !important;
+}
+
+.ideas-page .ideas-date-filter__calendar-icon {
+  position: absolute;
+  inset-inline-end: 2px;
+  top: 50%;
+  z-index: 2;
+  flex: 0 0 auto;
+  color: #667a74;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+html.vox-user-dark body .ideas-page .ideas-date-filter__calendar-icon {
+  color: #b9d7ce !important;
+  filter: drop-shadow(0 0 5px rgba(112, 205, 198, .12));
+}
