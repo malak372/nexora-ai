@@ -466,6 +466,7 @@ export class AdminTeamChatService {
 
         this.events.emit('admin-chat.message.created', {
             message,
+            senderId: currentAdminId,
             memberIds,
         });
 

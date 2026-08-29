@@ -54,6 +54,7 @@ import { IdeaGenerationRunService } from './idea-generation-run.service';
 import { DomainResolutionService } from './domain-resolution.service';
 import { RequestCollectionPlanningService } from './request-collection-planning.service';
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
+import { RequestTextIntegrityUtil } from '../utils/request-text-integrity.util';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { LanguageDetectionService } from '../../../nlp/language-detection/language-detection.service';
 import { createHash, randomUUID } from 'node:crypto';
@@ -1118,9 +1119,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     dto: GenerateIdeaDto,
     generationType: IdeaGenerationType,
   ): string {
+    const description = RequestTextIntegrityUtil.normalize(dto.description).text;
     return this.hashRequestFingerprint({
       generationType,
-      description: this.normalizeOptionalValue(dto.description) ?? '',
+      description: description ?? '',
       domainIds: this.normalizeExplicitDomainIds(dto.domainIds, dto.domainId),
       domainNames: this.normalizeStringArray(dto.domainNames),
       keywords: this.normalizeStringArray(dto.keywords),
@@ -1129,15 +1131,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       region: this.normalizeOptionalValue(dto.region) ?? '',
       radiusKm: dto.radiusKm ?? null,
       language: dto.language,
-      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage, dto.description),
+      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage, description),
       forceRefresh: dto.forceRefresh === true,
     });
   }
 
   private buildGuestRequestFingerprint(dto: GenerateGuestIdeaDto): string {
+    const description = RequestTextIntegrityUtil.normalize(dto.description).text;
     return this.hashRequestFingerprint({
       generationType: IdeaGenerationType.GUEST_FREE,
-      description: this.normalizeOptionalValue(dto.description) ?? '',
+      description: description ?? '',
       domainIds: this.normalizeExplicitDomainIds(undefined, dto.domainId),
       keywords: this.normalizeStringArray(dto.keywords),
       country: this.normalizeRequiredValue(dto.country, 'Country'),
@@ -1145,7 +1148,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       region: this.normalizeOptionalValue(dto.region) ?? '',
       radiusKm: dto.radiusKm ?? null,
       language: dto.language,
-      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage, dto.description),
+      outputLanguage: this.resolveOutputLanguage(dto.outputLanguage, description),
       forceRefresh: dto.forceRefresh === true,
     });
   }
@@ -1454,6 +1457,9 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     input: GenerateRegisteredIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
     const userId = this.normalizeRequiredValue(input.userId, 'User ID');
+    const requestDescription = this.normalizeRequestDescription(
+      input.dto.description,
+    );
     const requestedDomainIds = this.normalizeExplicitDomainIds(
       input.dto.domainIds,
       input.dto.domainId,
@@ -1474,7 +1480,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: requestedDomainIds[0] ?? PREPARING_DOMAIN_PLACEHOLDER_ID,
       selectedDomains: [],
       domainResolution: null,
-      requestDescription: this.normalizeOptionalValue(input.dto.description),
+      requestDescription,
       requestFingerprint,
       requestedDomainIds,
       requestedDomainNames,
@@ -1489,7 +1495,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
-      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage, input.dto.description),
+      outputLanguage: this.resolveOutputLanguage(
+        input.dto.outputLanguage,
+        requestDescription,
+      ),
     });
   }
 
@@ -1523,6 +1532,9 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       undefined,
       input.dto.domainId,
     );
+    const requestDescription = this.normalizeRequestDescription(
+      input.dto.description,
+    );
     const owner: IdeaOwner = {
       type: IDEA_OWNER_TYPES.GUEST,
       guestSessionId: guestSession.id,
@@ -1534,7 +1546,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: requestedDomainIds[0] ?? PREPARING_DOMAIN_PLACEHOLDER_ID,
       selectedDomains: [],
       domainResolution: null,
-      requestDescription: this.normalizeOptionalValue(input.dto.description),
+      requestDescription,
       requestFingerprint: this.buildGuestRequestFingerprint(input.dto),
       requestedDomainIds,
       requestedDomainNames: [],
@@ -1549,7 +1561,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
-      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage, input.dto.description),
+      outputLanguage: this.resolveOutputLanguage(
+        input.dto.outputLanguage,
+        requestDescription,
+      ),
     });
   }
 
@@ -1562,6 +1577,9 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     input: GenerateRegisteredIdeaInput,
   ): Promise<QueuedIdeaGenerationResult> {
     const userId = this.normalizeRequiredValue(input.userId, 'User ID');
+    const requestDescription = this.normalizeRequestDescription(
+      input.dto.description,
+    );
     const requestFingerprint = this.buildRegisteredRequestFingerprint(
       input.dto,
       input.dto.generationType,
@@ -1592,7 +1610,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: requestedDomainIds[0] ?? PREPARING_DOMAIN_PLACEHOLDER_ID,
       selectedDomains: [],
       domainResolution: null,
-      requestDescription: this.normalizeOptionalValue(input.dto.description),
+      requestDescription,
       requestFingerprint,
       requestedDomainIds,
       requestedDomainNames,
@@ -1607,7 +1625,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
-      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage, input.dto.description),
+      outputLanguage: this.resolveOutputLanguage(
+        input.dto.outputLanguage,
+        requestDescription,
+      ),
     });
   }
 
@@ -1631,6 +1652,9 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       undefined,
       input.dto.domainId,
     );
+    const requestDescription = this.normalizeRequestDescription(
+      input.dto.description,
+    );
 
     return this.queueOwnedGeneration({
       owner: {
@@ -1641,7 +1665,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainId: requestedDomainIds[0] ?? PREPARING_DOMAIN_PLACEHOLDER_ID,
       selectedDomains: [],
       domainResolution: null,
-      requestDescription: this.normalizeOptionalValue(input.dto.description),
+      requestDescription,
       requestFingerprint,
       requestedDomainIds,
       requestedDomainNames: [],
@@ -1656,7 +1680,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
         radiusKm: input.dto.radiusKm ?? null,
         language: input.dto.language,
       },
-      outputLanguage: this.resolveOutputLanguage(input.dto.outputLanguage, input.dto.description),
+      outputLanguage: this.resolveOutputLanguage(
+        input.dto.outputLanguage,
+        requestDescription,
+      ),
     });
   }
 
@@ -2102,7 +2129,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       domainName: checkpoint.domainName ?? null,
       selectedDomains,
       domainResolution: checkpoint.domainResolution ?? null,
-      requestDescription: this.normalizeOptionalValue(
+      requestDescription: this.normalizeRequestDescription(
         checkpoint.requestDescription ?? undefined,
       ),
       requestFingerprint:
@@ -2565,6 +2592,16 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
     const normalizedValue = value.trim();
 
     return normalizedValue || null;
+  }
+
+  private normalizeRequestDescription(value?: string | null): string | null {
+    const normalized = RequestTextIntegrityUtil.normalize(value);
+    if (normalized.repaired && normalized.text) {
+      this.logger.warn(
+        `Generation request text integrity repair applied (${normalized.reason}); stale text surrounding a mid-token paste was excluded before fingerprinting and pipeline planning.`,
+      );
+    }
+    return normalized.text;
   }
 
   /**

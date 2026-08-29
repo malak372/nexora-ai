@@ -640,6 +640,19 @@ export class IdeaPersistenceService {
           /\b(help|helps|helped|ensure|ensures|the|to|and|or|of|for|with|that|this|these|those)\s+\1\b/giu,
           '$1',
         )
+        .replace(/\bproduction\s+future\s+pilot participants\b/giu, 'future pilot participants')
+        .replace(
+          /\bsupporting\s+human operators\s+retain\s+final authority\b/giu,
+          'ensuring human operators retain final authority',
+        )
+        .replace(
+          /\bThis unvalidated ([^.!?]{3,120}?) creates\b/giu,
+          'This unvalidated $1 could create',
+        )
+        .replace(
+          /\bThis unvalidated ([^.!?]{3,120}?) causes\b/giu,
+          'This unvalidated $1 could cause',
+        )
         .trim();
 
       const region = selectedRegion.trim();

@@ -621,6 +621,12 @@ export class IndependentEvidenceVerificationService {
       'LOW_EVIDENCE_RELIABILITY',
       'LOW_EVIDENCE_QUALITY',
     ]);
+    if (
+      verifiedProblemMatchedEvidenceCount > 0 &&
+      verifiedProblemMatchedDirectCount === 0
+    ) {
+      pilotNonBlockingReasons.add('NO_DIRECT_EVIDENCE');
+    }
     const blockingPilotReasons = [...disqualificationReasons].filter(
       (reason) => !pilotNonBlockingReasons.has(reason),
     );
@@ -643,6 +649,16 @@ export class IndependentEvidenceVerificationService {
       disqualificationReasons.delete('LOW_CONFIDENCE_REQUIRES_STRONGER_EVIDENCE');
       disqualificationReasons.delete('LOW_EVIDENCE_RELIABILITY');
       disqualificationReasons.delete('LOW_EVIDENCE_QUALITY');
+      // A verified problem-matched SUPPORTING signal is trusted evidence.
+      // Missing a direct complaint remains a quality/evidence-strength warning
+      // (recomputed by the quality evaluator) but must not turn the candidate
+      // back into a zero-evidence hypothesis.
+      if (
+        verifiedProblemMatchedEvidenceCount > 0 &&
+        verifiedProblemMatchedDirectCount === 0
+      ) {
+        disqualificationReasons.delete('NO_DIRECT_EVIDENCE');
+      }
     }
 
     return {

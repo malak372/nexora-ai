@@ -234,7 +234,6 @@ export class PreparingStage implements IdeaGenerationStage {
           collectionPlan,
           requestedDomainIds,
           explicitDomains,
-          requestedDomainNames.length > 0,
         )
       : warmPlannedPrimary ??
         await this.domainResolutionService.resolve({
@@ -480,27 +479,28 @@ export class PreparingStage implements IdeaGenerationStage {
       readonly name: string;
       readonly domainKeywords: readonly { readonly keyword: string }[];
     }[],
-    preserveRequesterOrder: boolean,
   ): Awaited<ReturnType<DomainResolutionService['resolve']>> {
     const byId = new Map(explicitDomains.map((domain) => [domain.id, domain] as const));
     /*
-     * When the current client supplied ordered domainNames, requestedDomainIds
-     * already carries the reconciled requester order and position 1 is the
-     * authoritative primary lane. The AI plan may still describe a secondary
-     * workflow/enabling domain, but it cannot reorder the explicit boundary.
-     * Legacy id-only requests retain the semantic-plan preference because they
-     * do not carry an independent ordering assertion.
+     * The explicit domain arrays define the allowed requester-selected set.
+     * The AI plan may select the semantic primary only from that set; the
+     * selected-domain arrays themselves are not reordered here.
      */
     const plannedPreferredId =
-      !preserveRequesterOrder &&
-      plan?.domainSelectionMode === 'EXISTING' &&
-      plan.selectedExistingDomainId &&
+      plan?.selectedExistingDomainId &&
       requestedDomainIds.includes(plan.selectedExistingDomainId)
         ? plan.selectedExistingDomainId
         : null;
-    const preferredId = preserveRequesterOrder
-      ? requestedDomainIds[0]
-      : plannedPreferredId ?? requestedDomainIds[0];
+    /*
+     * Ordered domain names remain a requester identity assertion, but they are
+     * not a semantic classifier. For TEXT_AND_DOMAINS the AI request plan may
+     * choose which member of the already-approved explicit set is the primary
+     * problem lane without mutating the selected-domain set itself. This also
+     * prevents a client that serializes the same selected set in catalog order
+     * from accidentally forcing an enabling technology to become the problem
+     * domain.
+     */
+    const preferredId = plannedPreferredId ?? requestedDomainIds[0];
     const primary =
       (preferredId ? byId.get(preferredId) : undefined) ?? explicitDomains[0];
 
@@ -655,7 +655,7 @@ export class PreparingStage implements IdeaGenerationStage {
       .filter((domain): domain is NonNullable<typeof domain> => Boolean(domain));
     if (requested.length === 0) return plan;
 
-    const normalize = (value: string): string =>
+    const normalizeIdentity = (value: string): string =>
       value
         .normalize('NFKC')
         .toLocaleLowerCase()
@@ -663,106 +663,34 @@ export class PreparingStage implements IdeaGenerationStage {
         .replace(/\s+/gu, ' ')
         .trim();
 
-    const problemProfile = plan.problemProfile;
-    const workflowIdentityText = normalize([
-      problemProfile?.actor ?? '',
-      problemProfile?.object ?? '',
-      problemProfile?.workflow ?? '',
-      plan.domainIdentity?.actor ?? '',
-      plan.domainIdentity?.object ?? '',
-      plan.domainIdentity?.workflow ?? '',
-    ].join(' '));
-    const failureText = normalize([
-      plan.requestIntent?.explicitProblem ?? '',
-      problemProfile?.coreProblem ?? '',
-      problemProfile?.friction ?? '',
-      ...(problemProfile?.failureModes ?? []),
-      ...(problemProfile?.consequences ?? []),
-      plan.domainIdentity?.failure ?? '',
-    ].join(' '));
-    const explicitProblemText = normalize(
-      [workflowIdentityText, failureText].join(' '),
-    );
-    const hasExplicitProblemAnchor =
-      plan.requestIntent?.mode === 'EXPLICIT_PROBLEM' &&
-      explicitProblemText.length > 0;
-    const discoverySemanticText = normalize([
-      explicitProblemText,
-      plan.suggestedDomainName ?? '',
-      plan.requestIntent?.summary ?? '',
-      plan.requestIntent?.desiredOutcome ?? '',
-    ].join(' '));
-
     /*
-     * Primary-domain identity is anchored first by WHO performs WHICH workflow
-     * over WHICH object. Failure/solution vocabulary is deliberately weaker:
-     * words such as security, AI, automation, prediction, or devices often
-     * describe enabling technologies rather than the market in which the pain
-     * occurs. This keeps e.g. a university assessment workflow anchored to the
-     * education lane while Cybersecurity/AI remain mandatory selected-domain
-     * constraints. A truly cybersecurity-native request still wins because its
-     * actor/object/workflow and configured domain keywords match that lane.
+     * The request-understanding AI owns semantic primary-domain selection.
+     * This binding step is intentionally identity-only: it may map an AI
+     * selected UUID or an exact AI-returned domain name back to the explicit
+     * requester-selected set, but it must not independently infer semantics
+     * from request words, configured keywords, or domain-specific regexes.
+     *
+     * If the planner did not select one of the explicit domains, keep the
+     * requester serialization order only as a neutral compatibility fallback.
      */
-    const scoreDomain = (
-      domain: (typeof requested)[number],
-    ): number => {
-      const normalizedName = normalize(domain.name);
-      const semanticText = hasExplicitProblemAnchor
-        ? explicitProblemText
-        : discoverySemanticText;
-      let score = 0;
-
-      if (normalizedName) {
-        if (workflowIdentityText.includes(normalizedName)) score += 24;
-        else if (semanticText.includes(normalizedName)) score += 9;
-      }
-
-      const nameTokens = normalizedName
-        .split(' ')
-        .filter((token) => token.length >= 4);
-      score += nameTokens.filter((token) => workflowIdentityText.includes(token)).length * 7;
-      score += nameTokens.filter((token) => failureText.includes(token)).length * 2;
-
-      for (const entry of domain.domainKeywords) {
-        const keyword = normalize(entry.keyword);
-        if (!keyword || keyword.length < 3) continue;
-        if (workflowIdentityText.includes(keyword)) {
-          score += keyword.includes(' ') ? 10 : 5;
-        } else if (failureText.includes(keyword)) {
-          score += keyword.includes(' ') ? 3 : 1;
-        } else if (!hasExplicitProblemAnchor && discoverySemanticText.includes(keyword)) {
-          score += keyword.includes(' ') ? 4 : 2;
-        }
-      }
-
-      return score;
-    };
-
     const plannedExistingId =
-      plan.domainSelectionMode === 'EXISTING' &&
       plan.selectedExistingDomainId &&
       requestedDomainIds.includes(plan.selectedExistingDomainId)
         ? plan.selectedExistingDomainId
         : null;
-    const requestedOrder = new Map(
-      requestedDomainIds.map((id, index) => [id, index] as const),
+    const normalizedSuggestedName = normalizeIdentity(
+      plan.suggestedDomainName ?? '',
     );
-
-    const ranked = requested
-      .map((domain) => ({
-        domain,
-        score: scoreDomain(domain),
-        plannerTieBreak: domain.id === plannedExistingId ? 1 : 0,
-        requestIndex: requestedOrder.get(domain.id) ?? Number.MAX_SAFE_INTEGER,
-      }))
-      .sort(
-        (left, right) =>
-          right.score - left.score ||
-          right.plannerTieBreak - left.plannerTieBreak ||
-          left.requestIndex - right.requestIndex,
-      );
-
-    const primary = ranked[0]?.domain ?? requested[0];
+    const plannedByExactName = normalizedSuggestedName
+      ? requested.find(
+          (domain) =>
+            normalizeIdentity(domain.name) === normalizedSuggestedName,
+        ) ?? null
+      : null;
+    const primary =
+      (plannedExistingId ? byId.get(plannedExistingId) : undefined) ??
+      plannedByExactName ??
+      requested[0];
     if (!primary) return plan;
 
     return {

@@ -8,11 +8,28 @@ import {
 
 const TEAM_CHAT_BASE = '/admin/team-chat';
 
-const SOCKET_URL =
+const RAW_SOCKET_URL =
     process.env.REACT_APP_SOCKET_URL?.replace(/\/$/, '') ||
     process.env.REACT_APP_API_BASE_URL?.replace(/\/$/, '') ||
     process.env.REACT_APP_API_URL?.replace(/\/$/, '') ||
     'http://localhost:3000';
+
+function resolveSocketOrigin(value) {
+    try {
+        const browserOrigin =
+            typeof window !== 'undefined'
+                ? window.location.origin
+                : 'http://localhost';
+
+        return new URL(value, browserOrigin).origin;
+    } catch {
+        return String(value || '')
+            .replace(/\/+$/, '')
+            .replace(/\/api(?:\/.*)?$/i, '');
+    }
+}
+
+const SOCKET_URL = resolveSocketOrigin(RAW_SOCKET_URL);
 
 const unwrap = extractApiData;
 
@@ -199,13 +216,13 @@ export async function markAdminConversationRead(conversationId) {
 export function createAdminTeamChatSocket(token = getAccessToken()) {
     return io(`${SOCKET_URL}/admin-chat`, {
         transports: ['websocket', 'polling'],
-        auth: {
-            token,
-        },
+        auth: { token },
+        autoConnect: false,
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 150,
-        reconnectionDelayMax: 1000,
+        reconnectionDelayMax: 1500,
+        timeout: 8000,
     });
 }
 
@@ -232,6 +249,10 @@ export function getAdminTeamChatSocket() {
     if (!adminTeamChatSocket) {
         adminTeamChatSocket = createAdminTeamChatSocket(token);
         adminTeamChatSocketToken = token;
+    }
+
+    if (!adminTeamChatSocket.connected && !adminTeamChatSocket.active) {
+        adminTeamChatSocket.connect();
     }
 
     return adminTeamChatSocket;

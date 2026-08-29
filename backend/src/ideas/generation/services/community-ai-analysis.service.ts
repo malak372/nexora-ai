@@ -253,12 +253,39 @@ export class CommunityAiAnalysisService {
       unadjudicatedEvidenceCount === 0 &&
       triageTelemetry.fullCorpusAdjudicationCompleted &&
       synthesisEligibleEvidenceCount === 0;
+    const adjudicatedEvidenceCount = Math.max(
+      0,
+      evidenceClassifications.length - unadjudicatedEvidenceCount,
+    );
+    const highCoveragePartialAdjudication =
+      synthesisEligibleEvidenceCount === 0 &&
+      this.isLargeCorpusHighCoverageAdjudication(
+        adjudicatedEvidenceCount,
+        evidenceClassifications.length,
+      );
 
     if (
       hasRawExternalCorpus &&
       synthesisEligibleEvidenceCount === 0 &&
       unadjudicatedEvidenceCount > 0
     ) {
+      if (highCoveragePartialAdjudication) {
+        const analysis = this.buildNoGroundedEvidenceAnalysis(
+          context,
+          triageTelemetry.diagnostics,
+          `No trusted DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence was retained among ${adjudicatedEvidenceCount}/${evidenceClassifications.length} adjudicated rows; ${unadjudicatedEvidenceCount} unresolved row(s) remain explicitly UNADJUDICATED.`,
+          triageTelemetry.onlineAttemptCount > 0,
+          evidenceClassifications,
+        );
+        return {
+          ...analysis,
+          triageAiSucceeded: true,
+          qualityWarnings: [
+            ...analysis.qualityWarnings,
+            `High-coverage partial adjudication is usable: ${adjudicatedEvidenceCount}/${evidenceClassifications.length} rows received semantic verdicts from one complete-corpus model attempt; ${unadjudicatedEvidenceCount} unresolved row(s) remain UNADJUDICATED and are excluded from negative or positive evidence claims.`,
+          ],
+        };
+      }
       return this.buildAdjudicationUnavailableAnalysis(
         context,
         triageTelemetry.diagnostics,
@@ -3373,6 +3400,14 @@ export class CommunityAiAnalysisService {
           cluster.aiSelectedItemCount === 0 && !cluster.aiFamilyMatches,
       )
       .reduce((best, cluster) => Math.max(best, cluster.score), 0);
+    const strongestCorroboratedNonSelectedScore = rankedClusterCandidates
+      .filter(
+        (cluster) =>
+          cluster.aiSelectedItemCount === 0 &&
+          !cluster.aiFamilyMatches &&
+          (cluster.direct > 0 || cluster.sources >= 2 || cluster.items.length >= 2),
+      )
+      .reduce((best, cluster) => Math.max(best, cluster.score), 0);
 
     const rankedClusters = rankedClusterCandidates
       .sort((left, right) => {
@@ -3384,27 +3419,47 @@ export class CommunityAiAnalysisService {
          * A direct-user row, repeated family, or independently corroborated
          * family keeps AI priority. A one-row/one-source supporting-only niche
          * family may keep priority only when it is not materially dominated by
-         * another AI-classified cluster. This prevents a high-confidence niche
-         * report from beating a broader multi-signal production problem while
-         * preserving Community AI as the semantic authority.
+         * another AI-classified cluster. When the AI-selected family is only one
+         * supporting row from one source, independently corroborated competing
+         * families get a stronger structural tie-break. No domain or problem
+         * meaning is inferred here: the AI still defines every family label and
+         * the deterministic layer compares only verified support breadth.
          */
         const leftAiSelected = left.aiSelectedItemCount > 0 || left.aiFamilyMatches;
         const rightAiSelected = right.aiSelectedItemCount > 0 || right.aiFamilyMatches;
+        const leftWeakAiSelection =
+          leftAiSelected &&
+          left.direct === 0 &&
+          left.sources <= 1 &&
+          left.items.length <= 1;
+        const rightWeakAiSelection =
+          rightAiSelected &&
+          right.direct === 0 &&
+          right.sources <= 1 &&
+          right.items.length <= 1;
+        const leftRequiredCompetingScore = leftWeakAiSelection
+          ? strongestCorroboratedNonSelectedScore
+          : strongestNonSelectedScore;
+        const rightRequiredCompetingScore = rightWeakAiSelection
+          ? strongestCorroboratedNonSelectedScore
+          : strongestNonSelectedScore;
+        const leftDominanceRatio = leftWeakAiSelection ? 0.96 : 0.82;
+        const rightDominanceRatio = rightWeakAiSelection ? 0.96 : 0.82;
         const leftAiPriority = Boolean(
           leftAiSelected &&
             (left.direct > 0 ||
               left.sources >= 2 ||
               left.items.length >= 2 ||
-              strongestNonSelectedScore <= 0 ||
-              left.score >= strongestNonSelectedScore * 0.82),
+              leftRequiredCompetingScore <= 0 ||
+              left.score >= leftRequiredCompetingScore * leftDominanceRatio),
         );
         const rightAiPriority = Boolean(
           rightAiSelected &&
             (right.direct > 0 ||
               right.sources >= 2 ||
               right.items.length >= 2 ||
-              strongestNonSelectedScore <= 0 ||
-              right.score >= strongestNonSelectedScore * 0.82),
+              rightRequiredCompetingScore <= 0 ||
+              right.score >= rightRequiredCompetingScore * rightDominanceRatio),
         );
         if (leftAiPriority !== rightAiPriority) return leftAiPriority ? -1 : 1;
         if (left.aiSelectedItemCount !== right.aiSelectedItemCount) {
@@ -5192,6 +5247,13 @@ export class CommunityAiAnalysisService {
           )
         : null;
 
+    const highCoveragePartialAdjudication =
+      accepted.length === 0 &&
+      this.isLargeCorpusHighCoverageAdjudication(
+        Math.max(0, evidenceClassifications.length - unadjudicatedCount),
+        evidenceClassifications.length,
+      );
+
     return {
       summary:
         `Classified ${evidenceClassifications.length} recovered raw evidence item(s): ${directCount} direct, ${supportingCount} supporting, ${contextOnlyCount} context-only, ${unrelatedCount} unrelated, and ${unadjudicatedCount} unadjudicated. Opportunity synthesis was intentionally skipped because ranking consumes this canonical triage ledger directly.`,
@@ -5204,12 +5266,14 @@ export class CommunityAiAnalysisService {
           ? ['No synthesis-eligible recovered evidence remained after semantic classification and deterministic verification.']
           : []),
         ...(unadjudicatedCount > 0
-          ? ['Some recovered raw evidence remains UNADJUDICATED because online semantic triage was unavailable; those rows are not treated as unrelated.']
+          ? [highCoveragePartialAdjudication
+              ? 'A small high-coverage tail remains UNADJUDICATED; those rows are excluded from both positive and negative evidence claims while the adjudicated ledger remains usable.'
+              : 'Some recovered raw evidence remains UNADJUDICATED because online semantic triage was unavailable; those rows are not treated as unrelated.']
           : []),
       ],
       evidenceVerdictState: accepted.length > 0
         ? 'VALID_EVIDENCE_FOUND'
-        : unadjudicatedCount > 0
+        : unadjudicatedCount > 0 && !highCoveragePartialAdjudication
           ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
           : 'NO_VALID_EVIDENCE_FOUND',
       modelId: null,
@@ -5221,7 +5285,7 @@ export class CommunityAiAnalysisService {
       triageAiSucceeded: telemetry.adjudicatedEvidenceCount > 0,
       synthesisAiSucceeded: false,
       aiSucceeded: telemetry.adjudicatedEvidenceCount > 0,
-      fallbackUsed: unadjudicatedCount > 0,
+      fallbackUsed: unadjudicatedCount > 0 && !highCoveragePartialAdjudication,
       onlineAttemptCount: telemetry.onlineAttemptCount,
       executionFailureCount: telemetry.diagnostics.filter(
         (item) => item.status === 'EXECUTION_FAILED' || item.status === 'TIMEOUT',
@@ -5229,9 +5293,12 @@ export class CommunityAiAnalysisService {
       validationRejectedCount: telemetry.diagnostics.filter(
         (item) => item.status === 'VALIDATION_REJECTED',
       ).length,
-      fallbackReason: unadjudicatedCount > 0
-        ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE: some recovered rows did not receive an online semantic verdict.'
-        : null,
+      fallbackReason:
+        unadjudicatedCount > 0 && !highCoveragePartialAdjudication
+          ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE: some recovered rows did not receive an online semantic verdict.'
+          : highCoveragePartialAdjudication
+            ? `High-coverage partial adjudication retained ${evidenceClassifications.length - unadjudicatedCount}/${evidenceClassifications.length} usable semantic verdicts; unresolved rows remain UNADJUDICATED.`
+            : null,
       attemptDiagnostics: [...telemetry.diagnostics],
       unvalidatedDomainHypotheses: this.buildUnvalidatedDomainHypotheses(
         context,

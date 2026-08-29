@@ -1,10 +1,3 @@
-/**
- * Six user-facing milestones for the detailed backend pipeline.
- *
- * Backend stages stay separate for retries, monitoring, and persistence. The
- * frontend deliberately groups them into six clear milestones so the user sees
- * one active spinner and one meaningful transition at a time.
- */
 import {
   BrainCircuit,
   CheckCircle2,
@@ -12,106 +5,106 @@ import {
   Layers3,
   SearchCheck,
   Sparkles,
-} from "lucide-react";
+} from 'lucide-react';
 
 export const GENERATION_TYPES = {
-  NORMAL_FREE: "NORMAL_FREE",
-  PREMIUM_CREDIT: "PREMIUM_CREDIT",
+  NORMAL_FREE: 'NORMAL_FREE',
+  PREMIUM_CREDIT: 'PREMIUM_CREDIT',
 };
 
 export const LANGUAGE_OPTIONS = [
-  { value: "ANY", label: "Any language" },
-  { value: "EN", label: "English" },
-  { value: "AR", label: "Arabic" },
-  { value: "FR", label: "French" },
-  { value: "ES", label: "Spanish" },
-  { value: "DE", label: "German" },
-  { value: "TR", label: "Turkish" },
+  { value: 'ANY', label: 'Any language' },
+  { value: 'EN', label: 'English' },
+  { value: 'AR', label: 'Arabic' },
+  { value: 'FR', label: 'French' },
+  { value: 'ES', label: 'Spanish' },
+  { value: 'DE', label: 'German' },
+  { value: 'TR', label: 'Turkish' },
 ];
 
 export const VISUAL_PIPELINE_GROUPS = [
   {
-    key: "prepare",
+    key: 'prepare',
     number: 1,
-    title: "Preparing request",
-    description: "Validating your request, access, domain, and selected evidence sources.",
+    title: 'Preparing',
+    description: 'We understand your signal and set up the right discovery foundations.',
     icon: Layers3,
     stageKeys: [
-      "preparing",
-      "request-validation",
-      "entitlement-check",
-      "domain-resolution",
-      "data-source-selection",
+      'preparing',
+      'request-validation',
+      'entitlement-check',
+      'domain-resolution',
+      'data-source-selection',
     ],
   },
   {
-    key: "evidence",
+    key: 'evidence',
     number: 2,
-    title: "Collecting evidence",
-    description: "Gathering and restoring relevant posts, comments, and source evidence.",
+    title: 'Broad collection',
+    description: 'Collecting signals across news, research, social and more.',
     icon: Database,
     stageKeys: [
-      "collection-job-resolution",
-      "data-collection",
+      'collection-job-resolution',
+      'data-collection',
     ],
   },
   {
-    key: "insights",
+    key: 'insights',
     number: 3,
-    title: "Understanding community needs",
-    description: "Cleaning evidence, extracting community needs, and ranking evidence-backed opportunities.",
+    title: 'Community AI analysis',
+    description: 'Analyzing conversations, needs, pain points and emerging patterns.',
     icon: BrainCircuit,
     stageKeys: [
-      "nlp-analysis",
-      "community-ai-analysis",
-      "opportunity-ranking",
+      'nlp-analysis',
+      'community-ai-analysis',
+      'opportunity-ranking',
     ],
   },
   {
-    key: "generation",
+    key: 'generation',
     number: 4,
-    title: "Creating the idea",
-    description: "Building the grounded prompt and generating the strongest solution candidates.",
+    title: 'Core idea generation',
+    description: 'Synthesizing evidence into one strongest opportunity.',
     icon: Sparkles,
     stageKeys: [
-      "prompt-building",
-      "core-idea-generation",
+      'prompt-building',
+      'core-idea-generation',
     ],
   },
   {
-    key: "quality",
+    key: 'quality',
     number: 5,
-    title: "Checking quality and originality",
-    description: "Checking structure, evidence coverage, originality, duplication, and solution quality.",
+    title: 'Validation',
+    description: 'Validating with real-world signals and evidence quality.',
     icon: SearchCheck,
     stageKeys: [
-      "ai-output-validation",
-      "duplicate-check",
+      'ai-output-validation',
+      'duplicate-check',
     ],
   },
   {
-    key: "workspace",
+    key: 'workspace',
     number: 6,
-    title: "Saving workspace",
-    description: "Saving the approved idea and preparing its final workspace.",
+    title: 'Workspace ready',
+    description: 'Preparing your workspace with the final idea and next steps.',
     icon: CheckCircle2,
     stageKeys: [
-      "idea-persistence",
-      "full-abstract-generation",
-      "technology-stack-generation",
-      "system-architecture-generation",
-      "database-design-generation",
-      "mvp-features-generation",
-      "value-proposition-generation",
-      "revenue-model-generation",
-      "local-regulations-generation",
-      "budget-estimation-generation",
-      "feasibility-assessment-generation",
-      "implementation-timeline-generation",
-      "market-potential-generation",
-      "nlp-executive-summary-generation",
-      "community-feedback-summary-generation",
-      "finalization",
+      'idea-persistence',
+      'full-abstract-generation',
+      'technology-stack-generation',
+      'system-architecture-generation',
+      'database-design-generation',
+      'mvp-features-generation',
+      'value-proposition-generation',
+      'revenue-model-generation',
+      'local-regulations-generation',
+      'budget-estimation-generation',
+      'feasibility-assessment-generation',
+      'implementation-timeline-generation',
+      'market-potential-generation',
+      'nlp-executive-summary-generation',
+      'community-feedback-summary-generation',
+      'finalization',
     ],
   },
 ];
@@ -123,12 +116,12 @@ export const BACKEND_STAGE_TO_VISUAL_INDEX = new Map(
 );
 
 export const TERMINAL_RUN_STATUSES = new Set([
-  "COMPLETED",
-  "FAILED",
-  "CANCELLED",
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
 ]);
 
 export const COMPLETED_RUN_STATUSES = new Set([
-  "COMPLETED",
-  "SUCCEEDED",
+  'COMPLETED',
+  'SUCCEEDED',
 ]);

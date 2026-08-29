@@ -176,8 +176,7 @@ export class IdeaEvidenceRecoveryService {
       preflightSelectedTrusted,
     );
     const corroborationOnlyRecovery = Boolean(
-      !context.requestDescription?.trim() &&
-        preflightSelectedTrusted.length > 0 &&
+      preflightSelectedTrusted.length > 0 &&
         preflightSelectedSourceCount < 2,
     );
     /*
@@ -192,11 +191,11 @@ export class IdeaEvidenceRecoveryService {
      */
     const configuredRecoveryBudgetMs = this.readPositiveConfig(
       'IDEA_EVIDENCE_RECOVERY_TIMEOUT_MS',
-      16_000,
+      8_000,
     );
     const recoveryBudgetMs = corroborationOnlyRecovery
-      ? Math.max(7_000, Math.min(10_000, configuredRecoveryBudgetMs))
-      : Math.max(8_000, Math.min(20_000, configuredRecoveryBudgetMs));
+      ? Math.max(4_800, Math.min(6_000, configuredRecoveryBudgetMs))
+      : Math.max(6_000, Math.min(8_000, configuredRecoveryBudgetMs));
     const recoveryDeadlineAt = recoveryStartedAt + recoveryBudgetMs;
     const recoveryController = new AbortController();
     const abortRecovery = () => {
@@ -365,6 +364,105 @@ export class IdeaEvidenceRecoveryService {
       };
     }
 
+    const primaryAttemptedSourceKeys = new Set(
+      [
+        ...(context.selectedDataSources ?? []).map((source) => source.key),
+        ...(context.collectionPlan?.sourcePlans ?? []).map((plan) => plan.sourceKey),
+      ]
+        .map((key) => key.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+    const primaryClassifications =
+      context.communityAiAnalysis?.evidenceClassifications ?? [];
+    const primaryClassificationById = new Map(
+      primaryClassifications.map((item) => [item.evidenceId, item] as const),
+    );
+    const primaryCorpusFullyAdjudicated = Boolean(
+      (context.rawEvidenceCorpus?.length ?? 0) > 0 &&
+        (context.rawEvidenceCorpus ?? []).every((row) => {
+          const classification = primaryClassificationById.get(row.id);
+          return Boolean(
+            classification &&
+              classification.adjudicationStatus === 'ADJUDICATED' &&
+              classification.classification !== 'UNADJUDICATED',
+          );
+        }),
+    );
+    const primaryTrustedCount = (context.canonicalEvidenceLedger ?? []).filter(
+      (item) =>
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    ).length;
+    const hasNovelRecoverySource = selectedRecoverySources.some(
+      (source) =>
+        !primaryAttemptedSourceKeys.has(source.key.trim().toLocaleLowerCase()),
+    );
+    const primaryPlanWasAiOwned = Boolean(
+      context.collectionPlan?.aiUsed && !context.collectionPlan?.fallbackUsed,
+    );
+    const sourceOutcomeByKey = new Map(
+      this.buildRecoverySourceOutcomes(context).map(
+        (outcome) => [outcome.sourceKey, outcome.status] as const,
+      ),
+    );
+    const remainingSourcesWereAlreadyNonProductive =
+      selectedRecoverySources.length > 0 &&
+      selectedRecoverySources.every((source) => {
+        const status = sourceOutcomeByKey.get(
+          source.key.trim().toLocaleLowerCase(),
+        );
+        return status === 'EMPTY' || status === 'DEGRADED';
+      });
+
+    /*
+     * Stop BEFORE the first serial recovery wave when a successful AI-owned
+     * text plan already produced a fully adjudicated, non-trivial corpus, no
+     * trusted evidence survived, and recovery has no genuinely new source lane.
+     * Re-querying only empty/degraded sources has very low marginal value and
+     * was responsible for the 10-15 second zero-yield tail on sparse niche
+     * requests. A healthy source that returned only CONTEXT/UNRELATED material
+     * is not considered exhausted: a fresh AI-owned recovery query can still
+     * improve recall without changing semantic truth. Thin corpora,
+     * fallback-planned requests, or runs with a new healthy source remain
+     * eligible for recovery.
+     * No semantic meaning is inferred here; this is execution/yield accounting.
+     */
+    const lowMarginalValueTextRecovery = Boolean(
+      context.requestDescription?.trim() &&
+        primaryPlanWasAiOwned &&
+        primaryCorpusFullyAdjudicated &&
+        (context.rawEvidenceCorpus?.length ?? 0) >= 8 &&
+        primaryTrustedCount === 0 &&
+        !hasNovelRecoverySource &&
+        remainingSourcesWereAlreadyNonProductive,
+    );
+    if (lowMarginalValueTextRecovery) {
+      this.logger.debug(
+        `Skipping first targeted text recovery wave because the AI-owned primary corpus was fully adjudicated and no novel productive source lane remains: raw=${context.rawEvidenceCorpus?.length ?? 0}, candidateSources=${selectedRecoverySources.length}.`,
+      );
+      return {
+        collectionJobId: context.collection?.collectionJobId ?? 'recovery-skipped',
+        selectedDataSourceKeys: [],
+        recoveryKeywords: [],
+        evidenceFamilies,
+        totalPosts: 0,
+        totalComments: 0,
+        usefulCleanTextCount: 0,
+        complaintEvidenceCount: 0,
+        newCorpusEvidenceSampleCount: 0,
+        newEvidenceSampleCount: 0,
+        novelEvidenceSamples: [],
+        supportingExternalSamples: [],
+        supportingExternalEvidence: [],
+        rawEvidenceCorpus: [],
+        recoveryOutcome: 'RECOVERY_RETURNED_NO_USABLE_EVIDENCE',
+        communityAiRecoveryExecuted: false,
+        nlp: context.nlp!,
+        communityAiAnalysis: null,
+      };
+    }
+
     const compactDomainsOnlySecondaryRecovery =
       !context.requestDescription?.trim() &&
       context.domainResolution?.source === 'USER_SELECTED' &&
@@ -453,7 +551,7 @@ export class IdeaEvidenceRecoveryService {
 
     const recoveryPlannerRemainingMs = Math.max(
       0,
-      recoveryDeadlineAt - Date.now() - 9_000,
+      recoveryDeadlineAt - Date.now() - 6_000,
     );
     const recoveryPlannerBudgetMs = Math.min(3_200, recoveryPlannerRemainingMs);
     let recoveryQueryPlan: RequestCollectionPlan | null = null;
@@ -668,10 +766,7 @@ export class IdeaEvidenceRecoveryService {
         ) === index,
     );
     const requesterRecoverySourceLimit =
-      requestSpecificRecovery &&
-      qualifiedCommunityEvidenceCount > 0 &&
-      rawEvidenceCount >= 8 &&
-      rawEvidenceSourceCount >= 2
+      requestSpecificRecovery && rawEvidenceSourceCount >= 2
         ? 2
         : this.maximumRecoverySourcesPerWave;
     const corroborationPreferredSources = singleSourceFamilyCorroboration
@@ -693,16 +788,31 @@ export class IdeaEvidenceRecoveryService {
          */
         ? corroborationPreferredSources.slice(0, requesterRecoverySourceLimit)
         : singleSourceFamilyCorroboration
-          ? corroborationPreferredSources.slice(0, 2)
+          ? corroborationPreferredSources.slice(0, 1)
           : corroborationPreferredSources.slice(0, this.maximumRecoverySourcesPerWave)
     ).filter((source) =>
       this.collectorsFactory.isCollectorRuntimeAvailable(source.key),
     );
     const primaryQueryKeys = new Set(
-      (context.collectionPlan?.searchQueries ?? []).map((query) =>
+      [
+        ...(context.collectionPlan?.searchQueries ?? []),
+        ...(context.collectionPlan?.sourcePlans ?? []).flatMap(
+          (plan) => plan.queries ?? [],
+        ),
+      ].map((query) =>
         query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase(),
       ),
     );
+    const primaryQueriesBySource = new Map<string, Set<string>>();
+    for (const plan of context.collectionPlan?.sourcePlans ?? []) {
+      const sourceKey = plan.sourceKey.trim().toLocaleLowerCase();
+      const sourceQueries = primaryQueriesBySource.get(sourceKey) ?? new Set<string>();
+      for (const query of plan.queries ?? []) {
+        const normalized = query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
+        if (normalized) sourceQueries.add(normalized);
+      }
+      primaryQueriesBySource.set(sourceKey, sourceQueries);
+    }
     const plannedRecoveryKeywords = (recoveryQueryPlan?.searchQueries ?? [])
       .map((query) => this.sanitizeRecoveryQuery(query))
       .filter(Boolean)
@@ -832,9 +942,19 @@ export class IdeaEvidenceRecoveryService {
           recoverySemanticDescription || context.requestDescription?.trim(),
         ),
       });
+      const previouslyUsedBySource =
+        primaryQueriesBySource.get(source.key.trim().toLocaleLowerCase()) ??
+        new Set<string>();
+      const sourceNovelQueries = (compiledQueries.length
+        ? compiledQueries
+        : rawQueries.slice(0, 2)
+      ).filter((query) => {
+        const normalized = query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
+        return Boolean(normalized) && !previouslyUsedBySource.has(normalized);
+      });
       return {
         sourceKey: source.key,
-        queries: compiledQueries.length ? compiledQueries : rawQueries.slice(0, 2),
+        queries: sourceNovelQueries,
         routingHints: [
           ...new Set([
             ...(planned?.routingHints ?? []),
@@ -859,6 +979,39 @@ export class IdeaEvidenceRecoveryService {
         recoverySourceKeys.has(plan.sourceKey.toLocaleLowerCase()) &&
         plan.queries.length > 0,
     );
+    const plannedRecoverySourceKeys = new Set(
+      mergedRecoverySourcePlans.map((plan) =>
+        plan.sourceKey.trim().toLocaleLowerCase(),
+      ),
+    );
+    const plannedRecoverySources = recoverySources.filter((source) =>
+      plannedRecoverySourceKeys.has(source.key.trim().toLocaleLowerCase()),
+    );
+    if (plannedRecoverySources.length === 0) {
+      this.logger.debug(
+        'Skipping targeted recovery because every healthy candidate source would replay an already-used source/query pair; no novel executable provenance lane remains.',
+      );
+      return {
+        collectionJobId: context.collection?.collectionJobId ?? 'recovery-skipped',
+        selectedDataSourceKeys: [],
+        recoveryKeywords,
+        evidenceFamilies,
+        totalPosts: 0,
+        totalComments: 0,
+        usefulCleanTextCount: 0,
+        complaintEvidenceCount: 0,
+        newCorpusEvidenceSampleCount: 0,
+        newEvidenceSampleCount: 0,
+        novelEvidenceSamples: [],
+        supportingExternalSamples: [],
+        supportingExternalEvidence: [],
+        rawEvidenceCorpus: [],
+        recoveryOutcome: 'RECOVERY_RETURNED_NO_USABLE_EVIDENCE',
+        communityAiRecoveryExecuted: false,
+        nlp: context.nlp!,
+        communityAiAnalysis: null,
+      };
+    }
 
     const resolvedDomain =
       context.selectedDomains.find((domain) => domain.id === context.domainId) ??
@@ -882,7 +1035,7 @@ export class IdeaEvidenceRecoveryService {
       region: context.location.region ?? undefined,
       language: context.location.language,
       radiusKm: context.location.radiusKm ?? undefined,
-      dataSourceKeys: recoverySources.map((source) => source.key),
+      dataSourceKeys: plannedRecoverySources.map((source) => source.key),
       keywords: recoveryKeywords,
       plannedQueries: authoritativeRecoveryQueries,
       queriesGeneratedByAi: usingAiRecoveryPlan,
@@ -912,7 +1065,7 @@ export class IdeaEvidenceRecoveryService {
             },
           }
         : {}),
-      resolvedDataSources: recoverySources.map((source) => ({
+      resolvedDataSources: plannedRecoverySources.map((source) => ({
         id: source.id,
         key: source.key,
         displayName: source.displayName,
@@ -926,7 +1079,7 @@ export class IdeaEvidenceRecoveryService {
       );
       return {
         collectionJobId: 'recovery-collection-failed',
-        selectedDataSourceKeys: recoverySources.map((source) => source.key),
+        selectedDataSourceKeys: plannedRecoverySources.map((source) => source.key),
         recoveryKeywords,
         evidenceFamilies,
         totalPosts: 0,
@@ -1104,12 +1257,12 @@ export class IdeaEvidenceRecoveryService {
      */
     const recoveryAdjudicationBudgetMs = corroborationOnlyRecovery
       ? Math.min(
-          9_000,
-          Math.max(6_500, 6_500 + rawEvidenceCorpus.length * 350),
+          7_000,
+          Math.max(5_500, 5_500 + rawEvidenceCorpus.length * 220),
         )
       : Math.min(
-          16_000,
-          Math.max(10_000, 10_000 + rawEvidenceCorpus.length * 450),
+          8_500,
+          Math.max(6_500, 6_500 + rawEvidenceCorpus.length * 260),
         );
     const recoveryAdjudicationDeadlineAt =
       Date.now() + recoveryAdjudicationBudgetMs;
@@ -1294,7 +1447,7 @@ export class IdeaEvidenceRecoveryService {
 
     return {
       collectionJobId: result.job.id,
-      selectedDataSourceKeys: recoverySources.map((source) => source.key),
+      selectedDataSourceKeys: plannedRecoverySources.map((source) => source.key),
       recoveryKeywords,
       evidenceFamilies,
       totalPosts: result.nlpOutput.totalPostsAnalyzed,
@@ -1735,22 +1888,31 @@ export class IdeaEvidenceRecoveryService {
      */
     const observedYieldAdjustment =
       priorOutcome === 'USEFUL'
-        ? 0.08
+        ? 0.04
         : priorOutcome === 'CONTEXT_ONLY'
-          ? -0.08
+          ? -0.14
           : priorOutcome === 'UNRELATED_ONLY'
-            ? -0.24
+            ? -0.28
             : priorOutcome === 'EMPTY'
               ? -0.18
               : priorOutcome === 'DEGRADED'
                 ? -0.45
                 : 0;
+    const attemptedSourceKeys = new Set([
+      ...(context.selectedDataSources ?? []).map((item) => item.key),
+      ...(context.collectionPlan?.sourcePlans ?? []).map((plan) => plan.sourceKey),
+    ].map((key) => key.trim().toLocaleLowerCase()).filter(Boolean));
+    const sourceKey = source.key.trim().toLocaleLowerCase();
+    const provenanceNoveltyAdjustment = attemptedSourceKeys.has(sourceKey)
+      ? -0.08
+      : 0.14;
     return (
       semanticFit * 0.68 +
       health * 0.20 +
       directDiscussionBonus +
       plannerBonus +
-      observedYieldAdjustment
+      observedYieldAdjustment +
+      provenanceNoveltyAdjustment
     );
   }
 
@@ -2061,7 +2223,7 @@ export class IdeaEvidenceRecoveryService {
       if (signal?.aborted) return null;
       const remainingMs = deadlineAt
         ? Math.max(0, deadlineAt - Date.now())
-        : Math.min(16_000, Math.max(10_000, 10_000 + recoveryRawCorpus.length * 450));
+        : Math.min(10_000, Math.max(7_000, 7_000 + recoveryRawCorpus.length * 300));
       if (remainingMs < 1_000) return null;
 
       /*
@@ -2072,8 +2234,8 @@ export class IdeaEvidenceRecoveryService {
        * first complete valid answer.
        */
       const adaptiveTotalMs = Math.min(
-        16_000,
-        Math.max(10_000, 10_000 + recoveryRawCorpus.length * 450),
+        10_000,
+        Math.max(7_000, 7_000 + recoveryRawCorpus.length * 300),
       );
       const boundedTotalMs = Math.max(1_000, Math.min(adaptiveTotalMs, remainingMs));
       const requestTimeoutMs = Math.max(
@@ -2082,7 +2244,7 @@ export class IdeaEvidenceRecoveryService {
       );
       return await this.communityAiAnalysisService.analyze(recoveryContext, {
         classificationOnly: true,
-        maxAttempts: 3,
+        maxAttempts: 2,
         requestTimeoutMs,
         totalTimeoutMs: boundedTotalMs,
         signal,

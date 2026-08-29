@@ -212,12 +212,13 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             canonicalEvidenceLedger,
           )
         : analysis;
+    const unresolvedCanonicalRows = canonicalEvidenceLedger.filter(
+      (item) => item.classification === 'UNADJUDICATED',
+    ).length;
     const adjudicationUnavailable =
       evidenceAlignedAnalysis.evidenceVerdictState ===
         'EVIDENCE_ADJUDICATION_UNAVAILABLE' ||
-      canonicalEvidenceLedger.some(
-        (item) => item.classification === 'UNADJUDICATED',
-      );
+      canonicalState.state === 'EVIDENCE_ADJUDICATION_UNAVAILABLE';
     const authoritativeAnalysis: CommunityAiAnalysis =
       canonicalState.trustedCount > 0
         ? evidenceAlignedAnalysis
@@ -247,8 +248,10 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             qualityWarnings: [
               ...analysis.qualityWarnings,
               adjudicationUnavailable
-                ? 'Evidence adjudication is unavailable for one or more raw rows; UNADJUDICATED material was preserved and was not mislabelled as unrelated or promoted into trusted evidence.'
-                : 'Canonical evidence state is NO_VALID_EVIDENCE_FOUND; semantic adjudication completed but no DIRECT_PROBLEM or SUPPORTING_SIGNAL row passed canonical verification.',
+                ? 'Evidence adjudication is unavailable for a material portion of the raw corpus; UNADJUDICATED material was preserved and was not mislabelled as unrelated or promoted into trusted evidence.'
+                : unresolvedCanonicalRows > 0
+                  ? `Canonical evidence state is NO_VALID_EVIDENCE_FOUND for the adjudicated corpus; ${unresolvedCanonicalRows} high-coverage tail row(s) remain UNADJUDICATED and are excluded from both positive and negative evidence claims.`
+                  : 'Canonical evidence state is NO_VALID_EVIDENCE_FOUND; semantic adjudication completed but no DIRECT_PROBLEM or SUPPORTING_SIGNAL row passed canonical verification.',
             ],
             evidenceVerdictState: adjudicationUnavailable
               ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
@@ -595,7 +598,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     ledger: IdeaGenerationContext['canonicalEvidenceLedger'],
   ): CommunityAiAnalysis {
     if (this.hasExplicitRequesterProblem(context)) {
-      return this.attachSelectedProblemFamilyMetrics(analysis, ledger);
+      return this.attachSelectedProblemFamilyMetrics(context, analysis, ledger);
     }
 
     const trusted = [...ledger].filter(
@@ -870,107 +873,174 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
   }
 
   private attachSelectedProblemFamilyMetrics(
+    context: IdeaGenerationContext,
     analysis: CommunityAiAnalysis,
     ledger: IdeaGenerationContext['canonicalEvidenceLedger'],
   ): CommunityAiAnalysis {
-    const family = analysis.opportunities[0]?.title?.trim() ?? '';
-    if (!family) return analysis;
-    let selectedFamily = family;
-    let familyItems = ledger.filter(
+    const trusted = ledger.filter(
       (item) =>
         item.verified &&
         (item.classification === 'DIRECT_PROBLEM' ||
-          item.classification === 'SUPPORTING_SIGNAL') &&
-        this.problemFamilyMatchesSelectedFamily(
-          family,
-          item.problemFamily,
-          item.text,
+          item.classification === 'SUPPORTING_SIGNAL'),
+    );
+    if (trusted.length === 0) return analysis;
+
+    const aiProposedFamily = analysis.aiProposedProblemFamily?.trim() ?? '';
+    const aiProposedIds = new Set(
+      (analysis.aiProposedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    const aiProposedItems = aiProposedIds.size > 0
+      ? trusted.filter((item) => aiProposedIds.has(item.id))
+      : [];
+    const aiProposalSurvived = Boolean(
+      aiProposedFamily &&
+        aiProposedItems.length > 0 &&
+        aiProposedItems.length === aiProposedIds.size &&
+        this.problemFamilyMatchesSelectedFamilyGroup(
+          aiProposedFamily,
+          aiProposedItems,
         ),
     );
 
-    if (familyItems.length === 0) {
-      const alreadyLocked = Boolean(
-        analysis.selectedProblemFamily?.trim() &&
-          (analysis.selectedProblemFamilyEvidenceIds?.length ?? 0) > 0,
-      );
-      if (alreadyLocked) {
-        // A canonical family may be invalidated by later evidence verification,
-        // but it must never silently mutate into a second problem identity.
-        // Clear the lock and let downstream zero-evidence handling continue.
-        return {
-          ...analysis,
-          selectedProblemFamily: null,
-          selectedProblemFamilySelectionSource: 'AI_PROPOSAL_REJECTED',
-          selectedProblemFamilyTrustedEvidenceCount: 0,
-          selectedProblemFamilyDistinctSourceCount: 0,
-          selectedProblemFamilyEvidenceIds: [],
-        };
-      }
-
-      const trusted = ledger
-        .filter(
-          (item) =>
-            item.verified &&
-            Boolean(item.problemFamily?.trim()) &&
-            (item.classification === 'DIRECT_PROBLEM' ||
-              item.classification === 'SUPPORTING_SIGNAL'),
+    const opportunityFamily = analysis.opportunities[0]?.title?.trim() ?? '';
+    const previouslySelectedFamily = analysis.selectedProblemFamily?.trim() ?? '';
+    let selectedFamily = aiProposalSurvived
+      ? aiProposedFamily
+      : previouslySelectedFamily || opportunityFamily;
+    let familyItems = selectedFamily
+      ? trusted.filter((item) =>
+          this.problemFamilyMatchesSelectedFamily(
+            selectedFamily,
+            item.problemFamily,
+            item.text,
+          ),
         )
-        .sort((left, right) => {
-          const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
-          const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
-          return rightDirect - leftDirect || right.confidence - left.confidence;
-        });
-      const leadFamily = trusted[0]?.problemFamily?.trim() ?? '';
-      if (!leadFamily) {
-        const aiProposalExists = Boolean(
-          analysis.aiProposedProblemFamily?.trim() ||
-            (analysis.aiProposedProblemFamilyEvidenceIds?.length ?? 0) > 0,
-        );
-        return {
-          ...analysis,
-          selectedProblemFamily: null,
-          selectedProblemFamilySelectionSource: aiProposalExists
-            ? 'AI_PROPOSAL_REJECTED'
-            : null,
-          selectedProblemFamilyTrustedEvidenceCount: 0,
-          selectedProblemFamilyDistinctSourceCount: 0,
-          selectedProblemFamilyEvidenceIds: [],
-        };
-      }
+      : [];
 
-      selectedFamily = leadFamily;
-      familyItems = trusted.filter((item) =>
-        this.problemFamilyMatchesSelectedFamily(
-          leadFamily,
-          item.problemFamily,
-          item.text,
-        ),
-      );
+    if (aiProposalSurvived) {
+      familyItems = aiProposedItems;
     }
 
-    if (familyItems.length === 0) return analysis;
-    const selectedOpportunity = analysis.opportunities[0];
-    const opportunities = selectedOpportunity
-      ? [
-          {
-            ...selectedOpportunity,
-            title: selectedFamily,
-            solutionArea: `Evidence-prioritized requester workflow: ${selectedFamily}`,
-            evidenceSamples: familyItems.map((item) => item.text).slice(0, 8),
-            frequency: familyItems.length,
-          },
-          ...analysis.opportunities.slice(1),
-        ]
-      : analysis.opportunities;
+    if (familyItems.length === 0) {
+      const strongestFamilyItems = this.selectStrongestTrustedFamilyItems(trusted);
+      const leadFamily = strongestFamilyItems[0]?.problemFamily?.trim() ?? '';
+      if (!leadFamily) {
+        return {
+          ...analysis,
+          selectedProblemFamily: null,
+          selectedProblemFamilySelectionSource:
+            aiProposedFamily || aiProposedIds.size > 0
+              ? 'AI_PROPOSAL_REJECTED'
+              : null,
+          selectedProblemFamilyTrustedEvidenceCount: 0,
+          selectedProblemFamilyDistinctSourceCount: 0,
+          selectedProblemFamilyEvidenceIds: [],
+        };
+      }
+      selectedFamily = leadFamily;
+      familyItems = strongestFamilyItems;
+    }
+
+    const orderedFamilyItems = [...familyItems].sort((left, right) => {
+      const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+      const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
+      return rightDirect - leftDirect || right.confidence - left.confidence;
+    });
+    const distinctSourceCount = EvidenceSourceIdentityUtil.count(orderedFamilyItems);
+    const averageConfidence =
+      orderedFamilyItems.reduce((sum, item) => sum + item.confidence, 0) /
+      Math.max(1, orderedFamilyItems.length);
+    const evidenceSamples = orderedFamilyItems
+      .map((item) => item.text.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+
+    const selectedOpportunity =
+      analysis.opportunities.find((opportunity) =>
+        this.problemFamilyMatchesSelectedFamily(
+          selectedFamily,
+          opportunity.title,
+          opportunity.problem,
+        ),
+      ) ?? analysis.opportunities[0] ?? null;
+    const explicitProblem =
+      context.collectionPlan?.requestIntent?.mode === 'EXPLICIT_PROBLEM'
+        ? context.collectionPlan.requestIntent.explicitProblem?.trim() ||
+          context.requestDescription?.trim() ||
+          ''
+        : context.requestDescription?.trim() || '';
+    const lead = orderedFamilyItems[0];
+    const domainName =
+      selectedOpportunity?.domainName?.trim() ||
+      lead?.matchedDomainNames?.[0]?.trim() ||
+      context.domainName?.trim() ||
+      context.selectedDomains[0]?.name?.trim() ||
+      'Selected domain';
+    const requesterScopedProblem = explicitProblem
+      ? `Within the requester-defined workflow, the strongest retained evidence supports the "${selectedFamily}" problem facet. Canonical requester scope: ${explicitProblem}`
+      : selectedFamily;
+    const requesterScopedNeed =
+      `Prioritize product design around the evidence-leading requester facet "${selectedFamily}" while preserving the broader canonical request only as secondary scope until its remaining facets are independently validated.`;
+
+    const canonicalOpportunity: CommunityAiOpportunity = selectedOpportunity
+      ? {
+          ...selectedOpportunity,
+          domainName,
+          title: selectedFamily,
+          problem: requesterScopedProblem,
+          unmetNeed: selectedOpportunity.unmetNeed?.trim() || requesterScopedNeed,
+          solutionArea: `Evidence-prioritized requester workflow: ${selectedFamily}`,
+          evidenceSamples,
+          frequency: orderedFamilyItems.length,
+          confidence: Math.max(
+            selectedOpportunity.confidence,
+            Math.max(35, Math.min(90, Math.round(averageConfidence))),
+          ),
+          risks: [
+            `The selected problem family is grounded by ${orderedFamilyItems.length} retained verified evidence item(s) across ${distinctSourceCount} distinct source(s); broader validation is still required before prevalence claims are made.`,
+          ],
+        }
+      : {
+          domainName,
+          title: selectedFamily,
+          problem: requesterScopedProblem,
+          unmetNeed: requesterScopedNeed,
+          solutionArea: `Evidence-prioritized requester workflow: ${selectedFamily}`,
+          affectedUsers: ['Requester-defined target users represented by the retained workflow'],
+          evidenceSamples,
+          frequency: orderedFamilyItems.length,
+          severity: 'MEDIUM',
+          confidence: Math.max(35, Math.min(90, Math.round(averageConfidence))),
+          problemImportance: Math.max(40, Math.min(85, Math.round(averageConfidence))),
+          localEvidenceAvailable: false,
+          localEvidenceSamples: [],
+          localRelevance: 20,
+          groundingScore: Math.max(50, Math.min(100, Math.round(averageConfidence))),
+          technicalFeasibility: 65,
+          marketPotential: 40,
+          innovationPotential: 50,
+          risks: [
+            `The selected problem family is grounded by ${orderedFamilyItems.length} retained verified evidence item(s) across ${distinctSourceCount} distinct source(s); broader validation is still required before prevalence claims are made.`,
+          ],
+        };
 
     return {
       ...analysis,
-      opportunities,
+      opportunities: [
+        canonicalOpportunity,
+        ...analysis.opportunities.filter(
+          (opportunity) => opportunity !== selectedOpportunity,
+        ),
+      ],
       selectedProblemFamily: selectedFamily,
-      selectedProblemFamilyTrustedEvidenceCount: familyItems.length,
-      selectedProblemFamilyDistinctSourceCount:
-        EvidenceSourceIdentityUtil.count(familyItems),
-      selectedProblemFamilyEvidenceIds: familyItems.map((item) => item.id),
+      selectedProblemFamilySelectionSource: aiProposalSurvived
+        ? 'AI_SELECTED_VERIFIED'
+        : 'AI_CLUSTER_VERIFIED',
+      selectedProblemFamilyTrustedEvidenceCount: orderedFamilyItems.length,
+      selectedProblemFamilyDistinctSourceCount: distinctSourceCount,
+      selectedProblemFamilyEvidenceIds: orderedFamilyItems.map((item) => item.id),
     };
   }
 

@@ -206,7 +206,8 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
      * normal request-capability guard, so this does not force app stores or
      * developer communities into unrelated workflows.
      */
-    const desiredCommentLanes = 2;
+    const discoveryMode = !context.requestDescription?.trim();
+    const desiredCommentLanes = discoveryMode ? 3 : 2;
     if (
       selected.filter((source) => source.supportsComments === true).length <
       desiredCommentLanes
@@ -237,7 +238,12 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
      */
     const targetAutomaticCount = Math.min(
       maxAutomatic,
-      Math.max(1, plannerKeys.length > 0 ? plannerKeys.length + 1 : 1),
+      Math.max(
+        1,
+        plannerKeys.length > 0
+          ? plannerKeys.length + (discoveryMode ? 2 : 1)
+          : 1,
+      ),
     );
     if (plannerKeys.length > 0 && selected.length < targetAutomaticCount) {
       [...dataSources]

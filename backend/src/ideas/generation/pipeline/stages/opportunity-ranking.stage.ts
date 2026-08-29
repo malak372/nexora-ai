@@ -146,10 +146,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
      * passes independent provenance verification below, so this is an identity
      * lock rather than an evidence-quality bypass.
      */
-    const discoveryCanonicalRanking = !this.hasExplicitRequesterProblem(context)
-      ? await this.buildVerifiedDiscoveryCanonicalRanking(context)
-      : null;
-    let ranking = discoveryCanonicalRanking ?? explicitDirectCompetition;
+    const canonicalFamilyRanking =
+      await this.buildVerifiedCanonicalFamilyRanking(context);
+    let ranking = canonicalFamilyRanking ?? explicitDirectCompetition;
 
     if (!ranking) {
       const genericRanking = await this.tryRankContext(
@@ -531,9 +530,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
        * 10-20 seconds without any possible scoring/evidence change.
        */
       if (recoveryAddedTrustedEvidence) {
-        const recoveredCanonicalRanking = !this.hasExplicitRequesterProblem(workingContext)
-          ? await this.buildVerifiedDiscoveryCanonicalRanking(workingContext)
-          : null;
+        const recoveredCanonicalRanking =
+          await this.buildVerifiedCanonicalFamilyRanking(workingContext);
         ranking = recoveredCanonicalRanking ?? this.enforcePrimaryDomainFallback(
           await this.tryRankContext(workingContext, previousIdeaTexts),
           workingContext,
@@ -818,9 +816,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const rawRows = recovery.rawEvidenceCorpus ?? [];
     if (rawRows.length === 0) {
       this.logger.debug(
-        'A second text-recovery wave remains eligible because the previous completed wave returned zero new canonical raw rows.',
+        'Skipping a second text-recovery wave because the previous completed wave added zero new canonical raw rows; another serial recollection has low expected marginal value.',
       );
-      return true;
+      return false;
     }
 
     if (!recovery.communityAiRecoveryExecuted || !recovery.communityAiAnalysis) {
@@ -920,7 +918,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const rawSourceCount = new Set(
       (context.rawEvidenceCorpus ?? []).map((item) => item.sourceKey.toLocaleLowerCase()),
     ).size;
-    const rawSourceArchetypeCount = new Set(
+    const rawSourceArchetypes = new Set(
       (context.rawEvidenceCorpus ?? [])
         .map((item) =>
           CollectorRequestCapabilityUtil.sourceArchetype(
@@ -928,6 +926,17 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           ),
         )
         .filter((archetype) => archetype !== 'OTHER'),
+    );
+    const rawSourceArchetypeCount = rawSourceArchetypes.size;
+    const directExperienceSourceCount = new Set(
+      (context.rawEvidenceCorpus ?? [])
+        .filter((item) => {
+          const archetype = CollectorRequestCapabilityUtil.sourceArchetype(
+            item.sourceKey.toLocaleLowerCase(),
+          );
+          return archetype === 'COMMUNITY' || archetype === 'PRODUCT_REVIEW';
+        })
+        .map((item) => item.sourceKey.toLocaleLowerCase()),
     ).size;
     const selectedSourceCount = Math.max(1, context.selectedDataSources.length);
     const minimumBroadRawCount = context.requestDescription?.trim()
@@ -938,21 +947,54 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       rawEvidenceCount >= minimumBroadRawCount &&
       rawSourceCount >= minimumBroadSourceCount;
 
+    const classificationByEvidenceId = new Map(
+      classifications.map((item) => [item.evidenceId, item] as const),
+    );
+    const fullPrimaryCorpusAdjudicated =
+      rawEvidenceCount > 0 &&
+      (context.rawEvidenceCorpus ?? []).every((row) => {
+        const classification = classificationByEvidenceId.get(row.id);
+        return Boolean(
+          classification &&
+            classification.adjudicationStatus === 'ADJUDICATED' &&
+            classification.classification !== 'UNADJUDICATED',
+        );
+      });
+    const textCorpusHasIndependentBreadth = Boolean(
+      context.requestDescription?.trim() &&
+        fullPrimaryCorpusAdjudicated &&
+        rawEvidenceCount >= 14 &&
+        rawSourceCount >= 4 &&
+        rawSourceArchetypeCount >= 3 &&
+        (directExperienceSourceCount >= 1 ||
+          (rawSourceCount >= 5 && rawSourceArchetypeCount >= 4)),
+    );
+    const discoveryCorpusHasIndependentBreadth = Boolean(
+      !context.requestDescription?.trim() &&
+        fullPrimaryCorpusAdjudicated &&
+        rawEvidenceCount >= Math.max(10, minimumBroadRawCount) &&
+        rawSourceCount >= Math.min(3, minimumBroadSourceCount),
+    );
     /*
-     * One or several trusted items from one source are real evidence and remain
-     * trusted immediately, but they are not independent corroboration.  The
-     * previous fast-path skipped recovery for text requests and for discovery
-     * runs with an already locked canonical family, which left both modes with
-     * a single-source winner even when unused healthy sources were available.
-     * Give any single-source winner exactly one bounded source-rotated
-     * corroboration wave.  This strengthens evidence; it never changes the
-     * canonical family or requester problem lock.
+     * Trusted evidence is evaluated at the selected-family level, not at the
+     * global-corpus level. A run can have many trusted rows overall while the
+     * winning family is still supported by one independent source. In that
+     * case allow exactly one bounded corroboration wave; the recovery service
+     * performs source-health/executability preflight before any expensive AI
+     * re-planning and excludes the already represented family source. This is
+     * structural provenance logic only — no domain/problem meaning is inferred.
      */
     if (trustedEvidenceCount > 0) {
-      return (
+      if (
         context.evidenceRecoveryAttempts === 0 &&
         needsIndependentSourceCorroboration
-      );
+      ) {
+        this.logger.debug(
+          `Selected-family corroboration remains eligible: familyEvidence=${corroborationSet.length}, familySources=${corroborationSourceCount}, globalTrusted=${trustedEvidenceCount}, raw=${rawEvidenceCount}, rawSources=${rawSourceCount}.`,
+        );
+        return true;
+      }
+      return false;
     }
 
     /*
@@ -980,26 +1022,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       return false;
     }
 
-    const classificationByEvidenceId = new Map(
-      classifications.map((item) => [item.evidenceId, item] as const),
-    );
-    const fullPrimaryCorpusAdjudicated =
-      rawEvidenceCount > 0 &&
-      (context.rawEvidenceCorpus ?? []).every((row) => {
-        const classification = classificationByEvidenceId.get(row.id);
-        return Boolean(
-          classification &&
-            classification.adjudicationStatus === 'ADJUDICATED' &&
-            classification.classification !== 'UNADJUDICATED',
-        );
-      });
     const conclusiveBroadTextZeroTrusted = Boolean(
       context.requestDescription?.trim() &&
         trustedEvidenceCount === 0 &&
-        fullPrimaryCorpusAdjudicated &&
-        rawEvidenceCount >= 16 &&
-        (rawSourceCount >= 4 ||
-          (rawSourceCount >= 3 && rawSourceArchetypeCount >= 2)),
+        textCorpusHasIndependentBreadth,
     );
 
     /*
@@ -1019,6 +1045,16 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
     if (context.requestDescription?.trim()) {
       return true;
+    }
+
+    if (
+      trustedEvidenceCount === 0 &&
+      discoveryCorpusHasIndependentBreadth
+    ) {
+      this.logger.debug(
+        `Skipping redundant discovery recovery after a complete broad zero-trusted verdict: raw=${rawEvidenceCount}, sources=${rawSourceCount}, archetypes=${rawSourceArchetypeCount}, adjudicated=${classifications.length}.`,
+      );
+      return false;
     }
 
     // A broad discovery corpus was already collected and semantically reviewed
@@ -2777,13 +2813,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     };
   }
 
-  private async buildVerifiedDiscoveryCanonicalRanking(
+  private async buildVerifiedCanonicalFamilyRanking(
     context: IdeaGenerationContext,
   ): Promise<IdeaOpportunityRanking | null> {
-    if (this.hasExplicitRequesterProblem(context)) return null;
+    const analysis = context.communityAiAnalysis;
+    const lockedFamily = analysis?.selectedProblemFamily?.trim() ?? '';
     if (
-      !context.communityAiAnalysis?.selectedProblemFamily?.trim() ||
-      (context.communityAiAnalysis.selectedProblemFamilyTrustedEvidenceCount ?? 0) <= 0
+      !lockedFamily ||
+      (analysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0) <= 0
     ) {
       return null;
     }
@@ -2812,11 +2849,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
     const selected = verified.selected;
     const canonicalEvidenceIds = new Set(
-      (context.communityAiAnalysis.selectedProblemFamilyEvidenceIds ?? [])
+      (analysis?.selectedProblemFamilyEvidenceIds ?? [])
         .map((id) => id.trim())
         .filter(Boolean),
     );
-    const lockedFamily = context.communityAiAnalysis.selectedProblemFamily.trim();
     const canonicalFamilyItems = (context.canonicalEvidenceLedger ?? []).filter(
       (item) =>
         canonicalEvidenceIds.has(item.id) &&
@@ -2829,6 +2865,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           item.text,
         ),
     );
+
     const independentlyVerifiedCount =
       selected.verifiedProblemMatchedEvidenceCount ??
       selected.verifiedEvidenceCount ??
@@ -2837,74 +2874,179 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const verifiedCount = Math.max(
       independentlyVerifiedCount,
       canonicalFamilyItems.length,
-      context.communityAiAnalysis.selectedProblemFamilyTrustedEvidenceCount ?? 0,
+      analysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0,
     );
-    if (verifiedCount <= 0) {
-      return null;
-    }
+    if (verifiedCount <= 0) return null;
 
     const canonicalSelected = canonicalRanking.selected;
     const canonicalSamples = canonicalFamilyItems.length > 0
       ? canonicalFamilyItems.map((item) => item.text).filter(Boolean).slice(0, 8)
       : canonicalSelected.evidenceSamples;
     if (canonicalSamples.length === 0) return null;
+
     const canonicalDirectCount = canonicalFamilyItems.filter(
       (item) => item.classification === 'DIRECT_PROBLEM',
     ).length;
+    const canonicalSupportingCount = Math.max(
+      0,
+      canonicalFamilyItems.length - canonicalDirectCount,
+    );
     const canonicalSourceCount = Math.max(
-      context.communityAiAnalysis.selectedProblemFamilyDistinctSourceCount ?? 0,
+      analysis?.selectedProblemFamilyDistinctSourceCount ?? 0,
       EvidenceSourceIdentityUtil.count(canonicalFamilyItems),
     );
-    const staleZeroEvidenceReasons = new Set([
-      // These two reasons contradict the canonical ledger when the selected
-      // discovery family already owns a verified DIRECT/SUPPORTING item. Keep
-      // recurrence/source-diversity warnings intact: one verified observation
-      // is enough for a preliminary product direction, but it is not proof that
-      // the problem is recurrent or market-wide.
+    const hasExplicitRequesterProblem = this.hasExplicitRequesterProblem(context);
+
+    /*
+     * Evidence strength is structural, not semantic: the Community AI owns the
+     * family label and every row already passed canonical request/domain
+     * verification. Ranking therefore measures only how much independently
+     * corroborated support survived (count, source diversity, directness, and
+     * Community confidence). This prevents a 7-row/5-source canonical family
+     * from inheriting the fixed low score of a zero-evidence validation
+     * hypothesis while keeping the Core 70-point product-quality gate intact.
+     */
+    const evidenceCountStrength = Math.min(1, verifiedCount / 5);
+    const sourceDiversityStrength = Math.min(1, canonicalSourceCount / 3);
+    const directStrength = Math.min(
+      1,
+      canonicalDirectCount / Math.max(1, verifiedCount),
+    );
+    const communityConfidence = Math.max(
+      0,
+      Math.min(1, (analysis?.overallConfidence ?? 0) / 100),
+    );
+    const canonicalEvidenceStrength = Math.min(
+      0.92,
+      Math.round(
+        (0.25 +
+          evidenceCountStrength * 0.25 +
+          sourceDiversityStrength * 0.22 +
+          directStrength * 0.08 +
+          communityConfidence * 0.1) *
+          1000,
+      ) / 1000,
+    );
+    const canonicalReliabilityFloor = Math.min(
+      0.9,
+      0.52 + sourceDiversityStrength * 0.18 + directStrength * 0.12,
+    );
+    const canonicalSupportFloor = Math.min(
+      0.88,
+      0.42 + evidenceCountStrength * 0.2 + sourceDiversityStrength * 0.18,
+    );
+
+    const removableEvidenceReasons = new Set<string>([
       'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
-      'NO_DIRECT_EVIDENCE',
+      'EVIDENCE_SEMANTIC_MISMATCH',
+      'LOW_OPPORTUNITY_SCORE',
     ]);
+    if (verifiedCount >= 2 && canonicalSourceCount >= 2) {
+      removableEvidenceReasons.add('INSUFFICIENT_EVIDENCE_COUNT');
+      removableEvidenceReasons.add('INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE');
+      removableEvidenceReasons.add('NO_SUPPORTED_FREQUENCY');
+      removableEvidenceReasons.add('LOW_EVIDENCE_RELIABILITY');
+      removableEvidenceReasons.add('LOW_EVIDENCE_QUALITY');
+      removableEvidenceReasons.add('INSUFFICIENT_SUPPORT');
+      removableEvidenceReasons.add('LOW_CONFIDENCE_REQUIRES_STRONGER_EVIDENCE');
+    }
+    /*
+     * NO_DIRECT_EVIDENCE is a useful warning but must not make a repeatedly
+     * corroborated supporting-only family equivalent to zero evidence. The
+     * absence of direct user complaints is preserved in qualityWarnings and
+     * the final evidence qualification language below.
+     */
+    if (verifiedCount >= 1 && canonicalSupportingCount >= 1) {
+      removableEvidenceReasons.add('NO_DIRECT_EVIDENCE');
+    }
+
     const canonicalDisqualificationReasons = selected.disqualificationReasons.filter(
-      (reason) => !staleZeroEvidenceReasons.has(reason),
+      (reason) => !removableEvidenceReasons.has(reason),
     );
     const canonicalSelectionEligible =
       !canonicalDisqualificationReasons.some(
         (reason) =>
           reason === 'OFF_SELECTED_DOMAIN' ||
-          reason === 'EVIDENCE_SEMANTIC_MISMATCH' ||
           reason === 'EXPLICIT_DOMAIN_SCOPE_MISMATCH' ||
           reason === 'PROBLEM_EVIDENCE_OUTSIDE_EXPLICIT_SCOPE',
       );
+
+    const selectedTitle = hasExplicitRequesterProblem
+      ? canonicalSelected.title
+      : lockedFamily;
+    const selectedProblem = hasExplicitRequesterProblem
+      ? canonicalSelected.problem
+      : canonicalSelected.problem;
+
+    const raw =
+      selected.raw &&
+      typeof selected.raw === 'object' &&
+      !Array.isArray(selected.raw)
+        ? ({
+            ...(selected.raw as Prisma.JsonObject),
+            familyKey: hasExplicitRequesterProblem
+              ? (selected.raw as Prisma.JsonObject).familyKey ?? null
+              : null,
+            canonicalProblemFamily: lockedFamily,
+            canonicalProblemEvidenceIds: [
+              ...(analysis?.selectedProblemFamilyEvidenceIds ?? []),
+            ],
+            canonicalProblemTrustedEvidenceCount: verifiedCount,
+            canonicalProblemDistinctSourceCount: canonicalSourceCount,
+            canonicalProblemDirectEvidenceCount: canonicalDirectCount,
+            canonicalProblemSupportingEvidenceCount: canonicalSupportingCount,
+            ...(hasExplicitRequesterProblem
+              ? {
+                  canonicalRequesterProblemSupported: true,
+                  canonicalRequesterSupportFamily: lockedFamily,
+                }
+              : {
+                  canonicalDiscoveryProblemLocked: true,
+                  canonicalDiscoveryProblemFamily: lockedFamily,
+                }),
+          } as Prisma.JsonObject)
+        : selected.raw;
 
     return {
       ...verified,
       selected: {
         ...selected,
-        // Canonical Community + deterministic-ledger state is the discovery
-        // source of truth. Independent provenance verification may enrich this
-        // candidate, but it must not rename it or erase a ledger-verified item.
-        title: lockedFamily,
-        problem: canonicalSelected.problem,
+        title: selectedTitle,
+        problem: selectedProblem,
         need: canonicalSelected.need,
         solutionArea: canonicalSelected.solutionArea,
         evidenceSamples: canonicalSamples,
-        frequency: canonicalSamples.length,
-        selectionEligible: canonicalSelectionEligible,
-        disqualificationReasons: canonicalDisqualificationReasons,
-        evidenceReliabilityScore: Math.max(
-          selected.evidenceReliabilityScore,
-          canonicalDirectCount > 0 ? 0.85 : 0.7,
-        ),
-        supportScore: Math.max(
-          selected.supportScore,
-          canonicalDirectCount > 0 ? 0.7 : 0.55,
+        frequency: verifiedCount,
+        frequencyScore: Math.max(
+          selected.frequencyScore,
+          Math.min(1, verifiedCount / 5),
         ),
         evidenceScore: Math.max(
           selected.evidenceScore,
-          Math.min(1, canonicalSamples.length / 5),
+          Math.min(1, verifiedCount / 5),
+        ),
+        evidenceReliabilityScore: Math.max(
+          selected.evidenceReliabilityScore,
+          canonicalReliabilityFloor,
+        ),
+        supportScore: Math.max(selected.supportScore, canonicalSupportFloor),
+        baseScore: Math.max(selected.baseScore, canonicalEvidenceStrength),
+        finalScore: Math.max(selected.finalScore, canonicalEvidenceStrength),
+        selectionEligible: canonicalSelectionEligible,
+        disqualificationReasons: canonicalDisqualificationReasons,
+        qualifiedExternalSupportingEvidenceCount: Math.max(
+          selected.qualifiedExternalSupportingEvidenceCount ?? 0,
+          canonicalSupportingCount,
+        ),
+        qualifiedExternalSupportingSourceCount: Math.max(
+          selected.qualifiedExternalSupportingSourceCount ?? 0,
+          canonicalSourceCount,
         ),
         verifiedProblemMatchedEvidenceCount: verifiedCount,
-        verifiedEvidenceCount: Math.max(selected.verifiedEvidenceCount ?? 0, verifiedCount),
+        verifiedEvidenceCount: Math.max(
+          selected.verifiedEvidenceCount ?? 0,
+          verifiedCount,
+        ),
         verifiedProblemMatchedDirectUserEvidenceCount: Math.max(
           selected.verifiedProblemMatchedDirectUserEvidenceCount ?? 0,
           canonicalDirectCount,
@@ -2929,36 +3071,24 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           selected.verifiedProblemMatchedEvidenceSourceCount ?? 0,
           canonicalSourceCount,
         ),
-        raw:
-          selected.raw &&
-          typeof selected.raw === 'object' &&
-          !Array.isArray(selected.raw)
-            ? ({
-                ...(selected.raw as Prisma.JsonObject),
-                // Discovery canonical state supersedes the generic taxonomy
-                // familyKey produced earlier by deterministic ranking. Keeping
-                // that stale key let later benchmark/final-text guards compare
-                // against a second problem identity (for example navigation-ui)
-                // after Community had already locked a different evidence-native
-                // family. Null it at the handoff and preserve the canonical label
-                // explicitly below.
-                familyKey: null,
-                canonicalDiscoveryProblemLocked: true,
-                canonicalDiscoveryProblemFamily: lockedFamily,
-                canonicalDiscoveryProblemEvidenceIds:
-                  [...(context.communityAiAnalysis.selectedProblemFamilyEvidenceIds ?? [])],
-                canonicalDiscoveryProblemTrustedEvidenceCount:
-                  context.communityAiAnalysis.selectedProblemFamilyTrustedEvidenceCount ?? 0,
-                canonicalDiscoveryProblemDistinctSourceCount:
-                  context.communityAiAnalysis.selectedProblemFamilyDistinctSourceCount ?? 0,
-              } as Prisma.JsonObject)
-            : selected.raw,
+        raw,
       },
-      selectionReason:
-        `Locked discovery ranking to canonical verified problem family "${lockedFamily}" ` +
-        `with ${context.communityAiAnalysis.selectedProblemFamilyTrustedEvidenceCount ?? verifiedCount} family-matched trusted evidence item(s).`,
+      evidenceCoverage: Math.max(
+        verified.evidenceCoverage,
+        Math.min(1, verifiedCount / 3),
+      ),
+      selectionReason: hasExplicitRequesterProblem
+        ? `Preserved the requester-defined problem with canonical supporting family "${lockedFamily}" backed by ${verifiedCount} trusted item(s) across ${canonicalSourceCount} source(s).`
+        : `Locked discovery ranking to canonical verified problem family "${lockedFamily}" with ${verifiedCount} family-matched trusted evidence item(s) across ${canonicalSourceCount} source(s).`,
       qualityWarnings: [
-        'The discovery winner is locked to the Community/canonical-ledger problem family; unrelated generic NLP taxonomy candidates cannot rename it downstream.',
+        ...(canonicalDirectCount === 0
+          ? [
+              `The canonical family is supported by ${canonicalSupportingCount} verified secondary/supporting signal(s) across ${canonicalSourceCount} source(s) but no direct retained user complaint; prevalence remains preliminary.`,
+            ]
+          : []),
+        hasExplicitRequesterProblem
+          ? 'The requester problem remains the product scope; the canonical evidence family corroborates that scope but cannot replace unsupported requester facets.'
+          : 'The discovery winner is locked to the Community/canonical-ledger problem family; unrelated generic NLP taxonomy candidates cannot rename it downstream.',
         ...verified.qualityWarnings,
       ],
     };
@@ -4444,15 +4574,47 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const selectionEligible =
       selected.selectionEligible || preliminarySupportingEligible;
     /*
-     * Contextual/secondary support has its own qualified counters below.
-     * It must never inflate the verified-demand scores that are derived from
-     * `qualifiesAsCommunityEvidence=true` or other directly verified evidence.
+     * A requester-defined workflow can remain the immutable product scope while
+     * verified SUPPORTING_SIGNAL rows materially strengthen the opportunity.
+     * Previously these rows were attached to the candidate but baseScore and
+     * finalScore were deliberately left at the zero-evidence hypothesis value,
+     * so three canonical signals across three independent sources could still
+     * surface as a 0.41 opportunity. Score only structural evidence strength
+     * here: count + independent-source diversity. Semantic ownership remains
+     * with Community AI/canonical verification and the requester problem text
+     * is never replaced by this calculation.
      */
-    const evidenceReliabilityScore = selected.evidenceReliabilityScore;
-    const supportScore = selected.supportScore;
-    const evidenceScore = selected.evidenceScore;
-    const baseScore = selected.baseScore;
-    const finalScore = selected.finalScore;
+    const supportingCountStrength = Math.min(1, supportingCount / 5);
+    const supportingSourceStrength = Math.min(1, distinctSourceCount / 3);
+    const qualifiedSupportingStrength = Math.min(
+      0.86,
+      Math.round(
+        (0.28 +
+          supportingCountStrength * 0.28 +
+          supportingSourceStrength * 0.3) *
+          1000,
+      ) / 1000,
+    );
+    const evidenceReliabilityFloor = Math.min(
+      0.84,
+      0.48 + supportingCountStrength * 0.14 + supportingSourceStrength * 0.22,
+    );
+    const supportFloor = Math.min(
+      0.82,
+      0.4 + supportingCountStrength * 0.16 + supportingSourceStrength * 0.22,
+    );
+    const evidenceScoreFloor = Math.min(
+      0.86,
+      0.24 + supportingCountStrength * 0.3 + supportingSourceStrength * 0.28,
+    );
+    const evidenceReliabilityScore = Math.max(
+      selected.evidenceReliabilityScore,
+      evidenceReliabilityFloor,
+    );
+    const supportScore = Math.max(selected.supportScore, supportFloor);
+    const evidenceScore = Math.max(selected.evidenceScore, evidenceScoreFloor);
+    const baseScore = Math.max(selected.baseScore, qualifiedSupportingStrength);
+    const finalScore = Math.max(selected.finalScore, qualifiedSupportingStrength);
     const raw =
       selected.raw && typeof selected.raw === 'object' && !Array.isArray(selected.raw)
         ? ({
@@ -4497,16 +4659,25 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           secondaryCount,
         ),
         /*
-         * Problem-matched/trusted counters remain untouched. The contextual
-         * secondary ledger is exposed only through qualifiedExternalSupporting*
-         * and verifiedSecondaryEvidenceCount.
+         * These rows already passed Community AI semantic triage plus the
+         * canonical/provenance verifier, so they are legitimate problem-matched
+         * SUPPORTING_SIGNAL counters. They still remain distinct from direct-user
+         * evidence and therefore never establish recurrence by themselves.
          */
-        verifiedProblemMatchedEvidenceCount:
+        verifiedProblemMatchedEvidenceCount: Math.max(
           selected.verifiedProblemMatchedEvidenceCount ?? 0,
-        verifiedProblemMatchedSecondaryEvidenceCount:
+          supportingCount,
+        ),
+        verifiedProblemMatchedSecondaryEvidenceCount: Math.max(
           selected.verifiedProblemMatchedSecondaryEvidenceCount ?? 0,
+          supportingCount,
+        ),
         verifiedEvidenceSourceCount: Math.max(
           selected.verifiedEvidenceSourceCount ?? 0,
+          distinctSourceCount,
+        ),
+        verifiedProblemMatchedSourceCount: Math.max(
+          selected.verifiedProblemMatchedSourceCount ?? 0,
           distinctSourceCount,
         ),
         verifiedProblemMatchedEvidenceSourceCount: Math.max(
@@ -6560,9 +6731,22 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           } as Prisma.JsonObject)
         : ranking.selected.raw;
 
+    const canonicalSupportCount = Math.max(
+      0,
+      context.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0,
+    );
+    const canonicalSupportSourceCount = Math.max(
+      0,
+      context.communityAiAnalysis?.selectedProblemFamilyDistinctSourceCount ?? 0,
+    );
+    const evidenceGroundedRequesterTitle =
+      selectedFamily && canonicalSupportCount >= 2 && canonicalSupportSourceCount >= 2
+        ? `Evidence-Grounded Requester Workflow — ${selectedFamily}`
+        : 'Requester-Defined Workflow Opportunity';
+
     const selected: RankedIdeaOpportunity = {
       ...ranking.selected,
-      title: 'Requester-Defined Workflow Opportunity',
+      title: evidenceGroundedRequesterTitle,
       problem: explicitProblem,
       need: canonicalNeed,
       solutionArea: canonicalSolutionArea,

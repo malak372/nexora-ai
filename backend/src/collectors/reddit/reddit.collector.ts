@@ -20,12 +20,7 @@ import {
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 import { ProblemFirstCollectorQueryUtil } from '../base/problem-first-collector-query.util';
-import { RequestEvidenceAlignmentUtil } from '../../ideas/generation/utils/request-evidence-alignment.util';
 import { RequestDynamicQueryUtil } from '../../ideas/generation/utils/request-dynamic-query.util';
-import { RequestWorkflowIntentProfileUtil } from '../../ideas/generation/utils/request-workflow-intent-profile.util';
-import { RequestNicheCustomCraftUtil } from '../../ideas/generation/utils/request-niche-custom-craft.util';
-import { RequestOnlinePharmacyFraudUtil } from '../../ideas/generation/utils/request-online-pharmacy-fraud.util';
-import { RequestVerticalConstraintUtil } from '../../ideas/generation/utils/request-vertical-constraint.util';
 
 /**
  * Represents a Reddit listing wrapper.
@@ -377,10 +372,9 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
 
       /*
        * AI routing hints are authoritative for bounded request-scoped Reddit
-       * collection. Searching r/vintagecameras/r/camerarepair first prevents a
-       * valid niche query from falling through to an unrelated global RSS feed.
-       * Global Reddit remains a bounded fallback when the hinted communities do
-       * not return enough material.
+       * collection. Hinted communities are searched first when present; global
+       * Reddit remains a bounded fallback when those communities return too
+       * little material. No request-text vertical is mapped to a subreddit here.
        */
       let collectedPosts: RedditPostData[] = [];
       if (accessToken) {
@@ -1128,56 +1122,6 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     );
     if (!evidence) return false;
 
-    if (RequestOnlinePharmacyFraudUtil.isRequest(request)) {
-      return RequestOnlinePharmacyFraudUtil.isPlausibleRetrievalCandidate(
-        request,
-        evidence,
-      );
-    }
-    if (RequestNicheCustomCraftUtil.resolve(request)) {
-      return RequestNicheCustomCraftUtil.isPlausibleRetrievalCandidate(
-        request,
-        evidence,
-      );
-    }
-
-    const verticalConstraint = RequestVerticalConstraintUtil.resolve({
-      requestDescription: request,
-      domainName: input.domainName,
-      plannedQueries: input.plannedQueries,
-    });
-    if ([
-      'PUBLIC_PROGRAM_COST_ATTRIBUTION',
-      'OPERATIONAL_COST_ATTRIBUTION',
-      'HEALTHCARE_SUPPLY_COST_EFFICIENCY',
-      'AGRICULTURE_DISTRIBUTION_PROFITABILITY',
-      'AGRICULTURE_EXPORT_PROFITABILITY',
-    ].includes(verticalConstraint.kind)) {
-      /*
-       * High-signal business/operations verticals should not let a globally
-       * popular Reddit result into the raw ledger merely because it shares a
-       * generic domain word such as finance, budget, inventory, or delivery.
-       * Direct and Supporting classifications are both retained; unrelated
-       * posts are rejected at the source boundary before Community AI cost.
-       */
-      return RequestEvidenceAlignmentUtil.classifyForRequest({
-        requestDescription: request,
-        evidenceText: evidence,
-        plannedQueries: input.plannedQueries ?? [],
-      }) !== 'UNRELATED';
-    }
-
-    if (
-      RequestEvidenceAlignmentUtil.isAligned({
-        requestDescription: request,
-        evidenceText: evidence,
-        plannedQueries: input.plannedQueries ?? [],
-      })
-    ) {
-      return true;
-    }
-
-    const profile = RequestWorkflowIntentProfileUtil.resolve(request);
     const genericIdentityTerms = new Set([
       'business', 'businesses', 'company', 'companies', 'customer', 'customers',
       'client', 'clients', 'specialist', 'specialists', 'service', 'services',
@@ -1185,26 +1129,21 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
       'information', 'records', 'record', 'notes', 'problem', 'problems',
     ]);
     const identityTerms = this.unique([
-      ...profile.objectIdentityTerms,
       ...RequestDynamicQueryUtil.extractEvidenceIdentityTerms(request),
       RequestDynamicQueryUtil.extractActor(request),
     ])
       .map((value) => this.cleanNormalizedText(value))
       .filter((value) => value.length >= 4)
       .filter((value) => !genericIdentityTerms.has(value));
-
-    const identityMatched = identityTerms.some((term) =>
-      evidence.includes(term),
-    );
     const workflowTerms = RequestDynamicQueryUtil.extractWorkflowTerms(request)
       .map((value) => this.cleanNormalizedText(value))
       .filter((value) => value.length >= 4);
     const painTerms = RequestDynamicQueryUtil.extractPainTerms(request)
       .map((value) => this.cleanNormalizedText(value))
       .filter((value) => value.length >= 4);
-    const workflowMatched = workflowTerms.some((term) =>
-      evidence.includes(term),
-    );
+
+    const identityMatched = identityTerms.some((term) => evidence.includes(term));
+    const workflowMatched = workflowTerms.some((term) => evidence.includes(term));
     const painMatched = painTerms.some((term) => evidence.includes(term));
 
     const stopWords = new Set([
@@ -1222,8 +1161,11 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
       evidenceTokens.has(token),
     ).length;
 
-    return (identityMatched && (workflowMatched || painMatched || tokenOverlap >= 2)) ||
-      (tokenOverlap >= 3 && (workflowMatched || painMatched));
+    return (
+      (identityMatched && (workflowMatched || painMatched || tokenOverlap >= 2)) ||
+      (tokenOverlap >= 3 && (workflowMatched || painMatched)) ||
+      tokenOverlap >= 5
+    );
   }
 
   /**
@@ -1859,56 +1801,7 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
       return value ? [this.normalizeSubredditName(value)] : [];
     });
 
-    const request = this.cleanNormalizedText([
-      input.requestDescription ?? '',
-      input.domainName ?? '',
-    ].join(' '));
-    const inferred: string[] = [
-      ...RequestNicheCustomCraftUtil.preferredSubreddits(input.requestDescription),
-      ...(RequestOnlinePharmacyFraudUtil.isRequest(input.requestDescription)
-        ? RequestOnlinePharmacyFraudUtil.preferredSubreddits()
-        : []),
-    ];
-    const workflowProfile = RequestWorkflowIntentProfileUtil.resolve(
-      input.requestDescription,
-    );
-    if (inferred.length > 0) {
-      // Request-scoped niche communities were resolved from the workflow profile.
-    } else if (workflowProfile.restorationIntent && workflowProfile.restorationSubject) {
-      const subject = this.cleanNormalizedText(workflowProfile.restorationSubject);
-      if (/\b(?:stained glass|leaded glass|architectural glass)\b/u.test(subject)) {
-        inferred.push('stainedglass', 'woodworking');
-      } else if (/\b(?:book|manuscript|paper|binding)\b/u.test(subject)) {
-        inferred.push('bookbinding', 'bookrepair');
-      } else if (/\b(?:jewelry|jewellery|ring|brooch|bracelet|necklace)\b/u.test(subject)) {
-        inferred.push('jewelrymaking', 'benchjewelers');
-      } else if (/\b(?:textile|fabric|tapestry|rug|carpet)\b/u.test(subject)) {
-        inferred.push('textiles', 'visiblemending');
-      } else if (/\b(?:wood|door|frame|furniture|gilded|gilding)\b/u.test(subject)) {
-        inferred.push('woodworking', 'finishing');
-      } else {
-        inferred.push('restoration', 'crafts');
-      }
-    } else if (/\b(?:eyeglass frame repair|eyeglass repair|eyewear repair|optical frame repair|spectacle frame repair|glasses repair)\b/u.test(request)) {
-      inferred.push('optometry', 'glasses');
-    } else if (/\b(?:vintage camera|antique camera|film camera|camera restoration|camera repair)\b/u.test(request)) {
-      inferred.push('vintagecameras', 'camerarepair', 'analogcommunity');
-    } else if (/\b(?:fountain pen|fountain pens|nib repair|nib restoration|pen restoration|pen repair)\b/u.test(request)) {
-      inferred.push('fountainpens', 'pen_swap');
-    } else if (/\b(?:antique textile|historic textile|textile restoration|textile conservation|fabric conservation)\b/u.test(request)) {
-      inferred.push('textiles', 'antiques');
-    } else if (
-      /\b(?:agricultural distributors?|produce distributors?|fresh produce distributors?|crop distributors?|agricultural wholesalers?|produce wholesalers?)\b/u.test(request) &&
-      /\b(?:storage|warehouse|transport|delivery|spoilage|market price|profitability|margin|route)\w*\b/u.test(request)
-    ) {
-      inferred.push('farming', 'agriculture', 'supplychain');
-    } else if (/\b(?:logistics|freight|3pl|warehouse|delivery routes?|supply chain)\b/u.test(request)) {
-      inferred.push('logistics', 'supplychain');
-    } else if (/\b(?:bookplate|printmaking|ex libris)\b/u.test(request)) {
-      inferred.push('printmaking', 'bookbinding');
-    }
-
-    return this.unique([...hinted, ...inferred])
+    return this.unique(hinted)
       .map((value) => this.normalizeSubredditName(value))
       .filter(Boolean)
       .slice(0, Math.min(3, this.maxSubreddits));

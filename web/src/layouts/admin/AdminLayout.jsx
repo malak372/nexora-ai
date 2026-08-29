@@ -39,7 +39,7 @@ import {
 } from '../../features/auth/shared/auth.storage';
 import {
   adminTeamChatApi,
-  createAdminTeamChatSocket,
+  getAdminTeamChatSocket,
   disconnectAdminTeamChatSocket,
 } from '../../features/admin/team-chat/api/adminTeamChatApi';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
@@ -388,11 +388,21 @@ export default function AdminLayout() {
       } catch { }
     };
 
-    const socket = createAdminTeamChatSocket();
+    const socket = getAdminTeamChatSocket();
+    const receivedMessageIds = new Set();
 
-    const onMessage = (message) => {
+    const announceIncomingMessage = (message) => {
       if (!message?.conversationId || message.senderId === user.id) {
         return;
+      }
+
+      const messageId = String(message?.id || '').trim();
+      if (messageId && receivedMessageIds.has(messageId)) {
+        return;
+      }
+      if (messageId) {
+        receivedMessageIds.add(messageId);
+        window.setTimeout(() => receivedMessageIds.delete(messageId), 15000);
       }
 
       setTeamChatUnread((current) => current + 1);
@@ -402,6 +412,9 @@ export default function AdminLayout() {
         total: null,
       });
     };
+
+    const onMessage = (message) => announceIncomingMessage(message);
+    const onNotification = (message) => announceIncomingMessage(message);
 
     const onConversation = () => {
       void refreshUnread();
@@ -419,20 +432,56 @@ export default function AdminLayout() {
       }
     };
 
+    const reconcileRealtimeState = () => {
+      void refreshUnread();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (!socket.connected) socket.connect();
+        void refreshUnread();
+      }
+    };
+
+    const onWindowFocus = () => {
+      if (!socket.connected) socket.connect();
+      void refreshUnread();
+    };
+
+    const onOnline = () => {
+      if (!socket.connected) socket.connect();
+      void refreshUnread();
+    };
+
     socket.on('admin-chat:message', onMessage);
+    socket.on('admin-chat:notification', onNotification);
     socket.on('admin-chat:conversation', onConversation);
     socket.on('admin-chat:read', onRead);
     socket.on('admin-chat:message-deleted', onMessageDeleted);
+    socket.on('connect', reconcileRealtimeState);
+    socket.on('admin-chat:ready', reconcileRealtimeState);
 
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onWindowFocus);
+    window.addEventListener('online', onOnline);
+
+    if (!socket.connected) socket.connect();
     void refreshUnread({ announce: true });
 
     return () => {
       active = false;
       socket.off('admin-chat:message', onMessage);
+      socket.off('admin-chat:notification', onNotification);
       socket.off('admin-chat:conversation', onConversation);
       socket.off('admin-chat:read', onRead);
       socket.off('admin-chat:message-deleted', onMessageDeleted);
-      socket.disconnect();
+      socket.off('connect', reconcileRealtimeState);
+      socket.off('admin-chat:ready', reconcileRealtimeState);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onWindowFocus);
+      window.removeEventListener('online', onOnline);
+      // Keep the shared socket alive while the authenticated admin shell is mounted.
+      // AdminTeamChatPage uses the same connection, avoiding disconnect/reconnect races.
     };
   }, [role, user.id]);
 

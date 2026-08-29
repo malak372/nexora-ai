@@ -37,19 +37,28 @@ export class CanonicalEvidenceStateUtil {
     const adjudicatedCount = Math.max(0, ledger.length - unadjudicatedCount);
 
     /*
-     * These two zero-trusted states are intentionally different:
-     * - NO_VALID_EVIDENCE_FOUND: semantic adjudication completed and rejected
-     *   the corpus as non-trusted/context-only.
-     * - EVIDENCE_ADJUDICATION_UNAVAILABLE: at least one raw row still has no
-     *   semantic AI verdict, so the system must not claim that no evidence was
-     *   found. The correct statement is that evidence validity is unknown.
+     * Zero-trusted evidence keeps provider failure distinct from a completed
+     * negative semantic verdict. A very large full-corpus attempt may return a
+     * tiny malformed/omitted tail while still adjudicating >=92% of the SAME
+     * complete corpus with one model. In that case the adjudicated ledger is
+     * usable and the unresolved tail remains explicitly UNADJUDICATED; one row
+     * must not poison forty-plus valid sibling verdicts.
+     *
+     * This is structural coverage accounting only. It never infers relevance
+     * for the unresolved rows and never promotes CONTEXT/UNRELATED evidence.
      */
+    const highCoveragePartialAdjudication = Boolean(
+      ledger.length >= 32 &&
+        unadjudicatedCount > 0 &&
+        unadjudicatedCount <= 3 &&
+        adjudicatedCount / Math.max(1, ledger.length) >= 0.92,
+    );
     const state: IdeaGenerationEvidenceState =
       directCount > 0
         ? 'DIRECT_VALIDATED'
         : supportingCount > 0
           ? 'SUPPORTING_VALIDATED'
-          : unadjudicatedCount > 0
+          : unadjudicatedCount > 0 && !highCoveragePartialAdjudication
             ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
             : 'NO_VALID_EVIDENCE_FOUND';
 

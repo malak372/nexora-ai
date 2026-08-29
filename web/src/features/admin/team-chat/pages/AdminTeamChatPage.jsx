@@ -1006,22 +1006,34 @@ export default function AdminTeamChatPage() {
             void loadConversations({ quiet: true });
         };
 
+        const reconcileAfterReconnect = () => {
+            void loadConversations({ quiet: true });
+            if (activeIdRef.current) {
+                void loadMessages(activeIdRef.current);
+            }
+        };
+
         socket.on('admin-chat:message', onMessage);
         socket.on('admin-chat:conversation', onConversation);
         socket.on('admin-chat:read', onRead);
         socket.on('admin-chat:message-deleted', onMessageDeleted);
+        socket.on('connect', reconcileAfterReconnect);
+        socket.on('admin-chat:ready', reconcileAfterReconnect);
 
         return () => {
             socket.off('admin-chat:message', onMessage);
             socket.off('admin-chat:conversation', onConversation);
             socket.off('admin-chat:read', onRead);
             socket.off('admin-chat:message-deleted', onMessageDeleted);
+            socket.off('connect', reconcileAfterReconnect);
+            socket.off('admin-chat:ready', reconcileAfterReconnect);
         };
     }, [
         accessGranted,
         applyMessageToConversation,
         currentUserId,
         loadConversations,
+        loadMessages,
         mergeConfirmedMessage,
     ]);
 
