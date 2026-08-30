@@ -4,6 +4,7 @@
  * @author Malak
  */
 
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -104,7 +105,7 @@ export default function DirectUnlockPage() {
         await unlockIdeaWithCredit(ideaId);
         await refresh();
         window.dispatchEvent(new Event('nexora:credits-updated'));
-        navigate(`/normal/ideas/${ideaId}`, {
+        navigate(workspacePath(`/normal/ideas/${ideaId}`), {
           replace: true,
           state: { unlockedWithCredit: true },
         });
@@ -116,8 +117,8 @@ export default function DirectUnlockPage() {
         ideaId,
         paymentMethodKey: method,
         currency,
-        successUrl: `${origin}/normal/payments/success`,
-        cancelUrl: `${origin}/normal/ideas/${ideaId}/unlock`,
+        successUrl: `${origin}${workspacePath(`/normal/payments/success`)}`,
+        cancelUrl: `${origin}${workspacePath(`/normal/ideas/${ideaId}/unlock`)}`,
       });
 
       if (!result?.checkoutUrl) {
@@ -165,7 +166,7 @@ export default function DirectUnlockPage() {
         className="unlock-back"
         type="button"
         onClick={() =>
-          navigate(`/normal/ideas/${ideaId}`)
+          navigate(workspacePath(`/normal/ideas/${ideaId}`))
         }
       >
         <ArrowLeft size={17} />
@@ -326,9 +327,9 @@ export default function DirectUnlockPage() {
                 <p>{t('Saved once and used automatically for checkout.')}</p>
               </div>
               <Link
-                to="/normal/preferences"
+                to={workspacePath("/normal/preferences")}
                 state={{
-                  returnTo: `/normal/ideas/${ideaId}/unlock`,
+                  returnTo: workspacePath(`/normal/ideas/${ideaId}/unlock`),
                   returnLabel: 'Back to direct unlock',
                 }}
               >

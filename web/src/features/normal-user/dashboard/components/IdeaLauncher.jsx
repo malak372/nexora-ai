@@ -4,6 +4,7 @@
  * @author Malak
  */
 
+import { workspacePath } from '../../shared/utils/workspacePath';
 import { useState } from "react";
 import { ArrowUpRight, Mic, MicOff, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -38,7 +39,7 @@ export default function IdeaLauncher({ compact = false }) {
       ? `?problem=${encodeURIComponent(trimmedProblem)}`
       : "";
 
-    navigate(`/normal/generate${query}`);
+    navigate(workspacePath(`/normal/generate${query}`));
   };
 
   return (

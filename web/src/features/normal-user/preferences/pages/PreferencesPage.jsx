@@ -11,6 +11,7 @@
  * @author Malak
  */
 
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowLeft,
   Check,
@@ -113,7 +114,7 @@ export default function PreferencesPage() {
       return;
     }
 
-    navigate('/normal/dashboard');
+    navigate(workspacePath('/normal/dashboard'));
   };
 
   useEffect(() => {

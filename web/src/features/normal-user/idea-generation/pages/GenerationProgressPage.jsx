@@ -1,3 +1,4 @@
+import { workspacePath } from '../../shared/utils/workspacePath';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -5,7 +6,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock3,
-  Copy,
   RefreshCw,
   Sparkles,
   X,
@@ -60,7 +60,7 @@ export default function GenerationProgressPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const initialRun = location.state?.initialRun ?? null;
-  const { run, connectionState, error, errorStatus} = useIdeaGenerationSocket(runId, initialRun);
+  const { run, connectionState, error, errorStatus } = useIdeaGenerationSocket(runId, initialRun);
   const { t } = useUserExperience();
   const resetDraft = useGenerationDraftStore((state) => state.resetDraft);
   const syncedPremiumRunRef = useRef(null);
@@ -70,7 +70,6 @@ export default function GenerationProgressPage() {
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState('');
   const [showCancellationSuccess, setShowCancellationSuccess] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const pipeline = useMemo(
     () => getVisualPipeline(run?.stages ?? [], run?.currentStageKey ?? null, run?.status ?? 'QUEUED'),
@@ -123,15 +122,7 @@ export default function GenerationProgressPage() {
     }
   };
 
-  const copyRunId = async () => {
-    try {
-      await navigator.clipboard.writeText(String(runId));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1300);
-    } catch {
-      setCopied(false);
-    }
-  };
+
 
   if (!run && error && (errorStatus === 404 || errorStatus === 403)) {
     return (
@@ -139,7 +130,7 @@ export default function GenerationProgressPage() {
         <AlertCircle size={34} />
         <strong>{t(errorStatus === 404 ? 'Generation run not found' : 'Access denied')}</strong>
         <p>{t('We could not load this generation right now. Please try again.')}</p>
-        <button type="button" onClick={() => navigate('/normal/generate')}>{t('Back to Generate Idea')}</button>
+        <button type="button" onClick={() => navigate(workspacePath('/normal/generate'))}>{t('Back to Generate Idea')}</button>
       </div>
     );
   }
@@ -160,16 +151,9 @@ export default function GenerationProgressPage() {
           <h1>{t('Building your validated idea')}</h1>
           <p>{t("We're gathering signals, understanding your community and shaping one coherent, evidence-backed opportunity.")}</p>
           <div className="vx-progress-meta">
-            <span>{t('Run ID')}</span>
-            <button type="button" onClick={copyRunId} title={t('Copy run ID')}>
-              <b>{String(runId).slice(0, 10).toUpperCase()}</b>
-              <Copy size={12} />
-            </button>
-            <i />
             <span>{t('Started')}</span>
             <Clock3 size={13} />
             <b>{relativeStartedAt(run?.startedAt ?? run?.createdAt, t)}</b>
-            {copied ? <em>{t('Copied')}</em> : null}
           </div>
         </div>
 
@@ -233,7 +217,7 @@ export default function GenerationProgressPage() {
             <strong>{t("We couldn't generate your idea this time. Please try again.")}</strong>
             <p>{t('Your previous inputs are still saved, so you can retry without entering them again.')}</p>
           </div>
-          <button type="button" onClick={() => navigate('/normal/generate', { replace: true })}>{t('Try Again')}</button>
+          <button type="button" onClick={() => navigate(workspacePath('/normal/generate'), { replace: true })}>{t('Try Again')}</button>
         </section>
       ) : null}
 
@@ -242,7 +226,7 @@ export default function GenerationProgressPage() {
           ideaId={ideaId}
           ideaTitle={run.idea?.title}
           isPremium={run?.generationType === 'PREMIUM_CREDIT'}
-          onOpenIdea={(id) => navigate(`/normal/ideas/${id}`, { replace: true })}
+          onOpenIdea={(id) => navigate(workspacePath(`/normal/ideas/${id}`), { replace: true })}
         />
       ) : null}
 
@@ -254,7 +238,7 @@ export default function GenerationProgressPage() {
               <small>{t('Generation stopped safely')}</small>
               <h2>{t('Cancellation completed')}</h2>
               <p>{t('The active generation run has been cancelled and no further idea-generation stages will continue.')}</p>
-              <button type="button" onClick={() => { setShowCancellationSuccess(false); navigate('/normal/generate', { replace: true }); }}>{t('Back to Generate Idea')}</button>
+              <button type="button" onClick={() => { setShowCancellationSuccess(false); navigate(workspacePath('/normal/generate'), { replace: true }); }}>{t('Back to Generate Idea')}</button>
             </section>
           </div>,
           document.body,

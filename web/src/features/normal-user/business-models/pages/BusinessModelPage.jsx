@@ -16,6 +16,7 @@
  * @author Malak
  */
 
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowLeft,
   ArrowRight,
@@ -235,10 +236,9 @@ function normalizeItems(value) {
 
   if (value && typeof value === 'object') {
     return Object.entries(value).map(([key, item]) =>
-      `${prettify(key)}: ${
-        Array.isArray(item)
-          ? item.join(', ')
-          : String(item)
+      `${prettify(key)}: ${Array.isArray(item)
+        ? item.join(', ')
+        : String(item)
       }`,
     );
   }
@@ -321,8 +321,8 @@ function buildPrintableHtml(model, sections, templateKey, ideaTitle, translate, 
       const content =
         items.length > 1
           ? `<ul>${items
-              .map((item) => `<li dir="auto">${escapeHtml(item)}</li>`)
-              .join('')}</ul>`
+            .map((item) => `<li dir="auto">${escapeHtml(item)}</li>`)
+            .join('')}</ul>`
           : items[0]
             ? `<p dir="auto">${escapeHtml(items[0])}</p>`
             : `<p>${escapeHtml(translate('No content available.'))}</p>`;
@@ -375,11 +375,11 @@ footer{margin-top:5mm;padding-top:3mm;border-top:1px solid ${theme === 'dark' ? 
   <div>
     <span>Voxidence · ${escapeHtml(translate('Business model studio'))}</span>
     <h1>${escapeHtml(
-      TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model',
-    )}</h1>
+    TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model',
+  )}</h1>
     <p class="idea-title"><strong>${escapeHtml(translate('Idea'))}:</strong> <bdi dir="auto">${escapeHtml(
-      ideaTitle || translate('Untitled idea'),
-    )}</bdi></p>
+    ideaTitle || translate('Untitled idea'),
+  )}</bdi></p>
   </div>
   <small>${escapeHtml(translate('Version'))} ${escapeHtml(model?.version || 1)}</small>
 </header>
@@ -404,8 +404,8 @@ export default function BusinessModelPage() {
   const returnTo =
     location.state?.returnTo ||
     (isAcceptedBusinessModel && acceptedPublicationId
-      ? `/normal/accepted/${acceptedPublicationId}/workspace`
-      : `/normal/ideas/${ideaId}`);
+      ? workspacePath(`/normal/accepted/${acceptedPublicationId}/workspace`)
+      : workspacePath(`/normal/ideas/${ideaId}`));
   const returnLabel =
     location.state?.returnLabel ||
     (isAcceptedBusinessModel ? 'Accepted idea' : 'Idea workspace');
@@ -424,18 +424,18 @@ export default function BusinessModelPage() {
     const ideaRequest =
       isAcceptedBusinessModel && acceptedPublicationId
         ? getDiscoveryById(acceptedPublicationId, {
-            forceRefresh: true,
-          }).then((payload) => {
-            const publication = payload?.publication ?? payload;
+          forceRefresh: true,
+        }).then((payload) => {
+          const publication = payload?.publication ?? payload;
 
-            return {
-              id: ideaId,
-              title:
-                publication?.publicTitle ||
-                location.state?.ideaTitle ||
-                'Accepted idea',
-            };
-          })
+          return {
+            id: ideaId,
+            title:
+              publication?.publicTitle ||
+              location.state?.ideaTitle ||
+              'Accepted idea',
+          };
+        })
         : getIdeaWorkspace(ideaId);
 
     Promise.all([
@@ -455,9 +455,9 @@ export default function BusinessModelPage() {
         setIdea(currentIdea);
         setSelected(
           current?.businessModelTemplate?.id ||
-            safeList.find((item) => item.isDefault)?.id ||
-            safeList[0]?.id ||
-            '',
+          safeList.find((item) => item.isDefault)?.id ||
+          safeList[0]?.id ||
+          '',
         );
       })
       .catch((requestError) => {
@@ -465,7 +465,7 @@ export default function BusinessModelPage() {
 
         setError(
           requestError?.message ||
-            'Unable to load the business-model studio.',
+          'Unable to load the business-model studio.',
         );
       });
 
@@ -500,8 +500,8 @@ export default function BusinessModelPage() {
 
   const modelMatchesSelection = Boolean(
     model &&
-      (!selected ||
-        model.businessModelTemplate?.id === selected),
+    (!selected ||
+      model.businessModelTemplate?.id === selected),
   );
 
   const visibleModel = modelMatchesSelection ? model : null;
@@ -537,7 +537,7 @@ export default function BusinessModelPage() {
     } catch (requestError) {
       setError(
         requestError?.message ||
-          'Unable to generate the business model.',
+        'Unable to generate the business model.',
       );
     } finally {
       setBusy(false);
@@ -581,11 +581,11 @@ export default function BusinessModelPage() {
           </span>
 
           <h1>
-            {t('Build the right model for the selected framework.')} 
+            {t('Build the right model for the selected framework.')}
           </h1>
 
           <p>
-            {t('Every template now receives its own professional layout instead of being forced into one generic grid.')} 
+            {t('Every template now receives its own professional layout instead of being forced into one generic grid.')}
           </p>
         </div>
 
@@ -609,7 +609,7 @@ export default function BusinessModelPage() {
           </span>
           <h2>{t('Choose a framework')}</h2>
           <p>
-            {t('The displayed board changes automatically with the chosen template.')} 
+            {t('The displayed board changes automatically with the chosen template.')}
           </p>
 
           <div className="bm-template-list">
@@ -768,9 +768,9 @@ export default function BusinessModelPage() {
                         shouldReduceMotion
                           ? undefined
                           : {
-                              opacity: 0,
-                              y: 18,
-                            }
+                            opacity: 0,
+                            y: 18,
+                          }
                       }
                       whileInView={{
                         opacity: 1,
@@ -822,97 +822,97 @@ export default function BusinessModelPage() {
 
       {typeof document !== 'undefined'
         ? createPortal(
-            <AnimatePresence>
-              {previewOpen ? (
+          <AnimatePresence>
+            {previewOpen ? (
+              <motion.div
+                className="bm-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label={t('Business model presentation preview')}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) {
+                    setPreviewOpen(false);
+                  }
+                }}
+              >
                 <motion.div
-                  className="bm-modal"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label={t('Business model presentation preview')}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onMouseDown={(event) => {
-                    if (event.target === event.currentTarget) {
-                      setPreviewOpen(false);
-                    }
+                  className="bm-modal__shell"
+                  initial={
+                    shouldReduceMotion
+                      ? undefined
+                      : {
+                        opacity: 0,
+                        y: 18,
+                        scale: 0.98,
+                      }
+                  }
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    scale: 1,
                   }}
+                  exit={{
+                    opacity: 0,
+                    y: 12,
+                    scale: 0.985,
+                  }}
+                  onMouseDown={(event) => event.stopPropagation()}
                 >
-                  <motion.div
-                    className="bm-modal__shell"
-                    initial={
-                      shouldReduceMotion
-                        ? undefined
-                        : {
-                            opacity: 0,
-                            y: 18,
-                            scale: 0.98,
-                          }
-                    }
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      scale: 1,
-                    }}
-                    exit={{
-                      opacity: 0,
-                      y: 12,
-                      scale: 0.985,
-                    }}
-                    onMouseDown={(event) => event.stopPropagation()}
-                  >
-                    <header>
-                      <div>
-                        <strong>{t('Presentation preview')}</strong>
-                        <small>
-                          {idea?.title ? (
-                            <>
-                              <bdi dir="auto" data-idea-content="true">
-                                {idea.title}
-                              </bdi>
-                              <span aria-hidden="true"> · </span>
-                              <span dir="ltr" data-no-auto-translate="true">{layout.label}</span>
-                            </>
-                          ) : (
+                  <header>
+                    <div>
+                      <strong>{t('Presentation preview')}</strong>
+                      <small>
+                        {idea?.title ? (
+                          <>
+                            <bdi dir="auto" data-idea-content="true">
+                              {idea.title}
+                            </bdi>
+                            <span aria-hidden="true"> · </span>
                             <span dir="ltr" data-no-auto-translate="true">{layout.label}</span>
-                          )}
-                        </small>
-                      </div>
+                          </>
+                        ) : (
+                          <span dir="ltr" data-no-auto-translate="true">{layout.label}</span>
+                        )}
+                      </small>
+                    </div>
 
-                      <div>
-                        <button
-                          type="button"
-                          className="bm-preview-print"
-                          onClick={printPdf}
-                        >
-                          <Printer size={16} />
-                          {t('Print or save PDF')}
-                        </button>
+                    <div>
+                      <button
+                        type="button"
+                        className="bm-preview-print"
+                        onClick={printPdf}
+                      >
+                        <Printer size={16} />
+                        {t('Print or save PDF')}
+                      </button>
 
-                        <button
-                          type="button"
-                          className="bm-preview-close"
-                          aria-label={t('Close')}
-                          onClick={() =>
-                            setPreviewOpen(false)
-                          }
-                        >
-                          <X size={18} />
-                        </button>
-                      </div>
-                    </header>
+                      <button
+                        type="button"
+                        className="bm-preview-close"
+                        aria-label={t('Close')}
+                        onClick={() =>
+                          setPreviewOpen(false)
+                        }
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                  </header>
 
-                    <iframe
-                      id="business-model-preview-frame"
-                      title={t('Business model preview')}
-                      srcDoc={printableHtml}
-                    />
-                  </motion.div>
+                  <iframe
+                    id="business-model-preview-frame"
+                    title={t('Business model preview')}
+                    srcDoc={printableHtml}
+                  />
                 </motion.div>
-              ) : null}
-            </AnimatePresence>,
-            document.body,
-          )
+              </motion.div>
+            ) : null}
+          </AnimatePresence>,
+          document.body,
+        )
         : null}
     </main>
   );

@@ -7,6 +7,7 @@
  *
  * @author Malak
  */
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   extractApiData,
   getApiErrorMessage,
@@ -143,8 +144,8 @@ export async function acceptPublication(
           clientRequestId: createUuidV4(),
           paymentMethodKey,
           currency,
-          successUrl: `${origin}/normal/payments/success`,
-          cancelUrl: `${origin}/normal/discover/${publicationId}?cancelled=1`,
+          successUrl: `${origin}${workspacePath(`/normal/payments/success`)}`,
+          cancelUrl: `${origin}${workspacePath(`/normal/discover/${publicationId}?cancelled=1`)}`,
         },
       ),
     );
@@ -179,8 +180,8 @@ export async function createPublicationAdvancedUnlockCheckout(
           clientRequestId: createUuidV4(),
           paymentMethodKey,
           currency,
-          successUrl: `${origin}/normal/payments/success`,
-          cancelUrl: `${origin}/normal/discover/${publicationId}?advancedCancelled=1`,
+          successUrl: `${origin}${workspacePath(`/normal/payments/success`)}`,
+          cancelUrl: `${origin}${workspacePath(`/normal/discover/${publicationId}?advancedCancelled=1`)}`,
         },
       ),
     );

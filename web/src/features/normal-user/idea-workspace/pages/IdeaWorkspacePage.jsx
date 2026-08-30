@@ -6,6 +6,7 @@
  * navigation, section order, unlock logic, publication logic, and Framer
  * Motion interactions remain unchanged.
  */
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowLeft,
   Bot,
@@ -441,7 +442,7 @@ export default function IdeaWorkspacePage() {
           <h1>{t('Idea unavailable')}</h1>
           <p>{error || (language === 'ar' ? 'تعذر تحميل مساحة العمل هذه.' : 'This workspace could not be loaded.')}</p>
         </div>
-        <button type="button" onClick={() => navigate('/normal/ideas')}>
+        <button type="button" onClick={() => navigate(workspacePath('/normal/ideas'))}>
           <ArrowLeft size={17} />
           {t('Back to My ideas')}
         </button>
@@ -467,7 +468,7 @@ export default function IdeaWorkspacePage() {
       <button
         className="workspace-back"
         type="button"
-        onClick={() => navigate('/normal/ideas')}
+        onClick={() => navigate(workspacePath('/normal/ideas'))}
       >
         <ArrowLeft size={17} />
         <span>{t('My ideas')}</span>
@@ -545,7 +546,7 @@ export default function IdeaWorkspacePage() {
             <button
               className="workspace-primary"
               type="button"
-              onClick={() => navigate(`/normal/ideas/${ideaId}/unlock`)}
+              onClick={() => navigate(workspacePath(`/normal/ideas/${ideaId}/unlock`))}
             >
               <LockKeyhole size={17} />
               <span>
@@ -558,7 +559,7 @@ export default function IdeaWorkspacePage() {
             <button
               type="button"
               onClick={() =>
-                navigate(`/normal/ideas/${ideaId}/business-model`)
+                navigate(workspacePath(`/normal/ideas/${ideaId}/business-model`))
               }
             >
               <BriefcaseBusiness size={17} />
@@ -578,10 +579,10 @@ export default function IdeaWorkspacePage() {
               onFocus={() => preloadAiChatWorkspace(ideaId)}
               onPointerDown={() => preloadAiChatWorkspace(ideaId)}
               onClick={() =>
-                navigate(`/normal/ideas/${ideaId}/chat`, {
+                navigate(workspacePath(`/normal/ideas/${ideaId}/chat`), {
                   state: {
                     chatOrigin: 'owned-idea',
-                    returnTo: `/normal/ideas/${ideaId}`,
+                    returnTo: workspacePath(`/normal/ideas/${ideaId}`),
                     returnLabel: 'Idea workspace',
                     ideaTitle: idea?.title,
                     ideaSeed: idea,
@@ -601,11 +602,11 @@ export default function IdeaWorkspacePage() {
           <button
             type="button"
             onClick={() =>
-              navigate(`/normal/ideas/${ideaId}/publish`, {
+              navigate(workspacePath(`/normal/ideas/${ideaId}/publish`), {
                 state: {
-                  returnTo: `/normal/ideas/${ideaId}`,
+                  returnTo: workspacePath(`/normal/ideas/${ideaId}`),
                   returnLabel: 'Idea workspace',
-                  workspaceReturnTo: location.state?.returnTo || '/normal/ideas',
+                  workspaceReturnTo: location.state?.returnTo || workspacePath('/normal/ideas'),
                   workspaceReturnLabel:
                     location.state?.returnLabel || 'My ideas',
                   publicationOrigin: 'idea-workspace',

@@ -7,6 +7,7 @@
  * @author Malak
  */
 
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowRight,
   ChevronDown,
@@ -185,7 +186,7 @@ export default function DiscoveriesPage() {
       return;
     }
 
-    navigate(`/normal/discover/${publicationId}`, {
+    navigate(workspacePath(`/normal/discover/${publicationId}`), {
       state: {
         publicationSeed: publication,
       },

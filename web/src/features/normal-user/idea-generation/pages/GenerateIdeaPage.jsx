@@ -1,3 +1,4 @@
+import { workspacePath } from '../../shared/utils/workspacePath';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -500,7 +501,7 @@ export default function GenerateIdeaPage() {
       if (!result.runId) throw new Error('Generation started without a run identifier.');
 
       saveActiveGenerationRunId(result.runId);
-      navigate(`/normal/generation/${result.runId}`, {
+      navigate(workspacePath(`/normal/generation/${result.runId}`), {
         state: {
           initialRun: {
             id: result.runId,
@@ -562,7 +563,7 @@ export default function GenerateIdeaPage() {
           const recoveredRunId = String(activeRun?.runId ?? activeRun?.id ?? '').trim();
           if (recoveredRunId) {
             saveActiveGenerationRunId(recoveredRunId);
-            navigate(`/normal/generation/${recoveredRunId}`, {
+            navigate(workspacePath(`/normal/generation/${recoveredRunId}`), {
               state: { initialRun: activeRun },
             });
             return;
@@ -630,24 +631,39 @@ export default function GenerateIdeaPage() {
                     <textarea
                       id="vx-generation-signal"
                       value={draft.description}
-                      dir="auto"
+                      dir={draft.description.trim() ? 'auto' : (uiLanguage === 'ar' ? 'rtl' : 'ltr')}
                       maxLength={2000}
                       aria-label={t('Write your idea, problem, or opportunity here...')}
                       onChange={(event) => updateDraft({ description: event.target.value })}
                       placeholder={t("Example: 'College students in small cities struggle to find affordable, healthy meal options delivered quickly.'")}
                     />
                     <div className="vx-signal-input__footer">
-                      <button
-                        type="button"
-                        onClick={toggleVoice}
-                        disabled={submitting}
-                        className={`vx-speak-button${listening ? ' is-listening' : ''}`}
-                        aria-label={t(listening ? 'Listening…' : 'Speak')}
-                        title={t(listening ? 'Listening…' : 'Speak')}
-                      >
-                        {listening ? <MicOff size={16} /> : <Mic size={16} />}
-                        <span>{t(listening ? 'Listening…' : 'Speak')}</span>
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={toggleVoice}
+                          disabled={submitting}
+                          className={`vx-speak-button${listening ? ' is-listening' : ''}`}
+                          aria-label={t(listening ? 'Listening…' : 'Speak')}
+                          title={t(listening ? 'Listening…' : 'Speak')}
+                        >
+                          {listening ? <MicOff size={16} /> : <Mic size={16} />}
+                          <span>{t(listening ? 'Listening…' : 'Speak')}</span>
+                        </button>
+                        {draft.description.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => updateDraft({ description: '' })}
+                            disabled={submitting}
+                            className="vx-speak-button"
+                            aria-label={t('Clear text')}
+                            title={t('Clear text')}
+                          >
+                            <X size={16} />
+                            <span>{t('Clear text')}</span>
+                          </button>
+                        ) : null}
+                      </div>
                       <span>{draft.description.length} / 2000</span>
                     </div>
                   </div>
@@ -746,15 +762,15 @@ export default function GenerateIdeaPage() {
               <div className="vx-generate-section__body vx-context-grid">
                 <label>
                   <span>{t('Country')}</span>
-                  <div className="vx-context-field"><MapPin size={14} /><input value={countryDisplayValue} maxLength={100} dir="auto" placeholder={t('Country')} onChange={(event) => updateDraft({ country: uiLanguage === 'ar' && event.target.value.trim() === t('Palestine') ? 'Palestine' : event.target.value })} /></div>
+                  <div className="vx-context-field"><MapPin size={14} /><input value={countryDisplayValue} maxLength={100} dir={countryDisplayValue.trim() ? 'auto' : (uiLanguage === 'ar' ? 'rtl' : 'ltr')} placeholder={t('Country')} onChange={(event) => updateDraft({ country: uiLanguage === 'ar' && event.target.value.trim() === t('Palestine') ? 'Palestine' : event.target.value })} /></div>
                 </label>
                 <label>
                   <span>{t('City')}</span>
-                  <div className="vx-context-field"><Building2 size={14} /><input value={draft.city} maxLength={100} dir="auto" placeholder={t('City')} onChange={(event) => updateDraft({ city: event.target.value })} /></div>
+                  <div className="vx-context-field"><Building2 size={14} /><input value={draft.city} maxLength={100} dir={draft.city.trim() ? 'auto' : (uiLanguage === 'ar' ? 'rtl' : 'ltr')} placeholder={t('City')} onChange={(event) => updateDraft({ city: event.target.value })} /></div>
                 </label>
                 <label>
                   <span>{t('Region (Optional)')}</span>
-                  <div className="vx-context-field"><MapPin size={14} /><input value={draft.region} maxLength={100} dir="auto" placeholder={t('Region')} onChange={(event) => updateDraft({ region: event.target.value })} /></div>
+                  <div className="vx-context-field"><MapPin size={14} /><input value={draft.region} maxLength={100} dir={draft.region.trim() ? 'auto' : (uiLanguage === 'ar' ? 'rtl' : 'ltr')} placeholder={t('Region')} onChange={(event) => updateDraft({ region: event.target.value })} /></div>
                 </label>
                 <label>
                   <span>{t('Community language')}</span>
@@ -904,7 +920,7 @@ export default function GenerateIdeaPage() {
             </div>
             <div className="vx-generate-modal__actions">
               <button type="button" className="is-secondary" onClick={() => setAccessModal(null)}>{t('Close')}</button>
-              <button type="button" onClick={() => navigate('/normal/credits')}>{t(accessModal.isPremium ? 'Buy more credits' : 'Upgrade workspace')}<ArrowRight size={16} /></button>
+              <button type="button" onClick={() => navigate(workspacePath('/normal/credits'))}>{t(accessModal.isPremium ? 'Buy more credits' : 'Upgrade workspace')}<ArrowRight size={16} /></button>
             </div>
           </motion.section>
         </div>,

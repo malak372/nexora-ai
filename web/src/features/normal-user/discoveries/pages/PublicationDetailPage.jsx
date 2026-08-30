@@ -7,6 +7,7 @@
  *
  * @author Malak
  */
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -628,7 +629,7 @@ export default function PublicationDetailPage() {
         <ShieldCheck size={30} />
         <h1>{t('Discovery unavailable')}</h1>
         <p>{errorMessage}</p>
-        <button type="button" onClick={() => navigate('/normal/discover')}>
+        <button type="button" onClick={() => navigate(workspacePath('/normal/discover'))}>
           {t('Back to Discover')}
         </button>
       </section>
@@ -640,7 +641,7 @@ export default function PublicationDetailPage() {
       <button
         type="button"
         className="publication-detail-back"
-        onClick={() => navigate('/normal/discover')}
+        onClick={() => navigate(workspacePath('/normal/discover'))}
       >
         <ArrowLeft size={17} /> {t('Discover')}
       </button>
@@ -928,7 +929,7 @@ export default function PublicationDetailPage() {
                     type="button"
                     className="publication-workspace-button"
                     onClick={() =>
-                      navigate(`/normal/accepted/${publicationId}/workspace`, {
+                      navigate(workspacePath(`/normal/accepted/${publicationId}/workspace`), {
                         state: { forceRefresh: true },
                       })
                     }
@@ -1021,7 +1022,7 @@ export default function PublicationDetailPage() {
                       : t('Loading price…')}
                   </strong>
                   <Link
-                    to="/normal/preferences"
+                    to={workspacePath("/normal/preferences")}
                     state={{
                       returnTo: `${location.pathname}${location.search}`,
                       returnLabel: 'Back to publication',
@@ -1087,7 +1088,7 @@ export default function PublicationDetailPage() {
                   <small>{t('Advanced workspace price')}</small>
                   <strong>{paymentPricing?.normalPublicationAdvancedPrice} {paymentPricing?.currency}</strong>
                   <Link
-                    to="/normal/preferences"
+                    to={workspacePath("/normal/preferences")}
                     state={{
                       returnTo: `${location.pathname}${location.search}`,
                       returnLabel: 'Back to publication',
@@ -1278,7 +1279,7 @@ export default function PublicationDetailPage() {
                   className="is-primary"
                   onClick={() => {
                     setCreditUnlockReceipt(null);
-                    navigate(`/normal/accepted/${publicationId}/workspace`, {
+                    navigate(workspacePath(`/normal/accepted/${publicationId}/workspace`), {
                       state: { forceRefresh: true },
                     });
                   }}

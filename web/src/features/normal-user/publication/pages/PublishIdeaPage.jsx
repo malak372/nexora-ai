@@ -4,6 +4,7 @@
  *
  * @author Malak
  */
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowLeft,
   Eye,
@@ -117,12 +118,12 @@ export default function PublishIdeaPage() {
   const location = useLocation();
 
   const openedFromPublished =
-    location.state?.returnTo === '/normal/published' ||
+    location.state?.returnTo === workspacePath('/normal/published') ||
     location.state?.publicationOrigin === 'published';
 
   const returnTo = openedFromPublished
-    ? '/normal/published'
-    : `/normal/ideas/${ideaId}`;
+    ? workspacePath('/normal/published')
+    : workspacePath(`/normal/ideas/${ideaId}`);
 
   const returnLabel = openedFromPublished
     ? 'Published'
@@ -133,10 +134,10 @@ export default function PublishIdeaPage() {
       state: openedFromPublished
         ? undefined
         : {
-            returnTo: location.state?.workspaceReturnTo || '/normal/ideas',
-            returnLabel: location.state?.workspaceReturnLabel || 'My ideas',
-            ideaSeed: location.state?.ideaSeed || undefined,
-          },
+          returnTo: location.state?.workspaceReturnTo || workspacePath('/normal/ideas'),
+          returnLabel: location.state?.workspaceReturnLabel || 'My ideas',
+          ideaSeed: location.state?.ideaSeed || undefined,
+        },
     });
   }
 

@@ -5,10 +5,11 @@
  * @author Eman
  */
 import { Suspense, useEffect, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { getAccessToken } from '../../features/auth/shared/auth.storage';
 import PremiumWelcomeCelebration from '../../features/normal-user/shared/components/PremiumWelcomeCelebration';
+import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
 import RouteLoadingFallback from '../../components/RouteLoadingFallback';
 import { preloadPrimaryRoutes } from '../../routes/routePreloaders';
 import NormalHeader from './NormalHeader';
@@ -18,11 +19,33 @@ import './normal-user-theme.css';
 
 export default function NormalUserLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isPremium, isLoading } = useAccountAccess();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!getAccessToken()) navigate('/login', { replace: true });
   }, [navigate]);
+
+  useEffect(() => {
+    if (isLoading || !getAccessToken()) return;
+
+    const expectedBase = isPremium ? '/premium' : '/normal';
+    const currentBase = location.pathname.startsWith('/premium')
+      ? '/premium'
+      : location.pathname.startsWith('/normal')
+        ? '/normal'
+        : null;
+
+    if (!currentBase || currentBase === expectedBase) return;
+
+    const suffix = location.pathname.slice(currentBase.length);
+
+    navigate(`${expectedBase}${suffix}${location.search}${location.hash}`, {
+      replace: true,
+      state: location.state,
+    });
+  }, [isLoading, isPremium, location.hash, location.pathname, location.search, location.state, navigate]);
 
   useEffect(() => {
     const handleExpired = () => navigate('/login', { replace: true });

@@ -77,7 +77,8 @@ const routeDataPreloaders = {
 };
 
 function normalizePath(path = '') {
-  return String(path).split('?')[0].replace(/\/$/, '') || '/';
+  const normalized = String(path).split('?')[0].replace(/\/$/, '') || '/';
+  return normalized.replace(/^\/premium(?=\/|$)/, '/normal');
 }
 
 function canWarmInBackground() {
@@ -184,7 +185,7 @@ export function preloadPublicationStudio(ideaId) {
  * burst of unrelated API calls while making its first navigation feel instant.
  */
 export function preloadPrimaryRoutes() {
-  if (!canWarmInBackground()) return () => {};
+  if (!canWarmInBackground()) return () => { };
 
   let cancelled = false;
   const timers = [];

@@ -9,6 +9,7 @@
  * one-time action inside the idea workspace, never a prerequisite for reviewing
  * the generated result.
  */
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowUpRight,
   CalendarDays,
@@ -34,7 +35,7 @@ export default function LatestIdeaCard({ idea }) {
           <span className="normal-eyebrow">{t('Your next workspace')}</span>
           <h3>{t('Your first validated idea starts here.')}</h3>
           <p>{t('Describe one meaningful problem and let Voxidence transform it into a structured software opportunity.')}</p>
-          <button className="normal-work-card__open" type="button" onClick={() => navigate('/normal/generate')}>
+          <button className="normal-work-card__open" type="button" onClick={() => navigate(workspacePath('/normal/generate'))}>
             {t('Generate an idea')} <ArrowUpRight size={17} />
           </button>
         </div>
@@ -101,9 +102,9 @@ export default function LatestIdeaCard({ idea }) {
             onFocus={() => warmIdeaWorkspace(idea.id)}
             onPointerDown={() => warmIdeaWorkspace(idea.id)}
             onClick={() =>
-              navigate(`/normal/ideas/${idea.id}`, {
+              navigate(workspacePath(`/normal/ideas/${idea.id}`), {
                 state: {
-                  returnTo: '/normal/dashboard',
+                  returnTo: workspacePath('/normal/dashboard'),
                   returnLabel: 'Home',
                   ideaSeed: idea,
                 },

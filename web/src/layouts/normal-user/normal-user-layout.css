@@ -8,7 +8,6 @@
  *
  * @author Eman
  */
-
 :root {
   --nx-ink: #34413f;
   --nx-muted: #6f817a;
@@ -50,10 +49,6 @@
   background-size: 46px 46px;
   mask-image: linear-gradient(to bottom, #000, transparent 72%);
 }
-
-/* -------------------------------------------------------------------------- */
-/* Header shell                                                               */
-/* -------------------------------------------------------------------------- */
 
 .normal-header-wrap {
   position: sticky;
@@ -136,10 +131,6 @@
   z-index: 1;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Brand                                                                      */
-/* -------------------------------------------------------------------------- */
-
 .normal-header__brand {
   min-width: 172px;
   display: flex;
@@ -187,10 +178,6 @@
   font-weight: 800;
   letter-spacing: -0.025em;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Desktop navigation                                                         */
-/* -------------------------------------------------------------------------- */
 
 .normal-header__nav {
   min-width: 0;
@@ -245,10 +232,6 @@
   background: linear-gradient(90deg, #d98fa0, #5cbdb9);
   box-shadow: 0 2px 9px rgba(92, 189, 185, 0.38);
 }
-
-/* -------------------------------------------------------------------------- */
-/* Header tools                                                               */
-/* -------------------------------------------------------------------------- */
 
 .normal-header__tools {
   min-width: 0;
@@ -449,10 +432,6 @@
   background: #d98fa0;
   box-shadow: 0 0 0 3px rgba(217, 143, 160, 0.14);
 }
-
-/* -------------------------------------------------------------------------- */
-/* Profile                                                                    */
-/* -------------------------------------------------------------------------- */
 
 .normal-header__profile-wrap {
   position: relative;
@@ -708,10 +687,6 @@
   box-shadow: inset 0 0 0 1px rgba(217, 143, 160, 0.18);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Responsive menu button                                                     */
-/* -------------------------------------------------------------------------- */
-
 .normal-header__menu {
   width: 44px;
   height: 44px;
@@ -734,10 +709,6 @@
   box-shadow: 0 10px 22px rgba(47, 119, 116, 0.1);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Main content                                                               */
-/* -------------------------------------------------------------------------- */
-
 .normal-app-shell__main {
   width: min(1500px, 100%);
   margin: 0 auto;
@@ -748,10 +719,6 @@
   width: min(1500px, 100%);
   padding: 12px 24px 24px;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Responsive drawer                                                          */
-/* -------------------------------------------------------------------------- */
 
 .normal-drawer-backdrop,
 .normal-drawer {
@@ -945,7 +912,6 @@
   color: #7b8882;
   font-size: 10px;
 }
-
 
 @media (max-width: 1380px) {
   .normal-header.normal-header--professional {
@@ -1288,7 +1254,6 @@ html.vox-user-dark .normal-app-shell__aurora::after {
     linear-gradient(90deg, rgba(115, 208, 202, .07) 1px, transparent 1px) !important;
 }
 
-
 html.vox-user-rtl .normal-header__profile-wrap {
   z-index: 180;
 }
@@ -1382,7 +1347,6 @@ html.vox-user-dark .normal-header__profile-menu button small {
     width: min(320px, calc(100vw - 18px));
   }
 }
-
 
 html.vox-user-dark .normal-header.normal-header--professional {
   color: #edf7f4 !important;
@@ -1545,10 +1509,18 @@ html.vox-user-dark .normal-header__brand:focus-visible {
 }
 
 @media (min-width: 901px) {
-  .normal-app-shell__main:has(> .vx-generate-page) {
+
+  .normal-app-shell__main:has(> .vx-generate-page),
+  .normal-app-shell__main:has(> .vx-progress-page) {
     width: 100% !important;
     max-width: none !important;
     margin-inline: 0 !important;
     padding: 18px clamp(28px, 2.6vw, 52px) 34px !important;
+  }
+}
+
+@media (min-width: 901px) {
+  .normal-app-shell__main>.vx-progress-page {
+    padding-top: 14px !important;
   }
 }

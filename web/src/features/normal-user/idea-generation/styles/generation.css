@@ -12841,6 +12841,7 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
 }
 
 .vx-generate-modal__actions {
+  margin-top: 14px;
   display: flex;
   justify-content: center;
   gap: 8px;
@@ -20492,4 +20493,9 @@ html.vox-user-dark .vx-signal-optional-note strong {
 
 .vx-context-language__menu {
   z-index: 9999 !important;
+}
+
+.vx-progress-page,
+html.vox-user-dark .vx-progress-page {
+  background: transparent !important;
 }

@@ -8,6 +8,7 @@
  * @author Malak
  */
 
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   Archive,
   ArrowLeft,
@@ -573,7 +574,7 @@ export default function PublishedIdeasPage() {
             type="button"
             onClick={() =>
               navigate(
-                '/normal/ideas',
+                workspacePath('/normal/ideas'),
               )
             }
           >
@@ -602,10 +603,10 @@ export default function PublishedIdeasPage() {
                 onEdit={() =>
                   publication.ideaId &&
                   navigate(
-                    `/normal/ideas/${publication.ideaId}/publish`,
+                    workspacePath(`/normal/ideas/${publication.ideaId}/publish`),
                     {
                       state: {
-                        returnTo: '/normal/published',
+                        returnTo: workspacePath('/normal/published'),
                         returnLabel: 'Published',
                         publicationOrigin: 'published',
                         publicationSeed: publication,

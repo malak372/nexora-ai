@@ -2810,6 +2810,7 @@ Object.assign(ARABIC_SUPPLEMENTAL_PHRASES, {
   'Describe it naturally — a few clear sentences are enough.': 'اكتبها بطريقتك الطبيعية — بضع جمل واضحة تكفي.',
   "Example: 'College students in small cities struggle to find affordable, healthy meal options delivered quickly.'": 'مثال: يواجه طلاب الجامعات في المدن الصغيرة صعوبة في العثور على وجبات صحية وبأسعار مناسبة تصلهم بسرعة.',
   'Speak': 'تحدث',
+  'Clear text': 'مسح النص',
   'Listening…': 'جارٍ الاستماع…',
   'Optional': 'اختياري',
   'Leave blank to generate from your interests.': 'اتركها فارغة لتوليد فكرة من اهتماماتك.',

@@ -37,11 +37,11 @@ import { resolveMediaUrl } from '../../utils/mediaUrl';
 import { useUserExperience } from '../../system/user-experience';
 
 const PRIMARY_ITEMS = [
-  { to: '/normal/dashboard', label: 'Home', icon: LayoutDashboard },
-  { to: '/normal/generate', label: 'Generate', icon: Sparkles },
-  { to: '/normal/ideas', label: 'My ideas', icon: Lightbulb },
-  { to: '/normal/discover', label: 'Discover', icon: Compass },
-  { to: '/normal/published', label: 'Published', icon: BookOpenCheck },
+  { path: '/dashboard', label: 'Home', icon: LayoutDashboard },
+  { path: '/generate', label: 'Generate', icon: Sparkles },
+  { path: '/ideas', label: 'My ideas', icon: Lightbulb },
+  { path: '/discover', label: 'Discover', icon: Compass },
+  { path: '/published', label: 'Published', icon: BookOpenCheck },
 ];
 
 function getInitials(name = '') {
@@ -60,6 +60,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
   const [avatarFailed, setAvatarFailed] = useState(false);
   const { isPremium, creditBalance } = useAccountAccess();
   const { t, isArabic } = useUserExperience();
+  const workspaceBase = isPremium ? '/premium' : '/normal';
 
   const displayName = user.fullName || user.name || 'Voxidence user';
   const accessLabel = isPremium ? 'Premium' : 'Normal access';
@@ -108,7 +109,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
   const navigateFromProfileMenu = (path) => {
     setProfileMenuOpen(false);
 
-    if (path === '/normal/preferences') {
+    if (path === `${workspaceBase}/preferences`) {
       navigate(path, {
         state: {
           returnTo: `${location.pathname}${location.search}`,
@@ -147,7 +148,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
 
         <NavLink
           className="normal-header__brand"
-          to="/normal/dashboard"
+          to={`${workspaceBase}/dashboard`}
           aria-label={t('Voxidence workspace home')}
         >
           <motion.span
@@ -162,28 +163,32 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
         </NavLink>
 
         <nav className="normal-header__nav" aria-label={t('Workspace navigation')}>
-          {PRIMARY_ITEMS.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              onMouseEnter={() => preloadRoute(to)}
-              onFocus={() => preloadRoute(to)}
-              className={({ isActive }) => (isActive ? 'is-active' : '')}
-            >
-              {({ isActive }) => (
-                <>
-                  <Icon size={16} strokeWidth={1.9} />
-                  <span>{t(label)}</span>
-                  {isActive ? (
-                    <motion.i
-                      className="normal-header__active-line"
-                      layoutId="normal-nav-active"
-                    />
-                  ) : null}
-                </>
-              )}
-            </NavLink>
-          ))}
+          {PRIMARY_ITEMS.map(({ path, label, icon: Icon }) => {
+            const to = `${workspaceBase}${path}`;
+
+            return (
+              <NavLink
+                key={path}
+                to={to}
+                onMouseEnter={() => preloadRoute(to)}
+                onFocus={() => preloadRoute(to)}
+                className={({ isActive }) => (isActive ? 'is-active' : '')}
+              >
+                {({ isActive }) => (
+                  <>
+                    <Icon size={16} strokeWidth={1.9} />
+                    <span>{t(label)}</span>
+                    {isActive ? (
+                      <motion.i
+                        className="normal-header__active-line"
+                        layoutId="normal-nav-active"
+                      />
+                    ) : null}
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
 
         <div className="normal-header__tools">
@@ -195,8 +200,8 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
               const value = headerSearch.trim();
               navigate(
                 value
-                  ? `/normal/ideas?search=${encodeURIComponent(value)}`
-                  : '/normal/ideas',
+                  ? `${workspaceBase}/ideas?search=${encodeURIComponent(value)}`
+                  : `${workspaceBase}/ideas`,
               );
             }}
           >
@@ -213,7 +218,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
           <motion.button
             type="button"
             className={`normal-upgrade-button ${isPremium ? 'is-premium' : ''}`}
-            onClick={() => navigate('/normal/credits')}
+            onClick={() => navigate(`${workspaceBase}/credits`)}
             aria-label={t(isPremium ? 'Buy more credits' : 'Upgrade to Premium')}
             whileHover={{ y: -2, scale: 1.015 }}
             whileTap={{ scale: 0.975 }}
@@ -234,7 +239,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
           <motion.button
             type="button"
             className="normal-header__icon"
-            onClick={() => navigate('/normal/notifications')}
+            onClick={() => navigate(`${workspaceBase}/notifications`)}
             aria-label={t('Notifications')}
             whileHover={{ y: -2 }}
             whileTap={{ scale: 0.94 }}
@@ -315,7 +320,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => navigateFromProfileMenu('/normal/compliance')}
+                    onClick={() => navigateFromProfileMenu(`${workspaceBase}/compliance`)}
                   >
                     <ShieldAlert size={16} />
                     <span>
@@ -327,7 +332,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => navigateFromProfileMenu('/normal/billing')}
+                    onClick={() => navigateFromProfileMenu(`${workspaceBase}/billing`)}
                   >
                     <ReceiptText size={16} />
                     <span>
@@ -339,7 +344,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => navigateFromProfileMenu('/normal/preferences')}
+                    onClick={() => navigateFromProfileMenu(`${workspaceBase}/preferences`)}
                   >
                     <SlidersHorizontal size={16} />
                     <span>
@@ -351,7 +356,7 @@ export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => navigateFromProfileMenu('/normal/settings/profile')}
+                    onClick={() => navigateFromProfileMenu(`${workspaceBase}/settings/profile`)}
                   >
                     <Settings size={16} />
                     <span>
