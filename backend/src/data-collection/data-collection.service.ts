@@ -452,10 +452,10 @@ export class DataCollectionService {
             const sourceQueryBudget = sourcePlan?.queries?.length
               ? sourcePlan.sourceTier === 'PRIMARY'
                 ? multiDomainLaneCount > 1
-                  ? Math.min(6, Math.max(4, multiDomainLaneCount * 2))
-                  : 4
+                  ? Math.min(7, Math.max(6, multiDomainLaneCount * 2 + 1))
+                  : 6
                 : sourcePlan.sourceTier === 'SECONDARY'
-                  ? 3
+                  ? 4
                   : 1
               : 1;
             const sourceSpecificAiQueries = this.unique(
@@ -815,6 +815,7 @@ export class DataCollectionService {
             this.collectorSourceHealth.recordFailure(
               dataSource.key,
               Date.now() - sourceStartedMs,
+              error,
             );
 
             if (isFastPathCollection) {
@@ -1024,12 +1025,19 @@ export class DataCollectionService {
       }
 
       if (signal?.aborted || CollectorAbortContextUtil.isAbortError(error)) {
-        try {
-          await this.collectionJobService.stopJob(job.id);
-        } catch (stopError: unknown) {
-          this.logger.warn(
-            `Could not mark cancelled collection job ${job.id} as stopped: ${this.getErrorMessage(stopError)}.`,
-          );
+        const stopCancelledJob = async (): Promise<void> => {
+          try {
+            await this.collectionJobService.stopJob(job.id);
+          } catch (stopError: unknown) {
+            this.logger.warn(
+              `Could not mark cancelled collection job ${job.id} as stopped: ${this.getErrorMessage(stopError)}.`,
+            );
+          }
+        };
+        if (isFastPathCollection) {
+          void stopCancelledJob();
+        } else {
+          await stopCancelledJob();
         }
         throw error;
       }
@@ -1991,7 +1999,7 @@ export class DataCollectionService {
         });
       const atomicRequestPainAdmission =
         Boolean(requestDescription?.trim()) &&
-        RequestEvidenceAlignmentUtil.passesAtomicSupportingProblemGuard({
+        RequestEvidenceAlignmentUtil.passesAtomicPreAiCandidateGuard({
           requestDescription,
           evidenceText: requestEvidenceText,
           plannedQueries,
@@ -2195,6 +2203,23 @@ export class DataCollectionService {
           ? verticalWorkflowSignal
           : (verticalWorkflowSignal || plannedEvidenceAlignmentGuard));
 
+      const targetedRecoveryRequesterScopeTriageOverride =
+        Boolean(requestDescription?.trim()) &&
+        collectionMode === 'TARGETED_RECOVERY' &&
+        secondaryOperationalSource &&
+        strictRequestSemanticAdmission &&
+        verticalAnchorGuard &&
+        broadDomainCollisionGuard &&
+        passesGenericTitleGuard &&
+        hasMinimumIndependentRelevance &&
+        noisyCommunitySemanticGuard &&
+        requestDerivedAdmissionGuard &&
+        hasCommunityProblemSignal &&
+        (requestSemanticCandidateAdmission ||
+          compositeRequestCandidateAdmission ||
+          atomicRequestPainAdmission ||
+          domainAgnosticSupportingOverride);
+
       const commentContainerOverride =
         isCommentContainerSource &&
         hasComplaintComment &&
@@ -2221,13 +2246,28 @@ export class DataCollectionService {
         containerDomainScore >=
           Math.max(18, this.resolveContainerDomainMinimum(sourceKey, collectionMode) - 8);
 
+      /*
+       * Request-aware post admission must not erase a valid complaint/comment
+       * lane merely because the parent title is generic. Comment containers are
+       * allowed only through their already-strict request-aware comment guards;
+       * unrelated parent posts still fail this combined admission.
+       */
+      const finalRequestSemanticAdmission =
+        !requestDescription?.trim() ||
+        strictRequestSemanticAdmission ||
+        domainAgnosticCommentSupportingOverride ||
+        commentContainerOverride ||
+        aiTriageContainerOverride;
+
       const accepted =
         requestPainAlignedLowScoreOverride ||
         broadFirstPassSemanticTriageOverride ||
         secondarySemanticTriageAdmission ||
+        targetedRecoveryRequesterScopeTriageOverride ||
         (verticalAnchorGuard &&
         strictWorkflowGuard &&
         broadDomainCollisionGuard &&
+        finalRequestSemanticAdmission &&
         requestDerivedAdmissionGuard &&
         ((hasMinimumIndependentRelevance &&
           finalScore >= minimumScore &&
@@ -2269,6 +2309,7 @@ export class DataCollectionService {
           `broadFirstPassSemanticTriageOverride=${broadFirstPassSemanticTriageOverride}`,
           `noisyCommunitySemanticGuard=${noisyCommunitySemanticGuard}`,
           `targetedRecoveryDomainProblemOverride=${targetedRecoveryDomainProblemOverride}`,
+          `targetedRecoveryRequesterScopeTriageOverride=${targetedRecoveryRequesterScopeTriageOverride}`,
           `verticalKind=${verticalConstraint.kind}`,
           `verticalAnchorGuard=${verticalAnchorGuard}`,
           `verticalWorkflowSignal=${verticalWorkflowSignal}`,
@@ -2277,6 +2318,7 @@ export class DataCollectionService {
           `aiTriageContainerOverride=${aiTriageContainerOverride}`,
           `plannedCompositeSupportingOverride=${plannedCompositeSupportingOverride}`,
           `strictRequestSemanticAdmission=${strictRequestSemanticAdmission}`,
+          `finalRequestSemanticAdmission=${finalRequestSemanticAdmission}`,
           `complaintComments=${complaintComments.length}`,
           `aiTriageComments=${aiTriageComments.length}`,
           `accepted=${accepted}`,
@@ -3431,7 +3473,7 @@ export class DataCollectionService {
         ? withCaps(4, 2, 6, 2)
         : recovery
           ? withCaps(6, 4, 10, 4)
-          : withCaps(8, 5, 14, 5);
+          : withCaps(10, 6, 16, 6);
     }
 
     if (key === 'app-store' || key === 'google-play') {
@@ -3439,7 +3481,7 @@ export class DataCollectionService {
         ? withCaps(3, 2, 6, 3)
         : recovery
           ? withCaps(5, 3, 10, 4)
-          : withCaps(7, 4, 14, 5);
+          : withCaps(8, 5, 16, 6);
     }
 
     if (key === 'youtube') {
@@ -3447,7 +3489,7 @@ export class DataCollectionService {
         ? withCaps(3, 2, 4, 2)
         : recovery
           ? withCaps(5, 3, 8, 3)
-          : withCaps(6, 4, 10, 4);
+          : withCaps(8, 5, 12, 5);
     }
 
     if (key === 'crossref' || key === 'news') {
@@ -3455,7 +3497,7 @@ export class DataCollectionService {
         ? withCaps(4, 2, 1, 1)
         : recovery
           ? withCaps(6, 4, 1, 1)
-          : withCaps(8, 5, 1, 1);
+          : withCaps(10, 6, 1, 1);
     }
 
     if (key === 'blog' || key === 'gdelt') {
@@ -3463,7 +3505,7 @@ export class DataCollectionService {
         ? withCaps(3, 2, 1, 1)
         : recovery
           ? withCaps(5, 3, 1, 1)
-          : withCaps(6, 4, 1, 1);
+          : withCaps(8, 5, 1, 1);
     }
 
     if (
@@ -3475,11 +3517,11 @@ export class DataCollectionService {
     ) {
       return exploratoryScale
         ? withCaps(3, 2, 3, 2)
-        : withCaps(recovery ? 4 : 5, recovery ? 3 : 4, 5, 3);
+        : withCaps(recovery ? 4 : 6, recovery ? 3 : 5, 6, 4);
     }
 
-    if (!requesterText) return withCaps(6, 4, 6, 4);
-    return exploratoryScale ? withCaps(3, 2, 3, 2) : withCaps(6, 4, 6, 4);
+    if (!requesterText) return withCaps(8, 5, 8, 5);
+    return exploratoryScale ? withCaps(3, 2, 3, 2) : withCaps(8, 5, 8, 5);
   }
 
   /**

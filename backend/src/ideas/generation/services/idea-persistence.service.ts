@@ -52,6 +52,7 @@ import type {
 
 import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 import { TargetUserDeduplicationUtil } from '../utils/target-user-deduplication.util';
+import { IdeaOutputTextSanitizationUtil } from '../utils/idea-output-text-sanitization.util';
 
 /**
  * Maximum number of attempts used when the atomic persistence transaction
@@ -663,7 +664,9 @@ export class IdeaPersistenceService {
           region.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase()),
         );
       }
-      return sanitized.replace(/^([a-z])/u, (letter) => letter.toUpperCase());
+      return IdeaOutputTextSanitizationUtil.normalizeIdempotentPhrases(
+        sanitized.replace(/^([a-z])/u, (letter) => letter.toUpperCase()),
+      );
     };
 
     const sanitizeJson = (value: JsonValue): JsonValue => {

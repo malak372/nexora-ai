@@ -18,19 +18,27 @@ export class SourceSpecificEvidenceQueryUtil {
   static compile(input: {
     readonly sourceKey: string;
     readonly baseQueries: readonly string[];
+    /** AI-generated dynamic problem-relation probes. Retrieval-only. */
+    readonly causalQueries?: readonly string[];
     readonly requestDescription?: string | null;
     readonly problemProfile?: RequestCanonicalProblemProfile | null;
     readonly discoveryDomainName?: string | null;
     readonly maxQueries?: number;
     readonly preserveBaseQueries?: boolean;
+    /** Initial discovery keeps AI-planned facet diversity ahead of problem-axis rewrites. */
+    readonly discoveryIntent?: boolean;
   }): string[] {
     const maxQueries = Math.max(1, Math.min(6, input.maxQueries ?? 3));
-    const base = this.unique(input.baseQueries)
+    const causal = this.unique(input.causalQueries ?? [])
+      .map((query) => this.sanitize(query))
+      .filter((query) => this.isSafe(query));
+    const base = this.unique([...causal, ...input.baseQueries])
       .map((query) => this.sanitize(query))
       .filter((query) => this.isSafe(query));
     const sourceKey = input.sourceKey.trim().toLocaleLowerCase();
+    const sourceNativeCausal = this.adaptCausalQueries(sourceKey, causal);
 
-    const candidates = sourceKey === 'crossref'
+    const laneCandidates = sourceKey === 'crossref'
       ? this.buildAcademicQueries(input, base)
       : sourceKey === 'news' || sourceKey === 'gdelt' || sourceKey === 'blog'
         ? this.buildReportQueries(input, base)
@@ -41,14 +49,31 @@ export class SourceSpecificEvidenceQueryUtil {
             : sourceKey === 'github' || sourceKey === 'stackoverflow' || sourceKey === 'dev-to'
               ? this.buildTechnicalPainQueries(input, base)
               : base;
+    /*
+     * When an explicit canonical problem profile exists, start each tiny source
+     * budget with a stable actor/object/workflow problem-axis formulation, then
+     * interleave AI causal probes. AI probes remain in the plan, but malformed
+     * relation fragments such as "... accurately because operational incident"
+     * no longer consume the first/only source query.
+     */
+    const candidates = this.unique(
+      input.problemProfile
+        ? [...laneCandidates, ...sourceNativeCausal]
+        : [...sourceNativeCausal, ...laneCandidates],
+    );
 
     const preferProblemNativeProbe = Boolean(input.problemProfile) &&
-      ['news', 'gdelt', 'blog', 'reddit', 'forum', 'youtube', 'hacker-news', 'app-store', 'google-play'].includes(sourceKey);
+      !input.discoveryIntent &&
+      ['crossref', 'news', 'gdelt', 'blog', 'reddit', 'forum', 'youtube', 'hacker-news', 'app-store', 'google-play'].includes(sourceKey);
     const prioritizedCandidates = input.preserveBaseQueries
       ? this.interleavePreservingBase(
           candidates,
           base,
-          preferProblemNativeProbe,
+          input.discoveryIntent
+            ? false
+            : sourceNativeCausal.length > 0
+              ? true
+              : preferProblemNativeProbe,
         )
       : candidates;
 
@@ -67,6 +92,37 @@ export class SourceSpecificEvidenceQueryUtil {
     }
     const tail = normalized.toLocaleLowerCase().split(/\s+/u).at(-1) ?? '';
     return !['and', 'or', 'about', 'with', 'for', 'to', 'of', 'in', 'on', 'by'].includes(tail);
+  }
+
+  private static adaptCausalQueries(
+    sourceKey: string,
+    causalQueries: readonly string[],
+  ): string[] {
+    if (causalQueries.length === 0) return [];
+
+    return causalQueries.flatMap((query, index) => {
+      const seed = this.compact(this.trimDanglingRelation(query), 12);
+      if (!seed) return [];
+      if (sourceKey === 'crossref') {
+        return [
+          this.join(seed, index % 2 === 0 ? 'study evidence' : 'operational research'),
+        ];
+      }
+      if (['news', 'gdelt', 'blog'].includes(sourceKey)) {
+        return [
+          this.join(seed, index % 2 === 0 ? 'reported incident' : 'case report'),
+        ];
+      }
+      if (['reddit', 'forum', 'youtube', 'hacker-news'].includes(sourceKey)) {
+        return [
+          this.join(seed, index % 2 === 0 ? 'operator experience' : 'practitioner complaint'),
+        ];
+      }
+      if (['app-store', 'google-play'].includes(sourceKey)) {
+        return [this.join(seed, 'user review')];
+      }
+      return [seed];
+    });
   }
 
   private static buildAcademicQueries(
@@ -115,6 +171,7 @@ export class SourceSpecificEvidenceQueryUtil {
     const compactObject = this.compact(profile.object, 4);
     const compactFailure = failures[0] ?? this.compact(profile.coreProblem, 4);
     const profileQueries = [
+      ...this.buildProblemAxisProbes(profile, 'ACADEMIC'),
       this.join(compactObject, workflow, 'study'),
       this.join(compactObject, compactFailure, 'operational bottleneck research'),
       this.join(this.compact(profile.actor, 3), compactFailure, 'workflow challenge'),
@@ -174,6 +231,7 @@ export class SourceSpecificEvidenceQueryUtil {
     const object = this.compact(profile.object, 4);
     const shortWorkflow = this.compact(profile.workflow, 4);
     return [
+      ...this.buildProblemAxisProbes(profile, 'REPORT'),
       this.join(object, failure, 'reported problem'),
       this.join(shortWorkflow, failure, 'delay bottleneck'),
       this.join(object, consequence, 'service delay'),
@@ -239,6 +297,7 @@ export class SourceSpecificEvidenceQueryUtil {
     const secondaryFailure = failures[1] ?? primaryFailure;
     const consequence = this.compact(profile.consequences[0] ?? '', 3);
     return [
+      ...this.buildProblemAxisProbes(profile, 'COMMUNITY'),
       this.join(object, primaryFailure, 'problem'),
       this.join(actor, primaryFailure, 'complaint'),
       this.join(workflow, secondaryFailure, 'frustrating delay'),
@@ -246,6 +305,70 @@ export class SourceSpecificEvidenceQueryUtil {
       this.join(alternateActor, secondaryFailure, 'workflow issue'),
       this.join(actor, object, primaryFailure, 'struggle'),
       ...baseQueries,
+    ];
+  }
+
+  /**
+   * Produces orthogonal request-native probes from the canonical actor/object/
+   * workflow/failure/consequence axes. Search recall was previously dominated
+   * by multiple lexical rewrites of the same AI seed. These probes deliberately
+   * spend the small source budget on different problem facets instead. They are
+   * retrieval-only and cannot promote a row into trusted evidence; Community AI
+   * plus deterministic verification still own that decision.
+   */
+  private static buildProblemAxisProbes(
+    profile: RequestCanonicalProblemProfile,
+    lane: 'ACADEMIC' | 'REPORT' | 'COMMUNITY',
+  ): string[] {
+    const actor = this.compact(profile.actor, 3);
+    const alternateActor = this.compact(
+      profile.actorAliases?.[0] ?? profile.actor,
+      3,
+    );
+    const object = this.compact(profile.object, 4);
+    const alternateObject = this.compact(
+      profile.objectAliases?.[0] ?? profile.object,
+      4,
+    );
+    const workflow = this.compact(profile.workflow, 4);
+    const primaryFailure = this.compact(
+      profile.friction ?? profile.failureModes[0] ?? profile.coreProblem,
+      4,
+    );
+    const secondaryFailure = this.compact(
+      profile.failureModes[1] ?? profile.failureModes[0] ?? profile.coreProblem,
+      4,
+    );
+    const consequence = this.compact(profile.consequences[0] ?? '', 3);
+
+    /*
+     * Tiny source budgets should test separate observable axes rather than one
+     * synthetic actor+object+workflow+failure sentence. The source suffix is
+     * intentionally short and documentary; it never changes the problem.
+     */
+    if (lane === 'ACADEMIC') {
+      return [
+        this.join(object, primaryFailure, 'study'),
+        this.join(workflow, secondaryFailure, 'research'),
+        this.join(actor || alternateActor, primaryFailure, 'study'),
+        this.join(alternateObject || object, consequence, 'analysis'),
+      ];
+    }
+
+    if (lane === 'REPORT') {
+      return [
+        this.join(object, primaryFailure, 'incident'),
+        this.join(workflow, secondaryFailure, 'case'),
+        this.join(actor || alternateActor, primaryFailure, 'report'),
+        this.join(alternateObject || object, consequence, 'incident'),
+      ];
+    }
+
+    return [
+      this.join(actor || alternateActor, primaryFailure),
+      this.join(object, primaryFailure),
+      this.join(workflow, secondaryFailure),
+      this.join(alternateObject || object, consequence || secondaryFailure),
     ];
   }
 
@@ -330,13 +453,40 @@ export class SourceSpecificEvidenceQueryUtil {
      * phrases such as "users struggle problem".
      */
     const interleaved: string[] = [];
+    if (preferAdaptedFirst) {
+      /*
+       * Explicit-problem source plans have only 2-5 query slots. Spend two of
+       * every three slots on source-native problem-axis formulations and one on
+       * the original AI seed. This preserves AI intent while preventing a
+       * truncated/telegraphic AI phrase from occupying half of a tiny source
+       * budget before the stable requester-derived probes are tried.
+       */
+      let adaptedIndex = 0;
+      let baseIndex = 0;
+      while (adaptedIndex < adapted.length || baseIndex < safeBase.length) {
+        if (adapted[adaptedIndex]) interleaved.push(adapted[adaptedIndex++]!);
+        if (adapted[adaptedIndex]) interleaved.push(adapted[adaptedIndex++]!);
+        if (safeBase[baseIndex]) interleaved.push(safeBase[baseIndex++]!);
+      }
+      return interleaved;
+    }
+
     const width = Math.max(safeBase.length, adapted.length);
     for (let index = 0; index < width; index += 1) {
-      if (preferAdaptedFirst && adapted[index]) interleaved.push(adapted[index]!);
       if (safeBase[index]) interleaved.push(safeBase[index]!);
-      if (!preferAdaptedFirst && adapted[index]) interleaved.push(adapted[index]!);
+      if (adapted[index]) interleaved.push(adapted[index]!);
     }
     return interleaved;
+  }
+
+  private static trimDanglingRelation(value: string): string {
+    return this.sanitize(value)
+      .replace(
+        /\b(?:because(?: of)?|due(?: to)?|caused by|resulting from|leading to)\s*$/iu,
+        '',
+      )
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   private static compact(value: string, maxWords: number): string {
@@ -345,6 +495,7 @@ export class SourceSpecificEvidenceQueryUtil {
       'often', 'frequently', 'usually', 'commonly', 'making', 'difficult',
       'difficulty',
       'smarter', 'smart', 'platform', 'system', 'solution', 'could',
+      'because', 'due',
     ]);
     return this.sanitize(value)
       .replace(/[,:;()\[\]{}]+/gu, ' ')
@@ -384,7 +535,7 @@ export class SourceSpecificEvidenceQueryUtil {
       .replace(/[\r\n\t]+/gu, ' ')
       .replace(/\s+/gu, ' ')
       .replace(/^[\s|,:;.-]+|[\s|,:;.-]+$/gu, '')
-      .replace(/(?:\s+\b(?:and|or|about|with|for|to|of|in|on|by)\b\s*)+$/iu, '')
+      .replace(/(?:\s+\b(?:and|or|about|with|for|to|of|in|on|by|because|due)\b\s*)+$/iu, '')
       .trim();
   }
 

@@ -826,13 +826,41 @@ export class AiExecutionService {
         };
       }
 
+      /*
+       * Some OpenAI-compatible gateways accept a native response schema but the
+       * hosted model still emits the wrong root shape (for example an array
+       * instead of the required object). After the normal repair attempt fails,
+       * retry the same model once in JSON compatibility mode. The provider no
+       * longer receives the native schema, but Voxidence still parses and AJV-
+       * validates the response against the exact original caller schema before
+       * accepting it. This is a transport rescue, not a validation bypass.
+       */
+      if (
+        useNativeResponseSchema &&
+        input.responseFormat === AiResponseFormat.JSON &&
+        !input.signal?.aborted &&
+        !this.disablesSameModelRetry(model)
+      ) {
+        return this.executeModelAttempt(
+          provider,
+          model,
+          input,
+          context,
+          fallbackUsed,
+          modelAttemptNumber,
+          totalAttemptsForModel,
+          false,
+        );
+      }
+
       return {
         success: false,
         error: repairOutcome?.error ?? invalidOutputError,
 
         /**
-         * Invalid structured output is handled by the dedicated repair
-         * flow and must not enter the ordinary provider retry loop.
+         * Invalid structured output is handled by the dedicated repair /
+         * compatibility flow and must not enter the ordinary provider retry
+         * loop.
          */
         retrySameModel: false,
       };

@@ -75,7 +75,7 @@ export type IdeaGenerationPromptInput = {
 
   readonly requestDescription?: string | null;
 
-  /** PREPARING AI interpretation of whether the text is a problem or discovery intent. */
+  /** PREPARING retrieval intent. Initial user text is discovery context; EXPLICIT is internal corroboration only. */
   readonly requestIntent?: RequestIntentInterpretation | null;
 
   /** Language required for all human-readable generated values. */
@@ -105,7 +105,7 @@ export type IdeaGenerationPromptInput = {
    */
   readonly domainEvidence?: readonly IdeaGenerationDomainEvidence[];
 
-  /** Canonical requester/discovery problem. Downstream prompt logic must not reinterpret it. */
+  /** Canonical retrieval-scope facets. The final software problem is evidence-selected, not requester-text-selected. */
   readonly canonicalProblemSpec?: IdeaGenerationCanonicalProblemSpec | null;
 
   /** Authoritative evidence state computed from canonicalEvidence only. */

@@ -55,10 +55,16 @@ export type CommunityAiEvidenceTriage = {
   readonly evidenceNature?: CommunityAiEvidenceNature;
   readonly domainAlignment?: CommunityAiSemanticAlignment;
   readonly problemAlignment?: CommunityAiSemanticAlignment;
+  readonly actorAlignment?: CommunityAiSemanticAlignment;
+  readonly objectAlignment?: CommunityAiSemanticAlignment;
+  readonly workflowAlignment?: CommunityAiSemanticAlignment;
+  readonly failureAlignment?: CommunityAiSemanticAlignment;
   readonly familyBasis?: CommunityAiProblemFamilyBasis;
   readonly observedProblem?: string | null;
   readonly causalExplanation?: string | null;
   readonly matchedDomainNames?: readonly string[];
+  /** Canonical requester problem facets explicitly supported by this row. */
+  readonly matchedFacetIds?: readonly string[];
   /**
    * Historical field name retained for persistence/telemetry compatibility.
    * It now means the AI verdict passed non-semantic structural/provenance checks;
@@ -71,6 +77,31 @@ export type CommunityAiEvidenceTriage = {
   /** Provenance/claim kind kept separate from relevance classification. */
   readonly evidenceKind?: CommunityAiEvidenceKind;
 };
+
+export type CommunityAiJointEvidenceGroup = {
+  /** Stable synthetic id for the composed evidence claim. */
+  readonly id: string;
+  /** Raw evidence members that collectively support the group claim. */
+  readonly evidenceIds: readonly string[];
+  readonly confidence: number;
+  readonly reason: string;
+  /** Neutral family/claim supported by the members collectively, not by any one row alone. */
+  readonly problemFamily: string;
+  readonly observedProblem: string;
+  readonly actorAlignment: CommunityAiSemanticAlignment;
+  readonly objectAlignment: CommunityAiSemanticAlignment;
+  readonly workflowAlignment: CommunityAiSemanticAlignment;
+  readonly failureAlignment: CommunityAiSemanticAlignment;
+  /** Selected domains directly represented by one or more group members. */
+  readonly matchedDomainNames: readonly string[];
+  /** Canonical requester facets covered collectively by the group members. */
+  readonly matchedFacetIds: readonly string[];
+  /** Provenance-aware independent-source count for the member set. */
+  readonly distinctSourceCount: number;
+  /** True only after conservative structural/provenance verification of the AI-owned joint verdict. */
+  readonly verifiedByDeterministicGuard: boolean;
+};
+
 
 /**
  * One evidence-grounded opportunity extracted by the community-analysis LLM.
@@ -181,6 +212,13 @@ export type CommunityAiAnalysis = {
    * exposed as accepted triage labels.
    */
   readonly evidenceClassifications?: readonly CommunityAiEvidenceTriage[];
+
+  /**
+   * Conservatively composed SUPPORTING evidence. Individual member rows keep
+   * their original classifications; only the group as a whole may validate a
+   * requester-scoped causal/problem chain.
+   */
+  readonly jointEvidenceGroups?: readonly CommunityAiJointEvidenceGroup[];
 
   /** Family proposed by the same online triage response that classified the full raw corpus. */
   readonly aiProposedProblemFamily?: string | null;

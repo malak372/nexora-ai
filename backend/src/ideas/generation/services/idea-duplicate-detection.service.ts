@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import {
@@ -200,26 +200,7 @@ export class IdeaDuplicateDetectionService {
     })();
 
     const exactTitleStartedAt = Date.now();
-    const exactTitleMatch = await client.idea.findFirst({
-      where: {
-        deletedAt: null,
-        title: {
-          equals: rawTitle,
-          mode: 'insensitive',
-        },
-      },
-      select: {
-        id: true,
-        title: true,
-        problemStatement: true,
-        objectives: true,
-        targetUsers: true,
-        partialAbstract: true,
-        fullAbstract: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const exactTitleMatch = await this.findActiveExactTitleMatch(client, rawTitle);
     const exactTitleMs = Date.now() - exactTitleStartedAt;
 
     if (exactTitleMatch) {
@@ -448,6 +429,58 @@ export class IdeaDuplicateDetectionService {
     }
   }
 
+  /**
+   * Uses the partial functional index created by
+   * 20260829174500_add_active_idea_title_lookup_index. Prisma's generic
+   * case-insensitive filter may compile to ILIKE, which does not reliably use a
+   * btree lower(title) expression index. Matching the SQL expression exactly
+   * keeps the global race-safe title guard case-insensitive while avoiding a
+   * full active-ideas scan at the end of generation.
+   */
+  private async findActiveExactTitleMatch(
+    client: PrismaService | IdeaDuplicateDetectionDatabaseClient,
+    title: string,
+  ): Promise<{
+    readonly id: string;
+    readonly title: string;
+    readonly problemStatement: string | null;
+    readonly objectives: Prisma.JsonValue;
+    readonly targetUsers: Prisma.JsonValue;
+    readonly partialAbstract: string | null;
+    readonly fullAbstract: string | null;
+    readonly createdAt: Date;
+  } | null> {
+    const matches = await client.$queryRaw<
+      Array<{
+        readonly id: string;
+        readonly title: string;
+        readonly problemStatement: string | null;
+        readonly objectives: Prisma.JsonValue;
+        readonly targetUsers: Prisma.JsonValue;
+        readonly partialAbstract: string | null;
+        readonly fullAbstract: string | null;
+        readonly createdAt: Date;
+      }>
+    >(Prisma.sql`
+      SELECT
+        "id",
+        "title",
+        "problem_statement" AS "problemStatement",
+        "objectives",
+        "target_users" AS "targetUsers",
+        "partial_abstract" AS "partialAbstract",
+        "full_abstract" AS "fullAbstract",
+        "created_at" AS "createdAt"
+      FROM "ideas"
+      WHERE "deleted_at" IS NULL
+        AND lower("title") = lower(${title})
+      ORDER BY "created_at" DESC
+      LIMIT 1
+    `);
+
+    return matches[0] ?? null;
+  }
+
   private async loadSemanticCorpus(
     domainId: string,
     client: PrismaService | IdeaDuplicateDetectionDatabaseClient,
@@ -514,19 +547,7 @@ export class IdeaDuplicateDetectionService {
     const client = database ?? this.prisma;
     const title = idea.title.trim().slice(0, MAX_DUPLICATE_TITLE_LENGTH);
 
-    const match = await client.idea.findFirst({
-      where: {
-        deletedAt: null,
-        title: {
-          equals: title,
-          mode: 'insensitive',
-        },
-      },
-      select: {
-        id: true,
-        title: true,
-      },
-    });
+    const match = await this.findActiveExactTitleMatch(client, title);
 
     if (!match) {
       return;

@@ -13,7 +13,10 @@ export type IdeaGenerationProblemFacetType =
   | 'DELAY'
   | 'COST'
   | 'ACCESS'
-  | 'COORDINATION';
+  | 'COORDINATION'
+  | 'DATA_GAP'
+  | 'VISIBILITY'
+  | 'DECISION';
 
 export type IdeaGenerationProblemFacet = {
   readonly id: string;

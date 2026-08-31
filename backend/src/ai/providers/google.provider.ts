@@ -638,6 +638,10 @@ export class GoogleProvider implements AiProvider {
       return AiProviderErrorCode.CANCELLED;
     }
 
+    if (this.hasShortRetryWindow(error)) {
+      return AiProviderErrorCode.RATE_LIMIT;
+    }
+
     if (this.isInsufficientQuotaError(error)) {
       return AiProviderErrorCode.INSUFFICIENT_QUOTA;
     }
@@ -733,6 +737,27 @@ export class GoogleProvider implements AiProvider {
    * @returns True when the error likely represents exhausted quota or
    * unavailable billing capacity.
    */
+  private hasShortRetryWindow(error: unknown): boolean {
+    const message = this.readMessage(error, '').toLowerCase();
+    if (
+      message.includes('daily quota') ||
+      message.includes('monthly quota') ||
+      message.includes('billing disabled') ||
+      message.includes('billing account') ||
+      message.includes('limit: 0')
+    ) {
+      return false;
+    }
+
+    const match = message.match(
+      /(?:please\s+)?retry\s+in\s+([0-9]+(?:\.[0-9]+)?)\s*(?:s|sec|secs|second|seconds)\b/u,
+    );
+    if (!match) return false;
+
+    const seconds = Number(match[1]);
+    return Number.isFinite(seconds) && seconds > 0 && seconds <= 30;
+  }
+
   private isInsufficientQuotaError(error: unknown): boolean {
     const message = this.readMessage(error, '').toLowerCase();
 

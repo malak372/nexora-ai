@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { IDEA_MIN_ACCEPTED_QUALITY_SCORE } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
 import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
+import { RequestCapabilityContractUtil } from '../utils/request-capability-contract.util';
+import {
+  ExplicitDomainCapabilityCoverageUtil,
+  type ExplicitDomainCoverageContract,
+} from '../utils/explicit-domain-capability-coverage.util';
 
 /**
  * Individual deterministic quality issue detected in a generated idea.
@@ -70,6 +75,8 @@ export type IdeaQualityEvaluation = {
   readonly evidenceStrengthScore: number;
   readonly evidenceValidated: boolean;
   readonly accepted: boolean;
+  /** Exact deterministic reasons the candidate did not pass acceptance. */
+  readonly acceptanceFailureReasons: readonly string[];
   readonly dimensions: IdeaQualityDimensions;
   readonly issues: readonly IdeaQualityIssue[];
 };
@@ -95,6 +102,7 @@ export type IdeaQualityEvaluationContext = {
   readonly primaryDomainName?: string | null;
   readonly secondaryDomainNames?: readonly string[];
   readonly requiredDomainNames?: readonly string[];
+  readonly requiredDomains?: readonly ExplicitDomainCoverageContract[];
 };
 
 /**
@@ -371,10 +379,17 @@ export class IdeaQualityEvaluatorService {
       });
     }
 
-    const missingRequiredDomains = this.resolveMissingRequiredDomains(
-      context.requiredDomainNames ?? [],
-      candidateNarrative,
-    );
+    const requiredDomains =
+      context.requiredDomains ??
+      (context.requiredDomainNames ?? []).map((name) => ({
+        name,
+        keywords: [] as readonly string[],
+      }));
+    const missingRequiredDomains =
+      ExplicitDomainCapabilityCoverageUtil.resolveMissing(
+        requiredDomains,
+        candidateNarrative,
+      );
     if (missingRequiredDomains.length > 0) {
       issues.push({
         code: 'EXPLICIT_DOMAIN_COVERAGE_MISSING',
@@ -644,11 +659,11 @@ export class IdeaQualityEvaluatorService {
         ),
     );
 
-    if (hasNoDirectEvidence && secondaryDomainLeakage) {
+    if (!evidenceValidated && secondaryDomainLeakage) {
       issues.push({
         code: 'SECONDARY_DOMAIN_LEAKAGE',
         message:
-          'With zero retained evidence, keep the fallback strictly inside the authoritative final claim-domain set and remove only selected domains that are outside that set.',
+          'With zero retained direct or supporting evidence, keep the fallback strictly inside the authoritative final claim-domain set and remove only selected domains that are outside that set.',
         penalty: 20,
       });
     }
@@ -763,29 +778,36 @@ export class IdeaQualityEvaluatorService {
       evidenceValidated ||
       (requesterProblemProvided &&
         context.allowZeroEvidenceValidationCandidate === true);
-    const hasBlockingIssue = issues.some(
-      (issue) =>
-        issue.code === 'UNSUPPORTED_LOCAL_CLAIM' ||
-        issue.code === 'UNSUPPORTED_PLATFORM_ACCESS' ||
-        issue.code === 'MALFORMED_MEASURABLE_TARGET' ||
-        issue.code === 'UNSUPPORTED_IMPACT_TARGET' ||
-        issue.code === 'COMMON_TITLE_MISSPELLING' ||
-        issue.code === 'SECONDARY_DOMAIN_LEAKAGE' ||
-        issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT' ||
-        issue.code === 'REQUESTER_CONCRETE_FACET_MISSING' ||
-        issue.code === 'REQUESTED_CAPABILITY_MISSING' ||
-        issue.code === 'EXPLICIT_DOMAIN_COVERAGE_MISSING',
-    );
+    const blockingIssueCodes = issues
+      .filter(
+        (issue) =>
+          issue.code === 'UNSUPPORTED_LOCAL_CLAIM' ||
+          issue.code === 'UNSUPPORTED_PLATFORM_ACCESS' ||
+          issue.code === 'MALFORMED_MEASURABLE_TARGET' ||
+          issue.code === 'UNSUPPORTED_IMPACT_TARGET' ||
+          issue.code === 'COMMON_TITLE_MISSPELLING' ||
+          issue.code === 'SECONDARY_DOMAIN_LEAKAGE' ||
+          issue.code === 'CATASTROPHIC_REQUEST_SCOPE_DRIFT' ||
+          issue.code === 'REQUESTER_CONCRETE_FACET_MISSING' ||
+          issue.code === 'REQUESTED_CAPABILITY_MISSING' ||
+          issue.code === 'EXPLICIT_DOMAIN_COVERAGE_MISSING',
+      )
+      .map((issue) => issue.code);
+    const acceptanceFailureReasons = [
+      ...(productQualityScore < IDEA_MIN_ACCEPTED_QUALITY_SCORE
+        ? ['QUALITY_SCORE_BELOW_THRESHOLD']
+        : []),
+      ...blockingIssueCodes,
+      ...(!evidenceGateSatisfied ? ['EVIDENCE_GATE_NOT_SATISFIED'] : []),
+    ];
 
     return {
       score: productQualityScore,
       productQualityScore,
       evidenceStrengthScore,
       evidenceValidated,
-      accepted:
-        productQualityScore >= IDEA_MIN_ACCEPTED_QUALITY_SCORE &&
-        !hasBlockingIssue &&
-        evidenceGateSatisfied,
+      accepted: acceptanceFailureReasons.length === 0,
+      acceptanceFailureReasons,
       dimensions,
       issues,
     };
@@ -919,19 +941,24 @@ export class IdeaQualityEvaluatorService {
     const evidenceGateSatisfied =
       evidenceValidated ||
       (requesterProblemProvided && context.allowZeroEvidenceValidationCandidate === true);
-    const hasBlockingIssue = issues.some(
-      (issue) => issue.code === 'WRONG_OUTPUT_LANGUAGE',
-    );
+    const blockingIssueCodes = issues
+      .filter((issue) => issue.code === 'WRONG_OUTPUT_LANGUAGE')
+      .map((issue) => issue.code);
+    const acceptanceFailureReasons = [
+      ...(score < IDEA_MIN_ACCEPTED_QUALITY_SCORE
+        ? ['QUALITY_SCORE_BELOW_THRESHOLD']
+        : []),
+      ...blockingIssueCodes,
+      ...(!evidenceGateSatisfied ? ['EVIDENCE_GATE_NOT_SATISFIED'] : []),
+    ];
 
     return {
       score,
       productQualityScore: score,
       evidenceStrengthScore,
       evidenceValidated,
-      accepted:
-        score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE &&
-        !hasBlockingIssue &&
-        evidenceGateSatisfied,
+      accepted: acceptanceFailureReasons.length === 0,
+      acceptanceFailureReasons,
       dimensions,
       issues,
     };
@@ -1169,6 +1196,10 @@ export class IdeaQualityEvaluatorService {
       .replace(
         /\b(?:during|within)\s+(?:an?\s+)?(?:first\s+|initial\s+|bounded\s+|controlled\s+)?pilot\s+(?:deployment|implementation|evaluation|trial)\s+(?:in|for|within)\s+[^,.;!?]+[,;]?/giu,
         ' ',
+      )
+      .replace(
+        /\b(?:during|within)\s+(?:the\s+)?(?:first\s+|initial\s+|bounded\s+|controlled\s+)?(?:(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve)[ -]?(?:day|week|month|quarter|year)s?\s+)?pilot\s+(?:deployment|implementation|evaluation|trial)\s+(?:in|for|within)\s+[^,.;!?]+[,;]?/giu,
+        ' ',
       );
 
     return locations.some((location) => {
@@ -1177,6 +1208,8 @@ export class IdeaQualityEvaluatorService {
         '(?:students?|faculty|teachers?|learners?|users?|institutions?|universities|colleges|schools|administrators?|businesses|residents|organizations?)';
       const definitiveProblemVerb =
         "(?:face|faces|facing|encounter|encounters|experience|experiences|suffer|suffers|struggle|struggles|lack|lacks|report|reports|cannot|can't|are unable to|is unable to)";
+      const locationOnlyProblemVerb =
+        "(?:face|faces|facing|encounter|encounters|experience|experiences|suffer|suffers|struggle|struggles|lack|lacks|cannot|can't|are unable to|is unable to)";
       const actorThenLocation = new RegExp(
         `\\b${affectedActor}\\b[^.!?]{0,100}\\b(?:in|within|across|from)\\s+${escapedLocation}\\b[^.!?]{0,100}\\b${definitiveProblemVerb}\\b`,
         'iu',
@@ -1186,7 +1219,7 @@ export class IdeaQualityEvaluatorService {
         'iu',
       );
       const inLocationClaim = new RegExp(
-        `\\b(?:in|within|across)\\s+${escapedLocation}\\b[^.!?]{0,140}\\b${definitiveProblemVerb}\\b`,
+        `\\b(?:in|within|across)\\s+${escapedLocation}\\b[^.!?]{0,140}\\b${locationOnlyProblemVerb}\\b`,
         'iu',
       );
 
@@ -1246,73 +1279,10 @@ export class IdeaQualityEvaluatorService {
     desiredOutcome: string | null | undefined,
     candidateNarrative: string,
   ): string[] {
-    const requested = desiredOutcome?.replace(/\s+/gu, ' ').trim() ?? '';
-    if (!requested) return [];
-
-    const rules: readonly {
-      readonly label: string;
-      readonly request: RegExp;
-      readonly implementation: RegExp;
-    }[] = [
-      {
-        label: 'detection/identification',
-        request: /\b(?:detect|detects|detecting|identify|identifies|identifying)\b/iu,
-        implementation: /\b(?:detect|detection|identif|anomal|flag(?:ging)?|outlier|classif)\w*\b/iu,
-      },
-      {
-        label: 'tracking',
-        request: /\b(?:track|tracks|tracking|trace|traces|tracing|follow|follows|following)\b/iu,
-        implementation: /\b(?:track|tracking|trace|tracing|status|lifecycle|stage progression|item progression|queue)\w*\b/iu,
-      },
-      {
-        label: 'prediction/forecasting',
-        request: /\b(?:predict|predicts|predicting|forecast|forecasting|estimate|estimates|estimating)\b/iu,
-        implementation: /\b(?:predict|prediction|predictive|forecast|estimate|estimation|risk scor|probabil)\w*\b/iu,
-      },
-      {
-        label: 'prioritization/recommendation',
-        request: /\b(?:recommend|recommends|recommending|suggest|suggesting|prioriti[sz]e|prioriti[sz]ing|rank|ranking)\b/iu,
-        implementation: /\b(?:recommend|recommendation|suggest|prioriti[sz]|rank(?:ing)?|triage)\w*\b/iu,
-      },
-      {
-        label: 'optimization/capacity balancing',
-        request: /\b(?:optimi[sz]e|optimi[sz]es|optimi[sz]ing|balance|balances|balancing|organize|organise|organizing|organising)\b/iu,
-        implementation: /\b(?:optimi[sz]|balanc|organis|organiz|workload|capacity|allocation|schedul)\w*\b/iu,
-      },
-      {
-        label: 'adaptive scheduling',
-        request: /\b(?:adjust|adjusts|adjusting|reorganize|reorganizes|reorganizing|reorganise|reorganises|reorganising|reschedule|reschedules|rescheduling|replan|replanning)\b/iu,
-        implementation: /\b(?:adjust|reorgani[sz]|reschedul|replan|rebalanc|reprioriti[sz]|schedule update|schedule revision)\w*\b/iu,
-      },
-      {
-        label: 'notification/alerting',
-        request: /\b(?:remind|reminds|reminding|notify|notifies|notifying|alert|alerts|flag|flags|flagging)\b/iu,
-        implementation: /\b(?:remind|reminder|notify|notification|alert|flag)\w*\b/iu,
-      },
-      {
-        label: 'analysis/scoring',
-        request: /\b(?:analy[sz]e|analy[sz]es|analy[sz]ing|score|scoring|assess|assessing)\b/iu,
-        implementation: /\b(?:analy[sz]|analysis|analytics|scor|assessment|model inference)\w*\b/iu,
-      },
-      {
-        label: 'data/workflow integration',
-        request: /\b(?:combine|combines|combining|integrate|integrates|integrating|correlate|correlating)\b/iu,
-        implementation: /\b(?:combin|integrat|unif|aggregat|merge|fusion|correlat)\w*\b/iu,
-      },
-      {
-        label: 'response/dispatch action',
-        request: /\b(?:respond|responds|responding|dispatch|dispatching|assign|assigning)\b/iu,
-        implementation: /\b(?:respond|response|dispatch|assign|work order|case routing|maintenance task)\w*\b/iu,
-      },
-    ];
-
-    return rules
-      .filter(
-        (rule) =>
-          rule.request.test(requested) &&
-          !rule.implementation.test(candidateNarrative),
-      )
-      .map((rule) => rule.label);
+    return RequestCapabilityContractUtil.resolveMissingCapabilities(
+      desiredOutcome,
+      candidateNarrative,
+    );
   }
 
   /**
@@ -1345,6 +1315,9 @@ export class IdeaQualityEvaluatorService {
           .trim();
         if (
           /\b(?:prioriti[sz]|predict|forecast|detect|identif|analy[sz]|recommend|classif|scor|optimi[sz]|rank)\w*\b/iu.test(
+            cleaned,
+          ) ||
+          /^(?:help|organize|organise|prepare|automate|automatically|flag|alert|notify|generate|build|develop|implement|create|provide|enable|allow|support)\b/iu.test(
             cleaned,
           )
         ) {
@@ -1438,186 +1411,6 @@ export class IdeaQualityEvaluatorService {
     return hasConcreteCapability;
   }
 
-  /**
-   * Ensures TEXT_AND_DOMAINS candidates materially express every explicitly
-   * selected implementation domain before the candidate can win the benchmark.
-   * Domain-specific aliases are deliberately small and capability-oriented so
-   * a label-only mention is not required when the implementation is clear.
-   */
-  private resolveMissingRequiredDomains(
-    requiredDomainNames: readonly string[],
-    candidateNarrative: string,
-  ): string[] {
-    const narrative = candidateNarrative.toLocaleLowerCase();
-    const containsAny = (aliases: readonly string[]): boolean =>
-      aliases.some((alias) => {
-        const normalized = alias.trim().toLocaleLowerCase();
-        if (!normalized) return false;
-        return new RegExp(
-          `\\b${this.escapeRegExp(normalized).replace(/\s+/gu, '\\s+')}\\b`,
-          'iu',
-        ).test(narrative);
-      });
-
-    return requiredDomainNames.filter((domainName) => {
-      const normalized = domainName.trim().toLocaleLowerCase();
-      if (!normalized) return false;
-
-      if (normalized.includes('artificial intelligence') || normalized === 'ai') {
-        return !containsAny([
-          'artificial intelligence',
-          'machine learning',
-          'predictive model',
-          'anomaly detection',
-          'risk scoring',
-          'forecasting model',
-          'classification model',
-          'recommendation engine',
-          'model inference',
-          'deep learning',
-          'computer vision',
-          'ai-assisted',
-          'ai based',
-          'ai-based',
-        ]);
-      }
-
-      if (normalized.includes('internet of things') || normalized === 'iot') {
-        return !containsAny([
-          'internet of things',
-          'iot',
-          'sensor',
-          'sensors',
-          'connected device',
-          'device telemetry',
-          'telemetry',
-          'edge device',
-          'gateway',
-        ]);
-      }
-
-      if (normalized.includes('government') || normalized.includes('public sector')) {
-        return !containsAny([
-          'government',
-          'public sector',
-          'public institution',
-          'public administration',
-          'municipality',
-          'municipalities',
-          'municipal',
-          'public service',
-        ]);
-      }
-
-      if (normalized.includes('smart cities') || normalized === 'smart city') {
-        return !containsAny([
-          'smart city',
-          'smart cities',
-          'municipal',
-          'municipality',
-          'municipalities',
-          'city infrastructure',
-          'urban infrastructure',
-          'urban operations',
-          'city services',
-          'city-scale',
-          'city scale',
-          'sanitation operations',
-          'municipal waste',
-        ]);
-      }
-
-      if (normalized.includes('logistics')) {
-        return !containsAny([
-          'logistics',
-          'route optimization',
-          'route optimisation',
-          'vehicle routing',
-          'fleet routing',
-          'fleet dispatch',
-          'dispatch',
-          'collection route',
-          'delivery route',
-          'transport routing',
-        ]);
-      }
-
-      if (normalized.includes('cybersecurity')) {
-        const hasExplicitSecurityCapability = containsAny([
-          'cybersecurity',
-          'security monitoring',
-          'access anomaly',
-          'suspicious access',
-          'threat detection',
-          'security incident',
-          'authentication risk',
-        ]);
-        if (hasExplicitSecurityCapability) return false;
-
-        /*
-         * Cybersecurity can be materially implemented without repeating the
-         * domain label. A single generic HTTPS/RBAC mention is not enough;
-         * require at least two independent control families so physical
-         * "security operations" or incidental auth boilerplate cannot satisfy
-         * an explicitly selected Cybersecurity domain by accident.
-         */
-        const cybersecurityControlFamilies = [
-          containsAny([
-            'role based access control',
-            'role-based access control',
-            'rbac',
-            'least privilege',
-            'access control',
-            'authorization policy',
-          ]),
-          containsAny([
-            'encryption',
-            'encrypted transport',
-            'transport layer security',
-            'tls',
-            'data integrity',
-            'integrity check',
-          ]),
-          containsAny([
-            'audit trail',
-            'audit log',
-            'tamper evident',
-            'tamper-evident',
-            'signed provenance',
-            'data provenance',
-          ]),
-          containsAny([
-            'security anomaly',
-            'access anomaly',
-            'suspicious access',
-            'unauthorized access',
-            'security alert',
-          ]),
-        ].filter(Boolean).length;
-
-        return cybersecurityControlFamilies < 2;
-      }
-
-      if (normalized.includes('manufactur')) {
-        return !containsAny([
-          'manufacturing',
-          'manufacturer',
-          'factory',
-          'factories',
-          'industrial plant',
-          'industrial plants',
-          'production line',
-          'production lines',
-          'plant floor',
-          'shop floor',
-          'industrial operations',
-          'production operations',
-        ]);
-      }
-
-      return !containsAny([normalized]);
-    });
-  }
 
   private escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

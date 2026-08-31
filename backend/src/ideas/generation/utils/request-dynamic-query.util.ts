@@ -111,7 +111,7 @@ export class RequestDynamicQueryUtil {
     const inferredActor = description ? this.extractActor(description) : '';
     const actor = structuredActor || this.stripRequesterLeadIn(inferredActor);
     const actorAliases = actor ? this.buildActorAliases(actor) : [];
-    const actorTerm = actorAliases[1] || actorAliases[0] || actor;
+    const actorTerm = actorAliases[0] || actorAliases[1] || actor;
     const workflows = this.unique([
       structuredWorkflow,
       structuredObject,
@@ -205,63 +205,121 @@ export class RequestDynamicQueryUtil {
       .normalize('NFKC')
       .replace(/\s+/gu, ' ')
       .trim();
-    const description = this.cleanText(rawDescription);
+    const problemDescription = this.extractProblemBearingText(rawDescription);
+    const description = this.cleanText(problemDescription);
     if (!description) return [];
 
     const maxQueries = Math.max(1, Math.min(input.maxQueries ?? 10, 14));
     const actor = this.extractActor(description);
     const actors = this.buildActorAliases(actor || description);
     const workflows = this.unique([
-      ...(input.intentConcepts ?? []).map((value) => this.compactPhrase(value, 6)),
-      ...this.extractWorkflowPhrases(rawDescription),
-    ]).filter(Boolean).slice(0, 10);
-    const pains = this.unique([
-      ...this.extractFailurePhrases(rawDescription),
-      ...(input.evidenceTargets ?? []).flatMap((value) =>
-        this.extractFailurePhrases(value),
+      ...(input.intentConcepts ?? []).map((value) => this.compactPhrase(value, 5)),
+      ...this.extractWorkflowPhrases(problemDescription).map((value) =>
+        this.compactPhrase(value, 5),
       ),
     ]).filter(Boolean).slice(0, 10);
+    const explicitEvidenceTargets = this.unique(
+      (input.evidenceTargets ?? [])
+        .map((value) => this.compactPhrase(value, 6))
+        .filter(Boolean),
+    ).slice(0, 10);
+    const pains = this.unique([
+      ...explicitEvidenceTargets,
+      ...this.extractFailurePhrases(problemDescription).map((value) =>
+        this.compactPhrase(value, 5),
+      ),
+      ...(input.evidenceTargets ?? []).flatMap((value) =>
+        this.extractFailurePhrases(value).map((failure) =>
+          this.compactPhrase(failure, 5),
+        ),
+      ),
+    ]).filter(Boolean).slice(0, 12);
     const identityPhrases = this.buildIdentityPhrases(
-      this.extractEvidenceIdentityTerms(rawDescription).slice(0, 12),
-    );
+      this.extractEvidenceIdentityTerms(problemDescription).slice(0, 14),
+    )
+      .map((value) => this.compactPhrase(value, 4))
+      .filter(Boolean)
+      .slice(0, 10);
     const actorTerms = actors.length > 0
-      ? actors
+      ? actors.map((value) => this.compactPhrase(value, 4)).filter(Boolean)
       : [actor || this.extractFallbackSubject(description)].filter(Boolean);
     const queries: string[] = [];
+
     const add = (...parts: string[]) => {
-      const query = this.compose(...parts);
-      if (query.split(/\s+/u).length >= 3) queries.push(query);
+      const query = this.compose(...parts)
+        .replace(/\b(?:software|platform|application|app|dashboard|tool)\b/giu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      if (!query) return;
+
+      /*
+       * Search engines handle short concrete phrases such as "booking
+       * conflicts", "configuration drift", or "missed medication" better than
+       * synthetic suffixes like "reported problem". Keep genuine two-concept
+       * atomic probes intact; source-specific adapters can add incident/study
+       * language when that source actually benefits from it.
+       */
+      if (query.split(/\s+/u).length >= 2) queries.push(query);
     };
 
+    /*
+     * Atomic probes come first. A documentary row is allowed to establish one
+     * concrete requester facet, so retrieval should not require the whole
+     * actor+object+workflow+failure sentence to appear in one source. These
+     * pairwise probes are especially important for Text Only and Text + Domains
+     * where scheduling, workload, task failures, data gaps, and decision
+     * barriers are often documented by different communities or publications.
+     */
+    const painBreadth = Math.max(pains.length, 1);
+    for (let index = 0; index < painBreadth && queries.length < maxQueries * 3; index += 1) {
+      const pain = pains[index % Math.max(1, pains.length)] ?? '';
+      const identity = identityPhrases[index % Math.max(1, identityPhrases.length)] ?? '';
+      const actorTerm = actorTerms[index % Math.max(1, actorTerms.length)] ?? '';
+      const workflow = workflows[index % Math.max(1, workflows.length)] ?? '';
+
+      if (pain) {
+        add(pain);
+        add(actorTerm || identity, pain);
+        add(identity || actorTerm, pain);
+        add(workflow || identity || actorTerm, pain);
+      }
+    }
+
+    for (let index = 0; index < workflows.length && queries.length < maxQueries * 3; index += 1) {
+      const workflow = workflows[index];
+      const identity = identityPhrases[index % Math.max(1, identityPhrases.length)] ?? '';
+      const actorTerm = actorTerms[index % Math.max(1, actorTerms.length)] ?? '';
+      add(identity || actorTerm, workflow);
+      add(actorTerm || identity, workflow);
+    }
+
+    for (let index = 0; index < identityPhrases.length && queries.length < maxQueries * 3; index += 1) {
+      const facet =
+        pains[index % Math.max(1, pains.length)] ??
+        workflows[index % Math.max(1, workflows.length)] ??
+        '';
+      if (facet) add(identityPhrases[index], facet);
+    }
+
+    /*
+     * Keep a few composed probes at the tail for sources that index richer
+     * phrases well, but never let those full-chain queries crowd out the atomic
+     * evidence lanes above.
+     */
     const breadth = Math.max(workflows.length, pains.length, identityPhrases.length, 1);
-    for (let index = 0; index < breadth; index += 1) {
+    for (let index = 0; index < breadth && queries.length < maxQueries * 3; index += 1) {
       add(
         actorTerms[index % Math.max(1, actorTerms.length)] ?? '',
         identityPhrases[index % Math.max(1, identityPhrases.length)] ?? '',
         workflows[index % Math.max(1, workflows.length)] ?? '',
         pains[index % Math.max(1, pains.length)] ?? '',
       );
-      if (queries.length >= maxQueries) break;
-
-      add(
-        identityPhrases[(index + 1) % Math.max(1, identityPhrases.length)] ?? actorTerms[0] ?? '',
-        workflows[(index + 1) % Math.max(1, workflows.length)] ?? '',
-        pains[index % Math.max(1, pains.length)] ?? '',
-      );
-      if (queries.length >= maxQueries) break;
     }
 
-    if (queries.length < maxQueries) {
-      for (let index = 0; index < pains.length && queries.length < maxQueries; index += 1) {
-        add(
-          actorTerms[index % Math.max(1, actorTerms.length)] ?? '',
-          pains[index],
-          workflows[index % Math.max(1, workflows.length)] ?? '',
-        );
-      }
-    }
-
-    return this.deduplicate(queries).slice(0, maxQueries);
+    return this.deduplicate(queries)
+      .map((query) => query.split(/\s+/u).slice(0, 7).join(' '))
+      .filter((query) => query.split(/\s+/u).length >= 2)
+      .slice(0, maxQueries);
   }
 
   /**
@@ -275,14 +333,17 @@ export class RequestDynamicQueryUtil {
   static buildProfessionalTerminologyQueries(
     input: DynamicRequestQueryInput,
   ): string[] {
-    const description = this.cleanText(input.requestDescription ?? '');
+    const problemDescription = this.extractProblemBearingText(
+      input.requestDescription ?? '',
+    );
+    const description = this.cleanText(problemDescription);
     if (!description) return [];
 
     const maxQueries = Math.max(1, Math.min(input.maxQueries ?? 5, 8));
     const actor = this.extractActor(description);
     const aliases = this.buildActorAliases(actor || description);
     const actorTerm =
-      aliases[1] || aliases[0] || actor || this.extractFallbackSubject(description);
+      aliases[0] || aliases[1] || actor || this.extractFallbackSubject(description);
     const identityTerms = this.extractEvidenceIdentityTerms(description);
     const identityPhrases = this.buildIdentityPhrases(identityTerms.slice(0, 10));
     const workflows = this.extractWorkflowPhrases(description)
@@ -399,7 +460,7 @@ export class RequestDynamicQueryUtil {
 
     const actor = this.extractActor(description);
     const actorAliases = this.buildActorAliases(actor || description);
-    const actorTerm = actorAliases[1] || actorAliases[0] || actor;
+    const actorTerm = actorAliases[0] || actorAliases[1] || actor;
     const workflowTerms = this.extractWorkflowPhrases(description)
       .map((value) => this.compactPhrase(value, 4))
       .filter(Boolean)
@@ -496,7 +557,7 @@ export class RequestDynamicQueryUtil {
 
     const actor = this.extractActor(description);
     const actorAliases = this.buildActorAliases(actor || description);
-    const actorTerm = actorAliases[1] || actorAliases[0] || actor;
+    const actorTerm = actorAliases[0] || actorAliases[1] || actor;
     const identity = this.extractEvidenceIdentityTerms(description).slice(0, 4).join(' ');
     const workflows = this.extractWorkflowPhrases(description)
       .map((value) => this.compactPhrase(value, 4))
@@ -653,6 +714,39 @@ export class RequestDynamicQueryUtil {
     return tokens.slice(0, 5).join(' ');
   }
 
+  private static extractProblemBearingText(value: string): string {
+    const normalized = (value ?? '')
+      .normalize('NFKC')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!normalized) return '';
+
+    const sentences = normalized
+      .split(/(?<=[.!?؟])\s+/u)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+
+    const solutionLanguage =
+      /\b(?:a\s+smarter|smarter\s+(?:system|platform|tool)|could\s+(?:combine|track|detect|estimate|help|flag|organize|prioritize|provide|enable|allow|recommend|automate|predict)|would\s+(?:combine|track|detect|estimate|help|flag|organize|prioritize|provide|enable|allow|recommend|automate|predict))\b/iu;
+    const problemLanguage =
+      /\b(?:struggl\w*|difficult\w*|unable|cannot|can't|fragment\w*|separat\w*|delay\w*|miss\w*|fail\w*|error\w*|backlog\w*|conflict\w*|bottleneck\w*|shortage\w*|overtrain\w*|fatigue\w*|risk\w*|overload\w*|rework\w*|downtime|outage|slow\w*)\b/iu;
+    const arabicProblemLanguage =
+      /(?:يعان|صعوب|تأخير|فشل|خطأ|مشكل|ضغط|ازدحام|نقص|منفصل|إصابة|خطر|إرهاق|إجهاد)/u;
+
+    const problemSentences = sentences.filter(
+      (sentence) =>
+        !solutionLanguage.test(sentence) &&
+        (problemLanguage.test(sentence) || arabicProblemLanguage.test(sentence)),
+    );
+
+    if (problemSentences.length > 0) {
+      return problemSentences.slice(0, 2).join(' ');
+    }
+
+    const nonSolution = sentences.filter((sentence) => !solutionLanguage.test(sentence));
+    return (nonSolution[0] ?? sentences[0] ?? normalized).trim();
+  }
+
   private static extractWorkflowPhrases(description: string): string[] {
     const sentences = description
       .normalize('NFKC')
@@ -742,10 +836,15 @@ export class RequestDynamicQueryUtil {
     const lower = description.toLocaleLowerCase();
     const outputs: string[] = [];
     const painPatterns = [
-      /\b(?:missed|missing|forgotten|lost|incorrect|wrong|inconsistent|delayed|slow|unexpected|abnormal|unusual|unnecessary|inefficient|excessive|fragmented|scattered|unavailable|overloaded|underused|overused|duplicated|repeated)\s+[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,4}\b/gu,
-      /\b(?:failure|failures|failed|fault|faults|error|errors|risk|risks|conflict|conflicts|delay|delays|shortage|shortages|bottleneck|bottlenecks|outage|outages|breakdown|breakdowns|loss|losses|damage|waste|spoilage|anomaly|anomalies|inefficiency|inefficiencies|fraud|fraudulent|suspicious|rework|backlog|backlogs|overrun|overruns)\w*\b/gu,
+      /\b(?:missed|missing|forgotten|lost|incorrect|wrong|inconsistent|delayed|slow|unexpected|unauthorized|unauthorised|unapproved|abnormal|unusual|unnecessary|inefficient|excessive|fragmented|scattered|unavailable|overdue|overloaded|underused|overused|duplicated|repeated)\s+[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,4}\b/gu,
+      /\b(?:failure|failures|failed|fault|faults|error|errors|risk|risks|conflict|conflicts|delay|delays|shortage|shortages|bottleneck|bottlenecks|outage|outages|downtime|defect|defects|breakdown|breakdowns|loss|losses|damage|waste|spoilage|anomaly|anomalies|inefficiency|inefficiencies|fraud|fraudulent|suspicious|rework|backlog|backlogs|overrun|overruns|overtraining|fatigue|workload)\w*\b/gu,
+      /\b(?:risk|risks)\s+(?:of|for)\s+[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,4}\b/gu,
+      /\b(?:injury|safety|health|medical|performance|operational|financial|security)\s+risks?\b/gu,
+      /\b(?:pickup|delivery|completion|service)\s+deadlines?\b/gu,
       /\b(?:increase|increases|increasing|raise|raises|raising)\s+[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,3}\s+costs?\b/gu,
-      /\b(?:unable to|cannot|can't|difficult to|difficulty)\s+[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,4}\b/gu,
+      /\b(?:unable to|cannot|can't|difficult to|difficulty)\s+[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,6}\b/gu,
+      /\b(?:struggle|struggles|struggling)\s+to\s+[^.!?]{5,180}/gu,
+      /\b[^.!?]{0,80}(?:reviewed|analyzed|analysed|managed|stored|tracked)\s+separately\b/gu,
     ];
 
     for (const pattern of painPatterns) {
@@ -781,13 +880,19 @@ export class RequestDynamicQueryUtil {
     }
 
     return this.unique(outputs)
-      .sort((left, right) => right.split(/\s+/u).length - left.split(/\s+/u).length)
+      .sort((left, right) => {
+        const leftWords = left.split(/\s+/u).length;
+        const rightWords = right.split(/\s+/u).length;
+        const leftDistance = Math.abs(leftWords - 4);
+        const rightDistance = Math.abs(rightWords - 4);
+        return leftDistance - rightDistance || leftWords - rightWords;
+      })
       .slice(0, 10);
   }
 
   private static isUsefulFailurePhrase(value: string): boolean {
     const normalized = value.toLocaleLowerCase();
-    return /\b(?:fraud|fake|suspicious|misleading|restrict|false positive|miss|forgot|repeat|failure|fail|fault|error|risk|conflict|delay|slow|unsafe|unhealthy|incorrect|wrong|inconsistent|abnormal|unusual|unnecessary|inefficient|inefficiency|anomal|lost|missing|shortage|bottleneck|backlog|waste|spoil|breakdown|overload|outage|unable|cannot|can't|problem|issue|difficult|poor|fragmented|scattered|loss|damage|cost|overrun|rework)\w*\b/iu.test(
+    return /\b(?:fraud|fake|suspicious|misleading|restrict|unauthorized|unauthorised|unapproved|overdue|false positive|miss|forgot|repeat|failure|fail|fault|error|risk|conflict|delay|deadline|slow|unsafe|unhealthy|incorrect|wrong|inconsistent|abnormal|unusual|unnecessary|inefficient|inefficiency|anomal|lost|missing|shortage|bottleneck|backlog|waste|spoil|breakdown|overload|outage|downtime|defect|unable|cannot|can't|problem|issue|difficult|poor|fragmented|scattered|separate|separately|coordination|coordinate|workload|overtraining|fatigue|loss|damage|cost|overrun|rework)\w*\b/iu.test(
       normalized,
     );
   }

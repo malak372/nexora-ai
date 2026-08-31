@@ -38,7 +38,10 @@ import {
   IdeaOpportunityRankingService,
   NoRankedIdeaOpportunityError,
 } from '../../services/idea-opportunity-ranking.service';
-import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
+import type {
+  IdeaGenerationCanonicalEvidenceItem,
+  IdeaGenerationContext,
+} from '../../types/idea-generation-context.type';
 import type {
   IdeaOpportunityRanking,
   RankedIdeaOpportunity,
@@ -47,6 +50,7 @@ import type {
   CommunityAiAnalysis,
   CommunityAiOpportunity,
 } from '../../types/community-ai-analysis.type';
+import type { RequestIntentMode } from '../../types/request-collection-plan.type';
 import { RequestEvidenceAlignmentUtil } from '../../utils/request-evidence-alignment.util';
 import { CanonicalRequestProductBlueprintUtil } from '../../utils/canonical-request-product-blueprint.util';
 import { RequestDynamicQueryUtil } from '../../utils/request-dynamic-query.util';
@@ -193,6 +197,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         ranking,
         false,
       );
+      workingContext = this.releaseWeakTextAndDomainsCanonicalLock(
+        workingContext,
+        ranking,
+      );
     }
 
     /*
@@ -277,35 +285,24 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     ];
     let recoveryExecutionWaves = 0;
     /*
-     * Text-bearing requests carry useful requester intent. If the first targeted
-     * recovery wave still has zero trusted evidence, allow one additional
-     * source/query-rotated wave before declaring the scoped discovery externally
-     * unvalidated. DOMAINS_ONLY/NO_INPUT also receive one bounded targeted
-     * recovery wave when their first broad pass retains zero trusted evidence;
-     * successful evidence-backed runs still skip recovery entirely.
+     * Every path may spend at most one serial targeted recovery wave. The
+     * accepted first-pass plan already contains multiple source-specific query
+     * lanes, and source-health substitution happens inside that bounded wave.
+     * A second serial crawl had low marginal yield and was the main Text-only
+     * latency tail, so later source/provider recovery is deferred to a future run.
      */
-    const requesterHasText = Boolean(workingContext.requestDescription?.trim());
     /*
-     * The first pass now fans out across a broader capability-balanced source
-     * portfolio. Keep the common evidence-backed path at zero/one recovery wave,
-     * but let a text-bearing request with ZERO canonical trusted evidence spend
-     * the existing second bounded attempt on a source/query-rotated recovery.
-     * This extra wave is exceptional rather than the default latency path.
+     * The first pass already fans out across a capability-balanced source
+     * portfolio. Recovery is therefore one bounded semantic recall attempt,
+     * not another serial discovery pipeline.
      */
-    const zeroTrustedBeforeRecovery =
-      CanonicalEvidenceStateUtil.compute(
-        workingContext.canonicalEvidenceLedger ?? [],
-      ).trustedCount === 0;
     /*
-     * Preserve the existing bounded recall budget. Text requests with zero
-     * trusted evidence may still use the second rotated wave; we reduce latency
-     * only by removing redundant post-recovery work, never by deleting an
-     * evidence opportunity or shortening semantic deadlines.
+     * Zero-trusted text requests still receive one request-specific recovery
+     * attempt, but never a second serial collection wave. Semantic integrity is
+     * preserved by leaving unresolved or zero-yield recovery explicitly
+     * unvalidated rather than buying more wall-clock with another crawl.
      */
-    const maximumRecoveryExecutionWaves =
-      requesterHasText && zeroTrustedBeforeRecovery
-        ? MAX_EVIDENCE_RECOVERY_ATTEMPTS
-        : 1;
+    const maximumRecoveryExecutionWaves = 1;
     const maximumRecoveryAttemptsForRun = maximumRecoveryExecutionWaves;
     const seenRecoveryCollectionJobIds = new Set(
       workingContext.evidenceRecoveryCollectionJobIds.filter(Boolean),
@@ -337,6 +334,12 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         recoveryExecutionWaves,
         workingContext,
       );
+      const canonicalFamilyBeforeRecovery =
+        workingContext.communityAiAnalysis?.canonicalProblemFamilyLabel?.trim() ||
+        workingContext.communityAiAnalysis?.selectedProblemFamily?.trim() ||
+        '';
+      const canonicalFamilyEvidenceCountBeforeRecovery =
+        workingContext.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0;
       const recoveryContext = {
         ...workingContext,
         evidenceRecoveryAttempts: Math.min(
@@ -453,7 +456,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           newEvidenceSampleCount: 0,
           recoveryOutcome: recovery.recoveryOutcome,
         });
-        continue;
+        this.logger.debug(
+          'Stopping evidence recovery after the bounded collection wave failed or timed out; source health/circuit state will guide the next user run instead of starting another serial source chase.',
+        );
+        break;
       }
 
       const trustedEvidenceCountBeforeMerge =
@@ -483,6 +489,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           workingContext.canonicalEvidenceLedger,
           recovery.rawEvidenceCorpus,
           recovery.communityAiAnalysis,
+          recovery.corroborationTargetFamily
+            ? 'EXPLICIT_PROBLEM'
+            : workingContext.collectionPlan?.requestIntent?.mode ?? null,
         ),
         domainEvidence: workingContext.domainEvidence,
         opportunityRanking: null,
@@ -530,32 +539,77 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
        * 10-20 seconds without any possible scoring/evidence change.
        */
       if (recoveryAddedTrustedEvidence) {
-        const recoveredCanonicalRanking =
-          await this.buildVerifiedCanonicalFamilyRanking(workingContext);
-        ranking = recoveredCanonicalRanking ?? this.enforcePrimaryDomainFallback(
-          await this.tryRankContext(workingContext, previousIdeaTexts),
-          workingContext,
+        const canonicalFamilyAfterRecovery =
+          workingContext.communityAiAnalysis?.canonicalProblemFamilyLabel?.trim() ||
+          workingContext.communityAiAnalysis?.selectedProblemFamily?.trim() ||
+          '';
+        const canonicalFamilyEvidenceCountAfterRecovery =
+          workingContext.communityAiAnalysis?.selectedProblemFamilyTrustedEvidenceCount ?? 0;
+        const sameCanonicalFamilyWasCorroborated = Boolean(
+          canonicalFamilyBeforeRecovery &&
+          canonicalFamilyAfterRecovery &&
+          this.normalizeEvidenceKey(canonicalFamilyBeforeRecovery) ===
+            this.normalizeEvidenceKey(canonicalFamilyAfterRecovery) &&
+          canonicalFamilyEvidenceCountAfterRecovery >
+            canonicalFamilyEvidenceCountBeforeRecovery,
         );
-        if (ranking) {
-          ranking = this.applyRequestIntentAlignment(ranking, workingContext);
-        }
 
-        if (
-          ranking &&
-          this.hasExplicitRequesterProblem(workingContext) &&
-          canonicalRecoverySupportingExternalEvidence.length > 0
-        ) {
-          const verifiedRecoveredRequesterSupport =
-            this.verifyQualifiedRequesterSupportingEvidence(
-              workingContext,
-              canonicalRecoverySupportingExternalEvidence,
-            );
-          if (verifiedRecoveredRequesterSupport.length > 0) {
-            ranking = this.mergeQualifiedRequesterSupportingEvidence(
+        /*
+         * When recovery only corroborated an already-locked family, the merged
+         * canonical ledger is already the verification authority. Re-running the
+         * full async ranking tournament adds latency without a possible identity
+         * change. Refresh the existing ranking directly from the synchronized
+         * canonical state; full re-ranking remains reserved for recovery that
+         * establishes a previously missing family.
+         */
+        if (sameCanonicalFamilyWasCorroborated && ranking) {
+          if (this.hasExplicitRequesterProblem(workingContext)) {
+            const verifiedRecoveredRequesterSupport =
+              this.verifyQualifiedRequesterSupportingEvidence(
+                workingContext,
+                canonicalRecoverySupportingExternalEvidence,
+              );
+            if (verifiedRecoveredRequesterSupport.length > 0) {
+              ranking = this.mergeQualifiedRequesterSupportingEvidence(
+                workingContext,
+                ranking,
+                verifiedRecoveredRequesterSupport,
+              );
+            }
+          } else {
+            ranking = this.enforceCanonicalDiscoveryRankingAtHandoff(
               workingContext,
               ranking,
-              verifiedRecoveredRequesterSupport,
             );
+          }
+        } else {
+          const recoveredCanonicalRanking =
+            await this.buildVerifiedCanonicalFamilyRanking(workingContext);
+          ranking = recoveredCanonicalRanking ?? this.enforcePrimaryDomainFallback(
+            await this.tryRankContext(workingContext, previousIdeaTexts),
+            workingContext,
+          );
+          if (ranking) {
+            ranking = this.applyRequestIntentAlignment(ranking, workingContext);
+          }
+
+          if (
+            ranking &&
+            this.hasExplicitRequesterProblem(workingContext) &&
+            canonicalRecoverySupportingExternalEvidence.length > 0
+          ) {
+            const verifiedRecoveredRequesterSupport =
+              this.verifyQualifiedRequesterSupportingEvidence(
+                workingContext,
+                canonicalRecoverySupportingExternalEvidence,
+              );
+            if (verifiedRecoveredRequesterSupport.length > 0) {
+              ranking = this.mergeQualifiedRequesterSupportingEvidence(
+                workingContext,
+                ranking,
+                verifiedRecoveredRequesterSupport,
+              );
+            }
           }
         }
 
@@ -850,6 +904,18 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       return false;
     }
 
+    const recoveredProblemBearingCount = [...classificationById.values()].filter(
+      (classification) =>
+        classification.classification === 'DIRECT_PROBLEM' ||
+        classification.classification === 'SUPPORTING_SIGNAL',
+    ).length;
+    if (recoveredProblemBearingCount === 0) {
+      this.logger.debug(
+        `Skipping a second text-recovery wave because the completed first recovery added ${rawRows.length} new adjudicated raw row(s) but zero provisional DIRECT/SUPPORTING signal(s). The wave was retrieval-valid but evidence-low-yield, so another serial crawl is not justified.`,
+      );
+      return false;
+    }
+
     const productiveSourceKeys = new Set(
       rawRows
         .map((row) => row.sourceKey.trim().toLocaleLowerCase())
@@ -950,31 +1016,57 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const classificationByEvidenceId = new Map(
       classifications.map((item) => [item.evidenceId, item] as const),
     );
-    const fullPrimaryCorpusAdjudicated =
-      rawEvidenceCount > 0 &&
-      (context.rawEvidenceCorpus ?? []).every((row) => {
+    const adjudicatedPrimaryRowCount = (context.rawEvidenceCorpus ?? []).filter(
+      (row) => {
         const classification = classificationByEvidenceId.get(row.id);
         return Boolean(
           classification &&
             classification.adjudicationStatus === 'ADJUDICATED' &&
             classification.classification !== 'UNADJUDICATED',
         );
-      });
+      },
+    ).length;
+    const unresolvedPrimaryRowCount = Math.max(
+      0,
+      rawEvidenceCount - adjudicatedPrimaryRowCount,
+    );
+    const primaryAdjudicationCoverage =
+      rawEvidenceCount > 0
+        ? adjudicatedPrimaryRowCount / rawEvidenceCount
+        : 0;
+    const highCoveragePrimaryCorpusAdjudicated = Boolean(
+      rawEvidenceCount >= 8 &&
+        adjudicatedPrimaryRowCount >= 8 &&
+        unresolvedPrimaryRowCount <= 2 &&
+        primaryAdjudicationCoverage >= 0.9,
+    );
     const textCorpusHasIndependentBreadth = Boolean(
       context.requestDescription?.trim() &&
-        fullPrimaryCorpusAdjudicated &&
-        rawEvidenceCount >= 14 &&
-        rawSourceCount >= 4 &&
-        rawSourceArchetypeCount >= 3 &&
-        (directExperienceSourceCount >= 1 ||
-          (rawSourceCount >= 5 && rawSourceArchetypeCount >= 4)),
+        highCoveragePrimaryCorpusAdjudicated &&
+        rawEvidenceCount >= 8 &&
+        rawSourceCount >= 3 &&
+        rawSourceArchetypeCount >= 2,
     );
     const discoveryCorpusHasIndependentBreadth = Boolean(
       !context.requestDescription?.trim() &&
-        fullPrimaryCorpusAdjudicated &&
+        highCoveragePrimaryCorpusAdjudicated &&
         rawEvidenceCount >= Math.max(10, minimumBroadRawCount) &&
         rawSourceCount >= Math.min(3, minimumBroadSourceCount),
     );
+    const textAndDomainsIntentRecoveryNeeded = Boolean(
+      context.requestMode === 'TEXT_AND_DOMAINS' &&
+        context.requestDescription?.trim() &&
+        selectedIds.size === 0 &&
+        ranking?.selected.disqualificationReasons.includes(
+          'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+        ),
+    );
+    if (textAndDomainsIntentRecoveryNeeded) {
+      this.logger.debug(
+        `TEXT_AND_DOMAINS recovery remains eligible because trusted rows exist globally but none survived as a requester-context-compatible canonical family. Global trusted rows remain trusted audit evidence; recovery searches a better domain/workflow family without reclassifying them.`,
+      );
+    }
+
     /*
      * Trusted evidence is evaluated at the selected-family level, not at the
      * global-corpus level. A run can have many trusted rows overall while the
@@ -984,15 +1076,93 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
      * re-planning and excludes the already represented family source. This is
      * structural provenance logic only — no domain/problem meaning is inferred.
      */
-    if (trustedEvidenceCount > 0) {
+    if (trustedEvidenceCount > 0 && !textAndDomainsIntentRecoveryNeeded) {
+      const explicitRequesterHasBroadReviewedSupport = Boolean(
+        context.requestDescription?.trim() &&
+          selectedTrustedEvidence.length > 0 &&
+          rawEvidenceCount >= 8 &&
+          rawSourceCount >= 3 &&
+          classifications.length >= Math.min(rawEvidenceCount, 8) &&
+          selectedTrustedEvidence.some(
+            (item) => item.problemAlignment === 'MATCH' || item.problemAlignment === 'PARTIAL',
+          ),
+      );
+      const discoveryHasBroadReviewedAlternatives = Boolean(
+        !context.requestDescription?.trim() &&
+          highCoveragePrimaryCorpusAdjudicated &&
+          rawEvidenceCount >= 10 &&
+          rawSourceCount >= 3 &&
+          rawSourceArchetypeCount >= 2 &&
+          trustedEvidenceCount >= 4,
+      );
+      const discoveryHasBroadReviewedWinner = Boolean(
+        !context.requestDescription?.trim() &&
+          highCoveragePrimaryCorpusAdjudicated &&
+          selectedTrustedEvidence.length >= 1 &&
+          rawEvidenceCount >= 12 &&
+          rawSourceCount >= 3 &&
+          rawSourceArchetypeCount >= 2,
+      );
+      const discoveryWinnerHasDirectEvidence = selectedTrustedEvidence.some(
+        (item) => item.classification === 'DIRECT_PROBLEM',
+      );
+      const discoverySupportingOnlySingleSourceAlreadyReviewed = Boolean(
+        !context.requestDescription?.trim() &&
+          highCoveragePrimaryCorpusAdjudicated &&
+          selectedTrustedEvidence.length === 1 &&
+          selectedTrustedEvidence[0]?.classification === 'SUPPORTING_SIGNAL' &&
+          rawEvidenceCount >= 8 &&
+          rawSourceCount >= 2 &&
+          rawSourceArchetypeCount >= 2 &&
+          adjudicatedPrimaryRowCount >= Math.min(rawEvidenceCount, 8),
+      );
+      const discoveryWinnerHasRepeatedReviewedSupport = Boolean(
+        !context.requestDescription?.trim() &&
+          selectedTrustedEvidence.length >= 2 &&
+          rawEvidenceCount >= (discoveryWinnerHasDirectEvidence ? 8 : 10) &&
+          rawSourceCount >= (discoveryWinnerHasDirectEvidence ? 2 : 3) &&
+          rawSourceArchetypeCount >= 2 &&
+          adjudicatedPrimaryRowCount >= Math.min(rawEvidenceCount, 8),
+      );
+
       if (
         context.evidenceRecoveryAttempts === 0 &&
-        needsIndependentSourceCorroboration
+        needsIndependentSourceCorroboration &&
+        !explicitRequesterHasBroadReviewedSupport &&
+        !discoveryHasBroadReviewedAlternatives &&
+        !discoveryHasBroadReviewedWinner &&
+        !discoverySupportingOnlySingleSourceAlreadyReviewed &&
+        !discoveryWinnerHasRepeatedReviewedSupport
       ) {
         this.logger.debug(
           `Selected-family corroboration remains eligible: familyEvidence=${corroborationSet.length}, familySources=${corroborationSourceCount}, globalTrusted=${trustedEvidenceCount}, raw=${rawEvidenceCount}, rawSources=${rawSourceCount}.`,
         );
         return true;
+      }
+      if (needsIndependentSourceCorroboration && explicitRequesterHasBroadReviewedSupport) {
+        this.logger.debug(
+          `Skipping serial corroboration for an explicit requester problem after a broad reviewed first pass already retained trusted preliminary support: familyEvidence=${corroborationSet.length}, raw=${rawEvidenceCount}, rawSources=${rawSourceCount}. The evidence remains explicitly single-source/preliminary.`,
+        );
+      }
+      if (needsIndependentSourceCorroboration && discoveryHasBroadReviewedAlternatives) {
+        this.logger.debug(
+          `Skipping serial corroboration for a discovery-only winner after a broad high-coverage adjudicated corpus already produced multiple trusted alternatives: familyEvidence=${corroborationSet.length}, globalTrusted=${trustedEvidenceCount}, raw=${rawEvidenceCount}, rawSources=${rawSourceCount}, adjudicated=${adjudicatedPrimaryRowCount}/${rawEvidenceCount}. Unresolved rows remain UNADJUDICATED; the winning family remains explicitly single-source/preliminary rather than paying a low-yield serial recovery tail.`,
+        );
+      }
+      if (needsIndependentSourceCorroboration && discoveryHasBroadReviewedWinner) {
+        this.logger.debug(
+          `Skipping serial corroboration for a preliminary discovery winner because the primary pass already fully adjudicated a broad independent corpus: familyEvidence=${corroborationSet.length}, globalTrusted=${trustedEvidenceCount}, raw=${rawEvidenceCount}, rawSources=${rawSourceCount}, archetypes=${rawSourceArchetypeCount}. Source diversity remains explicit preliminary metadata rather than triggering another serial crawl.`,
+        );
+      }
+      if (needsIndependentSourceCorroboration && discoverySupportingOnlySingleSourceAlreadyReviewed) {
+        this.logger.debug(
+          `Skipping serial corroboration for a single-source SUPPORTING-only discovery winner after a fully adjudicated multi-source corpus already tested independent alternatives: familyEvidence=${corroborationSet.length}, raw=${rawEvidenceCount}, rawSources=${rawSourceCount}, archetypes=${rawSourceArchetypeCount}. The family remains explicitly preliminary instead of paying another low-yield serial source chase.`,
+        );
+      }
+      if (needsIndependentSourceCorroboration && discoveryWinnerHasRepeatedReviewedSupport) {
+        this.logger.debug(
+          `Skipping serial corroboration for a discovery winner already supported by ${selectedTrustedEvidence.length} trusted family-matched row(s) after a broad reviewed corpus: raw=${rawEvidenceCount}, rawSources=${rawSourceCount}, archetypes=${rawSourceArchetypeCount}, adjudicated=${adjudicatedPrimaryRowCount}/${rawEvidenceCount}. Source diversity remains preliminary metadata instead of triggering a serial recovery tail.`,
+        );
       }
       return false;
     }
@@ -1022,54 +1192,106 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       return false;
     }
 
+    const adjudicatedTextClassifications = classifications.filter(
+      (item) =>
+        item.adjudicationStatus === 'ADJUDICATED' &&
+        item.classification !== 'UNADJUDICATED',
+    );
+    const textContextOnlyCount = adjudicatedTextClassifications.filter(
+      (item) => item.classification === 'CONTEXT_ONLY',
+    ).length;
+    const textPartialContextCount = adjudicatedTextClassifications.filter(
+      (item) =>
+        item.classification === 'CONTEXT_ONLY' &&
+        item.problemAlignment === 'PARTIAL' &&
+        (context.requestMode === 'TEXT_ONLY' || item.domainAlignment !== 'NONE'),
+    ).length;
+    const textHighConfidenceNearMissCount = adjudicatedTextClassifications.filter(
+      (item) => {
+        if (
+          item.classification !== 'CONTEXT_ONLY' ||
+          item.confidence < 70 ||
+          (context.requestMode !== 'TEXT_ONLY' && item.domainAlignment === 'NONE')
+        ) {
+          return false;
+        }
+        const requesterFacets = [
+          item.actorAlignment,
+          item.objectAlignment,
+          item.workflowAlignment,
+          item.failureAlignment,
+        ];
+        const exactFacetCount = requesterFacets.filter(
+          (alignment) => alignment === 'MATCH',
+        ).length;
+        const materialFacetCount = requesterFacets.filter(
+          (alignment) => alignment !== undefined && alignment !== 'NONE',
+        ).length;
+        return (
+          item.problemAlignment === 'PARTIAL' ||
+          item.problemAlignment === 'MATCH' ||
+          (exactFacetCount >= 1 && materialFacetCount >= 2)
+        );
+      },
+    ).length;
+    const textDomainMatchedContextCount =
+      adjudicatedTextClassifications.filter(
+        (item) =>
+          item.classification === 'CONTEXT_ONLY' &&
+          item.domainAlignment !== 'NONE',
+      ).length;
+    const textContextOnlyRatio =
+      textContextOnlyCount / Math.max(1, adjudicatedTextClassifications.length);
+    const contextHeavyNearMissCorpus = Boolean(
+      context.requestDescription?.trim() &&
+        trustedEvidenceCount === 0 &&
+        textContextOnlyCount >= 1 &&
+        textContextOnlyRatio >= 0.35 &&
+        (textPartialContextCount >= 2 || textHighConfidenceNearMissCount >= 1),
+    );
     const conclusiveBroadTextZeroTrusted = Boolean(
       context.requestDescription?.trim() &&
         trustedEvidenceCount === 0 &&
-        textCorpusHasIndependentBreadth,
+        textCorpusHasIndependentBreadth &&
+        !contextHeavyNearMissCorpus,
     );
 
     /*
-     * A broad, source-diverse text corpus that was fully adjudicated item by
-     * item and still produced zero canonical DIRECT/SUPPORTING evidence is a
-     * conclusive bounded verdict for this run. Re-collecting one or two more
-     * rows serially cannot justify another 10-20 second recovery tail. Smaller
-     * or thin corpora (for example 6-7 rows) still receive targeted recovery,
-     * so niche recall is preserved where another lane can materially help.
+     * Text-backed discovery gets exactly one bounded recovery wave whenever the
+     * primary corpus ends with zero canonical trusted evidence. Broad coverage
+     * is useful evidence about retrieval quality, but it is not a reason to stop
+     * when the admission semantics may have landed near the requester workflow.
+     * Recovery rotates source/query facets only; existing CONTEXT_ONLY rows stay
+     * non-trusted and DIRECT/SUPPORTING verification remains authoritative.
      */
-    if (conclusiveBroadTextZeroTrusted) {
+    if (conclusiveBroadTextZeroTrusted && context.evidenceRecoveryAttempts === 0) {
       this.logger.debug(
-        `Skipping redundant text recovery after a complete broad zero-trusted verdict: raw=${rawEvidenceCount}, sources=${rawSourceCount}, archetypes=${rawSourceArchetypeCount}, adjudicated=${classifications.length}.`,
+        `Allowing one bounded atomic-facet recovery after a high-coverage, source-diverse text pass completed semantic adjudication with zero trusted rows: raw=${rawEvidenceCount}, sources=${rawSourceCount}, archetypes=${rawSourceArchetypeCount}, adjudicated=${adjudicatedPrimaryRowCount}/${rawEvidenceCount}, contextOnly=${textContextOnlyCount}, partialContext=${textPartialContextCount}, highConfidenceNearMiss=${textHighConfidenceNearMissCount}. Broad coverage no longer suppresses the single zero-evidence recovery guarantee.`,
       );
-      return false;
+      return true;
+    }
+    if (contextHeavyNearMissCorpus && context.evidenceRecoveryAttempts === 0) {
+      this.logger.debug(
+        `Allowing one bounded semantic rotation for a context-heavy zero-trusted text corpus: raw=${rawEvidenceCount}, sources=${rawSourceCount}, contextOnly=${textContextOnlyCount}/${adjudicatedTextClassifications.length}, partialContext=${textPartialContextCount}, highConfidenceNearMiss=${textHighConfidenceNearMissCount}, domainMatchedContext=${textDomainMatchedContextCount}. Existing CONTEXT_ONLY rows remain non-trusted; recovery must find a new DIRECT/SUPPORTING row rather than reclassify the current corpus.`,
+      );
+      return true;
     }
 
     if (context.requestDescription?.trim()) {
       return true;
     }
 
-    if (
-      trustedEvidenceCount === 0 &&
-      discoveryCorpusHasIndependentBreadth
-    ) {
+    if (trustedEvidenceCount === 0 && context.evidenceRecoveryAttempts === 0) {
       this.logger.debug(
-        `Skipping redundant discovery recovery after a complete broad zero-trusted verdict: raw=${rawEvidenceCount}, sources=${rawSourceCount}, archetypes=${rawSourceArchetypeCount}, adjudicated=${classifications.length}.`,
+        `Evidence-first guarantee allows one bounded discovery recovery before falling back to an unvalidated validation-first result: raw=${rawEvidenceCount}, sources=${rawSourceCount}, archetypes=${rawSourceArchetypeCount}, broad=${broadFirstPassCompleted || discoveryCorpusHasIndependentBreadth}. The recovery may improve recall but cannot promote CONTEXT_ONLY/UNRELATED material.`,
       );
-      return false;
-    }
-
-    // A broad discovery corpus was already collected and semantically reviewed
-    // (or explicitly marked unavailable above). Repeating generic domain-label
-    // collection is not semantic re-planning and only adds latency.
-    if (broadFirstPassCompleted) {
-      return false;
-    }
-
-    // Discovery paths cannot safely manufacture evidence from domain labels.
-    // When the first pass retained zero DIRECT/SUPPORTING rows, spend exactly
-    // one bounded source-rotated recovery wave before accepting a completed no-valid-evidence result.
-    // The surrounding per-run cap keeps this recall improvement latency-bounded.
-    if (context.evidenceRecoveryAttempts === 0) {
       return true;
+    }
+
+    // After the single guarantee wave, a broad discovery corpus is conclusive
+    // for this bounded run. Continuing would only add serial latency.
+    if (broadFirstPassCompleted || discoveryCorpusHasIndependentBreadth) {
+      return false;
     }
 
     const semanticClassificationCompleted = Boolean(
@@ -1465,12 +1687,17 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         problem,
         unmetNeed: need,
         solutionArea,
-        requestDescription: requestDescription || null,
-        requestIntentAlignmentScore: requestDescription ? 1 : null,
-        requestIntentAdjustedScore: requestDescription
+        requestIntentMode: context.collectionPlan?.requestIntent?.mode ?? null,
+        requestDescription:
+          explicitProblem && requestDescription ? requestDescription : null,
+        requestContext:
+          !explicitProblem && requestDescription ? requestDescription : null,
+        requestIntentAlignmentScore: explicitProblem && requestDescription ? 1 : null,
+        requestIntentAdjustedScore: explicitProblem && requestDescription
           ? requesterValidationScore
           : null,
-        requestIntentAlignmentApplied: requestDescription ? true : null,
+        requestIntentAlignmentApplied:
+          explicitProblem && requestDescription ? true : null,
         evidenceSamples: [],
         supportingEvidence,
       },
@@ -1855,6 +2082,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     primary: IdeaGenerationContext['canonicalEvidenceLedger'],
     recoveredRaw: readonly IdeaGenerationContext['rawEvidenceCorpus'][number][],
     recoveredAnalysis: CommunityAiAnalysis | null,
+    recoveryRequestIntentMode: RequestIntentMode | null = null,
   ): IdeaGenerationContext['canonicalEvidenceLedger'] {
     const byId = new Map(primary.map((item) => [item.id, item] as const));
     const rawById = new Map(recoveredRaw.map((item) => [item.id, item] as const));
@@ -1883,6 +2111,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           requestMode: context.requestMode,
           problemSpec: context.canonicalProblemSpec,
           selectedDomains: context.selectedDomains,
+          requestIntentMode:
+            recoveryRequestIntentMode ??
+            context.collectionPlan?.requestIntent?.mode ??
+            null,
         }),
       );
     }
@@ -1905,6 +2137,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           requestMode: context.requestMode,
           problemSpec: context.canonicalProblemSpec,
           selectedDomains: context.selectedDomains,
+          requestIntentMode:
+            recoveryRequestIntentMode ??
+            context.collectionPlan?.requestIntent?.mode ??
+            null,
         }),
       );
     }
@@ -2029,6 +2265,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         primary.evidenceClassifications ?? [],
         recovered.evidenceClassifications ?? [],
       ),
+      jointEvidenceGroups: this.mergeCommunityJointEvidenceGroups(
+        primary.jointEvidenceGroups ?? [],
+        recovered.jointEvidenceGroups ?? [],
+      ),
       aiProposedProblemFamily:
         primary.aiProposedProblemFamily ?? recovered.aiProposedProblemFamily ?? null,
       aiProposedProblemFamilyEvidenceIds: [
@@ -2049,6 +2289,38 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       canonicalProblemFamilyLabel: lockedLabel,
       canonicalProblemFamilyEvidenceIds: lockedEvidenceIds,
     };
+  }
+
+
+  private mergeCommunityJointEvidenceGroups(
+    primary: NonNullable<CommunityAiAnalysis['jointEvidenceGroups']>,
+    recovered: NonNullable<CommunityAiAnalysis['jointEvidenceGroups']>,
+  ): NonNullable<CommunityAiAnalysis['jointEvidenceGroups']> {
+    const byKey = new Map<
+      string,
+      NonNullable<CommunityAiAnalysis['jointEvidenceGroups']>[number]
+    >();
+
+    for (const group of [...primary, ...recovered]) {
+      const memberKey = [...group.evidenceIds]
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .sort()
+        .join('|');
+      const familyKey = this.normalizeEvidenceKey(group.problemFamily);
+      const key = group.id?.trim() || `${familyKey}::${memberKey}`;
+      const existing = byKey.get(key);
+      if (
+        !existing ||
+        group.distinctSourceCount > existing.distinctSourceCount ||
+        (group.distinctSourceCount === existing.distinctSourceCount &&
+          group.confidence > existing.confidence)
+      ) {
+        byKey.set(key, group);
+      }
+    }
+
+    return [...byKey.values()];
   }
 
   /**
@@ -4568,7 +4840,15 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
      * signal is enough to select a bounded evidence-supported pilot instead of
      * collapsing back to a zero-evidence requester hypothesis.
      */
-    const disqualificationReasons = [...selected.disqualificationReasons];
+    const staleZeroEvidenceReasons = new Set([
+      'NO_DIRECT_EVIDENCE',
+      'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      'INSUFFICIENT_EVIDENCE_COUNT',
+      'INSUFFICIENT_SUPPORT',
+    ]);
+    const disqualificationReasons = selected.disqualificationReasons.filter(
+      (reason) => !(supportingCount > 0 && staleZeroEvidenceReasons.has(reason)),
+    );
     const preliminarySupportingEligible =
       this.hasExplicitRequesterProblem(context) && supportingCount > 0;
     const selectionEligible =
@@ -4919,6 +5199,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         .filter(Boolean),
     );
     const requestDescription = context.requestDescription?.trim() ?? '';
+    const requestIntentMode = context.collectionPlan?.requestIntent?.mode ?? null;
+    const lockedRequesterProblem =
+      requestIntentMode === 'EXPLICIT_PROBLEM' &&
+      Boolean(this.resolveExplicitRequesterProblem(context));
     const trustedCanonicalEvidence = (context.canonicalEvidenceLedger ?? []).filter(
       (item) =>
         item.verified &&
@@ -5012,7 +5296,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           evidenceKind,
         });
         const problemSignal = this.looksLikeDirectProblemEvidence(body);
-        const requestAligned = requestDescription
+        const requestAligned = lockedRequesterProblem && requestDescription
           ? RequestEvidenceAlignmentUtil.isAligned({
               requestDescription,
               evidenceText: text,
@@ -5025,7 +5309,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         const semanticTriageVerified =
           'semanticTriageVerified' in entry && entry.semanticTriageVerified === true;
         const workflowAdjacent = Boolean(
-          requestDescription &&
+          lockedRequesterProblem &&
+            requestDescription &&
             !requestAligned &&
             ((semanticTriageVerified &&
               RequestEvidenceAlignmentUtil.passesAiEvidenceAdmissionGuard({
@@ -5040,8 +5325,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           /\b(?:reported|reports?|study|survey|operators?|facilities?|restaurants?|kennels?|boarding|cost|costs|margin|margins|profit|profits|waste|missed|missing|error|errors|problem|problems|delay|delayed|failure|failures|rising|increasing|declining|complaints?|struggle|difficult)\w*\b/iu.test(
             text,
           );
-        const semanticDomainText =
-          entry.sourceKind === 'COMMENT' ? body : text;
+        const semanticDomainText = entry.sourceKind === 'COMMENT' ? body : text;
         const semanticMatches = SelectedDomainEvidenceAlignmentUtil.matchDomainNames(
           semanticDomainText,
           domainDescriptors,
@@ -5054,13 +5338,17 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         )
           ? 0.75
           : 0;
+        const requesterContextBonus =
+          !lockedRequesterProblem && requestDescription
+            ? Math.min(1.25, requestAlignment * 1.25)
+            : 0;
         const score =
-          (requestAligned ? 8 : 0) +
-          (workflowAdjacent ? 4 : 0) +
-          requestAlignment * 5 +
-          matchedDomainNames.length * 3 +
+          (lockedRequesterProblem && requestAligned ? 8 : 0) +
+          (lockedRequesterProblem && workflowAdjacent ? 4 : 0) +
+          (lockedRequesterProblem ? requestAlignment * 5 : requesterContextBonus) +
+          matchedDomainNames.length * 4 +
           (directSignal ? 7 : 0) +
-          (problemSignal ? 3 : 0) +
+          (problemSignal ? 4 : 0) +
           (secondaryOperationalSignal ? 4 : 0) +
           (entry.sourceKind === 'COMMENT' ? 1.5 : 0.5) +
           sourceQualityBonus;
@@ -5088,10 +5376,12 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           entry.directSignal ||
           entry.problemSignal ||
           entry.secondaryOperationalSignal ||
-          (entry.semanticTriageVerified && entry.workflowAdjacent),
+          (lockedRequesterProblem &&
+            entry.semanticTriageVerified &&
+            entry.workflowAdjacent),
       )
       .filter((entry) =>
-        requestDescription
+        lockedRequesterProblem
           ? entry.requestAligned ||
             (entry.semanticTriageVerified && entry.workflowAdjacent)
           : entry.domainAligned,
@@ -5109,10 +5399,13 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const strongestTrusted = trustedRetainedEntries[0] ?? null;
 
     const exactRequestEvidence = Boolean(
-      requestDescription && strongestTrusted?.requestAligned,
+      lockedRequesterProblem && requestDescription && strongestTrusted?.requestAligned,
     );
     const workflowAdjacentEvidence = Boolean(
-      requestDescription && !exactRequestEvidence && Boolean(strongestTrusted?.workflowAdjacent),
+      lockedRequesterProblem &&
+        requestDescription &&
+        !exactRequestEvidence &&
+        Boolean(strongestTrusted?.workflowAdjacent),
     );
     const evidenceMatchedDomains = [
       ...new Set(
@@ -5122,9 +5415,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       ),
     ];
     const domainLabel = evidenceMatchedDomains.join(' + ');
-    const semanticAnchor = hasTrustedExternalEvidence
-      ? strongestTrusted!
-      : strongest;
+    const semanticAnchor = hasTrustedExternalEvidence ? strongestTrusted! : strongest;
     const canonicalAnchor = hasTrustedExternalEvidence
       ? trustedCanonicalEvidence.find(
           (item) =>
@@ -5146,29 +5437,33 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           semanticAnchor.body,
           domainLabel,
         );
-    /*
-     * With requester text, evidence may corroborate one or many facets but is
-     * never allowed to rename, narrow, or replace the canonical problem.
-     */
-    const problem = requestDescription ||
-      (hasTrustedExternalEvidence
-        ? familySemantics?.problem || strongestTrusted?.body.slice(0, 360).trim() || null
-        : `No canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence survived verification in ${domainLabel || strongest.domainName}; a concrete external problem remains unvalidated.`);
-    const title = requestDescription
+
+    const evidenceNativeProblem = hasTrustedExternalEvidence
+      ? familySemantics?.problem ||
+        strongestTrusted?.body.slice(0, 360).trim() ||
+        null
+      : null;
+    const problem = lockedRequesterProblem && requestDescription
+      ? requestDescription
+      : evidenceNativeProblem ||
+        `No canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence survived verification in ${domainLabel || strongest.domainName}; a concrete external problem remains unvalidated.`;
+    const title = lockedRequesterProblem && requestDescription
       ? hasTrustedExternalEvidence
         ? 'Requester-Defined Workflow with Verified External Support'
         : 'Requester-Defined Workflow Validation Hypothesis'
       : hasTrustedExternalEvidence
-        ? familySemantics?.title ?? `${strongestTrusted?.domainName ?? strongest.domainName} Evidence-Grounded Preliminary Opportunity`
+        ? familySemantics?.title ??
+          `${strongestTrusted?.domainName ?? strongest.domainName} Evidence-Grounded Preliminary Opportunity`
         : `${strongest.domainName} Validation-First Opportunity`;
-    const need = requestDescription
+    const need = lockedRequesterProblem && requestDescription
       ? hasTrustedExternalEvidence
         ? 'A focused implementation that preserves the complete requester-described workflow while using only canonical trusted external signals as complementary preliminary support. The pilot must validate the unproven mechanisms and prevalence without substituting a narrower evidence title for the requester problem.'
         : 'A focused implementation that preserves the complete requester-described workflow as an unvalidated hypothesis. Retrieval context may guide follow-up collection, but it must not be described as verified evidence or user feedback until canonical verification succeeds.'
       : hasTrustedExternalEvidence
-        ? familySemantics?.need ?? `A focused implementation that addresses the retained ${domainLabel} problem signal without overstating what the evidence proves.`
+        ? familySemantics?.need ??
+          `A focused implementation that addresses the retained ${domainLabel || strongest.domainName} problem signal without overstating what the evidence proves. Requester text may inform compatible workflow design but does not override the evidence-selected problem.`
         : `A validation workflow that continues evidence collection in ${domainLabel || strongest.domainName} before promoting a concrete problem into normal product generation.`;
-    const solutionArea = requestDescription
+    const solutionArea = lockedRequesterProblem && requestDescription
       ? hasTrustedExternalEvidence
         ? 'Requester-Defined Workflow Implementation with Canonical Evidence Validation'
         : 'Requester-Defined Workflow Validation and Evidence Collection'
@@ -5184,7 +5479,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         text: entry.text,
         qualifiesAsCommunityEvidence: entry.directSignal,
       })),
-      ...(requestDescription
+      ...(lockedRequesterProblem && requestDescription
         ? [
             {
               sourceType: 'REQUESTER_STATEMENT' as const,
@@ -5204,12 +5499,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         solutionArea,
         evidenceType: 'OPPORTUNITY',
         sourceIndex: 0,
-        frequency: 1,
+        frequency: hasTrustedExternalEvidence ? trustedRetainedEntries.length : 0,
         severity: 'MEDIUM',
         evidenceSamples: trustedRetainedEntries.map((entry) => entry.text),
-        frequencyScore: 0.2,
+        frequencyScore: Math.min(1, trustedRetainedEntries.length / 5),
         severityScore: 0.6,
-        evidenceScore: hasTrustedExternalEvidence ? 0.16 : 0,
+        evidenceScore: hasTrustedExternalEvidence
+          ? Math.min(1, trustedRetainedEntries.length / 5)
+          : 0,
         evidenceReliabilityScore: !hasTrustedExternalEvidence
           ? 0
           : strongestTrusted?.directSignal
@@ -5218,7 +5515,15 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
               ? 0.56
               : 0.46,
         weakEvidencePenalty: 0.12,
-        specificityScore: exactRequestEvidence ? 0.92 : workflowAdjacentEvidence ? 0.84 : 0.78,
+        specificityScore: lockedRequesterProblem
+          ? exactRequestEvidence
+            ? 0.92
+            : workflowAdjacentEvidence
+              ? 0.84
+              : 0.78
+          : hasTrustedExternalEvidence
+            ? 0.84
+            : 0.7,
         feasibilityScore: 0.88,
         localRelevanceScore: 0.25,
         noveltyScore: 0.55,
@@ -5236,7 +5541,13 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         nlpConfidenceScore: context.nlp?.confidence ?? 0.2,
         baseScore: 0.34,
         confidencePenalty: 0.1,
-        finalScore: exactRequestEvidence ? 0.32 : 0.29,
+        finalScore: lockedRequesterProblem
+          ? exactRequestEvidence
+            ? 0.32
+            : 0.29
+          : hasTrustedExternalEvidence
+            ? 0.34
+            : 0.2,
         matchedDomainNames: evidenceMatchedDomains,
         problemDomainNames: evidenceMatchedDomains,
         primaryMatchedDomainName: evidenceMatchedDomains[0] ?? strongest.domainName,
@@ -5260,28 +5571,32 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         verifiedIndependentEvidenceCount: 0,
         verifiedIndependentSourceCount: 0,
         independentEvidence: [],
-        requestIntentAlignmentScore: requestDescription
+        requestIntentAlignmentScore: lockedRequesterProblem && requestDescription
           ? strongest.requestAlignment
           : undefined,
-        requestIntentAdjustedScore: requestDescription
+        requestIntentAdjustedScore: lockedRequesterProblem && requestDescription
           ? Math.max(0.2, strongest.requestAlignment * 0.5)
           : undefined,
-        requestIntentSupportTier: exactRequestEvidence
-          ? 'FULL_REQUEST_MATCH'
-          : workflowAdjacentEvidence
-            ? 'PARTIAL_REQUEST_SUPPORT'
-            : requestDescription
-              ? 'DOMAIN_SUPPORTED_FALLBACK'
-              : undefined,
+        requestIntentSupportTier: lockedRequesterProblem
+          ? exactRequestEvidence
+            ? 'FULL_REQUEST_MATCH'
+            : workflowAdjacentEvidence
+              ? 'PARTIAL_REQUEST_SUPPORT'
+              : requestDescription
+                ? 'DOMAIN_SUPPORTED_FALLBACK'
+                : undefined
+          : undefined,
         supportingEvidence,
         raw: {
           source: 'EXTERNAL_SUPPORTING_CONTEXT_FALLBACK',
           ...(familySemantics ? { familyKey: familySemantics.familyKey } : {}),
-          evidenceScope: exactRequestEvidence
-            ? 'REQUEST_MATCHED'
-            : workflowAdjacentEvidence
-              ? 'WORKFLOW_ADJACENT'
-              : 'SELECTED_DOMAIN_FALLBACK',
+          evidenceScope: lockedRequesterProblem
+            ? exactRequestEvidence
+              ? 'REQUEST_MATCHED'
+              : workflowAdjacentEvidence
+                ? 'WORKFLOW_ADJACENT'
+                : 'SELECTED_DOMAIN_FALLBACK'
+            : 'EVIDENCE_NATIVE_DOMAIN_PROBLEM',
           semanticTriageVerified: strongest.semanticTriageVerified,
           domainName: evidenceMatchedDomains[0] ?? strongest.domainName,
           domainNames: evidenceMatchedDomains,
@@ -5289,7 +5604,15 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           problem,
           unmetNeed: need,
           solutionArea,
-          requestDescription: requestDescription || null,
+          requestIntentMode,
+          requestDescription:
+            lockedRequesterProblem && requestDescription
+              ? requestDescription
+              : null,
+          requestContext:
+            !lockedRequesterProblem && requestDescription
+              ? requestDescription
+              : null,
           evidenceSamples: trustedRetainedEntries.map((entry) => entry.text),
           retrievalContextSamples: retainedEntries
             .filter((entry) => !trustedRetainedEntries.includes(entry))
@@ -5306,27 +5629,29 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       },
       alternatives: [],
       evaluatedCount: Math.max(1, entries.length),
-      evidenceCoverage: hasTrustedExternalEvidence ? 1 / 3 : 0,
-      selectionReason: requestDescription
+      evidenceCoverage: hasTrustedExternalEvidence
+        ? Math.min(1, trustedRetainedEntries.length / 3)
+        : 0,
+      selectionReason: lockedRequesterProblem && requestDescription
         ? hasTrustedExternalEvidence
-          ? `Selected the requester-defined workflow unchanged with ${trustedRetainedEntries.length} canonical trusted supporting item(s) across ${EvidenceSourceIdentityUtil.count(trustedRetainedEntries)} source(s). No evidence item is allowed to redefine the requester problem.`
-          : 'Selected the requester-defined workflow unchanged as an unvalidated hypothesis. Retrieved context was not promoted because no canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence survived verification.'
+          ? `Selected the requester-defined workflow unchanged with ${trustedRetainedEntries.length} canonical trusted supporting item(s) across ${EvidenceSourceIdentityUtil.count(trustedRetainedEntries)} source(s). No evidence item is allowed to redefine the internally locked requester problem.`
+          : 'Selected the requester-defined workflow unchanged as an unvalidated internally locked hypothesis. Retrieved context was not promoted because no canonical DIRECT_PROBLEM or SUPPORTING_SIGNAL evidence survived verification.'
         : hasTrustedExternalEvidence
-          ? `Selected ${trustedRetainedEntries.length} canonical trusted problem signal(s) from the evidence-backed domain lane (${domainLabel}) without fabricating recurrence.`
-          : `No canonical trusted problem signal survived; retained retrieval context is diagnostic only and the selected direction remains validation-first.`,
+          ? `Selected the strongest evidence-native problem inside the resolved domain scope from ${trustedRetainedEntries.length} canonical trusted signal(s) across ${EvidenceSourceIdentityUtil.count(trustedRetainedEntries)} source(s). Requester text was used only as soft domain/workflow context and did not gate or rename the problem.`
+          : `No canonical trusted problem signal survived; retained retrieval context is diagnostic only and the selected direction remains validation-first inside the resolved domain scope.`,
       qualityWarnings: [
         hasTrustedExternalEvidence
           ? `The selected direction is supported by ${trustedRetainedEntries.length} canonical trusted item(s) across ${EvidenceSourceIdentityUtil.count(trustedRetainedEntries)} source(s) and must remain preliminary until direct recurrence is validated.`
           : context.evidenceState === 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
             ? 'EVIDENCE_ADJUDICATION_UNAVAILABLE: raw retrieval context exists, but semantic AI adjudication did not complete; the corpus must not be described as unrelated or as proof of no evidence.'
             : 'NO_VALID_EVIDENCE_FOUND: semantic adjudication completed but no canonical trusted evidence supports an external-demand claim.',
-        ...(workflowAdjacentEvidence
+        ...(!lockedRequesterProblem && requestDescription && hasTrustedExternalEvidence
           ? [
-              "The retained external evidence is workflow-adjacent rather than proof of the requester's exact vertical. It may justify a validation-first design pattern but not a prevalence or demand claim for the requester domain.",
+              'Requester text helped resolve the search domain and may inform compatible product design, but the retained external evidence—not the requester example—owns the canonical problem family.',
             ]
-          : !exactRequestEvidence && requestDescription
+          : workflowAdjacentEvidence
             ? [
-                'The evidence supports a selected/inferred domain problem rather than every detail of the requester description. The final idea must not claim that the full requester workflow was externally proven.',
+                "The retained external evidence is workflow-adjacent rather than proof of the internally locked requester problem. It may justify a validation-first design pattern but not a prevalence or demand claim for the full requester workflow.",
               ]
             : []),
       ],
@@ -5899,6 +6224,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       evidenceNature: item.evidenceNature,
       domainAlignment: item.domainAlignment,
       problemAlignment: item.problemAlignment,
+      actorAlignment: item.actorAlignment,
+      objectAlignment: item.objectAlignment,
+      workflowAlignment: item.workflowAlignment,
+      failureAlignment: item.failureAlignment,
       familyBasis: item.familyBasis,
       observedProblem: item.observedProblem ?? null,
       causalExplanation: item.causalExplanation ?? null,
@@ -5961,6 +6290,29 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const corroboratingTrustedItems = lockRemainsValid
       ? trustedCanonicalItems.filter((item) => {
           if (lockedEvidenceIdSet.has(item.id)) return false;
+          /*
+           * Recovery triage is explicitly scoped to the immutable canonical
+           * family. Therefore a RECOVERY row that Community AI adjudicates as
+           * problemAlignment=MATCH is valid corroboration even when the model
+           * chooses a narrower evidence-native problemFamily label for that
+           * individual source. This keeps semantic ownership with AI while
+           * allowing independent corroboration to update the canonical counts.
+           */
+          if (
+            item.collectionPhase === 'RECOVERY' &&
+            item.problemAlignment === 'MATCH'
+          ) {
+            return true;
+          }
+          if (
+            this.canonicalEvidenceSupportsFamily(
+              canonicalLabel!,
+              item.problemFamily,
+              item.text,
+            )
+          ) {
+            return true;
+          }
           if (!item.problemFamily?.trim()) return false;
           const itemFamilyIdentity = normalizeFamilyIdentity(item.problemFamily);
           if (!itemFamilyIdentity || !canonicalFamilyIdentity) return false;
@@ -6070,6 +6422,12 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
                 warning.includes('No external evidence-backed partial candidate survived verification')) &&
               !(reconciledTrustedCount > 0 &&
                 warning.includes('No sufficiently request-aligned direct community problem was established')) &&
+              !(reconciledTrustedCount > 0 &&
+                warning.includes('Community AI did not produce an acceptable grounded opportunity within the bounded budget')) &&
+              !(reconciledTrustedCount > 0 &&
+                warning.includes('Opportunity synthesis was skipped because the first-pass discovery corpus contained no trusted problem-bearing evidence')) &&
+              !(reconciledTrustedCount > 0 &&
+                warning.includes('Unvalidated domain hypotheses are not treated as community evidence and may only be used as a last-resort generation direction')) &&
               !(selectedCanonicalDirectCount > 0 &&
                 warning.includes('No verified direct-user complaint establishes recurrence')) &&
               !(selectedCanonicalDirectCount > 0 &&
@@ -6079,11 +6437,28 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           ...(finalSupportWarning ? [finalSupportWarning] : []),
         ]))
       : [];
+    const reconciledAiSucceeded = Boolean(
+      context.communityAiAnalysis &&
+      (
+        context.communityAiAnalysis.aiSucceeded ||
+        state.adjudicatedCount > 0 ||
+        reconciledTrustedCount > 0
+      ),
+    );
+    const reconciledFallbackUsed = Boolean(
+      context.communityAiAnalysis?.fallbackUsed && reconciledTrustedCount <= 0,
+    );
+    const reconciledFallbackReason = reconciledTrustedCount > 0
+      ? null
+      : context.communityAiAnalysis?.fallbackReason ?? null;
     const communityAiAnalysis = context.communityAiAnalysis
       ? {
           ...context.communityAiAnalysis,
           evidenceVerdictState: finalEvidenceVerdictState,
           qualityWarnings: reconciledQualityWarnings,
+          aiSucceeded: reconciledAiSucceeded,
+          fallbackUsed: reconciledFallbackUsed,
+          fallbackReason: reconciledFallbackReason,
           triageAiSucceeded:
             state.adjudicatedCount > 0
               ? true
@@ -6122,6 +6497,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
             summary: communityAiAnalysis?.summary ?? record.summary,
             dominantProblems: communityAiAnalysis?.dominantProblems ?? [],
             unmetNeeds: communityAiAnalysis?.unmetNeeds ?? [],
+            qualityWarnings:
+              communityAiAnalysis?.qualityWarnings ?? record.qualityWarnings ?? [],
+            aiSucceeded:
+              communityAiAnalysis?.aiSucceeded ?? record.aiSucceeded ?? false,
+            fallbackUsed:
+              communityAiAnalysis?.fallbackUsed ?? record.fallbackUsed ?? false,
+            fallbackReason:
+              communityAiAnalysis?.fallbackReason ?? record.fallbackReason ?? null,
             evidenceClassifications: classifications,
             evidenceVerdictState: finalEvidenceVerdictState,
             evidenceAdjudicationUnavailable:
@@ -6145,6 +6528,25 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
               (item) =>
                 item.classification === 'CONTEXT_ONLY' ||
                 item.classification === 'ANALOGOUS_WORKFLOW_SIGNAL',
+            ).length,
+            domainAlignedEvidenceCandidateCount: classifications.filter(
+              (item) =>
+                item.adjudicationStatus === 'ADJUDICATED' &&
+                item.classification !== 'UNRELATED' &&
+                item.classification !== 'UNADJUDICATED' &&
+                item.domainAlignment !== 'NONE',
+            ).length,
+            jointFacetEvidenceCandidateCount: classifications.filter(
+              (item) =>
+                item.adjudicationStatus === 'ADJUDICATED' &&
+                item.classification !== 'UNRELATED' &&
+                item.classification !== 'UNADJUDICATED' &&
+                [
+                  item.actorAlignment,
+                  item.objectAlignment,
+                  item.workflowAlignment,
+                  item.failureAlignment,
+                ].some((alignment) => alignment === 'MATCH'),
             ).length,
             trustedNlpEvidenceCount: state.trustedCount,
             selectedProblemFamily:
@@ -6277,6 +6679,51 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   }
 
 
+  private buildCanonicalIndependentEvidence(
+    item: IdeaGenerationCanonicalEvidenceItem,
+  ): IndependentEvidence {
+    const rawExternalId = item.id
+      .split(':')
+      .slice(2)
+      .join(':')
+      .trim();
+    const externalId = rawExternalId || item.id;
+
+    const evidenceKind: IndependentEvidence['evidenceKind'] = (() => {
+      switch (item.evidenceKind) {
+        case 'USER_COMPLAINT':
+          return 'USER_COMPLAINT';
+        case 'NEWS_REPORT':
+          return 'NEWS_REPORT';
+        case 'ACADEMIC_TECHNICAL_SIGNAL':
+          return 'SECONDARY_REPORT';
+        case 'MARKET_REPORT':
+          return 'SECONDARY_REPORT';
+        case 'COMMUNITY_DISCUSSION':
+          return 'GENERAL_COMMENTARY';
+        case 'OPERATIONAL_INCIDENT':
+          return 'SECONDARY_REPORT';
+        default:
+          return 'UNKNOWN';
+      }
+    })();
+
+    return {
+      text: item.text,
+      sourceKey: item.sourceKey,
+      postExternalId:
+        item.sourceType === 'POST' ? externalId : `canonical:${item.id}`,
+      commentExternalId: item.sourceType === 'COMMENT' ? externalId : null,
+      threadExternalId: `canonical:${item.id}`,
+      identityKey: `canonical:${item.id}`,
+      evidenceKind,
+      qualifiesForRecurrence:
+        item.classification === 'DIRECT_PROBLEM' &&
+        item.evidenceNature === 'LIVED_EXPERIENCE',
+    };
+  }
+
+
   private buildSuccessResult(
     context: IdeaGenerationContext,
     ranking: IdeaOpportunityRanking,
@@ -6319,6 +6766,20 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     if (requestScopedContext !== synchronizedContext) {
       synchronizedContext = this.synchronizeCanonicalEvidenceState(
         requestScopedContext,
+      );
+      intentAlignedRanking = this.applyRequestIntentAlignment(
+        ranking,
+        synchronizedContext,
+      );
+    }
+    const textAndDomainsScopedContext =
+      this.releaseWeakTextAndDomainsCanonicalLock(
+        synchronizedContext,
+        intentAlignedRanking,
+      );
+    if (textAndDomainsScopedContext !== synchronizedContext) {
+      synchronizedContext = this.synchronizeCanonicalEvidenceState(
+        textAndDomainsScopedContext,
       );
       intentAlignedRanking = this.applyRequestIntentAlignment(
         ranking,
@@ -6620,15 +7081,95 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     if (directCount === 0) reasons.push('NO_DIRECT_EVIDENCE');
     if (sourceCount < 2) reasons.push('INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE');
 
+    const existingIndependentByText = new Map(
+      (ranking.selected.independentEvidence ?? []).map((item) => [
+        normalize(item.text),
+        item,
+      ]),
+    );
+    const canonicalIndependentEvidence = selectedTrusted.map((item) =>
+      existingIndependentByText.get(normalize(item.text)) ??
+      this.buildCanonicalIndependentEvidence(item),
+    );
+    const canonicalMatchedDomainNames = [...new Set(
+      selectedTrusted.flatMap((item) => item.matchedDomainNames ?? [])
+        .map((name) => name.trim())
+        .filter(Boolean),
+    )];
+    const selectedDomainNameByKey = new Map(
+      context.selectedDomains.map((domain) => [
+        domain.name.trim().toLocaleLowerCase(),
+        domain.name.trim(),
+      ] as const),
+    );
+    const authoritativeMatchedDomainNames = canonicalMatchedDomainNames
+      .map((name) => selectedDomainNameByKey.get(name.toLocaleLowerCase()) ?? null)
+      .filter((name): name is string => Boolean(name));
+    const canonicalDomainScores = Object.fromEntries(
+      context.selectedDomains.map((domain) => [
+        domain.name,
+        authoritativeMatchedDomainNames.some(
+          (name) => name.toLocaleLowerCase() === domain.name.trim().toLocaleLowerCase(),
+        )
+          ? 1
+          : 0,
+      ]),
+    );
+    if (authoritativeMatchedDomainNames.length > 0) {
+      for (const staleScopeReason of [
+        'OFF_SELECTED_DOMAIN',
+        'EXPLICIT_DOMAIN_SCOPE_MISMATCH',
+        'PROBLEM_EVIDENCE_OUTSIDE_EXPLICIT_SCOPE',
+      ]) {
+        let index = reasons.indexOf(staleScopeReason);
+        while (index >= 0) {
+          reasons.splice(index, 1);
+          index = reasons.indexOf(staleScopeReason);
+        }
+      }
+    }
+
     const selected: RankedIdeaOpportunity = {
       ...ranking.selected,
       evidenceSamples: canonicalSamples,
-      independentEvidence: (ranking.selected.independentEvidence ?? []).filter((item) =>
-        selectedAllowedTexts.has(normalize(item.text)),
-      ),
+      /*
+       * Rebuild the final provenance array from the canonical winner ledger.
+       * Filtering the pre-canonical ranking array could leave one stale row
+       * while the canonical counters correctly reported six rows across two
+       * sources. Validators and Core must observe one coherent evidence shape.
+       */
+      independentEvidence: canonicalIndependentEvidence,
       supportingEvidence: (ranking.selected.supportingEvidence ?? []).filter((item) =>
         selectedAllowedTexts.has(normalize(item.text)),
       ),
+      matchedDomainNames:
+        authoritativeMatchedDomainNames.length > 0
+          ? authoritativeMatchedDomainNames
+          : ranking.selected.matchedDomainNames ?? [],
+      problemDomainNames:
+        authoritativeMatchedDomainNames.length > 0
+          ? authoritativeMatchedDomainNames
+          : ranking.selected.problemDomainNames ?? [],
+      workflowDomainNames:
+        authoritativeMatchedDomainNames.length > 0
+          ? (ranking.selected.workflowDomainNames ?? []).filter(
+              (name) => !authoritativeMatchedDomainNames.some(
+                (matched) => matched.toLocaleLowerCase() === name.toLocaleLowerCase(),
+              ),
+            )
+          : ranking.selected.workflowDomainNames ?? [],
+      primaryMatchedDomainName:
+        authoritativeMatchedDomainNames[0] ??
+        ranking.selected.primaryMatchedDomainName ??
+        null,
+      domainRelevanceScores:
+        authoritativeMatchedDomainNames.length > 0
+          ? canonicalDomainScores
+          : ranking.selected.domainRelevanceScores ?? {},
+      problemDomainRelevanceScores:
+        authoritativeMatchedDomainNames.length > 0
+          ? canonicalDomainScores
+          : ranking.selected.problemDomainRelevanceScores ?? {},
       frequency: selectedTrusted.length,
       frequencyScore: Math.min(1, selectedTrusted.length / 5),
       evidenceScore: Math.min(1, selectedTrusted.length / 5),
@@ -6698,7 +7239,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         ? context.communityAiAnalysis?.selectedProblemFamily?.trim() ?? ''
         : '';
     const desiredOutcome =
-      context.collectionPlan?.requestIntent?.mode === 'EXPLICIT_PROBLEM'
+      context.collectionPlan?.requestIntent?.mode === 'EXPLICIT_PROBLEM' ||
+      context.collectionPlan?.requestIntent?.mode === 'EXPLICIT_PROBLEM_DISCOVERY'
         ? context.collectionPlan.requestIntent.desiredOutcome
             ?.replace(/\s+/gu, ' ')
             .trim() ?? ''
@@ -7000,6 +7542,25 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     )];
     if (lockedIds.length === 0) return context;
 
+    const lockedIdSet = new Set(lockedIds);
+    const aiVerifiedRequestAligned = (context.canonicalEvidenceLedger ?? []).filter(
+      (item) =>
+        lockedIdSet.has(item.id) &&
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL') &&
+        item.problemAlignment !== 'NONE',
+    );
+    /*
+     * Community AI owns semantic request alignment. Canonical verification
+     * already allows PARTIAL alignment only as SUPPORTING_SIGNAL, so a later
+     * deterministic ranking heuristic must not erase that trusted preliminary
+     * family merely because it does not prove the whole requester workflow.
+     * MATCH and PARTIAL remain different evidence strengths downstream, but
+     * both are real AI-adjudicated evidence and must survive the handoff.
+     */
+    if (aiVerifiedRequestAligned.length > 0) return context;
+
     const lockedFamilyLabel =
       analysis.canonicalProblemFamilyLabel?.trim() ||
       analysis.selectedProblemFamily?.trim() ||
@@ -7077,7 +7638,6 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       };
     }
 
-    const lockedIdSet = new Set(lockedIds);
     const canonicalEvidenceLedger = (context.canonicalEvidenceLedger ?? []).map(
       (item) => {
         if (
@@ -7104,6 +7664,76 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     };
   }
 
+  private releaseWeakTextAndDomainsCanonicalLock(
+    context: IdeaGenerationContext,
+    ranking: IdeaOpportunityRanking,
+  ): IdeaGenerationContext {
+    if (
+      context.requestMode !== 'TEXT_AND_DOMAINS' ||
+      !context.requestDescription?.trim() ||
+      this.hasExplicitRequesterProblem(context)
+    ) {
+      return context;
+    }
+
+    const analysis = context.communityAiAnalysis;
+    if (!analysis?.selectedProblemFamily?.trim()) return context;
+
+    const selectedIds = [...new Set(
+      (analysis.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    )];
+    if (selectedIds.length === 0) return context;
+
+    const normalizedFamily = this.normalizeIntentText(
+      analysis.selectedProblemFamily,
+    );
+    const familyCandidate = [ranking.selected, ...ranking.alternatives].find(
+      (candidate) =>
+        this.normalizeIntentText(candidate.title) === normalizedFamily ||
+        this.normalizeIntentText(candidate.problem ?? '') === normalizedFamily,
+    );
+    if (!familyCandidate) return context;
+
+    const raw =
+      familyCandidate.raw &&
+      typeof familyCandidate.raw === 'object' &&
+      !Array.isArray(familyCandidate.raw)
+        ? (familyCandidate.raw as Prisma.JsonObject)
+        : null;
+    const selectionTier =
+      raw && typeof raw.requestIntentSelectionTier === 'string'
+        ? raw.requestIntentSelectionTier
+        : null;
+    const weakRequesterContext =
+      familyCandidate.requestIntentSupportTier === 'WEAK_OR_UNRELATED' ||
+      selectionTier === 'MISMATCH_FALLBACK_ONLY';
+    if (!weakRequesterContext) return context;
+
+    const warning =
+      `The evidence remains trusted in the canonical audit ledger, but the Text+Domains family "${analysis.selectedProblemFamily}" was released as a selection lock because it was classified as requester-context mismatch. Recovery may search the same selected domains with requester actor/object/workflow vocabulary; no evidence threshold is changed.`;
+
+    this.logger.debug(warning);
+    return {
+      ...context,
+      communityAiAnalysis: {
+        ...analysis,
+        selectedProblemFamily: null,
+        selectedProblemFamilySelectionSource: null,
+        selectedProblemFamilyEvidenceIds: [],
+        selectedProblemFamilyTrustedEvidenceCount: 0,
+        selectedProblemFamilyDistinctSourceCount: 0,
+        canonicalProblemFamilyId: null,
+        canonicalProblemFamilyLabel: null,
+        canonicalProblemFamilyEvidenceIds: [],
+        qualityWarnings: Array.from(
+          new Set([...analysis.qualityWarnings, warning]),
+        ),
+      },
+    };
+  }
+
   private applyRequestIntentAlignment(
     ranking: IdeaOpportunityRanking,
     context: IdeaGenerationContext,
@@ -7115,11 +7745,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     if (!description) return ranking;
 
     /*
-     * Intent is a selection gate, not merely another small ranking weight.
-     * A strongly evidenced login/authentication problem must not become the
-     * primary result for a request about student homework when its alignment is
-     * effectively zero. The lower band remains usable as a preliminary,
-     * explicitly warned fallback so sparse data does not turn into FAILED.
+     * Only internal EXPLICIT_PROBLEM corroboration uses requester intent as a
+     * selection gate. In normal text discovery the text resolves domain/workflow
+     * context and remains diagnostic; evidence strength selects the problem.
      */
     const normalizedDescription = this.normalizeIntentText(description);
     const intentConceptCount =
@@ -7136,6 +7764,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         .filter(Boolean),
     );
     const textPlusDomains = explicitDomainNames.size > 0;
+    const textAndDomainsDiscovery = Boolean(
+      !explicitRequesterProblem &&
+        context.requestMode === 'TEXT_AND_DOMAINS' &&
+        explicitDomainNames.size > 0,
+    );
 
     const scored = originalCandidates.map((candidate) => {
       const rawCandidate =
@@ -7165,7 +7798,12 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           : this.calculateDiscoveryIntentAlignment(candidate, context);
       const adjusted = Math.max(
         0,
-        Math.min(1, candidate.finalScore * 0.72 + alignment * 0.28),
+        Math.min(
+          1,
+          explicitRequesterProblem
+            ? candidate.finalScore * 0.72 + alignment * 0.28
+            : candidate.finalScore,
+        ),
       );
       const candidateMatchedDomains = new Set(
         (candidate.matchedDomainNames ?? [])
@@ -7273,10 +7911,15 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
        * Discovery-intent text only constrains the search/actor/domain scope;
        * verified evidence is allowed to choose the actual software problem.
        */
+      const discoveryContextCompatible =
+        !textAndDomainsDiscovery ||
+        requestIntentSupportTier !== 'WEAK_OR_UNRELATED';
       const selectionEligible =
         candidate.selectionEligible &&
         !isOffSelectedDomain &&
-        (explicitRequesterProblem ? isStronglyAligned : true);
+        (explicitRequesterProblem
+          ? isStronglyAligned
+          : discoveryContextCompatible);
       const raw =
         candidate.raw && typeof candidate.raw === 'object' && !Array.isArray(candidate.raw)
           ? {
@@ -7365,14 +8008,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           alternatives: diagnosticAlternatives,
           evaluatedCount: Math.max(fallback.evaluatedCount, ranking.evaluatedCount),
           qualityWarnings: Array.from(new Set([
-            'Requester text was classified as DISCOVERY_INTENT. It constrained evidence collection but was not promoted into a problem statement or external evidence.',
+            'Requester text was handled as domain/workflow discovery context. It constrained domain resolution and retrieval vocabulary but was not promoted into a problem statement or external evidence.',
             partialSupportCandidates.length > 0
               ? `${partialSupportCandidates.length} partial evidence candidate(s) remained diagnostic because none survived the canonical discovery-selection gate.`
               : 'No canonical DIRECT/SUPPORTING problem family survived inside the requester intent and selected-domain scope.',
             ...fallback.qualityWarnings,
           ])),
           selectionReason:
-            `No canonical evidence-backed problem survived inside discovery intent "${description}". ` +
+            `No canonical evidence-backed problem survived inside the resolved discovery domain scope. ` +
             'The pipeline kept the text as search scope only and preserved a validation-first discovery direction instead of inventing a requester-defined problem.',
         };
       }
@@ -8492,14 +9135,19 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
   private resolveExplicitRequesterProblem(context: IdeaGenerationContext): string {
     const intent = context.collectionPlan?.requestIntent;
-    if (intent?.mode !== 'EXPLICIT_PROBLEM') return '';
+    if (intent?.mode !== 'EXPLICIT_PROBLEM') {
+      return '';
+    }
     return intent.explicitProblem?.replace(/\s+/gu, ' ').trim() ?? '';
   }
 
   private resolveRequestIntentScope(context: IdeaGenerationContext): string {
     const intent = context.collectionPlan?.requestIntent;
+    const requesterProblemMode =
+      intent?.mode === 'EXPLICIT_PROBLEM' ||
+      intent?.mode === 'EXPLICIT_PROBLEM_DISCOVERY';
     return (
-      (intent?.mode === 'EXPLICIT_PROBLEM' ? intent.explicitProblem : intent?.summary)?.replace(/\s+/gu, ' ').trim() ||
+      (requesterProblemMode ? intent?.explicitProblem : intent?.summary)?.replace(/\s+/gu, ' ').trim() ||
       context.requestDescription?.replace(/\s+/gu, ' ').trim() ||
       ''
     );

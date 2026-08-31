@@ -196,7 +196,35 @@ export class IdeaGenerationModelSelectorService {
    * health/cooldown are not reintroduced by the benchmark selector.
    */
   getInitialModels(orderedModels: readonly AiModel[]): AiModel[] {
-    return orderedModels.slice(0, IDEA_BENCHMARK_INITIAL_MODEL_COUNT);
+    if (orderedModels.length <= IDEA_BENCHMARK_INITIAL_MODEL_COUNT) {
+      return [...orderedModels];
+    }
+
+    const selected: AiModel[] = [];
+    const usedProviders = new Set<string>();
+
+    for (const model of orderedModels) {
+      const providerKey = model.providerKey.trim().toLocaleLowerCase();
+      if (usedProviders.has(providerKey)) continue;
+
+      selected.push(model);
+      usedProviders.add(providerKey);
+
+      if (selected.length >= IDEA_BENCHMARK_INITIAL_MODEL_COUNT) {
+        return selected;
+      }
+    }
+
+    for (const model of orderedModels) {
+      if (selected.some((candidate) => candidate.id === model.id)) continue;
+      selected.push(model);
+
+      if (selected.length >= IDEA_BENCHMARK_INITIAL_MODEL_COUNT) {
+        break;
+      }
+    }
+
+    return selected;
   }
 
   private compareModels(

@@ -27,6 +27,7 @@ import type {
 import type {
   IdeaGenerationContext,
   IdeaGenerationNlpContext,
+  IdeaGenerationRawEvidenceItem,
 } from '../../types/idea-generation-context.type';
 import {
   classifyDirectCommunityEvidence,
@@ -127,7 +128,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         maxAttempts: hasGroundedEvidenceForOnlineAi
           ? 3
           : hasCompositeSynthesisCorpus || hasRawAiTriageCorpus
-            ? 2
+            ? 3
             : 1,
         requestTimeoutMs: hasGroundedEvidenceForOnlineAi
           ? COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS
@@ -198,6 +199,17 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           ? 'AI semantic triage accepted this evidence after deterministic verification.'
           : 'Canonical evidence ledger admitted a concrete external problem signal after deterministic verification.',
       problemFamily: item.problemFamily,
+      evidenceNature: item.evidenceNature,
+      domainAlignment: item.domainAlignment,
+      problemAlignment: item.problemAlignment,
+      actorAlignment: item.actorAlignment,
+      objectAlignment: item.objectAlignment,
+      workflowAlignment: item.workflowAlignment,
+      failureAlignment: item.failureAlignment,
+      familyBasis: item.familyBasis,
+      observedProblem: item.observedProblem,
+      causalExplanation: item.causalExplanation,
+      matchedDomainNames: item.matchedDomainNames,
       verifiedByDeterministicGuard: item.verified,
       adjudicationStatus: item.adjudicationStatus,
       adjudicationFailureReason: item.adjudicationFailureReason,
@@ -425,6 +437,14 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
             (item) => ({ ...item, risks: [...item.risks] }),
           ),
           evidenceClassifications: canonicalClassifications.map((item) => ({ ...item })),
+          jointEvidenceGroups: (synchronizedAnalysis.jointEvidenceGroups ?? []).map(
+            (group) => ({
+              ...group,
+              evidenceIds: [...group.evidenceIds],
+              matchedDomainNames: [...group.matchedDomainNames],
+              matchedFacetIds: [...(group.matchedFacetIds ?? [])],
+            }),
+          ),
           evidenceVerdictState:
             synchronizedAnalysis.evidenceVerdictState ??
             (canonicalState.trustedCount > 0
@@ -460,6 +480,27 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
                 item.classification === 'CONTEXT_ONLY' ||
                 item.classification === 'ANALOGOUS_WORKFLOW_SIGNAL',
             ).length,
+          domainAlignedEvidenceCandidateCount:
+            canonicalClassifications.filter(
+              (item) =>
+                item.adjudicationStatus === 'ADJUDICATED' &&
+                item.classification !== 'UNRELATED' &&
+                item.classification !== 'UNADJUDICATED' &&
+                item.domainAlignment !== 'NONE',
+            ).length,
+          jointFacetEvidenceCandidateCount:
+            canonicalClassifications.filter(
+              (item) =>
+                item.adjudicationStatus === 'ADJUDICATED' &&
+                item.classification !== 'UNRELATED' &&
+                item.classification !== 'UNADJUDICATED' &&
+                [
+                  item.actorAlignment,
+                  item.objectAlignment,
+                  item.workflowAlignment,
+                  item.failureAlignment,
+                ].some((alignment) => alignment === 'MATCH'),
+            ).length,
           reviewedEvidenceCandidateCount: canonicalClassifications.length,
           aiProposedProblemFamily:
             authoritativeAnalysis.aiProposedProblemFamily ?? null,
@@ -479,7 +520,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           canonicalProblemFamilyLabel: synchronizedAnalysis.canonicalProblemFamilyLabel ?? null,
           canonicalProblemFamilyEvidenceIds: [...(synchronizedAnalysis.canonicalProblemFamilyEvidenceIds ?? [])],
           evidencePipelineSemantics:
-            'Raw collector candidates are semantically triaged before final trusted evidence admission. DIRECT_PROBLEM + SUPPORTING_SIGNAL are trusted. ANALOGOUS_WORKFLOW_SIGNAL is useful adjacent-workflow context but never validates requester demand. UNADJUDICATED means online semantic adjudication did not complete; it is neither related nor unrelated evidence.',
+            'Raw collector candidates are semantically triaged before final trusted problem-evidence admission. In normal text discovery, requester text resolves domain/workflow context but does not own the canonical problem; verified DIRECT_PROBLEM/SUPPORTING_SIGNAL evidence selects the strongest concrete problem family inside the resolved domain. A verified JOINT_COMPOSITION may contribute one SUPPORTING signal only when multiple independent problem-bearing evidence items corroborate the same evidence-native family. EXPLICIT_PROBLEM is reserved for internal post-evidence corroboration. ANALOGOUS_WORKFLOW_SIGNAL is context only. UNADJUDICATED means online semantic adjudication did not complete; it is neither positive nor negative evidence.',
           directEvidenceClassificationCount:
             canonicalClassifications.filter(
               (item) => item.verifiedByDeterministicGuard && item.classification === 'DIRECT_PROBLEM',
@@ -634,8 +675,16 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
      */
     const clusteredWinner = analysis.opportunities[0] ?? null;
     const clusteredFamily = clusteredWinner?.title?.trim() ?? '';
+    const normalizeEvidenceText = (value: string): string =>
+      value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+    const clusteredEvidenceTexts = new Set(
+      (clusteredWinner?.evidenceSamples ?? [])
+        .map(normalizeEvidenceText)
+        .filter(Boolean),
+    );
     const familyTrusted = clusteredFamily
       ? trusted.filter((item) =>
+          clusteredEvidenceTexts.has(normalizeEvidenceText(item.text)) ||
           this.discoveryProblemFamilyEntails(
             clusteredFamily,
             item.problemFamily,
@@ -676,20 +725,34 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         aiSelectedTrusted,
       ),
     );
-    const lockedClusteredWinner =
-      clusteredWinner &&
-      ((aiSelectionSurvived &&
-        this.problemFamilyMatchesSelectedFamilyGroup(
-          aiProposedFamily,
-          familyTrusted.length > 0 ? familyTrusted : aiSelectedTrusted,
-        )) ||
-        (!aiSelectionSurvived && familyTrusted.length > 0))
-        ? clusteredWinner
-        : null;
-    const selectedFamilyItems = aiSelectionSurvived
-      ? aiSelectedTrusted
-      : familyTrusted.length > 0
-        ? familyTrusted
+    const clusteredWinnerSurvived = Boolean(
+      clusteredWinner && clusteredFamily && familyTrusted.length > 0,
+    );
+    const normalizedClusteredFamily = this.normalizeAiProblemFamily(
+      clusteredFamily,
+    );
+    const normalizedAiProposedFamily = this.normalizeAiProblemFamily(
+      aiProposedFamily,
+    );
+    const clusteredWinnerMatchesAiProposal = Boolean(
+      clusteredWinnerSurvived &&
+        aiSelectionSurvived &&
+        normalizedClusteredFamily &&
+        normalizedClusteredFamily === normalizedAiProposedFamily,
+    );
+
+    /*
+     * The semantic clustering service has already ranked every verified family
+     * across the complete corpus. That ranked winner is authoritative for
+     * discovery handoff. A surviving provider-selected family is preserved only
+     * when it is also the ranked winner, or when no ranked cluster survived.
+     * This prevents an older one-row AI selection from overwriting a stronger
+     * corroborated family after the support ranking has already chosen it.
+     */
+    const selectedFamilyItems = clusteredWinnerSurvived
+      ? familyTrusted
+      : aiSelectionSurvived
+        ? aiSelectedTrusted
         : this.selectStrongestTrustedFamilyItems(trusted);
 
     const lead = selectedFamilyItems[0];
@@ -714,10 +777,10 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     )
       ? lead.problemFamily?.trim() ?? ''
       : '';
-    const family = aiSelectionSurvived
-      ? aiProposedFamily
-      : familyTrusted.length > 0
-        ? clusteredFamily
+    const family = clusteredWinnerSurvived
+      ? clusteredFamily
+      : aiSelectionSurvived
+        ? aiProposedFamily
         : evidenceNativeFallbackFamily || ledgerFamily;
     if (!family) {
       const rejectedAiProposalExists = Boolean(
@@ -738,20 +801,39 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         ])),
       };
     }
-    const selectionSource = aiSelectionSurvived
-      ? 'AI_SELECTED_VERIFIED' as const
-      : familyTrusted.length > 0
-        ? 'AI_CLUSTER_VERIFIED' as const
+    const selectionSource = clusteredWinnerSurvived
+      ? clusteredWinnerMatchesAiProposal
+        ? 'AI_SELECTED_VERIFIED' as const
+        : 'AI_CLUSTER_VERIFIED' as const
+      : aiSelectionSurvived
+        ? 'AI_SELECTED_VERIFIED' as const
         : 'DETERMINISTIC_VERIFIED_FALLBACK' as const;
+    const lockedClusteredWinner = clusteredWinnerSurvived
+      ? clusteredWinner
+      : null;
 
     const orderedFamilyItems = [...selectedFamilyItems].sort((left, right) => {
       const leftDirect = left.classification === 'DIRECT_PROBLEM' ? 1 : 0;
       const rightDirect = right.classification === 'DIRECT_PROBLEM' ? 1 : 0;
       return rightDirect - leftDirect || right.confidence - left.confidence;
     });
+    const rawEvidenceById = new Map(
+      (context.rawEvidenceCorpus ?? []).map((item) => [item.id, item] as const),
+    );
+    const jointGroupById = new Map(
+      (analysis.jointEvidenceGroups ?? []).map((group) => [group.id, group] as const),
+    );
     const evidenceSamples = orderedFamilyItems
-      .slice(0, 8)
-      .map((item) => item.text);
+      .flatMap((item) => {
+        if (item.origin !== 'JOINT_COMPOSITION') return [item.text];
+        const group = jointGroupById.get(item.id);
+        if (!group) return [item.text];
+        return group.evidenceIds
+          .map((id) => rawEvidenceById.get(id)?.text?.trim() ?? '')
+          .filter(Boolean);
+      })
+      .filter(Boolean)
+      .slice(0, 8);
     const distinctSourceCount =
       EvidenceSourceIdentityUtil.count(orderedFamilyItems);
     const averageConfidence =
@@ -885,6 +967,29 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     );
     if (trusted.length === 0) return analysis;
 
+    const lockedRequesterProblem =
+      context.collectionPlan?.requestIntent?.mode === 'EXPLICIT_PROBLEM';
+    const exactRequesterTrusted = trusted.filter(
+      (item) => item.problemAlignment === 'MATCH',
+    );
+    const familyEligibleTrusted = lockedRequesterProblem
+      ? exactRequesterTrusted
+      : trusted;
+    if (familyEligibleTrusted.length === 0) {
+      return {
+        ...analysis,
+        selectedProblemFamily: null,
+        selectedProblemFamilySelectionSource: null,
+        selectedProblemFamilyTrustedEvidenceCount: 0,
+        selectedProblemFamilyDistinctSourceCount: 0,
+        selectedProblemFamilyEvidenceIds: [],
+        qualityWarnings: Array.from(new Set([
+          ...analysis.qualityWarnings,
+          `No verified evidence family survived the locked canonical problem boundary. ${trusted.length} trusted row(s) remain available outside that internal corroboration target.`,
+        ])),
+      };
+    }
+
     const aiProposedFamily = analysis.aiProposedProblemFamily?.trim() ?? '';
     const aiProposedIds = new Set(
       (analysis.aiProposedProblemFamilyEvidenceIds ?? [])
@@ -898,6 +1003,9 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       aiProposedFamily &&
         aiProposedItems.length > 0 &&
         aiProposedItems.length === aiProposedIds.size &&
+        aiProposedItems.some((item) =>
+          lockedRequesterProblem ? item.problemAlignment === 'MATCH' : item.verified,
+        ) &&
         this.problemFamilyMatchesSelectedFamilyGroup(
           aiProposedFamily,
           aiProposedItems,
@@ -923,9 +1031,15 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       familyItems = aiProposedItems;
     }
 
-    if (familyItems.length === 0) {
-      const strongestFamilyItems = this.selectStrongestTrustedFamilyItems(trusted);
-      const leadFamily = strongestFamilyItems[0]?.problemFamily?.trim() ?? '';
+    const selectedFamilyHasEligibleEvidence = familyItems.some((item) =>
+      familyEligibleTrusted.some((eligible) => eligible.id === item.id),
+    );
+    if (familyItems.length === 0 || !selectedFamilyHasEligibleEvidence) {
+      const strongestRequesterFamilyItems = this.selectStrongestTrustedFamilyItems(
+        familyEligibleTrusted,
+      );
+      const leadFamily =
+        strongestRequesterFamilyItems[0]?.problemFamily?.trim() ?? '';
       if (!leadFamily) {
         return {
           ...analysis,
@@ -940,7 +1054,13 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         };
       }
       selectedFamily = leadFamily;
-      familyItems = strongestFamilyItems;
+      familyItems = trusted.filter((item) =>
+        this.problemFamilyMatchesSelectedFamily(
+          selectedFamily,
+          item.problemFamily,
+          item.text,
+        ),
+      );
     }
 
     const orderedFamilyItems = [...familyItems].sort((left, right) => {
@@ -952,8 +1072,21 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     const averageConfidence =
       orderedFamilyItems.reduce((sum, item) => sum + item.confidence, 0) /
       Math.max(1, orderedFamilyItems.length);
+    const rawEvidenceById = new Map(
+      (context.rawEvidenceCorpus ?? []).map((item) => [item.id, item] as const),
+    );
+    const jointGroupById = new Map(
+      (analysis.jointEvidenceGroups ?? []).map((group) => [group.id, group] as const),
+    );
     const evidenceSamples = orderedFamilyItems
-      .map((item) => item.text.trim())
+      .flatMap((item) => {
+        if (item.origin !== 'JOINT_COMPOSITION') return [item.text.trim()];
+        const group = jointGroupById.get(item.id);
+        if (!group) return [item.text.trim()];
+        return group.evidenceIds
+          .map((id) => rawEvidenceById.get(id)?.text?.trim() ?? '')
+          .filter(Boolean);
+      })
       .filter(Boolean)
       .slice(0, 8);
 
@@ -965,12 +1098,13 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           opportunity.problem,
         ),
       ) ?? analysis.opportunities[0] ?? null;
+    const requestIntent = context.collectionPlan?.requestIntent;
     const explicitProblem =
-      context.collectionPlan?.requestIntent?.mode === 'EXPLICIT_PROBLEM'
-        ? context.collectionPlan.requestIntent.explicitProblem?.trim() ||
+      requestIntent?.mode === 'EXPLICIT_PROBLEM'
+        ? requestIntent.explicitProblem?.trim() ||
           context.requestDescription?.trim() ||
           ''
-        : context.requestDescription?.trim() || '';
+        : '';
     const lead = orderedFamilyItems[0];
     const domainName =
       selectedOpportunity?.domainName?.trim() ||
@@ -981,8 +1115,9 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     const requesterScopedProblem = explicitProblem
       ? `Within the requester-defined workflow, the strongest retained evidence supports the "${selectedFamily}" problem facet. Canonical requester scope: ${explicitProblem}`
       : selectedFamily;
-    const requesterScopedNeed =
-      `Prioritize product design around the evidence-leading requester facet "${selectedFamily}" while preserving the broader canonical request only as secondary scope until its remaining facets are independently validated.`;
+    const requesterScopedNeed = explicitProblem
+      ? `Prioritize product design around the evidence-leading locked facet "${selectedFamily}" while preserving the internal corroboration target.`
+      : `A focused software workflow that addresses ${selectedFamily} while preserving human review and validating how broadly the problem occurs.`;
 
     const canonicalOpportunity: CommunityAiOpportunity = selectedOpportunity
       ? {
@@ -991,7 +1126,9 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           title: selectedFamily,
           problem: requesterScopedProblem,
           unmetNeed: selectedOpportunity.unmetNeed?.trim() || requesterScopedNeed,
-          solutionArea: `Evidence-prioritized requester workflow: ${selectedFamily}`,
+          solutionArea: explicitProblem
+            ? `Evidence-prioritized locked workflow: ${selectedFamily}`
+            : `Evidence-grounded workflow for ${selectedFamily}`,
           evidenceSamples,
           frequency: orderedFamilyItems.length,
           confidence: Math.max(
@@ -1007,8 +1144,12 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           title: selectedFamily,
           problem: requesterScopedProblem,
           unmetNeed: requesterScopedNeed,
-          solutionArea: `Evidence-prioritized requester workflow: ${selectedFamily}`,
-          affectedUsers: ['Requester-defined target users represented by the retained workflow'],
+          solutionArea: explicitProblem
+            ? `Evidence-prioritized locked workflow: ${selectedFamily}`
+            : `Evidence-grounded workflow for ${selectedFamily}`,
+          affectedUsers: [explicitProblem
+            ? 'Users or operators represented by the locked workflow'
+            : 'Users or operators represented by the retained external evidence'],
           evidenceSamples,
           frequency: orderedFamilyItems.length,
           severity: 'MEDIUM',
@@ -1060,7 +1201,74 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
   ): boolean {
     const selected = this.normalizeAiProblemFamily(selectedFamily);
     const evidence = this.normalizeAiProblemFamily(evidenceFamily);
-    return Boolean(selected && evidence && selected === evidence);
+    if (!selected || !evidence) return false;
+    if (selected === evidence) return true;
+
+    /*
+     * Structured-output providers can truncate long problem-family labels at
+     * the schema boundary while preserving the complete family everywhere
+     * else. Treat only a long, bounded prefix continuation as the same neutral
+     * identity. This is a transport-normalization rule, not semantic matching:
+     * no synonyms, stems, domains, or evidence text are consulted.
+     */
+    const shorter = selected.length <= evidence.length ? selected : evidence;
+    const longer = selected.length <= evidence.length ? evidence : selected;
+    const looksLikeBoundedTransportTruncation =
+      shorter.length >= 48 &&
+      longer.length - shorter.length <= 100 &&
+      longer.startsWith(shorter);
+    if (looksLikeBoundedTransportTruncation) return true;
+
+    /*
+     * The same AI triage can phrase one observed family in a different word
+     * order across rows (for example noun-first vs actor-first wording). Allow a
+     * conservative linguistic alias match so those already-verified rows can
+     * share one canonical lock. This does not use domain-specific synonyms or
+     * infer new meaning: both labels must share the same high-overlap normalized
+     * content-token identity.
+     */
+    const semanticTokens = (value: string): string[] => {
+      const ignored = new Set([
+        'a', 'an', 'and', 'are', 'as', 'at', 'by', 'for', 'from', 'in', 'into',
+        'of', 'on', 'or', 'the', 'through', 'to', 'with', 'within',
+        'company', 'companies', 'business', 'businesses', 'service', 'services',
+        'system', 'systems', 'operation', 'operations', 'operational',
+        'problem', 'problems', 'issue', 'issues', 'challenge', 'challenges',
+        'involve', 'involved', 'involvement', 'involving',
+      ]);
+      const stem = (token: string): string => {
+        let normalized = token.toLocaleLowerCase();
+        if (/ies$/u.test(normalized) && normalized.length > 5) {
+          normalized = `${normalized.slice(0, -3)}y`;
+        } else if (/ing$/u.test(normalized) && normalized.length > 6) {
+          normalized = normalized.slice(0, -3);
+        } else if (/ed$/u.test(normalized) && normalized.length > 5) {
+          normalized = normalized.slice(0, -2);
+        } else if (/s$/u.test(normalized) && !/ss$/u.test(normalized) && normalized.length > 5) {
+          normalized = normalized.slice(0, -1);
+        }
+        return normalized;
+      };
+      return [...new Set(
+        value
+          .normalize('NFKC')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .split(/\s+/u)
+          .map(stem)
+          .filter((token) => token.length >= 3 && !ignored.has(token)),
+      )];
+    };
+    const selectedTokens = semanticTokens(selected);
+    const evidenceTokens = semanticTokens(evidence);
+    if (selectedTokens.length < 2 || evidenceTokens.length < 2) return false;
+    const evidenceSet = new Set(evidenceTokens);
+    const intersection = selectedTokens.filter((token) => evidenceSet.has(token)).length;
+    const overlapCoefficient =
+      intersection / Math.max(1, Math.min(selectedTokens.length, evidenceTokens.length));
+    const union = new Set([...selectedTokens, ...evidenceTokens]).size;
+    const jaccard = intersection / Math.max(1, union);
+    return intersection >= 2 && (overlapCoefficient >= 0.72 || jaccard >= 0.58);
   }
 
   private problemFamilyMatchesSelectedFamilyGroup(
@@ -1073,7 +1281,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       (item) =>
         item.verified &&
         item.familyBasis === 'OBSERVED_PROBLEM' &&
-        this.normalizeAiProblemFamily(item.problemFamily) === selected,
+        this.discoveryProblemFamilyEntails(selected, item.problemFamily),
     );
   }
 
@@ -1158,47 +1366,161 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     requestMode: IdeaGenerationContext['requestMode'],
   ): { readonly id: string; readonly label: string; readonly evidenceIds: string[] } | null {
     void requestMode;
-    const label = analysis.selectedProblemFamily?.replace(/\s+/gu, ' ').trim() ?? '';
+
+    const normalizeFamilyIdentity = (value: string | null | undefined): string =>
+      (value ?? '')
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+    const trusted = ledger.filter(
+      (item) =>
+        item.verified &&
+        item.adjudicationStatus === 'ADJUDICATED' &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    );
+    if (trusted.length === 0) return null;
+
+    const byId = new Map(ledger.map((item) => [item.id, item] as const));
     const requestedIds = [...new Set(
       (analysis.selectedProblemFamilyEvidenceIds ?? [])
         .map((id) => id.trim())
         .filter(Boolean),
     )];
-    if (!label || requestedIds.length === 0) return null;
-
-    const byId = new Map(ledger.map((item) => [item.id, item] as const));
-    const verified = requestedIds
+    const requestedLabel =
+      analysis.selectedProblemFamily?.replace(/\s+/gu, ' ').trim() ?? '';
+    const requestedVerified = requestedIds
       .map((id) => byId.get(id))
-      .filter((item): item is IdeaGenerationContext['canonicalEvidenceLedger'][number] => Boolean(item))
-      .filter((item) =>
-        item.verified &&
-        (item.classification === 'DIRECT_PROBLEM' || item.classification === 'SUPPORTING_SIGNAL'),
+      .filter(
+        (
+          item,
+        ): item is IdeaGenerationContext['canonicalEvidenceLedger'][number] =>
+          Boolean(item),
+      )
+      .filter(
+        (item) =>
+          item.verified &&
+          item.adjudicationStatus === 'ADJUDICATED' &&
+          (item.classification === 'DIRECT_PROBLEM' ||
+            item.classification === 'SUPPORTING_SIGNAL'),
       );
-    if (verified.length !== requestedIds.length) return null;
 
     /*
-     * Semantic family ownership belongs to the accepted Community-AI verdict.
-     * Deterministic code does not re-read evidence text with token/stem/synonym
-     * rules. A canonical lock exists only when every AI-selected row is trusted,
-     * explicitly marked as OBSERVED_PROBLEM, and carries the same normalized
-     * neutral family label selected by the model.
+     * Semantic family ownership belongs to Community AI. Deterministic code is
+     * only allowed to verify provenance/trust and reconcile identity. If the
+     * ranked AI family already entails every selected trusted row, preserve it.
      */
-    if (!this.problemFamilyMatchesSelectedFamilyGroup(label, verified)) {
-      return null;
+    if (
+      requestedLabel &&
+      requestedIds.length > 0 &&
+      requestedVerified.length === requestedIds.length &&
+      this.problemFamilyMatchesSelectedFamilyGroup(
+        requestedLabel,
+        requestedVerified,
+      )
+    ) {
+      const normalizedLabel = normalizeFamilyIdentity(requestedLabel);
+      const id = createHash('sha256')
+        .update(`${normalizedLabel}|${[...requestedIds].sort().join('|')}`)
+        .digest('hex')
+        .slice(0, 24);
+      return { id, label: requestedLabel, evidenceIds: requestedIds };
     }
 
-    const evidenceIds = requestedIds;
-    const normalizedLabel = label
-      .normalize('NFKC')
-      .toLocaleLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, ' ')
-      .replace(/\s+/gu, ' ')
-      .trim();
+    /*
+     * The discovery clustering layer may intentionally merge AI-owned wording
+     * variants before ranking (for example, two observed-problem labels that
+     * describe the same failure with different noun/actor phrasing). At that
+     * point `alignDiscoveryAnalysisToCanonicalEvidence()` has already selected
+     * the exact trusted row ids and marked the selection as semantically
+     * verified. Re-running a stricter token-entailment test here used to erase
+     * a valid ranked winner and produce `selectedProblemFamily=null` even though
+     * every selected row was still canonically trusted.
+     *
+     * Preserve that already-verified cluster identity only when all requested
+     * ids still resolve to trusted OBSERVED_PROBLEM rows and the synchronized
+     * opportunity carries the same family label. This is identity
+     * reconciliation only; no row is promoted and no evidence threshold is
+     * relaxed.
+     */
+    const alreadyVerifiedClusterSelection =
+      analysis.selectedProblemFamilySelectionSource === 'AI_CLUSTER_VERIFIED' ||
+      analysis.selectedProblemFamilySelectionSource === 'AI_SELECTED_VERIFIED';
+    const requestedOpportunityOwnsLabel = analysis.opportunities.some(
+      (opportunity) =>
+        normalizeFamilyIdentity(opportunity.title) ===
+        normalizeFamilyIdentity(requestedLabel),
+    );
+    const allRequestedRowsAreObservedProblems = requestedVerified.every(
+      (item) =>
+        item.familyBasis === 'OBSERVED_PROBLEM' &&
+        Boolean(item.problemFamily?.trim()) &&
+        Boolean(item.observedProblem?.trim()),
+    );
+
+    if (
+      requestedLabel &&
+      requestedIds.length > 0 &&
+      requestedVerified.length === requestedIds.length &&
+      alreadyVerifiedClusterSelection &&
+      requestedOpportunityOwnsLabel &&
+      allRequestedRowsAreObservedProblems
+    ) {
+      const normalizedLabel = normalizeFamilyIdentity(requestedLabel);
+      const id = createHash('sha256')
+        .update(`${normalizedLabel}|${[...requestedIds].sort().join('|')}`)
+        .digest('hex')
+        .slice(0, 24);
+      return { id, label: requestedLabel, evidenceIds: requestedIds };
+    }
+
+    /*
+     * A common safe case is one AI-adjudicated trusted family whose provider
+     * label and clustering label are phrased differently. Previously a token-
+     * entailment mismatch erased the family even though the trusted row itself
+     * carried an OBSERVED_PROBLEM problemFamily. When all candidate trusted
+     * rows expose the SAME normalized AI family identity, use that AI-owned
+     * identity directly. This is identity reconciliation, not a deterministic
+     * semantic guess.
+     */
+    const candidateRows =
+      requestedVerified.length > 0 ? requestedVerified : trusted;
+    const familyGroups = new Map<
+      string,
+      {
+        readonly label: string;
+        readonly rows: IdeaGenerationContext['canonicalEvidenceLedger'];
+      }
+    >();
+    for (const item of candidateRows) {
+      if (item.familyBasis !== 'OBSERVED_PROBLEM') continue;
+      const label = item.problemFamily?.replace(/\s+/gu, ' ').trim() ?? '';
+      const normalized = normalizeFamilyIdentity(label);
+      if (!label || !normalized) continue;
+      const existing = familyGroups.get(normalized);
+      if (existing) {
+        familyGroups.set(normalized, {
+          label: existing.label,
+          rows: [...existing.rows, item],
+        });
+      } else {
+        familyGroups.set(normalized, { label, rows: [item] });
+      }
+    }
+
+    if (familyGroups.size !== 1) return null;
+    const [normalizedLabel, group] = [...familyGroups.entries()][0];
+    const evidenceIds = group.rows.map((item) => item.id);
+    if (evidenceIds.length === 0) return null;
+
     const id = createHash('sha256')
       .update(`${normalizedLabel}|${[...evidenceIds].sort().join('|')}`)
       .digest('hex')
       .slice(0, 24);
-    return { id, label, evidenceIds };
+    return { id, label: group.label, evidenceIds };
   }
 
 
@@ -1224,10 +1546,15 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           evidenceNature: classification.evidenceNature,
           domainAlignment: classification.domainAlignment,
           problemAlignment: classification.problemAlignment,
+          actorAlignment: classification.actorAlignment,
+          objectAlignment: classification.objectAlignment,
+          workflowAlignment: classification.workflowAlignment,
+          failureAlignment: classification.failureAlignment,
           familyBasis: classification.familyBasis,
           observedProblem: classification.observedProblem,
           causalExplanation: classification.causalExplanation,
           matchedDomainNames: classification.matchedDomainNames,
+          matchedFacetIds: classification.matchedFacetIds ?? [],
           adjudicationStatus: classification.adjudicationStatus,
           adjudicationFailureReason: classification.adjudicationFailureReason,
           origin: 'COMMUNITY_AI',
@@ -1235,8 +1562,97 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         requestMode: context.requestMode,
         problemSpec: context.canonicalProblemSpec,
         selectedDomains: context.selectedDomains,
+        requestIntentMode: context.collectionPlan?.requestIntent?.mode ?? null,
       });
       ledger.set(raw.id, verified);
+    }
+
+    for (const group of analysis.jointEvidenceGroups ?? []) {
+      if (!group.verifiedByDeterministicGuard || group.evidenceIds.length < 2) {
+        continue;
+      }
+      const members = group.evidenceIds
+        .map((id) => rawById.get(id))
+        .filter((item): item is IdeaGenerationRawEvidenceItem => Boolean(item));
+      if (members.length !== group.evidenceIds.length) continue;
+
+      const jointSourceIdentities = [
+        ...new Set(members.map((item) => EvidenceSourceIdentityUtil.resolve(item))),
+      ];
+      if (jointSourceIdentities.length < 2) continue;
+
+      const selectedDomainByName = new Map(
+        context.selectedDomains.map((domain) => [
+          domain.name.trim().toLocaleLowerCase(),
+          domain,
+        ] as const),
+      );
+      const matchedDomainNames = [
+        ...new Set(
+          group.matchedDomainNames
+            .map((name) => name.trim())
+            .filter(Boolean),
+        ),
+      ];
+      const matchedDomainIds = matchedDomainNames
+        .map((name) => selectedDomainByName.get(name.toLocaleLowerCase())?.id)
+        .filter((id): id is string => Boolean(id));
+      const memberText = members
+        .map((item, index) =>
+          `[Evidence ${index + 1} | ${EvidenceSourceIdentityUtil.resolve(item)}] ${item.text.trim()}`,
+        )
+        .join('\n---\n');
+      const validCanonicalFacetIds = new Set(
+        (context.canonicalProblemSpec?.facets ?? []).map((facet) => facet.id),
+      );
+      const memberVerifiedFacetIds = group.evidenceIds.flatMap(
+        (id) => ledger.get(id)?.matchedFacetIds ?? [],
+      );
+      const matchedFacetIds = [
+        ...new Set([
+          ...(group.matchedFacetIds ?? []),
+          ...memberVerifiedFacetIds,
+        ]),
+      ].filter((id) => validCanonicalFacetIds.has(id));
+
+      ledger.set(group.id, {
+        id: group.id,
+        sourceKey: 'joint-composition',
+        sourceType: 'POST',
+        text: memberText,
+        title: `Joint evidence: ${group.problemFamily}`,
+        classification: 'SUPPORTING_SIGNAL',
+        confidence: group.confidence,
+        problemFamily: group.problemFamily,
+        evidenceKind: 'UNKNOWN',
+        evidenceNature: 'OTHER',
+        domainAlignment: matchedDomainNames.length > 0 ? 'MATCH' : 'PARTIAL',
+        problemAlignment: 'MATCH',
+        actorAlignment: group.actorAlignment,
+        objectAlignment: group.objectAlignment,
+        workflowAlignment: group.workflowAlignment,
+        failureAlignment: group.failureAlignment,
+        familyBasis: 'OBSERVED_PROBLEM',
+        observedProblem: group.observedProblem,
+        causalExplanation: null,
+        matchedDomainNames,
+        verified: true,
+        adjudicationStatus: 'ADJUDICATED',
+        adjudicationFailureReason: null,
+        origin: 'JOINT_COMPOSITION',
+        jointEvidenceMemberIds: [...group.evidenceIds],
+        jointSourceIdentities,
+        matchedDomainIds,
+        matchedFacetIds,
+        discoveryDomainId: null,
+        discoveryDomainName: null,
+        discoveryDomainIds: matchedDomainIds,
+        discoveryDomainNames: matchedDomainNames,
+        queryIntentId: null,
+        queryText: null,
+        collectionPhase: 'INITIAL',
+        sourceTier: 'PRIMARY',
+      });
     }
 
     /*
@@ -1262,6 +1678,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
           requestMode: context.requestMode,
           problemSpec: context.canonicalProblemSpec,
           selectedDomains: context.selectedDomains,
+          requestIntentMode: context.collectionPlan?.requestIntent?.mode ?? null,
         }),
       );
     }
@@ -1289,8 +1706,8 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       ...analysis.unvalidatedDomainHypotheses,
     ];
     const canonicalClassifications = analysis.evidenceClassifications ?? [];
-    const canonicalTrustedDomainNames = new Set(
-      canonicalClassifications
+    const canonicalTrustedDomainNames = new Set([
+      ...canonicalClassifications
         .filter(
           (item) =>
             item.adjudicationStatus === 'ADJUDICATED' &&
@@ -1301,7 +1718,12 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         .flatMap((item) => item.matchedDomainNames ?? [])
         .map((name) => name.trim().toLocaleLowerCase())
         .filter(Boolean),
-    );
+      ...(analysis.jointEvidenceGroups ?? [])
+        .filter((group) => group.verifiedByDeterministicGuard)
+        .flatMap((group) => group.matchedDomainNames)
+        .map((name) => name.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    ]);
     const canonicalDirectDomainNames = new Set(
       canonicalClassifications
         .filter(
@@ -2210,9 +2632,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
   private hasExplicitRequesterProblem(context: IdeaGenerationContext): boolean {
     const intent = context.collectionPlan?.requestIntent;
     return Boolean(
-      context.requestDescription?.trim() &&
-      intent?.mode === 'EXPLICIT_PROBLEM' &&
-      intent.explicitProblem?.trim(),
+      intent?.mode === 'EXPLICIT_PROBLEM' && intent.explicitProblem?.trim(),
     );
   }
 

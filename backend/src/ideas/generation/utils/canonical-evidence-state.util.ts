@@ -37,21 +37,23 @@ export class CanonicalEvidenceStateUtil {
     const adjudicatedCount = Math.max(0, ledger.length - unadjudicatedCount);
 
     /*
-     * Zero-trusted evidence keeps provider failure distinct from a completed
-     * negative semantic verdict. A very large full-corpus attempt may return a
-     * tiny malformed/omitted tail while still adjudicating >=92% of the SAME
-     * complete corpus with one model. In that case the adjudicated ledger is
-     * usable and the unresolved tail remains explicitly UNADJUDICATED; one row
-     * must not poison forty-plus valid sibling verdicts.
+     * Keep the canonical state aligned with CommunityAiAnalysisService's
+     * accepted full-corpus partial-adjudication contract. A bounded corpus is
+     * still usable when one model returned at least eight valid per-item
+     * verdicts, no more than three rows remain unresolved, and coverage is at
+     * least 70%. The unresolved tail stays explicitly UNADJUDICATED and is
+     * never promoted into positive or negative evidence.
      *
-     * This is structural coverage accounting only. It never infers relevance
-     * for the unresolved rows and never promotes CONTEXT/UNRELATED evidence.
+     * This prevents a 10/12 result from being mislabeled as a provider outage
+     * while preserving the distinction for genuinely incomplete adjudication.
      */
+    const adjudicationCoverage =
+      adjudicatedCount / Math.max(1, ledger.length);
     const highCoveragePartialAdjudication = Boolean(
-      ledger.length >= 32 &&
+      adjudicatedCount >= 8 &&
         unadjudicatedCount > 0 &&
         unadjudicatedCount <= 3 &&
-        adjudicatedCount / Math.max(1, ledger.length) >= 0.92,
+        adjudicationCoverage >= 0.7,
     );
     const state: IdeaGenerationEvidenceState =
       directCount > 0

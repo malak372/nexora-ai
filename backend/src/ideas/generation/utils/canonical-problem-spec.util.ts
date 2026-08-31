@@ -6,6 +6,7 @@ import type {
   IdeaGenerationRequestMode,
 } from '../types/canonical-problem-spec.type';
 import type { RequestCollectionPlan } from '../types/request-collection-plan.type';
+import { RequestDynamicQueryUtil } from './request-dynamic-query.util';
 
 export class CanonicalProblemSpecUtil {
   static resolveRequestMode(input: {
@@ -28,91 +29,191 @@ export class CanonicalProblemSpecUtil {
     readonly requestedDomainIds?: readonly string[];
   }): IdeaGenerationCanonicalProblemSpec {
     const requestIntent = input.collectionPlan?.requestIntent;
-    const hasExplicitProblem = requestIntent?.mode === 'EXPLICIT_PROBLEM' &&
+    const requesterProblemHypothesis =
+      (requestIntent?.mode === 'EXPLICIT_PROBLEM_DISCOVERY' ||
+        requestIntent?.mode === 'EXPLICIT_PROBLEM') &&
       Boolean(requestIntent.explicitProblem?.trim());
-    const profile = hasExplicitProblem ? input.collectionPlan?.problemProfile : undefined;
+    const profile = requesterProblemHypothesis
+      ? input.collectionPlan?.problemProfile
+      : undefined;
     const identity = input.collectionPlan?.domainIdentity;
     const description = this.clean(input.description ?? '');
+    const problemText = this.clean([
+      requestIntent?.explicitProblem ?? '',
+      profile?.friction ?? '',
+      ...(profile?.failureModes ?? []),
+      ...(profile?.consequences ?? []),
+    ].join('. '));
 
     const actor = this.firstNonEmpty(profile?.actor, identity?.actor);
     const object = this.firstNonEmpty(profile?.object, identity?.object);
     const workflow = this.firstNonEmpty(profile?.workflow, identity?.workflow);
-    const friction = hasExplicitProblem
+    const friction = requesterProblemHypothesis
       ? this.firstNonEmpty(
           profile?.friction,
           profile?.failureModes?.[0],
           identity?.failure,
+          requestIntent?.explicitProblem,
         )
       : '';
-    const failureModes = this.unique([
-      ...(profile?.failureModes ?? []),
-      ...(friction ? [friction] : []),
-    ]).slice(0, 6);
-    const consequences = hasExplicitProblem
+    const failureModes = requesterProblemHypothesis
+      ? this.unique([
+          ...(profile?.failureModes ?? []),
+          ...(identity?.failure ? [identity.failure] : []),
+          ...(friction ? [friction] : []),
+          ...RequestDynamicQueryUtil.extractPainTerms(problemText || description)
+            .filter((value) => this.isMaterialProblemFacet(value)),
+        ]).slice(0, 10)
+      : [];
+    const consequences = requesterProblemHypothesis
       ? this.unique(profile?.consequences ?? []).slice(0, 8)
       : [];
 
     const facets: IdeaGenerationProblemFacet[] = [];
+    const counters = new Map<IdeaGenerationProblemFacetType, number>();
     const addFacet = (
       type: IdeaGenerationProblemFacetType,
       statement: string | null | undefined,
-      index: number,
     ): void => {
       const value = this.clean(statement ?? '');
-      if (!value) return;
-      if (facets.some((facet) => facet.statement.toLocaleLowerCase() === value.toLocaleLowerCase())) {
+      if (!value || !this.isMaterialProblemFacet(value)) return;
+      const key = value.toLocaleLowerCase();
+      if (facets.some((facet) => facet.statement.toLocaleLowerCase() === key)) {
         return;
       }
+      const next = (counters.get(type) ?? 0) + 1;
+      counters.set(type, next);
       facets.push({
-        id: `${type.toLocaleLowerCase()}-${index + 1}`,
+        id: `${type.toLocaleLowerCase()}-${next}`,
         type,
         statement: value,
       });
     };
 
-    addFacet('WORKFLOW', workflow, 0);
-    addFacet('FAILURE', friction, 0);
-    failureModes.forEach((value, index) => addFacet('FAILURE', value, index + 1));
-    consequences.forEach((value, index) => {
-      const normalized = value.toLocaleLowerCase();
-      const type: IdeaGenerationProblemFacetType = /delay|late|waiting|response time/u.test(normalized)
-        ? 'DELAY'
-        : /cost|fuel|waste|expense|charge|refund/u.test(normalized)
-          ? 'COST'
-          : /rework|repeat|redo|remake/u.test(normalized)
-            ? 'REWORK'
-            : /access|unauthor|permission|account/u.test(normalized)
-              ? 'ACCESS'
-              : /coordinat|handoff|repriorit|schedule/u.test(normalized)
-                ? 'COORDINATION'
-                : 'CONSEQUENCE';
-      addFacet(type, value, index);
-    });
+    if (requesterProblemHypothesis) {
+      const canonicalFacetText = problemText || description;
+      const dynamicWorkflowFacets = RequestDynamicQueryUtil.extractWorkflowTerms(
+        canonicalFacetText,
+      ).filter((value) => this.isMaterialProblemFacet(value));
+      const dynamicPainFacets = RequestDynamicQueryUtil.extractPainTerms(
+        canonicalFacetText,
+      ).filter((value) => this.isMaterialProblemFacet(value));
+
+      /*
+       * Problem-bearing facets intentionally come before generic workflow
+       * nouns. The canonical facet list is bounded, so scheduling/delay/risk/
+       * data-gap evidence must never be crowded out by many workflow phrases.
+       */
+      if (friction) addFacet(this.classifyFacetType(friction, 'FAILURE'), friction);
+      for (const value of failureModes) {
+        addFacet(this.classifyFacetType(value, 'FAILURE'), value);
+      }
+      for (const value of dynamicPainFacets) {
+        addFacet(this.classifyFacetType(value, 'FAILURE'), value);
+      }
+      for (const value of profile?.evidenceFacets ?? []) {
+        addFacet(this.classifyFacetType(value, 'FAILURE'), value);
+      }
+      for (const value of consequences) {
+        addFacet(this.classifyFacetType(value, 'CONSEQUENCE'), value);
+      }
+
+      if (workflow) addFacet('WORKFLOW', workflow);
+      for (const value of dynamicWorkflowFacets.slice(0, 8)) {
+        addFacet(this.classifyFacetType(value, 'WORKFLOW'), value);
+      }
+    } else if (workflow) {
+      addFacet('WORKFLOW', workflow);
+    }
 
     const explicitDomainIds = this.unique(input.requestedDomainIds ?? []);
-    const inferredDomainId = explicitDomainIds.length === 0
-      ? input.selectedDomains[0]?.id ?? null
-      : null;
+    const inferredDomainId =
+      explicitDomainIds.length === 0 ? input.selectedDomains[0]?.id ?? null : null;
 
     return {
       mode: input.mode,
-      actor: actor || (description && input.mode.startsWith('TEXT_') ? this.inferActor(description) : null),
-      actorAliases: this.unique(profile?.actorAliases ?? (actor ? [actor] : [])).slice(0, 10),
+      actor:
+        actor ||
+        (description && input.mode.startsWith('TEXT_')
+          ? this.inferActor(description)
+          : null),
+      actorAliases: this.unique(
+        profile?.actorAliases ?? (actor ? [actor] : []),
+      ).slice(0, 10),
       object: object || null,
-      objectAliases: this.unique(profile?.objectAliases ?? (object ? [object] : [])).slice(0, 12),
+      objectAliases: this.unique(
+        profile?.objectAliases ?? (object ? [object] : []),
+      ).slice(0, 12),
       workflow: workflow || null,
       friction: friction || null,
       failureModes,
       consequences,
-      facets: facets.slice(0, 14),
+      facets: facets.slice(0, 18),
       explicitDomainIds,
       inferredDomainId,
     };
   }
 
+  private static isMaterialProblemFacet(value: string): boolean {
+    const normalized = this.clean(value);
+    const words = normalized.split(/\s+/u).filter(Boolean);
+    if (words.length < 2) return false;
+    if (
+      /\b(?:a smarter|smarter (?:system|platform|tool)|platform could|system could)\b|\bcould\s+(?:combine|track|detect|estimate|help|flag|organize|organise|prioritize|prioritise|provide|enable|allow)\b|\bhelp\s+[^.!?]{0,90}\b(?:adjust|prioritize|prioritise|manage|allocate)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return false;
+    }
+    return !/^(?:reported )?(?:problem|issue|risk|delay|failure|workload|overtraining|fatigue)$/iu.test(
+      normalized,
+    );
+  }
+
+  private static classifyFacetType(
+    value: string,
+    fallback: IdeaGenerationProblemFacetType,
+  ): IdeaGenerationProblemFacetType {
+    const normalized = value.toLocaleLowerCase();
+    if (
+      /fragment|scatter|silo|separate|disconnected|data gap|information gap|missing data|incomplete data/u.test(
+        normalized,
+      )
+    ) {
+      return 'DATA_GAP';
+    }
+    if (/delay|late|waiting|deadline|turnaround|backlog|promised pickup|pickup (?:time|times|deadline)/u.test(normalized)) {
+      return 'DELAY';
+    }
+    if (/risk|injur|safety|harm|overtrain|fatigue|threat/u.test(normalized)) {
+      return 'RISK';
+    }
+    if (/cost|fuel|waste|expense|charge|refund|overrun/u.test(normalized)) {
+      return 'COST';
+    }
+    if (/rework|repeat|redo|remake|duplicat/u.test(normalized)) {
+      return 'REWORK';
+    }
+    if (/access|unauthor|permission|account|login|authenticat/u.test(normalized)) {
+      return 'ACCESS';
+    }
+    if (/coordinat|handoff|repriorit|schedule|assign|workload|booking/u.test(normalized)) {
+      return 'COORDINATION';
+    }
+    if (/visib|detect|identify|understand|monitor|recogniz|recognis/u.test(normalized)) {
+      return 'VISIBILITY';
+    }
+    if (/decid|priorit|adjust|allocate|plan|estimate/u.test(normalized)) {
+      return 'DECISION';
+    }
+    return fallback;
+  }
+
   private static inferActor(description: string): string | null {
     const first = description.split(/[.!?]/u)[0]?.trim() ?? '';
-    const match = first.match(/^(.{3,120}?)\s+(?:often\s+)?(?:struggle|struggles|face|faces|find|finds|have|has)\b/iu);
+    const match = first.match(
+      /^(.{3,120}?)\s+(?:often\s+)?(?:struggle|struggles|face|faces|find|finds|have|has)\b/iu,
+    );
     return this.clean(match?.[1] ?? '') || null;
   }
 

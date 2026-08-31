@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import {
   AiRoutingStrategy,
   ApiRequestType,
@@ -20,28 +20,60 @@ import type {
   RequestCollectionDomainIdentity,
   RequestCanonicalProblemProfile,
   RequestIntentInterpretation,
+  RequestCausalSearchProbe,
 } from '../types/request-collection-plan.type';
+import type { IdeaGenerationRequestMode } from '../types/canonical-problem-spec.type';
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
 import { RequestQueryProvenanceUtil } from '../utils/request-query-provenance.util';
 import { CanonicalRequestUnderstandingUtil } from '../utils/canonical-request-understanding.util';
 import { SourceSpecificEvidenceQueryUtil } from '../utils/source-specific-evidence-query.util';
+import { RequestWorkflowSourcePolicyUtil } from '../utils/request-workflow-source-policy.util';
 import { CollectorsFactory } from '../../../collectors/collectors.factory';
 
-const REQUEST_COLLECTION_PLAN_SCHEMA_NAME = 'nexora_request_collection_plan_v10_static_local';
-const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 5_200;
-const REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS = 5_600;
+const REQUEST_COLLECTION_PLAN_SCHEMA_NAME = 'nexora_request_collection_plan_v13_wide_ai_rescue';
+const REQUEST_COLLECTION_PLAN_TIMEOUT_MS = 10_800;
+const REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS = 12_800;
+const REQUEST_COLLECTION_PLAN_AI_RESCUE_DEADLINE_MS = 13_800;
+const REQUEST_COLLECTION_PLAN_AI_FINAL_RESCUE_DEADLINE_MS = 16_000;
 const REQUEST_COLLECTION_PLAN_PROVIDER_LANES = [
-  ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
-  /*
-   * Keep PREPARING provider-diverse, but do not pin the race to the stale
-   * Claude OpenRouter route that currently resolves MODEL_NOT_FOUND. This
-   * Mistral route is already exercised successfully by the live Community/Core
-   * pools and therefore provides a real second-provider hedge.
-   */
-  ['mistralai/mistral-small-3.2-24b-instruct'],
+  [
+    'gemini-3.5-flash-lite',
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+    'gemini-3.1-flash-lite',
+  ],
+  [
+    'anthropic/claude-haiku-4.5',
+    'qwen/qwen3.5-flash-02-23',
+    'openai/gpt-5-mini',
+  ],
+  [
+    'mistralai/mistral-small-3.2-24b-instruct',
+    'qwen/qwen3.6-35b-a3b',
+    'google/gemini-3.5-flash-lite',
+  ],
 ] as const;
-const REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS = 4_700;
-const REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS = 5_100;
+const REQUEST_COLLECTION_PLAN_RESCUE_PROVIDER_LANES = [
+  [
+    'qwen/qwen3.6-35b-a3b',
+    'openai/gpt-5-mini',
+    'anthropic/claude-haiku-4.5',
+  ],
+  [
+    'google/gemini-3.5-flash-lite',
+    'google/gemini-3.1-flash-lite',
+    'gemini-3.1-flash-lite',
+  ],
+  [
+    'mistralai/mistral-small-3.2-24b-instruct',
+    'qwen/qwen3.5-flash-02-23',
+    'gemini-3.6-flash',
+  ],
+] as const;
+const REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS = 6_800;
+const REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS = 9_500;
+const REQUEST_DOMAIN_DISCOVERY_AI_RESCUE_DEADLINE_MS = 13_500;
+const REQUEST_DOMAIN_DISCOVERY_AI_FINAL_RESCUE_DEADLINE_MS = 17_500;
 const REQUEST_COLLECTION_CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
 const REQUEST_EXISTING_DOMAIN_REUSE_MIN_SCORE = 88;
 
@@ -220,31 +252,45 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       return null;
     }
 
-    /*
-     * Start the provider race from in-memory/runtime metadata only. A catalog
-     * cache miss must never serialize PREPARING behind a remote PostgreSQL
-     * round trip. Exact explicit-domain binding is performed independently by
-     * PreparingStage before collection starts, while Text Only domain
-     * resolution remains authoritative after the planner returns.
-     */
-    const domainCatalog = this.readPlanningDomainCatalogImmediate(
+    let domainCatalog = this.readPlanningDomainCatalogImmediate(
       input.language,
       input.requestedDomainIds ?? [],
     );
+    const requestedDomainIds = input.requestedDomainIds ?? [];
+    const looksLikeSelectedSubsetOnly =
+      requestedDomainIds.length > 0 &&
+      domainCatalog.length <= requestedDomainIds.length;
+
+    if (domainCatalog.length === 0 || looksLikeSelectedSubsetOnly) {
+      const completeCatalog = await this.loadActiveDomainIdentityCatalog().catch(
+        (error: unknown) => {
+          this.logger.debug(
+            `[PREPARING] Complete domain identity catalog was unavailable; continuing with the already-resolved subset only. ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          return [] as RequestDomainCatalogEntry[];
+        },
+      );
+      if (completeCatalog.length > domainCatalog.length) {
+        domainCatalog = completeCatalog;
+      }
+    }
+
     const sourceCatalog = this.readActiveSourceCatalogImmediate();
     this.refreshPlanningCatalogsInBackground(
       input.language,
-      input.requestedDomainIds ?? [],
+      requestedDomainIds,
     );
 
     /*
-     * Keep the critical-path fallback intentionally compact. The full
-     * deterministic expansion is built only if every online planning lane
-     * fails. This prevents large regex/query-expansion families from delaying
-     * the first provider request even when the provider itself answers in a
-     * couple of seconds.
+     * This object is an internal grounding scaffold only. It can supply safe
+     * requester-derived defaults when an online model omits a non-semantic
+     * envelope field, but it is never returned as the final PREPARING plan.
+     * A user-text run therefore remains AI-owned even when one provider is
+     * throttled or unavailable.
      */
-    const fastFallback = this.decorateFallbackSourceSelection(
+    const deterministicScaffold = this.decorateFallbackSourceSelection(
       this.decorateFallbackDomainSelection(
         this.buildFastDeterministicFallback(description, input.keywords ?? []),
         domainCatalog,
@@ -265,21 +311,21 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       guestSessionId: input.guestSessionId,
     });
     const recent = this.recentPlans.get(cacheKey);
-    if (recent && recent.expiresAt > Date.now()) {
-      return recent.plan ?? fastFallback;
+    if (recent && recent.expiresAt > Date.now() && recent.plan) {
+      return recent.plan;
     }
     if (recent) this.recentPlans.delete(cacheKey);
 
     const active = this.inFlightPlans.get(cacheKey);
     if (active) {
       const shared = await active;
-      return shared ?? fastFallback;
+      if (shared) return shared;
     }
 
-    const planningPromise = this.runProviderDiversePlanningRace({
+    const raceInput = {
       description,
       keywords: input.keywords ?? [],
-      deterministic: fastFallback,
+      deterministic: deterministicScaffold,
       domainCatalog,
       sourceCatalog,
       requestedDomainIds: input.requestedDomainIds ?? [],
@@ -287,15 +333,56 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       language: input.language,
       userId: input.userId,
       guestSessionId: input.guestSessionId,
-    });
+    } as const;
+
+    const planningPromise = (async (): Promise<RequestCollectionPlan | null> => {
+      const primaryPlan = await this.runProviderDiversePlanningRace({
+        ...raceInput,
+        providerLanes: REQUEST_COLLECTION_PLAN_PROVIDER_LANES,
+        maxModelsPerOperation: 3,
+        deadlineMs: REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS,
+        waveLabel: 'primary',
+      });
+      if (primaryPlan) return primaryPlan;
+
+      this.logger.warn(
+        '[PREPARING] Primary AI planning wave produced no grounded plan; continuing with an AI-only provider/model rescue instead of deterministic planning.',
+      );
+
+      const rescuePlan = await this.runProviderDiversePlanningRace({
+        ...raceInput,
+        providerLanes: REQUEST_COLLECTION_PLAN_RESCUE_PROVIDER_LANES,
+        maxModelsPerOperation: 4,
+        deadlineMs: REQUEST_COLLECTION_PLAN_AI_RESCUE_DEADLINE_MS,
+        providerTimeoutMs: 11_200,
+        waveLabel: 'rescue-1',
+      });
+      if (rescuePlan) return rescuePlan;
+
+      this.logger.warn(
+        '[PREPARING] First AI rescue wave produced no grounded plan; running one final AI-only wave across the configured provider pool. Deterministic planning remains disabled for user-text requests.',
+      );
+
+      return this.runProviderDiversePlanningRace({
+        ...raceInput,
+        providerLanes: [
+          ...REQUEST_COLLECTION_PLAN_RESCUE_PROVIDER_LANES,
+          ...REQUEST_COLLECTION_PLAN_PROVIDER_LANES,
+        ],
+        maxModelsPerOperation: 6,
+        maxRetriesPerModel: 1,
+        deadlineMs: REQUEST_COLLECTION_PLAN_AI_FINAL_RESCUE_DEADLINE_MS,
+        providerTimeoutMs: 12_000,
+        waveLabel: 'rescue-2',
+        allowTemporaryModelCooldownBypass: true,
+        allowBoundedEmergencyModelAttempt: true,
+      });
+    })();
     this.inFlightPlans.set(cacheKey, planningPromise);
 
     try {
       const aiPlan = await planningPromise;
       if (aiPlan) {
-        // Cache only successful AI-owned plans. Caching a null/provider-failure
-        // result caused later identical runs to skip AI planning entirely for
-        // the TTL window, which violated the always-attempt-AI contract.
         this.recentPlans.set(cacheKey, {
           expiresAt: Date.now() + this.planReuseTtlMs,
           plan: aiPlan,
@@ -303,25 +390,31 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         return aiPlan;
       }
       this.recentPlans.delete(cacheKey);
+
+      const deterministicFallback = this.decorateFallbackSourceSelection(
+        this.decorateFallbackDomainSelection(
+          this.buildDeterministicFallback(description, input.keywords ?? []),
+          domainCatalog,
+        ),
+        sourceCatalog,
+        description,
+      );
+
+      this.logger.error(
+        '[PREPARING] All provider-diverse AI planning routes were exhausted. Continuing with the full deterministic request-derived plan so the generation run remains available. The fallback is explicitly marked aiUsed=false and fallbackUsed=true; no deterministic result is reported as AI-owned.',
+      );
+
+      this.recentPlans.set(cacheKey, {
+        expiresAt: Date.now() + Math.min(this.planReuseTtlMs, 5_000),
+        plan: deterministicFallback,
+      });
+      return deterministicFallback;
     } finally {
       this.inFlightPlans.delete(cacheKey);
     }
 
-    this.logger.warn(
-      '[PREPARING] Provider-diverse AI planning produced no grounded plan; building the full request-derived deterministic plan only now as the final fallback.',
-    );
-    return this.decorateFallbackSourceSelection(
-      this.decorateFallbackDomainSelection(
-        this.buildDeterministicFallback(
-          description,
-          input.keywords ?? [],
-        ),
-        domainCatalog,
-      ),
-      sourceCatalog,
-      description,
-    );
   }
+
 
 
   async expandEvidenceSearch(input: {
@@ -417,55 +510,104 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     readonly userId?: string;
     readonly guestSessionId?: string;
   }): Promise<RequestCollectionPlan> {
-    const sourceCatalog = this.readActiveSourceCatalogImmediate();
-    void this.loadActiveSourceCatalog().catch((error: unknown) => {
-      this.logger.debug(
-        `[PREPARING] Background source-catalog refresh failed non-fatally during domain discovery: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    });
+    let sourceCatalog = this.readActiveSourceCatalogImmediate();
+    if (sourceCatalog.length === 0) {
+      sourceCatalog = await this.loadActiveSourceCatalog();
+    } else {
+      void this.loadActiveSourceCatalog().catch((error: unknown) => {
+        this.logger.debug(
+          `[PREPARING] Background source-catalog refresh failed non-fatally during domain discovery: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+    }
 
     const activeSourceKeys = sourceCatalog.map((source) => source.key);
     const domainNames = this.deduplicatePhrases(input.domainNames).slice(0, 3);
+    if (domainNames.length === 0) {
+      throw new ServiceUnavailableException(
+        'AI domain discovery requires at least one selected domain.',
+      );
+    }
 
-    const aiDiscoveryPlan =
+    const raceInput = {
+      domainNames,
+      sourceCatalog,
+      language: input.language,
+      generationType: input.generationType,
+      userId: input.userId,
+      guestSessionId: input.guestSessionId,
+    } as const;
+
+    let aiDiscoveryPlan =
       await this.runProviderDiverseDomainDiscoveryPlanningRace({
-        domainNames,
-        sourceCatalog,
-        language: input.language,
-        generationType: input.generationType,
-        userId: input.userId,
-        guestSessionId: input.guestSessionId,
+        ...raceInput,
+        providerLanes: REQUEST_COLLECTION_PLAN_PROVIDER_LANES,
+        maxModelsPerOperation: 3,
+        deadlineMs: REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS,
+        providerTimeoutMs: REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS,
+        waveLabel: 'primary',
       });
 
-    /*
-     * Semantic discovery is AI-owned.  When every AI lane is unavailable we do
-     * NOT synthesize failure archetypes such as "approval backlog", "manual
-     * handoff", "capacity scheduling", or any other guessed problem from a
-     * domain label.  The safety fallback is deliberately neutral: each selected
-     * domain is issued as a retrieval seed and Community AI remains the first
-     * component allowed to decide which returned rows describe a real problem.
-     */
+    if (!aiDiscoveryPlan) {
+      this.logger.warn(
+        '[PREPARING] Primary domain-discovery AI wave produced no complete domain-grounded plan; continuing with AI-only provider/model rescue instead of neutral deterministic retrieval.',
+      );
+      aiDiscoveryPlan =
+        await this.runProviderDiverseDomainDiscoveryPlanningRace({
+          ...raceInput,
+          providerLanes: REQUEST_COLLECTION_PLAN_RESCUE_PROVIDER_LANES,
+          maxModelsPerOperation: 4,
+          deadlineMs: REQUEST_DOMAIN_DISCOVERY_AI_RESCUE_DEADLINE_MS,
+          providerTimeoutMs: 6_600,
+          waveLabel: 'rescue-1',
+        });
+    }
+
+    if (!aiDiscoveryPlan) {
+      this.logger.warn(
+        '[PREPARING] First domain-discovery AI rescue produced no complete plan; running final AI-only emergency rescue across configured models. Deterministic domain-only planning remains disabled.',
+      );
+      aiDiscoveryPlan =
+        await this.runProviderDiverseDomainDiscoveryPlanningRace({
+          ...raceInput,
+          providerLanes: [
+            ...REQUEST_COLLECTION_PLAN_RESCUE_PROVIDER_LANES,
+            ...REQUEST_COLLECTION_PLAN_PROVIDER_LANES,
+          ],
+          maxModelsPerOperation: 6,
+          maxRetriesPerModel: 1,
+          deadlineMs: REQUEST_DOMAIN_DISCOVERY_AI_FINAL_RESCUE_DEADLINE_MS,
+          providerTimeoutMs: 7_200,
+          waveLabel: 'rescue-2',
+          allowTemporaryModelCooldownBypass: true,
+          allowBoundedEmergencyModelAttempt: true,
+        });
+    }
+
+    const domainDiscoveryFallbackUsed = !aiDiscoveryPlan;
+    if (!aiDiscoveryPlan) {
+      aiDiscoveryPlan = this.buildDeterministicDomainDiscoveryFallback(
+        domainNames,
+        activeSourceKeys,
+      );
+      this.logger.error(
+        '[PREPARING] All provider-diverse domain-discovery AI routes were exhausted. Continuing with a neutral deterministic selected-domain discovery plan so the run does not fail. The fallback never invents a problem family and is explicitly marked aiUsed=false/fallbackUsed=true.',
+      );
+    }
+
     const aiQueriesByDomain = new Map(
-      (aiDiscoveryPlan?.domainQueryGroups ?? []).map((group) => [
+      aiDiscoveryPlan.domainQueryGroups.map((group) => [
         this.normalizeDiscoveryIdentity(group.domainName),
-        this.uniqueStrings(group.queries).slice(0, 4),
-      ] as const),
-    );
-    const neutralQueriesByDomain = new Map(
-      domainNames.map((domainName) => [
-        this.normalizeDiscoveryIdentity(domainName),
-        [domainName],
+        this.uniqueStrings(group.queries).slice(0, 5),
       ] as const),
     );
 
     const domainPackets = domainNames.map((domainName) => ({
       domainName,
       queries:
-        aiQueriesByDomain.get(this.normalizeDiscoveryIdentity(domainName)) ??
-        neutralQueriesByDomain.get(this.normalizeDiscoveryIdentity(domainName)) ??
-        [domainName],
+        aiQueriesByDomain.get(this.normalizeDiscoveryIdentity(domainName)) ?? [],
     }));
 
     /*
@@ -482,7 +624,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     );
     for (
       let depth = 0;
-      depth < maxPerDomainDepth && roundRobinDomainQueries.length < 15;
+      depth < maxPerDomainDepth && roundRobinDomainQueries.length < 18;
       depth += 1
     ) {
       for (const packet of domainPackets) {
@@ -498,12 +640,12 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         ) {
           roundRobinDomainQueries.push(cleaned);
         }
-        if (roundRobinDomainQueries.length >= 15) break;
+        if (roundRobinDomainQueries.length >= 18) break;
       }
     }
 
     const aiGlobalQueries = this.uniqueStrings(
-      aiDiscoveryPlan?.searchQueries ?? [],
+      aiDiscoveryPlan.searchQueries,
     ).filter((query) =>
       domainNames.some((domainName) =>
         this.discoveryQueryMatchesDomain(query, domainName),
@@ -513,13 +655,13 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const searchQueries = this.uniqueStrings([
       ...roundRobinDomainQueries,
       ...aiGlobalQueries,
-    ]).slice(0, 15);
+    ]).slice(0, 18);
 
     const requestedDiscoverySourceKeys = this.deduplicatePhrases([
-      ...(aiDiscoveryPlan?.sourceAssignments.map(
+      ...aiDiscoveryPlan.sourceAssignments.map(
         (assignment) => assignment.sourceKey,
-      ) ?? []),
-      ...(aiDiscoveryPlan?.selectedSourceKeys?.length
+      ),
+      ...(aiDiscoveryPlan.selectedSourceKeys.length
         ? aiDiscoveryPlan.selectedSourceKeys
         : activeSourceKeys),
     ]).filter((key) => activeSourceKeys.includes(key));
@@ -570,7 +712,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const completedAssignments = this.completeDomainDiscoverySourceAssignments({
       domainNames,
       selectedSourceKeys,
-      aiAssignments: aiDiscoveryPlan?.sourceAssignments ?? [],
+      aiAssignments: aiDiscoveryPlan.sourceAssignments,
       sourceCatalog,
     });
 
@@ -616,30 +758,24 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         );
         const perDomainBudget =
           domainNames.length >= 3
-            ? 2
+            ? 3
             : domainNames.length === 2
-              ? 3
-              : 4;
+              ? 4
+              : 5;
 
         const packets = orderedDomains.map((domainName) => {
           const baseQueries =
             aiQueriesByDomain.get(
               this.normalizeDiscoveryIdentity(domainName),
-            ) ??
-            neutralQueriesByDomain.get(
-              this.normalizeDiscoveryIdentity(domainName),
-            ) ??
-            [domainName];
+            ) ?? [];
 
-          const compiledQueries = aiDiscoveryPlan
-            ? SourceSpecificEvidenceQueryUtil.compile({
-                sourceKey,
-                baseQueries,
-                discoveryDomainName: domainName,
-                maxQueries: perDomainBudget,
-                preserveBaseQueries: true,
-              })
-            : [...baseQueries];
+          const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
+            sourceKey,
+            baseQueries,
+            discoveryDomainName: domainName,
+            maxQueries: perDomainBudget,
+            preserveBaseQueries: true,
+          });
 
           return {
             domainName,
@@ -652,10 +788,11 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           };
         });
 
-        const maxQueries = Math.min(
-          6,
-          Math.max(domainNames.length, domainNames.length * 2),
-        );
+        const maxQueries = domainNames.length >= 3
+          ? 7
+          : domainNames.length === 2
+            ? 7
+            : 6;
         const queries: string[] = [];
         const maxDepth = Math.max(
           1,
@@ -707,9 +844,65 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       sourceFocus: this.deriveSourceFocusFromKeys(selectedSourceKeys),
       selectedSourceKeys,
       sourcePlans,
-      confidence: aiDiscoveryPlan?.confidence ?? 35,
-      aiUsed: Boolean(aiDiscoveryPlan),
-      fallbackUsed: !aiDiscoveryPlan,
+      confidence: domainDiscoveryFallbackUsed
+        ? Math.min(58, aiDiscoveryPlan.confidence)
+        : aiDiscoveryPlan.confidence,
+      aiUsed: !domainDiscoveryFallbackUsed,
+      fallbackUsed: domainDiscoveryFallbackUsed,
+    };
+  }
+
+  private buildDeterministicDomainDiscoveryFallback(
+    domainNames: readonly string[],
+    activeSourceKeys: readonly string[],
+  ): RequestDomainDiscoveryAiPlan {
+    const selectedDomains = this.deduplicatePhrases(domainNames).slice(0, 3);
+    const domainQueryGroups = selectedDomains.map((domainName) => {
+      const broadQueries = this.buildBroadDiscoveryQueries(
+        [domainName],
+        { actor: '', object: '', workflow: '', failure: '' },
+        [],
+      );
+      const queries = this.deduplicateQueries([
+        ...broadQueries,
+        `${domainName} reported operational failures incidents`,
+        `${domainName} user complaints service barriers`,
+        `${domainName} workflow delays bottlenecks rework`,
+        `${domainName} research documented challenges`,
+      ]).slice(0, 4);
+
+      return { domainName, queries };
+    });
+
+    const searchQueries: string[] = [];
+    const maxDepth = Math.max(
+      1,
+      ...domainQueryGroups.map((group) => group.queries.length),
+    );
+    for (let depth = 0; depth < maxDepth && searchQueries.length < 12; depth += 1) {
+      for (const group of domainQueryGroups) {
+        const query = group.queries[depth];
+        if (!query) continue;
+        const normalized = query.replace(/\s+/gu, ' ').trim();
+        if (
+          normalized &&
+          !searchQueries.some(
+            (existing) =>
+              existing.toLocaleLowerCase() === normalized.toLocaleLowerCase(),
+          )
+        ) {
+          searchQueries.push(normalized);
+        }
+        if (searchQueries.length >= 12) break;
+      }
+    }
+
+    return {
+      searchQueries,
+      selectedSourceKeys: this.deduplicatePhrases(activeSourceKeys).slice(0, 9),
+      domainQueryGroups,
+      sourceAssignments: [],
+      confidence: 52,
     };
   }
 
@@ -735,18 +928,65 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       } | null;
       readonly requestKeywords?: readonly string[];
       readonly preferenceTerms?: readonly string[];
+      readonly requestMode?: IdeaGenerationRequestMode;
     },
   ): RequestCollectionPlan {
     const description = (input.description ?? '').replace(/\s+/gu, ' ').trim();
-    const searchQueries = this.deduplicateQueries(plan.searchQueries)
+    const selectedDomainNames = this.deduplicatePhrases(
+      input.selectedDomains.map((domain) => domain.name),
+    );
+    const groundedSearchQueries = this.deduplicateQueries(plan.searchQueries)
       .filter((query) =>
         !description ||
-        RequestQueryProvenanceUtil.isQueryGrounded({
-          requestDescription: description,
+        this.isPlanningQueryGrounded({
           query,
+          description,
+          discoveryIntent: plan.requestIntent?.mode !== 'EXPLICIT_PROBLEM',
+          domainNames: this.deduplicatePhrases([
+            ...selectedDomainNames,
+            input.resolvedPrimaryDomain?.name ?? '',
+            plan.suggestedDomainName ?? '',
+          ]).filter(Boolean),
+          domainIdentity: plan.domainIdentity,
+          retrievalVocabulary: plan.retrievalVocabulary ?? [],
         }),
-      )
-      .slice(0, 14);
+      );
+
+    const textAndDomains =
+      input.requestMode === 'TEXT_AND_DOMAINS' ||
+      (input.requestMode === undefined &&
+        description.length > 0 &&
+        input.selectedDomains.length > 1);
+    const textOnly =
+      input.requestMode === 'TEXT_ONLY' ||
+      (input.requestMode === undefined &&
+        description.length > 0 &&
+        input.selectedDomains.length === 1);
+    const searchQueries = textAndDomains
+      ? this.buildTextAndDomainsSearchPortfolio({
+          baseQueries: groundedSearchQueries,
+          selectedDomainNames,
+          description,
+          problemProfile: plan.problemProfile,
+          domainIdentity: plan.domainIdentity,
+          retrievalVocabulary: plan.retrievalVocabulary ?? [],
+          causalSearchProbes: plan.causalSearchProbes ?? [],
+        })
+      : textOnly
+        ? this.buildTextOnlyExpandedSearchPortfolio({
+            baseQueries: groundedSearchQueries,
+            inferredPrimaryDomainName:
+              input.resolvedPrimaryDomain?.name ??
+              input.selectedDomains[0]?.name ??
+              plan.suggestedDomainName ??
+              '',
+            inferredSecondaryScopes: plan.inferredSecondaryScopes ?? [],
+            description,
+            problemProfile: plan.problemProfile,
+            domainIdentity: plan.domainIdentity,
+            retrievalVocabulary: plan.retrievalVocabulary ?? [],
+          })
+        : groundedSearchQueries.slice(0, 18);
     if (searchQueries.length === 0) return plan;
 
     const runtimeSourceKeys = this.deduplicatePhrases([
@@ -758,16 +998,29 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const sourcePlans = preserveDomainDiscoveryProvenance
       ? plan.sourcePlans
       : runtimeSourceKeys.length > 0
-        ? this.buildRuntimeSourcePlans(
-            runtimeSourceKeys,
-            searchQueries,
-            description,
-            plan.requestIntent?.mode === 'EXPLICIT_PROBLEM'
-              ? plan.problemProfile
-              : undefined,
-            plan.selectedSourceKeys ?? [],
-            plan.retrievalVocabulary ?? [],
-          )
+        ? textAndDomains
+          ? this.buildTextAndDomainsRuntimeSourcePlans({
+              selectedSourceKeys: runtimeSourceKeys,
+              selectedDomains: input.selectedDomains,
+              searchQueries,
+              description,
+              problemProfile: plan.problemProfile,
+              plannerPrioritySourceKeys: plan.selectedSourceKeys ?? [],
+              retrievalVocabulary: plan.retrievalVocabulary ?? [],
+              causalSearchProbes: plan.causalSearchProbes ?? [],
+              domainIdentity: plan.domainIdentity,
+            })
+          : this.buildRuntimeSourcePlans(
+              runtimeSourceKeys,
+              searchQueries,
+              description,
+              plan.problemProfile,
+              plan.selectedSourceKeys ?? [],
+              plan.retrievalVocabulary ?? [],
+              plan.causalSearchProbes ?? [],
+              plan.requestIntent?.mode !== 'EXPLICIT_PROBLEM',
+              input.resolvedPrimaryDomain?.name ?? input.selectedDomains[0]?.name ?? plan.suggestedDomainName ?? null,
+            )
         : plan.sourcePlans;
 
     const resolvedPrimary =
@@ -938,10 +1191,46 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     readonly generationType?: IdeaGenerationType;
     readonly userId?: string;
     readonly guestSessionId?: string;
+    readonly providerTimeoutMs?: number;
+    readonly maxModelsPerOperation?: number;
+    readonly maxRetriesPerModel?: number;
+    readonly providerLanes?: readonly (readonly string[])[];
+    readonly deadlineMs?: number;
+    readonly waveLabel?: string;
+    readonly allowTemporaryModelCooldownBypass?: boolean;
+    readonly allowBoundedEmergencyModelAttempt?: boolean;
   }): Promise<RequestDomainDiscoveryAiPlan | null> {
     if (input.domainNames.length === 0 || input.sourceCatalog.length === 0) {
       return null;
     }
+
+    const providerLanes =
+      input.providerLanes && input.providerLanes.length > 0
+        ? input.providerLanes
+        : REQUEST_COLLECTION_PLAN_PROVIDER_LANES;
+    const effectiveDeadlineMs = Math.max(
+      900,
+      Math.min(
+        REQUEST_DOMAIN_DISCOVERY_AI_FINAL_RESCUE_DEADLINE_MS,
+        Number.isFinite(input.deadlineMs)
+          ? Number(input.deadlineMs)
+          : REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS,
+      ),
+    );
+    const providerTimeoutMs = Math.max(
+      700,
+      Math.min(
+        Number.isFinite(input.providerTimeoutMs)
+          ? Number(input.providerTimeoutMs)
+          : REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS,
+        effectiveDeadlineMs - 150,
+      ),
+    );
+    const maxModelsPerOperation = Math.max(
+      1,
+      Math.min(10, Math.floor(input.maxModelsPerOperation ?? 1)),
+    );
+    const waveLabel = input.waveLabel?.trim() || 'standard';
 
     const activeSourceKeys = new Set(
       input.sourceCatalog.map((source) => source.key),
@@ -958,9 +1247,9 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       language: input.language ?? LanguageCode.ANY,
       activeSourceCatalog: sourceCatalogText,
       requiredOutput: {
-        searchQueries: '6-10 short search strings',
+        searchQueries: '9-12 short search strings',
         selectedSourceKeys: 'up to 9 exact active source keys',
-        domainQueryGroups: 'exactly one object per selected domain; copy domainName exactly and return 2-3 concrete evidence-search queries (at least 1 is mandatory)',
+        domainQueryGroups: 'exactly one object per selected domain; copy domainName exactly and return 3-4 concrete evidence-search queries (at least 2 are mandatory)',
         sourceAssignments: 'up to 3 unique source assignments per domain, covering community/direct voice, documentary/reporting, and research-or-specialist evidence when executable',
         confidence: '0-100',
       },
@@ -971,7 +1260,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       'Return JSON only with keys searchQueries, selectedSourceKeys, domainQueryGroups, sourceAssignments, confidence.',
       'Create broad but problem-first discovery queries that find real complaints, failures, barriers, incidents, unmet needs, rework, delays, cost pressure, or operational friction inside the selected domains.',
       'Cover every selected domain as an independent discovery lane. Infer concrete evidence-search language for EACH domain, but do not decide which domain has the winning problem before collection.',
-      'Return exactly one domainQueryGroups entry for every selected domain and copy each domainName exactly as supplied. Aim for 2-3 queries per domain; at least one concrete AI-authored query per domain is mandatory. Each query must be specific enough to retrieve real-world problem-bearing material. The runtime may mechanically prefix the selected domain identity when a search engine needs it, so do not waste tokens repeating a long domain label in every query. Avoid generic boilerplate and avoid inventing a final opportunity or solution.',
+      'Return exactly one domainQueryGroups entry for every selected domain and copy each domainName exactly as supplied. Aim for 3-4 queries per domain and return at least two concrete AI-authored queries for every selected domain. Vary the evidence angle inside each domain: direct complaints/user pain, documented incidents or failures, operational bottlenecks/barriers, and research or institutional findings when appropriate. Each query must be specific enough to retrieve real-world problem-bearing material. The runtime may mechanically prefix the selected domain identity when a search engine needs it, so do not waste tokens repeating a long domain label in every query. Avoid generic boilerplate and avoid inventing a final opportunity or solution.',
       'Do not create bridge queries merely to connect selected domains. A cross-domain problem is accepted only if one returned evidence item independently demonstrates that workflow.',
       'Keep each query short, natural, and source-searchable; include concrete pain/discovery wording grounded in that domain lane.',
       'Plan sourceAssignments per domain, not globally. Aim for three unique executable source assignments per domain when the catalog permits: one direct-voice/community-or-review lane, one documentary/reporting lane, and one research-or-specialist lane. Prefer a scholarly source for research when it is semantically useful; otherwise use the best specialist source. Do not give one domain all documentary sources while another domain receives only one source. Use technical developer sources only when a plausible operational archetype is genuinely software/API/infrastructure-related.',
@@ -979,9 +1268,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       'Do not return a guessed opportunity, solution, actor, market claim, or problem family. Planning only.',
     ].join(' ');
 
-    const controllers = REQUEST_COLLECTION_PLAN_PROVIDER_LANES.map(
-      () => new AbortController(),
-    );
+    const controllers = providerLanes.map(() => new AbortController());
 
     return new Promise<RequestDomainDiscoveryAiPlan | null>((resolve) => {
       let settledCount = 0;
@@ -991,16 +1278,16 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         resolved = true;
         controllers.forEach((controller) => controller.abort());
         this.logger.warn(
-          `[PREPARING] Domain-discovery AI planning deadline ${REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS}ms reached; neutral domain-only retrieval remains available as the safety fallback.`,
+          `[PREPARING] Domain-discovery AI planning wave "${waveLabel}" reached its ${effectiveDeadlineMs}ms deadline without complete AI-authored coverage; advancing to the next AI-only rescue wave.`,
         );
         resolve(null);
-      }, REQUEST_DOMAIN_DISCOVERY_GLOBAL_DEADLINE_MS);
+      }, effectiveDeadlineMs);
 
       const finishFailure = (): void => {
         settledCount += 1;
         if (
           !resolved &&
-          settledCount >= REQUEST_COLLECTION_PLAN_PROVIDER_LANES.length
+          settledCount >= providerLanes.length
         ) {
           resolved = true;
           clearTimeout(deadline);
@@ -1009,7 +1296,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         }
       };
 
-      REQUEST_COLLECTION_PLAN_PROVIDER_LANES.forEach(
+      providerLanes.forEach(
         (preferredApiModelIds, index) => {
           void this.aiExecutionService
             .execute({
@@ -1026,11 +1313,18 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               estimatedOutputTokens: 360,
               maxOutputTokens: 650,
               temperature: 0.1,
-              timeoutMs: REQUEST_DOMAIN_DISCOVERY_PLAN_TIMEOUT_MS,
-              maxRetriesPerModel: 0,
-              maxModelsPerOperation: 1,
-              excludeLocalFallback: true,
+              timeoutMs: providerTimeoutMs,
+              maxRetriesPerModel: Math.max(
+                0,
+                Math.min(1, Math.floor(input.maxRetriesPerModel ?? 0)),
+              ),
+              maxModelsPerOperation,
+              excludeLocalFallback: false,
               allowProviderFallbackOnInvalidPrompt: true,
+              allowTemporaryModelCooldownBypass:
+                input.allowTemporaryModelCooldownBypass ?? false,
+              allowBoundedEmergencyModelAttempt:
+                input.allowBoundedEmergencyModelAttempt ?? false,
               allowPartialTextOnMaxTokens: true,
               signal: controllers[index]?.signal,
             })
@@ -1057,7 +1351,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                   )
                   .filter((query) => !this.isGenericDomainDiscoveryQuery(query))
                   .filter(SourceSpecificEvidenceQueryUtil.isSafe.bind(SourceSpecificEvidenceQueryUtil))
-                  .slice(0, 14);
+                  .slice(0, 18);
 
                 const rawSourceKeys = Array.isArray(record.selectedSourceKeys)
                   ? record.selectedSourceKeys
@@ -1160,11 +1454,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                   .filter((entry) => entry.queries.length > 0);
 
                 /*
-                 * One AI-authored semantic seed per selected domain is enough.
-                 * SourceSpecificEvidenceQueryUtil later creates bounded
-                 * source-search variants without inventing a problem meaning.
-                 * Requiring two literal strings per domain caused otherwise
-                 * useful provider plans to fall into neutral domain-only search.
+                 * Require at least two AI-authored semantic seeds per selected
+                 * domain before accepting the plan. Source-specific variants may
+                 * expand those seeds later, but they never substitute semantic
+                 * coverage for a domain the AI planner omitted.
                  */
                 const coveredDomainIdentities = new Set(
                   domainQueryGroups.map((group) =>
@@ -1179,7 +1472,16 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                 );
                 if (missingDomainCoverage.length > 0) {
                   throw new Error(
-                    `Domain-discovery AI omitted required query coverage for: ${missingDomainCoverage.join(', ')}.`,
+                    `Domain-discovery AI omitted selected-domain lane(s): ${missingDomainCoverage.join(', ')}.`,
+                  );
+                }
+
+                const underfilledDomainCoverage = domainQueryGroups.filter(
+                  (group) => group.queries.length < 2,
+                );
+                if (underfilledDomainCoverage.length > 0) {
+                  throw new Error(
+                    `Domain-discovery AI returned fewer than two concrete queries for: ${underfilledDomainCoverage.map((group) => group.domainName).join(', ')}.`,
                   );
                 }
 
@@ -1195,7 +1497,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                 );
                 for (
                   let depth = 0;
-                  depth < maxDepth && groupedRoundRobin.length < 15;
+                  depth < maxDepth && groupedRoundRobin.length < 18;
                   depth += 1
                 ) {
                   for (const group of domainQueryGroups) {
@@ -1212,13 +1514,13 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                     ) {
                       groupedRoundRobin.push(cleaned);
                     }
-                    if (groupedRoundRobin.length >= 15) break;
+                    if (groupedRoundRobin.length >= 18) break;
                   }
                 }
                 const effectiveSearchQueries = this.uniqueStrings([
                   ...groupedRoundRobin,
                   ...searchQueries,
-                ]).slice(0, 15);
+                ]).slice(0, 18);
 
                 const rawSourceAssignments = Array.isArray(record.sourceAssignments)
                   ? record.sourceAssignments
@@ -1269,7 +1571,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
                   if (controllerIndex !== index) controller.abort();
                 });
                 this.logger.log(
-                  `[PREPARING] AI domain-discovery evidence plan accepted. provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${effectiveSearchQueries.length}, prioritySources=${effectiveSelectedSourceKeys.length}.`,
+                  `[PREPARING] AI domain-discovery evidence plan accepted. wave=${waveLabel}, provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${effectiveSearchQueries.length}, prioritySources=${effectiveSelectedSourceKeys.length}.`,
                 );
                 resolve({ searchQueries: effectiveSearchQueries, selectedSourceKeys: effectiveSelectedSourceKeys, domainQueryGroups, sourceAssignments, confidence });
               } catch (error: unknown) {
@@ -1351,14 +1653,23 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     readonly guestSessionId?: string;
     readonly signal?: AbortSignal;
     readonly deadlineMs?: number;
+    readonly providerTimeoutMs?: number;
+    readonly maxModelsPerOperation?: number;
+    readonly maxRetriesPerModel?: number;
+    readonly providerLanes?: readonly (readonly string[])[];
+    readonly waveLabel?: string;
+    readonly allowTemporaryModelCooldownBypass?: boolean;
+    readonly allowBoundedEmergencyModelAttempt?: boolean;
   }): Promise<RequestCollectionPlan | null> {
-    const controllers = REQUEST_COLLECTION_PLAN_PROVIDER_LANES.map(
-      () => new AbortController(),
-    );
+    const providerLanes =
+      input.providerLanes && input.providerLanes.length > 0
+        ? input.providerLanes
+        : REQUEST_COLLECTION_PLAN_PROVIDER_LANES;
+    const controllers = providerLanes.map(() => new AbortController());
     const effectiveDeadlineMs = Math.max(
       900,
       Math.min(
-        REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS,
+        REQUEST_COLLECTION_PLAN_AI_FINAL_RESCUE_DEADLINE_MS,
         Number.isFinite(input.deadlineMs)
           ? Number(input.deadlineMs)
           : REQUEST_COLLECTION_PLAN_GLOBAL_DEADLINE_MS,
@@ -1366,8 +1677,18 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     );
     const providerTimeoutMs = Math.max(
       700,
-      Math.min(REQUEST_COLLECTION_PLAN_TIMEOUT_MS, effectiveDeadlineMs - 150),
+      Math.min(
+        Number.isFinite(input.providerTimeoutMs)
+          ? Number(input.providerTimeoutMs)
+          : REQUEST_COLLECTION_PLAN_TIMEOUT_MS,
+        effectiveDeadlineMs - 150,
+      ),
     );
+    const maxModelsPerOperation = Math.max(
+      1,
+      Math.min(10, Math.floor(input.maxModelsPerOperation ?? 1)),
+    );
+    const waveLabel = input.waveLabel?.trim() || 'standard';
     if (input.signal?.aborted) return null;
     const userPrompt = this.buildUserPrompt(
       input.description,
@@ -1402,7 +1723,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         resolved = true;
         controllers.forEach((controller) => controller.abort());
         this.logger.warn(
-          `[PREPARING] Global planning deadline ${effectiveDeadlineMs}ms reached; using the deterministic request-derived plan without waiting for additional providers.`,
+          `[PREPARING] AI planning wave "${waveLabel}" reached its ${effectiveDeadlineMs}ms deadline without a grounded plan; advancing to the next AI-only rescue wave.`,
         );
         cleanupExternalAbort();
         resolve(null);
@@ -1410,7 +1731,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
 
       const finishFailure = (): void => {
         settledCount += 1;
-        if (!resolved && settledCount >= REQUEST_COLLECTION_PLAN_PROVIDER_LANES.length) {
+        if (!resolved && settledCount >= providerLanes.length) {
           resolved = true;
           clearTimeout(globalDeadline);
           controllers.forEach((controller) => controller.abort());
@@ -1419,7 +1740,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         }
       };
 
-      REQUEST_COLLECTION_PLAN_PROVIDER_LANES.forEach((preferredApiModelIds, index) => {
+      providerLanes.forEach((preferredApiModelIds, index) => {
         void this.aiExecutionService.execute({
           userPrompt,
           systemInstruction,
@@ -1436,14 +1757,21 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           responseFormat: AiResponseFormat.TEXT,
           strategy: AiRoutingStrategy.BALANCED,
           preferredApiModelIds,
-          estimatedOutputTokens: 420,
-          maxOutputTokens: 800,
+          estimatedOutputTokens: 520,
+          maxOutputTokens: 900,
           temperature: 0.1,
           timeoutMs: providerTimeoutMs,
-          maxRetriesPerModel: 0,
-          maxModelsPerOperation: 1,
-          excludeLocalFallback: true,
+          maxRetriesPerModel: Math.max(
+            0,
+            Math.min(1, Math.floor(input.maxRetriesPerModel ?? 0)),
+          ),
+          maxModelsPerOperation,
+          excludeLocalFallback: false,
           allowProviderFallbackOnInvalidPrompt: true,
+          allowTemporaryModelCooldownBypass:
+            input.allowTemporaryModelCooldownBypass ?? false,
+          allowBoundedEmergencyModelAttempt:
+            input.allowBoundedEmergencyModelAttempt ?? false,
           // PREPARING uses plain text transport and validates JSON locally. If a
           // provider reaches MAX_TOKENS after already emitting one complete JSON
           // object, keep the text so the local parser can still accept it.
@@ -1505,7 +1833,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               });
               cleanupExternalAbort();
               this.logger.log(
-                `[PREPARING] AI request-understanding/evidence plan accepted from provider-diverse race. provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${planned.searchQueries.length}, sources=${planned.selectedSourceKeys?.length ?? planned.sourcePlans?.length ?? 0}.`,
+                `[PREPARING] AI request-understanding/evidence plan accepted from provider-diverse race. wave=${waveLabel}, provider=${result.providerKey}, apiModelId=${result.apiModelId}, responseTimeMs=${result.responseTimeMs ?? 'unknown'}, queries=${planned.searchQueries.length}, causalProbes=${planned.causalSearchProbes?.length ?? 0}, sources=${planned.selectedSourceKeys?.length ?? planned.sourcePlans?.length ?? 0}.`,
               );
               resolve(planned);
             } catch (error: unknown) {
@@ -1519,8 +1847,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           })
           .catch((error: unknown) => {
             if (resolved) return;
-            this.logger.warn(
-              `Pre-collection AI lane failed: ${
+            this.logger.debug(
+              `[PREPARING] One AI planning lane was unavailable; other provider/model routes remain active. ${
                 error instanceof Error ? error.message : String(error)
               }`,
             );
@@ -1533,17 +1861,17 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   private buildSystemInstruction(): string {
     return [
       'You are the PREPARING-stage semantic retrieval planner for software opportunity research.',
-      'The requester description is intent/context, not automatically a problem statement and never evidence. First decide whether the text truly states a concrete operational problem or merely expresses a goal, preference, audience, product direction, or area of interest.',
-      'Return ONLY one compact JSON object. The first non-whitespace character must be { and the last must be }. Never return an array, string, Markdown fence, or wrapper object. Use these exact canonical keys: domainSelectionMode, selectedExistingDomainId, suggestedDomainName, secondaryScopes, requestIntent, domainIdentity, searchQueries, retrievalVocabulary, selectedSourceKeys, confidence. requestIntent must contain exactly mode, summary, explicitProblem, desiredOutcome. domainIdentity should contain exactly actor, object, workflow, failure. secondaryScopes is optional and must contain at most four concise requester-grounded operational/industry scopes that materially participate in the described workflow but should NOT become configured domain rows. Exclude the primary suggested/selected domain, generic actors, solution words, and anything not explicitly supported by the requester text. Do not add prose and do not return problemProfile, evidenceTargets, intentConcepts, sourcePlans, routingHints, or explanations; the runtime derives those locally. retrievalVocabulary must contain concise practitioner, operator, industry, standards, or research terminology that people in this workflow actually use for the same problem/failure; it is search vocabulary only, never evidence or a new problem claim. If a NEW domain is necessary, suggestedDomainName must be a stable reusable profession/industry taxonomy category, never the exact actor/persona phrase, role title (Owner, Manager, Lead, Buyer, Seller, User, Operator), customer occasion, product SKU, workflow, solution, order-management, tracking, dashboard, platform, or project name. A role such as "X maker" or "Y painter" belongs under the reusable craft/profession category that describes the underlying production discipline; keep the exact item/occasion in domainIdentity.object/workflow, not in the domain taxonomy.',
-      'requestIntent.mode must be EXPLICIT_PROBLEM when the requester directly asserts a concrete current pain/failure/friction as the problem to solve. Narrative problem descriptions count as explicit problems even when they do not say "I have a problem". Phrases such as "often struggle", "information is scattered", "difficult to confirm", "cannot connect", "leads to errors/rework/waste/delays", or equivalent current-state wording are EXPLICIT_PROBLEM when they describe the requester actor/workflow and a real negative consequence. Do NOT mark EXPLICIT_PROBLEM merely because the text mentions possible future risks, desired capabilities, an audience, a workflow, examples of hypothetical failures, or what the requester wants a future product to improve. Those are DISCOVERY_INTENT. In EXPLICIT_PROBLEM put a concise faithful problem in explicitProblem. Otherwise use DISCOVERY_INTENT and explicitProblem:"". desiredOutcome may capture what the requester wants to improve/build/serve, without turning that desire into a market problem.',
-      'Canonical example shape: {"domainSelectionMode":"EXISTING","selectedExistingDomainId":"catalog-id","suggestedDomainName":"","secondaryScopes":[],"requestIntent":{"mode":"DISCOVERY_INTENT","summary":"...","explicitProblem":"","desiredOutcome":"..."},"domainIdentity":{"actor":"...","object":"...","workflow":"...","failure":""},"searchQueries":["query 1","query 2","query 3","query 4","query 5","query 6","query 7","query 8"],"retrievalVocabulary":["workflow term","failure term","research term"],"selectedSourceKeys":["reddit","forum","news","crossref","app-store","youtube"],"confidence":90}. For NEW use selectedExistingDomainId:"" and a non-empty suggestedDomainName. For EXISTING use the exact catalog id and suggestedDomainName:"".',
+      'The requester description is retrieval/classification context and never evidence. Detect whether it states a concrete current problem. If it does, return requestIntent.mode=EXPLICIT_PROBLEM_DISCOVERY and preserve that wording in explicitProblem as a SOFT context hypothesis only. In both EXPLICIT_PROBLEM_DISCOVERY and DISCOVERY_INTENT, the main job is to resolve the relevant profession/domain and discover the strongest real problems inside that domain; the requester example must never become a hard evidence-alignment gate. If no concrete current problem is stated, use DISCOVERY_INTENT with explicitProblem:"". EXPLICIT_PROBLEM remains reserved for an internal post-evidence corroboration pass.',
+      'Return ONLY one compact JSON object. The first non-whitespace character must be { and the last must be }. Never return an array, string, Markdown fence, or wrapper object. Use these exact canonical keys: domainSelectionMode, selectedExistingDomainId, suggestedDomainName, secondaryScopes, requestIntent, domainIdentity, searchQueries, retrievalVocabulary, causalSearchProbes, selectedSourceKeys, confidence. requestIntent must contain exactly mode, summary, explicitProblem, desiredOutcome. domainIdentity should contain exactly actor, object, workflow, failure. secondaryScopes is optional and must contain at most four concise ONE-LEVEL-BROADER operational parent scopes for retrieval only. They should generalize the requester-described profession/workflow without changing the problem, for example a niche custom workshop may broaden to a made-to-order production, staged production, artisan/craft production, inventory-constrained production, or deadline-driven operations scope when those concepts are supported by the request. Do NOT merely repeat the object/SKU (for example "handmade ceramic orders") as a secondary scope. Preserve at least one requester-grounded anchor such as custom/order/production/material/deadline/workflow so runtime provenance checks can verify the expansion. Exclude the primary suggested/selected domain, generic actors, solution words, and unsupported market/industry claims. These scopes are recall lanes only and never evidence or canonical problem labels. The evidence-selected problem remains authoritative; requester text returns later only as compatible solution-design context. Do not add prose and do not return problemProfile, evidenceTargets, intentConcepts, sourcePlans, routingHints, or explanations; the runtime derives those locally. retrievalVocabulary must contain concise practitioner, operator, industry, standards, or research terminology for the classified actor/object/workflow scope and any text-mentioned friction; it is search vocabulary only, never evidence or a new problem claim. causalSearchProbes is retrieval-only and must be dynamic for the current input. In initial DISCOVERY_INTENT or EXPLICIT_PROBLEM_DISCOVERY, return 0-6 probes only when the text supplies useful workflow/failure/cause/consequence clues; these probes are search angles and never a canonical problem claim. Never invent a causal mechanism that the requester did not state. In internal EXPLICIT_PROBLEM corroboration, probes must stay on the already evidence-selected family. If a NEW domain is necessary, suggestedDomainName must be a stable reusable profession/industry taxonomy category, never the exact actor/persona phrase, role title (Owner, Manager, Lead, Buyer, Seller, User, Operator), customer occasion, product SKU, workflow, solution, order-management, tracking, dashboard, platform, or project name. A role such as "X maker" or "Y painter" belongs under the reusable craft/profession category that describes the underlying production discipline; keep the exact item/occasion in domainIdentity.object/workflow, not in the domain taxonomy.',
+      'INITIAL USER-TEXT INTENT: use EXPLICIT_PROBLEM_DISCOVERY when the text itself asserts a concrete present problem, friction, failure, delay, risk, inability, fragmented/separate information state, missed deadline, or comparable operational pain. Preserve it in explicitProblem and keep proposed capabilities in desiredOutcome, but treat both as soft discovery/product context. Verified external evidence is allowed to select a different stronger problem inside the resolved domain. Use DISCOVERY_INTENT when the text supplies scope/preferences/capabilities without a concrete current problem. EXPLICIT_PROBLEM is reserved for an internal later corroboration request where the application explicitly supplies an already evidence-selected canonical family.',
+      'Canonical problem-hypothesis example shape: {"domainSelectionMode":"EXISTING","selectedExistingDomainId":"catalog-id","suggestedDomainName":"","secondaryScopes":[],"requestIntent":{"mode":"EXPLICIT_PROBLEM_DISCOVERY","summary":"...","explicitProblem":"concise requester-stated problem","desiredOutcome":"..."},"domainIdentity":{"actor":"...","object":"...","workflow":"...","failure":"stated failure phrase"},"searchQueries":["query 1","query 2","query 3","query 4","query 5","query 6","query 7","query 8"],"retrievalVocabulary":["workflow term","failure term","research term"],"causalSearchProbes":[{"relationType":"FAILURE_CHAIN","query":"actor workflow failure consequence"},{"relationType":"PRACTITIONER_LANGUAGE","query":"operator wording for same problem"}],"selectedSourceKeys":["reddit","forum","news","crossref","app-store","youtube"],"confidence":90}. For a scope-only request use DISCOVERY_INTENT and explicitProblem:"". For NEW use selectedExistingDomainId:"" and a non-empty suggestedDomainName. For EXISTING use the exact catalog id and suggestedDomainName:"".',
       'DOMAIN: choose EXISTING only when the active catalog contains the same professional actor, primary object/resource, and operational workflow. Broad-sector similarity is not enough. Otherwise choose NEW. For EXISTING, return the exact catalog id when available. For NEW, return a narrow reusable professional domain name.',
-      'DOMAIN IDENTITY: return concise actor, object, and workflow phrases grounded in the requester intent. Return failure only when the request explicitly states one; otherwise return an empty string.',
-      "QUERIES: target 8 ordered evidence-search seed queries (a partial response is still useful; never exceed 10). Also return 6-12 retrievalVocabulary phrases: terminology/synonyms that practitioners, operators, researchers, or incident reports use for this SAME workflow and failure. These terms may be semantically equivalent to requester wording rather than literal copies, but must stay anchored to the same actor/object/workflow/problem and must not invent a different problem. When requestIntent.mode=EXPLICIT_PROBLEM, search to validate that problem and its strongest facets. When mode=DISCOVERY_INTENT, search for real complaints, failures, delays, rework, cost pressure, access barriers, unmet needs, incidents, or operational friction that occur inside the requester's actor/object/workflow/desired-outcome scope. Do not invent the winning problem during planning; collection + Community AI choose it from evidence. Write human-searchable 4-9 word queries and avoid proposed-solution terms unless the request itself concerns software/API/system failures or a review-store lane. Treat implementation-oriented selected domains such as Artificial Intelligence as scope constraints, not mandatory query words; do not inject them into every evidence query unless the problem statement itself makes that technology part of the failing workflow.",
-      'SOURCES: select 6-8 complementary exact sourceKey values from ACTIVE SOURCE CATALOG when they can execute this retrieval plan. Treat source-fit as a ranking decision, not a reason to omit a complementary research/documentary lane solely because requester wording is niche. First-pass evidence should normally include at least two direct-voice/community lanes and at least two documentary/research lanes; for consumer or service workflows include at least one app-review lane when relevant. Do not pad with unrelated sources. Prefer community/practitioner sources for niche/local-service workflows and research/news/institutional sources for public-sector or documented operational workflows. IMPORTANT: when a comparable mobile app or workflow tool plausibly exists, include app-store or google-play because USER REVIEWS are valuable problem evidence. Store listing descriptions are discovery metadata only; reviews/comments are the evidence. Use technical developer sources only for genuine software/API/infrastructure problems, not merely because AI is part of the proposed solution.',
-      'When requester-selected domains are present, choose the best-matching one of those exact existing domains as the primary collection anchor. Do not create an additional NEW domain from the actor phrase. The selected domains are authoritative search scope. If requestIntent.mode=EXPLICIT_PROBLEM, preserve the requester problem and collect evidence that validates or tightly supports it inside that scope. If mode=DISCOVERY_INTENT, use the description only to constrain actor/object/workflow/outcome search intent and let collected verified evidence determine the final problem after collection.',
-      'If this is recovery, materially change wording/source mix while preserving the requester intent and any truly explicit problem. CURRENT EVIDENCE TARGETS are authoritative corroboration targets: when they contain a concrete locked problem family, search for independent evidence of that SAME family only. Do not broaden back to generic domain failures, adjacent problem families, or a new opportunity.',
-      'Be compact: short identity phrases, about 8 strong ordered queries, source keys only, and confidence. The runtime preserves safe AI seeds, enriches partial responses, and builds the full source-aware plan locally.',
+      'DOMAIN IDENTITY: return concise actor, object, workflow, and failure phrases grounded in the requester text. If the requester states an operational failure, bottleneck, shortage, delay, fragmented/separate-data state, inability, coordination friction, risk, error, outage, missed deadline, or comparable negative outcome, failure MUST preserve that concise mechanism. This field and explicitProblem are retrieval/alignment metadata only; neither is external evidence.',
+      "QUERIES: target 10-12 ordered evidence-search seed queries (never exceed 12). For BOTH EXPLICIT_PROBLEM_DISCOVERY and DISCOVERY_INTENT, make broad profession/domain problem-discovery the majority of the plan: common operational failures, complaints, delays, shortages, quality/reliability issues, workload/capacity problems, service barriers, and documented risks inside the resolved domain. Use only a minority of requester-derived atomic probes for disambiguation/context. A query should usually contain 2-6 meaningful concepts and must not restate the entire requester sentence. causalSearchProbes remain retrieval-only. Also return 6-12 practitioner/research vocabulary phrases. Do not invent the winning problem during planning; collected evidence chooses it. Avoid proposed-solution terms unless the problem itself is about software/API/system behavior.",
+      'SOURCES: you are the primary owner of source selection. Select 7-9 complementary exact sourceKey values from ACTIVE SOURCE CATALOG when they can execute this retrieval plan. First-pass breadth is mandatory: when healthy sources exist, cover at least THREE evidence archetypes among direct-voice/community, documentary/news/institutional, and research/specialist/technical. Base source choice on actor + object + workflow + the AI-classified domain/profession, not only the requester-mentioned pain. Never choose a developer-community source merely because Cybersecurity, Artificial Intelligence, Blockchain, IoT, or another technical domain was selected when the actual workflow is operational/physical/public-sector rather than a software/API/infrastructure failure. First-pass evidence should normally include at least two direct-voice/community lanes and at least two documentary/research lanes; for niche physical/service domains add specialist/research/documentary coverage rather than padding with generic app stores. For consumer/software workflows include an app-review lane only when the problem itself concerns a mobile/software product or directly comparable app workflow. Do not pad with unrelated sources. Store listing descriptions are discovery metadata only; reviews/comments are the evidence. Use technical developer sources only for genuine software/API/infrastructure problem discovery.',
+      'When requester-selected domains are present, choose the exact selected domain that most directly OWNS the described actor/object/workflow as the primary collection anchor. Domain array order is not semantic evidence. Treat technologies, implementation methods, analytics techniques, infrastructure, and enabling capabilities as secondary search lanes when appropriate. Do not create or substitute an additional hidden/new domain. The selected domains are authoritative SEARCH scope only; they are not mandatory final-product ingredients. The description classifies/narrows the domain and supplies soft vocabulary/context; collected verified evidence determines the final problem family and which searched domains are actually relevant to it.',
+      'If this is recovery, materially change wording/source mix while preserving the discovery scope. CURRENT EVIDENCE TARGETS become authoritative only when the application supplies a concrete already-evidence-selected problem family for corroboration; in that case search that SAME family only. Otherwise continue discovery and do not promote requester text into a problem claim.',
+      'Be compact: short identity phrases, about 10-12 strong ordered queries, source keys only, and confidence. The runtime preserves safe AI seeds, enriches partial responses, and builds the full source-aware plan locally.',
     ].join(' ');
   }
 
@@ -1569,8 +1897,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const catalogLines = domainCatalog.map((domain) => {
       const visibility = domain.isVisible ? 'VISIBLE' : 'HIDDEN';
       const origin = domain.isAutoGenerated ? 'AUTO' : 'CONFIGURED';
-      const vocabulary = domain.keywords.slice(0, 2).join(', ');
-      return `${domain.id} | ${visibility} | ${origin} | ${domain.name}${vocabulary ? ` | HISTORICAL IDENTITY: ${vocabulary}` : ''}`;
+      return `${domain.id} | ${visibility} | ${origin} | ${domain.name}`;
     });
     const sourceLines = sourceCatalog.map((source) =>
       [
@@ -1593,15 +1920,15 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       description,
       '',
       'PREPARING CONTRACT:',
-      'Interpret the request as intent/context first. Do not assume it is a problem statement. Return requestIntent so downstream stages know whether an explicit problem was actually stated; the runtime derives retrieval metadata locally.',
+      'Treat the request text as retrieval/classification context, never as evidence. If it asserts a concrete current problem, return EXPLICIT_PROBLEM_DISCOVERY and preserve that concise wording in explicitProblem as soft context only; otherwise return DISCOVERY_INTENT. In both modes, resolve the profession/domain first and let trusted collected evidence select the strongest concrete problem family inside that resolved scope, even when it differs from the requester-stated example.',
       '',
       'OPTIONAL REQUEST KEYWORDS:',
       keywords.filter(Boolean).slice(0, 12).join(', ') || 'none',
       '',
-      'ACTIVE DOMAIN CATALOG (visible + hidden). Historical identity terms are ONLY for exact-domain reuse checking; never copy them into search queries unless they also occur semantically in the current request:',
+      'ACTIVE DOMAIN CATALOG (ALL active visible + hidden domains). Use this catalog ONLY to classify which domain the text belongs to. Domain names are taxonomy context, not evidence, not problem statements, and not search-query vocabulary unless the same concept is independently present in the requester text:',
       catalogLines.join('\n') || 'none',
       '',
-      'REQUESTER-SELECTED DOMAIN CONSTRAINTS (authoritative scope: when non-empty, primary domain MUST be one of these exact existing ids; do not create a fourth/new domain):',
+      'REQUESTER-SELECTED DOMAIN CONSTRAINTS (authoritative when non-empty: search/evidence scope MUST stay inside these exact ids. The full catalog above remains classification context only; do not add or substitute a hidden/new domain. When more than one domain is listed, selectedExistingDomainId must identify the selected domain that semantically owns the affected actor/object/workflow; never choose a primary only because it is first in this list, and do not promote an enabling technology over the domain whose real-world workflow is being described):',
       requesterSelectedDomains.map((domain) => `${domain.id} | ${domain.name}`).join('\n') || 'none',
       '',
       'ACTIVE SOURCE CATALOG (these are the only source keys you may select):',
@@ -1621,13 +1948,13 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               .map((outcome) => `${outcome.sourceKey} | ${outcome.status} | raw=${outcome.rawCount} | trusted=${outcome.trustedCount} | context=${outcome.contextCount} | unrelated=${outcome.unrelatedCount}`)
               .join('\n') || 'none',
             '',
-            'This is a recovery search. Rotate away from EMPTY, DEGRADED, or UNRELATED_ONLY lanes unless there is a materially new retrieval strategy for that source. Prefer complementary source archetypes that were missing or only weakly represented. When CURRENT EVIDENCE TARGETS name a concrete problem family, every query must seek independent corroboration of that same family; do not revert to domain-wide discovery or adjacent problems. Generate materially different practitioner/research/incident wording for the locked family, not generic problem/issue/complaint suffixes.',
+            'This is a recovery search. Rotate away from EMPTY, DEGRADED, or UNRELATED_ONLY lanes unless there is a materially new retrieval strategy for that source. Prefer complementary source archetypes that were missing or only weakly represented. When CURRENT EVIDENCE TARGETS name a concrete problem family, every query must seek independent corroboration of that same family; do not revert to domain-wide discovery or adjacent problems. Generate materially different practitioner/research/incident wording for the locked family, not generic problem/issue/complaint suffixes. If the previous corpus was mostly CONTEXT_ONLY, use causalSearchProbes to target the missing relationship between the request-stated failure and its cause/consequence; if the corpus was thin/EMPTY, use causalSearchProbes plus practitioner vocabulary to broaden recall without changing the problem.',
           ]
         : []),
       '',
       isRecovery
-        ? 'Return a compact recovery seed plan: request intent + domain identity + 8 materially different evidence-search seeds + 6-12 retrievalVocabulary phrases + 4-6 exact active source keys + confidence. Preserve the requester actor/object/workflow and any explicit problem without inventing one.'
-        : 'Return a compact first-pass seed plan: domain choice + request intent + domain identity + 8 strong evidence-search seeds + 6-12 retrievalVocabulary phrases + 6-8 exact active source keys + confidence. Cover practitioner wording, workflow/failure terminology, documentary language, and research terminology for the SAME problem. The final software problem is chosen only after evidence collection.',
+        ? 'Return a compact recovery seed plan: discovery intent + domain classification + 8 materially different evidence-search seeds + optional retrieval-only causal/facet probes + 6-12 retrievalVocabulary phrases + 4-6 exact active source keys + confidence. Preserve the locked evidence family only when CURRENT EVIDENCE TARGETS explicitly provide one; otherwise the requester text remains discovery context.'
+        : 'Return a compact first-pass seed plan: domain classification + EXPLICIT_PROBLEM_DISCOVERY when a concrete requester problem exists, otherwise DISCOVERY_INTENT + domain identity + 10-12 short evidence-search seeds + optional retrieval-only causal/facet probes + 6-12 retrievalVocabulary phrases + 7-9 exact active source keys + confidence. Make domain/profession problem discovery the majority of the plan; requester-derived probes are a minority used only for context/disambiguation. Collected evidence selects the winning problem family.',
     ].join('\n');
   }
 
@@ -1852,6 +2179,39 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       parsed.terminology,
       parsed.synonyms,
     );
+    const rawCausalSearchProbes = readArray(
+      parsed.causalSearchProbes,
+      parsed.causal_search_probes,
+      parsed.problemRelationProbes,
+      parsed.problem_relation_probes,
+      parsed.causalQueries,
+      parsed.causal_queries,
+    );
+    const causalSearchProbes = (rawCausalSearchProbes ?? [])
+      .map((value, index): Record<string, unknown> | null => {
+        if (typeof value === 'string') {
+          return {
+            relationType: index % 2 === 0 ? 'FAILURE_CHAIN' : 'PRACTITIONER_LANGUAGE',
+            query: value.replace(/\s+/gu, ' ').trim(),
+          };
+        }
+        if (!this.isRecord(value)) return null;
+        const relationType = readString(
+          value.relationType,
+          value.relation_type,
+          value.angle,
+          value.type,
+        );
+        const query = readString(
+          value.query,
+          value.searchQuery,
+          value.search_query,
+          value.text,
+        );
+        if (!query) return null;
+        return { relationType: relationType ?? 'FAILURE_CHAIN', query };
+      })
+      .filter((value): value is Record<string, unknown> => Boolean(value));
     const confidence = readNumber(
       parsed.confidence,
       parsed.confidenceScore,
@@ -1889,6 +2249,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       },
       searchQueries: searchQueries ?? [],
       retrievalVocabulary: retrievalVocabulary ?? [],
+      causalSearchProbes,
       selectedSourceKeys: selectedSourceKeys ?? [],
       confidence: confidence ?? 0,
     };
@@ -1914,25 +2275,32 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const domainIdentity = this.normalizeDomainIdentity(
       parsed.domainIdentity,
       description,
-      requestIntent.mode === 'DISCOVERY_INTENT',
+      requestIntent.mode !== 'EXPLICIT_PROBLEM',
     );
-    const problemProfile = requestIntent.mode === 'EXPLICIT_PROBLEM' && requestIntent.explicitProblem
-      ? this.normalizeProblemProfile(
-          parsed.problemProfile,
-          requestIntent.explicitProblem,
-          domainIdentity,
-        )
-      : undefined;
+    const problemProfile =
+      requestIntent.explicitProblem &&
+      (requestIntent.mode === 'EXPLICIT_PROBLEM' ||
+        requestIntent.mode === 'EXPLICIT_PROBLEM_DISCOVERY')
+        ? this.normalizeProblemProfile(
+            parsed.problemProfile,
+            description,
+            requestIntent.explicitProblem,
+            domainIdentity,
+          )
+        : undefined;
     const existingDomainMatchScore = this.normalizeScore(
       parsed.existingDomainMatchScore,
       rawSelectionMode === 'EXISTING' ? 100 : 0,
     );
 
     const catalogById = new Map(domainCatalog.map((domain) => [domain.id, domain] as const));
-    const normalizedRequestedName =
+    const normalizedRequestedDomainLabel =
       typeof parsed.suggestedDomainName === 'string'
-        ? this.normalizeComparableDomainName(parsed.suggestedDomainName)
+        ? this.sanitizeReusableDomainLabel(parsed.suggestedDomainName)
         : '';
+    const normalizedRequestedName = normalizedRequestedDomainLabel
+      ? this.normalizeComparableDomainName(normalizedRequestedDomainLabel)
+      : '';
     const selectedById = rawSelectedDomainId
       ? catalogById.get(rawSelectedDomainId) ?? null
       : null;
@@ -1948,6 +2316,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         : null;
     const reuseExistingDomain = Boolean(
       requestedExistingDomain &&
+      !this.hasDanglingDomainConnector(requestedExistingDomain.name) &&
       existingDomainMatchScore >= REQUEST_EXISTING_DOMAIN_REUSE_MIN_SCORE &&
       this.existingDomainIdentityMatchesRequest(
         requestedExistingDomain,
@@ -1984,7 +2353,33 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const explicitDomains = requestedDomainIds
       .map((id) => catalogById.get(id))
       .filter((domain): domain is RequestDomainCatalogEntry => Boolean(domain));
-    const explicitPrimary = explicitDomains[0] ?? null;
+
+    /*
+     * When the requester selected multiple domains, their array order is an
+     * allowed-scope assertion, not a semantic primary-domain decision. The AI
+     * planner has already seen both the request and the exact selected-domain
+     * catalog and is therefore the owner of choosing which selected domain most
+     * directly represents the affected actor/object/workflow. Deterministic
+     * code only validates that the chosen id/name is one of the requester-
+     * selected rows; it never promotes the first serialized domain merely
+     * because it appeared first in the payload.
+     */
+    const aiSelectedExplicitDomainById =
+      rawSelectedDomainId && requestedDomainIds.includes(rawSelectedDomainId)
+        ? catalogById.get(rawSelectedDomainId) ?? null
+        : null;
+    const aiSelectedExplicitDomainByName = normalizedRequestedName
+      ? explicitDomains.find(
+          (domain) =>
+            this.normalizeComparableDomainName(domain.name) ===
+            normalizedRequestedName,
+        ) ?? null
+      : null;
+    const explicitPrimary =
+      aiSelectedExplicitDomainById ??
+      aiSelectedExplicitDomainByName ??
+      explicitDomains[0] ??
+      null;
 
     const domainSelectionMode = explicitPrimary || reuseExistingDomain
       ? 'EXISTING' as const
@@ -2009,6 +2404,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         );
     const inferredSecondaryScopes = this.normalizeInferredSecondaryScopes(
       [
+        ...this.deriveOperationalParentScopes(description, domainIdentity),
         ...(Array.isArray(parsed.secondaryScopes) ? parsed.secondaryScopes : []),
         ...this.extractSecondaryScopePhrases(domainIdentity.object),
       ],
@@ -2022,6 +2418,13 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const retrievalVocabulary = this.normalizeRetrievalVocabulary(
       parsed.retrievalVocabulary,
       description,
+      problemProfile,
+      domainIdentity,
+    );
+    const causalSearchProbes = this.normalizeCausalSearchProbes(
+      parsed.causalSearchProbes,
+      description,
+      requestIntent,
       problemProfile,
       domainIdentity,
     );
@@ -2046,25 +2449,40 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     // Keep AI ownership without making an omitted seed invalidate the whole
     // PREPARING result. One grounded AI seed is enough; missing coverage is
     // completed deterministically without changing aiUsed/fallbackUsed.
-    const acceptedAiQueries = this.deduplicateQueries(rankedAiQueries).slice(0, 8);
+    const acceptedAiQueries = this.deduplicateQueries(rankedAiQueries).slice(0, 10);
     // Do not discard a useful fastest-provider response simply because it is
     // partial. At least one safe, requester-grounded AI query keeps aiUsed=true;
     // deterministic/request-derived lanes fill the remaining retrieval budget.
     if (acceptedAiQueries.length === 0) return fallback;
 
+    const discoveryScopeDomainNames = this.deduplicatePhrases([
+      ...explicitDomains.map((domain) => domain.name),
+      suggestedDomainName ?? '',
+    ]).filter(Boolean);
     const searchQueries = this.buildAiPrimarySearchPlan(
       [...acceptedAiQueries, ...vocabularyAnchoredQueries],
+      causalSearchProbes.map((probe) => probe.query),
       fallback.searchQueries,
       description,
       problemProfile,
+      {
+        discoveryIntent: requestIntent.mode !== 'EXPLICIT_PROBLEM',
+        domainNames: discoveryScopeDomainNames,
+        domainIdentity,
+        retrievalVocabulary,
+      },
     )
       .filter((query) =>
-        RequestQueryProvenanceUtil.isQueryGrounded({
-          requestDescription: description,
+        this.isPlanningQueryGrounded({
           query,
+          description,
+          discoveryIntent: requestIntent.mode !== 'EXPLICIT_PROBLEM',
+          domainNames: discoveryScopeDomainNames,
+          domainIdentity,
+          retrievalVocabulary,
         }),
       )
-      .slice(0, 14);
+      .slice(0, 18);
     if (searchQueries.length === 0) return fallback;
 
     const evidenceTargets = this.deduplicatePhrases([
@@ -2105,29 +2523,75 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     );
     const capabilityInput = {
       requestDescription: description,
-      domainName: suggestedDomainName,
+      domainName:
+        requestIntent.mode === 'EXPLICIT_PROBLEM' ? undefined : suggestedDomainName,
       keywords: intentConcepts,
       plannedQueries: searchQueries,
       collectionMode: 'FAST_GENERATION' as const,
     };
     /*
-     * AI-selected sources are semantic retrieval decisions, so a heuristic fit
-     * score must not hard-veto them. Runtime/collector-specific executability is
-     * the hard boundary; generic request-fit remains a ranking signal for the
-     * supplementary portfolio only. This prevents niche professional requests
-     * from silently losing scholarly/documentary sources before collection.
+     * AI owns semantic source selection, but bounded explicit-problem planning
+     * must still obey the generic request-capability contract. Otherwise an AI
+     * source choice can spend scarce collection slots on an executable yet
+     * structurally incompatible corpus (for example developer-only discussion
+     * sources for a physical workshop workflow). This gate affects routing
+     * only; it never classifies or promotes evidence.
      */
-    const requestCapableSourceKeys = selectedSourceKeys.filter((sourceKey) =>
-      this.collectorsFactory.isCollectorRouteExecutable(
-        sourceKey,
-        capabilityInput,
-      ),
+    const suppressAppReviewLanes =
+      RequestWorkflowSourcePolicyUtil.shouldSuppressAppReviewLanes({
+        requestDescription: description,
+        problemProfile,
+      });
+    const suppressDeveloperCommunityLanes =
+      RequestWorkflowSourcePolicyUtil.shouldSuppressDeveloperCommunityLanes({
+        requestDescription: description,
+        problemProfile,
+      });
+    const sourcePassesProblemOwnedPolicy = (sourceKey: string): boolean =>
+      !(
+        (suppressAppReviewLanes &&
+          RequestWorkflowSourcePolicyUtil.isAppReviewSource(sourceKey)) ||
+        (suppressDeveloperCommunityLanes &&
+          RequestWorkflowSourcePolicyUtil.isDeveloperCommunitySource(sourceKey))
+      );
+    const requestCapableSourceKeys = selectedSourceKeys.filter(
+      (sourceKey) =>
+        sourcePassesProblemOwnedPolicy(sourceKey) &&
+        this.collectorsFactory.getCollectorRequestCapability(
+          sourceKey,
+          capabilityInput,
+        ).supported,
     );
     const executableActiveSourceKeys = [...activeSourceKeys].filter((sourceKey) =>
-      this.collectorsFactory.isCollectorRouteExecutable(
+      sourcePassesProblemOwnedPolicy(sourceKey) &&
+      this.collectorsFactory.getCollectorRequestCapability(
         sourceKey,
         capabilityInput,
-      ),
+      ).supported,
+    );
+    const textAndDomainsRequest = requestedDomainIds.length > 1;
+    const textOnlyRequest = requestedDomainIds.length === 0;
+    const minimumAiOwnedPortfolio = requestIntent.mode === 'EXPLICIT_PROBLEM'
+      ? 6
+      : textAndDomainsRequest
+        ? 9
+        : 9;
+    const evidenceBackbone = [
+      'crossref',
+      'news',
+      'gdelt',
+      'reddit',
+      'forum',
+      'blog',
+      'youtube',
+    ].filter(
+      (sourceKey) =>
+        executableActiveSourceKeys.includes(sourceKey) &&
+        sourcePassesProblemOwnedPolicy(sourceKey),
+    );
+    const missingAiOwnedLanes = Math.max(
+      0,
+      minimumAiOwnedPortfolio - requestCapableSourceKeys.length,
     );
     const capabilityRankedSupplement = executableActiveSourceKeys
       .filter((sourceKey) => !requestCapableSourceKeys.includes(sourceKey))
@@ -2135,18 +2599,76 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         this.collectorsFactory.getCollectorRequestFitScore(right, capabilityInput) -
           this.collectorsFactory.getCollectorRequestFitScore(left, capabilityInput) ||
         left.localeCompare(right),
-      );
-    const rankedEffectiveSourceKeys = this.deduplicatePhrases([
-      ...requestCapableSourceKeys,
-      ...capabilityRankedSupplement,
-    ]);
-    const boundedEffectiveSourceKeys = this.buildBalancedEvidenceSourcePortfolio(
+      )
+      .slice(0, Math.max(missingAiOwnedLanes, minimumAiOwnedPortfolio));
+    const rankedEffectiveSourceKeys = this.prioritizeProblemAwareSources(
+      this.deduplicatePhrases([
+        ...requestCapableSourceKeys,
+        ...evidenceBackbone,
+        ...capabilityRankedSupplement,
+      ]),
+      description,
+      problemProfile,
+    );
+    let boundedEffectiveSourceKeys = this.buildBalancedEvidenceSourcePortfolio(
       rankedEffectiveSourceKeys,
       sourceCatalog,
-      8,
+      textAndDomainsRequest ? 9 : textOnlyRequest ? 9 : 8,
     );
     if (boundedEffectiveSourceKeys.length === 0) {
       return fallback;
+    }
+
+    /*
+     * TEXT_ONLY niche workflows frequently return only community noise when an
+     * AI planner chooses Reddit/Forum/Blog/News but omits every research lane.
+     * Preserve the exact source-count budget and AI ownership, but guarantee one
+     * executable Crossref lane for a text-only operational workflow with an
+     * explicit failure. This is retrieval diversification only: Crossref rows
+     * still pass the same Community AI + deterministic evidence gates.
+     */
+    const textOnlyOperationalRequest =
+      textOnlyRequest &&
+      requestIntent.mode !== 'EXPLICIT_PROBLEM' &&
+      Boolean(domainIdentity.workflow.trim()) &&
+      Boolean(domainIdentity.failure.trim());
+    if (
+      textOnlyOperationalRequest &&
+      activeSourceKeys.has('crossref') &&
+      !boundedEffectiveSourceKeys.includes('crossref') &&
+      sourcePassesProblemOwnedPolicy('crossref') &&
+      this.collectorsFactory.getCollectorRequestCapability(
+        'crossref',
+        capabilityInput,
+      ).supported
+    ) {
+      if (boundedEffectiveSourceKeys.length < 9) {
+        boundedEffectiveSourceKeys = this.deduplicatePhrases([
+          ...boundedEffectiveSourceKeys,
+          'crossref',
+        ]).slice(0, 9);
+        this.logger.debug(
+          `[PREPARING] TEXT_ONLY operational source diversification added crossref inside the bounded 9-source text portfolio.`,
+        );
+      } else {
+        const replaceableIndex = boundedEffectiveSourceKeys.findIndex((key) =>
+          ['blog', 'youtube', 'product-hunt'].includes(key),
+        );
+        const replacementIndex =
+          replaceableIndex >= 0
+            ? replaceableIndex
+            : boundedEffectiveSourceKeys.length - 1;
+        const replaced = boundedEffectiveSourceKeys[replacementIndex];
+        boundedEffectiveSourceKeys = boundedEffectiveSourceKeys.map((key, index) =>
+          index === replacementIndex ? 'crossref' : key,
+        );
+        boundedEffectiveSourceKeys = this.deduplicatePhrases(
+          boundedEffectiveSourceKeys,
+        );
+        this.logger.debug(
+          `[PREPARING] TEXT_ONLY operational source diversification replaced source=${replaced} with crossref while preserving the ${boundedEffectiveSourceKeys.length}-source budget.`,
+        );
+      }
     }
 
     const allRuntimeSourceKeys = [...boundedEffectiveSourceKeys];
@@ -2157,6 +2679,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       problemProfile,
       boundedEffectiveSourceKeys,
       retrievalVocabulary,
+      causalSearchProbes,
+      requestIntent.mode !== 'EXPLICIT_PROBLEM',
     );
     const sourceFocus = this.deriveSourceFocusFromKeys(boundedEffectiveSourceKeys);
     const confidence = this.normalizeScore(parsed.confidence, fallback.confidence);
@@ -2172,6 +2696,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       existingDomainMatchScore: effectiveExistingDomainMatchScore,
       searchQueries,
       retrievalVocabulary,
+      causalSearchProbes,
       evidenceTargets,
       intentConcepts,
       sourceFocus,
@@ -2188,46 +2713,78 @@ export class RequestCollectionPlanningService implements OnModuleInit {
 
     return plan;
   }  /**
-   * AI queries remain first because collectors with tight query budgets use
-   * the first one to three entries. Deterministic terms are added only to fill
-   * uncovered request concepts; they never push valid AI queries behind broad
-   * domain fallback searches.
+   * Request-derived atomic evidence probes lead text-bearing discovery because
+   * collectors with tight budgets often execute only the first few entries.
+   * AI-owned seeds remain immediately behind them and still provide semantic
+   * vocabulary, source selection, and recall breadth.
    */
   private buildAiPrimarySearchPlan(
     aiQueries: readonly string[],
+    causalQueries: readonly string[],
     fallbackQueries: readonly string[],
     description: string,
     problemProfile?: RequestCanonicalProblemProfile,
+    discovery?: {
+      readonly discoveryIntent: boolean;
+      readonly domainNames: readonly string[];
+      readonly domainIdentity: {
+        readonly actor: string;
+        readonly object: string;
+        readonly workflow: string;
+        readonly failure: string;
+      };
+      readonly retrievalVocabulary: readonly string[];
+    },
   ): string[] {
     /*
-     * AI queries are the retrieval contract for text-bearing requests. Keep a
-     * larger AI-owned front section because several collectors intentionally
-     * execute only the first few queries. Deterministic queries are therefore
-     * fill/recovery terms, not the primary search plan.
+     * AI owns semantic planning, but the runtime converts the requester problem
+     * into short atomic evidence probes before source execution. This prevents a
+     * valid yet prose-like AI seed from monopolizing the first/only collector
+     * query while preserving the AI vocabulary and causal lanes directly behind
+     * the atomic probes.
      */
-    const acceptedAi = this.rankAiQueriesForRequest(
-      aiQueries,
-      description,
-    );
-    const aiOwned = this.deduplicateQueries(acceptedAi).slice(0, 14);
-    const requestDerivedPrecisionQueries = RequestDynamicQueryUtil.build({
-      requestDescription: description,
-      intentConcepts: problemProfile
-        ? [
-            problemProfile.actor,
-            problemProfile.object,
-            problemProfile.workflow,
-          ]
-        : [],
-      evidenceTargets: problemProfile
-        ? [
-            ...problemProfile.failureModes,
-            ...problemProfile.consequences,
-          ]
-        : [],
-      plannedQueries: aiOwned,
-      maxQueries: 6,
-    });
+    const acceptedAi = discovery?.discoveryIntent
+      ? this.rankAiQueriesForDiscovery(
+          aiQueries,
+          description,
+          discovery.domainNames,
+          discovery.domainIdentity,
+          discovery.retrievalVocabulary,
+        )
+      : this.rankAiQueriesForRequest(aiQueries, description);
+    const aiOwned = this.deduplicateQueries(acceptedAi).slice(0, 16);
+    const causalOwned = this.deduplicateQueries(
+      causalQueries.filter((query) =>
+        this.isPlanningQueryGrounded({
+          query,
+          description,
+          discoveryIntent: Boolean(discovery?.discoveryIntent),
+          domainNames: discovery?.domainNames ?? [],
+          domainIdentity: discovery?.domainIdentity,
+          retrievalVocabulary: discovery?.retrievalVocabulary ?? [],
+        }),
+      ),
+    ).slice(0, 6);
+    const requestDerivedPrecisionQueries =
+      RequestDynamicQueryUtil.buildEvidenceFacetQueries({
+        requestDescription: description,
+        intentConcepts: problemProfile
+          ? [
+              problemProfile.actor,
+              problemProfile.object,
+              problemProfile.workflow,
+            ]
+          : [],
+        evidenceTargets: problemProfile
+          ? [
+              ...(problemProfile.evidenceFacets ?? []),
+              ...problemProfile.failureModes,
+              ...problemProfile.consequences,
+            ]
+          : [],
+        plannedQueries: aiOwned,
+        maxQueries: 8,
+      });
 
     /*
      * Keep the fastest provider's best seeds first, but reserve a bounded
@@ -2240,13 +2797,50 @@ export class RequestCollectionPlanningService implements OnModuleInit {
      * are derived only from the request; they do not create evidence or change
      * the semantic problem identity.
      */
-    const output = this.deduplicateQueries([
-      ...aiOwned.slice(0, 4),
-      ...requestDerivedPrecisionQueries.slice(0, 4),
-      ...aiOwned.slice(4),
-    ]).slice(0, 14);
+    const broadDiscoveryQueries = discovery?.discoveryIntent
+      ? this.buildBroadDiscoveryQueries(
+          discovery.domainNames,
+          discovery.domainIdentity,
+          discovery.retrievalVocabulary,
+        )
+      : [];
+    const practitionerPrecisionQueries = discovery?.discoveryIntent
+      ? RequestDynamicQueryUtil.buildProfessionalTerminologyQueries({
+          requestDescription: description,
+          intentConcepts: [
+            discovery.domainIdentity.actor,
+            discovery.domainIdentity.object,
+            discovery.domainIdentity.workflow,
+          ],
+          evidenceTargets: [discovery.domainIdentity.failure],
+          plannedQueries: aiOwned,
+          maxQueries: 5,
+        })
+      : [];
+    const output = this.deduplicateQueries(
+      discovery?.discoveryIntent
+        ? [
+            ...broadDiscoveryQueries.slice(0, 5),
+            ...aiOwned.slice(0, 4),
+            ...practitionerPrecisionQueries.slice(0, 2),
+            ...requestDerivedPrecisionQueries.slice(0, 2),
+            ...causalOwned.slice(0, 1),
+            ...broadDiscoveryQueries.slice(5),
+            ...aiOwned.slice(4),
+            ...practitionerPrecisionQueries.slice(2),
+            ...requestDerivedPrecisionQueries.slice(2),
+            ...causalOwned.slice(1),
+          ]
+        : [
+            ...aiOwned.slice(0, 3),
+            ...causalOwned.slice(0, 4),
+            ...requestDerivedPrecisionQueries.slice(0, 3),
+            ...aiOwned.slice(3),
+            ...causalOwned.slice(4),
+          ],
+    ).slice(0, 18);
 
-    if (output.length >= 10) {
+    if (output.length >= 12) {
       return output;
     }
 
@@ -2263,14 +2857,633 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     );
 
     for (const fallbackQuery of acceptedFallback) {
-      if (output.length >= 14) break;
+      if (output.length >= 18) break;
       const next = this.deduplicateQueries([...output, fallbackQuery]);
       if (next.length > output.length) {
         output.push(next[next.length - 1]);
       }
     }
 
-    return output.slice(0, 14);
+    return output.slice(0, 18);
+  }
+
+  private buildBroadDiscoveryQueries(
+    domainNames: readonly string[],
+    domainIdentity: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    },
+    retrievalVocabulary: readonly string[],
+  ): string[] {
+    const compact = (value: string, maxWords = 7): string =>
+      value
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, maxWords)
+        .join(' ');
+    const domainSeeds = this.deduplicatePhrases(domainNames).slice(0, 3);
+    const actor = compact(domainIdentity.actor, 5);
+    const object = compact(domainIdentity.object, 5);
+    const workflow = compact(domainIdentity.workflow, 5);
+    const failure = compact(domainIdentity.failure, 5);
+    const vocab = retrievalVocabulary
+      .map((value) => compact(value, 5))
+      .filter(Boolean)
+      .slice(0, 4);
+    const candidates: string[] = [];
+    /*
+     * User text resolves the profession/domain and contributes vocabulary, but
+     * it does not own the problem that discovery must prove. Spend the scarce
+     * broad-discovery slots on domain-native problem search first, then add a
+     * small requester-derived tail for disambiguation and later solution fit.
+     */
+    for (const domain of domainSeeds) {
+      const scope = compact(domain, 5);
+      if (!scope) continue;
+      candidates.push(
+        `${scope} practitioner operational challenges`,
+        `${scope} workflow bottlenecks delays failures`,
+        `${scope} recurring complaints service problems`,
+        `${scope} staffing capacity workload issues`,
+        `${scope} quality reliability operational risks`,
+      );
+    }
+    if (actor && workflow) candidates.push(`${actor} ${workflow} common bottlenecks`);
+    if (actor && object) candidates.push(`${actor} ${object} recurring operational issues`);
+    if (object && workflow) candidates.push(`${object} ${workflow} quality delay failures`);
+    if (actor && failure) candidates.push(`${actor} ${failure} operational reports`);
+    if (actor && workflow && failure) candidates.push(`${actor} ${workflow} ${failure}`);
+    if (object && workflow && failure) candidates.push(`${object} ${workflow} ${failure}`);
+    for (const phrase of vocab) {
+      candidates.push(`${phrase} operational problems`);
+    }
+    return this.deduplicateQueries(candidates)
+      .filter((query) => query.split(/\s+/u).length >= 3)
+      .slice(0, 8);
+  }
+
+  private buildTextAndDomainsSearchPortfolio(input: {
+    readonly baseQueries: readonly string[];
+    readonly selectedDomainNames: readonly string[];
+    readonly description?: string;
+    readonly problemProfile?: RequestCanonicalProblemProfile;
+    readonly domainIdentity?: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    };
+    readonly retrievalVocabulary: readonly string[];
+    readonly causalSearchProbes: readonly RequestCausalSearchProbe[];
+  }): string[] {
+    const compact = (value: string, maxWords = 7): string =>
+      value
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, maxWords)
+        .join(' ');
+
+    const domains = this.deduplicatePhrases(input.selectedDomainNames).slice(0, 3);
+    const atomicFacets = input.description?.trim()
+      ? RequestDynamicQueryUtil.buildEvidenceFacetQueries({
+          requestDescription: input.description,
+          intentConcepts: [
+            input.problemProfile?.actor ?? input.domainIdentity?.actor ?? '',
+            input.problemProfile?.object ?? input.domainIdentity?.object ?? '',
+            input.problemProfile?.workflow ?? input.domainIdentity?.workflow ?? '',
+          ].filter(Boolean),
+          evidenceTargets: [
+            ...(input.problemProfile?.evidenceFacets ?? []),
+            ...(input.problemProfile?.failureModes ?? []),
+            ...(input.problemProfile?.consequences ?? []),
+            input.domainIdentity?.failure ?? '',
+          ].filter(Boolean),
+          plannedQueries: input.baseQueries,
+          maxQueries: 10,
+        })
+      : [];
+
+    const domainAtomicLanes = domains.flatMap((domainName, domainIndex) => {
+      const domain = compact(domainName, 3);
+      const rotated = atomicFacets.filter(
+        (_, index) => index % Math.max(1, domains.length) === domainIndex,
+      );
+      return rotated.slice(0, 3).map((query) =>
+        compact(`${domain} ${query}`, 8),
+      );
+    });
+
+    const actor = compact(input.domainIdentity?.actor ?? '', 4);
+    const object = compact(input.domainIdentity?.object ?? '', 4);
+    const workflow = compact(input.domainIdentity?.workflow ?? '', 5);
+    const failure = compact(input.domainIdentity?.failure ?? '', 5);
+    const vocabulary = this.deduplicatePhrases(input.retrievalVocabulary)
+      .map((value) => compact(value, 4))
+      .filter(Boolean)
+      .slice(0, 4);
+
+    const domainRecall = domains.flatMap((domainName, index) => {
+      const domain = compact(domainName, 3);
+      return [
+        compact(`${domain} ${failure || workflow} reported problem`, 8),
+        compact(
+          `${domain} ${vocabulary[index % Math.max(1, vocabulary.length)] ?? (object || actor)} operational issue`,
+          8,
+        ),
+      ];
+    });
+
+    const domainProblemDiscovery = domains.flatMap((domainName) => {
+      const domain = compact(domainName, 3);
+      return [
+        compact(`${domain} common operational problems complaints`, 7),
+        compact(`${domain} workflow bottlenecks delays failures`, 7),
+        compact(`${domain} practitioner challenges service barriers`, 7),
+      ];
+    });
+
+    const causalQueries = this.deduplicateQueries(
+      input.causalSearchProbes.map((probe) => compact(probe.query, 8)),
+    ).slice(0, 2);
+
+    return this.deduplicateQueries([
+      ...domainProblemDiscovery,
+      ...domainRecall,
+      ...input.baseQueries.slice(0, 4).map((query) => compact(query, 8)),
+      ...domainAtomicLanes,
+      ...atomicFacets.slice(0, 5).map((query) => compact(query, 7)),
+      ...causalQueries,
+      ...input.baseQueries.slice(4).map((query) => compact(query, 8)),
+    ])
+      .filter((query) => query.split(/\s+/u).length >= 2)
+      .slice(0, 18);
+  }
+
+  private buildTextOnlyExpandedSearchPortfolio(input: {
+    readonly baseQueries: readonly string[];
+    readonly inferredPrimaryDomainName?: string;
+    readonly inferredSecondaryScopes: readonly string[];
+    readonly description?: string;
+    readonly problemProfile?: RequestCanonicalProblemProfile;
+    readonly domainIdentity?: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    };
+    readonly retrievalVocabulary: readonly string[];
+  }): string[] {
+    const compact = (value: string, maxWords = 7): string =>
+      value
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, maxWords)
+        .join(' ');
+
+    const atomicFacets = input.description?.trim()
+      ? RequestDynamicQueryUtil.buildEvidenceFacetQueries({
+          requestDescription: input.description,
+          intentConcepts: [
+            input.problemProfile?.actor ?? input.domainIdentity?.actor ?? '',
+            input.problemProfile?.object ?? input.domainIdentity?.object ?? '',
+            input.problemProfile?.workflow ?? input.domainIdentity?.workflow ?? '',
+          ].filter(Boolean),
+          evidenceTargets: [
+            ...(input.problemProfile?.evidenceFacets ?? []),
+            ...(input.problemProfile?.failureModes ?? []),
+            ...(input.problemProfile?.consequences ?? []),
+            input.domainIdentity?.failure ?? '',
+          ].filter(Boolean),
+          plannedQueries: input.baseQueries,
+          maxQueries: 18,
+        })
+      : [];
+
+    const scopes = this.deduplicatePhrases(input.inferredSecondaryScopes)
+      .map((value) => compact(value, 4))
+      .filter(Boolean)
+      .slice(0, 4);
+    const actor = compact(input.domainIdentity?.actor ?? '', 4);
+    const object = compact(input.domainIdentity?.object ?? '', 4);
+    const workflow = compact(input.domainIdentity?.workflow ?? '', 5);
+    const failure = compact(input.domainIdentity?.failure ?? '', 5);
+    const vocabulary = this.deduplicatePhrases(input.retrievalVocabulary)
+      .map((value) => compact(value, 4))
+      .filter(Boolean)
+      .slice(0, 7);
+
+    const scopeRecall = scopes.flatMap((scope, index) => [
+      compact(
+        `${scope} ${atomicFacets[index % Math.max(1, atomicFacets.length)] ?? (failure || workflow)}`,
+        8,
+      ),
+      compact(`${scope} operational bottleneck reported problem`, 7),
+    ]);
+
+    const primaryDomain = compact(input.inferredPrimaryDomainName ?? '', 4);
+    const domainProblemDiscovery = primaryDomain
+      ? [
+          compact(`${primaryDomain} common operational problems complaints`, 8),
+          compact(`${primaryDomain} workflow bottlenecks delays failures`, 8),
+          compact(`${primaryDomain} staffing capacity quality service issues`, 8),
+          compact(`${primaryDomain} practitioner challenges recurring problems`, 8),
+          compact(`${primaryDomain} scheduling coordination workload problems`, 8),
+          compact(`${primaryDomain} service delays missed follow ups`, 8),
+          compact(`${primaryDomain} resource shortages operational disruption`, 8),
+          compact(`${primaryDomain} handoff communication missed updates`, 8),
+          compact(`${primaryDomain} recurring service complaints pain points`, 8),
+          compact(`${primaryDomain} daily operations failure case`, 8),
+        ]
+      : [];
+
+    const professionRecall = this.deduplicateQueries([
+      compact(`${actor || object} ${workflow} reported problems`, 8),
+      compact(`${object || actor} ${failure} reported issue`, 8),
+      ...vocabulary.slice(0, 4).map((term) =>
+        compact(`${term} ${failure || workflow} problem`, 8),
+      ),
+    ]);
+
+    /*
+     * Domain/profession problem discovery is intentionally first. Requester
+     * facets remain a bounded recall tail so they can help solution fit and
+     * vocabulary without deciding which problem the external evidence selects.
+     */
+    return this.deduplicateQueries([
+      ...domainProblemDiscovery,
+      ...professionRecall,
+      ...scopeRecall,
+      ...input.baseQueries.slice(0, 6).map((query) => compact(query, 8)),
+      ...atomicFacets.slice(0, 10).map((query) => compact(query, 7)),
+      ...input.baseQueries.slice(6).map((query) => compact(query, 8)),
+      ...atomicFacets.slice(10).map((query) => compact(query, 7)),
+    ])
+      .filter((query) => query.split(/\s+/u).length >= 2)
+      .slice(0, 28);
+  }
+
+  private buildTextAndDomainsRuntimeSourcePlans(input: {
+    readonly selectedSourceKeys: readonly string[];
+    readonly selectedDomains: readonly { readonly id: string; readonly name: string }[];
+    readonly searchQueries: readonly string[];
+    readonly description: string;
+    readonly problemProfile?: RequestCanonicalProblemProfile;
+    readonly plannerPrioritySourceKeys: readonly string[];
+    readonly retrievalVocabulary: readonly string[];
+    readonly causalSearchProbes: readonly RequestCausalSearchProbe[];
+    readonly domainIdentity?: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    };
+  }): RequestCollectionSourcePlan[] {
+    const sourceKeys = this.deduplicatePhrases(input.selectedSourceKeys)
+      .map((key) => key.toLocaleLowerCase())
+      .slice(0, 9);
+    const domains = input.selectedDomains.slice(0, 3);
+    if (sourceKeys.length === 0 || domains.length === 0) return [];
+
+    const priority = new Set(
+      input.plannerPrioritySourceKeys.map((key) => key.toLocaleLowerCase()),
+    );
+    const laneQueriesByDomain = new Map(
+      domains.map((domain) => [
+        domain.id,
+        input.searchQueries.filter((query) =>
+          this.discoveryQueryMatchesDomain(query, domain.name),
+        ),
+      ] as const),
+    );
+    const fallbackLaneQueries = this.buildTextAndDomainsSearchPortfolio({
+      baseQueries: input.searchQueries,
+      selectedDomainNames: domains.map((domain) => domain.name),
+      description: input.description,
+      problemProfile: input.problemProfile,
+      domainIdentity: input.domainIdentity,
+      retrievalVocabulary: input.retrievalVocabulary,
+      causalSearchProbes: input.causalSearchProbes,
+    });
+
+    const sourcePlans = sourceKeys.map((sourceKey, sourceIndex) => {
+      const first = domains[sourceIndex % domains.length]!;
+      const second = domains[(sourceIndex + 1) % domains.length]!;
+      const third = domains[(sourceIndex + 2) % domains.length]!;
+      const budget = priority.has(sourceKey) ? 5 : 4;
+      const firstQueries = laneQueriesByDomain.get(first.id) ?? [];
+      const secondQueries = laneQueriesByDomain.get(second.id) ?? [];
+      const thirdQueries = laneQueriesByDomain.get(third.id) ?? [];
+      const bridgeQueries = input.searchQueries.filter(
+        (query) =>
+          this.discoveryQueryMatchesDomain(query, first.name) &&
+          this.discoveryQueryMatchesDomain(query, second.name),
+      );
+      const guaranteedPrimaryLane = this.buildGuaranteedTextAndDomainLaneQuery(
+        first,
+        input.searchQueries,
+        input.domainIdentity,
+      );
+      const baseQueries = this.deduplicateQueries([
+        guaranteedPrimaryLane,
+        ...firstQueries.slice(0, 2),
+        ...secondQueries.slice(0, 1),
+        ...bridgeQueries.slice(0, 1),
+        ...thirdQueries.slice(0, 1),
+        ...fallbackLaneQueries,
+      ]).slice(0, Math.max(9, budget * 3));
+      const sourceQueries = SourceSpecificEvidenceQueryUtil.compile({
+        sourceKey,
+        baseQueries,
+        discoveryDomainName: first.name,
+        maxQueries: budget,
+        preserveBaseQueries: true,
+        discoveryIntent: true,
+      });
+      const queries =
+        sourceQueries.length > 0 ? sourceQueries : baseQueries.slice(0, budget);
+      const representedDomains = domains.filter((domain) =>
+        queries.some((query) => this.discoveryQueryMatchesDomain(query, domain.name)),
+      );
+      return {
+        sourceKey,
+        queries,
+        routingHints:
+          sourceKey === 'forum'
+            ? this.buildForumPractitionerRoutingHints(
+                input.problemProfile,
+                input.retrievalVocabulary,
+              )
+            : [],
+        discoveryDomainName:
+          representedDomains.length === 1 ? representedDomains[0]!.name : null,
+        discoveryDomainNames: representedDomains.map((domain) => domain.name),
+        discoveryDomainId:
+          representedDomains.length === 1 ? representedDomains[0]!.id : null,
+        discoveryDomainIds: representedDomains.map((domain) => domain.id),
+        queryIntentId: `${representedDomains.map((domain) => domain.id).join('+') || 'request'}:${sourceKey}:${sourceIndex + 1}`,
+        sourceTier: priority.has(sourceKey)
+          ? ('PRIMARY' as const)
+          : ('SECONDARY' as const),
+        problemFacetIds: [],
+      };
+    }).filter((plan) => plan.queries.length > 0);
+
+    return this.ensureTextAndDomainsRuntimeCoverage({
+      sourcePlans,
+      selectedDomains: domains,
+      searchQueries: input.searchQueries,
+      domainIdentity: input.domainIdentity,
+    });
+  }
+
+  private buildGuaranteedTextAndDomainLaneQuery(
+    domain: { readonly id: string; readonly name: string },
+    searchQueries: readonly string[],
+    domainIdentity?: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    },
+  ): string {
+    const contextualTail = [
+      domainIdentity?.actor ?? '',
+      domainIdentity?.object ?? '',
+      domainIdentity?.workflow ?? '',
+    ]
+      .map((value) => value.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean)
+      .join(' ')
+      .split(/\s+/u)
+      .slice(0, 6)
+      .join(' ');
+
+    const existingDomainQuery = searchQueries.find((query) =>
+      this.discoveryQueryMatchesDomain(query, domain.name),
+    );
+    if (existingDomainQuery) {
+      const contextualizedQuery = contextualTail
+        ? `${existingDomainQuery} ${contextualTail}`
+        : existingDomainQuery;
+      return this.anchorDiscoveryQueryToDomain(contextualizedQuery, domain.name);
+    }
+
+    const domainProblemQuery = `${domain.name} common operational problems complaints`;
+    const fallbackQuery = contextualTail
+      ? `${domainProblemQuery} ${contextualTail}`
+      : domainProblemQuery;
+    return this.anchorDiscoveryQueryToDomain(fallbackQuery, domain.name);
+  }
+
+  private ensureTextAndDomainsRuntimeCoverage(input: {
+    readonly sourcePlans: readonly RequestCollectionSourcePlan[];
+    readonly selectedDomains: readonly { readonly id: string; readonly name: string }[];
+    readonly searchQueries: readonly string[];
+    readonly domainIdentity?: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    };
+  }): RequestCollectionSourcePlan[] {
+    if (input.sourcePlans.length === 0 || input.selectedDomains.length === 0) {
+      return [...input.sourcePlans];
+    }
+
+    const representedDomainIds = (plan: RequestCollectionSourcePlan): string[] =>
+      input.selectedDomains
+        .filter((domain) =>
+          plan.queries.some((query) =>
+            this.discoveryQueryMatchesDomain(query, domain.name),
+          ),
+        )
+        .map((domain) => domain.id);
+
+    const covered = new Set(
+      input.sourcePlans.flatMap((plan) => representedDomainIds(plan)),
+    );
+    const missing = input.selectedDomains.filter((domain) => !covered.has(domain.id));
+    if (missing.length > 0) {
+      this.logger.warn(
+        `[PREPARING] TEXT_AND_DOMAINS source-plan coverage repair added requester-grounded executable lane(s) for: ${missing
+          .map((domain) => domain.name)
+          .join(', ')}. The strict selected-domain invariant remains enabled after repair.`,
+      );
+    }
+    if (missing.length === 0) {
+      return input.sourcePlans.map((plan, index) =>
+        this.rebindTextAndDomainsSourcePlanMetadata(
+          plan,
+          input.selectedDomains,
+          index,
+        ),
+      );
+    }
+
+    const assignments = new Map<number, typeof missing>();
+    missing.forEach((domain, missingIndex) => {
+      const targetIndex = missingIndex % input.sourcePlans.length;
+      const current = assignments.get(targetIndex) ?? [];
+      assignments.set(targetIndex, [...current, domain]);
+    });
+
+    return input.sourcePlans.map((plan, index) => {
+      const assigned = assignments.get(index) ?? [];
+      if (assigned.length === 0) {
+        return this.rebindTextAndDomainsSourcePlanMetadata(
+          plan,
+          input.selectedDomains,
+          index,
+        );
+      }
+
+      const guaranteedQueries = assigned.map((domain) =>
+        this.buildGuaranteedTextAndDomainLaneQuery(
+          domain,
+          input.searchQueries,
+          input.domainIdentity,
+        ),
+      );
+      const alreadyCoveredQueries = input.selectedDomains
+        .filter((domain) =>
+          plan.queries.some((query) =>
+            this.discoveryQueryMatchesDomain(query, domain.name),
+          ),
+        )
+        .map((domain) =>
+          this.buildGuaranteedTextAndDomainLaneQuery(
+            domain,
+            input.searchQueries,
+            input.domainIdentity,
+          ),
+        );
+      const budget = plan.sourceTier === 'PRIMARY' ? 5 : 4;
+      const queries = this.deduplicateQueries([
+        ...guaranteedQueries,
+        ...alreadyCoveredQueries,
+        ...plan.queries,
+      ]).slice(0, Math.max(budget, input.selectedDomains.length));
+
+      return this.rebindTextAndDomainsSourcePlanMetadata(
+        {
+          ...plan,
+          queries,
+        },
+        input.selectedDomains,
+        index,
+      );
+    });
+  }
+
+  private rebindTextAndDomainsSourcePlanMetadata(
+    plan: RequestCollectionSourcePlan,
+    selectedDomains: readonly { readonly id: string; readonly name: string }[],
+    sourceIndex: number,
+  ): RequestCollectionSourcePlan {
+    const representedDomains = selectedDomains.filter((domain) =>
+      plan.queries.some((query) =>
+        this.discoveryQueryMatchesDomain(query, domain.name),
+      ),
+    );
+
+    return {
+      ...plan,
+      discoveryDomainName:
+        representedDomains.length === 1 ? representedDomains[0]!.name : null,
+      discoveryDomainNames: representedDomains.map((domain) => domain.name),
+      discoveryDomainId:
+        representedDomains.length === 1 ? representedDomains[0]!.id : null,
+      discoveryDomainIds: representedDomains.map((domain) => domain.id),
+      queryIntentId: `${representedDomains.map((domain) => domain.id).join('+') || 'request'}:${plan.sourceKey}:${sourceIndex + 1}`,
+    };
+  }
+
+  private isPlanningQueryGrounded(input: {
+    readonly query: string;
+    readonly description: string;
+    readonly discoveryIntent: boolean;
+    readonly domainNames: readonly string[];
+    readonly domainIdentity?: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    };
+    readonly retrievalVocabulary: readonly string[];
+  }): boolean {
+    if (!input.discoveryIntent) {
+      return RequestQueryProvenanceUtil.isQueryGrounded({
+        requestDescription: input.description,
+        query: input.query,
+      });
+    }
+    const queryTokens = this.semanticTokens(input.query);
+    if (queryTokens.size === 0) return false;
+    const discoveryScope = [
+      ...input.domainNames,
+      input.domainIdentity?.actor ?? '',
+      input.domainIdentity?.object ?? '',
+      input.domainIdentity?.workflow ?? '',
+      ...input.retrievalVocabulary,
+    ].join(' ');
+    const scopeTokens = this.semanticTokens(discoveryScope);
+    const sharedScopeTokens = [...queryTokens].filter((token) => scopeTokens.has(token));
+    if (sharedScopeTokens.length >= 2) return true;
+    return input.domainNames.some((domainName) => {
+      const domainTokens = this.semanticTokens(domainName);
+      return [...domainTokens].some((token) => queryTokens.has(token));
+    });
+  }
+
+  private rankAiQueriesForDiscovery(
+    queries: readonly string[],
+    description: string,
+    domainNames: readonly string[],
+    domainIdentity: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    },
+    retrievalVocabulary: readonly string[],
+  ): string[] {
+    const requestTokens = this.semanticTokens(description);
+    const scopeTokens = this.semanticTokens([
+      ...domainNames,
+      domainIdentity.actor,
+      domainIdentity.object,
+      domainIdentity.workflow,
+      ...retrievalVocabulary,
+    ].join(' '));
+    return [...queries]
+      .map((query, index) => {
+        const queryTokens = this.semanticTokens(query);
+        const scopeOverlap = [...queryTokens].filter((token) => scopeTokens.has(token)).length;
+        const requestOverlap = [...queryTokens].filter((token) => requestTokens.has(token)).length;
+        const wordCount = query.trim().split(/\s+/u).filter(Boolean).length;
+        const broadProblemSignal = /\b(?:challenge|challenges|bottleneck|bottlenecks|failure|failures|delay|delays|rework|quality|reliability|constraint|constraints|shortage|shortages|friction|incident|incidents|complaint|complaints|cost|costs|access|service)\b/iu.test(query) ? 2 : 0;
+        const exactPainParaphrasePenalty = requestOverlap >= Math.max(4, Math.ceil(queryTokens.size * 0.75)) ? 2 : 0;
+        return {
+          query,
+          score: scopeOverlap * 4 + Math.min(requestOverlap, 2) + broadProblemSignal - exactPainParaphrasePenalty - index * 0.01,
+        };
+      })
+      .sort((left, right) => right.score - left.score)
+      .map((entry) => entry.query);
   }
 
   private rankAiQueriesForRequest(
@@ -2465,6 +3678,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ...(plan.problemProfile?.failureModes ?? []),
       ...(plan.problemProfile?.consequences ?? []),
       ...plan.searchQueries,
+      ...(plan.causalSearchProbes ?? []).map((probe) => probe.query),
       ...plan.evidenceTargets,
       ...plan.intentConcepts,
     ].join(' ');
@@ -2494,15 +3708,56 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         [],
         12,
       );
+    const suggestedDomainName =
+      this.composeDomainNameFromProblemProfile(problemProfile) ??
+      this.genericFallbackDomainName(problemProfile);
+    const atomicFacetQueries = RequestDynamicQueryUtil.buildEvidenceFacetQueries({
+      requestDescription: description,
+      intentConcepts: [
+        problemProfile.actor,
+        problemProfile.object,
+        problemProfile.workflow,
+      ],
+      evidenceTargets: [
+        ...(problemProfile.evidenceFacets ?? []),
+        ...problemProfile.failureModes,
+        ...problemProfile.consequences,
+      ],
+      plannedQueries: canonicalQueries,
+      maxQueries: 8,
+    });
+    const fallbackDomainIdentity = {
+      actor: problemProfile.actor,
+      object: problemProfile.object,
+      workflow: problemProfile.workflow,
+      failure:
+        this.inferRequesterFailureIdentity(description) ||
+        problemProfile.failureModes[0] ||
+        '',
+    };
+    const broadDiscoveryQueries = this.buildBroadDiscoveryQueries(
+      [suggestedDomainName],
+      fallbackDomainIdentity,
+      [],
+    );
     const searchQueries = this.deduplicateQueries([
-      ...canonicalQueries,
-      ...facetExpansionQueries,
+      ...broadDiscoveryQueries.slice(0, 6),
+      ...canonicalQueries.slice(0, 2),
+      ...atomicFacetQueries.slice(0, 2),
+      ...facetExpansionQueries.slice(0, 1),
+      ...broadDiscoveryQueries.slice(6),
+      ...canonicalQueries.slice(2),
+      ...atomicFacetQueries.slice(2),
       ...keywords.map((keyword) => keyword.trim()).filter(Boolean),
     ])
       .filter((query) =>
-        RequestQueryProvenanceUtil.isQueryGrounded({
-          requestDescription: description,
+        this.isPlanningQueryGrounded({
           query,
+          description,
+          discoveryIntent: true,
+          domainNames: [suggestedDomainName],
+          domainIdentity: fallbackDomainIdentity,
+          retrievalVocabulary: keywords,
         }),
       )
       .slice(0, 12);
@@ -2518,11 +3773,11 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ...(problemProfile.objectAliases ?? []),
       problemProfile.workflow,
     ]).slice(0, 10);
-    const suggestedDomainName =
-      this.composeDomainNameFromProblemProfile(problemProfile) ??
-      this.genericFallbackDomainName(problemProfile);
     const inferredSecondaryScopes = this.normalizeInferredSecondaryScopes(
-      this.extractSecondaryScopePhrases(problemProfile.object),
+      [
+        ...this.deriveOperationalParentScopes(description, fallbackDomainIdentity),
+        ...this.extractSecondaryScopePhrases(problemProfile.object),
+      ],
       description,
       [suggestedDomainName],
     );
@@ -2538,16 +3793,21 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         object: problemProfile.object,
         workflow: problemProfile.workflow,
         failure:
-          requestIntent.mode === 'EXPLICIT_PROBLEM'
-            ? problemProfile.coreProblem || problemProfile.failureModes[0] || ''
-            : '',
+          this.inferRequesterFailureIdentity(description) ||
+          problemProfile.failureModes[0] ||
+          ((requestIntent.mode === 'EXPLICIT_PROBLEM' ||
+              requestIntent.mode === 'EXPLICIT_PROBLEM_DISCOVERY')
+            ? problemProfile.coreProblem || ''
+            : ''),
       },
-      ...(requestIntent.mode === 'EXPLICIT_PROBLEM'
+      ...((requestIntent.mode === 'EXPLICIT_PROBLEM' ||
+        requestIntent.mode === 'EXPLICIT_PROBLEM_DISCOVERY')
         ? { problemProfile }
         : {}),
       searchQueries,
       evidenceTargets:
-        requestIntent.mode === 'EXPLICIT_PROBLEM' ? evidenceTargets : [],
+        (requestIntent.mode === 'EXPLICIT_PROBLEM' ||
+          requestIntent.mode === 'EXPLICIT_PROBLEM_DISCOVERY') ? evidenceTargets : [],
       intentConcepts,
       sourceFocus: [],
       confidence: 60,
@@ -2580,23 +3840,40 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         .map((query) => query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase())
         .filter(Boolean),
     );
+    const recoveryDomainName =
+      base.suggestedDomainName?.trim() || this.genericFallbackDomainName(problemProfile);
+    const domainRotation = this.buildBroadDiscoveryQueries(
+      [recoveryDomainName],
+      base.domainIdentity ?? {
+        actor: problemProfile.actor,
+        object: problemProfile.object,
+        workflow: problemProfile.workflow,
+        failure: problemProfile.failureModes[0] ?? problemProfile.friction ?? '',
+      },
+      base.retrievalVocabulary ?? keywords,
+    );
     const rotatedQueries = this.deduplicateQueries([
+      ...domainRotation,
       ...CanonicalRequestUnderstandingUtil.buildRecoveryQueries(
         problemProfile,
         previousQueries,
-        12,
-      ),
+        8,
+      ).slice(0, 2),
       ...CanonicalRequestUnderstandingUtil.buildSearchQueries(
         problemProfile,
-        12,
-      ),
+        8,
+      ).slice(0, 2),
       ...keywords,
     ])
       .filter((query) => !previous.has(query.toLocaleLowerCase()))
       .filter((query) =>
-        RequestQueryProvenanceUtil.isQueryGrounded({
-          requestDescription: description,
+        this.isPlanningQueryGrounded({
           query,
+          description,
+          discoveryIntent: true,
+          domainNames: [recoveryDomainName],
+          domainIdentity: base.domainIdentity,
+          retrievalVocabulary: base.retrievalVocabulary ?? keywords,
         }),
       )
       .slice(0, 10);
@@ -2633,33 +3910,36 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     language: LanguageCode | undefined,
     requestedDomainIds: readonly string[],
   ): RequestDomainCatalogEntry[] {
+    /*
+     * Text classification must see the COMPLETE active taxonomy (visible +
+     * hidden), even when the requester already selected explicit visible
+     * domains. The selected ids are passed separately as authoritative
+     * constraints; the broader catalog is classification context only.
+     */
+    const fullCatalog = this.readFreshDomainIdentityCatalog();
+    if (fullCatalog && fullCatalog.length > 0) {
+      return fullCatalog.map((entry) => ({ ...entry, keywords: [] }));
+    }
+
+    /*
+     * Cold-start fallback: if the full warm catalog has not arrived yet, use
+     * any already-resolved selected subset rather than blocking PREPARING on a
+     * remote DB read. Background refresh below warms the complete catalog for
+     * the next request.
+     */
     const ids = [...new Set(
       requestedDomainIds.map((id) => id.trim()).filter(Boolean),
     )];
+    if (ids.length === 0) return [];
 
-    if (ids.length > 0) {
-      const cacheKey = `${language ?? LanguageCode.ANY}:${ids.join(',')}`;
-      const subset = this.domainSubsetCache.get(cacheKey);
-      if (subset && subset.expiresAt > Date.now()) {
-        return subset.value.map((entry) => ({
-          ...entry,
-          keywords: [...entry.keywords],
-        }));
-      }
+    const cacheKey = `${language ?? LanguageCode.ANY}:${ids.join(',')}`;
+    const subset = this.domainSubsetCache.get(cacheKey);
+    if (!subset || subset.expiresAt <= Date.now()) return [];
 
-      const identity = this.readFreshDomainIdentityCatalog();
-      if (identity) {
-        const byId = new Map(identity.map((entry) => [entry.id, entry] as const));
-        return ids
-          .map((id) => byId.get(id))
-          .filter((entry): entry is RequestDomainCatalogEntry => Boolean(entry))
-          .map((entry) => ({ ...entry, keywords: [] }));
-      }
-
-      return [];
-    }
-
-    return this.readFreshDomainIdentityCatalog() ?? [];
+    return subset.value.map((entry) => ({
+      ...entry,
+      keywords: [],
+    }));
   }
 
   private readActiveSourceCatalogImmediate(): RequestSourceCatalogEntry[] {
@@ -2684,12 +3964,14 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const ids = [...new Set(
       requestedDomainIds.map((id) => id.trim()).filter(Boolean),
     )];
-    const domainRefresh = ids.length > 0
+    const domainRefresh = this.loadActiveDomainIdentityCatalog();
+    const selectedSubsetRefresh = ids.length > 0
       ? this.loadActiveDomainSubset(ids, language)
-      : this.loadActiveDomainIdentityCatalog();
+      : Promise.resolve<RequestDomainCatalogEntry[]>([]);
 
     void Promise.allSettled([
       domainRefresh,
+      selectedSubsetRefresh,
       this.loadActiveSourceCatalog(),
     ]).then((results) => {
       for (const result of results) {
@@ -2720,14 +4002,58 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const requestIntent = this.normalizeRequestIntent({}, description);
     const canonicalQueries =
       CanonicalRequestUnderstandingUtil.buildSearchQueries(profile, 6);
+    const atomicFacetQueries = RequestDynamicQueryUtil.buildEvidenceFacetQueries({
+      requestDescription: description,
+      intentConcepts: [profile.actor, profile.object, profile.workflow],
+      evidenceTargets: [
+        ...(profile.evidenceFacets ?? []),
+        ...profile.failureModes,
+        ...profile.consequences,
+      ],
+      plannedQueries: canonicalQueries,
+      maxQueries: 6,
+    });
+    const suggestedDomainName =
+      this.composeDomainNameFromProblemProfile(profile) ??
+      this.genericFallbackDomainName(profile);
+    const broadDiscoveryQueries = this.buildBroadDiscoveryQueries(
+      [suggestedDomainName],
+      {
+        actor: profile.actor,
+        object: profile.object,
+        workflow: profile.workflow,
+        failure:
+          this.inferRequesterFailureIdentity(description) ||
+          profile.failureModes[0] ||
+          '',
+      },
+      keywords,
+    );
     const searchQueries = this.deduplicateQueries([
-      ...canonicalQueries,
+      ...broadDiscoveryQueries.slice(0, 5),
+      ...canonicalQueries.slice(0, 1),
+      ...atomicFacetQueries.slice(0, 2),
+      ...broadDiscoveryQueries.slice(5),
+      ...canonicalQueries.slice(1),
+      ...atomicFacetQueries.slice(2),
       ...keywords.map((keyword) => keyword.trim()).filter(Boolean),
     ])
       .filter((query) =>
-        RequestQueryProvenanceUtil.isQueryGrounded({
-          requestDescription: description,
+        this.isPlanningQueryGrounded({
           query,
+          description,
+          discoveryIntent: true,
+          domainNames: [suggestedDomainName],
+          domainIdentity: {
+            actor: profile.actor,
+            object: profile.object,
+            workflow: profile.workflow,
+            failure:
+              this.inferRequesterFailureIdentity(description) ||
+              profile.failureModes[0] ||
+              '',
+          },
+          retrievalVocabulary: keywords,
         }),
       )
       .slice(0, 8);
@@ -2744,16 +4070,23 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ...(profile.objectAliases ?? []),
       profile.workflow,
     ]).slice(0, 10);
-    const suggestedDomainName =
-      this.composeDomainNameFromProblemProfile(profile) ??
-      this.genericFallbackDomainName(profile);
-
     return {
       selectedExistingDomainId: null,
       domainSelectionMode: 'NEW',
       suggestedDomainName,
       inferredSecondaryScopes: this.normalizeInferredSecondaryScopes(
-        this.extractSecondaryScopePhrases(profile.object),
+        [
+          ...this.deriveOperationalParentScopes(description, {
+            actor: profile.actor,
+            object: profile.object,
+            workflow: profile.workflow,
+            failure:
+              this.inferRequesterFailureIdentity(description) ||
+              profile.failureModes[0] ||
+              '',
+          }),
+          ...this.extractSecondaryScopePhrases(profile.object),
+        ],
         description,
         [suggestedDomainName],
       ),
@@ -2763,16 +4096,21 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         object: profile.object,
         workflow: profile.workflow,
         failure:
-          requestIntent.mode === 'EXPLICIT_PROBLEM'
-            ? profile.coreProblem || profile.failureModes[0] || ''
-            : '',
+          this.inferRequesterFailureIdentity(description) ||
+          profile.failureModes[0] ||
+          ((requestIntent.mode === 'EXPLICIT_PROBLEM' ||
+              requestIntent.mode === 'EXPLICIT_PROBLEM_DISCOVERY')
+            ? profile.coreProblem || ''
+            : ''),
       },
-      ...(requestIntent.mode === 'EXPLICIT_PROBLEM'
+      ...((requestIntent.mode === 'EXPLICIT_PROBLEM' ||
+        requestIntent.mode === 'EXPLICIT_PROBLEM_DISCOVERY')
         ? { problemProfile: profile }
         : {}),
       searchQueries,
       evidenceTargets:
-        requestIntent.mode === 'EXPLICIT_PROBLEM' ? evidenceTargets : [],
+        (requestIntent.mode === 'EXPLICIT_PROBLEM' ||
+          requestIntent.mode === 'EXPLICIT_PROBLEM_DISCOVERY') ? evidenceTargets : [],
       intentConcepts,
       sourceFocus: [],
       confidence: 58,
@@ -3124,10 +4462,10 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       collectionMode: 'FAST_GENERATION' as const,
     };
     const executableKeys = activeKeys.filter((sourceKey) =>
-      this.collectorsFactory.isCollectorRouteExecutable(
+      this.collectorsFactory.getCollectorRequestCapability(
         sourceKey,
         requestCapabilityInput,
-      ),
+      ).supported,
     );
     const executableSet = new Set(executableKeys);
     const existing = this.normalizeSourceKeys(
@@ -3142,10 +4480,14 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         left.localeCompare(right),
       );
     const priority = this.buildBalancedEvidenceSourcePortfolio(
-      this.deduplicatePhrases([
-        ...existing,
-        ...scoredSupplement,
-      ]),
+      this.prioritizeProblemAwareSources(
+        this.deduplicatePhrases([
+          ...existing,
+          ...scoredSupplement,
+        ]),
+        description,
+        plan.problemProfile,
+      ),
       sourceCatalog,
       8,
     );
@@ -3160,6 +4502,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         plan.problemProfile,
         priority,
         plan.retrievalVocabulary ?? [],
+        plan.causalSearchProbes ?? [],
+        plan.requestIntent?.mode !== 'EXPLICIT_PROBLEM',
       ),
       sourceFocus: this.deriveSourceFocusFromKeys(priority),
     };
@@ -3315,18 +4659,14 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     fallback: string | null,
     description: string,
   ): string | null {
-    const cleaned = value
-      ?.replace(/\s+/gu, ' ')
-      .replace(/[.!?]+$/gu, '')
-      .replace(/\b(?:workflow|order|specification|tracking|management|intelligence|operations)\s+(?:management|platform|workspace|system|application|app|dashboard)\b.*$/iu, '')
-      .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, '')
-      .replace(/\b(?:maker|makers|operator|operators|manager|managers|owner|owners|specialist|specialists|designer|designers|technician|technicians)\b$/iu, '')
-      // Actor/domain extraction can end on a conjunction when the request
-      // continues with another clause (for example "... centers and ...").
-      // A dangling connector is syntax noise, never part of a domain label.
-      .replace(/\b(?:and|or|with|for|of|to|from|in|at)\s*$/iu, '')
-      .replace(/\s+/gu, ' ')
-      .trim();
+    const cleaned = this.sanitizeReusableDomainLabel(
+      value
+        ?.replace(/\s+/gu, ' ')
+        .replace(/[.!?]+$/gu, '')
+        .replace(/\b(?:workflow|order|specification|tracking|management|intelligence|operations)\s+(?:management|platform|workspace|system|application|app|dashboard)\b.*$/iu, '')
+        .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, '')
+        .replace(/\b(?:maker|makers|operator|operators|manager|managers|owner|owners|specialist|specialists|designer|designers|technician|technicians)\b$/iu, ''),
+    );
 
     if (!cleaned) return fallback;
     if (cleaned.length > 80) return fallback;
@@ -3338,7 +4678,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       return fallback;
     }
     if (!this.domainLabelMatchesRequest(cleaned, description)) {
-      return fallback ?? cleaned;
+      return fallback;
     }
 
     const wordCount = cleaned.split(/\s+/u).filter(Boolean).length;
@@ -3505,7 +4845,100 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     return /\b(?:software|app|application|tool|dashboard|tracker|solution)\s*$/u.test(
       candidate,
     );
-  }  private normalizeRetrievalVocabulary(
+  }  private normalizeCausalSearchProbes(
+    value: unknown,
+    description: string,
+    requestIntent: RequestIntentInterpretation,
+    problemProfile?: RequestCanonicalProblemProfile,
+    domainIdentity?: RequestCollectionDomainIdentity,
+  ): RequestCausalSearchProbe[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const allowedTypes = new Set<RequestCausalSearchProbe['relationType']>([
+      'STATED_CAUSE',
+      'FAILURE_CHAIN',
+      'OBSERVED_SYMPTOM',
+      'CONSEQUENCE',
+      'PRACTITIONER_LANGUAGE',
+      'DOCUMENTARY_LANGUAGE',
+    ]);
+    const actorAnchor = this.compactSearchPhrase(
+      problemProfile?.actor ?? domainIdentity?.actor ?? '',
+      3,
+    );
+    const objectAnchor = this.compactSearchPhrase(
+      problemProfile?.object ?? domainIdentity?.object ?? '',
+      3,
+    );
+    const anchor = [actorAnchor, objectAnchor].filter(Boolean).join(' ');
+    const candidates: RequestCausalSearchProbe[] = [];
+
+    for (const raw of value) {
+      const record = this.isRecord(raw) ? raw : null;
+      const rawQuery = typeof raw === 'string'
+        ? raw
+        : typeof record?.query === 'string'
+          ? record.query
+          : '';
+      const cleanedQuery = this.normalizeAiSearchQuery(rawQuery);
+      if (!cleanedQuery) continue;
+
+      const rawType = typeof record?.relationType === 'string'
+        ? record.relationType.trim().toLocaleUpperCase().replace(/[\s-]+/gu, '_')
+        : 'FAILURE_CHAIN';
+      const relationType = allowedTypes.has(rawType as RequestCausalSearchProbe['relationType'])
+        ? rawType as RequestCausalSearchProbe['relationType']
+        : 'FAILURE_CHAIN';
+
+      let groundedQuery = cleanedQuery;
+      if (!RequestQueryProvenanceUtil.isQueryGrounded({
+        requestDescription: description,
+        query: groundedQuery,
+      })) {
+        groundedQuery = this.cleanRepeatedQueryTokens(
+          [anchor, cleanedQuery].filter(Boolean).join(' '),
+        );
+      }
+      if (!RequestQueryProvenanceUtil.isQueryGrounded({
+        requestDescription: description,
+        query: groundedQuery,
+      })) continue;
+      if (this.isSolutionSeekingEvidenceQuery(groundedQuery, description)) continue;
+      if (!SourceSpecificEvidenceQueryUtil.isSafe(groundedQuery)) continue;
+
+      const words = groundedQuery.split(/\s+/u).filter(Boolean);
+      if (words.length < 4 || words.length > 12) continue;
+      candidates.push({ relationType, query: groundedQuery });
+    }
+
+    const selected: RequestCausalSearchProbe[] = [];
+    const seenTypes = new Set<RequestCausalSearchProbe['relationType']>();
+    const materiallyDifferent = (query: string): boolean =>
+      RequestQueryProvenanceUtil.isMateriallyNovelQuery({
+        query,
+        previousQueries: selected.map((item) => item.query),
+      });
+
+    for (const candidate of candidates) {
+      if (selected.length >= 6) break;
+      if (seenTypes.has(candidate.relationType)) continue;
+      if (!materiallyDifferent(candidate.query)) continue;
+      selected.push(candidate);
+      seenTypes.add(candidate.relationType);
+    }
+    for (const candidate of candidates) {
+      if (selected.length >= 6) break;
+      if (selected.some((item) => item.query.toLocaleLowerCase() === candidate.query.toLocaleLowerCase())) continue;
+      if (!materiallyDifferent(candidate.query)) continue;
+      selected.push(candidate);
+    }
+
+    return selected;
+  }
+
+  private normalizeRetrievalVocabulary(
     value: unknown,
     _description: string,
     _problemProfile?: RequestCanonicalProblemProfile,
@@ -3753,6 +5186,91 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       .slice(0, 4);
   }
 
+  /**
+   * Builds one-level-broader retrieval scopes from requester-owned operational
+   * concepts. These are deliberately generic workflow parents, not market
+   * claims and not configured domains. Every emitted phrase preserves at least
+   * one lexical anchor from the requester description so provenance remains
+   * auditable and the final product cannot drift to an unrelated industry.
+   */
+  private deriveOperationalParentScopes(
+    description: string,
+    domainIdentity: {
+      readonly actor: string;
+      readonly object: string;
+      readonly workflow: string;
+      readonly failure: string;
+    },
+  ): string[] {
+    const normalized = description.normalize('NFKC').toLocaleLowerCase();
+    const identityText = [
+      domainIdentity.actor,
+      domainIdentity.object,
+      domainIdentity.workflow,
+      domainIdentity.failure,
+    ]
+      .join(' ')
+      .normalize('NFKC')
+      .toLocaleLowerCase();
+    const corpus = `${normalized} ${identityText}`;
+
+    const candidates: string[] = [];
+    const add = (value: string): void => {
+      if (!value.trim()) return;
+      candidates.push(value);
+    };
+
+    const customOrderSignal =
+      /\b(?:custom|customized|personalized|bespoke|made[\s-]?to[\s-]?order|handmade|commission(?:ed)?)\b/iu.test(
+        corpus,
+      );
+    const productionSignal =
+      /\b(?:production|manufactur|fabricat|workshop|studio|assembly|processing|preparation|drying|curing|firing|printing|finishing|packaging)\b/iu.test(
+        corpus,
+      );
+    const stagedWorkflowSignal =
+      /\b(?:stage|stages|workflow|from\b.+\bto|preparation|drying|curing|firing|finishing|packaging)\b/iu.test(
+        corpus,
+      );
+    const materialSignal =
+      /\b(?:material|materials|stock|inventory|ingredient|ingredients|suppl(?:y|ies)|availability|shortage|shortages)\b/iu.test(
+        corpus,
+      );
+    const deadlineSignal =
+      /\b(?:deadline|deadlines|delivery|deliveries|lead[\s-]?time|due date|promised|urgent|delay|delays|late)\b/iu.test(
+        corpus,
+      );
+    const schedulingSignal =
+      /\b(?:schedule|schedules|scheduling|capacity|queue|queues|coordination|bottleneck|bottlenecks)\b/iu.test(
+        corpus,
+      );
+
+    if (customOrderSignal && productionSignal) {
+      add('custom order production operations');
+    }
+    if (productionSignal && stagedWorkflowSignal) {
+      add('multi-stage production workflow');
+    }
+    if (productionSignal && materialSignal) {
+      add('material constrained production');
+    }
+    if (productionSignal && deadlineSignal) {
+      add('deadline driven production workflow');
+    }
+    if (productionSignal && schedulingSignal) {
+      add('production scheduling operations');
+    }
+
+    return this.deduplicatePhrases(candidates)
+      .filter((scope) =>
+        RequestQueryProvenanceUtil.isDerivedConceptGrounded(
+          description,
+          scope,
+        ),
+      )
+      .slice(0, 4);
+  }
+
   private extractSecondaryScopePhrases(value: string): string[] {
     if (!value.trim()) return [];
 
@@ -3814,39 +5332,52 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ? this.truncateAtBoundary(record.summary.replace(/\s+/gu, ' ').trim(), 360)
       : '';
     const explicitProblemRaw = typeof record.explicitProblem === 'string'
-      ? this.truncateAtBoundary(record.explicitProblem.replace(/\s+/gu, ' ').trim(), 600)
+      ? this.truncateAtBoundary(
+          record.explicitProblem.replace(/\s+/gu, ' ').trim(),
+          600,
+        )
       : '';
     const desiredOutcomeRaw = typeof record.desiredOutcome === 'string'
       ? this.truncateAtBoundary(record.desiredOutcome.replace(/\s+/gu, ' ').trim(), 360)
       : '';
-    const aiExplicitProblem = explicitProblemRaw &&
-      RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, explicitProblemRaw)
-      ? explicitProblemRaw
-      : null;
-    const deterministicExplicitProblem =
-      this.resolveDeterministicExplicitProblem(description);
-    const explicitProblem = deterministicExplicitProblem
-      ? deterministicExplicitProblem
-      : modeRaw === 'EXPLICIT_PROBLEM' && aiExplicitProblem
-        ? aiExplicitProblem
-        : null;
-    const mode = explicitProblem
-      ? 'EXPLICIT_PROBLEM'
-      : 'DISCOVERY_INTENT';
 
-    if (
-      modeRaw === 'DISCOVERY_INTENT' &&
-      deterministicExplicitProblem
-    ) {
+    const requesterProblem =
+      this.resolveDeterministicExplicitProblem(description) ||
+      (
+        explicitProblemRaw &&
+        RequestQueryProvenanceUtil.isDerivedConceptGrounded(
+          description,
+          explicitProblemRaw,
+        )
+          ? explicitProblemRaw
+          : null
+      );
+
+    /*
+     * A requester-stated problem is soft domain/workflow discovery and later
+     * product-design context, not external evidence and not the problem-selection
+     * target. EXPLICIT_PROBLEM remains reserved for a later internal
+     * corroboration pass where an evidence-selected family is already locked.
+     */
+    if (requesterProblem) {
+      return {
+        mode: 'EXPLICIT_PROBLEM_DISCOVERY',
+        summary: summaryRaw || this.truncateAtBoundary(description, 360),
+        explicitProblem: requesterProblem,
+        desiredOutcome: desiredOutcomeRaw || null,
+      };
+    }
+
+    if (modeRaw === 'EXPLICIT_PROBLEM') {
       this.logger.debug(
-        '[PREPARING] Deterministic explicit-problem sanity guard overrode an AI DISCOVERY_INTENT false negative.',
+        '[PREPARING] Ignored provider EXPLICIT_PROBLEM for an initial request because no grounded requester problem assertion was detected.',
       );
     }
 
     return {
-      mode,
+      mode: 'DISCOVERY_INTENT',
       summary: summaryRaw || this.truncateAtBoundary(description, 360),
-      explicitProblem: mode === 'EXPLICIT_PROBLEM' ? explicitProblem : null,
+      explicitProblem: null,
       desiredOutcome: desiredOutcomeRaw || null,
     };
   }
@@ -3961,10 +5492,12 @@ export class RequestCollectionPlanningService implements OnModuleInit {
 
   private normalizeProblemProfile(
     value: unknown,
-    description: string,
+    requestDescription: string,
+    explicitProblem: string,
     identity: RequestCollectionDomainIdentity,
   ): RequestCanonicalProblemProfile {
-    const fallback = this.buildDeterministicProblemProfile(description);
+    const fallback = this.buildDeterministicProblemProfile(requestDescription);
+    const groundingText = `${explicitProblem} ${requestDescription}`.replace(/\s+/gu, ' ').trim();
     const record = this.isRecord(value) ? value : {};
     const scalar = (key: string, fallbackValue: string): string => {
       const candidate = typeof record[key] === 'string'
@@ -3972,7 +5505,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         : '';
       if (
         candidate &&
-        RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, candidate)
+        RequestQueryProvenanceUtil.isDerivedConceptGrounded(groundingText, candidate)
       ) {
         return candidate;
       }
@@ -3981,18 +5514,69 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const groundedList = (key: string, fallbackValues: readonly string[]): string[] => {
       const normalized = this.normalizeFlexibleStrings(record[key], 8, 3, 180)
         .filter((item) =>
-          RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, item),
+          RequestQueryProvenanceUtil.isDerivedConceptGrounded(groundingText, item),
         );
       return normalized.length > 0 ? normalized : [...fallbackValues];
     };
+
+    const friction = scalar(
+      'friction',
+      identity.failure || fallback.friction || fallback.failureModes[0] || fallback.coreProblem,
+    );
+    const isMaterialProblemFacet = (item: string): boolean => {
+      const normalized = item.replace(/\s+/gu, ' ').trim();
+      const words = normalized.split(/\s+/u).filter(Boolean);
+      if (words.length < 2) return false;
+      return !/\b(?:a smarter|smarter (?:system|platform|tool)|platform could|system could)\b|\bcould\s+(?:combine|track|detect|estimate|help|flag|organize|organise|prioritize|prioritise|provide|enable|allow)\b|\bhelp\s+[^.!?]{0,90}\b(?:adjust|prioritize|prioritise|manage|allocate)\b/iu.test(
+        normalized,
+      );
+    };
+    const problemHypothesisText = [
+      explicitProblem,
+      fallback.friction ?? '',
+      ...fallback.failureModes,
+      ...fallback.consequences,
+    ]
+      .filter(Boolean)
+      .join('. ');
+    const failureModes = this.deduplicatePhrases([
+      ...groundedList('failureModes', fallback.failureModes),
+      friction,
+      ...RequestDynamicQueryUtil.extractPainTerms(problemHypothesisText)
+        .filter(isMaterialProblemFacet),
+    ])
+      .filter(isMaterialProblemFacet)
+      .slice(0, 10);
+    const consequences = groundedList('consequences', fallback.consequences)
+      .filter(isMaterialProblemFacet);
+    const evidenceFacets = this.deduplicatePhrases([
+      ...groundedList('evidenceFacets', []),
+      ...(fallback.evidenceFacets ?? []),
+      ...failureModes,
+      ...consequences,
+      ...RequestDynamicQueryUtil.extractPainTerms(requestDescription),
+      ...RequestDynamicQueryUtil.extractWorkflowTerms(problemHypothesisText),
+    ])
+      .filter(isMaterialProblemFacet)
+      .filter((item) =>
+        RequestQueryProvenanceUtil.isDerivedConceptGrounded(
+          groundingText,
+          item,
+        ),
+      )
+      .slice(0, 14);
 
     return {
       actor: scalar('actor', identity.actor || fallback.actor),
       object: scalar('object', identity.object || fallback.object),
       coreProblem: scalar('coreProblem', fallback.coreProblem),
       workflow: scalar('workflow', identity.workflow || fallback.workflow),
-      failureModes: groundedList('failureModes', fallback.failureModes),
-      consequences: groundedList('consequences', fallback.consequences),
+      friction,
+      failureModes,
+      consequences,
+      actorAliases: fallback.actorAliases,
+      objectAliases: fallback.objectAliases,
+      evidenceFacets,
     };
   }
 
@@ -4009,15 +5593,19 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   ): string | null {
     if (domainCatalog.length === 0) return null;
 
-    const requestTokens = this.meaningfulIdentityTokens(
-      `${description} ${identity.actor} ${identity.object} ${identity.workflow}`,
-    );
-    if (requestTokens.size === 0) return null;
+    const requestIdentityText =
+      `${description} ${identity.actor} ${identity.object} ${identity.workflow}`;
 
     const ranked = domainCatalog
       .map((domain) => {
+        const strictVerticalIdentity = domain.isAutoGenerated && !domain.isVisible;
+        const requestTokens = this.meaningfulIdentityTokens(
+          requestIdentityText,
+          strictVerticalIdentity,
+        );
         const domainTokens = this.meaningfulIdentityTokens(
           [domain.name, ...domain.keywords].join(' '),
+          strictVerticalIdentity,
         );
         if (domainTokens.size === 0) {
           return { domain, score: 0, overlap: 0 };
@@ -4065,12 +5653,13 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     description: string,
     domainCatalog: readonly RequestDomainCatalogEntry[],
   ): string | null {
-    const cleaned = value
-      ?.replace(/\s+/gu, ' ')
-      .replace(/[.!?]+$/gu, '')
-      .replace(/\b(?:workflow|order|specification|tracking|management|intelligence|operations)\s+(?:management|platform|workspace|system|application|app|dashboard)\b.*$/iu, '')
-      .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, '')
-      .trim();
+    const cleaned = this.sanitizeReusableDomainLabel(
+      value
+        ?.replace(/\s+/gu, ' ')
+        .replace(/[.!?]+$/gu, '')
+        .replace(/\b(?:workflow|order|specification|tracking|management|intelligence|operations)\s+(?:management|platform|workspace|system|application|app|dashboard)\b.*$/iu, '')
+        .replace(/\b(?:platform|dashboard|workspace|system|application|app)\b$/iu, ''),
+    );
     const reusableIndustryName = this.inferReusableIndustryDomainName(
       description,
       identity,
@@ -4084,7 +5673,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     }
 
     if (!this.domainLabelMatchesRequest(cleaned, description)) {
-      return reusableIndustryName ?? identityName ?? cleaned;
+      return reusableIndustryName ?? identityName;
     }
     const words = cleaned.split(/\s+/u).filter(Boolean);
     return words.length <= 8
@@ -4115,17 +5704,83 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         : '';
       return candidate || this.fallbackIdentityPhrase(description, key);
     };
+    const explicitFailure =
+      typeof record.failure === 'string'
+        ? this.truncateAtBoundary(
+            String(record.failure).replace(/\s+/gu, ' ').trim(),
+            140,
+          )
+        : '';
+    const requesterFailure = this.inferRequesterFailureIdentity(description);
 
     return {
       actor: read('actor'),
       object: read('object'),
       workflow: read('workflow'),
       failure:
-        allowEmptyFailure &&
-        (!this.isRecord(value) || typeof (value as Record<string, unknown>).failure !== 'string' || !(value as Record<string, unknown>).failure)
-          ? ''
-          : read('failure'),
+        explicitFailure ||
+        requesterFailure ||
+        (allowEmptyFailure ? '' : read('failure')),
     };
+  }
+
+  private inferRequesterFailureIdentity(description: string): string {
+    const normalizedDescription = description
+      .normalize('NFKC')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!normalizedDescription) return '';
+
+    const painTerms = RequestDynamicQueryUtil.extractPainTerms(normalizedDescription)
+      .map((value) => value.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean);
+    if (painTerms.length === 0) return '';
+
+    const tokens = normalizedDescription
+      .replace(/[^\p{L}\p{N}'’-]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .split(' ')
+      .filter(Boolean);
+    const lowerTokens = tokens.map((token) => token.toLocaleLowerCase());
+    const windows: string[] = [];
+
+    for (const pain of painTerms.slice(0, 4)) {
+      const painTokens = pain
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}'’-]+/gu, ' ')
+        .split(' ')
+        .filter(Boolean);
+      if (painTokens.length === 0) continue;
+
+      let matchIndex = -1;
+      for (let index = 0; index <= lowerTokens.length - painTokens.length; index += 1) {
+        if (
+          painTokens.every(
+            (token, offset) => lowerTokens[index + offset] === token,
+          )
+        ) {
+          matchIndex = index;
+          break;
+        }
+      }
+
+      if (matchIndex < 0) continue;
+      const start = Math.max(0, matchIndex - 2);
+      const end = Math.min(
+        tokens.length,
+        matchIndex + painTokens.length + 3,
+      );
+      const window = tokens.slice(start, end).join(' ').trim();
+      if (window) windows.push(window);
+    }
+
+    const candidates = this.deduplicatePhrases([
+      ...windows,
+      ...painTerms,
+    ]).filter((value) => value.length >= 3);
+
+    return this.truncateAtBoundary(candidates.slice(0, 2).join('; '), 140);
   }
 
   private fallbackIdentityPhrase(description: string, key: string): string {
@@ -4146,15 +5801,32 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     description: string,
   ): boolean {
     const domainText = [domain.name, ...domain.keywords].join(' ');
-    const objectOverlap = this.semanticOverlapRatio(identity.object, domainText);
-    const actorOverlap = this.semanticOverlapRatio(identity.actor, domainText);
+    const strictVerticalIdentity = domain.isAutoGenerated && !domain.isVisible;
+    const objectOverlap = this.semanticOverlapRatio(
+      identity.object,
+      domainText,
+      strictVerticalIdentity,
+    );
+    const actorOverlap = this.semanticOverlapRatio(
+      identity.actor,
+      domainText,
+      strictVerticalIdentity,
+    );
     const identityGrounded = [identity.object, identity.workflow]
       .every((value) => RequestQueryProvenanceUtil.isDerivedConceptGrounded(description, value));
 
     if (!identityGrounded) return false;
-    const domainTokens = this.meaningfulIdentityTokens(domainText);
+    const domainTokens = this.meaningfulIdentityTokens(
+      domainText,
+      strictVerticalIdentity,
+    );
+    const domainNameIdentityTokens = this.meaningfulIdentityTokens(
+      domain.name,
+      false,
+    );
     const requestTokens = this.meaningfulIdentityTokens(
       `${description} ${identity.actor} ${identity.object}`,
+      strictVerticalIdentity,
     );
     const overlap = [...domainTokens].filter((token) =>
       requestTokens.has(token),
@@ -4162,6 +5834,19 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     if (overlap === 0) return false;
 
     const domainCoverage = overlap / Math.max(1, domainTokens.size);
+    if (strictVerticalIdentity) {
+      const exactSingleTokenIdentity =
+        domainNameIdentityTokens.size === 1 &&
+        domainTokens.size === 1 &&
+        overlap === 1;
+      return (
+        exactSingleTokenIdentity ||
+        (
+          overlap >= 2 &&
+          (domainCoverage >= 0.5 || objectOverlap >= 0.5 || actorOverlap >= 0.5)
+        )
+      );
+    }
     return (
       domainCoverage >= 0.4 ||
       objectOverlap >= 0.25 ||
@@ -4169,22 +5854,49 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     );
   }
 
-  private semanticOverlapRatio(left: string, right: string): number {
-    const leftTokens = this.meaningfulIdentityTokens(left);
-    const rightTokens = this.meaningfulIdentityTokens(right);
+  private semanticOverlapRatio(
+    left: string,
+    right: string,
+    strictVerticalIdentity = false,
+  ): number {
+    const leftTokens = this.meaningfulIdentityTokens(left, strictVerticalIdentity);
+    const rightTokens = this.meaningfulIdentityTokens(right, strictVerticalIdentity);
     if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
     const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
     return overlap / Math.max(1, leftTokens.size);
   }
 
-  private meaningfulIdentityTokens(value: string): Set<string> {
+  private meaningfulIdentityTokens(
+    value: string,
+    strictVerticalIdentity = false,
+  ): Set<string> {
     const generic = new Set([
       'system', 'systems', 'platform', 'platforms', 'management', 'operations',
       'operation', 'workflow', 'workflows', 'service', 'services', 'monitoring',
       'tracking', 'records', 'record', 'information', 'data', 'activity',
       'process', 'processes', 'problem', 'problems', 'issue', 'issues',
       'specialists', 'specialist', 'teams', 'team', 'users', 'user',
+      'owner', 'owners', 'manager', 'managers', 'operator', 'operators',
+      'customer', 'customers', 'client', 'clients', 'staff', 'employee',
+      'employees', 'often', 'usually', 'frequently', 'commonly', 'regularly',
+      'struggle', 'struggles', 'struggling',
+      'studio', 'studios', 'workshop', 'workshops', 'shop', 'shops', 'facility',
+      'facilities', 'company', 'companies', 'business', 'businesses', 'agency',
+      'agencies', 'department', 'departments', 'office', 'offices',
     ]);
+    if (strictVerticalIdentity) {
+      for (const token of [
+        'custom', 'customized', 'customised', 'customization', 'customisation',
+        'bespoke', 'tailor', 'tailored', 'design', 'designing', 'production',
+        'manufacturing', 'material', 'materials', 'inventory', 'stock', 'stocks',
+        'delivery', 'deliveries', 'deadline', 'deadlines', 'schedule', 'schedules',
+        'scheduling', 'coordination', 'coordinate', 'coordinating', 'fulfillment',
+        'fulfilment', 'product', 'products', 'order', 'orders', 'repair', 'repairs',
+        'installation', 'installations', 'installing', 'maintenance', 'servicing',
+      ]) {
+        generic.add(token);
+      }
+    }
     return new Set(
       [...this.semanticTokens(value)]
         .map((token) => {
@@ -4200,18 +5912,49 @@ export class RequestCollectionPlanningService implements OnModuleInit {
   private composeDomainNameFromIdentity(
     identity: RequestCollectionDomainIdentity,
   ): string | null {
+    const actorIndustryStem = identity.actor
+      .replace(
+        /\b(?:owner|owners|manager|managers|lead|leads|buyer|buyers|seller|sellers|operator|operators|designer|designers|technician|technicians|staff|employee|employees|user|users|customer|customers|client|clients|practitioner|practitioners)\b/giu,
+        ' ',
+      )
+      .replace(
+        /\b(?:independent|professional|professionals|specialist|specialists|teams?|departments?|business|businesses|company|companies|organization|organizations|organisation|organisations|shop|shops|facility|facilities)\b/giu,
+        ' ',
+      )
+      .replace(/\b(?:and|or)\b/giu, ' ')
+      .replace(/[,/&]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const actorStemWords = actorIndustryStem.split(/\s+/u).filter(Boolean);
+    if (actorStemWords.length >= 2 && actorStemWords.length <= 5) {
+      const stemLabel = this.sanitizeReusableDomainLabel(
+        this.toTitleCase(actorStemWords.join(' ')),
+      );
+      if (stemLabel) return stemLabel;
+    }
+
     const actor = identity.actor
-      .replace(/\b(?:independent|professional|professionals|specialist|specialists|practitioner|practitioners|staff|teams?|departments?)\b/giu, ' ')
-      .replace(/\b(?:maker|makers|painter|painters|owner|owners|manager|managers|lead|leads|buyer|buyers|seller|sellers|operator|operators|designer|designers)\b$/iu, ' ')
+      .replace(
+        /\b(?:independent|professional|professionals|specialist|specialists|practitioner|practitioners|staff|teams?|departments?)\b/giu,
+        ' ',
+      )
+      .replace(
+        /\b(?:maker|makers|painter|painters|owner|owners|manager|managers|lead|leads|buyer|buyers|seller|sellers|operator|operators|designer|designers|technician|technicians)\b$/iu,
+        ' ',
+      )
       .replace(/\s+/gu, ' ')
       .trim();
     const actorWords = actor.split(/\s+/u).filter(Boolean);
     if (
       actorWords.length >= 2 &&
       actorWords.length <= 7 &&
+      !this.isActorLikeDomainLabel(actor) &&
       !/^(?:users?|people|companies?|businesses?|organizations?)$/iu.test(actor)
     ) {
-      return this.toTitleCase(actorWords.join(' '));
+      const actorLabel = this.sanitizeReusableDomainLabel(
+        this.toTitleCase(actorWords.join(' ')),
+      );
+      return actorLabel || null;
     }
 
     const object = identity.object
@@ -4222,8 +5965,43 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       .replace(/\b(?:and|or|the|their|workflow|process)\b/giu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
-    const raw = [object, workflow].filter(Boolean).join(' ').split(/\s+/u).slice(0, 8).join(' ');
-    return raw ? this.toTitleCase(raw) : null;
+    const raw = [object, workflow]
+      .filter(Boolean)
+      .join(' ')
+      .split(/\s+/u)
+      .slice(0, 6)
+      .join(' ');
+    const label = raw
+      ? this.sanitizeReusableDomainLabel(this.toTitleCase(raw))
+      : '';
+    return label || null;
+  }
+
+  private sanitizeReusableDomainLabel(value: string | null | undefined): string {
+    const normalized = (value ?? '')
+      .normalize('NFKC')
+      .replace(/\s+/gu, ' ')
+      .replace(/[.!?,;:]+$/gu, '')
+      .replace(/\b(?:and|or|with|for|of|to|from|in|at|by|via)\s*$/giu, '')
+      .replace(/\b(and|or)\s+(?:and|or)\b/giu, '$1')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (!normalized) return '';
+    if (
+      /\b(?:often|usually|frequently|commonly|regularly|struggle|struggles|struggling|want to|need to|who)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return '';
+    }
+    return normalized;
+  }
+
+  private hasDanglingDomainConnector(value: string): boolean {
+    return /\b(?:and|or|with|for|of|to|from|in|at|by|via)\s*[.!?,;:]*$/iu.test(
+      value.normalize('NFKC').trim(),
+    );
   }
 
   private normalizeSourceKeys(
@@ -4237,7 +6015,7 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       const key = item.trim().toLocaleLowerCase();
       if (!key || !activeSourceKeys.has(key) || output.includes(key)) continue;
       output.push(key);
-      if (output.length >= 8) break;
+      if (output.length >= 9) break;
     }
     return output;
   }  private buildRuntimeSourcePlans(
@@ -4247,17 +6025,26 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     problemProfile?: RequestCanonicalProblemProfile,
     plannerPrioritySourceKeys: readonly string[] = [],
     retrievalVocabulary: readonly string[] = [],
+    causalSearchProbes: readonly RequestCausalSearchProbe[] = [],
+    discoveryIntent = false,
+    discoveryDomainName: string | null = null,
   ): RequestCollectionSourcePlan[] {
     const sourceKeys = this.deduplicatePhrases(selectedSourceKeys)
       .map((key) => key.toLocaleLowerCase())
-      .slice(0, 8);
-    const queries = this.deduplicateQueries(searchQueries).slice(0, 24);
+      .slice(0, 9);
+    const queries = this.deduplicateQueries(searchQueries).slice(0, 30);
     const vocabularyQueries = this.buildVocabularyAnchoredQueries(
       retrievalVocabulary,
       problemProfile,
       undefined,
     );
-    if (sourceKeys.length === 0 || (queries.length === 0 && vocabularyQueries.length === 0)) return [];
+    const causalQueries = this.deduplicateQueries(
+      causalSearchProbes.map((probe) => probe.query),
+    ).slice(0, 6);
+    if (
+      sourceKeys.length === 0 ||
+      (queries.length === 0 && vocabularyQueries.length === 0 && causalQueries.length === 0)
+    ) return [];
 
     const priority = new Set(
       plannerPrioritySourceKeys.map((key) => key.toLocaleLowerCase()),
@@ -4273,27 +6060,84 @@ export class RequestCollectionPlanningService implements OnModuleInit {
 
     return sourceKeys
       .map((sourceKey) => {
+        const sourceIndex = sourceKeys.indexOf(sourceKey);
         const assigned = assignments.get(sourceKey) ?? [];
-        const budget = Math.max(1, Math.min(priority.has(sourceKey) ? 4 : 3, 4));
+        const painRecallSource = [
+          'reddit',
+          'forum',
+          'news',
+          'gdelt',
+          'youtube',
+          'app-store',
+          'google-play',
+        ].includes(sourceKey);
+        const textDiscovery = discoveryIntent && Boolean(description.trim());
+        const budget = problemProfile && priority.has(sourceKey) && painRecallSource
+          ? 8
+          : textDiscovery
+            ? priority.has(sourceKey)
+              ? 8
+              : 6
+            : Math.max(1, Math.min(priority.has(sourceKey) ? 5 : 4, 5));
         const sourceVocabulary = vocabularyQueries.length > 0
           ? [
-              vocabularyQueries[sourceKeys.indexOf(sourceKey) % vocabularyQueries.length],
-              vocabularyQueries[(sourceKeys.indexOf(sourceKey) + 1) % vocabularyQueries.length],
+              vocabularyQueries[sourceIndex % vocabularyQueries.length],
+              vocabularyQueries[(sourceIndex + 1) % vocabularyQueries.length],
             ].filter((query): query is string => Boolean(query))
           : [];
-        const baseQueries = this.deduplicateQueries([
-          ...assigned,
-          ...sourceVocabulary,
-          ...queries,
-        ]).slice(0, Math.max(7, budget * 3));
+        const sourceCausalQueries = causalQueries.length > 0
+          ? [
+              causalQueries[sourceIndex % causalQueries.length],
+              causalQueries[(sourceIndex + 1) % causalQueries.length],
+            ].filter((query): query is string => Boolean(query))
+          : [];
+        /*
+         * DISCOVERY_INTENT must preserve the semantic breadth produced by the
+         * AI planner all the way into per-source execution. Previously every
+         * source started with the same profile/causal probes, so tiny source
+         * budgets collapsed a broad 12-14 query plan back onto one workflow
+         * facet. Rotate additional AI-owned queries per source and place each
+         * source's assigned queries first. Corroboration keeps the old
+         * problem-first ordering because it is intentionally narrow.
+         */
+        const rotatedDiscoveryQueries = discoveryIntent && queries.length > 0
+          ? Array.from({ length: Math.min(6, queries.length) }, (_, offset) =>
+              queries[(sourceIndex + offset * Math.max(1, sourceKeys.length)) % queries.length],
+            ).filter((query): query is string => Boolean(query))
+          : [];
+        const baseQueries = this.deduplicateQueries(
+          discoveryIntent
+            ? [
+                ...assigned,
+                ...rotatedDiscoveryQueries,
+                ...sourceVocabulary,
+                ...sourceCausalQueries,
+                ...queries,
+              ]
+            : [
+                ...sourceCausalQueries,
+                ...assigned,
+                ...sourceVocabulary,
+                ...queries,
+              ],
+        ).slice(0, Math.max(10, budget * 3));
         const sourceQueries = SourceSpecificEvidenceQueryUtil.compile({
           sourceKey,
           baseQueries,
-          requestDescription: description,
-          problemProfile,
+          causalQueries: discoveryIntent ? [] : sourceCausalQueries,
+          requestDescription: discoveryIntent ? undefined : description,
+          problemProfile: discoveryIntent ? undefined : problemProfile,
+          discoveryDomainName: discoveryIntent ? discoveryDomainName : undefined,
           maxQueries: budget,
           preserveBaseQueries: true,
+          discoveryIntent,
         });
+        const routingHints = sourceKey === 'forum'
+          ? this.buildForumPractitionerRoutingHints(
+              problemProfile,
+              retrievalVocabulary,
+            )
+          : [];
         return {
           sourceKey,
           queries:
@@ -4302,15 +6146,49 @@ export class RequestCollectionPlanningService implements OnModuleInit {
               : baseQueries.slice(0, budget),
           sourceTier: priority.has(sourceKey) ? 'PRIMARY' as const : 'SECONDARY' as const,
           /*
-           * Forum discovery is query-driven. Do not encode named niche forums
-           * in backend code; the collector may discover specialist communities
-           * from the semantic query itself, and recovery can change that query
-           * from observed yield.
+           * Forum discovery remains domain-agnostic: the hints are compact
+           * requester-derived actor/object/workflow phrases, never hard-coded
+           * forum domains. ForumCollector can use them as specialist search
+           * vocabulary while direct-domain routing still requires an explicit
+           * URL/domain hint.
            */
-          routingHints: [],
+          routingHints,
         };
       })
       .filter((plan) => plan.queries.length > 0);
+  }
+
+  private buildForumPractitionerRoutingHints(
+    problemProfile?: RequestCanonicalProblemProfile,
+    retrievalVocabulary: readonly string[] = [],
+  ): string[] {
+    if (!problemProfile) return [];
+
+    const compact = (value: string, maxWords = 8): string =>
+      value
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, maxWords)
+        .join(' ');
+
+    const failure = compact(
+      problemProfile.friction ??
+        problemProfile.failureModes[0] ??
+        problemProfile.coreProblem,
+      5,
+    );
+    const candidates = [
+      compact(`${problemProfile.actor} ${problemProfile.workflow}`, 8),
+      compact(`${problemProfile.actor} ${problemProfile.object}`, 8),
+      compact(`${problemProfile.object} ${failure}`, 8),
+      ...retrievalVocabulary.slice(0, 3).map((value) => compact(value, 7)),
+    ].filter((value) => value.split(/\s+/u).length >= 2);
+
+    return this.uniqueStrings(candidates).slice(0, 4);
   }
 
   private uniqueStrings(values: readonly string[]): string[] {
@@ -4424,6 +6302,92 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     }
 
     return assignments;
+  }
+
+  /**
+   * Reorders executable sources for explicit-problem requests using only the
+   * shape of the requester-owned workflow. It never changes evidence semantics
+   * and contains no business-domain dictionary. Operational/day-to-day pain is
+   * biased toward direct-voice sources, while record/document/verification or
+   * governance-heavy workflows retain stronger documentary/research lanes.
+   * This prevents a scarce eight-source budget from being spent on a generic
+   * low-precision feed before the source types most likely to observe the pain.
+   */
+  private prioritizeProblemAwareSources(
+    sourceKeys: readonly string[],
+    description: string,
+    problemProfile?: RequestCanonicalProblemProfile,
+  ): string[] {
+    if (!problemProfile || !description.trim()) {
+      return this.deduplicatePhrases(sourceKeys);
+    }
+
+    const suppressAppReviewLanes =
+      RequestWorkflowSourcePolicyUtil.shouldSuppressAppReviewLanes({
+        requestDescription: description,
+        problemProfile,
+      });
+    const suppressDeveloperCommunityLanes =
+      RequestWorkflowSourcePolicyUtil.shouldSuppressDeveloperCommunityLanes({
+        requestDescription: description,
+        problemProfile,
+      });
+    const policyEligibleSourceKeys = this.deduplicatePhrases(sourceKeys).filter(
+      (sourceKey) =>
+        (!suppressAppReviewLanes ||
+          !RequestWorkflowSourcePolicyUtil.isAppReviewSource(sourceKey)) &&
+        (!suppressDeveloperCommunityLanes ||
+          !RequestWorkflowSourcePolicyUtil.isDeveloperCommunitySource(sourceKey)),
+    );
+
+    const corpus = [
+      description,
+      problemProfile.actor,
+      problemProfile.object,
+      problemProfile.workflow,
+      problemProfile.friction ?? '',
+      ...problemProfile.failureModes,
+      ...problemProfile.consequences,
+    ]
+      .join(' ')
+      .normalize('NFKC')
+      .toLocaleLowerCase();
+
+    const operationalPain = /\b(?:booking|schedule|scheduling|assignment|turnover|reset|maintenance|equipment|capacity|staff|queue|handoff|coordination|workflow|delay|rework)\b/u.test(corpus);
+    const documentaryPain = /\b(?:record|document|transaction|payment|claim|verify|verification|reconcile|reconciliation|audit|compliance|regulatory|inspection|fraud|reimbursement|approval)\b/u.test(corpus);
+    const technicalPain = /\b(?:api|sdk|database|runtime|deployment|integration|webhook|authentication|network|model|inference|software|server)\b/u.test(corpus);
+
+    const baseOrder = new Map(
+      policyEligibleSourceKeys.map((key, index) => [key.toLocaleLowerCase(), index] as const),
+    );
+    const score = (sourceKey: string): number => {
+      const key = sourceKey.toLocaleLowerCase();
+      let value = -(baseOrder.get(key) ?? 999) * 0.01;
+      if (['reddit', 'forum'].includes(key)) value += 4;
+      if (key === 'news') value += 2.5;
+      if (key === 'crossref') value += 1.8;
+      if (key === 'gdelt') value += 1.2;
+      if (key === 'youtube') value += 1;
+      if (key === 'blog') value -= 0.8;
+
+      if (operationalPain) {
+        if (['reddit', 'forum', 'youtube'].includes(key)) value += 2.5;
+        if (['app-store', 'google-play'].includes(key)) value += 0.8;
+      }
+      if (documentaryPain) {
+        if (['news', 'crossref', 'gdelt'].includes(key)) value += 3;
+        if (['reddit', 'forum'].includes(key)) value += 1.2;
+      }
+      if (technicalPain && ['github', 'stackoverflow', 'dev-to', 'hacker-news'].includes(key)) {
+        value += 3;
+      }
+      return value;
+    };
+
+    return policyEligibleSourceKeys
+      .map((key, index) => ({ key: key.toLocaleLowerCase(), index, score: score(key) }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)
+      .map((item) => item.key);
   }
 
   private buildBalancedEvidenceSourcePortfolio(
