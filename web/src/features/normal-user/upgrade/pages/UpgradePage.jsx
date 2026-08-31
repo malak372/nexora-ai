@@ -1,3 +1,4 @@
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   CheckCircle2,
   CreditCard,
@@ -224,8 +225,8 @@ export default function UpgradePage() {
         creditsQuantity,
         paymentMethodKey: method,
         currency,
-        successUrl: `${origin}/normal/payments/success`,
-        cancelUrl: `${origin}/normal/credits?payment=cancelled`,
+        successUrl: `${origin}${workspacePath(`/normal/payments/success`)}`,
+        cancelUrl: `${origin}${workspacePath(`/normal/credits?payment=cancelled`)}`,
       });
 
       if (!result?.checkoutUrl) {
@@ -506,9 +507,9 @@ export default function UpgradePage() {
             </div>
 
             <Link
-              to="/normal/preferences"
+              to={workspacePath("/normal/preferences")}
               state={{
-                returnTo: '/normal/credits',
+                returnTo: workspacePath('/normal/credits'),
                 returnLabel: 'Back to Premium credits',
               }}
             >

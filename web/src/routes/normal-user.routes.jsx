@@ -1,8 +1,8 @@
 /**
- * Authenticated normal-user routes with route-level code splitting.
+ * Authenticated normal-user and premium-user routes with route-level code splitting.
  *
- * Heavy pages such as charts, AI chat, payments, and idea workspaces are
- * loaded only when the user visits them.
+ * NORMAL and PREMIUM accounts share the same workspace implementation, while
+ * keeping an account-appropriate URL prefix in the browser.
  *
  * @author Eman
  */
@@ -40,31 +40,40 @@ function TemporaryNormalPage({ title }) {
     );
 }
 
+function createWorkspaceRoute(basePath) {
+    return (
+        <Route key={basePath} path={basePath} element={<NormalUserLayout />}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<NormalDashboardPage />} />
+            <Route path="generate" element={<GenerateIdeaPage />} />
+            <Route path="generation/:runId" element={<GenerationProgressPage />} />
+            <Route path="ideas" element={<MyIdeasPage />} />
+            <Route path="ideas/:ideaId" element={<IdeaWorkspacePage />} />
+            <Route path="ideas/:ideaId/business-model" element={<BusinessModelPage />} />
+            <Route path="ideas/:ideaId/chat" element={<AiChatPage />} />
+            <Route path="ideas/:ideaId/unlock" element={<DirectUnlockPage />} />
+            <Route path="payments/success" element={<PaymentResultPage />} />
+            <Route path="ideas/:ideaId/publish" element={<PublishIdeaPage />} />
+            <Route path="discover" element={<DiscoveriesPage />} />
+            <Route path="discover/:publicationId" element={<PublicationDetailPage />} />
+            <Route path="accepted/:publicationId/workspace" element={<AcceptedIdeaWorkspacePage />} />
+            <Route path="published" element={<PublishedIdeasPage />} />
+            <Route path="accepted" element={<Navigate to={`${basePath}/ideas?view=accepted`} replace />} />
+            <Route path="compliance" element={<CompliancePage />} />
+            <Route path="favorites" element={<TemporaryNormalPage title="Favorites" />} />
+            <Route path="credits" element={<UpgradePage />} />
+            <Route path="preferences" element={<PreferencesPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="billing" element={<BillingHistoryPage />} />
+            <Route path="settings/profile" element={<ProfileSettingsPage />} />
+            <Route path="support" element={<Navigate to={`${basePath}/compliance`} replace />} />
+        </Route>
+    );
+}
+
 export const normalUserRoutes = (
-    <Route path="/normal" element={<NormalUserLayout />}>
-        <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<NormalDashboardPage />} />
-        <Route path="generate" element={<GenerateIdeaPage />} />
-        <Route path="generation/:runId" element={<GenerationProgressPage />} />
-        <Route path="ideas" element={<MyIdeasPage />} />
-        <Route path="ideas/:ideaId" element={<IdeaWorkspacePage />} />
-        <Route path="ideas/:ideaId/business-model" element={<BusinessModelPage />} />
-        <Route path="ideas/:ideaId/chat" element={<AiChatPage />} />
-        <Route path="ideas/:ideaId/unlock" element={<DirectUnlockPage />} />
-        <Route path="payments/success" element={<PaymentResultPage />} />
-        <Route path="ideas/:ideaId/publish" element={<PublishIdeaPage />} />
-        <Route path="discover" element={<DiscoveriesPage />} />
-        <Route path="discover/:publicationId" element={<PublicationDetailPage />} />
-        <Route path="accepted/:publicationId/workspace" element={<AcceptedIdeaWorkspacePage />} />
-        <Route path="published" element={<PublishedIdeasPage />} />
-        <Route path="accepted" element={<Navigate to="/normal/ideas?view=accepted" replace />} />
-        <Route path="compliance" element={<CompliancePage />} />
-        <Route path="favorites" element={<TemporaryNormalPage title="Favorites" />} />
-        <Route path="credits" element={<UpgradePage />} />
-        <Route path="preferences" element={<PreferencesPage />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="billing" element={<BillingHistoryPage />} />
-        <Route path="settings/profile" element={<ProfileSettingsPage />} />
-        <Route path="support" element={<Navigate to="/normal/compliance" replace />} />
-    </Route>
+    <>
+        {createWorkspaceRoute('/normal')}
+        {createWorkspaceRoute('/premium')}
+    </>
 );

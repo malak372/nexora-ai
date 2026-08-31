@@ -60,9 +60,16 @@ function getDestinationByUser(user) {
     const role = String(user?.role || '')
         .trim()
         .toUpperCase();
+    const accountStatus = String(user?.accountStatus || '')
+        .trim()
+        .toUpperCase();
 
-    return role === 'ADMIN'
-        ? '/admin/dashboard'
+    if (role === 'ADMIN') {
+        return '/admin/dashboard';
+    }
+
+    return accountStatus === 'PREMIUM'
+        ? '/premium/dashboard'
         : '/normal/dashboard';
 }
 
@@ -133,12 +140,12 @@ export default function LoginPage() {
 
             const destination = getDestinationByUser(session.user);
 
-            if (destination === '/normal/dashboard') {
+            if (destination === '/normal/dashboard' || destination === '/premium/dashboard') {
                 // Now that the token is stored, start the first dashboard data
                 // request before navigation. cachedRequest deduplicates it with
                 // the page request if both happen at nearly the same time.
                 void dashboardChunkPromise;
-                preloadRoute('/normal/dashboard');
+                preloadRoute(destination);
             } else if (destination === '/admin/dashboard') {
                 // Admin users get the same route-and-data warming before the
                 // workspace transition, removing the cold admin dashboard wait.

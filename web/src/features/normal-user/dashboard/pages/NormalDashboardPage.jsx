@@ -5,6 +5,7 @@
  * component order, and Direct Unlock rules while applying the current
  * Voxidence eucalyptus-and-rose visual identity.
  */
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowRight,
   BookOpenCheck,
@@ -140,8 +141,8 @@ export default function NormalDashboardPage() {
           <h1>{t('Welcome back,')} <span>{getFirstName(summary?.fullName)}.</span></h1>
           <p>{t('Describe a real need. Voxidence listens across communities, finds repeated evidence, compares multiple AI candidates, and returns one validated software direction.')}</p>
           <div className="normal-dashboard-hero__actions">
-            <motion.button className="normal-primary-button" type="button" onClick={() => navigate('/normal/generate')} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}><Rocket size={18} />{t('Start discovering')}</motion.button>
-            <button className="normal-secondary-button" type="button" onClick={() => navigate('/normal/ideas')}>{t('Open my ideas')} <ArrowRight size={17} /></button>
+            <motion.button className="normal-primary-button" type="button" onClick={() => navigate(workspacePath('/normal/generate'))} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}><Rocket size={18} />{t('Start discovering')}</motion.button>
+            <button className="normal-secondary-button" type="button" onClick={() => navigate(workspacePath('/normal/ideas'))}>{t('Open my ideas')} <ArrowRight size={17} /></button>
           </div>
           <div className="normal-dashboard-hero__access"><strong>{t(accessMessage)}</strong><span>{t(isPremium ? 'Each premium generation includes all advanced outputs immediately, plus contextual AI Chat for unlocked ideas.' : 'Review the result first. Direct payment appears only when you choose to unlock that specific idea.')}</span></div>
         </div>
@@ -168,10 +169,10 @@ export default function NormalDashboardPage() {
         className="normal-dashboard-metrics normal-dashboard-metrics--v4"
         {...metricsContainer}
       >
-        <motion.div {...metricItem}><MetricCard icon={Lightbulb} label={t('Ideas created')} value={summary?.ideasCount ?? 0} helper={t('All generated idea workspaces')} tone="violet" index="01" onClick={() => navigate('/normal/ideas')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={CheckCircle2} label={t('Validated ideas')} value={summary?.validatedIdeasCount ?? summary?.ideasCount ?? 0} helper={t('Passed the Voxidence quality pipeline')} tone="blue" index="02" onClick={() => navigate('/normal/ideas?status=validated')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={Heart} label={t('Favorite ideas')} value={summary?.favoriteIdeasCount ?? 0} helper={t('Owned and accepted ideas you love')} tone="mint" index="03" onClick={() => navigate('/normal/ideas?view=favorites')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={isPremium ? Coins : BookOpenCheck} label={t(isPremium ? 'Premium credits' : 'Published ideas')} value={isPremium ? creditBalance : (summary?.publishedIdeasCount ?? 0)} helper={t(isPremium ? 'Credits available for complete idea generation' : 'Ideas shared with the community')} tone="amber" index="04" onClick={() => navigate(isPremium ? '/normal/credits' : '/normal/published')} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={Lightbulb} label={t('Ideas created')} value={summary?.ideasCount ?? 0} helper={t('All generated idea workspaces')} tone="violet" index="01" onClick={() => navigate(workspacePath('/normal/ideas'))} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={CheckCircle2} label={t('Validated ideas')} value={summary?.validatedIdeasCount ?? summary?.ideasCount ?? 0} helper={t('Passed the Voxidence quality pipeline')} tone="blue" index="02" onClick={() => navigate(workspacePath('/normal/ideas?status=validated'))} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={Heart} label={t('Favorite ideas')} value={summary?.favoriteIdeasCount ?? 0} helper={t('Owned and accepted ideas you love')} tone="mint" index="03" onClick={() => navigate(workspacePath('/normal/ideas?view=favorites'))} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={isPremium ? Coins : BookOpenCheck} label={t(isPremium ? 'Premium credits' : 'Published ideas')} value={isPremium ? creditBalance : (summary?.publishedIdeasCount ?? 0)} helper={t(isPremium ? 'Credits available for complete idea generation' : 'Ideas shared with the community')} tone="amber" index="04" onClick={() => navigate(isPremium ? workspacePath('/normal/credits') : workspacePath('/normal/published'))} /></motion.div>
       </motion.section>
 
 
@@ -179,7 +180,7 @@ export default function NormalDashboardPage() {
         <motion.button
           className="normal-active-generation"
           type="button"
-          onClick={() => navigate(`/normal/generation/${activeRun.id}`, { state: { initialRun: activeRun } })}
+          onClick={() => navigate(workspacePath(`/normal/generation/${activeRun.id}`), { state: { initialRun: activeRun } })}
           {...reveal}
         >
           <span className="normal-active-generation__icon"><Radio size={20} /></span>
@@ -197,17 +198,17 @@ export default function NormalDashboardPage() {
       ) : null}
 
       <motion.section className="normal-dashboard-latest" {...reveal}>
-        <div className="normal-section-heading"><div><span className="normal-eyebrow">{t('Continue building')}</span><h2>{t('Your latest workspace')}</h2></div><button className="normal-text-button" type="button" onClick={() => navigate('/normal/ideas')}>{t('View all ideas')} <ArrowRight size={17} /></button></div>
+        <div className="normal-section-heading"><div><span className="normal-eyebrow">{t('Continue building')}</span><h2>{t('Your latest workspace')}</h2></div><button className="normal-text-button" type="button" onClick={() => navigate(workspacePath('/normal/ideas'))}>{t('View all ideas')} <ArrowRight size={17} /></button></div>
         <LatestIdeaCard idea={summary?.latestIdea ?? null} />
         {isPremium && summary?.latestIdea?.isUnlocked ? (
           <button
             className="normal-text-button"
             type="button"
             onClick={() =>
-              navigate(`/normal/ideas/${summary.latestIdea.id}/chat`, {
+              navigate(workspacePath(`/normal/ideas/${summary.latestIdea.id}/chat`), {
                 state: {
                   chatOrigin: 'owned-idea',
-                  returnTo: '/normal/dashboard',
+                  returnTo: workspacePath('/normal/dashboard'),
                   returnLabel: 'Home',
                   ideaTitle: summary.latestIdea.title,
                   ideaSeed: summary.latestIdea,

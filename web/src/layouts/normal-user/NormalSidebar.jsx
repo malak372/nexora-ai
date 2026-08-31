@@ -32,16 +32,16 @@ import { resolveMediaUrl } from '../../utils/mediaUrl';
 import { useUserExperience } from '../../system/user-experience';
 
 const BASE_ITEMS = [
-  ['/normal/dashboard', 'Home', LayoutDashboard],
-  ['/normal/generate', 'Generate idea', Sparkles],
-  ['/normal/ideas', 'My ideas', Lightbulb],
-  ['/normal/discover', 'Discover', Compass],
-  ['/normal/published', 'Published ideas', BookOpenCheck],
-  ['/normal/compliance', 'Compliance', FileWarning],
-  ['/normal/notifications', 'Notifications', Bell],
-  ['/normal/billing', 'Billing & invoices', ReceiptText],
-  ['/normal/preferences', 'Preferences', SlidersHorizontal],
-  ['/normal/settings/profile', 'Settings', Settings],
+  ['/dashboard', 'Home', LayoutDashboard],
+  ['/generate', 'Generate idea', Sparkles],
+  ['/ideas', 'My ideas', Lightbulb],
+  ['/discover', 'Discover', Compass],
+  ['/published', 'Published ideas', BookOpenCheck],
+  ['/compliance', 'Compliance', FileWarning],
+  ['/notifications', 'Notifications', Bell],
+  ['/billing', 'Billing & invoices', ReceiptText],
+  ['/preferences', 'Preferences', SlidersHorizontal],
+  ['/settings/profile', 'Settings', Settings],
 ];
 
 function getInitials(name = '') {
@@ -57,6 +57,7 @@ export default function NormalSidebar({ isOpen, onClose }) {
   const [avatarFailed, setAvatarFailed] = useState(false);
   const { isPremium, creditBalance } = useAccountAccess();
   const { t } = useUserExperience();
+  const workspaceBase = isPremium ? '/premium' : '/normal';
 
   const displayName = user.fullName || user.name || 'Voxidence user';
   const imageUrl = resolveMediaUrl(
@@ -66,9 +67,9 @@ export default function NormalSidebar({ isOpen, onClose }) {
   const initials = getInitials(displayName);
 
   const items = [
-    ...BASE_ITEMS,
+    ...BASE_ITEMS.map(([path, label, Icon]) => [`${workspaceBase}${path}`, label, Icon]),
     [
-      '/normal/credits',
+      `${workspaceBase}/credits`,
       isPremium ? `Buy credits (${creditBalance})` : 'Upgrade to Premium',
       Coins,
     ],
@@ -124,7 +125,7 @@ export default function NormalSidebar({ isOpen, onClose }) {
               key={to}
               to={to}
               state={
-                to === '/normal/preferences'
+                to === `${workspaceBase}/preferences`
                   ? {
                     returnTo: `${location.pathname}${location.search}`,
                     returnLabel: 'Back to previous page',

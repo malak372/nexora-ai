@@ -1,4 +1,4 @@
-import { ArrowRight, Check, TriangleAlert } from 'lucide-react';
+import { ArrowRight, Check, LoaderCircle, TriangleAlert } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useUserExperience } from '../../../../system/user-experience';
 
@@ -13,7 +13,7 @@ function elapsedLabel(stage, t) {
     const diff = Math.max(0, new Date(end).getTime() - new Date(start).getTime());
     if (Number.isFinite(diff) && diff > 0) {
       const seconds = Math.max(1, Math.round(diff / 1000));
-      return seconds < 60 ? `${seconds}s ${t('elapsed')}` : `${Math.round(seconds / 60)}m ${t('elapsed')}`;
+      return seconds < 60 ? t(`${seconds}s elapsed`) : t(`${Math.round(seconds / 60)}m elapsed`);
     }
   }
 
@@ -45,10 +45,22 @@ export default function PipelineStage({ stage, index }) {
           <ArrowRight size={15} />
         </span>
       ) : null}
-      <span className="vx-progress-stage__orbit" aria-hidden="true" />
+      {isActive ? (
+        <span className="vx-progress-stage__active-glow" aria-hidden="true">
+          <i />
+        </span>
+      ) : null}
       <div className="vx-progress-stage__top">
         <span className="vx-progress-stage__icon">
-          {isCompleted ? <Check size={17} /> : isActive ? <span className="vx-progress-stage__active-dial" aria-hidden="true" /> : isFailed ? <TriangleAlert size={17} /> : <Icon size={17} className="vx-progress-stage__icon-glyph" />}
+          {isCompleted ? (
+            <Check size={17} />
+          ) : isActive ? (
+            <LoaderCircle className="vx-progress-stage__loader" size={20} />
+          ) : isFailed ? (
+            <TriangleAlert size={17} />
+          ) : (
+            <Icon size={17} className="vx-progress-stage__icon-glyph" />
+          )}
         </span>
         <span className="vx-progress-stage__number">{String(index + 1).padStart(2, '0')}</span>
       </div>

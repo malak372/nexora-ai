@@ -3,6 +3,7 @@
  * fully applied. The backend remains the only authority for payment success.
  */
 
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   CheckCircle2,
   Clock3,
@@ -204,7 +205,7 @@ export default function PaymentResultPage() {
               payment.ideaId || fallbackIdeaId;
 
             if (destinationIdeaId) {
-              navigate(`/normal/ideas/${destinationIdeaId}`, {
+              navigate(workspacePath(`/normal/ideas/${destinationIdeaId}`), {
                 replace: true,
                 state: {
                   forceRefresh: true,
@@ -251,7 +252,7 @@ export default function PaymentResultPage() {
       error: paymentWasVerified
         ? 'Your payment is confirmed, but the unlock is still being completed. Press “Check again” to continue safely without paying again.'
         : lastError?.message ||
-          'Payment confirmation is taking longer than expected. Press “Check again”; you will not be charged twice.',
+        'Payment confirmation is taking longer than expected. Press “Check again”; you will not be charged twice.',
       payment: latestPayment,
       processingMessage: '',
     });
@@ -283,7 +284,7 @@ export default function PaymentResultPage() {
     const publicationId = payment?.publicationId || fallbackPublicationId;
 
     if (payment?.paymentPurpose === 'DIRECT_UNLOCK' && ideaId) {
-      navigate(`/normal/ideas/${ideaId}`, {
+      navigate(workspacePath(`/normal/ideas/${ideaId}`), {
         replace: true,
         state: { forceRefresh: true, paymentCompletedAt: Date.now() },
       });
@@ -291,7 +292,7 @@ export default function PaymentResultPage() {
     }
 
     if (payment?.paymentPurpose === 'UNLOCK_PUBLICATION_ADVANCED' && publicationId) {
-      navigate(`/normal/accepted/${publicationId}/workspace`, {
+      navigate(workspacePath(`/normal/accepted/${publicationId}/workspace`), {
         replace: true,
         state: { forceRefresh: true, paymentCompletedAt: Date.now() },
       });
@@ -299,7 +300,7 @@ export default function PaymentResultPage() {
     }
 
     if (payment?.paymentPurpose === 'ACCEPT_PUBLICATION' && publicationId) {
-      navigate(`/normal/discover/${publicationId}`, {
+      navigate(workspacePath(`/normal/discover/${publicationId}`), {
         replace: true,
         state: { forceRefresh: true, paymentCompletedAt: Date.now() },
       });
@@ -311,21 +312,21 @@ export default function PaymentResultPage() {
       return;
     }
 
-    navigate('/normal/dashboard');
+    navigate(workspacePath('/normal/dashboard'));
   };
 
   const returnToRelevantPage = () => {
     if (fallbackIdeaId) {
-      navigate(`/normal/ideas/${fallbackIdeaId}/unlock`);
+      navigate(workspacePath(`/normal/ideas/${fallbackIdeaId}/unlock`));
       return;
     }
 
     if (fallbackPublicationId) {
-      navigate(`/normal/discover/${fallbackPublicationId}`);
+      navigate(workspacePath(`/normal/discover/${fallbackPublicationId}`));
       return;
     }
 
-    navigate('/normal/dashboard');
+    navigate(workspacePath('/normal/dashboard'));
   };
 
   return createPortal(

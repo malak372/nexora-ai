@@ -11,6 +11,7 @@
  * @author Eman
  */
 
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
     ArrowLeft,
     Bot,
@@ -151,8 +152,8 @@ export default function AiChatPage() {
     const returnTo =
         location.state?.returnTo ||
         (chatOrigin === 'accepted-publication' && acceptedPublicationId
-            ? `/normal/accepted/${acceptedPublicationId}/workspace`
-            : `/normal/ideas/${ideaId}`);
+            ? workspacePath(`/normal/accepted/${acceptedPublicationId}/workspace`)
+            : workspacePath(`/normal/ideas/${ideaId}`));
     const returnLabel =
         location.state?.returnLabel ||
         (chatOrigin === 'accepted-publication'
@@ -430,7 +431,7 @@ export default function AiChatPage() {
 
                     const existingText =
                         message.status === 'PENDING' ||
-                        message.message === 'Generating response…'
+                            message.message === 'Generating response…'
                             ? ''
                             : message.message || '';
 
@@ -870,7 +871,7 @@ export default function AiChatPage() {
 
                 <button
                     type="button"
-                    onClick={() => navigate('/normal/credits')}
+                    onClick={() => navigate(workspacePath('/normal/credits'))}
                 >
                     <Sparkles size={17} />
                     {t('View Premium credits')}

@@ -1,17 +1,3 @@
-/**
- * Nexora normal-user idea-generation styles.
- *
- * Contains the generation wizard, progress interface, animated intelligence
- * pipeline, celebration state, responsive layouts, and accessibility-friendly
- * interaction styling.
- *
- * The AI-core particle positions use explicit nth-of-type selectors because
- * native CSS calc() does not support multiplication or modulo operations with
- * custom properties.
- *
- * @author Malak
- */
-
 .nx-generation-page,
 .nx-generation-progress {
   --ink: #34413f;
@@ -352,7 +338,7 @@
   box-shadow: 0 0 0 5px rgba(92, 189, 185, .08)
 }
 
-/* Custom language dropdown: native <select> highlight is controlled by Windows/Chrome. */
+
 .nx-language-select {
   position: relative;
   width: 100%;
@@ -626,7 +612,7 @@
   cursor: not-allowed
 }
 
-/* Live progress */
+
 .nx-generation-loading {
   min-height: 60vh;
   display: grid;
@@ -985,7 +971,7 @@
   }
 }
 
-/* Normal users always generate a normal idea first. Direct Unlock appears after creation. */
+
 .nx-normal-generation-note {
   margin-top: 16px;
   padding: 18px;
@@ -1074,14 +1060,7 @@
   }
 }
 
-/* ========================================================================== */
-/* V7 — horizontal live generation pipeline                                   */
-/* ========================================================================== */
 
-/**
- * Full-width live generation workspace used while an idea-generation run
- * progresses through the backend pipeline.
- */
 .nx-generation-progress--horizontal {
   min-height: calc(100vh - 120px);
   padding: clamp(28px, 4vw, 64px);
@@ -1096,9 +1075,7 @@
     linear-gradient(135deg, #fffafb 0%, #fffafb 100%);
 }
 
-/**
- * Progress hero containing the title, status message, and percentage summary.
- */
+
 .nx-generation-progress__hero {
   max-width: 1520px;
   margin: 0 auto 28px;
@@ -1144,9 +1121,7 @@
   line-height: 1.65;
 }
 
-/**
- * Percentage summary card.
- */
+
 .nx-progress-summary-card {
   min-width: 285px;
   padding: 18px 22px;
@@ -1177,12 +1152,7 @@
   font-size: 16px;
 }
 
-/**
- * Circular progress indicator.
- *
- * React can update --progress dynamically, for example:
- * style={{ '--progress': `${percentage * 3.6}deg` }}
- */
+
 .nx-generation-progress--horizontal .nx-progress-ring {
   --progress: 0deg;
 
@@ -1228,9 +1198,7 @@
   text-transform: uppercase;
 }
 
-/**
- * Main horizontal pipeline surface.
- */
+
 .nx-horizontal-pipeline-card {
   max-width: 1520px;
   margin: 0 auto;
@@ -1284,9 +1252,7 @@
   font-size: 24px;
 }
 
-/**
- * Horizontally scrollable stage row.
- */
+
 .nx-horizontal-pipeline {
   padding: 34px 0 30px;
   display: grid;
@@ -1311,9 +1277,7 @@
   background: rgba(92, 189, 185, 0.22);
 }
 
-/**
- * Individual stage card.
- */
+
 .nx-horizontal-stage {
   position: relative;
   min-height: 280px;
@@ -1385,9 +1349,7 @@
   line-height: 1.55;
 }
 
-/**
- * Active stage state.
- */
+
 .nx-horizontal-stage--active {
   transform: translateY(-5px);
   border-color: #5cbdb9;
@@ -1411,9 +1373,7 @@
   animation: nxHorizontalPulse 1.6s ease-in-out infinite;
 }
 
-/**
- * Completed stage state.
- */
+
 .nx-horizontal-stage--completed {
   border-color: #bdebd8;
   background: linear-gradient(160deg, #fff, #f1fcf7);
@@ -1432,9 +1392,7 @@
   background: #18a575;
 }
 
-/**
- * Failed stage state.
- */
+
 .nx-horizontal-stage--failed {
   border-color: #f1c6ce;
   background: #fff7f8;
@@ -1453,16 +1411,12 @@
   background: #cf425b;
 }
 
-/**
- * Waiting stage state.
- */
+
 .nx-horizontal-stage--waiting {
   opacity: 0.88;
 }
 
-/**
- * Connector between neighboring stages.
- */
+
 .nx-horizontal-stage__connector {
   position: absolute;
   z-index: 3;
@@ -1507,9 +1461,7 @@
   display: none;
 }
 
-/**
- * Main progress track.
- */
+
 .nx-progress-track {
   height: 9px;
   overflow: hidden;
@@ -1526,9 +1478,7 @@
   transition: width 0.4s ease;
 }
 
-/**
- * Footer metadata and cancellation control.
- */
+
 .nx-pipeline-meta {
   margin-top: 24px;
   display: flex;
@@ -1609,9 +1559,7 @@
   background: #fff4f5;
 }
 
-/**
- * Horizontal pipeline animations.
- */
+
 @keyframes nxHorizontalPulse {
   50% {
     box-shadow: 0 0 0 9px rgba(92, 189, 185, 0);
@@ -1628,9 +1576,7 @@
   }
 }
 
-/**
- * Tablet layout.
- */
+
 @media (max-width: 1100px) {
   .nx-generation-progress--horizontal {
     padding: 24px;
@@ -1649,9 +1595,7 @@
   }
 }
 
-/**
- * Mobile layout.
- */
+
 @media (max-width: 760px) {
   .nx-generation-progress--horizontal {
     padding: 20px 14px 34px;
@@ -1691,9 +1635,7 @@
   }
 }
 
-/**
- * Small mobile layout.
- */
+
 @media (max-width: 480px) {
   .nx-generation-progress--horizontal {
     padding-inline: 10px;
@@ -1722,10 +1664,7 @@
   }
 }
 
-/**
- * Accessibility: disable non-essential movement when the user requests
- * reduced motion.
- */
+
 @media (prefers-reduced-motion: reduce) {
 
   .nx-horizontal-stage,
@@ -1737,7 +1676,7 @@
   }
 }
 
-/* V8 refined generation studio and responsive pipeline */
+
 .nx-generation-page {
   padding: clamp(18px, 3vw, 42px);
   background: radial-gradient(circle at 8% 2%, rgba(243, 201, 211, .10), transparent 25%), radial-gradient(circle at 92% 7%, rgba(92, 189, 185, .12), transparent 27%), #fffbfc;
@@ -1946,9 +1885,6 @@
   }
 }
 
-/* ========================================================================== */
-/* V9 — compact cinematic pipeline                                             */
-/* ========================================================================== */
 
 .nx-generation-progress__toolbar {
   width: min(1280px, 100%);
@@ -2194,9 +2130,6 @@
   }
 }
 
-/* ========================================================================== */
-/* V10 — refined generation controls, compact domains, clearer activity       */
-/* ========================================================================== */
 
 .nx-speech-field {
   padding: 16px;
@@ -2462,7 +2395,7 @@
   }
 }
 
-/* Voxidence reconnect state refinement */
+
 .nx-generation-progress--horizontal .nx-kicker {
   color: #b85f78;
   border-color: rgba(217, 143, 160, .28);
@@ -2482,7 +2415,7 @@
   filter: drop-shadow(0 0 9px rgba(207, 102, 131, .58));
 }
 
-/* Voxidence active pipeline stage refinement */
+
 .nx-horizontal-stage--active {
   transform: translateY(-5px);
   transform-origin: center;
@@ -2555,7 +2488,7 @@
   }
 }
 
-/* Voxidence rotating active-card glow refinement */
+
 .nx-horizontal-stage--active .nx-horizontal-stage__active-glow {
   opacity: 1;
   background:
@@ -2594,7 +2527,7 @@
   }
 }
 
-/* Voxidence active-card orbit: teal pearl refinement */
+
 .nx-horizontal-stage--active .nx-horizontal-stage__active-glow {
   opacity: 1;
   background:
@@ -2619,7 +2552,6 @@
 }
 
 
-/* Voxidence current-stage summary refinement */
 .nx-generation-progress__current {
   width: fit-content;
   margin-top: 20px;
@@ -2714,7 +2646,7 @@
   }
 }
 
-/* Premium-only completion reveal. Normal-user celebration styles above remain unchanged. */
+
 .nx-celebration--premium {
   overflow: hidden;
   background:
@@ -3011,12 +2943,6 @@
 }
 
 
-/* Compact idea-generation wizard.
- * Keeps the existing layout and behavior while fitting the active step into
- * a shorter desktop viewport with less unnecessary vertical scrolling.
- *
- * @author Eman
- */
 @media (min-width: 761px) {
   .nx-generation-page {
     padding-top: 14px;
@@ -3140,11 +3066,6 @@
   }
 }
 
-/* ==========================================================================
-   Full-viewport completion celebration
-   Rendered through React Portal into document.body so transformed layout
-   ancestors cannot constrain position: fixed.
-   ========================================================================== */
 
 .nx-celebration {
   position: fixed !important;
@@ -3246,8 +3167,7 @@
   }
 }
 
-/* Realtime pipeline reliability: the loader itself always rotates while its
-   card may float independently. This avoids transform animation collisions. */
+
 .nx-horizontal-stage--active .nx-horizontal-stage__icon>.nx-spin,
 .nx-generation-loading>.nx-spin {
   transform-origin: 50% 50%;
@@ -3266,7 +3186,6 @@
 }
 
 
-/* Compact generate-page layout */
 .nx-generation-page {
   padding: 0 0 14px !important;
   background: transparent !important;
@@ -3483,7 +3402,6 @@
 }
 
 
-/* Generate page without the introductory hero */
 .nx-generation-page {
   padding-top: 8px !important;
 }
@@ -3672,7 +3590,7 @@
   }
 }
 
-/* Personalized discovery option */
+
 .nx-personalized-discovery {
   margin-top: 18px;
 }
@@ -3743,7 +3661,7 @@
   line-height: 1.45;
 }
 
-/* Premium review card uses the same structure as normal with a refined tier cue. */
+
 .nx-normal-generation-note.is-premium {
   border-color: rgba(47, 143, 137, .28);
   background:
@@ -3756,7 +3674,7 @@
   color: #276f6a;
 }
 
-/* Progress page: calmer, more premium opening and no elapsed/stage counters. */
+
 .nx-generation-progress--horizontal {
   padding-top: 18px;
 }
@@ -3806,7 +3724,7 @@
   font-size: 11px;
 }
 
-/* Project-green live spinner; removes the older rose override. */
+
 .nx-generation-progress--horizontal .nx-kicker,
 .nx-generation-progress--horizontal .nx-kicker svg {
   color: #2f7774;
@@ -3834,7 +3752,7 @@
     inset 0 1px 0 rgba(255, 255, 255, .9);
 }
 
-/* Premium completion now shares the normal celebration language, with a richer green finish. */
+
 .nx-celebration--premium {
   background:
     linear-gradient(rgba(38, 47, 44, .48), rgba(38, 47, 44, .48)),
@@ -3945,9 +3863,6 @@
   }
 }
 
-/* ========================================================================== */
-/* V10 — refined live-generation opening + real completion celebration         */
-/* ========================================================================== */
 
 .nx-generation-progress--horizontal {
   padding-top: 12px;
@@ -4143,7 +4058,7 @@
   margin-inline: auto;
 }
 
-/* Definitive project-green active loader. This intentionally sits last. */
+
 .nx-horizontal-stage--active {
   border-color: rgba(47, 143, 137, .48) !important;
   background: linear-gradient(150deg, #fbfefd 0%, #f4fbf9 100%) !important;
@@ -4181,7 +4096,7 @@
   filter: blur(7px) drop-shadow(0 0 8px rgba(47, 143, 137, .18)) !important;
 }
 
-/* Real completion celebration: visual burst outside the card, no inner scroll. */
+
 .nx-celebration {
   overflow: hidden !important;
 }
@@ -4477,7 +4392,7 @@
   }
 }
 
-/* V11 — countdown reveal + distinct normal/premium celebration intensity. */
+
 .nx-celebration.is-counting {
   background:
     radial-gradient(circle at 50% 46%, rgba(92, 189, 185, .16), transparent 30%),
@@ -4586,7 +4501,7 @@
   font-weight: 650;
 }
 
-/* Normal has a real celebration, but deliberately calmer than premium. */
+
 .nx-celebration--normal.is-revealed {
   background:
     radial-gradient(circle at 50% 43%, rgba(92, 189, 185, .13), transparent 32%),
@@ -4624,7 +4539,7 @@
   opacity: .88;
 }
 
-/* Premium reveal stays visibly richer than normal. */
+
 .nx-celebration--premium.is-revealed .nx-celebration-burst__ring {
   box-shadow: 0 0 100px rgba(92, 189, 185, .14);
 }
@@ -4648,7 +4563,7 @@
   }
 }
 
-/* V12 — cinematic 3→2→1 reveal + compact generation-progress header. */
+
 .nx-celebration.is-counting {
   padding: 0 !important;
   overflow: hidden !important;
@@ -4661,7 +4576,7 @@
   -webkit-backdrop-filter: none !important;
 }
 
-/* The countdown is intentionally the whole screen — no modal/card container. */
+
 .nx-celebration-countdown,
 .nx-celebration-countdown--premium {
   position: relative;
@@ -4915,7 +4830,7 @@
   }
 }
 
-/* Compact progress opening: one clean strip, no oversized status card. */
+
 .nx-generation-progress__hero.nx-generation-progress__hero--compact {
   width: min(1220px, 100%);
   min-height: 0;
@@ -5122,11 +5037,6 @@
   }
 }
 
-/* ==========================================================================
-   Countdown background refinement — soft project palette
-   Keeps the 3 → 2 → 1 animation exactly the same while replacing the dark
-   full-screen background with a refined porcelain / sage celebration canvas.
-   ========================================================================== */
 
 .nx-celebration.is-counting {
   background:
@@ -5138,7 +5048,7 @@
   -webkit-backdrop-filter: none !important;
 }
 
-/* Normal countdown: airy and celebratory. */
+
 .nx-celebration--normal.is-counting {
   background:
     radial-gradient(circle at 50% 45%, rgba(92, 189, 185, .18), transparent 29%),
@@ -5147,7 +5057,7 @@
     linear-gradient(145deg, #fbfcfa 0%, #edf6f2 52%, #fdf7f8 100%) !important;
 }
 
-/* Premium countdown: same identity, slightly richer depth. */
+
 .nx-celebration--premium.is-counting {
   background:
     radial-gradient(circle at 50% 44%, rgba(68, 160, 153, .24), transparent 30%),
@@ -5156,7 +5066,7 @@
     linear-gradient(145deg, #f7fbf8 0%, #e8f3ee 49%, #fbf3f6 100%) !important;
 }
 
-/* Retune countdown details for the lighter background. */
+
 .nx-celebration-countdown__eyebrow {
   border-color: rgba(47, 143, 137, .18) !important;
   color: #2f7774 !important;
@@ -5234,11 +5144,6 @@
 }
 
 
-/* ==========================================================================
-   Countdown blush-pink visibility refinement
-   Makes the blush accent visibly present while keeping sage/porcelain dominant.
-   ========================================================================== */
-
 .nx-celebration.is-counting {
   background:
     radial-gradient(circle at 18% 18%, rgba(225, 145, 166, .34), transparent 28%),
@@ -5263,7 +5168,7 @@
     linear-gradient(145deg, #f8fbf8 0%, #e8f3ee 48%, #fff0f5 100%) !important;
 }
 
-/* Visible blush halo behind the countdown number. */
+
 .nx-celebration-countdown__number-stage::before {
   content: '';
   position: absolute;
@@ -5278,7 +5183,7 @@
   pointer-events: none;
 }
 
-/* Pink pearl detail on the orbit so the blush accent is unmistakable. */
+
 .nx-celebration-countdown__ring--middle::before {
   content: '';
   position: absolute;
@@ -5293,17 +5198,12 @@
     0 0 22px rgba(228, 154, 173, .42);
 }
 
-/* Keep teal dominant, but introduce one visible blush sparkle. */
+
 .nx-celebration-countdown__spark--two {
   background: #e39aac !important;
   box-shadow: 0 0 20px rgba(227, 154, 172, .52) !important;
 }
 
-
-/* ==========================================================================
-   Countdown scale refinement
-   Smaller, more elegant 3 → 2 → 1 typography while preserving timing/colors.
-   ========================================================================== */
 
 .nx-celebration-countdown__number-stage {
   width: min(46vw, 420px) !important;
@@ -5319,12 +5219,12 @@
   letter-spacing: -.065em !important;
 }
 
-/* Normal stays intentionally a little calmer. */
+
 .nx-celebration-countdown:not(.nx-celebration-countdown--premium) .nx-celebration-countdown__number {
   font-size: clamp(102px, 17vw, 176px) !important;
 }
 
-/* Premium gets a subtle size lift, not an oversized cinematic number. */
+
 .nx-celebration-countdown--premium .nx-celebration-countdown__number {
   font-size: clamp(112px, 18.5vw, 194px) !important;
 }
@@ -5356,13 +5256,6 @@
   }
 }
 
-
-
-/* ==========================================================================
-   Generation access blocker
-   A full viewport entitlement gate. It is rendered through a React portal so
-   it is centered relative to the screen, not the page container.
-   ========================================================================== */
 
 .nx-generation-page.is-generation-blocked .nx-generation-shell {
   pointer-events: none;
@@ -5825,8 +5718,7 @@
   }
 }
 
-/* Cancellation success confirmation. Shown only after the backend reaches the
-   authoritative CANCELLED terminal state. */
+
 .nx-cancel-success {
   position: fixed;
   inset: 0;
@@ -5910,7 +5802,7 @@
   transform: translateY(-1px);
 }
 
-/* Active-run conflict is a viewport-level dialog, not an inline form error. */
+
 .nx-active-run-conflict {
   position: fixed;
   inset: 0;
@@ -6018,7 +5910,7 @@
   }
 }
 
-/* Keep the Signal-step question compact without changing headings in the other steps. */
+
 .nx-panel--signal .nx-panel__head h2 {
   font-size: clamp(26px, 2.2vw, 34px) !important;
   line-height: 1.08 !important;
@@ -6031,7 +5923,7 @@
   }
 }
 
-/* Keep the Signal step closer to the wizard actions on desktop. */
+
 @media (min-width: 761px) {
   .nx-panel--signal {
     min-height: 0 !important;
@@ -6039,10 +5931,6 @@
   }
 }
 
-/* ========================================================================== */
-/* V11 — creative discovery canvas for Signal · Focus · Ground · Launch       */
-/* Keeps generation behavior unchanged; this layer is presentation only.      */
-/* ========================================================================== */
 
 .nx-generation-page {
   --nx-aqua-1: #68c8c3;
@@ -6211,7 +6099,7 @@
   backdrop-filter: blur(10px);
 }
 
-/* Decorative discovery artwork */
+
 .nx-step-art {
   position: absolute;
   z-index: 1;
@@ -6496,7 +6384,7 @@
   transform: rotate(-2deg);
 }
 
-/* Each step gets a slightly different drawing language. */
+
 .nx-step-art--signal .nx-step-art__scene::after {
   content: '';
   position: absolute;
@@ -6557,7 +6445,7 @@
   animation: nxOrbitSpin 9s linear infinite;
 }
 
-/* Let each panel breathe around the floating artwork. */
+
 .nx-panel--signal .nx-speech-field {
   margin-top: 58px !important;
 }
@@ -6760,7 +6648,6 @@
 }
 
 
-/* V12 — premium domain gallery cards */
 .nx-panel--domains .nx-domain-grid {
   gap: 12px !important;
   margin-top: 14px !important;
@@ -7021,7 +6908,7 @@
   }
 }
 
-/* V13 — compact premium domain cards + aqua system notices */
+
 .nx-panel--domains .nx-domain-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
   gap: 8px !important;
@@ -7191,7 +7078,7 @@
     inset 0 1px 0 #fff !important;
 }
 
-/* Replace the old rose selection surfaces with Voxidence aqua tones. */
+
 .nx-panel--domains .nx-auto-domain button,
 .nx-panel--domains .nx-auto-domain button.is-selected {
   border-color: rgba(82, 185, 181, .20) !important;
@@ -7264,7 +7151,7 @@
   }
 }
 
-/* V14 — classic Voxidence domain cards (4-column desktop layout) */
+
 .nx-panel--domains .nx-domain-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   gap: 10px !important;
@@ -7490,7 +7377,7 @@
   }
 }
 
-/* V15 — Voxidence pearl domain cards: brand palette + readable copy */
+
 .nx-panel--domains .nx-domain-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   gap: 11px !important;
@@ -7629,7 +7516,7 @@
   box-shadow: 0 7px 16px rgba(79, 169, 164, .18) !important;
 }
 
-/* Keep the automatic option in the same pearl / eucalyptus / soft-rose system. */
+
 .nx-panel--domains .nx-auto-domain button,
 .nx-panel--domains .nx-auto-domain button.is-selected {
   border-color: rgba(127, 151, 140, .22) !important;
@@ -7700,12 +7587,7 @@
   }
 }
 
-/* ================================================================
-   Domain cards — restored original Voxidence layout
-   Only the color treatment is refreshed to the current brand palette.
-   Geometry, information density, and four-column desktop layout mirror
-   the original domain selector.
-   ================================================================ */
+
 .nx-panel--domains .nx-domain-grid {
   margin-top: 9px !important;
   display: grid !important;
@@ -7865,7 +7747,7 @@
   cursor: not-allowed !important;
 }
 
-/* Auto-detect keeps its original structure, now using the same Voxidence aqua/rose system. */
+
 .nx-panel--domains .nx-auto-domain button,
 .nx-panel--domains .nx-auto-domain button.is-selected {
   border-color: rgba(92, 189, 185, .28) !important;
@@ -7912,7 +7794,6 @@
 }
 
 
-/* Voxidence RTL + dark refinement */
 html.vox-user-rtl .nx-generation-page,
 html.vox-user-rtl .nx-panel,
 html.vox-user-rtl .nx-generation-hero,
@@ -8122,9 +8003,6 @@ html.vox-user-dark .nx-domain-shortcut:hover {
 }
 
 
-/* ========================================================================== */
-/* Dark-mode selection hardening — no light selected/hover domain cards        */
-/* ========================================================================== */
 html.vox-user-dark .nx-panel--domains .nx-domain-grid>button,
 html.vox-user-dark .nx-panel--domains .nx-domain-grid>button:hover:not(:disabled),
 html.vox-user-dark .nx-panel--domains .nx-domain-grid>button:focus-visible,
@@ -8162,7 +8040,6 @@ html.vox-user-dark .nx-panel--domains .nx-auto-domain button.is-selected {
 }
 
 
-/* VOXIDENCE_DROPDOWN_RTL_DARK_FIX */
 .nx-generation-card:has(.nx-language-select.is-open) {
   overflow: visible;
 }
@@ -8222,7 +8099,6 @@ html.vox-user-dark .nx-language-select__menu button[aria-selected='true'] {
 }
 
 
-/* FINAL_GENERATION_DARK_RTL_POLISH */
 html.vox-user-dark :is(.nx-generation-card, .nx-generation-hero, .nx-wizard-actions,
   .nx-generation-progress__toolbar, .nx-generation-progress__hero,
   .nx-progress-summary-card, .nx-horizontal-pipeline-card,
@@ -8285,7 +8161,6 @@ html.vox-user-rtl .nx-horizontal-pipeline-card__head {
 }
 
 
-/* FINAL_GENERATION_WHITE_SURFACE_ERADICATION */
 html.vox-user-dark :is(.nx-generation-shell,
   .nx-generation-progress,
   .nx-generation-progress__hero,
@@ -8338,7 +8213,6 @@ html.vox-user-dark .nx-celebration-countdown__ring--middle {
 }
 
 
-/* FINAL_CELEBRATION_DARK_SURFACE_FIX */
 html.vox-user-dark .nx-celebration,
 html.vox-user-dark .nx-celebration.is-counting,
 html.vox-user-dark .nx-celebration.is-revealed {
@@ -8372,7 +8246,7 @@ html.vox-user-dark .nx-celebration__eyebrow {
   background: #20382f !important;
 }
 
-/* Final dark review + bilingual voice controls */
+
 .nx-voice-language-toggle {
   flex: 0 0 auto;
   min-width: 42px;
@@ -8428,9 +8302,7 @@ html.vox-user-rtl .nx-voice-language-toggle {
   direction: ltr;
 }
 
-/* ========================================================================== */
-/* FINAL_20260827_GENERATION_DARK_RTL_VOICE                                   */
-/* ========================================================================== */
+
 html.vox-user-dark .nx-panel--launch .nx-refresh-toggle,
 html.vox-user-dark .nx-panel--launch .nx-normal-generation-note,
 html.vox-user-dark .nx-panel--launch .nx-normal-generation-note.is-premium,
@@ -8464,8 +8336,7 @@ html.vox-user-dark .nx-panel--launch .nx-normal-generation-note small {
   color: #abc0b9 !important;
 }
 
-/* User-entered content keeps its own direction. The placeholder follows the
-   localized example and begins at the true start of the input line. */
+
 .nx-speech-field textarea[dir="auto"] {
   text-align: start !important;
   unicode-bidi: plaintext;
@@ -8476,8 +8347,7 @@ html.vox-user-rtl .nx-speech-field textarea[dir="auto"] {
   text-align: start !important;
 }
 
-/* Keep the same physical control order as English. Arabic only changes the
-   copy direction inside each button. */
+
 html.vox-user-rtl .nx-speech-field__actions {
   direction: ltr !important;
   left: 20px !important;
@@ -8507,7 +8377,6 @@ html.vox-user-rtl .nx-domain-shortcut svg:last-child {
 }
 
 
-/* FINAL_20260827_GENERATION_VOICE_RTL_GEOMETRY */
 .nx-speech-field textarea[dir="auto"] {
   unicode-bidi: plaintext !important;
   text-align: start !important;
@@ -8541,7 +8410,7 @@ html.vox-user-rtl .nx-domain-shortcut svg:last-child {
   }
 }
 
-/* FINAL_20260827_GENERATION_DARK_GEOMETRY_V2 */
+
 html.vox-user-dark .nx-step-rail {
   padding-inline: 24px !important;
 }
@@ -8652,7 +8521,7 @@ html.vox-user-rtl .nx-speech-field textarea[dir="auto"]::placeholder {
   }
 }
 
-/* 2026-08-27 — description-first auto domain resolution lives on Signal step. */
+
 .nx-auto-detect-skip {
   margin-top: 18px;
 }
@@ -8765,7 +8634,7 @@ html.vox-user-dark .nx-auto-detect-skip small {
   color: #a8bbb6 !important;
 }
 
-/* FINAL_20260828_PROGRESS_RTL_AND_DARK_POLISH */
+
 html.vox-user-rtl .nx-dashboard-return,
 html.vox-user-rtl .nx-generation-error-actions button,
 html.vox-user-rtl .nx-cancel-success__dialog button {
@@ -8808,7 +8677,7 @@ html.vox-user-dark .nx-progress-compact-spinner {
   background-color: rgba(31, 58, 49, .92) !important;
 }
 
-/* FINAL_20260828_GENERATION_PROGRESS_COMPLETE_FIXES */
+
 .nx-horizontal-pipeline[dir="rtl"] {
   direction: rtl;
 }
@@ -8832,8 +8701,7 @@ html.vox-user-rtl .nx-stage-flow__arrow {
   direction: ltr !important;
 }
 
-/* SVGs should never inherit dark surface fills; only their intended parent
-   tiles can own a background. This removes the black/rectangular slab under icons. */
+
 html.vox-user-dark .nx-horizontal-stage__icon>svg,
 html.vox-user-dark .nx-personalized-discovery button>svg,
 html.vox-user-dark .nx-auto-detect-skip button>svg,
@@ -8944,8 +8812,7 @@ html.vox-user-dark .nx-run-error--friendly .nx-run-error__dashboard {
   }
 }
 
-/* FINAL_20260828_PROGRESS_DIRECTION
-   Anchor the animated progress fill to the logical start edge. */
+
 html.vox-user-rtl .nx-progress-track {
   direction: rtl;
 }
@@ -8964,15 +8831,6 @@ html.vox-user-ltr .nx-progress-track span {
   margin-inline-end: auto;
 }
 
-
-/* ========================================================================== */
-/* MERGED CREATIVE SIGNAL EXPERIENCE — kept in generation.css on purpose      */
-/* ========================================================================== */
-
-/* ========================================================================== */
-/* Voxidence Generate — Creative Signal Experience                            */
-/* Presentation-only override. No generation logic is changed.                */
-/* ========================================================================== */
 
 .nx-generation-page {
   --nx-signal-aqua: #5cbdb9;
@@ -9013,9 +8871,6 @@ html.vox-user-ltr .nx-progress-track span {
   background: radial-gradient(circle, rgba(92, 189, 185, .18), rgba(92, 189, 185, .05) 45%, transparent 72%);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Step rail                                                                   */
-/* -------------------------------------------------------------------------- */
 
 .nx-generation-page .nx-step-rail {
   width: min(1220px, calc(100% - 38px));
@@ -9100,9 +8955,6 @@ html.vox-user-ltr .nx-progress-track span {
   background: linear-gradient(90deg, rgba(92, 189, 185, .28), rgba(230, 174, 185, .2)) !important;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Main Signal card                                                            */
-/* -------------------------------------------------------------------------- */
 
 .nx-generation-page .nx-generation-card {
   width: min(1280px, calc(100% - 26px));
@@ -9223,9 +9075,6 @@ html.vox-user-ltr .nx-progress-track span {
   font-size: 12px;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Holographic discovery artwork                                               */
-/* -------------------------------------------------------------------------- */
 
 .nx-generation-page .nx-panel--signal>.nx-step-art {
   grid-area: visual;
@@ -9583,9 +9432,6 @@ html.vox-user-ltr .nx-progress-track span {
   box-shadow: 0 0 0 4px rgba(92, 189, 185, .1);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Signal input                                                                */
-/* -------------------------------------------------------------------------- */
 
 .nx-generation-page .nx-panel--signal .nx-speech-field {
   grid-area: speech;
@@ -9663,9 +9509,6 @@ html.vox-user-ltr .nx-progress-track span {
   color: #8d9d99 !important;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Secondary discovery choices                                                 */
-/* -------------------------------------------------------------------------- */
 
 .nx-generation-page .nx-panel--signal .nx-auto-detect-skip {
   grid-area: auto;
@@ -9775,9 +9618,6 @@ html.vox-user-ltr .nx-progress-track span {
   box-shadow: 0 0 0 4px rgba(230, 174, 185, .075);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Footer actions                                                              */
-/* -------------------------------------------------------------------------- */
 
 .nx-generation-page .nx-wizard-actions {
   padding: 18px 30px !important;
@@ -9801,9 +9641,6 @@ html.vox-user-ltr .nx-progress-track span {
   box-shadow: 0 17px 32px rgba(47, 143, 137, .25) !important;
 }
 
-/* -------------------------------------------------------------------------- */
-/* RTL                                                                         */
-/* -------------------------------------------------------------------------- */
 
 html.vox-user-rtl .nx-generation-page .nx-panel--signal {
   grid-template-columns: minmax(390px, .92fr) minmax(0, 1.08fr);
@@ -9840,9 +9677,6 @@ html.vox-user-rtl .nx-generation-page .nx-panel--signal .nx-signal-tips span::be
   right: 10px;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Dark mode — same Voxidence aqua / rose identity                             */
-/* -------------------------------------------------------------------------- */
 
 html.vox-user-dark .nx-generation-page .nx-generation-card {
   border-color: rgba(104, 200, 195, .17) !important;
@@ -9929,9 +9763,6 @@ html.vox-user-dark .nx-generation-page .nx-wizard-actions {
   background: linear-gradient(90deg, rgba(16, 29, 26, .96), rgba(20, 35, 31, .94)) !important;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Responsive                                                                  */
-/* -------------------------------------------------------------------------- */
 
 @media (max-width: 1120px) {
   .nx-generation-page .nx-panel--signal {
@@ -10187,10 +10018,6 @@ html.vox-user-dark .nx-generation-page .nx-wizard-actions {
   }
 }
 
-/* ========================================================================== */
-/* Generate / Signal — evidence-library-inspired discovery canvas              */
-/* Visual-only enhancement. Existing wizard logic and actions remain intact.  */
-/* ========================================================================== */
 
 .nx-generation-page .nx-step-rail {
   width: min(1380px, calc(100% - 42px));
@@ -10351,9 +10178,6 @@ html.vox-user-rtl .nx-generation-page .nx-step.is-current::before {
   line-height: 1.35;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Signal discovery illustration                                               */
-/* -------------------------------------------------------------------------- */
 
 .nx-signal-visual {
   grid-area: visual;
@@ -10786,9 +10610,6 @@ html.vox-user-rtl .nx-generation-page .nx-step.is-current::before {
   transform: rotate(-31deg);
 }
 
-/* -------------------------------------------------------------------------- */
-/* RTL + dark                                                                  */
-/* -------------------------------------------------------------------------- */
 
 html.vox-user-rtl .nx-generation-page .nx-panel--signal {
   grid-template-columns: minmax(455px, 1.02fr) minmax(0, .5fr) minmax(0, .5fr);
@@ -10849,9 +10670,6 @@ html.vox-user-dark .nx-generation-page .nx-step.is-current {
   background: linear-gradient(145deg, rgba(27, 46, 41, .96), rgba(22, 39, 35, .95)) !important;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Responsive                                                                  */
-/* -------------------------------------------------------------------------- */
 
 @media (max-width: 1220px) {
   .nx-generation-page .nx-panel--signal {
@@ -10990,19 +10808,13 @@ html.vox-user-dark .nx-generation-page .nx-step.is-current {
   }
 }
 
-/* ========================================================================== */
-/* Generate / Signal — unified open canvas                                    */
-/* Final presentation override: one composition, no card-inside-card shell.   */
-/* Generation behavior and actions remain unchanged.                          */
-/* ========================================================================== */
 
-/* Remove the decorative sparkle tile that used to sit before the active step. */
 .nx-generation-page .nx-step.is-current::before {
   display: none !important;
   content: none !important;
 }
 
-/* The first step is one continuous page composition instead of a framed card. */
+
 .nx-generation-page .nx-generation-card.is-signal-step {
   width: min(1460px, calc(100% - 38px));
   overflow: visible;
@@ -11037,14 +10849,12 @@ html.vox-user-dark .nx-generation-page .nx-step.is-current {
   pointer-events: none;
 }
 
-/* The mockup is intentionally cleaner without an extra privacy pill floating
-   inside the composition. Privacy behavior itself is not changed. */
+
 .nx-generation-page .nx-generation-card.is-signal-step .nx-private-note {
   display: none !important;
 }
 
-/* Keep the right-side discovery illustration integrated into the page canvas,
-   rather than putting another rounded rectangle inside the main section. */
+
 .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-visual {
   min-height: 590px;
   margin-inline-start: 18px;
@@ -11081,8 +10891,7 @@ html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-sig
     0 0 0 92px rgba(230, 174, 185, .012);
 }
 
-/* Match the simplified approved artwork: Human signal, WHO/PAIN/WHY,
-   Context, Friction and the central reactor only. */
+
 .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-chip--live,
 .nx-generation-page .nx-generation-card.is-signal-step .nx-signal-float-card--map {
   display: none !important;
@@ -11112,7 +10921,7 @@ html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-sig
   top: 53%;
 }
 
-/* Let the input remain the only intentionally card-like surface in the hero. */
+
 .nx-generation-page .nx-generation-card.is-signal-step .nx-speech-field {
   border-radius: 22px !important;
   background:
@@ -11124,7 +10933,7 @@ html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-sig
   backdrop-filter: blur(10px);
 }
 
-/* Footer actions belong to the same open canvas, not to a second framed bar. */
+
 .nx-generation-page .nx-generation-card.is-signal-step .nx-wizard-actions {
   margin-top: 12px;
   padding: 16px 46px 22px !important;
@@ -11133,7 +10942,7 @@ html.vox-user-rtl .nx-generation-page .nx-generation-card.is-signal-step .nx-sig
   backdrop-filter: none !important;
 }
 
-/* Dark mode keeps the same single-canvas structure. */
+
 html.vox-user-dark .nx-generation-page .nx-generation-card.is-signal-step {
   background: transparent !important;
   box-shadow: none !important;
@@ -11217,10 +11026,6 @@ html.vox-user-dark .nx-generation-page .nx-generation-card.is-signal-step .nx-sp
   }
 }
 
-/* ========================================================================== */
-/* Generate page — edge-to-edge discovery experience                         */
-/* Keeps all generation logic intact; presentation only.                      */
-/* ========================================================================== */
 
 .nx-generation-page {
   position: relative;
@@ -12028,9 +11833,7 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
     opacity: 1;
   }
 }
-/* ========================================================================== */
-/* 2026-08-29 — Single-canvas Generate + validated-idea live pipeline          */
-/* ========================================================================== */
+
 
 .vx-generate-page,
 .vx-progress-page {
@@ -12472,6 +12275,7 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
   font-weight: 710;
   line-height: 1.35;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
@@ -12778,10 +12582,32 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
   box-shadow: 0 3px 7px rgba(244, 94, 149, .18);
 }
 
-.vx-discovery-globe__dot--1 { left: 25px; top: 42px; }
-.vx-discovery-globe__dot--2 { right: 16px; top: 36px; width: 6px; height: 6px; }
-.vx-discovery-globe__dot--3 { right: 27px; bottom: 40px; width: 5px; height: 5px; }
-.vx-discovery-globe__dot--4 { left: 44px; bottom: 30px; width: 4px; height: 4px; background: #69d7d1; }
+.vx-discovery-globe__dot--1 {
+  left: 25px;
+  top: 42px;
+}
+
+.vx-discovery-globe__dot--2 {
+  right: 16px;
+  top: 36px;
+  width: 6px;
+  height: 6px;
+}
+
+.vx-discovery-globe__dot--3 {
+  right: 27px;
+  bottom: 40px;
+  width: 5px;
+  height: 5px;
+}
+
+.vx-discovery-globe__dot--4 {
+  left: 44px;
+  bottom: 30px;
+  width: 4px;
+  height: 4px;
+  background: #69d7d1;
+}
 
 .vx-generate-next__title {
   margin-top: 2px;
@@ -12843,11 +12669,35 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
   color: #21aaa5;
 }
 
-.vx-generate-next__icon.is-2 { border-color: #d7e5fb; background: #f7faff; color: #6699ff; }
-.vx-generate-next__icon.is-3 { border-color: #e3dafc; background: #fbf9ff; color: #8c72f1; }
-.vx-generate-next__icon.is-4 { border-color: #fbd9e6; background: #fff8fb; color: #fa7ca9; }
-.vx-generate-next__icon.is-5 { border-color: #f7d9df; background: #fff9fa; color: #f18b9b; }
-.vx-generate-next__icon.is-6 { border-color: #d8eadf; background: #f8fdf9; color: #56b982; }
+.vx-generate-next__icon.is-2 {
+  border-color: #d7e5fb;
+  background: #f7faff;
+  color: #6699ff;
+}
+
+.vx-generate-next__icon.is-3 {
+  border-color: #e3dafc;
+  background: #fbf9ff;
+  color: #8c72f1;
+}
+
+.vx-generate-next__icon.is-4 {
+  border-color: #fbd9e6;
+  background: #fff8fb;
+  color: #fa7ca9;
+}
+
+.vx-generate-next__icon.is-5 {
+  border-color: #f7d9df;
+  background: #fff9fa;
+  color: #f18b9b;
+}
+
+.vx-generate-next__icon.is-6 {
+  border-color: #d8eadf;
+  background: #f8fdf9;
+  color: #56b982;
+}
 
 .vx-generate-next__timeline article>div {
   min-width: 0;
@@ -12991,6 +12841,7 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
 }
 
 .vx-generate-modal__actions {
+  margin-top: 14px;
   display: flex;
   justify-content: center;
   gap: 8px;
@@ -13009,7 +12860,7 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
   color: #6f808b;
 }
 
-/* Live pipeline */
+
 .vx-progress-page {
   min-height: 100%;
   padding: 18px 16px 42px;
@@ -13294,13 +13145,57 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
   top: 2px;
 }
 
-.vx-progress-globe__land--1 { width: 19px; height: 13px; top: 13px; left: 10px; }
-.vx-progress-globe__land--2 { width: 16px; height: 18px; right: 7px; bottom: 8px; }
-.vx-progress-globe__orbit--1 { width: 105px; height: 34px; left: 4px; top: 13px; transform: rotate(-13deg); }
-.vx-progress-globe__orbit--2 { width: 82px; height: 30px; left: 17px; top: 14px; transform: rotate(31deg); border-color: rgba(46, 184, 180, .25); }
-.vx-progress-globe__dot--1 { left: 8px; top: 15px; width: 5px; height: 5px; }
-.vx-progress-globe__dot--2 { right: 4px; top: 8px; width: 6px; height: 6px; }
-.vx-progress-globe__dot--3 { right: 14px; bottom: 5px; width: 4px; height: 4px; }
+.vx-progress-globe__land--1 {
+  width: 19px;
+  height: 13px;
+  top: 13px;
+  left: 10px;
+}
+
+.vx-progress-globe__land--2 {
+  width: 16px;
+  height: 18px;
+  right: 7px;
+  bottom: 8px;
+}
+
+.vx-progress-globe__orbit--1 {
+  width: 105px;
+  height: 34px;
+  left: 4px;
+  top: 13px;
+  transform: rotate(-13deg);
+}
+
+.vx-progress-globe__orbit--2 {
+  width: 82px;
+  height: 30px;
+  left: 17px;
+  top: 14px;
+  transform: rotate(31deg);
+  border-color: rgba(46, 184, 180, .25);
+}
+
+.vx-progress-globe__dot--1 {
+  left: 8px;
+  top: 15px;
+  width: 5px;
+  height: 5px;
+}
+
+.vx-progress-globe__dot--2 {
+  right: 4px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+}
+
+.vx-progress-globe__dot--3 {
+  right: 14px;
+  bottom: 5px;
+  width: 4px;
+  height: 4px;
+}
 
 .vx-progress-pipeline {
   position: relative;
@@ -13550,7 +13445,7 @@ html.vox-user-dark .nx-generation-page .nx-signal-ai-status__copy small {
   font-size: 11px;
 }
 
-/* RTL */
+
 html.vox-user-rtl .vx-generate-layout,
 html.vox-user-rtl .vx-progress-page {
   direction: rtl;
@@ -13589,7 +13484,7 @@ html.vox-user-rtl .vx-progress-current__status {
   margin-right: 54px;
 }
 
-/* Dark */
+
 html.vox-user-dark .vx-generate-page,
 html.vox-user-dark .vx-progress-page {
   --vx-ink: #edf7f5;
@@ -13830,6 +13725,7 @@ html.vox-user-dark .vx-generate-modal__actions .is-secondary {
 }
 
 @media (max-width: 640px) {
+
   .vx-generate-page,
   .vx-progress-page {
     padding-inline: 9px;
@@ -13909,12 +13805,7 @@ html.vox-user-dark .vx-generate-modal__actions .is-secondary {
   }
 }
 
-/* ========================================================================== */
-/* 2026-08-29 — Generate refinement: seamless canvas + smart discovery modes  */
-/* ========================================================================== */
 
-/* The shell already owns the page background. Keep Generate transparent so it
-   reads as one continuous workspace instead of a large white box inside it. */
 .vx-generate-page {
   padding: 8px 0 38px;
   background: transparent !important;
@@ -14019,7 +13910,7 @@ html.vox-user-dark .vx-generate-modal__actions .is-secondary {
   padding: 15px 16px 17px;
 }
 
-/* Premium signal composer */
+
 .vx-signal-input {
   position: relative;
   overflow: hidden;
@@ -14111,7 +14002,7 @@ html.vox-user-dark .vx-generate-modal__actions .is-secondary {
   font-weight: 650;
 }
 
-/* Smart discovery choices */
+
 .vx-personalized-mode,
 .vx-auto-domain-mode {
   width: 100%;
@@ -14291,7 +14182,7 @@ html.vox-user-dark .vx-generate-modal__actions .is-secondary {
   font-size: 8.7px;
 }
 
-/* Premium context fields */
+
 .vx-context-grid {
   gap: 12px;
 }
@@ -14357,7 +14248,7 @@ html.vox-user-dark .vx-generate-modal__actions .is-secondary {
   font-size: 9.5px;
 }
 
-/* Review stays compact, but is clearer in both themes. */
+
 .vx-review-row {
   border-radius: 11px;
   border-color: rgba(201, 220, 222, .86);
@@ -14393,7 +14284,7 @@ html.vox-user-dark .vx-generate-modal__actions .is-secondary {
   font-size: 8px;
 }
 
-/* Side pipeline card + richer discovery illustration */
+
 .vx-generate-next {
   position: sticky;
   top: 14px;
@@ -14597,7 +14488,7 @@ html.vox-user-dark .vx-generate-modal__actions .is-secondary {
   border-radius: 10px;
 }
 
-/* RTL details for new controls. */
+
 html.vox-user-rtl .vx-personalized-mode,
 html.vox-user-rtl .vx-auto-domain-mode,
 html.vox-user-rtl .vx-signal-input,
@@ -14620,8 +14511,7 @@ html.vox-user-rtl .vx-context-language__menu {
   text-align: right;
 }
 
-/* Dark mode: keep every new surface, placeholder, control, and illustration
-   readable instead of letting light-only colors disappear. */
+
 html.vox-user-dark .vx-generate-page {
   background: transparent !important;
 }
@@ -14916,7 +14806,7 @@ html.vox-user-dark .vx-generate-next__timeline small {
   }
 }
 
-/* Refined generation experience */
+
 .vx-signal-block {
   display: grid;
   gap: 14px;
@@ -14971,7 +14861,7 @@ html.vox-user-dark .vx-generate-next__timeline small {
     radial-gradient(circle at 96% 5%, rgba(62, 202, 194, .07), transparent 26%),
     radial-gradient(circle at 2% 100%, rgba(243, 128, 171, .05), transparent 24%),
     #fff;
-  box-shadow: 0 15px 40px rgba(45, 88, 100, .055), inset 0 1px 0 rgba(255,255,255,.9);
+  box-shadow: 0 15px 40px rgba(45, 88, 100, .055), inset 0 1px 0 rgba(255, 255, 255, .9);
   transition: border-color .22s ease, box-shadow .22s ease, transform .22s ease;
 }
 
@@ -15009,7 +14899,7 @@ html.vox-user-dark .vx-generate-next__timeline small {
 .vx-auto-domain-mode,
 .vx-domain-grid button,
 .vx-generate-button {
-  transition: transform .24s cubic-bezier(.2,.8,.2,1), box-shadow .24s ease, border-color .24s ease, background .24s ease;
+  transition: transform .24s cubic-bezier(.2, .8, .2, 1), box-shadow .24s ease, border-color .24s ease, background .24s ease;
 }
 
 .vx-signal-input__footer button:hover:not(:disabled),
@@ -15036,7 +14926,7 @@ html.vox-user-dark .vx-generate-next__timeline small {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(110deg, transparent 20%, rgba(255,255,255,.7) 48%, transparent 72%);
+  background: linear-gradient(110deg, transparent 20%, rgba(255, 255, 255, .7) 48%, transparent 72%);
   transform: translateX(-120%);
   transition: transform .65s ease;
 }
@@ -15055,14 +14945,14 @@ html.vox-user-dark .vx-generate-next__timeline small {
 .vx-personalized-mode__icon,
 .vx-auto-domain-mode__icon {
   border-radius: 13px;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.65), 0 7px 17px rgba(47, 150, 145, .08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .65), 0 7px 17px rgba(47, 150, 145, .08);
 }
 
 .vx-domain-grid button {
   position: relative;
   overflow: hidden;
   border-radius: 15px;
-  background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(249,252,252,.96));
+  background: linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(249, 252, 252, .96));
   box-shadow: 0 7px 18px rgba(42, 82, 92, .035);
 }
 
@@ -15083,7 +14973,7 @@ html.vox-user-dark .vx-generate-next__timeline small {
   box-shadow: 0 6px 17px rgba(45, 87, 98, .035);
 }
 
-/* Polished orbit globe inspired by the reference image */
+
 .vx-discovery-globe {
   width: 220px;
   height: 176px;
@@ -15115,14 +15005,14 @@ html.vox-user-dark .vx-generate-next__timeline small {
   height: 108px;
   left: 56px;
   top: 27px;
-  border: 1px solid rgba(255,255,255,.88);
+  border: 1px solid rgba(255, 255, 255, .88);
   background:
-    radial-gradient(circle at 30% 24%, rgba(255,255,255,.95) 0 7%, rgba(255,255,255,.35) 8% 17%, transparent 18%),
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, .95) 0 7%, rgba(255, 255, 255, .35) 8% 17%, transparent 18%),
     radial-gradient(circle at 62% 70%, rgba(90, 221, 213, .22), transparent 27%),
     linear-gradient(145deg, rgba(213, 252, 249, .94), rgba(99, 211, 204, .82) 48%, rgba(31, 161, 157, .78));
   box-shadow:
     inset -16px -15px 26px rgba(21, 140, 137, .18),
-    inset 15px 14px 24px rgba(255,255,255,.55),
+    inset 15px 14px 24px rgba(255, 255, 255, .55),
     0 18px 25px rgba(40, 148, 143, .15);
   backdrop-filter: blur(7px);
 }
@@ -15135,7 +15025,7 @@ html.vox-user-dark .vx-generate-next__timeline small {
   top: 14px;
   border-radius: 50%;
   transform: rotate(-24deg);
-  background: rgba(255,255,255,.72);
+  background: rgba(255, 255, 255, .72);
   filter: blur(1px);
 }
 
@@ -15143,19 +15033,39 @@ html.vox-user-dark .vx-generate-next__timeline small {
   position: absolute;
   inset: 9px;
   border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.30);
-  box-shadow: inset 0 0 22px rgba(255,255,255,.22);
+  border: 1px solid rgba(255, 255, 255, .30);
+  box-shadow: inset 0 0 22px rgba(255, 255, 255, .22);
 }
 
 .vx-discovery-globe__land {
   background: rgba(232, 255, 252, .46);
-  box-shadow: inset 0 0 10px rgba(255,255,255,.28);
+  box-shadow: inset 0 0 10px rgba(255, 255, 255, .28);
   filter: blur(.1px);
 }
 
-.vx-discovery-globe__land--1 { width: 37px; height: 24px; top: 30px; left: 19px; transform: rotate(-18deg); }
-.vx-discovery-globe__land--2 { width: 30px; height: 37px; right: 17px; bottom: 22px; transform: rotate(22deg); }
-.vx-discovery-globe__land--3 { width: 22px; height: 15px; left: 42px; bottom: 17px; transform: rotate(10deg); }
+.vx-discovery-globe__land--1 {
+  width: 37px;
+  height: 24px;
+  top: 30px;
+  left: 19px;
+  transform: rotate(-18deg);
+}
+
+.vx-discovery-globe__land--2 {
+  width: 30px;
+  height: 37px;
+  right: 17px;
+  bottom: 22px;
+  transform: rotate(22deg);
+}
+
+.vx-discovery-globe__land--3 {
+  width: 22px;
+  height: 15px;
+  left: 42px;
+  bottom: 17px;
+  transform: rotate(10deg);
+}
 
 .vx-discovery-globe__orbit {
   border-width: 1px;
@@ -15164,19 +15074,65 @@ html.vox-user-dark .vx-generate-next__timeline small {
   box-shadow: 0 0 13px rgba(235, 119, 164, .045);
 }
 
-.vx-discovery-globe__orbit--one { width: 193px; height: 65px; left: 13px; top: 48px; transform: rotate(-14deg); }
-.vx-discovery-globe__orbit--two { width: 177px; height: 61px; left: 23px; top: 51px; transform: rotate(24deg); border-color: rgba(44, 184, 179, .34); }
-.vx-discovery-globe__orbit--three { width: 158px; height: 52px; left: 31px; top: 56px; transform: rotate(64deg); border-color: rgba(238, 135, 171, .28); }
+.vx-discovery-globe__orbit--one {
+  width: 193px;
+  height: 65px;
+  left: 13px;
+  top: 48px;
+  transform: rotate(-14deg);
+}
+
+.vx-discovery-globe__orbit--two {
+  width: 177px;
+  height: 61px;
+  left: 23px;
+  top: 51px;
+  transform: rotate(24deg);
+  border-color: rgba(44, 184, 179, .34);
+}
+
+.vx-discovery-globe__orbit--three {
+  width: 158px;
+  height: 52px;
+  left: 31px;
+  top: 56px;
+  transform: rotate(64deg);
+  border-color: rgba(238, 135, 171, .28);
+}
 
 .vx-discovery-globe__dot {
   background: linear-gradient(145deg, #ffb2cf, #ee6fa0);
-  box-shadow: inset 0 1px 2px rgba(255,255,255,.85), 0 5px 12px rgba(232, 94, 144, .20);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, .85), 0 5px 12px rgba(232, 94, 144, .20);
 }
 
-.vx-discovery-globe__dot--1 { width: 9px; height: 9px; left: 15px; top: 64px; }
-.vx-discovery-globe__dot--2 { width: 8px; height: 8px; right: 14px; top: 42px; }
-.vx-discovery-globe__dot--3 { width: 7px; height: 7px; right: 32px; bottom: 37px; }
-.vx-discovery-globe__dot--4 { width: 6px; height: 6px; left: 37px; bottom: 43px; background: #54cfc9; }
+.vx-discovery-globe__dot--1 {
+  width: 9px;
+  height: 9px;
+  left: 15px;
+  top: 64px;
+}
+
+.vx-discovery-globe__dot--2 {
+  width: 8px;
+  height: 8px;
+  right: 14px;
+  top: 42px;
+}
+
+.vx-discovery-globe__dot--3 {
+  width: 7px;
+  height: 7px;
+  right: 32px;
+  bottom: 37px;
+}
+
+.vx-discovery-globe__dot--4 {
+  width: 6px;
+  height: 6px;
+  left: 37px;
+  bottom: 43px;
+  background: #54cfc9;
+}
 
 .vx-discovery-globe__spark {
   position: absolute;
@@ -15188,16 +15144,39 @@ html.vox-user-dark .vx-generate-next__timeline small {
   animation: vxGlobeSpark 3.4s ease-in-out infinite;
 }
 
-.vx-discovery-globe__spark--one { left: 31px; top: 27px; }
-.vx-discovery-globe__spark--two { right: 34px; top: 25px; animation-delay: .8s; background: #f08db3; }
-.vx-discovery-globe__spark--three { right: 25px; bottom: 28px; animation-delay: 1.5s; }
-
-@keyframes vxGlobeSpark {
-  0%, 100% { opacity: .35; transform: scale(.8); }
-  50% { opacity: 1; transform: scale(1.45); }
+.vx-discovery-globe__spark--one {
+  left: 31px;
+  top: 27px;
 }
 
-/* Generation progress: floating cards + directional animated flow */
+.vx-discovery-globe__spark--two {
+  right: 34px;
+  top: 25px;
+  animation-delay: .8s;
+  background: #f08db3;
+}
+
+.vx-discovery-globe__spark--three {
+  right: 25px;
+  bottom: 28px;
+  animation-delay: 1.5s;
+}
+
+@keyframes vxGlobeSpark {
+
+  0%,
+  100% {
+    opacity: .35;
+    transform: scale(.8);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.45);
+  }
+}
+
+
 .vx-progress-pipeline-card {
   overflow: visible;
   padding: 22px 20px 18px;
@@ -15205,7 +15184,7 @@ html.vox-user-dark .vx-generate-next__timeline small {
   background:
     radial-gradient(circle at 0 0, rgba(48, 190, 183, .055), transparent 25%),
     radial-gradient(circle at 100% 0, rgba(241, 126, 168, .045), transparent 24%),
-    rgba(255,255,255,.97);
+    rgba(255, 255, 255, .97);
   box-shadow: 0 18px 50px rgba(40, 75, 91, .055);
 }
 
@@ -15225,9 +15204,9 @@ html.vox-user-dark .vx-generate-next__timeline small {
   padding: 17px 15px 14px;
   border-radius: 18px;
   border-color: rgba(65, 117, 130, .13);
-  background: linear-gradient(155deg, rgba(255,255,255,.99), rgba(249,252,252,.96));
+  background: linear-gradient(155deg, rgba(255, 255, 255, .99), rgba(249, 252, 252, .96));
   box-shadow: 0 12px 30px rgba(42, 82, 93, .05);
-  transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease, border-color .28s ease;
+  transition: transform .28s cubic-bezier(.2, .8, .2, 1), box-shadow .28s ease, border-color .28s ease;
 }
 
 .vx-progress-stage:hover {
@@ -15333,21 +15312,41 @@ html.vox-user-dark .vx-generate-next__timeline small {
 }
 
 @keyframes vxStageClock {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes vxActiveCardFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
 }
 
 @keyframes vxPipelineFlow {
-  to { background-position: -220% 0; }
+  to {
+    background-position: -220% 0;
+  }
 }
 
 @keyframes vxArrowNudge {
-  0%, 100% { transform: translateX(-1px); opacity: .72; }
-  50% { transform: translateX(3px); opacity: 1; }
+
+  0%,
+  100% {
+    transform: translateX(-1px);
+    opacity: .72;
+  }
+
+  50% {
+    transform: translateX(3px);
+    opacity: 1;
+  }
 }
 
 html[dir='rtl'] .vx-signal-block__heading,
@@ -15380,7 +15379,7 @@ html.vox-user-dark .vx-signal-block__icon {
   border-color: rgba(77, 204, 194, .18);
   color: #7bd5cd;
   background: linear-gradient(145deg, #203c35, #2a3535);
-  box-shadow: 0 8px 20px rgba(0,0,0,.16);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .16);
 }
 
 html.vox-user-dark .vx-signal-input {
@@ -15389,12 +15388,12 @@ html.vox-user-dark .vx-signal-input {
     radial-gradient(circle at 96% 5%, rgba(59, 195, 185, .07), transparent 26%),
     radial-gradient(circle at 2% 100%, rgba(238, 128, 167, .045), transparent 24%),
     #1b2b27;
-  box-shadow: 0 15px 38px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.025);
+  box-shadow: 0 15px 38px rgba(0, 0, 0, .20), inset 0 1px 0 rgba(255, 255, 255, .025);
 }
 
 html.vox-user-dark .vx-signal-input:focus-within {
   border-color: rgba(76, 205, 195, .50);
-  box-shadow: 0 17px 42px rgba(0,0,0,.25), 0 0 0 4px rgba(52, 194, 184, .055);
+  box-shadow: 0 17px 42px rgba(0, 0, 0, .25), 0 0 0 4px rgba(52, 194, 184, .055);
 }
 
 html.vox-user-dark .vx-signal-input textarea {
@@ -15417,14 +15416,14 @@ html.vox-user-dark .vx-context-field,
 html.vox-user-dark .vx-context-language>button {
   border-color: rgba(114, 170, 161, .18);
   background: linear-gradient(145deg, #1d302b, #1b2b27);
-  box-shadow: 0 9px 24px rgba(0,0,0,.12);
+  box-shadow: 0 9px 24px rgba(0, 0, 0, .12);
 }
 
 html.vox-user-dark .vx-domain-grid button:hover:not(:disabled),
 html.vox-user-dark .vx-personalized-mode:hover:not(:disabled),
 html.vox-user-dark .vx-auto-domain-mode:hover:not(:disabled) {
   border-color: rgba(83, 207, 197, .36);
-  box-shadow: 0 15px 32px rgba(0,0,0,.18);
+  box-shadow: 0 15px 32px rgba(0, 0, 0, .18);
 }
 
 html.vox-user-dark .vx-progress-pipeline-card {
@@ -15433,24 +15432,24 @@ html.vox-user-dark .vx-progress-pipeline-card {
     radial-gradient(circle at 0 0, rgba(51, 194, 183, .06), transparent 25%),
     radial-gradient(circle at 100% 0, rgba(240, 128, 169, .045), transparent 24%),
     rgba(24, 39, 34, .95);
-  box-shadow: 0 18px 50px rgba(0,0,0,.22);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .22);
 }
 
 html.vox-user-dark .vx-progress-stage {
   border-color: rgba(112, 166, 157, .17);
   background: linear-gradient(155deg, #1d302a, #1a2a26);
-  box-shadow: 0 12px 30px rgba(0,0,0,.15);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .15);
 }
 
 html.vox-user-dark .vx-progress-stage:hover {
   border-color: rgba(76, 205, 195, .32);
-  box-shadow: 0 20px 42px rgba(0,0,0,.24);
+  box-shadow: 0 20px 42px rgba(0, 0, 0, .24);
 }
 
 html.vox-user-dark .vx-progress-stage--active {
   border-color: transparent;
   background: linear-gradient(155deg, #1f342e, #1b2e29);
-  box-shadow: 0 18px 44px rgba(0,0,0,.24), 0 0 0 1px rgba(72, 206, 196, .08);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .24), 0 0 0 1px rgba(72, 206, 196, .08);
 }
 
 html.vox-user-dark .vx-progress-stage--active::after {
@@ -15500,6 +15499,7 @@ html.vox-user-dark .vx-progress-stage__flow {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .vx-progress-stage--active,
   .vx-progress-stage--active .vx-progress-stage__orbit,
   .vx-progress-stage__connector .vx-progress-stage__flow,
@@ -15509,11 +15509,6 @@ html.vox-user-dark .vx-progress-stage__flow {
   }
 }
 
-
-/* ========================================================================== */
-/* 2026-08 Generate/Progress visual refinement                                 */
-/* Keeps generation behavior unchanged; only presentation + legibility.        */
-/* ========================================================================== */
 
 :root {
   --vx-refine-ink: #173d50;
@@ -15525,28 +15520,28 @@ html.vox-user-dark .vx-progress-stage__flow {
   --vx-refine-pink: #ed83aa;
 }
 
-/* More premium section shells */
+
 .vx-generate-section {
   border: 1px solid rgba(68, 153, 157, .20) !important;
   border-radius: 24px !important;
   background:
     radial-gradient(circle at 100% 0, rgba(94, 214, 206, .055), transparent 28%),
     radial-gradient(circle at 0 100%, rgba(239, 139, 177, .035), transparent 28%),
-    rgba(255,255,255,.975) !important;
-  box-shadow: 0 16px 44px rgba(39, 84, 96, .055), inset 0 1px 0 rgba(255,255,255,.8) !important;
+    rgba(255, 255, 255, .975) !important;
+  box-shadow: 0 16px 44px rgba(39, 84, 96, .055), inset 0 1px 0 rgba(255, 255, 255, .8) !important;
   overflow: hidden;
 }
 
 .vx-generate-section:hover {
   border-color: rgba(35, 172, 167, .32) !important;
-  box-shadow: 0 22px 54px rgba(34, 113, 119, .075), inset 0 1px 0 rgba(255,255,255,.9) !important;
+  box-shadow: 0 22px 54px rgba(34, 113, 119, .075), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
 }
 
 .vx-generate-section__header {
   min-height: 76px !important;
   padding: 17px 20px !important;
   border-bottom: 1px solid rgba(84, 141, 150, .12) !important;
-  background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(250,253,253,.73));
+  background: linear-gradient(180deg, rgba(255, 255, 255, .92), rgba(250, 253, 253, .73));
 }
 
 .vx-generate-section__number {
@@ -15557,7 +15552,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   font-size: 16px !important;
   font-weight: 900 !important;
   background: linear-gradient(145deg, #1bb9b2, #0f8f8d) !important;
-  box-shadow: 0 10px 23px rgba(22, 157, 152, .24), inset 0 1px 0 rgba(255,255,255,.28) !important;
+  box-shadow: 0 10px 23px rgba(22, 157, 152, .24), inset 0 1px 0 rgba(255, 255, 255, .28) !important;
 }
 
 .vx-generate-section__header strong {
@@ -15594,7 +15589,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   padding: 20px !important;
 }
 
-/* Signal label is clearly OUTSIDE the text box */
+
 .vx-signal-block {
   display: grid;
   gap: 13px;
@@ -15637,7 +15632,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   background:
     radial-gradient(circle at 98% 0, rgba(93, 215, 207, .06), transparent 24%),
     #fff !important;
-  box-shadow: 0 12px 34px rgba(41, 89, 101, .055), inset 0 1px 0 rgba(255,255,255,.9) !important;
+  box-shadow: 0 12px 34px rgba(41, 89, 101, .055), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
 }
 
 .vx-signal-input:focus-within {
@@ -15668,7 +15663,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   border-top: 1px solid rgba(67, 145, 150, .12) !important;
 }
 
-.vx-signal-input__footer > span {
+.vx-signal-input__footer>span {
   color: #6d8794 !important;
   font-size: 10.5px !important;
   font-weight: 760 !important;
@@ -15684,7 +15679,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   font-weight: 780 !important;
 }
 
-/* Modern action cards */
+
 .vx-personalized-mode,
 .vx-auto-domain-mode {
   min-height: 78px !important;
@@ -15692,9 +15687,9 @@ html.vox-user-dark .vx-progress-stage__flow {
   border-radius: 20px !important;
   border: 1px solid rgba(56, 153, 158, .18) !important;
   background:
-    linear-gradient(115deg, rgba(243,253,252,.98), rgba(255,255,255,.98) 54%, rgba(255,247,250,.92)) !important;
+    linear-gradient(115deg, rgba(243, 253, 252, .98), rgba(255, 255, 255, .98) 54%, rgba(255, 247, 250, .92)) !important;
   box-shadow: 0 11px 29px rgba(39, 93, 103, .045) !important;
-  transition: transform .24s cubic-bezier(.2,.8,.2,1), box-shadow .24s ease, border-color .24s ease !important;
+  transition: transform .24s cubic-bezier(.2, .8, .2, 1), box-shadow .24s ease, border-color .24s ease !important;
 }
 
 .vx-personalized-mode:hover:not(:disabled),
@@ -15737,7 +15732,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   background: linear-gradient(145deg, #fff, #fbfdfd) !important;
   box-shadow: 0 8px 22px rgba(41, 82, 93, .035) !important;
   font-weight: 780 !important;
-  transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease, border-color .22s ease !important;
+  transition: transform .22s cubic-bezier(.2, .8, .2, 1), box-shadow .22s ease, border-color .22s ease !important;
 }
 
 .vx-domain-grid button:hover:not(:disabled) {
@@ -15762,15 +15757,15 @@ html.vox-user-dark .vx-progress-stage__flow {
   color: #25aaa5 !important;
 }
 
-/* Better readable form labels and controls */
-.vx-context-grid > label > span,
-.vx-generate-section label > span {
+
+.vx-context-grid>label>span,
+.vx-generate-section label>span {
   color: #496a7b !important;
   font-weight: 790 !important;
 }
 
 .vx-context-field,
-.vx-context-language > button {
+.vx-context-language>button {
   min-height: 48px !important;
   border-radius: 15px !important;
   border-color: rgba(68, 145, 151, .23) !important;
@@ -15788,19 +15783,19 @@ html.vox-user-dark .vx-progress-stage__flow {
   opacity: 1 !important;
 }
 
-/* Premium CTA instead of a flat gradient strip */
+
 .vx-generate-button {
   position: relative !important;
   isolation: isolate;
   min-height: 78px !important;
-  border: 1px solid rgba(255,255,255,.52) !important;
+  border: 1px solid rgba(255, 255, 255, .52) !important;
   border-radius: 22px !important;
   overflow: hidden;
   background:
-    radial-gradient(circle at 13% 0, rgba(255,255,255,.23), transparent 31%),
+    radial-gradient(circle at 13% 0, rgba(255, 255, 255, .23), transparent 31%),
     linear-gradient(105deg, #138f91 0%, #1fb8b1 43%, #65cdc6 62%, #e77da7 100%) !important;
-  box-shadow: 0 18px 40px rgba(24, 146, 145, .20), inset 0 1px 0 rgba(255,255,255,.32) !important;
-  transition: transform .24s cubic-bezier(.2,.8,.2,1), box-shadow .24s ease, filter .24s ease !important;
+  box-shadow: 0 18px 40px rgba(24, 146, 145, .20), inset 0 1px 0 rgba(255, 255, 255, .32) !important;
+  transition: transform .24s cubic-bezier(.2, .8, .2, 1), box-shadow .24s ease, filter .24s ease !important;
 }
 
 .vx-generate-button::before {
@@ -15812,7 +15807,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   left: -55px;
   top: -95px;
   border-radius: 50%;
-  background: rgba(255,255,255,.12);
+  background: rgba(255, 255, 255, .12);
   filter: blur(1px);
 }
 
@@ -15821,7 +15816,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(110deg, transparent 18%, rgba(255,255,255,.22) 45%, transparent 68%);
+  background: linear-gradient(110deg, transparent 18%, rgba(255, 255, 255, .22) 45%, transparent 68%);
   transform: translateX(-115%);
   transition: transform .7s ease;
 }
@@ -15829,17 +15824,17 @@ html.vox-user-dark .vx-progress-stage__flow {
 .vx-generate-button:hover:not(:disabled) {
   transform: translateY(-4px) scale(1.003) !important;
   filter: saturate(1.04) !important;
-  box-shadow: 0 25px 54px rgba(23, 137, 139, .27), inset 0 1px 0 rgba(255,255,255,.36) !important;
+  box-shadow: 0 25px 54px rgba(23, 137, 139, .27), inset 0 1px 0 rgba(255, 255, 255, .36) !important;
 }
 
 .vx-generate-button:hover:not(:disabled)::after {
   transform: translateX(115%);
 }
 
-.vx-generate-button > svg {
+.vx-generate-button>svg {
   width: 22px;
   height: 22px;
-  filter: drop-shadow(0 4px 8px rgba(0,0,0,.10));
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, .10));
 }
 
 .vx-generate-button strong {
@@ -15854,7 +15849,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   opacity: .95 !important;
 }
 
-/* Reference-inspired glass planet: airy, translucent, less clip-art-like */
+
 .vx-discovery-globe {
   width: 252px !important;
   height: 205px !important;
@@ -15893,16 +15888,16 @@ html.vox-user-dark .vx-progress-stage__flow {
   height: 124px !important;
   left: 64px !important;
   top: 27px !important;
-  border: 1px solid rgba(255,255,255,.92) !important;
+  border: 1px solid rgba(255, 255, 255, .92) !important;
   background:
-    radial-gradient(circle at 28% 20%, rgba(255,255,255,.96) 0 7%, rgba(255,255,255,.44) 8% 16%, transparent 17%),
+    radial-gradient(circle at 28% 20%, rgba(255, 255, 255, .96) 0 7%, rgba(255, 255, 255, .44) 8% 16%, transparent 17%),
     radial-gradient(circle at 62% 68%, rgba(146, 239, 232, .24), transparent 22%),
-    radial-gradient(circle at 36% 66%, rgba(255,255,255,.18), transparent 18%),
-    linear-gradient(145deg, rgba(218,253,250,.92), rgba(115,219,211,.80) 47%, rgba(31,165,161,.74)) !important;
+    radial-gradient(circle at 36% 66%, rgba(255, 255, 255, .18), transparent 18%),
+    linear-gradient(145deg, rgba(218, 253, 250, .92), rgba(115, 219, 211, .80) 47%, rgba(31, 165, 161, .74)) !important;
   box-shadow:
-    inset -20px -18px 32px rgba(18,130,132,.18),
-    inset 17px 15px 27px rgba(255,255,255,.58),
-    0 20px 32px rgba(30,145,143,.17) !important;
+    inset -20px -18px 32px rgba(18, 130, 132, .18),
+    inset 17px 15px 27px rgba(255, 255, 255, .58),
+    0 20px 32px rgba(30, 145, 143, .17) !important;
   backdrop-filter: blur(8px);
 }
 
@@ -15911,16 +15906,16 @@ html.vox-user-dark .vx-progress-stage__flow {
   position: absolute;
   inset: 7px;
   border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.28);
-  background: linear-gradient(130deg, rgba(255,255,255,.14), transparent 45%);
+  border: 1px solid rgba(255, 255, 255, .28);
+  background: linear-gradient(130deg, rgba(255, 255, 255, .14), transparent 45%);
   pointer-events: none;
 }
 
 .vx-discovery-globe__land {
   opacity: .74;
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(229,255,252,.40) !important;
-  box-shadow: inset 0 0 12px rgba(255,255,255,.24) !important;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: rgba(229, 255, 252, .40) !important;
+  box-shadow: inset 0 0 12px rgba(255, 255, 255, .24) !important;
 }
 
 .vx-discovery-globe__orbit {
@@ -15956,17 +15951,22 @@ html.vox-user-dark .vx-progress-stage__flow {
   width: 36px !important;
   height: 36px !important;
   border-radius: 12px !important;
-  border: 1px solid rgba(255,255,255,.88) !important;
-  background: rgba(255,255,255,.88) !important;
+  border: 1px solid rgba(255, 255, 255, .88) !important;
+  background: rgba(255, 255, 255, .88) !important;
   color: #20aaa5 !important;
   box-shadow: 0 10px 24px rgba(39, 121, 128, .10) !important;
   backdrop-filter: blur(8px);
 }
 
-.vx-discovery-globe__node--two { color: #e87aa5 !important; }
-.vx-discovery-globe__node--three { color: #39b7a8 !important; }
+.vx-discovery-globe__node--two {
+  color: #e87aa5 !important;
+}
 
-/* PROGRESS PIPELINE — richer cards and a small rotating dial like reference */
+.vx-discovery-globe__node--three {
+  color: #39b7a8 !important;
+}
+
+
 .vx-progress-pipeline-card {
   padding: 24px 22px 20px !important;
   border-radius: 26px !important;
@@ -15974,7 +15974,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   background:
     radial-gradient(circle at 6% 0, rgba(54, 194, 186, .075), transparent 23%),
     radial-gradient(circle at 96% 4%, rgba(237, 126, 169, .055), transparent 20%),
-    rgba(255,255,255,.98) !important;
+    rgba(255, 255, 255, .98) !important;
   box-shadow: 0 24px 60px rgba(38, 80, 93, .065) !important;
 }
 
@@ -16003,7 +16003,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   background:
     radial-gradient(circle at 90% 8%, rgba(85, 210, 202, .045), transparent 25%),
     linear-gradient(155deg, #fff, #fbfdfd) !important;
-  box-shadow: 0 14px 36px rgba(39, 79, 91, .052), inset 0 1px 0 rgba(255,255,255,.92) !important;
+  box-shadow: 0 14px 36px rgba(39, 79, 91, .052), inset 0 1px 0 rgba(255, 255, 255, .92) !important;
   overflow: visible !important;
 }
 
@@ -16022,7 +16022,7 @@ html.vox-user-dark .vx-progress-stage__flow {
 .vx-progress-stage:hover {
   transform: translateY(-7px) !important;
   border-color: rgba(35, 176, 169, .33) !important;
-  box-shadow: 0 24px 48px rgba(30, 121, 124, .10), inset 0 1px 0 rgba(255,255,255,.95) !important;
+  box-shadow: 0 24px 48px rgba(30, 121, 124, .10), inset 0 1px 0 rgba(255, 255, 255, .95) !important;
 }
 
 .vx-progress-stage--active {
@@ -16034,7 +16034,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   animation: vxActiveCardFloatRefined 2.9s ease-in-out infinite !important;
 }
 
-/* Remove the full-card spinning border: the spinner now lives in the icon tile. */
+
 .vx-progress-stage__orbit {
   display: none !important;
 }
@@ -16054,7 +16054,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   border: 1px solid rgba(57, 155, 158, .18) !important;
   color: #6f8d98 !important;
   background: linear-gradient(145deg, #f6fdfc, #fff9fb) !important;
-  box-shadow: 0 8px 22px rgba(37, 103, 111, .055), inset 0 1px 0 rgba(255,255,255,.88) !important;
+  box-shadow: 0 8px 22px rgba(37, 103, 111, .055), inset 0 1px 0 rgba(255, 255, 255, .88) !important;
 }
 
 .vx-progress-stage--active .vx-progress-stage__icon {
@@ -16130,7 +16130,7 @@ html.vox-user-dark .vx-progress-stage__flow {
   font-weight: 650 !important;
 }
 
-/* Flow connector: moving bead + arrow. Only completed/current path animates. */
+
 .vx-progress-stage__connector {
   right: -20px !important;
   width: 21px !important;
@@ -16182,27 +16182,58 @@ html.vox-user-dark .vx-progress-stage__flow {
 }
 
 @keyframes vxActiveDialClock {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes vxActiveCardFloatRefined {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 @keyframes vxFlowBead {
-  0% { left: -5px; opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { left: 16px; opacity: 0; }
+  0% {
+    left: -5px;
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    left: 16px;
+    opacity: 0;
+  }
 }
 
 @keyframes vxArrowNudgeRefined {
-  0%, 100% { transform: translateX(-1px); opacity: .72; }
-  50% { transform: translateX(3px); opacity: 1; }
+
+  0%,
+  100% {
+    transform: translateX(-1px);
+    opacity: .72;
+  }
+
+  50% {
+    transform: translateX(3px);
+    opacity: 1;
+  }
 }
 
-/* RTL maintains the correct visual flow direction */
+
 html[dir='rtl'] .vx-progress-stage__connector,
 html.vox-user-rtl .vx-progress-stage__connector {
   right: auto !important;
@@ -16221,17 +16252,17 @@ html.vox-user-rtl .vx-domain-grid button {
   text-align: right !important;
 }
 
-/* Dark mode contrast parity */
+
 html.vox-user-dark .vx-generate-section {
   border-color: rgba(92, 174, 165, .20) !important;
   background:
     radial-gradient(circle at 100% 0, rgba(62, 194, 183, .055), transparent 28%),
     #172722 !important;
-  box-shadow: 0 18px 46px rgba(0,0,0,.20) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .20) !important;
 }
 
 html.vox-user-dark .vx-generate-section__header {
-  background: linear-gradient(180deg, rgba(27,45,40,.92), rgba(23,39,34,.82)) !important;
+  background: linear-gradient(180deg, rgba(27, 45, 40, .92), rgba(23, 39, 34, .82)) !important;
   border-bottom-color: rgba(117, 177, 168, .12) !important;
 }
 
@@ -16256,7 +16287,7 @@ html.vox-user-dark .vx-signal-input {
 
 html.vox-user-dark .vx-signal-input textarea,
 html.vox-user-dark .vx-context-field input,
-html.vox-user-dark .vx-context-language > button {
+html.vox-user-dark .vx-context-language>button {
   color: #e8f4f1 !important;
 }
 
@@ -16274,7 +16305,7 @@ html.vox-user-dark .vx-personalized-mode,
 html.vox-user-dark .vx-auto-domain-mode,
 html.vox-user-dark .vx-domain-grid button,
 html.vox-user-dark .vx-context-field,
-html.vox-user-dark .vx-context-language > button {
+html.vox-user-dark .vx-context-language>button {
   border-color: rgba(111, 177, 168, .19) !important;
   background: linear-gradient(145deg, #1c302a, #192a26) !important;
 }
@@ -16287,8 +16318,8 @@ html.vox-user-dark .vx-domain-grid button svg {
   color: #91aaa4 !important;
 }
 
-html.vox-user-dark .vx-context-grid > label > span,
-html.vox-user-dark .vx-generate-section label > span {
+html.vox-user-dark .vx-context-grid>label>span,
+html.vox-user-dark .vx-generate-section label>span {
   color: #bdd0cb !important;
 }
 
@@ -16298,7 +16329,7 @@ html.vox-user-dark .vx-progress-pipeline-card {
     radial-gradient(circle at 6% 0, rgba(57, 194, 183, .065), transparent 23%),
     radial-gradient(circle at 96% 4%, rgba(237, 126, 169, .04), transparent 20%),
     #172722 !important;
-  box-shadow: 0 24px 60px rgba(0,0,0,.23) !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .23) !important;
 }
 
 html.vox-user-dark .vx-progress-pipeline-card__head span,
@@ -16316,7 +16347,7 @@ html.vox-user-dark .vx-progress-stage {
   background:
     radial-gradient(circle at 90% 8%, rgba(73, 201, 190, .04), transparent 25%),
     linear-gradient(155deg, #1d312b, #192a26) !important;
-  box-shadow: 0 15px 36px rgba(0,0,0,.17) !important;
+  box-shadow: 0 15px 36px rgba(0, 0, 0, .17) !important;
 }
 
 html.vox-user-dark .vx-progress-stage--active {
@@ -16324,7 +16355,7 @@ html.vox-user-dark .vx-progress-stage--active {
   background:
     radial-gradient(circle at 85% 8%, rgba(74, 203, 192, .075), transparent 31%),
     linear-gradient(155deg, #203630, #1b2e29) !important;
-  box-shadow: 0 24px 52px rgba(0,0,0,.25), 0 0 0 1px rgba(72, 205, 195, .05) !important;
+  box-shadow: 0 24px 52px rgba(0, 0, 0, .25), 0 0 0 1px rgba(72, 205, 195, .05) !important;
 }
 
 html.vox-user-dark .vx-progress-stage__icon {
@@ -16338,21 +16369,50 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
 }
 
 @media (max-width: 1050px) {
-  .vx-progress-pipeline { gap: 14px !important; }
-  .vx-progress-stage__connector { display: none !important; }
+  .vx-progress-pipeline {
+    gap: 14px !important;
+  }
+
+  .vx-progress-stage__connector {
+    display: none !important;
+  }
 }
 
 @media (max-width: 640px) {
-  .vx-generate-section { border-radius: 19px !important; }
-  .vx-generate-section__header { min-height: 68px !important; padding: 14px !important; }
-  .vx-generate-section__body { padding: 14px !important; }
-  .vx-generate-section__header strong { font-size: 16px !important; }
-  .vx-generate-section__header small { font-size: 10.5px !important; }
-  .vx-discovery-globe { transform: scale(.88) !important; margin-top: -7px !important; margin-bottom: -4px !important; }
-  .vx-progress-stage { min-height: 205px !important; }
+  .vx-generate-section {
+    border-radius: 19px !important;
+  }
+
+  .vx-generate-section__header {
+    min-height: 68px !important;
+    padding: 14px !important;
+  }
+
+  .vx-generate-section__body {
+    padding: 14px !important;
+  }
+
+  .vx-generate-section__header strong {
+    font-size: 16px !important;
+  }
+
+  .vx-generate-section__header small {
+    font-size: 10.5px !important;
+  }
+
+  .vx-discovery-globe {
+    transform: scale(.88) !important;
+    margin-top: -7px !important;
+    margin-bottom: -4px !important;
+  }
+
+  .vx-progress-stage {
+    min-height: 205px !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .vx-progress-stage--active,
   .vx-progress-stage__active-dial,
   .vx-progress-stage__flow::after,
@@ -16362,25 +16422,24 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
 }
 
 
-/* === Fresh compact polish: prettier illustration, smaller cards, v2 hover/arrows === */
 .vx-generate-section {
   border-radius: 28px !important;
   border: 1px solid rgba(93, 183, 179, .18) !important;
   background:
     radial-gradient(circle at 100% 0, rgba(96, 219, 211, .06), transparent 24%),
     radial-gradient(circle at 0 100%, rgba(241, 154, 189, .05), transparent 20%),
-    rgba(255,255,255,.94) !important;
-  box-shadow: 0 20px 56px rgba(29, 88, 100, .055), inset 0 1px 0 rgba(255,255,255,.76) !important;
+    rgba(255, 255, 255, .94) !important;
+  box-shadow: 0 20px 56px rgba(29, 88, 100, .055), inset 0 1px 0 rgba(255, 255, 255, .76) !important;
 }
 
 .vx-generate-section:hover {
   border-color: rgba(39, 182, 175, .28) !important;
-  box-shadow: 0 24px 62px rgba(31, 113, 124, .075), inset 0 1px 0 rgba(255,255,255,.86) !important;
+  box-shadow: 0 24px 62px rgba(31, 113, 124, .075), inset 0 1px 0 rgba(255, 255, 255, .86) !important;
 }
 
 .vx-generate-section__header {
   padding: 18px 22px !important;
-  background: linear-gradient(180deg, rgba(250,253,253,.96), rgba(255,255,255,.84)) !important;
+  background: linear-gradient(180deg, rgba(250, 253, 253, .96), rgba(255, 255, 255, .84)) !important;
 }
 
 .vx-generate-section__header strong {
@@ -16423,8 +16482,8 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   border-color: rgba(59, 153, 159, .24) !important;
   background:
     radial-gradient(circle at 96% 0, rgba(86, 212, 204, .075), transparent 24%),
-    linear-gradient(180deg, rgba(255,255,255,.985), rgba(251,254,254,.96)) !important;
-  box-shadow: 0 16px 36px rgba(38, 85, 98, .05), inset 0 1px 0 rgba(255,255,255,.88) !important;
+    linear-gradient(180deg, rgba(255, 255, 255, .985), rgba(251, 254, 254, .96)) !important;
+  box-shadow: 0 16px 36px rgba(38, 85, 98, .05), inset 0 1px 0 rgba(255, 255, 255, .88) !important;
 }
 
 .vx-signal-input:focus-within {
@@ -16461,7 +16520,7 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   border-color: rgba(64, 154, 160, .18) !important;
   background:
     radial-gradient(circle at 92% 0, rgba(243, 188, 212, .14), transparent 22%),
-    linear-gradient(125deg, rgba(242,252,251,.98), rgba(255,255,255,.985) 58%, rgba(255,248,250,.95)) !important;
+    linear-gradient(125deg, rgba(242, 252, 251, .98), rgba(255, 255, 255, .985) 58%, rgba(255, 248, 250, .95)) !important;
   box-shadow: 0 14px 30px rgba(38, 95, 105, .04) !important;
 }
 
@@ -16524,7 +16583,7 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   padding: 12px 18px !important;
   border-radius: 22px !important;
   background:
-    radial-gradient(circle at 10% 0, rgba(255,255,255,.24), transparent 30%),
+    radial-gradient(circle at 10% 0, rgba(255, 255, 255, .24), transparent 30%),
     linear-gradient(108deg, #128f92 0%, #22b8b1 44%, #64d0c9 65%, #e781aa 100%) !important;
 }
 
@@ -16536,7 +16595,7 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   font-size: 10px !important;
 }
 
-/* Nicer side illustration closer to the user reference */
+
 .vx-discovery-globe {
   position: relative;
   width: 270px !important;
@@ -16573,7 +16632,7 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   background:
     radial-gradient(circle at 50% 30%, rgba(211, 250, 247, .42), transparent 24%),
     radial-gradient(circle at 72% 25%, rgba(247, 195, 215, .14), transparent 16%),
-    radial-gradient(circle at 28% 32%, rgba(255,255,255,.24), transparent 12%) !important;
+    radial-gradient(circle at 28% 32%, rgba(255, 255, 255, .24), transparent 12%) !important;
   filter: blur(12px) !important;
 }
 
@@ -16591,20 +16650,20 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   height: 128px !important;
   left: 71px !important;
   top: 6px !important;
-  border: 1px solid rgba(255,255,255,.88) !important;
+  border: 1px solid rgba(255, 255, 255, .88) !important;
   background:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.98) 0 7%, rgba(255,255,255,.46) 8% 15%, transparent 16%),
-    radial-gradient(circle at 63% 34%, rgba(255,255,255,.42), transparent 18%),
-    radial-gradient(circle at 37% 64%, rgba(255,255,255,.16), transparent 15%),
-    linear-gradient(145deg, rgba(225,253,250,.96), rgba(110,221,212,.86) 48%, rgba(26,163,159,.78)) !important;
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, .98) 0 7%, rgba(255, 255, 255, .46) 8% 15%, transparent 16%),
+    radial-gradient(circle at 63% 34%, rgba(255, 255, 255, .42), transparent 18%),
+    radial-gradient(circle at 37% 64%, rgba(255, 255, 255, .16), transparent 15%),
+    linear-gradient(145deg, rgba(225, 253, 250, .96), rgba(110, 221, 212, .86) 48%, rgba(26, 163, 159, .78)) !important;
   box-shadow:
-    inset -18px -22px 34px rgba(20,124,124,.18),
-    inset 16px 16px 24px rgba(255,255,255,.52),
+    inset -18px -22px 34px rgba(20, 124, 124, .18),
+    inset 16px 16px 24px rgba(255, 255, 255, .52),
     0 22px 34px rgba(29, 142, 142, .16) !important;
 }
 
 .vx-discovery-globe__glass {
-  background: linear-gradient(145deg, rgba(255,255,255,.08), rgba(255,255,255,.01)) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .01)) !important;
 }
 
 .vx-discovery-globe__shine {
@@ -16612,19 +16671,36 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   height: 28px !important;
   top: 11px !important;
   left: 18px !important;
-  background: radial-gradient(ellipse, rgba(255,255,255,.78), transparent 70%) !important;
+  background: radial-gradient(ellipse, rgba(255, 255, 255, .78), transparent 70%) !important;
   filter: blur(.4px);
 }
 
 .vx-discovery-globe__land {
   opacity: .76 !important;
-  background: rgba(232,255,252,.36) !important;
-  border: 1px solid rgba(255,255,255,.18) !important;
+  background: rgba(232, 255, 252, .36) !important;
+  border: 1px solid rgba(255, 255, 255, .18) !important;
 }
 
-.vx-discovery-globe__land--1 { width: 38px !important; height: 24px !important; top: 35px !important; left: 20px !important; }
-.vx-discovery-globe__land--2 { width: 30px !important; height: 36px !important; right: 16px !important; bottom: 21px !important; }
-.vx-discovery-globe__land--3 { width: 22px !important; height: 14px !important; left: 43px !important; bottom: 18px !important; }
+.vx-discovery-globe__land--1 {
+  width: 38px !important;
+  height: 24px !important;
+  top: 35px !important;
+  left: 20px !important;
+}
+
+.vx-discovery-globe__land--2 {
+  width: 30px !important;
+  height: 36px !important;
+  right: 16px !important;
+  bottom: 21px !important;
+}
+
+.vx-discovery-globe__land--3 {
+  width: 22px !important;
+  height: 14px !important;
+  left: 43px !important;
+  bottom: 18px !important;
+}
 
 .vx-discovery-globe__core {
   width: 28px !important;
@@ -16632,9 +16708,9 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   top: 42px !important;
   left: 50px !important;
   border-radius: 12px !important;
-  background: rgba(255,255,255,.22) !important;
+  background: rgba(255, 255, 255, .22) !important;
   color: #fdfefe !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 10px 20px rgba(19, 128, 132, .18) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 10px 20px rgba(19, 128, 132, .18) !important;
 }
 
 .vx-discovery-globe__orbit {
@@ -16674,20 +16750,46 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   width: 44px !important;
   height: 44px !important;
   border-radius: 15px !important;
-  background: rgba(255,255,255,.90) !important;
-  border: 1px solid rgba(255,255,255,.88) !important;
+  background: rgba(255, 255, 255, .90) !important;
+  border: 1px solid rgba(255, 255, 255, .88) !important;
   box-shadow: 0 14px 28px rgba(30, 101, 111, .09) !important;
   backdrop-filter: blur(10px);
 }
 
-.vx-discovery-globe__node--one { left: 8px !important; top: 62px !important; }
-.vx-discovery-globe__node--two { right: 12px !important; top: 67px !important; }
-.vx-discovery-globe__node--three { left: 53px !important; bottom: 15px !important; }
+.vx-discovery-globe__node--one {
+  left: 8px !important;
+  top: 62px !important;
+}
 
-.vx-discovery-globe__dot--1 { left: 22px !important; top: 77px !important; }
-.vx-discovery-globe__dot--2 { right: 28px !important; top: 36px !important; }
-.vx-discovery-globe__dot--3 { right: 40px !important; bottom: 36px !important; }
-.vx-discovery-globe__dot--4 { left: 43px !important; bottom: 47px !important; }
+.vx-discovery-globe__node--two {
+  right: 12px !important;
+  top: 67px !important;
+}
+
+.vx-discovery-globe__node--three {
+  left: 53px !important;
+  bottom: 15px !important;
+}
+
+.vx-discovery-globe__dot--1 {
+  left: 22px !important;
+  top: 77px !important;
+}
+
+.vx-discovery-globe__dot--2 {
+  right: 28px !important;
+  top: 36px !important;
+}
+
+.vx-discovery-globe__dot--3 {
+  right: 40px !important;
+  bottom: 36px !important;
+}
+
+.vx-discovery-globe__dot--4 {
+  left: 43px !important;
+  bottom: 47px !important;
+}
 
 .vx-discovery-globe__spark {
   width: 6px !important;
@@ -16697,7 +16799,7 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   box-shadow: 0 0 0 3px rgba(242, 152, 186, .12) !important;
 }
 
-/* Compact pipeline with the hover/orbit and moving arrows from version 2 */
+
 .vx-progress-pipeline-card {
   padding: 22px 18px 18px !important;
   border-radius: 26px !important;
@@ -16727,10 +16829,10 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   border: 1px solid rgba(66, 137, 147, .16) !important;
   background:
     radial-gradient(circle at 90% 8%, rgba(84, 211, 203, .05), transparent 25%),
-    linear-gradient(155deg, rgba(255,255,255,.99), rgba(249,252,252,.97)) !important;
+    linear-gradient(155deg, rgba(255, 255, 255, .99), rgba(249, 252, 252, .97)) !important;
   box-shadow: 0 12px 28px rgba(42, 82, 93, .05) !important;
   overflow: visible !important;
-  transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease, border-color .28s ease !important;
+  transition: transform .28s cubic-bezier(.2, .8, .2, 1), box-shadow .28s ease, border-color .28s ease !important;
 }
 
 .vx-progress-stage::before {
@@ -16796,7 +16898,7 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
   border: 1px solid rgba(57, 155, 158, .16) !important;
   color: #75909a !important;
   background: linear-gradient(145deg, #f6fdfc, #fff9fb) !important;
-  box-shadow: 0 8px 18px rgba(37, 103, 111, .05), inset 0 1px 0 rgba(255,255,255,.9) !important;
+  box-shadow: 0 8px 18px rgba(37, 103, 111, .05), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
   overflow: hidden;
 }
 
@@ -16913,21 +17015,41 @@ html.vox-user-dark .vx-progress-stage__active-dial::after {
 }
 
 @keyframes vxStageClockV2 {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes vxActiveCardFloatV2 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
 }
 
 @keyframes vxPipelineFlowV2 {
-  to { background-position: -220% 0; }
+  to {
+    background-position: -220% 0;
+  }
 }
 
 @keyframes vxArrowNudgeV2 {
-  0%, 100% { transform: translateX(-1px); opacity: .72; }
-  50% { transform: translateX(3px); opacity: 1; }
+
+  0%,
+  100% {
+    transform: translateX(-1px);
+    opacity: .72;
+  }
+
+  50% {
+    transform: translateX(3px);
+    opacity: 1;
+  }
 }
 
 html[dir='rtl'] .vx-progress-stage__connector,
@@ -16949,11 +17071,11 @@ html.vox-user-dark .vx-generate-section {
     radial-gradient(circle at 100% 0, rgba(62, 194, 183, .065), transparent 28%),
     radial-gradient(circle at 0 100%, rgba(237, 126, 169, .045), transparent 22%),
     #162723 !important;
-  box-shadow: 0 18px 48px rgba(0,0,0,.22) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .22) !important;
 }
 
 html.vox-user-dark .vx-generate-section__header {
-  background: linear-gradient(180deg, rgba(26,44,39,.94), rgba(22,39,35,.84)) !important;
+  background: linear-gradient(180deg, rgba(26, 44, 39, .94), rgba(22, 39, 35, .84)) !important;
 }
 
 html.vox-user-dark .vx-generate-section__header strong,
@@ -16978,7 +17100,7 @@ html.vox-user-dark .vx-signal-input {
   border-color: rgba(101, 183, 173, .24) !important;
   background:
     radial-gradient(circle at 96% 0, rgba(86, 212, 204, .06), transparent 24%),
-    linear-gradient(180deg, rgba(24,42,37,.98), rgba(25,44,39,.94)) !important;
+    linear-gradient(180deg, rgba(24, 42, 37, .98), rgba(25, 44, 39, .94)) !important;
 }
 
 html.vox-user-dark .vx-signal-input textarea {
@@ -16994,13 +17116,13 @@ html.vox-user-dark .vx-personalized-mode,
 html.vox-user-dark .vx-auto-domain-mode,
 html.vox-user-dark .vx-domain-grid button,
 html.vox-user-dark .vx-context-field,
-html.vox-user-dark .vx-context-language > button {
+html.vox-user-dark .vx-context-language>button {
   background: linear-gradient(145deg, #1a2d28, #192a26) !important;
   border-color: rgba(111, 177, 168, .20) !important;
 }
 
 html.vox-user-dark .vx-generate-button {
-  box-shadow: 0 22px 46px rgba(7, 60, 60, .30), inset 0 1px 0 rgba(255,255,255,.18) !important;
+  box-shadow: 0 22px 46px rgba(7, 60, 60, .30), inset 0 1px 0 rgba(255, 255, 255, .18) !important;
 }
 
 html.vox-user-dark .vx-progress-pipeline-card {
@@ -17015,7 +17137,7 @@ html.vox-user-dark .vx-progress-stage {
   background:
     radial-gradient(circle at 90% 8%, rgba(73, 201, 190, .05), transparent 25%),
     linear-gradient(155deg, #1c302a, #192a26) !important;
-  box-shadow: 0 15px 34px rgba(0,0,0,.18) !important;
+  box-shadow: 0 15px 34px rgba(0, 0, 0, .18) !important;
 }
 
 html.vox-user-dark .vx-progress-stage--active {
@@ -17055,22 +17177,24 @@ html.vox-user-dark .vx-progress-stage__icon {
     width: 235px !important;
     height: 190px !important;
   }
+
   .vx-discovery-globe__sphere {
     left: 58px !important;
     top: 8px !important;
     width: 116px !important;
     height: 116px !important;
   }
+
   .vx-domain-grid button {
     min-height: 50px !important;
   }
+
   .vx-progress-stage {
     min-height: 190px !important;
   }
 }
 
 
-/* === Final compact premium tune based on latest feedback === */
 .vx-generate-layout {
   gap: 22px !important;
   align-items: start !important;
@@ -17214,19 +17338,19 @@ html.vox-user-dark .vx-progress-stage__icon {
   gap: 12px !important;
 }
 
-.vx-context-grid > label > span,
-.vx-generate-section label > span {
+.vx-context-grid>label>span,
+.vx-generate-section label>span {
   font-size: 11px !important;
 }
 
 .vx-context-field,
-.vx-context-language > button {
+.vx-context-language>button {
   min-height: 44px !important;
   border-radius: 14px !important;
 }
 
 .vx-context-field input,
-.vx-context-language > button span {
+.vx-context-language>button span {
   font-size: 12.4px !important;
 }
 
@@ -17246,7 +17370,7 @@ html.vox-user-dark .vx-progress-stage__icon {
   margin-top: 2px !important;
 }
 
-.vx-generate-button > svg {
+.vx-generate-button>svg {
   width: 20px !important;
   height: 20px !important;
 }
@@ -17268,11 +17392,11 @@ html.vox-user-dark .vx-progress-stage__icon {
   font-size: 14px !important;
 }
 
-.vx-generate-next > p {
+.vx-generate-next>p {
   font-size: 10.3px !important;
 }
 
-/* Closer globe-earth reference */
+
 .vx-discovery-globe {
   width: 238px !important;
   height: 184px !important;
@@ -17313,9 +17437,9 @@ html.vox-user-dark .vx-progress-stage__icon {
   left: 68px !important;
   top: 14px !important;
   background:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.99) 0 7%, rgba(255,255,255,.48) 8% 15%, transparent 16%),
-    radial-gradient(circle at 67% 35%, rgba(255,255,255,.40), transparent 18%),
-    linear-gradient(145deg, rgba(222,253,249,.98), rgba(114,222,214,.88) 48%, rgba(30,165,161,.79)) !important;
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, .99) 0 7%, rgba(255, 255, 255, .48) 8% 15%, transparent 16%),
+    radial-gradient(circle at 67% 35%, rgba(255, 255, 255, .40), transparent 18%),
+    linear-gradient(145deg, rgba(222, 253, 249, .98), rgba(114, 222, 214, .88) 48%, rgba(30, 165, 161, .79)) !important;
 }
 
 .vx-discovery-globe__sphere::before {
@@ -17324,8 +17448,8 @@ html.vox-user-dark .vx-progress-stage__icon {
   inset: 8px !important;
   border-radius: 50% !important;
   background:
-    repeating-linear-gradient(0deg, transparent 0 13px, rgba(255,255,255,.14) 13px 14px),
-    repeating-linear-gradient(90deg, transparent 0 15px, rgba(255,255,255,.10) 15px 16px) !important;
+    repeating-linear-gradient(0deg, transparent 0 13px, rgba(255, 255, 255, .14) 13px 14px),
+    repeating-linear-gradient(90deg, transparent 0 15px, rgba(255, 255, 255, .10) 15px 16px) !important;
   mix-blend-mode: screen;
   opacity: .45;
 }
@@ -17337,9 +17461,26 @@ html.vox-user-dark .vx-progress-stage__icon {
   left: 16px !important;
 }
 
-.vx-discovery-globe__land--1 { width: 31px !important; height: 21px !important; top: 30px !important; left: 17px !important; }
-.vx-discovery-globe__land--2 { width: 26px !important; height: 30px !important; right: 15px !important; bottom: 18px !important; }
-.vx-discovery-globe__land--3 { width: 18px !important; height: 12px !important; left: 37px !important; bottom: 15px !important; }
+.vx-discovery-globe__land--1 {
+  width: 31px !important;
+  height: 21px !important;
+  top: 30px !important;
+  left: 17px !important;
+}
+
+.vx-discovery-globe__land--2 {
+  width: 26px !important;
+  height: 30px !important;
+  right: 15px !important;
+  bottom: 18px !important;
+}
+
+.vx-discovery-globe__land--3 {
+  width: 18px !important;
+  height: 12px !important;
+  left: 37px !important;
+  bottom: 15px !important;
+}
 
 .vx-discovery-globe__core {
   width: 22px !important;
@@ -17386,15 +17527,50 @@ html.vox-user-dark .vx-progress-stage__icon {
   height: 12px !important;
 }
 
-.vx-discovery-globe__node--one { left: 9px !important; top: 76px !important; }
-.vx-discovery-globe__node--two { right: 14px !important; top: 82px !important; }
-.vx-discovery-globe__node--three { left: 52px !important; bottom: 17px !important; }
-.vx-discovery-globe__dot--1 { left: 25px !important; top: 90px !important; width: 7px !important; height: 7px !important; }
-.vx-discovery-globe__dot--2 { right: 32px !important; top: 48px !important; width: 8px !important; height: 8px !important; }
-.vx-discovery-globe__dot--3 { right: 35px !important; bottom: 22px !important; width: 9px !important; height: 9px !important; }
-.vx-discovery-globe__dot--4 { left: 41px !important; bottom: 35px !important; width: 6px !important; height: 6px !important; }
+.vx-discovery-globe__node--one {
+  left: 9px !important;
+  top: 76px !important;
+}
 
-/* Progress pipeline: shorter cards like version 2 */
+.vx-discovery-globe__node--two {
+  right: 14px !important;
+  top: 82px !important;
+}
+
+.vx-discovery-globe__node--three {
+  left: 52px !important;
+  bottom: 17px !important;
+}
+
+.vx-discovery-globe__dot--1 {
+  left: 25px !important;
+  top: 90px !important;
+  width: 7px !important;
+  height: 7px !important;
+}
+
+.vx-discovery-globe__dot--2 {
+  right: 32px !important;
+  top: 48px !important;
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.vx-discovery-globe__dot--3 {
+  right: 35px !important;
+  bottom: 22px !important;
+  width: 9px !important;
+  height: 9px !important;
+}
+
+.vx-discovery-globe__dot--4 {
+  left: 41px !important;
+  bottom: 35px !important;
+  width: 6px !important;
+  height: 6px !important;
+}
+
+
 .vx-progress-pipeline-card {
   padding: 18px 16px 16px !important;
 }
@@ -17499,20 +17675,2827 @@ html.vox-user-rtl .vx-progress-stage__connector {
   .vx-generate-section__header {
     padding: 12px 14px !important;
   }
+
   .vx-generate-section__body {
     padding: 14px !important;
   }
+
   .vx-discovery-globe {
     width: 214px !important;
     height: 168px !important;
   }
+
   .vx-discovery-globe__sphere {
     width: 92px !important;
     height: 92px !important;
     left: 61px !important;
     top: 15px !important;
   }
+
   .vx-progress-stage {
     min-height: 168px !important;
   }
+}
+
+
+.vx-generate-page {
+  padding: 0 0 34px !important;
+  background: transparent !important;
+}
+
+.vx-generate-layout {
+  width: min(1480px, 100%) !important;
+  margin: 0 auto !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(350px, 390px) !important;
+  gap: 18px !important;
+  align-items: start !important;
+}
+
+
+.vx-generate-stack {
+  display: block !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(64, 158, 163, .19) !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(74, 207, 199, .045), transparent 24%),
+    radial-gradient(circle at 0 100%, rgba(242, 143, 181, .035), transparent 22%),
+    rgba(255, 255, 255, .965) !important;
+  box-shadow: 0 18px 46px rgba(36, 81, 94, .055), inset 0 1px 0 rgba(255, 255, 255, .92) !important;
+}
+
+.vx-generate-section,
+.vx-generate-section:hover {
+  margin: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.vx-generate-section+.vx-generate-section {
+  border-top: 1px solid rgba(65, 126, 139, .11) !important;
+}
+
+.vx-generate-section__header {
+  min-height: 56px !important;
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr) 30px !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 8px 18px !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(65, 126, 139, .085) !important;
+  background: rgba(255, 255, 255, .30) !important;
+}
+
+.vx-generate-section.is-collapsed .vx-generate-section__header {
+  border-bottom: 0 !important;
+}
+
+.vx-generate-section__number {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 999px !important;
+  color: #fff !important;
+  background: linear-gradient(145deg, #18b4ae 0%, #0b9491 72%, #087f7c 100%) !important;
+  box-shadow: 0 6px 14px rgba(18, 155, 151, .20) !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+
+.vx-generate-section__header>div {
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+}
+
+.vx-generate-section__header strong {
+  color: #173e52 !important;
+  font-size: 14px !important;
+  font-weight: 880 !important;
+  letter-spacing: -.018em !important;
+}
+
+.vx-generate-section__header small {
+  color: #78909d !important;
+  font-size: 9.5px !important;
+  font-weight: 650 !important;
+  line-height: 1.35 !important;
+}
+
+.vx-generate-section__collapse,
+.vx-generate-section__collapse:hover {
+  width: 30px !important;
+  height: 30px !important;
+  padding: 0 !important;
+  justify-self: end !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: #119a96 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.vx-generate-section__collapse:hover {
+  background: rgba(226, 248, 246, .72) !important;
+}
+
+.vx-generate-section__collapse svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.vx-generate-section__body {
+  padding: 12px 18px 14px !important;
+}
+
+
+.vx-signal-input {
+  overflow: hidden !important;
+  border: 1px solid rgba(61, 136, 149, .22) !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  box-shadow: 0 3px 10px rgba(38, 78, 91, .025), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
+  transform: none !important;
+}
+
+.vx-signal-input:focus-within {
+  border-color: rgba(24, 170, 165, .53) !important;
+  box-shadow: 0 0 0 3px rgba(32, 184, 179, .07) !important;
+  transform: none !important;
+}
+
+.vx-signal-input>label {
+  display: block !important;
+  padding: 12px 13px 1px !important;
+  color: #6f8290 !important;
+  font-size: 10px !important;
+  font-weight: 710 !important;
+  line-height: 1.35 !important;
+}
+
+.vx-signal-input textarea {
+  min-height: 72px !important;
+  max-height: 145px !important;
+  padding: 4px 13px 8px !important;
+  resize: vertical !important;
+  color: #284b5d !important;
+  background: transparent !important;
+  font-size: 10px !important;
+  font-weight: 540 !important;
+  line-height: 1.55 !important;
+  letter-spacing: 0 !important;
+}
+
+.vx-signal-input textarea::placeholder {
+  color: #81929e !important;
+  opacity: .92 !important;
+  font-weight: 520 !important;
+}
+
+.vx-signal-input__footer {
+  min-height: 30px !important;
+  padding: 3px 9px 7px !important;
+  border-top: 0 !important;
+  background: transparent !important;
+}
+
+.vx-signal-input__footer button {
+  width: 28px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1px solid rgba(50, 156, 157, .18) !important;
+  border-radius: 999px !important;
+  background: #f7fcfc !important;
+  color: #2c8986 !important;
+  box-shadow: none !important;
+}
+
+.vx-signal-input__footer button:hover:not(:disabled) {
+  transform: none !important;
+  border-color: rgba(27, 169, 164, .38) !important;
+  background: #effaf9 !important;
+}
+
+.vx-signal-input__footer>span {
+  color: #82939e !important;
+  font-size: 8.5px !important;
+  font-weight: 700 !important;
+}
+
+.vx-inline-warning {
+  margin: 6px 1px 0 !important;
+  font-size: 9px !important;
+}
+
+
+.vx-domain-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px 9px !important;
+}
+
+.vx-domain-grid>button,
+.vx-domain-grid button {
+  min-width: 0 !important;
+  min-height: 38px !important;
+  padding: 6px 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  border: 1px solid rgba(78, 135, 147, .16) !important;
+  border-radius: 7px !important;
+  background: rgba(255, 255, 255, .92) !important;
+  color: #637887 !important;
+  box-shadow: none !important;
+  font-size: 9px !important;
+  font-weight: 720 !important;
+  transform: none !important;
+}
+
+.vx-domain-grid>button:hover:not(:disabled),
+.vx-domain-grid button:hover:not(:disabled) {
+  transform: translateY(-1px) !important;
+  border-color: rgba(34, 174, 168, .46) !important;
+  background: #f9fffe !important;
+  color: #267d79 !important;
+  box-shadow: 0 5px 12px rgba(36, 120, 119, .05) !important;
+}
+
+.vx-domain-grid>button.is-selected,
+.vx-domain-grid button.is-selected {
+  border-color: rgba(18, 164, 159, .70) !important;
+  background: linear-gradient(180deg, #fbffff, #f0fbfa) !important;
+  color: #21827e !important;
+  box-shadow: inset 0 0 0 1px rgba(31, 178, 172, .055) !important;
+}
+
+.vx-domain-grid button svg {
+  width: 15px !important;
+  height: 15px !important;
+  color: #8a9ba5 !important;
+}
+
+.vx-domain-grid button.is-selected svg {
+  color: #1ca39f !important;
+}
+
+.vx-domain-grid>button>i {
+  right: 6px !important;
+  width: 14px !important;
+  height: 14px !important;
+  background: #109e9a !important;
+}
+
+.vx-domain-selected {
+  margin-top: 9px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  flex-wrap: wrap !important;
+}
+
+.vx-domain-selected>strong {
+  color: #71838f !important;
+  font-size: 8px !important;
+  font-weight: 780 !important;
+}
+
+.vx-domain-selected>div {
+  display: flex !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+}
+
+.vx-domain-selected button,
+.vx-domain-selected>div>span,
+.vx-domain-selected__auto {
+  min-height: 22px !important;
+  padding: 0 8px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: #eaf8f7 !important;
+  color: #3e837f !important;
+  box-shadow: none !important;
+  font-size: 8px !important;
+  font-weight: 680 !important;
+}
+
+.vx-domain-selected__auto {
+  background: #f3f8f8 !important;
+  color: #748d96 !important;
+}
+
+
+.vx-context-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.vx-context-grid>label {
+  gap: 5px !important;
+  color: #647985 !important;
+  font-size: 8px !important;
+  font-weight: 760 !important;
+}
+
+.vx-context-grid>label>span,
+.vx-generate-section label>span {
+  color: #647985 !important;
+  font-size: 8px !important;
+  font-weight: 760 !important;
+}
+
+.vx-context-field,
+.vx-context-language>button {
+  min-height: 36px !important;
+  padding: 0 10px !important;
+  gap: 7px !important;
+  border: 1px solid rgba(72, 137, 149, .17) !important;
+  border-radius: 7px !important;
+  background: #fff !important;
+  color: #607683 !important;
+  box-shadow: none !important;
+}
+
+.vx-context-field:focus-within,
+.vx-context-language.is-open>button {
+  border-color: rgba(31, 170, 165, .53) !important;
+  box-shadow: 0 0 0 3px rgba(32, 184, 179, .06) !important;
+}
+
+.vx-context-field input,
+.vx-context-language>button,
+.vx-context-language>button span {
+  color: #4c6675 !important;
+  font-size: 8.8px !important;
+  font-weight: 620 !important;
+}
+
+.vx-context-field svg,
+.vx-context-language>button>svg:first-child {
+  width: 13px !important;
+  height: 13px !important;
+  color: #8298a4 !important;
+}
+
+.vx-context-language__menu {
+  top: calc(100% + 5px) !important;
+  padding: 5px !important;
+  border-radius: 8px !important;
+}
+
+.vx-context-language__menu button {
+  min-height: 30px !important;
+  border-radius: 6px !important;
+  font-size: 8.5px !important;
+}
+
+
+.vx-generate-review .vx-generate-section__body {
+  padding-top: 9px !important;
+}
+
+.vx-review-row {
+  display: grid !important;
+  grid-template-columns: 1.5fr .9fr 1.12fr .92fr .82fr !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.vx-review-row article {
+  min-width: 0 !important;
+  min-height: 58px !important;
+  padding: 6px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  border: 0 !important;
+  border-right: 1px solid rgba(73, 131, 144, .11) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.vx-review-row article:last-child {
+  border-right: 0 !important;
+}
+
+.vx-review-row small {
+  color: #657b89 !important;
+  font-size: 7.4px !important;
+  font-weight: 820 !important;
+}
+
+.vx-review-row strong,
+.vx-review-row__signal strong {
+  color: #526c7a !important;
+  font-size: 8px !important;
+  font-weight: 620 !important;
+  line-height: 1.35 !important;
+}
+
+.vx-review-value {
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+}
+
+.vx-review-value>strong {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  line-clamp: 2 !important;
+}
+
+.vx-review-value__icon,
+.vx-review-domain-icons>span {
+  width: 24px !important;
+  height: 24px !important;
+  flex: 0 0 24px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1px solid rgba(33, 169, 164, .13) !important;
+  border-radius: 999px !important;
+  background: #effaf9 !important;
+  color: #1a9d99 !important;
+}
+
+.vx-review-domain-icons {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.vx-review-row__toggle label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  color: #149691 !important;
+  font-size: 8px !important;
+  font-weight: 780 !important;
+}
+
+.vx-review-row__toggle i {
+  width: 31px !important;
+  height: 17px !important;
+}
+
+.vx-review-row__toggle i::after {
+  width: 13px !important;
+  height: 13px !important;
+}
+
+.vx-review-row__toggle input:checked+i::after {
+  transform: translateX(14px) !important;
+}
+
+.vx-review-note {
+  min-height: 36px !important;
+  margin-top: 7px !important;
+  padding: 6px 10px !important;
+  gap: 8px !important;
+  border: 1px solid rgba(56, 176, 169, .14) !important;
+  border-radius: 6px !important;
+  background: linear-gradient(90deg, #f1fbfa, #f8fcfc) !important;
+  color: #397b78 !important;
+}
+
+.vx-review-note>svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.vx-review-note strong {
+  color: #287a76 !important;
+  font-size: 7.7px !important;
+  font-weight: 820 !important;
+}
+
+.vx-review-note span {
+  color: #748c96 !important;
+  font-size: 6.9px !important;
+  line-height: 1.35 !important;
+}
+
+
+.vx-generate-error {
+  margin: 8px 10px 0 !important;
+  border-radius: 7px !important;
+}
+
+.vx-generate-button {
+  width: calc(100% - 16px) !important;
+  min-height: 62px !important;
+  margin: 10px 8px 8px !important;
+  padding: 8px 18px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 12px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: linear-gradient(92deg, #2bb8b6 0%, #41c4c0 42%, #bda8c4 68%, #fa79a8 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 9px 22px rgba(62, 174, 173, .14) !important;
+  transform: none !important;
+}
+
+.vx-generate-button:hover:not(:disabled) {
+  transform: translateY(-1px) !important;
+  filter: saturate(1.04) !important;
+  box-shadow: 0 12px 28px rgba(52, 160, 160, .18) !important;
+}
+
+.vx-generate-button>svg {
+  width: 21px !important;
+  height: 21px !important;
+}
+
+.vx-generate-button>span {
+  gap: 1px !important;
+}
+
+.vx-generate-button strong {
+  color: #fff !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+}
+
+.vx-generate-button small {
+  margin: 0 !important;
+  color: rgba(255, 255, 255, .91) !important;
+  font-size: 8px !important;
+  font-weight: 570 !important;
+}
+
+
+.vx-generate-next {
+  position: sticky !important;
+  top: 14px !important;
+  min-height: 790px !important;
+  padding: 20px 22px 18px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(71, 138, 151, .15) !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(circle at 50% 0, rgba(66, 205, 198, .075), transparent 23%),
+    radial-gradient(circle at 95% 0, rgba(246, 144, 181, .055), transparent 20%),
+    rgba(255, 255, 255, .965) !important;
+  box-shadow: 0 18px 46px rgba(36, 81, 94, .052), inset 0 1px 0 rgba(255, 255, 255, .88) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.vx-generate-next::before,
+.vx-generate-next::after {
+  opacity: .55 !important;
+}
+
+.vx-discovery-globe {
+  width: 278px !important;
+  height: 212px !important;
+  margin: 0 auto 4px !important;
+  filter: drop-shadow(0 18px 26px rgba(30, 145, 142, .10)) !important;
+}
+
+.vx-discovery-globe__sphere {
+  width: 118px !important;
+  height: 118px !important;
+  left: 80px !important;
+  top: 29px !important;
+}
+
+.vx-discovery-globe__halo {
+  width: 200px !important;
+  height: 58px !important;
+  left: 39px !important;
+  bottom: 12px !important;
+}
+
+.vx-discovery-globe__shadow {
+  width: 100px !important;
+  height: 15px !important;
+  left: 89px !important;
+  bottom: 17px !important;
+}
+
+.vx-discovery-globe__orbit--one {
+  width: 242px !important;
+  height: 68px !important;
+  left: 18px !important;
+  top: 84px !important;
+}
+
+.vx-discovery-globe__orbit--two {
+  width: 224px !important;
+  height: 64px !important;
+  left: 27px !important;
+  top: 86px !important;
+}
+
+.vx-discovery-globe__orbit--three {
+  width: 196px !important;
+  height: 59px !important;
+  left: 41px !important;
+  top: 89px !important;
+}
+
+.vx-discovery-globe__node {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 12px !important;
+}
+
+.vx-discovery-globe__node--one {
+  left: 15px !important;
+  top: 74px !important;
+}
+
+.vx-discovery-globe__node--two {
+  right: 17px !important;
+  top: 80px !important;
+}
+
+.vx-discovery-globe__node--three {
+  left: 58px !important;
+  bottom: 18px !important;
+}
+
+.vx-generate-next__title {
+  margin-top: 3px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.vx-generate-next__title strong {
+  color: #1d4158 !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+}
+
+.vx-generate-next__title svg {
+  color: #28b7b1 !important;
+}
+
+.vx-generate-next>p {
+  margin: 5px 0 16px !important;
+  color: #8495a1 !important;
+  font-size: 8.8px !important;
+  line-height: 1.45 !important;
+}
+
+.vx-generate-next__timeline {
+  position: relative !important;
+  display: grid !important;
+  gap: 3px !important;
+}
+
+.vx-generate-next__timeline::before {
+  left: 15px !important;
+  top: 25px !important;
+  bottom: 25px !important;
+  background: linear-gradient(#4bc7c2, #bad8e6 38%, #efc1d5 76%, #8ed6b9) !important;
+}
+
+.vx-generate-next__timeline article {
+  min-height: 58px !important;
+  grid-template-columns: 31px minmax(0, 1fr) !important;
+  gap: 10px !important;
+  align-items: center !important;
+}
+
+.vx-generate-next__icon {
+  width: 31px !important;
+  height: 31px !important;
+}
+
+.vx-generate-next__timeline strong {
+  color: #405b70 !important;
+  font-size: 9px !important;
+  font-weight: 850 !important;
+}
+
+.vx-generate-next__timeline small {
+  color: #8595a1 !important;
+  font-size: 7.1px !important;
+  line-height: 1.42 !important;
+}
+
+.vx-generate-next__note {
+  margin-top: 14px !important;
+  padding: 10px 11px !important;
+  border: 1px solid rgba(234, 179, 200, .30) !important;
+  border-radius: 7px !important;
+  background: #fff6f9 !important;
+  color: #a9778d !important;
+  font-size: 7.2px !important;
+  line-height: 1.45 !important;
+  text-align: start !important;
+}
+
+
+html.vox-user-rtl .vx-generate-section__collapse,
+html[dir='rtl'] .vx-generate-section__collapse {
+  justify-self: start !important;
+}
+
+html.vox-user-rtl .vx-review-row article,
+html[dir='rtl'] .vx-review-row article {
+  border-right: 0 !important;
+  border-left: 1px solid rgba(73, 131, 144, .11) !important;
+}
+
+html.vox-user-rtl .vx-review-row article:last-child,
+html[dir='rtl'] .vx-review-row article:last-child {
+  border-left: 0 !important;
+}
+
+
+html.vox-user-dark .vx-generate-stack,
+html.vox-user-dark .vx-generate-next {
+  border-color: rgba(103, 177, 166, .18) !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(54, 194, 184, .05), transparent 24%),
+    radial-gradient(circle at 0 100%, rgba(232, 126, 165, .025), transparent 22%),
+    rgba(24, 39, 34, .96) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .16), inset 0 1px 0 rgba(255, 255, 255, .015) !important;
+}
+
+html.vox-user-dark .vx-generate-section,
+html.vox-user-dark .vx-generate-section:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vx-generate-section+.vx-generate-section,
+html.vox-user-dark .vx-generate-section__header {
+  border-color: rgba(116, 167, 158, .10) !important;
+}
+
+html.vox-user-dark .vx-generate-section__header {
+  background: rgba(26, 43, 38, .24) !important;
+}
+
+html.vox-user-dark .vx-generate-section__header strong,
+html.vox-user-dark .vx-generate-next__title strong,
+html.vox-user-dark .vx-generate-next__timeline strong {
+  color: #e7f2ef !important;
+}
+
+html.vox-user-dark .vx-generate-section__header small,
+html.vox-user-dark .vx-generate-next>p,
+html.vox-user-dark .vx-generate-next__timeline small {
+  color: #96aaa5 !important;
+}
+
+html.vox-user-dark .vx-signal-input,
+html.vox-user-dark .vx-domain-grid button,
+html.vox-user-dark .vx-context-field,
+html.vox-user-dark .vx-context-language>button {
+  border-color: rgba(108, 169, 159, .18) !important;
+  background: #1c2f2a !important;
+  color: #d6e5e1 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vx-signal-input>label,
+html.vox-user-dark .vx-context-grid>label,
+html.vox-user-dark .vx-context-grid>label>span,
+html.vox-user-dark .vx-generate-section label>span {
+  color: #a9bdb7 !important;
+}
+
+html.vox-user-dark .vx-signal-input textarea,
+html.vox-user-dark .vx-context-field input,
+html.vox-user-dark .vx-context-language>button,
+html.vox-user-dark .vx-context-language>button span {
+  color: #e8f3f0 !important;
+}
+
+html.vox-user-dark .vx-signal-input textarea::placeholder,
+html.vox-user-dark .vx-context-field input::placeholder {
+  color: #849a94 !important;
+}
+
+html.vox-user-dark .vx-signal-input__footer button {
+  border-color: rgba(93, 177, 167, .18) !important;
+  background: #213932 !important;
+  color: #83d4cd !important;
+}
+
+html.vox-user-dark .vx-domain-grid button.is-selected {
+  border-color: rgba(61, 205, 195, .42) !important;
+  background: #1d3932 !important;
+  color: #bde8e2 !important;
+}
+
+html.vox-user-dark .vx-domain-selected button,
+html.vox-user-dark .vx-domain-selected>div>span,
+html.vox-user-dark .vx-domain-selected__auto {
+  background: #203731 !important;
+  color: #9fc2bc !important;
+}
+
+html.vox-user-dark .vx-review-row article {
+  border-color: rgba(116, 167, 158, .10) !important;
+}
+
+html.vox-user-dark .vx-review-row small,
+html.vox-user-dark .vx-review-row strong,
+html.vox-user-dark .vx-review-row__signal strong {
+  color: #c2d3ce !important;
+}
+
+html.vox-user-dark .vx-review-value__icon,
+html.vox-user-dark .vx-review-domain-icons>span {
+  border-color: rgba(69, 194, 184, .16) !important;
+  background: #1e3b34 !important;
+  color: #79d2cb !important;
+}
+
+html.vox-user-dark .vx-review-note {
+  border-color: rgba(67, 185, 176, .16) !important;
+  background: #1b3730 !important;
+}
+
+html.vox-user-dark .vx-review-note strong {
+  color: #a8ddd6 !important;
+}
+
+html.vox-user-dark .vx-review-note span {
+  color: #94aaa4 !important;
+}
+
+html.vox-user-dark .vx-generate-next__note {
+  border-color: rgba(225, 126, 163, .14) !important;
+  background: #34262d !important;
+  color: #d3a0b3 !important;
+}
+
+@media (max-width: 1180px) {
+  .vx-generate-layout {
+    grid-template-columns: minmax(0, 1fr) 330px !important;
+  }
+
+  .vx-discovery-globe {
+    transform: scale(.91) !important;
+    transform-origin: top center !important;
+    margin-bottom: -8px !important;
+  }
+}
+
+@media (max-width: 960px) {
+  .vx-generate-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .vx-generate-next {
+    position: static !important;
+    min-height: 0 !important;
+  }
+
+  .vx-generate-next__timeline {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px 18px !important;
+  }
+
+  .vx-generate-next__timeline::before {
+    display: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+
+  .vx-generate-stack,
+  .vx-generate-next {
+    border-radius: 14px !important;
+  }
+
+  .vx-generate-section__header {
+    grid-template-columns: 32px minmax(0, 1fr) 30px !important;
+    padding: 8px 12px !important;
+  }
+
+  .vx-generate-section__header>div {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 1px !important;
+  }
+
+  .vx-generate-section__body {
+    padding: 11px 12px 13px !important;
+  }
+
+  .vx-domain-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .vx-context-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .vx-review-row {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .vx-review-row article,
+  html.vox-user-rtl .vx-review-row article,
+  html[dir='rtl'] .vx-review-row article {
+    border: 0 !important;
+    border-bottom: 1px solid rgba(73, 131, 144, .10) !important;
+  }
+
+  .vx-review-row__signal {
+    grid-column: 1 / -1 !important;
+  }
+
+  .vx-generate-next__timeline {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
+.vx-generate-page {
+  padding: 14px 0 42px !important;
+  background: transparent !important;
+}
+
+.vx-generate-layout {
+  width: min(1500px, calc(100% - 8px)) !important;
+  margin: 0 auto !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 405px !important;
+  gap: 22px !important;
+  align-items: start !important;
+}
+
+
+.vx-generate-stack {
+  gap: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(132, 187, 191, .32) !important;
+  border-radius: 19px !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(95, 221, 212, .055), transparent 25%),
+    radial-gradient(circle at 0 100%, rgba(246, 153, 187, .032), transparent 24%),
+    rgba(255, 255, 255, .965) !important;
+  box-shadow: 0 22px 56px rgba(36, 85, 96, .065), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
+}
+
+.vx-generate-section,
+.vx-generate-section:hover {
+  margin: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.vx-generate-section+.vx-generate-section {
+  border-top: 1px solid rgba(73, 135, 147, .13) !important;
+}
+
+.vx-generate-section__header {
+  min-height: 66px !important;
+  grid-template-columns: 36px minmax(0, 1fr) 32px !important;
+  gap: 12px !important;
+  padding: 11px 18px !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(73, 135, 147, .105) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(250, 254, 254, .74)) !important;
+}
+
+.vx-generate-section.is-collapsed .vx-generate-section__header {
+  border-bottom-color: transparent !important;
+}
+
+.vx-generate-section__number {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 999px !important;
+  color: #fff !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  background: linear-gradient(145deg, #20bbb5 0%, #0b9995 60%, #087f7d 100%) !important;
+  box-shadow: 0 8px 19px rgba(14, 155, 151, .22) !important;
+}
+
+.vx-generate-section__header>div {
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 14px !important;
+}
+
+.vx-generate-section__header strong {
+  flex: 0 0 auto !important;
+  color: #173f54 !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+  letter-spacing: -.02em !important;
+}
+
+.vx-generate-section__header small {
+  min-width: 0 !important;
+  color: #78909c !important;
+  font-size: 10.2px !important;
+  font-weight: 700 !important;
+  line-height: 1.4 !important;
+}
+
+.vx-generate-section__collapse {
+  width: 30px !important;
+  height: 30px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: #10a39f !important;
+  box-shadow: none !important;
+}
+
+.vx-generate-section__collapse:hover {
+  transform: none !important;
+  background: #effaf9 !important;
+  color: #087f7c !important;
+}
+
+.vx-generate-section__body {
+  padding: 14px 18px 16px !important;
+}
+
+
+.vx-signal-input {
+  border: 1px solid rgba(78, 145, 157, .24) !important;
+  border-radius: 13px !important;
+  background: #fff !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 7px 20px rgba(38, 82, 94, .028) !important;
+  transform: none !important;
+}
+
+.vx-signal-input:focus-within {
+  transform: none !important;
+  border-color: rgba(22, 171, 166, .54) !important;
+  box-shadow: 0 0 0 4px rgba(37, 183, 177, .065), 0 12px 29px rgba(37, 122, 125, .055) !important;
+}
+
+.vx-signal-input>label {
+  display: block !important;
+  padding: 13px 15px 0 !important;
+  color: #627d8c !important;
+  font-size: 10.8px !important;
+  font-weight: 800 !important;
+}
+
+.vx-signal-input textarea {
+  min-height: 143px !important;
+  padding: 7px 15px 11px !important;
+  color: #264d61 !important;
+  font-size: 12.6px !important;
+  line-height: 1.65 !important;
+  background: transparent !important;
+}
+
+.vx-signal-input textarea::placeholder {
+  color: #899ca6 !important;
+  font-weight: 560 !important;
+}
+
+.vx-signal-input__footer {
+  min-height: 42px !important;
+  padding: 5px 10px 8px 11px !important;
+  border-top: 0 !important;
+  background: transparent !important;
+}
+
+.vx-signal-input__footer button {
+  width: 31px !important;
+  min-width: 31px !important;
+  height: 31px !important;
+  min-height: 31px !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1px solid rgba(42, 171, 166, .24) !important;
+  border-radius: 999px !important;
+  color: #179f9b !important;
+  background: #f6fcfb !important;
+}
+
+.vx-signal-input__footer>span {
+  color: #7d919b !important;
+  font-size: 9.2px !important;
+  font-weight: 760 !important;
+}
+
+
+.vx-domain-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 9px 10px !important;
+}
+
+.vx-domain-grid button {
+  min-height: 46px !important;
+  padding: 8px 11px !important;
+  display: grid !important;
+  grid-template-columns: 24px minmax(0, 1fr) 18px !important;
+  align-items: center !important;
+  gap: 8px !important;
+  border: 1px solid rgba(74, 143, 153, .18) !important;
+  border-radius: 11px !important;
+  color: #5b7584 !important;
+  background: rgba(255, 255, 255, .96) !important;
+  box-shadow: 0 5px 15px rgba(42, 79, 91, .025) !important;
+  font-size: 9.4px !important;
+  font-weight: 790 !important;
+}
+
+.vx-domain-grid button:hover:not(:disabled) {
+  transform: translateY(-1px) !important;
+  border-color: rgba(30, 172, 166, .39) !important;
+  color: #1f7774 !important;
+  box-shadow: 0 8px 20px rgba(30, 126, 124, .06) !important;
+}
+
+.vx-domain-grid button>svg {
+  justify-self: center !important;
+  color: #829ba7 !important;
+}
+
+.vx-domain-grid button>span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.vx-domain-grid button>i {
+  width: 18px !important;
+  height: 18px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 999px !important;
+  color: #fff !important;
+  background: #129e9a !important;
+  box-shadow: 0 4px 10px rgba(18, 158, 154, .17) !important;
+}
+
+.vx-domain-grid button.is-selected {
+  border-color: rgba(15, 157, 153, .58) !important;
+  color: #147d79 !important;
+  background: linear-gradient(180deg, #fbfffe, #eefaf9) !important;
+  box-shadow: inset 0 0 0 1px rgba(32, 183, 177, .07), 0 7px 17px rgba(24, 143, 139, .055) !important;
+}
+
+.vx-domain-grid button.is-selected>svg {
+  color: #19a6a1 !important;
+}
+
+.vx-domain-selected {
+  margin-top: 11px !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 9px !important;
+}
+
+.vx-domain-selected>strong {
+  color: #6d8490 !important;
+  font-size: 8.8px !important;
+  font-weight: 820 !important;
+}
+
+.vx-domain-selected>div {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 7px !important;
+}
+
+.vx-domain-selected button,
+.vx-domain-selected__auto {
+  min-height: 25px !important;
+  padding: 0 9px !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: #eaf8f6 !important;
+  color: #32827e !important;
+  font-size: 8px !important;
+  font-weight: 780 !important;
+}
+
+
+.vx-context-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+}
+
+.vx-context-grid>label>span {
+  margin-bottom: 6px !important;
+  color: #5b7381 !important;
+  font-size: 8.5px !important;
+  font-weight: 790 !important;
+}
+
+.vx-context-field,
+.vx-context-language>button {
+  min-height: 43px !important;
+  border: 1px solid rgba(77, 142, 153, .18) !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  color: #526d7b !important;
+  box-shadow: 0 4px 13px rgba(42, 80, 90, .022) !important;
+}
+
+.vx-context-field input,
+.vx-context-language>button span {
+  color: #536f7d !important;
+  font-size: 9.3px !important;
+  font-weight: 720 !important;
+}
+
+.vx-context-field>svg,
+.vx-context-language>button>svg:first-child {
+  color: #849ba6 !important;
+}
+
+
+.vx-generate-review .vx-generate-section__body {
+  padding-top: 12px !important;
+}
+
+.vx-review-row {
+  overflow: hidden !important;
+  display: grid !important;
+  grid-template-columns: 1.35fr .75fr 1fr .9fr .82fr !important;
+  border: 1px solid rgba(79, 143, 152, .12) !important;
+  border-radius: 11px !important;
+  background: rgba(252, 255, 255, .78) !important;
+}
+
+.vx-review-row article {
+  min-width: 0 !important;
+  min-height: 66px !important;
+  padding: 10px 13px !important;
+  border-right: 1px solid rgba(79, 143, 152, .10) !important;
+}
+
+.vx-review-row article:last-child {
+  border-right: 0 !important;
+}
+
+.vx-review-row small {
+  color: #78909b !important;
+  font-size: 7.7px !important;
+  font-weight: 800 !important;
+}
+
+.vx-review-row strong,
+.vx-review-row__signal strong {
+  color: #506d7b !important;
+  font-size: 8.6px !important;
+  font-weight: 760 !important;
+  line-height: 1.42 !important;
+}
+
+.vx-review-value__icon,
+.vx-review-domain-icons>span {
+  width: 27px !important;
+  height: 27px !important;
+  border: 1px solid rgba(39, 180, 173, .13) !important;
+  border-radius: 999px !important;
+  background: #edf9f7 !important;
+  color: #24a39e !important;
+}
+
+.vx-review-note {
+  margin-top: 8px !important;
+  min-height: 43px !important;
+  padding: 8px 11px !important;
+  border: 1px solid rgba(48, 180, 173, .12) !important;
+  border-radius: 9px !important;
+  background: linear-gradient(90deg, #f0fbf9, #f6fcfb) !important;
+}
+
+.vx-review-note strong {
+  color: #36837f !important;
+  font-size: 8.2px !important;
+}
+
+.vx-review-note span {
+  color: #81959f !important;
+  font-size: 7.6px !important;
+}
+
+
+.vx-generate-button {
+  width: calc(100% - 22px) !important;
+  min-height: 64px !important;
+  margin: 12px 11px 11px !important;
+  padding: 8px 18px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: linear-gradient(93deg, #2ab8b6 0%, #44c5c1 44%, #b7a8c5 70%, #fa79a8 100%) !important;
+  box-shadow: 0 11px 25px rgba(53, 169, 168, .16) !important;
+}
+
+.vx-generate-button:hover:not(:disabled) {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 16px 32px rgba(53, 160, 160, .21) !important;
+}
+
+.vx-generate-button strong {
+  font-size: 15.5px !important;
+  font-weight: 900 !important;
+}
+
+.vx-generate-button small {
+  margin-top: 1px !important;
+  font-size: 8.5px !important;
+  font-weight: 620 !important;
+}
+
+
+.vx-generate-next {
+  position: sticky !important;
+  top: 16px !important;
+  min-height: 785px !important;
+  overflow: hidden !important;
+  padding: 18px 24px 20px !important;
+  border: 1px solid rgba(88, 150, 160, .15) !important;
+  border-radius: 20px !important;
+  background:
+    radial-gradient(circle at 54% 4%, rgba(91, 222, 213, .08), transparent 24%),
+    radial-gradient(circle at 92% 2%, rgba(246, 146, 181, .065), transparent 20%),
+    rgba(255, 255, 255, .97) !important;
+  box-shadow: 0 22px 56px rgba(36, 81, 94, .055), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
+}
+
+.vx-discovery-globe {
+  display: none !important;
+}
+
+.vx-discovery-orb {
+  position: relative;
+  width: min(100%, 350px);
+  margin: -2px auto 6px;
+  pointer-events: none;
+  filter: drop-shadow(0 17px 27px rgba(34, 144, 142, .085));
+}
+
+.vx-discovery-orb__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.vx-discovery-orb__orbits {
+  transform-origin: 210px 139px;
+  animation: vxOrbOrbitFloat 8s ease-in-out infinite;
+}
+
+.vx-discovery-orb__particles {
+  animation: vxOrbParticles 5.6s ease-in-out infinite;
+}
+
+.vx-discovery-orb__sparkles {
+  animation: vxOrbSparkles 3.1s ease-in-out infinite;
+}
+
+@keyframes vxOrbOrbitFloat {
+
+  0%,
+  100% {
+    transform: rotate(-1deg) scale(1);
+    opacity: .94;
+  }
+
+  50% {
+    transform: rotate(1.8deg) scale(1.012);
+    opacity: 1;
+  }
+}
+
+@keyframes vxOrbParticles {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes vxOrbSparkles {
+
+  0%,
+  100% {
+    opacity: .45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.vx-generate-next__title {
+  margin-top: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.vx-generate-next__title strong {
+  color: #173f55 !important;
+  font-size: 16.5px !important;
+  font-weight: 900 !important;
+  letter-spacing: -.02em !important;
+}
+
+.vx-generate-next__title svg {
+  color: #1eb0aa !important;
+}
+
+.vx-generate-next>p {
+  margin: 5px 0 14px !important;
+  color: #81949e !important;
+  font-size: 9px !important;
+  font-weight: 570 !important;
+}
+
+.vx-generate-next__timeline {
+  position: relative !important;
+  display: grid !important;
+  gap: 0 !important;
+}
+
+.vx-generate-next__timeline::before {
+  left: 15px !important;
+  top: 28px !important;
+  bottom: 27px !important;
+  width: 1px !important;
+  background: linear-gradient(#5fcfc8, #b2d8ec 34%, #d4baf0 58%, #f0b2ca 79%, #91d9b5) !important;
+  opacity: .72 !important;
+}
+
+.vx-generate-next__timeline article {
+  min-height: 64px !important;
+  display: grid !important;
+  grid-template-columns: 31px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 11px !important;
+}
+
+.vx-generate-next__icon {
+  width: 31px !important;
+  height: 31px !important;
+  border-width: 1px !important;
+  box-shadow: 0 6px 15px rgba(46, 89, 99, .035) !important;
+}
+
+.vx-generate-next__timeline strong {
+  color: #3d5a6d !important;
+  font-size: 9.3px !important;
+  font-weight: 860 !important;
+}
+
+.vx-generate-next__timeline small {
+  margin-top: 3px !important;
+  color: #8497a1 !important;
+  font-size: 7.5px !important;
+  line-height: 1.42 !important;
+  font-weight: 560 !important;
+}
+
+.vx-generate-next__note {
+  margin-top: 12px !important;
+  padding: 10px 11px !important;
+  border: 1px solid rgba(235, 174, 197, .26) !important;
+  border-radius: 8px !important;
+  background: linear-gradient(90deg, #fff6f9, #fff8fa) !important;
+  color: #a77589 !important;
+  font-size: 7.4px !important;
+  line-height: 1.48 !important;
+}
+
+
+html[dir='rtl'] .vx-generate-section__header>div,
+html.vox-user-rtl .vx-generate-section__header>div {
+  flex-direction: row !important;
+  text-align: right !important;
+}
+
+html[dir='rtl'] .vx-domain-grid button,
+html.vox-user-rtl .vx-domain-grid button {
+  text-align: right !important;
+}
+
+html[dir='rtl'] .vx-generate-next__timeline::before,
+html.vox-user-rtl .vx-generate-next__timeline::before {
+  left: auto !important;
+  right: 15px !important;
+}
+
+html[dir='rtl'] .vx-review-row article,
+html.vox-user-rtl .vx-review-row article {
+  border-right: 0 !important;
+  border-left: 1px solid rgba(79, 143, 152, .10) !important;
+}
+
+html[dir='rtl'] .vx-review-row article:last-child,
+html.vox-user-rtl .vx-review-row article:last-child {
+  border-left: 0 !important;
+}
+
+
+html.vox-user-dark .vx-generate-stack,
+html.vox-user-dark .vx-generate-next {
+  border-color: rgba(101, 179, 168, .18) !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(52, 196, 185, .06), transparent 25%),
+    radial-gradient(circle at 0 100%, rgba(232, 122, 164, .03), transparent 23%),
+    rgba(23, 38, 33, .97) !important;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, .19), inset 0 1px 0 rgba(255, 255, 255, .018) !important;
+}
+
+html.vox-user-dark .vx-generate-section__header {
+  background: rgba(25, 42, 36, .36) !important;
+  border-bottom-color: rgba(118, 170, 161, .10) !important;
+}
+
+html.vox-user-dark .vx-generate-section+.vx-generate-section {
+  border-top-color: rgba(118, 170, 161, .10) !important;
+}
+
+html.vox-user-dark .vx-generate-section__header strong,
+html.vox-user-dark .vx-generate-next__title strong,
+html.vox-user-dark .vx-generate-next__timeline strong {
+  color: #e9f4f1 !important;
+}
+
+html.vox-user-dark .vx-generate-section__header small,
+html.vox-user-dark .vx-generate-next>p,
+html.vox-user-dark .vx-generate-next__timeline small {
+  color: #98aca6 !important;
+}
+
+html.vox-user-dark .vx-signal-input,
+html.vox-user-dark .vx-domain-grid button,
+html.vox-user-dark .vx-context-field,
+html.vox-user-dark .vx-context-language>button,
+html.vox-user-dark .vx-review-row {
+  border-color: rgba(109, 172, 162, .17) !important;
+  background: #1c2f2a !important;
+  color: #d8e7e3 !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vx-signal-input textarea,
+html.vox-user-dark .vx-context-field input,
+html.vox-user-dark .vx-context-language>button span,
+html.vox-user-dark .vx-review-row strong,
+html.vox-user-dark .vx-review-row__signal strong {
+  color: #e4efec !important;
+}
+
+html.vox-user-dark .vx-signal-input>label,
+html.vox-user-dark .vx-context-grid>label>span,
+html.vox-user-dark .vx-review-row small {
+  color: #a1b5af !important;
+}
+
+html.vox-user-dark .vx-domain-grid button.is-selected {
+  border-color: rgba(61, 205, 195, .42) !important;
+  background: #1c3a32 !important;
+  color: #bde8e2 !important;
+}
+
+html.vox-user-dark .vx-domain-selected button,
+html.vox-user-dark .vx-domain-selected__auto,
+html.vox-user-dark .vx-review-value__icon,
+html.vox-user-dark .vx-review-domain-icons>span {
+  background: #203a33 !important;
+  color: #82d5cd !important;
+}
+
+html.vox-user-dark .vx-review-note {
+  border-color: rgba(63, 186, 177, .14) !important;
+  background: #1b3730 !important;
+}
+
+html.vox-user-dark .vx-review-note strong {
+  color: #a9ddd7 !important;
+}
+
+html.vox-user-dark .vx-review-note span {
+  color: #95aba5 !important;
+}
+
+html.vox-user-dark .vx-generate-next__note {
+  border-color: rgba(226, 127, 163, .14) !important;
+  background: #33252c !important;
+  color: #d5a1b4 !important;
+}
+
+@media (max-width: 1250px) {
+  .vx-generate-layout {
+    grid-template-columns: minmax(0, 1fr) 355px !important;
+  }
+
+  .vx-domain-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .vx-generate-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .vx-generate-next {
+    position: static !important;
+    min-height: 0 !important;
+  }
+
+  .vx-discovery-orb {
+    width: min(100%, 320px) !important;
+  }
+
+  .vx-generate-next__timeline {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px 18px !important;
+  }
+
+  .vx-generate-next__timeline::before {
+    display: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .vx-generate-layout {
+    width: 100% !important;
+  }
+
+  .vx-generate-stack,
+  .vx-generate-next {
+    border-radius: 14px !important;
+  }
+
+  .vx-generate-section__header {
+    grid-template-columns: 32px minmax(0, 1fr) 30px !important;
+    gap: 8px !important;
+    padding: 9px 12px !important;
+  }
+
+  .vx-generate-section__header>div {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+  }
+
+  .vx-generate-section__body {
+    padding: 11px 12px 13px !important;
+  }
+
+  .vx-domain-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .vx-context-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .vx-review-row {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .vx-review-row__signal {
+    grid-column: 1 / -1 !important;
+  }
+
+  .vx-review-row article,
+  html[dir='rtl'] .vx-review-row article,
+  html.vox-user-rtl .vx-review-row article {
+    border: 0 !important;
+    border-bottom: 1px solid rgba(79, 143, 152, .10) !important;
+  }
+
+  .vx-generate-next__timeline {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .vx-discovery-orb__orbits,
+  .vx-discovery-orb__particles,
+  .vx-discovery-orb__sparkles {
+    animation: none !important;
+  }
+}
+
+
+.vx-generate-next>*:not(.vx-generate-next__ambient) {
+  position: relative;
+  z-index: 2;
+}
+
+.vx-generate-next__ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.vx-generate-next__ambient::before {
+  content: '';
+  position: absolute;
+  width: 210px;
+  height: 210px;
+  top: -72px;
+  right: -82px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(74, 215, 208, .11), rgba(74, 215, 208, .025) 46%, transparent 70%);
+  filter: blur(2px);
+  animation: vxSideGlowDrift 9s ease-in-out infinite;
+}
+
+.vx-generate-next__ambient::after {
+  content: '';
+  position: absolute;
+  width: 185px;
+  height: 185px;
+  left: -88px;
+  top: 38%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(247, 129, 173, .075), transparent 67%);
+  animation: vxSideGlowDriftAlt 11s ease-in-out infinite;
+}
+
+.vx-generate-next__ambient-dot,
+.vx-generate-next__ambient-ring {
+  position: absolute;
+  display: block;
+  border-radius: 999px;
+}
+
+.vx-generate-next__ambient-dot {
+  width: 7px;
+  height: 7px;
+  background: linear-gradient(145deg, #9cebe6, #24b3ad);
+  box-shadow: 0 0 0 5px rgba(76, 207, 199, .055), 0 6px 18px rgba(23, 151, 148, .16);
+}
+
+.vx-generate-next__ambient-dot.is-1 {
+  top: 84px;
+  left: 26px;
+  animation: vxSideParticleOne 6.4s ease-in-out infinite;
+}
+
+.vx-generate-next__ambient-dot.is-2 {
+  top: 205px;
+  right: 27px;
+  width: 9px;
+  height: 9px;
+  background: linear-gradient(145deg, #ffd9e7, #ef6e9f);
+  box-shadow: 0 0 0 5px rgba(242, 105, 156, .055), 0 6px 18px rgba(222, 78, 133, .13);
+  animation: vxSideParticleTwo 7.1s ease-in-out infinite .4s;
+}
+
+.vx-generate-next__ambient-dot.is-3 {
+  top: 350px;
+  left: 18px;
+  width: 5px;
+  height: 5px;
+  animation: vxSideParticleThree 5.8s ease-in-out infinite .8s;
+}
+
+.vx-generate-next__ambient-dot.is-4 {
+  bottom: 104px;
+  right: 26px;
+  width: 6px;
+  height: 6px;
+  background: linear-gradient(145deg, #ffdceb, #f184ad);
+  animation: vxSideParticleOne 6.9s ease-in-out infinite 1.1s;
+}
+
+.vx-generate-next__ambient-ring {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(49, 188, 183, .23);
+  background: rgba(255, 255, 255, .17);
+}
+
+.vx-generate-next__ambient-ring.is-1 {
+  top: 132px;
+  right: 48px;
+  animation: vxSideRingFloat 8s ease-in-out infinite;
+}
+
+.vx-generate-next__ambient-ring.is-2 {
+  top: 300px;
+  left: 34px;
+  width: 12px;
+  height: 12px;
+  border-color: rgba(240, 118, 162, .22);
+  animation: vxSideRingFloatAlt 7.2s ease-in-out infinite .6s;
+}
+
+.vx-discovery-orb__float {
+  position: absolute;
+  z-index: 7;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .9);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .84);
+  color: #22a9a5;
+  box-shadow:
+    0 12px 28px rgba(37, 99, 112, .11),
+    inset 0 1px 0 rgba(255, 255, 255, .94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.vx-discovery-orb__float::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 9px;
+  border: 1px solid rgba(67, 197, 190, .08);
+}
+
+.vx-discovery-orb__float--search {
+  left: 10%;
+  top: 36%;
+}
+
+.vx-discovery-orb__float--people {
+  right: 8%;
+  top: 42%;
+  color: #eb75a3;
+}
+
+.vx-discovery-orb__float--check {
+  left: 25%;
+  bottom: 9%;
+  color: #38ad83;
+}
+
+.vx-discovery-orb__float--spark {
+  width: 28px;
+  height: 28px;
+  right: 21%;
+  top: 10%;
+  border-radius: 10px;
+  color: #e86f9d;
+  background: rgba(255, 249, 252, .84);
+}
+
+
+.vx-generate-next__timeline article {
+  transition: transform .24s ease, background-color .24s ease;
+}
+
+.vx-generate-next__timeline article:hover {
+  transform: translateX(3px);
+}
+
+html.vox-user-rtl .vx-generate-next__timeline article:hover,
+html[dir='rtl'] .vx-generate-next__timeline article:hover {
+  transform: translateX(-3px);
+}
+
+.vx-generate-next__icon {
+  overflow: visible;
+}
+
+.vx-generate-next__timeline article:nth-child(1) .vx-generate-next__icon {
+  animation: vxSideIconPulse 3.6s ease-in-out infinite;
+}
+
+.vx-generate-next__timeline article:nth-child(2) .vx-generate-next__icon {
+  animation: vxSideIconPulse 3.6s ease-in-out infinite .35s;
+}
+
+.vx-generate-next__timeline article:nth-child(3) .vx-generate-next__icon {
+  animation: vxSideIconPulse 3.6s ease-in-out infinite .7s;
+}
+
+.vx-generate-next__timeline article:nth-child(4) .vx-generate-next__icon {
+  animation: vxSideIconPulse 3.6s ease-in-out infinite 1.05s;
+}
+
+.vx-generate-next__timeline article:nth-child(5) .vx-generate-next__icon {
+  animation: vxSideIconPulse 3.6s ease-in-out infinite 1.4s;
+}
+
+.vx-generate-next__timeline article:nth-child(6) .vx-generate-next__icon {
+  animation: vxSideIconPulse 3.6s ease-in-out infinite 1.75s;
+}
+
+@keyframes vxSideGlowDrift {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: .72;
+  }
+
+  50% {
+    transform: translate3d(-18px, 18px, 0) scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes vxSideGlowDriftAlt {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: .64;
+  }
+
+  50% {
+    transform: translate3d(20px, -18px, 0) scale(1.1);
+    opacity: .92;
+  }
+}
+
+@keyframes vxSideParticleOne {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(.92);
+    opacity: .45;
+  }
+
+  48% {
+    transform: translate3d(8px, -14px, 0) scale(1.08);
+    opacity: 1;
+  }
+
+  72% {
+    transform: translate3d(3px, -8px, 0) scale(1);
+    opacity: .78;
+  }
+}
+
+@keyframes vxSideParticleTwo {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: .56;
+  }
+
+  50% {
+    transform: translate3d(-9px, 13px, 0) scale(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes vxSideParticleThree {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: .36;
+  }
+
+  50% {
+    transform: translate3d(13px, -9px, 0);
+    opacity: .9;
+  }
+}
+
+@keyframes vxSideRingFloat {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(.92);
+    opacity: .42;
+  }
+
+  50% {
+    transform: translate3d(-10px, 12px, 0) rotate(16deg) scale(1.08);
+    opacity: .86;
+  }
+}
+
+@keyframes vxSideRingFloatAlt {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+    opacity: .35;
+  }
+
+  50% {
+    transform: translate3d(8px, -11px, 0) rotate(-18deg);
+    opacity: .76;
+  }
+}
+
+@keyframes vxSideIconPulse {
+
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 0 rgba(34, 175, 170, 0));
+  }
+
+  50% {
+    transform: translateY(-2px) scale(1.035);
+    filter: drop-shadow(0 5px 8px rgba(34, 175, 170, .10));
+  }
+}
+
+html.vox-user-dark .vx-discovery-orb__float {
+  border-color: rgba(122, 202, 192, .18);
+  background: rgba(27, 46, 40, .84);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+html.vox-user-dark .vx-discovery-orb__float::after {
+  border-color: rgba(105, 212, 203, .08);
+}
+
+html.vox-user-dark .vx-generate-next__ambient-ring {
+  background: rgba(25, 47, 41, .16);
+}
+
+@media (max-width: 980px) {
+
+  .vx-generate-next__ambient-dot.is-3,
+  .vx-generate-next__ambient-dot.is-4,
+  .vx-generate-next__ambient-ring.is-2 {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .vx-generate-next__ambient::before,
+  .vx-generate-next__ambient::after,
+  .vx-generate-next__ambient-dot,
+  .vx-generate-next__ambient-ring,
+  .vx-generate-next__timeline .vx-generate-next__icon {
+    animation: none !important;
+  }
+}
+
+
+.vx-signal-input__footer .vx-speak-button {
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 31px !important;
+  padding: 0 11px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+}
+
+.vx-signal-input__footer .vx-speak-button>span {
+  display: inline !important;
+  color: inherit !important;
+  font-size: 9.8px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+.vx-personalized-mode,
+.vx-auto-domain-mode {
+  text-align: start !important;
+}
+
+.vx-personalized-mode__copy,
+.vx-auto-domain-mode__copy {
+  text-align: start !important;
+}
+
+@media (max-width: 760px) {
+  .vx-signal-input__footer .vx-speak-button>span {
+    display: none !important;
+  }
+
+  .vx-signal-input__footer .vx-speak-button {
+    width: 31px !important;
+    min-width: 31px !important;
+    padding: 0 !important;
+  }
+}
+
+.vx-progress-stage__orbit,
+.vx-progress-stage__active-dial {
+  display: none !important;
+}
+
+.vx-progress-stage--active {
+  position: relative !important;
+  isolation: isolate !important;
+  border-color: rgba(76, 173, 166, .62) !important;
+  background: linear-gradient(150deg, #fffdfd 0%, #fff7f9 100%) !important;
+  box-shadow: 0 18px 42px rgba(48, 86, 82, .13), 0 0 0 1px rgba(76, 173, 166, .13) !important;
+}
+
+.vx-progress-stage__active-glow {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  overflow: hidden !important;
+  border-radius: inherit !important;
+  pointer-events: none !important;
+}
+
+.vx-progress-stage__active-glow>i {
+  position: absolute !important;
+  inset: -58% -34% !important;
+  display: block !important;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 218deg, rgba(244, 163, 194, .06) 246deg, rgba(238, 126, 169, .92) 302deg, rgba(255, 188, 214, .62) 334deg, transparent 360deg) !important;
+  filter: blur(6px) drop-shadow(0 0 10px rgba(238, 126, 169, .34)) !important;
+  transform-origin: center !important;
+  animation: vxPipelineStageClock 2.55s linear infinite !important;
+}
+
+.vx-progress-stage__top,
+.vx-progress-stage h3,
+.vx-progress-stage p,
+.vx-progress-stage__footer {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+.vx-progress-stage--active .vx-progress-stage__icon {
+  width: 42px !important;
+  height: 42px !important;
+  border: 1px solid rgba(76, 173, 166, .25) !important;
+  border-radius: 14px !important;
+  color: #2f8f89 !important;
+  background: linear-gradient(145deg, #eef8f6 0%, #fff8fa 100%) !important;
+  box-shadow: 0 10px 22px rgba(47, 119, 116, .12), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
+  overflow: visible !important;
+}
+
+.vx-progress-stage__loader {
+  color: #2f8f89 !important;
+  stroke-width: 2.6 !important;
+  filter: drop-shadow(0 0 4px rgba(47, 143, 137, .46)) drop-shadow(0 0 9px rgba(47, 143, 137, .22)) !important;
+  animation: vxPipelineStageLoader .72s linear infinite !important;
+}
+
+html.vox-user-dark .vx-progress-stage--active {
+  border-color: rgba(93, 205, 197, .54) !important;
+  background: linear-gradient(150deg, #1c302a 0%, #1b2c28 100%) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .24), 0 0 0 1px rgba(93, 205, 197, .11) !important;
+}
+
+html.vox-user-dark .vx-progress-stage__active-glow>i {
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 218deg, rgba(255, 160, 199, .07) 246deg, rgba(247, 126, 178, .94) 302deg, rgba(255, 190, 218, .58) 334deg, transparent 360deg) !important;
+  filter: blur(6px) drop-shadow(0 0 11px rgba(247, 126, 178, .34)) !important;
+}
+
+html.vox-user-dark .vx-progress-stage--active .vx-progress-stage__icon {
+  border-color: rgba(101, 213, 205, .24) !important;
+  color: #77d9d2 !important;
+  background: linear-gradient(145deg, #203a34 0%, #20322e 100%) !important;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+html.vox-user-dark .vx-progress-stage__loader {
+  color: #77d9d2 !important;
+  filter: drop-shadow(0 0 5px rgba(119, 217, 210, .48)) drop-shadow(0 0 10px rgba(119, 217, 210, .20)) !important;
+}
+
+@keyframes vxPipelineStageClock {
+  from {
+    transform: rotate(0deg) scale(1.015);
+  }
+
+  to {
+    transform: rotate(360deg) scale(1.015);
+  }
+}
+
+@keyframes vxPipelineStageLoader {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .vx-progress-stage__active-glow>i,
+  .vx-progress-stage__loader {
+    animation: none !important;
+  }
+}
+
+.nx-horizontal-stage--active .nx-horizontal-stage__active-glow {
+  opacity: 1;
+  background:
+    conic-gradient(from 0deg,
+      transparent 0deg,
+      transparent 216deg,
+      rgba(95, 205, 198, .06) 244deg,
+      rgba(47, 156, 149, .92) 298deg,
+      rgba(111, 214, 207, .72) 328deg,
+      rgba(190, 241, 237, .34) 346deg,
+      transparent 360deg);
+  filter:
+    blur(6px) drop-shadow(0 0 8px rgba(47, 156, 149, .34)) drop-shadow(0 0 14px rgba(92, 189, 185, .16));
+  transform-origin: center;
+  animation: nxActiveCardGlowSpin 2.55s linear infinite;
+}
+
+.nx-horizontal-stage--active {
+  border-color: rgba(92, 189, 185, .66);
+  box-shadow:
+    0 18px 42px rgba(48, 86, 82, .13),
+    0 0 0 1px rgba(92, 189, 185, .15);
+}
+
+.nx-horizontal-stage--active .nx-horizontal-stage__active-glow {
+  opacity: 1;
+  background:
+    conic-gradient(from 0deg,
+      transparent 0deg,
+      transparent 214deg,
+      rgba(255, 224, 234, .10) 242deg,
+      rgba(250, 190, 210, .96) 296deg,
+      rgba(255, 214, 228, .82) 326deg,
+      rgba(255, 239, 245, .48) 346deg,
+      transparent 360deg);
+  filter:
+    blur(6px) drop-shadow(0 0 9px rgba(246, 176, 201, .42)) drop-shadow(0 0 16px rgba(255, 213, 228, .24));
+  transform-origin: center;
+  animation: nxActiveCardGlowSpin 2.55s linear infinite;
+}
+
+.nx-horizontal-stage--active {
+  border-color: rgba(248, 190, 210, .72);
+  box-shadow:
+    0 18px 42px rgba(103, 69, 82, .10),
+    0 0 0 1px rgba(255, 211, 226, .22);
+}
+
+.nx-horizontal-stage--active .nx-horizontal-stage__active-glow {
+  opacity: 1;
+  background:
+    conic-gradient(from 0deg,
+      transparent 0deg,
+      transparent 208deg,
+      rgba(255, 231, 240, .08) 232deg,
+      rgba(250, 188, 211, .96) 268deg,
+      rgba(255, 214, 228, .88) 292deg,
+      rgba(196, 238, 226, .90) 318deg,
+      rgba(111, 204, 187, .94) 338deg,
+      rgba(228, 249, 242, .62) 350deg,
+      transparent 360deg);
+  filter:
+    blur(6px) drop-shadow(0 0 9px rgba(245, 177, 202, .34)) drop-shadow(0 0 11px rgba(92, 189, 169, .28)) drop-shadow(0 0 18px rgba(236, 221, 228, .18));
+  transform-origin: center;
+  animation: nxActiveCardGlowSpin 2.55s linear infinite;
+}
+
+.nx-horizontal-stage--active {
+  border-color: rgba(210, 206, 211, .66);
+  box-shadow:
+    0 18px 42px rgba(73, 92, 87, .10),
+    0 0 0 1px rgba(248, 198, 216, .17),
+    0 0 18px rgba(95, 190, 171, .10);
+}
+
+.vx-progress-stage--active {
+  border-color: rgba(86, 194, 182, .72) !important;
+  background: linear-gradient(150deg, #ffffff 0%, #fbfffe 58%, #fffdfd 100%) !important;
+  box-shadow:
+    0 18px 42px rgba(49, 105, 98, .13),
+    0 0 0 1px rgba(86, 194, 182, .12) !important;
+}
+
+.vx-progress-stage__active-glow>i {
+  inset: -58% -34% !important;
+  background:
+    conic-gradient(from 0deg,
+      transparent 0deg,
+      transparent 282deg,
+      rgba(82, 192, 181, .08) 292deg,
+      rgba(75, 197, 184, .94) 307deg,
+      rgba(145, 224, 209, .88) 321deg,
+      rgba(247, 199, 216, .76) 334deg,
+      rgba(255, 229, 237, .34) 343deg,
+      transparent 352deg,
+      transparent 360deg) !important;
+  filter:
+    blur(4px) drop-shadow(0 0 8px rgba(75, 197, 184, .34)) drop-shadow(0 0 7px rgba(247, 199, 216, .18)) !important;
+}
+
+.vx-progress-stage--active .vx-progress-stage__icon {
+  border-color: rgba(86, 194, 182, .28) !important;
+  color: #278d84 !important;
+  background: linear-gradient(145deg, #eefaf7 0%, #ffffff 62%, #fff7fa 100%) !important;
+  box-shadow:
+    0 10px 22px rgba(47, 119, 116, .12),
+    inset 0 1px 0 rgba(255, 255, 255, .92) !important;
+}
+
+.vx-progress-stage--active .vx-progress-stage__loader {
+  color: #278d84 !important;
+  filter:
+    drop-shadow(0 0 4px rgba(39, 141, 132, .42)) drop-shadow(0 0 8px rgba(39, 141, 132, .18)) !important;
+}
+
+html.vox-user-dark .vx-progress-stage--active {
+  border-color: rgba(105, 211, 199, .52) !important;
+  background: linear-gradient(150deg, #1b302a 0%, #192a27 100%) !important;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, .24),
+    0 0 0 1px rgba(105, 211, 199, .10) !important;
+}
+
+html.vox-user-dark .vx-progress-stage__active-glow>i {
+  background:
+    conic-gradient(from 0deg,
+      transparent 0deg,
+      transparent 282deg,
+      rgba(105, 211, 199, .08) 292deg,
+      rgba(99, 211, 198, .92) 307deg,
+      rgba(160, 231, 218, .82) 321deg,
+      rgba(245, 188, 210, .70) 334deg,
+      rgba(255, 220, 232, .26) 343deg,
+      transparent 352deg,
+      transparent 360deg) !important;
+  filter:
+    blur(4px) drop-shadow(0 0 9px rgba(99, 211, 198, .30)) drop-shadow(0 0 7px rgba(245, 188, 210, .14)) !important;
+}
+
+.vx-progress-stage--active {
+  border-color: rgba(229, 190, 210, .66) !important;
+  background: linear-gradient(150deg, #ffffff 0%, #fffefe 62%, #fffafb 100%) !important;
+  box-shadow:
+    0 18px 42px rgba(91, 70, 82, .09),
+    0 0 0 1px rgba(238, 205, 221, .18) !important;
+}
+
+.vx-progress-stage__active-glow>i {
+  inset: -58% -34% !important;
+  background:
+    conic-gradient(from 0deg,
+      transparent 0deg,
+      transparent 284deg,
+      rgba(255, 241, 247, .05) 294deg,
+      rgba(248, 214, 228, .78) 309deg,
+      rgba(244, 200, 220, .86) 322deg,
+      rgba(255, 228, 239, .72) 335deg,
+      rgba(255, 242, 247, .28) 345deg,
+      transparent 354deg,
+      transparent 360deg) !important;
+  filter:
+    blur(4px) drop-shadow(0 0 8px rgba(238, 195, 215, .26)) drop-shadow(0 0 13px rgba(255, 226, 239, .16)) !important;
+}
+
+.vx-progress-stage--active .vx-progress-stage__icon {
+  border-color: rgba(234, 203, 219, .28) !important;
+  color: #d79ab7 !important;
+  background: linear-gradient(145deg, #fff9fc 0%, #ffffff 72%) !important;
+  box-shadow:
+    0 10px 22px rgba(107, 77, 91, .08),
+    inset 0 1px 0 rgba(255, 255, 255, .94) !important;
+}
+
+.vx-progress-stage--active .vx-progress-stage__loader {
+  color: #d79ab7 !important;
+  filter:
+    drop-shadow(0 0 4px rgba(215, 154, 183, .30)) drop-shadow(0 0 8px rgba(242, 204, 221, .18)) !important;
+}
+
+html.vox-user-dark .vx-progress-stage--active {
+  border-color: rgba(234, 191, 211, .46) !important;
+  background: linear-gradient(150deg, #1f2d2a 0%, #1b2926 100%) !important;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, .24),
+    0 0 0 1px rgba(234, 191, 211, .08) !important;
+}
+
+html.vox-user-dark .vx-progress-stage__active-glow>i {
+  background:
+    conic-gradient(from 0deg,
+      transparent 0deg,
+      transparent 284deg,
+      rgba(255, 234, 243, .05) 294deg,
+      rgba(241, 194, 215, .72) 309deg,
+      rgba(236, 180, 206, .80) 322deg,
+      rgba(250, 211, 228, .62) 335deg,
+      rgba(255, 232, 242, .22) 345deg,
+      transparent 354deg,
+      transparent 360deg) !important;
+  filter:
+    blur(4px) drop-shadow(0 0 8px rgba(236, 180, 206, .22)) drop-shadow(0 0 12px rgba(250, 211, 228, .12)) !important;
+}
+
+.vx-domain-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 7px 8px !important;
+}
+
+.vx-domain-grid button {
+  min-height: 39px !important;
+  padding: 6px 9px !important;
+  grid-template-columns: 23px minmax(0, 1fr) !important;
+  gap: 7px !important;
+  border-radius: 10px !important;
+  font-size: 8.8px !important;
+}
+
+.vx-domain-icon {
+  width: 22px !important;
+  height: 22px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 7px !important;
+  color: #829ba7 !important;
+  background: transparent !important;
+  transition: color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease !important;
+}
+
+.vx-domain-icon svg {
+  width: 15px !important;
+  height: 15px !important;
+  stroke-width: 2 !important;
+}
+
+.vx-domain-grid button:hover:not(:disabled) .vx-domain-icon {
+  color: #209b96 !important;
+  background: rgba(45, 183, 176, .08) !important;
+}
+
+.vx-domain-grid button.is-selected .vx-domain-icon {
+  color: #fff !important;
+  background: linear-gradient(145deg, #28b8b1, #149a96) !important;
+  box-shadow: 0 5px 11px rgba(20, 154, 150, .2) !important;
+  transform: scale(1.04) !important;
+}
+
+.vx-domain-grid button.is-selected .vx-domain-icon svg {
+  color: #fff !important;
+  stroke: currentColor !important;
+}
+
+.vx-domain-more-row {
+  display: flex !important;
+  justify-content: center !important;
+  margin-top: 9px !important;
+}
+
+.vx-domain-more {
+  min-height: 29px !important;
+  padding: 0 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  border: 1px solid rgba(54, 165, 162, .22) !important;
+  border-radius: 999px !important;
+  color: #2a8783 !important;
+  background: rgba(240, 250, 249, .82) !important;
+  box-shadow: none !important;
+  font-size: 8.8px !important;
+  font-weight: 820 !important;
+  cursor: pointer !important;
+}
+
+.vx-domain-more:hover {
+  border-color: rgba(35, 166, 161, .38) !important;
+  background: #eaf8f6 !important;
+  transform: translateY(-1px) !important;
+}
+
+.vx-domain-selected {
+  align-items: flex-start !important;
+}
+
+.vx-domain-selected__head {
+  min-height: 25px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.vx-domain-selected__head>strong {
+  color: #6d8490 !important;
+  font-size: 8.8px !important;
+  font-weight: 820 !important;
+}
+
+.vx-domain-clear {
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  border: 1px solid rgba(99, 129, 139, .16) !important;
+  border-radius: 7px !important;
+  color: #70858f !important;
+  background: rgba(249, 252, 252, .88) !important;
+  font-size: 7.8px !important;
+  font-weight: 790 !important;
+  cursor: pointer !important;
+}
+
+.vx-domain-clear:hover {
+  border-color: rgba(35, 166, 161, .26) !important;
+  color: #21837f !important;
+  background: #f0faf8 !important;
+}
+
+html.vox-user-dark .vx-domain-icon {
+  color: #91aaa6 !important;
+}
+
+html.vox-user-dark .vx-domain-grid button:hover:not(:disabled) .vx-domain-icon {
+  color: #83d8d1 !important;
+  background: rgba(102, 208, 199, .09) !important;
+}
+
+html.vox-user-dark .vx-domain-grid button.is-selected .vx-domain-icon {
+  color: #f7fffe !important;
+  background: linear-gradient(145deg, #49c6bd, #269f99) !important;
+  box-shadow: 0 5px 12px rgba(73, 198, 189, .17) !important;
+}
+
+html.vox-user-dark .vx-domain-more {
+  border-color: rgba(100, 196, 188, .16) !important;
+  color: #9accc7 !important;
+  background: rgba(39, 63, 58, .64) !important;
+}
+
+html.vox-user-dark .vx-domain-more:hover {
+  border-color: rgba(111, 211, 202, .28) !important;
+  color: #b3e0dc !important;
+  background: rgba(45, 75, 68, .78) !important;
+}
+
+html.vox-user-dark .vx-domain-clear {
+  border-color: rgba(122, 161, 154, .14) !important;
+  color: #a2b9b4 !important;
+  background: rgba(30, 48, 44, .74) !important;
+}
+
+html.vox-user-dark .vx-domain-clear:hover {
+  border-color: rgba(111, 211, 202, .22) !important;
+  color: #bce1dc !important;
+  background: rgba(42, 67, 61, .88) !important;
+}
+
+html[dir='rtl'] .vx-domain-grid button,
+html.vox-user-rtl .vx-domain-grid button {
+  grid-template-columns: 23px minmax(0, 1fr) !important;
+}
+
+@media (max-width: 1180px) {
+  .vx-domain-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .vx-domain-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .vx-domain-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .vx-domain-selected {
+    flex-direction: column !important;
+  }
+}
+
+.vx-domain-selected .vx-domain-clear {
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  border: 1px solid rgba(99, 129, 139, .16) !important;
+  border-radius: 7px !important;
+  color: #70858f !important;
+  background: rgba(249, 252, 252, .88) !important;
+  font-size: 7.8px !important;
+  font-weight: 790 !important;
+}
+
+.vx-domain-selected .vx-domain-clear:hover {
+  border-color: rgba(35, 166, 161, .26) !important;
+  color: #21837f !important;
+  background: #f0faf8 !important;
+}
+
+html.vox-user-dark .vx-domain-selected .vx-domain-clear {
+  border-color: rgba(122, 161, 154, .14) !important;
+  color: #a2b9b4 !important;
+  background: rgba(30, 48, 44, .74) !important;
+}
+
+html.vox-user-dark .vx-domain-selected .vx-domain-clear:hover {
+  border-color: rgba(111, 211, 202, .22) !important;
+  color: #bce1dc !important;
+  background: rgba(42, 67, 61, .88) !important;
+}
+
+/* Separate the four generation steps into independent cards. */
+.vx-generate-stack {
+  display: grid !important;
+  gap: 18px !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.vx-generate-section,
+.vx-generate-section:hover {
+  margin: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(132, 187, 191, .32) !important;
+  border-radius: 19px !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(95, 221, 212, .055), transparent 25%),
+    radial-gradient(circle at 0 100%, rgba(246, 153, 187, .032), transparent 24%),
+    rgba(255, 255, 255, .965) !important;
+  box-shadow:
+    0 16px 38px rgba(36, 85, 96, .055),
+    inset 0 1px 0 rgba(255, 255, 255, .9) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+}
+
+.vx-generate-section:hover {
+  border-color: rgba(82, 174, 175, .42) !important;
+  box-shadow:
+    0 18px 42px rgba(36, 85, 96, .07),
+    inset 0 1px 0 rgba(255, 255, 255, .94) !important;
+}
+
+.vx-generate-section+.vx-generate-section {
+  border-top: 1px solid rgba(132, 187, 191, .32) !important;
+}
+
+.vx-generate-section__header {
+  border-radius: 19px 19px 0 0 !important;
+}
+
+.vx-generate-section.is-collapsed .vx-generate-section__header {
+  border-radius: 19px !important;
+}
+
+html.vox-user-dark .vx-generate-stack {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.vox-user-dark .vx-generate-section,
+html.vox-user-dark .vx-generate-section:hover {
+  border: 1px solid rgba(101, 179, 168, .18) !important;
+  border-radius: 19px !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(52, 196, 185, .06), transparent 25%),
+    radial-gradient(circle at 0 100%, rgba(232, 122, 164, .03), transparent 23%),
+    rgba(23, 38, 33, .97) !important;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, .16),
+    inset 0 1px 0 rgba(255, 255, 255, .018) !important;
+}
+
+html.vox-user-dark .vx-generate-section:hover {
+  border-color: rgba(102, 195, 184, .28) !important;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, .2),
+    inset 0 1px 0 rgba(255, 255, 255, .022) !important;
+}
+
+html.vox-user-dark .vx-generate-section+.vx-generate-section {
+  border-top: 1px solid rgba(101, 179, 168, .18) !important;
+}
+
+@media (max-width: 760px) {
+  .vx-generate-stack {
+    gap: 12px !important;
+  }
+
+  .vx-generate-section,
+  .vx-generate-section:hover,
+  html.vox-user-dark .vx-generate-section,
+  html.vox-user-dark .vx-generate-section:hover {
+    border-radius: 14px !important;
+  }
+
+  .vx-generate-section__header,
+  .vx-generate-section.is-collapsed .vx-generate-section__header {
+    border-radius: 14px !important;
+  }
+
+  .vx-generate-section:not(.is-collapsed) .vx-generate-section__header {
+    border-radius: 14px 14px 0 0 !important;
+  }
+}
+
+.vx-signal-optional-note {
+  margin: 9px 2px 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: #7b909a !important;
+  font-size: 8.8px !important;
+  font-weight: 620 !important;
+  line-height: 1.45 !important;
+}
+
+.vx-signal-optional-note svg {
+  flex: 0 0 auto !important;
+  color: #31aaa5 !important;
+}
+
+.vx-signal-optional-note strong {
+  color: #3f7d79 !important;
+  font-weight: 820 !important;
+}
+
+html.vox-user-rtl .vx-signal-optional-note,
+html[dir='rtl'] .vx-signal-optional-note {
+  text-align: right !important;
+}
+
+html.vox-user-dark .vx-signal-optional-note {
+  color: #91a7a2 !important;
+}
+
+html.vox-user-dark .vx-signal-optional-note svg {
+  color: #75d2cb !important;
+}
+
+html.vox-user-dark .vx-signal-optional-note strong {
+  color: #b5dcd7 !important;
+}
+
+/* Keep the Context language menu above the following Review card. */
+.vx-generate-stack>.vx-generate-section:nth-child(3) {
+  position: relative !important;
+  overflow: visible !important;
+  z-index: 20 !important;
+}
+
+.vx-generate-stack>.vx-generate-section:nth-child(4) {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+.vx-context-language,
+.vx-context-language.is-open {
+  position: relative !important;
+  z-index: 30 !important;
+}
+
+.vx-context-language__menu {
+  z-index: 9999 !important;
+}
+
+.vx-progress-page,
+html.vox-user-dark .vx-progress-page {
+  background: transparent !important;
 }

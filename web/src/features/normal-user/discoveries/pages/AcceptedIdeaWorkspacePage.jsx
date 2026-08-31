@@ -3,6 +3,7 @@
  * the private Open Idea workspace. Advanced outputs stay protected by the
  * acceptance API while Premium-only AI Chat follows account access.
  */
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowLeft,
   Bot,
@@ -211,15 +212,15 @@ export default function AcceptedIdeaWorkspacePage() {
 
     const advancedOutputs = Array.isArray(publication.advancedOutputs)
       ? publication.advancedOutputs
-          .filter((output) => hasMeaningfulContent(getOutputContent(output)))
-          .filter(
-            (output, index, items) =>
-              items.findIndex(
-                (candidate) =>
-                  (candidate.outputKey || candidate.key || candidate.id) ===
-                  (output.outputKey || output.key || output.id),
-              ) === index,
-          )
+        .filter((output) => hasMeaningfulContent(getOutputContent(output)))
+        .filter(
+          (output, index, items) =>
+            items.findIndex(
+              (candidate) =>
+                (candidate.outputKey || candidate.key || candidate.id) ===
+                (output.outputKey || output.key || output.id),
+            ) === index,
+        )
       : [];
 
     const explicitBusinessModel = publication.businessModel;
@@ -239,12 +240,12 @@ export default function AcceptedIdeaWorkspacePage() {
       ? explicitBusinessModel
       : legacyBusinessModelOutput
         ? {
-            content: getOutputContent(legacyBusinessModelOutput),
-            businessModelTemplate: {
-              name: legacyBusinessModelOutput.title || 'Business model',
-              description: 'Business strategy and operating model',
-            },
-          }
+          content: getOutputContent(legacyBusinessModelOutput),
+          businessModelTemplate: {
+            name: legacyBusinessModelOutput.title || 'Business model',
+            description: 'Business strategy and operating model',
+          },
+        }
         : null;
 
     const businessModelContent = businessModel?.content;
@@ -294,16 +295,16 @@ export default function AcceptedIdeaWorkspacePage() {
         })),
       ...(hasBusinessModel
         ? [
-            {
-              key: 'business-model',
-              title: businessModel?.businessModelTemplate?.name || 'Business model',
-              caption:
-                businessModel?.businessModelTemplate?.description ||
-                'Business strategy and operating model',
-              icon: BriefcaseBusiness,
-              content: businessModelContent,
-            },
-          ]
+          {
+            key: 'business-model',
+            title: businessModel?.businessModelTemplate?.name || 'Business model',
+            caption:
+              businessModel?.businessModelTemplate?.description ||
+              'Business strategy and operating model',
+            icon: BriefcaseBusiness,
+            content: businessModelContent,
+          },
+        ]
         : []),
     ];
   }, [publication]);
@@ -329,7 +330,7 @@ export default function AcceptedIdeaWorkspacePage() {
           <h1>Idea unavailable</h1>
           <p>{error || 'This accepted idea could not be opened.'}</p>
         </div>
-        <button type="button" onClick={() => navigate('/normal/ideas?view=accepted')}>
+        <button type="button" onClick={() => navigate(workspacePath('/normal/ideas?view=accepted'))}>
           <ArrowLeft size={17} />
           Accepted ideas
         </button>
@@ -339,10 +340,10 @@ export default function AcceptedIdeaWorkspacePage() {
 
   const acceptedDate = acceptance?.acceptedAt
     ? new Date(acceptance.acceptedAt).toLocaleDateString(undefined, {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
     : 'Accepted';
 
   return (
@@ -355,7 +356,7 @@ export default function AcceptedIdeaWorkspacePage() {
       <button
         className="workspace-back"
         type="button"
-        onClick={() => navigate('/normal/ideas?view=accepted')}
+        onClick={() => navigate(workspacePath('/normal/ideas?view=accepted'))}
       >
         <ArrowLeft size={17} />
         <span>Accepted ideas</span>
@@ -405,11 +406,11 @@ export default function AcceptedIdeaWorkspacePage() {
               className="workspace-premium-chat accepted-workspace-hero-action"
               type="button"
               onClick={() =>
-                navigate(`/normal/ideas/${sourceIdeaId}/chat`, {
+                navigate(workspacePath(`/normal/ideas/${sourceIdeaId}/chat`), {
                   state: {
                     chatOrigin: 'accepted-publication',
                     publicationId,
-                    returnTo: `/normal/accepted/${publicationId}/workspace`,
+                    returnTo: workspacePath(`/normal/accepted/${publicationId}/workspace`),
                     returnLabel: 'Accepted idea',
                     ideaTitle: publication.publicTitle,
                     ideaSeed: {
@@ -439,11 +440,11 @@ export default function AcceptedIdeaWorkspacePage() {
               type="button"
               className="accepted-workspace-business-model accepted-workspace-hero-action"
               onClick={() =>
-                navigate(`/normal/ideas/${sourceIdeaId}/business-model`, {
+                navigate(workspacePath(`/normal/ideas/${sourceIdeaId}/business-model`), {
                   state: {
                     businessModelOrigin: 'accepted-publication',
                     publicationId,
-                    returnTo: `/normal/accepted/${publicationId}/workspace`,
+                    returnTo: workspacePath(`/normal/accepted/${publicationId}/workspace`),
                     returnLabel: 'Accepted idea',
                     ideaTitle: publication.publicTitle,
                   },
@@ -460,7 +461,7 @@ export default function AcceptedIdeaWorkspacePage() {
                 <small>
                   {businessModelSection
                     ? publication.businessModel?.businessModelTemplate?.name ||
-                      'Open your strategy canvas'
+                    'Open your strategy canvas'
                     : 'Create your model from this accepted idea'}
                 </small>
               </span>

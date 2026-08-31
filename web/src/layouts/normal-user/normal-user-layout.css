@@ -8,7 +8,6 @@
  *
  * @author Eman
  */
-
 :root {
   --nx-ink: #34413f;
   --nx-muted: #6f817a;
@@ -50,10 +49,6 @@
   background-size: 46px 46px;
   mask-image: linear-gradient(to bottom, #000, transparent 72%);
 }
-
-/* -------------------------------------------------------------------------- */
-/* Header shell                                                               */
-/* -------------------------------------------------------------------------- */
 
 .normal-header-wrap {
   position: sticky;
@@ -136,10 +131,6 @@
   z-index: 1;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Brand                                                                      */
-/* -------------------------------------------------------------------------- */
-
 .normal-header__brand {
   min-width: 172px;
   display: flex;
@@ -187,10 +178,6 @@
   font-weight: 800;
   letter-spacing: -0.025em;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Desktop navigation                                                         */
-/* -------------------------------------------------------------------------- */
 
 .normal-header__nav {
   min-width: 0;
@@ -245,10 +232,6 @@
   background: linear-gradient(90deg, #d98fa0, #5cbdb9);
   box-shadow: 0 2px 9px rgba(92, 189, 185, 0.38);
 }
-
-/* -------------------------------------------------------------------------- */
-/* Header tools                                                               */
-/* -------------------------------------------------------------------------- */
 
 .normal-header__tools {
   min-width: 0;
@@ -449,10 +432,6 @@
   background: #d98fa0;
   box-shadow: 0 0 0 3px rgba(217, 143, 160, 0.14);
 }
-
-/* -------------------------------------------------------------------------- */
-/* Profile                                                                    */
-/* -------------------------------------------------------------------------- */
 
 .normal-header__profile-wrap {
   position: relative;
@@ -708,10 +687,6 @@
   box-shadow: inset 0 0 0 1px rgba(217, 143, 160, 0.18);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Responsive menu button                                                     */
-/* -------------------------------------------------------------------------- */
-
 .normal-header__menu {
   width: 44px;
   height: 44px;
@@ -734,10 +709,6 @@
   box-shadow: 0 10px 22px rgba(47, 119, 116, 0.1);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Main content                                                               */
-/* -------------------------------------------------------------------------- */
-
 .normal-app-shell__main {
   width: min(1500px, 100%);
   margin: 0 auto;
@@ -748,10 +719,6 @@
   width: min(1500px, 100%);
   padding: 12px 24px 24px;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Responsive drawer                                                          */
-/* -------------------------------------------------------------------------- */
 
 .normal-drawer-backdrop,
 .normal-drawer {
@@ -946,10 +913,6 @@
   font-size: 10px;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Responsive behavior                                                        */
-/* -------------------------------------------------------------------------- */
-
 @media (max-width: 1380px) {
   .normal-header.normal-header--professional {
     gap: 12px;
@@ -992,10 +955,6 @@
   }
 }
 
-/*
- * IMPORTANT: 1180px is shared by the hidden desktop nav, visible hamburger,
- * backdrop, and drawer. There is no dead responsive range anymore.
- */
 @media (max-width: 1180px) {
   .normal-header-wrap {
     padding: 14px 16px 0;
@@ -1189,10 +1148,6 @@
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Motion                                                                     */
-/* -------------------------------------------------------------------------- */
-
 @keyframes normalHeaderFloat {
   from {
     transform: translate3d(-12px, 0, 0) scale(0.9);
@@ -1234,7 +1189,6 @@
   }
 }
 
-/* Dashboard-only shell dark polish. Uses :has so other normal-user pages are not restyled here. */
 html.vox-user-dark .normal-app-shell:has(.normal-dashboard-page) {
   color: #f1f8f5 !important;
   background: #18231f !important;
@@ -1278,8 +1232,6 @@ html.vox-user-rtl .normal-app-shell:has(.normal-dashboard-page) .normal-header__
   text-align: right;
 }
 
-/* User dark canvas: keep every authenticated page on one continuous charcoal
-   background. Scoped to the user theme class, so English/light stays intact. */
 html.vox-user-dark .normal-app-shell,
 html.vox-user-dark .normal-app-shell__main {
   background-color: #111a17 !important;
@@ -1301,10 +1253,6 @@ html.vox-user-dark .normal-app-shell__aurora::after {
     linear-gradient(rgba(115, 208, 202, .07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(115, 208, 202, .07) 1px, transparent 1px) !important;
 }
-
-/* ========================================================================== */
-/* Arabic account menu + dark-menu hardening                                  */
-/* ========================================================================== */
 
 html.vox-user-rtl .normal-header__profile-wrap {
   z-index: 180;
@@ -1400,8 +1348,6 @@ html.vox-user-dark .normal-header__profile-menu button small {
   }
 }
 
-
-/* FINAL_NORMAL_HEADER_DARK_POLISH */
 html.vox-user-dark .normal-header.normal-header--professional {
   color: #edf7f4 !important;
   border-color: rgba(112, 205, 198, .20) !important;
@@ -1434,7 +1380,6 @@ html.vox-user-dark .normal-header__search kbd {
   background: #20382f !important;
 }
 
-/* Profile image stays correctly cropped in both LTR and RTL menus. */
 .normal-header__avatar img,
 .normal-header__menu-avatar img,
 .normal-drawer__avatar img {
@@ -1447,7 +1392,6 @@ html.vox-user-rtl .normal-header__profile-menu {
   text-align: right;
 }
 
-/* FINAL_20260828_NORMAL_BRAND_HOVER_NO_RECTANGLE */
 .normal-header__brand,
 .normal-header__brand:hover,
 .normal-header__brand:focus,
@@ -1479,13 +1423,6 @@ html.vox-user-dark .normal-header__brand:focus-visible {
   box-shadow: none !important;
 }
 
-
-/* ==========================================================================
-   FINAL_20260828_NORMAL_USER_CANVAS_UNIFICATION
-   Remove the page-sized "outer card" feeling on normal-user screens by
-   forcing page roots to sit directly on the shared workspace canvas.
-   Dashboard is intentionally excluded.
-   ========================================================================== */
 .normal-app-shell__main> :is(.preferences-page,
   .profile-settings-page,
   .discover-page,
@@ -1506,12 +1443,6 @@ html.vox-user-dark .normal-header__brand:focus-visible {
   border: 0 !important;
 }
 
-/* ==========================================================================
-   FINAL_20260828_NORMAL_USER_WIDE_CONTENT
-   Let normal-user pages use the workspace width like Billing does, instead of
-   stacking page-level max-width + page padding inside the main container.
-   Generate / generation-progress pages are intentionally not included.
-   ========================================================================== */
 @media (min-width: 901px) {
 
   .normal-app-shell__main> :is(.preferences-page,
@@ -1543,14 +1474,6 @@ html.vox-user-dark .normal-header__brand:focus-visible {
   }
 }
 
-
-
-/* ==========================================================================
-   FINAL_20260828_NORMAL_USER_HERO_SPACING
-   Keep top-level normal-user heroes at the same distance from the workspace
-   header as Home/Billing. Page roots no longer add a second top inset.
-   Generation progress is intentionally excluded.
-   ========================================================================== */
 @media (min-width: 901px) {
 
   .normal-app-shell__main> :is(.preferences-page,
@@ -1571,16 +1494,10 @@ html.vox-user-dark .normal-header__brand:focus-visible {
     padding-top: 0 !important;
   }
 
-  /* Restore the original generation wizard proportions while giving the
-     wizard the same comfortable header gap as Home/Billing. */
   .normal-app-shell__main:has(> .nx-generation-page) {
     padding-top: 30px !important;
   }
 }
-
-/* ========================================================================== */
-/* Generate page — full-width canvas only                                     */
-/* ========================================================================== */
 
 @media (min-width: 901px) {
   .normal-app-shell__main:has(> .nx-generation-page) {
@@ -1588,5 +1505,22 @@ html.vox-user-dark .normal-header__brand:focus-visible {
     max-width: none !important;
     margin-inline: 0 !important;
     padding: 22px clamp(18px, 1.65vw, 32px) 30px !important;
+  }
+}
+
+@media (min-width: 901px) {
+
+  .normal-app-shell__main:has(> .vx-generate-page),
+  .normal-app-shell__main:has(> .vx-progress-page) {
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    padding: 18px clamp(28px, 2.6vw, 52px) 34px !important;
+  }
+}
+
+@media (min-width: 901px) {
+  .normal-app-shell__main>.vx-progress-page {
+    padding-top: 14px !important;
   }
 }

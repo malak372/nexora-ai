@@ -1,3 +1,4 @@
+import { workspacePath } from '../../shared/utils/workspacePath';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -40,6 +41,7 @@ import { normalizeGenerationStartResponse } from '../utils/pipeline.utils';
 import '../styles/generation.css';
 
 const MAX_SELECTED_DOMAINS = 3;
+const DOMAIN_PREVIEW_COUNT = 10;
 const list = (value) => (Array.isArray(value) ? value : value?.data ?? value?.items ?? value?.results ?? []);
 
 function domainIconFor(domain) {
@@ -58,37 +60,140 @@ function domainIconFor(domain) {
 
 function DiscoveryGlobe() {
   return (
-    <div className="vx-discovery-globe" aria-hidden="true">
-      <span className="vx-discovery-globe__halo" />
-      <span className="vx-discovery-globe__mist" />
-      <span className="vx-discovery-globe__mesh" />
-      <span className="vx-discovery-globe__shadow" />
-      <span className="vx-discovery-globe__spark vx-discovery-globe__spark--one" />
-      <span className="vx-discovery-globe__spark vx-discovery-globe__spark--two" />
-      <span className="vx-discovery-globe__spark vx-discovery-globe__spark--three" />
-      <span className="vx-discovery-globe__orbit vx-discovery-globe__orbit--one" />
-      <span className="vx-discovery-globe__orbit vx-discovery-globe__orbit--two" />
-      <span className="vx-discovery-globe__orbit vx-discovery-globe__orbit--three" />
-      <span className="vx-discovery-globe__dot vx-discovery-globe__dot--1" />
-      <span className="vx-discovery-globe__dot vx-discovery-globe__dot--2" />
-      <span className="vx-discovery-globe__dot vx-discovery-globe__dot--3" />
-      <span className="vx-discovery-globe__dot vx-discovery-globe__dot--4" />
-      <span className="vx-discovery-globe__node vx-discovery-globe__node--one"><Search size={11} /></span>
-      <span className="vx-discovery-globe__node vx-discovery-globe__node--two"><UsersRound size={11} /></span>
-      <span className="vx-discovery-globe__node vx-discovery-globe__node--three"><Check size={11} /></span>
+    <motion.div
+      className="vx-discovery-orb"
+      aria-hidden="true"
+      animate={{ y: [0, -5, 0] }}
+      transition={{ duration: 6.4, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <svg className="vx-discovery-orb__svg" viewBox="0 0 420 275" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="vxOrbBody" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(177 76) rotate(57) scale(151)">
+            <stop stopColor="#F5FFFF" />
+            <stop offset="0.20" stopColor="#C8F8F4" />
+            <stop offset="0.58" stopColor="#7BDDD6" />
+            <stop offset="1" stopColor="#23A7A5" />
+          </radialGradient>
+          <linearGradient id="vxOrbGlass" x1="150" y1="48" x2="273" y2="203" gradientUnits="userSpaceOnUse">
+            <stop stopColor="white" stopOpacity="0.86" />
+            <stop offset="0.42" stopColor="white" stopOpacity="0.16" />
+            <stop offset="1" stopColor="#0F9698" stopOpacity="0.18" />
+          </linearGradient>
+          <linearGradient id="vxOrbitPink" x1="57" y1="154" x2="360" y2="112" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#F7BCD0" stopOpacity="0.12" />
+            <stop offset="0.5" stopColor="#F08DB2" stopOpacity="0.78" />
+            <stop offset="1" stopColor="#F7BCD0" stopOpacity="0.10" />
+          </linearGradient>
+          <linearGradient id="vxOrbitTeal" x1="79" y1="172" x2="350" y2="87" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#6ED8D2" stopOpacity="0.10" />
+            <stop offset="0.5" stopColor="#42BEBB" stopOpacity="0.62" />
+            <stop offset="1" stopColor="#6ED8D2" stopOpacity="0.10" />
+          </linearGradient>
+          <radialGradient id="vxPinkDot" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(322 67) rotate(120) scale(13)">
+            <stop stopColor="#FFDCE8" />
+            <stop offset="0.44" stopColor="#FF86B1" />
+            <stop offset="1" stopColor="#EE5E94" />
+          </radialGradient>
+          <radialGradient id="vxTealDot" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(300 47) rotate(120) scale(11)">
+            <stop stopColor="#E8FFFF" />
+            <stop offset="0.45" stopColor="#62D5D0" />
+            <stop offset="1" stopColor="#239F9F" />
+          </radialGradient>
+          <filter id="vxOrbShadow" x="72" y="27" width="282" height="253" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+            <feDropShadow dx="0" dy="19" stdDeviation="14" floodColor="#159B9C" floodOpacity="0.18" />
+          </filter>
+          <filter id="vxBlur" x="19" y="188" width="382" height="80" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+            <feGaussianBlur stdDeviation="9" />
+          </filter>
+        </defs>
+
+        <ellipse cx="210" cy="224" rx="130" ry="19" fill="#75DAD4" fillOpacity="0.12" filter="url(#vxBlur)" />
+        <ellipse cx="210" cy="218" rx="86" ry="10" stroke="#8EDFD9" strokeOpacity="0.30" />
+        <ellipse cx="210" cy="219" rx="116" ry="14" stroke="#F4A8C3" strokeOpacity="0.24" />
+
+        <g className="vx-discovery-orb__orbits">
+          <ellipse cx="210" cy="139" rx="151" ry="48" transform="rotate(-12 210 139)" stroke="url(#vxOrbitPink)" strokeWidth="1.25" />
+          <ellipse cx="210" cy="139" rx="142" ry="42" transform="rotate(18 210 139)" stroke="url(#vxOrbitTeal)" strokeWidth="1.15" />
+          <ellipse cx="210" cy="139" rx="111" ry="34" transform="rotate(-55 210 139)" stroke="#EFA0BC" strokeOpacity="0.34" strokeWidth="1.15" />
+        </g>
+
+        <g filter="url(#vxOrbShadow)">
+          <circle cx="210" cy="128" r="78" fill="url(#vxOrbBody)" />
+          <circle cx="210" cy="128" r="76" fill="url(#vxOrbGlass)" stroke="white" strokeOpacity="0.72" strokeWidth="2" />
+          <ellipse cx="210" cy="128" rx="51" ry="76" stroke="white" strokeOpacity="0.22" />
+          <ellipse cx="210" cy="128" rx="27" ry="76" stroke="white" strokeOpacity="0.19" />
+          <ellipse cx="210" cy="128" rx="76" ry="31" stroke="white" strokeOpacity="0.20" />
+          <path d="M144 101C171 114 250 111 275 92" stroke="white" strokeOpacity="0.20" />
+          <path d="M145 156C180 143 246 146 275 166" stroke="white" strokeOpacity="0.18" />
+
+          <path
+            d="M160 88C176 72 198 66 219 70"
+            stroke="white"
+            strokeOpacity="0.26"
+            strokeWidth="5"
+            strokeLinecap="round"
+          />
+          <path
+            d="M159 98C171 86 184 81 196 80"
+            stroke="white"
+            strokeOpacity="0.13"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+        </g>
+
+        <g className="vx-discovery-orb__particles">
+          <circle cx="321" cy="66" r="9" fill="url(#vxPinkDot)" />
+          <circle cx="297" cy="48" r="7" fill="url(#vxTealDot)" />
+          <circle cx="342" cy="134" r="5" fill="#F57EAA" fillOpacity="0.90" />
+          <circle cx="78" cy="149" r="7" fill="url(#vxPinkDot)" />
+          <circle cx="95" cy="84" r="4" fill="#55C9C5" />
+          <circle cx="115" cy="51" r="3" fill="#F5A1BE" />
+          <circle cx="350" cy="90" r="2.7" fill="#68D5D0" />
+          <circle cx="307" cy="184" r="3" fill="#F18AB0" />
+          <circle cx="106" cy="192" r="3.8" fill="#62D4CF" />
+          <circle cx="358" cy="175" r="6" fill="#F385AD" fillOpacity="0.72" />
+          <circle cx="69" cy="118" r="2.6" fill="#F5B0C8" />
+          <circle cx="332" cy="36" r="2.8" fill="#F9B8CE" />
+          <circle cx="273" cy="31" r="2.4" fill="#69D2CD" />
+        </g>
+
+        <g className="vx-discovery-orb__sparkles" fill="white">
+          <path d="M112 117L115 124L122 127L115 130L112 137L109 130L102 127L109 124L112 117Z" fillOpacity="0.88" />
+          <path d="M311 108L313 113L318 115L313 117L311 122L309 117L304 115L309 113L311 108Z" fillOpacity="0.78" />
+          <path d="M281 193L283 197L287 199L283 201L281 205L279 201L275 199L279 197L281 193Z" fillOpacity="0.65" />
+        </g>
+      </svg>
+
       <motion.span
-        className="vx-discovery-globe__sphere"
-        animate={{ y: [0, -7, 0], rotate: [0, 3, 0, -3, 0] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+        className="vx-discovery-orb__float vx-discovery-orb__float--search"
+        animate={{ x: [0, 5, 0], y: [0, -8, 0], rotate: [-7, 3, -7] }}
+        transition={{ duration: 5.2, repeat: Infinity, ease: 'easeInOut' }}
       >
-        <i className="vx-discovery-globe__shine" />
-        <i className="vx-discovery-globe__glass" />
-        <i className="vx-discovery-globe__land vx-discovery-globe__land--1" />
-        <i className="vx-discovery-globe__land vx-discovery-globe__land--2" />
-        <i className="vx-discovery-globe__land vx-discovery-globe__land--3" />
-        <span className="vx-discovery-globe__core"><Sparkles size={22} /></span>
+        <Search size={16} />
       </motion.span>
-    </div>
+      <motion.span
+        className="vx-discovery-orb__float vx-discovery-orb__float--people"
+        animate={{ x: [0, -5, 0], y: [0, 7, 0], rotate: [6, -3, 6] }}
+        transition={{ duration: 6.1, repeat: Infinity, ease: 'easeInOut', delay: 0.35 }}
+      >
+        <UsersRound size={16} />
+      </motion.span>
+      <motion.span
+        className="vx-discovery-orb__float vx-discovery-orb__float--check"
+        animate={{ x: [0, 4, 0], y: [0, -6, 0], rotate: [5, -4, 5] }}
+        transition={{ duration: 4.8, repeat: Infinity, ease: 'easeInOut', delay: 0.65 }}
+      >
+        <Check size={16} />
+      </motion.span>
+      <motion.span
+        className="vx-discovery-orb__float vx-discovery-orb__float--spark"
+        animate={{ scale: [1, 1.14, 1], rotate: [0, 14, 0], opacity: [.72, 1, .72] }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        <Sparkles size={14} />
+      </motion.span>
+    </motion.div>
   );
 }
 
@@ -125,6 +230,14 @@ function PipelinePreview({ t }) {
 
   return (
     <aside className="vx-generate-next">
+      <div className="vx-generate-next__ambient" aria-hidden="true">
+        <span className="vx-generate-next__ambient-dot is-1" />
+        <span className="vx-generate-next__ambient-dot is-2" />
+        <span className="vx-generate-next__ambient-dot is-3" />
+        <span className="vx-generate-next__ambient-dot is-4" />
+        <span className="vx-generate-next__ambient-ring is-1" />
+        <span className="vx-generate-next__ambient-ring is-2" />
+      </div>
       <DiscoveryGlobe />
       <div className="vx-generate-next__title">
         <strong>{t('What happens next')}</strong>
@@ -159,6 +272,7 @@ export default function GenerateIdeaPage() {
 
   const [domains, setDomains] = useState([]);
   const [loadingDomains, setLoadingDomains] = useState(true);
+  const [showAllDomains, setShowAllDomains] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [checkingAccess, setCheckingAccess] = useState(true);
@@ -189,6 +303,13 @@ export default function GenerateIdeaPage() {
       .filter(Boolean),
     [domains, selectedDomainIds],
   );
+
+  const visibleDomains = useMemo(
+    () => showAllDomains ? domains : domains.slice(0, DOMAIN_PREVIEW_COUNT),
+    [domains, showAllDomains],
+  );
+
+  const hiddenDomainCount = Math.max(0, domains.length - DOMAIN_PREVIEW_COUNT);
 
   const selectedDomainNames = useMemo(
     () => selectedDomains
@@ -312,37 +433,15 @@ export default function GenerateIdeaPage() {
     updateDraft({ domainIds: nextDomainIds, domainId: nextDomainIds[0] ?? '' });
   };
 
+  const clearSelectedDomains = () => {
+    updateDraft({ domainIds: [], domainId: '' });
+  };
+
   const toggleSection = (sectionKey) => {
     setCollapsedSections((current) => ({
       ...current,
       [sectionKey]: !current[sectionKey],
     }));
-  };
-
-  const activateAutoDetect = () => {
-    if (!hasSignal) {
-      setError(t('Add a signal first, then Voxidence can detect the best domains automatically.'));
-      return;
-    }
-
-    setError('');
-    updateDraft({
-      domainIds: [],
-      domainId: '',
-      autoDetectDomains: true,
-      personalizedDiscovery: false,
-    });
-  };
-
-  const activatePersonalizedDiscovery = () => {
-    setError('');
-    updateDraft({
-      description: '',
-      domainIds: [],
-      domainId: '',
-      autoDetectDomains: false,
-      personalizedDiscovery: true,
-    });
   };
 
   const submit = async () => {
@@ -402,7 +501,7 @@ export default function GenerateIdeaPage() {
       if (!result.runId) throw new Error('Generation started without a run identifier.');
 
       saveActiveGenerationRunId(result.runId);
-      navigate(`/normal/generation/${result.runId}`, {
+      navigate(workspacePath(`/normal/generation/${result.runId}`), {
         state: {
           initialRun: {
             id: result.runId,
@@ -464,7 +563,7 @@ export default function GenerateIdeaPage() {
           const recoveredRunId = String(activeRun?.runId ?? activeRun?.id ?? '').trim();
           if (recoveredRunId) {
             saveActiveGenerationRunId(recoveredRunId);
-            navigate(`/normal/generation/${recoveredRunId}`, {
+            navigate(workspacePath(`/normal/generation/${recoveredRunId}`), {
               state: { initialRun: activeRun },
             });
             return;
@@ -480,12 +579,30 @@ export default function GenerateIdeaPage() {
     }
   };
 
-  const selectedLocation = [draft.country, draft.city, draft.region].filter(Boolean).join(', ');
+  const countryDisplayValue = uiLanguage === 'ar' && draft.country.trim().toLocaleLowerCase('en-US') === 'palestine'
+    ? t('Palestine')
+    : draft.country;
+  const selectedLocation = [countryDisplayValue, draft.city, draft.region].filter(Boolean).join(', ');
   const languageLabel = LANGUAGE_OPTIONS.find((item) => item.value === draft.language)?.label ?? 'Any language';
   const signalSummary = draft.description.trim()
     || (selectedDomains.length
       ? `${t('Cross-domain discovery')}: ${selectedDomains.map((domain) => t(domain.name ?? domain.displayName ?? '')).join(' + ')}`
-      : t('Personalized discovery from your interests and preferences'));
+      : t('Automatic discovery — Voxidence will find the best direction for you.'));
+
+  const idleGenerateTitle = 'Generate Idea';
+  const idleGenerateSubtitle = 'Start discovery with what you provide — Voxidence will complete the rest automatically.';
+
+  const generateTitle = checkingAccess
+    ? 'Checking generation access…'
+    : submitting
+      ? 'Launching intelligence…'
+      : idleGenerateTitle;
+
+  const generateSubtitle = checkingAccess
+    ? 'Confirming your generation access before launch.'
+    : submitting
+      ? 'Your discovery pipeline is starting now.'
+      : idleGenerateSubtitle;
 
   return (
     <main className="vx-generate-page">
@@ -503,45 +620,59 @@ export default function GenerateIdeaPage() {
               <div className="vx-generate-section__body">
                 <div className="vx-signal-block">
                   <div className="vx-signal-block__heading">
-                    <span className="vx-signal-block__icon"><Sparkles size={15} /></span>
+                    <span className="vx-signal-block__icon"><Sparkles size={16} /></span>
                     <div>
                       <strong>{t('Write your idea, problem, or opportunity here...')}</strong>
                       <small>{t('Describe the real situation in your own words. Voxidence will understand the signal and shape the discovery path around it.')}</small>
                     </div>
                   </div>
+
                   <div className="vx-signal-input">
-                  <textarea
-                    value={draft.description}
-                    dir="auto"
-                    maxLength={2000}
-                    onChange={(event) => updateDraft({ description: event.target.value })}
-                    placeholder={t("Example: 'College students in small cities struggle to find affordable, healthy meal options delivered quickly.'")}
-                  />
-                  <div className="vx-signal-input__footer">
-                    <button type="button" onClick={toggleVoice} disabled={submitting} className={listening ? 'is-listening' : ''}>
-                      {listening ? <MicOff size={17} /> : <Mic size={17} />}
-                      <span>{t(listening ? 'Listening…' : 'Speak')}</span>
-                    </button>
-                    <span>{draft.description.length} / 2000</span>
+                    <textarea
+                      id="vx-generation-signal"
+                      value={draft.description}
+                      dir={draft.description.trim() ? 'auto' : (uiLanguage === 'ar' ? 'rtl' : 'ltr')}
+                      maxLength={2000}
+                      aria-label={t('Write your idea, problem, or opportunity here...')}
+                      onChange={(event) => updateDraft({ description: event.target.value })}
+                      placeholder={t("Example: 'College students in small cities struggle to find affordable, healthy meal options delivered quickly.'")}
+                    />
+                    <div className="vx-signal-input__footer">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={toggleVoice}
+                          disabled={submitting}
+                          className={`vx-speak-button${listening ? ' is-listening' : ''}`}
+                          aria-label={t(listening ? 'Listening…' : 'Speak')}
+                          title={t(listening ? 'Listening…' : 'Speak')}
+                        >
+                          {listening ? <MicOff size={16} /> : <Mic size={16} />}
+                          <span>{t(listening ? 'Listening…' : 'Speak')}</span>
+                        </button>
+                        {draft.description.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => updateDraft({ description: '' })}
+                            disabled={submitting}
+                            className="vx-speak-button"
+                            aria-label={t('Clear text')}
+                            title={t('Clear text')}
+                          >
+                            <X size={16} />
+                            <span>{t('Clear text')}</span>
+                          </button>
+                        ) : null}
+                      </div>
+                      <span>{draft.description.length} / 2000</span>
+                    </div>
                   </div>
-                  </div>
+
+                  <p className="vx-signal-optional-note">
+                    <Sparkles size={12} />
+                    <span><strong>{t('Optional')}</strong> · {t('You can leave this blank.')}</span>
+                  </p>
                 </div>
-
-                <button
-                  type="button"
-                  className={`vx-personalized-mode${personalizedDiscoveryActive ? ' is-active' : ''}`}
-                  onClick={activatePersonalizedDiscovery}
-                >
-                  <span className="vx-personalized-mode__icon"><UsersRound size={18} /></span>
-                  <span className="vx-personalized-mode__copy">
-                    <strong>{t('Generate from my interests')}</strong>
-                    <small>{t('Skip the signal and domains. Voxidence will discover a direction from your saved interests and preferences.')}</small>
-                  </span>
-                  <span className="vx-personalized-mode__state">
-                    {personalizedDiscoveryActive ? <Check size={14} /> : <Sparkles size={14} />}
-                  </span>
-                </button>
-
                 {voiceError ? <p className="vx-inline-warning">{t(voiceError)}</p> : null}
               </div>
             ) : null}
@@ -551,72 +682,71 @@ export default function GenerateIdeaPage() {
             <SectionHeader
               number="2"
               title={t('Domains')}
-              subtitle={t('Choose up to 3 domains that best fit your idea.')}
+              subtitle={t('Choose up to 3 domains, or leave this empty and Voxidence will detect the best fit automatically.')}
               collapsed={collapsedSections.domains}
               onToggle={() => toggleSection('domains')}
             />
             {!collapsedSections.domains ? (
-            <div className="vx-generate-section__body">
-              <button
-                type="button"
-                className={`vx-auto-domain-mode${autoDetectActive ? ' is-active' : ''}`}
-                onClick={activateAutoDetect}
-                disabled={!hasSignal}
-              >
-                <span className="vx-auto-domain-mode__icon"><Sparkles size={18} /></span>
-                <span className="vx-auto-domain-mode__copy">
-                  <strong>{t('Auto-detect by Voxidence')}</strong>
-                  <small>{t('No domain picking required — Voxidence resolves the strongest domain blend directly from your signal.')}</small>
-                </span>
-                <span className="vx-auto-domain-mode__state">
-                  {autoDetectActive ? <Check size={14} /> : <Search size={14} />}
-                </span>
-              </button>
-
-              <div className="vx-domain-divider"><span>{t('or choose manually')}</span></div>
-
-              <div className="vx-domain-grid">
-                {loadingDomains ? (
-                  <div className="vx-domain-loading">{t('Loading domains…')}</div>
-                ) : domains.map((domain) => {
-                  const isSelected = selectedDomainIds.some((id) => String(id) === String(domain.id));
-                  const isBlocked = !isSelected && selectedDomainIds.length >= MAX_SELECTED_DOMAINS;
-                  const DomainIcon = domainIconFor(domain);
-                  return (
+              <div className="vx-generate-section__body">
+                <div className="vx-domain-grid">
+                  {loadingDomains ? (
+                    <div className="vx-domain-loading">{t('Loading domains…')}</div>
+                  ) : visibleDomains.map((domain) => {
+                    const isSelected = selectedDomainIds.some((id) => String(id) === String(domain.id));
+                    const isBlocked = !isSelected && selectedDomainIds.length >= MAX_SELECTED_DOMAINS;
+                    const DomainIcon = domainIconFor(domain);
+                    return (
+                      <button
+                        type="button"
+                        key={domain.id}
+                        className={isSelected ? 'is-selected' : ''}
+                        disabled={isBlocked}
+                        aria-pressed={isSelected}
+                        onClick={() => toggleDomain(domain.id)}
+                      >
+                        <span className="vx-domain-icon"><DomainIcon size={16} /></span>
+                        <span>{t(domain.name ?? domain.displayName ?? '')}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {!loadingDomains && hiddenDomainCount > 0 ? (
+                  <div className="vx-domain-more-row">
                     <button
                       type="button"
-                      key={domain.id}
-                      className={isSelected ? 'is-selected' : ''}
-                      disabled={isBlocked}
-                      aria-pressed={isSelected}
-                      onClick={() => toggleDomain(domain.id)}
+                      className="vx-domain-more"
+                      onClick={() => setShowAllDomains((current) => !current)}
+                      aria-expanded={showAllDomains}
                     >
-                      <DomainIcon size={18} />
-                      <span>{t(domain.name ?? domain.displayName ?? '')}</span>
-                      {isSelected ? <i><Check size={11} /></i> : null}
+                      <span>{showAllDomains ? t('Show less') : `${t('More')} +${hiddenDomainCount}`}</span>
+                      {showAllDomains ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </button>
-                  );
-                })}
-              </div>
-              <div className="vx-domain-selected">
-                <strong>{t('Selected')} ({selectedDomainIds.length}/{MAX_SELECTED_DOMAINS})</strong>
-                <div>
-                  {selectedDomains.map((domain) => (
-                    <button type="button" key={domain.id} onClick={() => removeDomain(domain.id)}>
-                      {t(domain.name ?? domain.displayName ?? '')}
-                      <X size={11} />
-                    </button>
-                  ))}
-                  {!selectedDomains.length ? (
-                    <span>
-                      {t(hasSignal
-                        ? 'Auto-detect is active — Voxidence will resolve the domains from your signal.'
-                        : 'No domains selected — Voxidence will use your interests and preferences.')}
-                    </span>
-                  ) : null}
+                  </div>
+                ) : null}
+                <div className="vx-domain-selected">
+                  <div className="vx-domain-selected__head">
+                    <strong>{t('Selected')} ({selectedDomainIds.length}/{MAX_SELECTED_DOMAINS})</strong>
+                    {selectedDomainIds.length ? (
+                      <button type="button" className="vx-domain-clear" onClick={clearSelectedDomains}>
+                        {t('Clear selected')}
+                      </button>
+                    ) : null}
+                  </div>
+                  <div>
+                    {selectedDomains.map((domain) => (
+                      <button type="button" key={domain.id} onClick={() => removeDomain(domain.id)}>
+                        {t(domain.name ?? domain.displayName ?? '')}
+                        <X size={11} />
+                      </button>
+                    ))}
+                    {!selectedDomains.length ? (
+                      <span className="vx-domain-selected__auto">
+                        {t('No domains selected — Voxidence will detect the best fit automatically.')}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
             ) : null}
           </section>
 
@@ -629,48 +759,48 @@ export default function GenerateIdeaPage() {
               onToggle={() => toggleSection('context')}
             />
             {!collapsedSections.context ? (
-            <div className="vx-generate-section__body vx-context-grid">
-              <label>
-                <span>{t('Country')}</span>
-                <div className="vx-context-field"><MapPin size={14} /><input value={draft.country} maxLength={100} dir="auto" placeholder={t('Country')} onChange={(event) => updateDraft({ country: event.target.value })} /></div>
-              </label>
-              <label>
-                <span>{t('City')}</span>
-                <div className="vx-context-field"><Building2 size={14} /><input value={draft.city} maxLength={100} dir="auto" placeholder={t('City')} onChange={(event) => updateDraft({ city: event.target.value })} /></div>
-              </label>
-              <label>
-                <span>{t('Region (Optional)')}</span>
-                <div className="vx-context-field"><MapPin size={14} /><input value={draft.region} maxLength={100} dir="auto" placeholder={t('Region')} onChange={(event) => updateDraft({ region: event.target.value })} /></div>
-              </label>
-              <label>
-                <span>{t('Community language')}</span>
-                <div className={`vx-context-language ${languageMenuOpen ? 'is-open' : ''}`}>
-                  <button type="button" onClick={() => setLanguageMenuOpen((value) => !value)}>
-                    <BookOpen size={14} />
-                    <span>{t(languageLabel)}</span>
-                    <ChevronDown size={14} />
-                  </button>
-                  {languageMenuOpen ? (
-                    <div className="vx-context-language__menu">
-                      {LANGUAGE_OPTIONS.map((option) => (
-                        <button
-                          type="button"
-                          key={option.value}
-                          className={draft.language === option.value ? 'is-selected' : ''}
-                          onClick={() => {
-                            updateDraft({ language: option.value });
-                            setLanguageMenuOpen(false);
-                          }}
-                        >
-                          {t(option.label)}
-                          {draft.language === option.value ? <Check size={12} /> : null}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </label>
-            </div>
+              <div className="vx-generate-section__body vx-context-grid">
+                <label>
+                  <span>{t('Country')}</span>
+                  <div className="vx-context-field"><MapPin size={14} /><input value={countryDisplayValue} maxLength={100} dir={countryDisplayValue.trim() ? 'auto' : (uiLanguage === 'ar' ? 'rtl' : 'ltr')} placeholder={t('Country')} onChange={(event) => updateDraft({ country: uiLanguage === 'ar' && event.target.value.trim() === t('Palestine') ? 'Palestine' : event.target.value })} /></div>
+                </label>
+                <label>
+                  <span>{t('City')}</span>
+                  <div className="vx-context-field"><Building2 size={14} /><input value={draft.city} maxLength={100} dir={draft.city.trim() ? 'auto' : (uiLanguage === 'ar' ? 'rtl' : 'ltr')} placeholder={t('City')} onChange={(event) => updateDraft({ city: event.target.value })} /></div>
+                </label>
+                <label>
+                  <span>{t('Region (Optional)')}</span>
+                  <div className="vx-context-field"><MapPin size={14} /><input value={draft.region} maxLength={100} dir={draft.region.trim() ? 'auto' : (uiLanguage === 'ar' ? 'rtl' : 'ltr')} placeholder={t('Region')} onChange={(event) => updateDraft({ region: event.target.value })} /></div>
+                </label>
+                <label>
+                  <span>{t('Community language')}</span>
+                  <div className={`vx-context-language ${languageMenuOpen ? 'is-open' : ''}`}>
+                    <button type="button" onClick={() => setLanguageMenuOpen((value) => !value)}>
+                      <BookOpen size={14} />
+                      <span>{t(languageLabel)}</span>
+                      <ChevronDown size={14} />
+                    </button>
+                    {languageMenuOpen ? (
+                      <div className="vx-context-language__menu">
+                        {LANGUAGE_OPTIONS.map((option) => (
+                          <button
+                            type="button"
+                            key={option.value}
+                            className={draft.language === option.value ? 'is-selected' : ''}
+                            onClick={() => {
+                              updateDraft({ language: option.value });
+                              setLanguageMenuOpen(false);
+                            }}
+                          >
+                            {t(option.label)}
+                            {draft.language === option.value ? <Check size={12} /> : null}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </label>
+              </div>
             ) : null}
           </section>
 
@@ -683,45 +813,63 @@ export default function GenerateIdeaPage() {
               onToggle={() => toggleSection('review')}
             />
             {!collapsedSections.review ? (
-            <div className="vx-generate-section__body">
-              <div className="vx-review-row">
-                <article className="vx-review-row__signal">
-                  <small>{t('Your signal')}</small>
-                  <strong dir="auto">{signalSummary}</strong>
-                </article>
-                <article>
-                  <small>{t('Domains')}{selectedDomainIds.length ? ` (${selectedDomainIds.length})` : ''}</small>
-                  <strong>
-                    {selectedDomains.length
-                      ? selectedDomains.map((domain) => t(domain.name ?? domain.displayName ?? '')).join(' · ')
-                      : t(hasSignal ? 'Auto-detect' : 'From my interests')}
-                  </strong>
-                </article>
-                <article>
-                  <small>{t('Place')}</small>
-                  <strong dir="auto">{selectedLocation || t('Not specified')}</strong>
-                </article>
-                <article>
-                  <small>{t('Language')}</small>
-                  <strong>{t(languageLabel)}</strong>
-                </article>
-                <article className="vx-review-row__toggle">
-                  <small>{t('Collect fresh evidence')}</small>
-                  <label>
-                    <span>{draft.forceRefresh ? t('On') : t('Off')}</span>
-                    <input type="checkbox" checked={Boolean(draft.forceRefresh)} onChange={(event) => updateDraft({ forceRefresh: event.target.checked })} />
-                    <i />
-                  </label>
-                </article>
-              </div>
-              <div className="vx-review-note">
-                <Check size={15} />
-                <div>
-                  <strong>{t('Voxidence chooses the best sources automatically.')}</strong>
-                  <span>{t('We scan social signals, reviews, research, and more to bring you the most credible and relevant insights.')}</span>
+              <div className="vx-generate-section__body">
+                <div className="vx-review-row">
+                  <article className="vx-review-row__signal">
+                    <small>{t('Your signal')}</small>
+                    <div className="vx-review-value">
+                      <span className="vx-review-value__icon"><Search size={13} /></span>
+                      <strong dir="auto">{signalSummary}</strong>
+                    </div>
+                  </article>
+                  <article className="vx-review-row__domains">
+                    <small>{t('Domains')}{selectedDomainIds.length ? ` (${selectedDomainIds.length})` : ''}</small>
+                    {selectedDomains.length ? (
+                      <div className="vx-review-domain-icons" aria-label={selectedDomains.map((domain) => t(domain.name ?? domain.displayName ?? '')).join(', ')}>
+                        {selectedDomains.map((domain) => {
+                          const DomainIcon = domainIconFor(domain);
+                          return (
+                            <span key={domain.id} title={t(domain.name ?? domain.displayName ?? '')}>
+                              <DomainIcon size={14} />
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <strong>{t('Auto-detect')}</strong>
+                    )}
+                  </article>
+                  <article>
+                    <small>{t('Place')}</small>
+                    <div className="vx-review-value">
+                      <span className="vx-review-value__icon"><MapPin size={13} /></span>
+                      <strong dir="auto">{selectedLocation || t('Not specified')}</strong>
+                    </div>
+                  </article>
+                  <article>
+                    <small>{t('Language')}</small>
+                    <div className="vx-review-value">
+                      <span className="vx-review-value__icon"><BookOpen size={13} /></span>
+                      <strong>{t(languageLabel)}</strong>
+                    </div>
+                  </article>
+                  <article className="vx-review-row__toggle">
+                    <small>{t('Collect fresh evidence')}</small>
+                    <label>
+                      <span>{draft.forceRefresh ? t('On') : t('Off')}</span>
+                      <input type="checkbox" checked={Boolean(draft.forceRefresh)} onChange={(event) => updateDraft({ forceRefresh: event.target.checked })} />
+                      <i />
+                    </label>
+                  </article>
+                </div>
+                <div className="vx-review-note">
+                  <Check size={15} />
+                  <div>
+                    <strong>{t('Voxidence chooses the best sources automatically.')}</strong>
+                    <span>{t('We scan social signals, reviews, research, and more to bring you the most credible and relevant insights.')}</span>
+                  </div>
                 </div>
               </div>
-            </div>
             ) : null}
           </section>
 
@@ -736,8 +884,8 @@ export default function GenerateIdeaPage() {
           >
             <Sparkles size={20} />
             <span>
-              <strong>{t(checkingAccess ? 'Checking generation access…' : submitting ? 'Launching intelligence…' : 'Generate validated idea')}</strong>
-              <small>{t('We’ll gather evidence and surface the strongest validated ideas.')}</small>
+              <strong>{t(generateTitle)}</strong>
+              <small>{t(generateSubtitle)}</small>
             </span>
           </button>
         </div>
@@ -772,7 +920,7 @@ export default function GenerateIdeaPage() {
             </div>
             <div className="vx-generate-modal__actions">
               <button type="button" className="is-secondary" onClick={() => setAccessModal(null)}>{t('Close')}</button>
-              <button type="button" onClick={() => navigate('/normal/credits')}>{t(accessModal.isPremium ? 'Buy more credits' : 'Upgrade workspace')}<ArrowRight size={16} /></button>
+              <button type="button" onClick={() => navigate(workspacePath('/normal/credits'))}>{t(accessModal.isPremium ? 'Buy more credits' : 'Upgrade workspace')}<ArrowRight size={16} /></button>
             </div>
           </motion.section>
         </div>,

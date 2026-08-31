@@ -8,6 +8,7 @@
  *
  * @author Malak
  */
+import { workspacePath } from '../../shared/utils/workspacePath';
 import {
   ArrowLeft,
   ArrowRight,
@@ -783,8 +784,8 @@ export default function MyIdeasPage() {
       if (publicationId) {
         navigate(
           idea?.hasAdvancedAccess
-            ? `/normal/accepted/${publicationId}/workspace`
-            : `/normal/discover/${publicationId}`,
+            ? workspacePath(`/normal/accepted/${publicationId}/workspace`)
+            : workspacePath(`/normal/discover/${publicationId}`),
           {
             state: {
               publicationSeed: idea?.publication ?? null,
@@ -810,10 +811,10 @@ export default function MyIdeasPage() {
 
       if (ideaId) {
         navigate(
-          `/normal/ideas/${ideaId}`,
+          workspacePath(`/normal/ideas/${ideaId}`),
           {
             state: {
-              returnTo: '/normal/ideas',
+              returnTo: workspacePath('/normal/ideas'),
               returnLabel: 'My ideas',
               ideaSeed: {
                 ...idea,
@@ -839,17 +840,17 @@ export default function MyIdeasPage() {
       idea?.generationRun?.id
     ) {
       navigate(
-        `/normal/generation/${idea.generationRun.id}`,
+        workspacePath(`/normal/generation/${idea.generationRun.id}`),
       );
 
       return;
     }
 
     navigate(
-      `/normal/ideas/${idea.id}`,
+      workspacePath(`/normal/ideas/${idea.id}`),
       {
         state: {
-          returnTo: '/normal/ideas',
+          returnTo: workspacePath('/normal/ideas'),
           returnLabel: 'My ideas',
           ideaSeed: idea,
         },
@@ -1036,8 +1037,8 @@ export default function MyIdeasPage() {
 
         <div
           className={`ideas-date-filter${fromDate || toDate
-              ? ' has-value'
-              : ''
+            ? ' has-value'
+            : ''
             }`}
           aria-label={t('Creation date range')}
         >
@@ -1155,17 +1156,17 @@ export default function MyIdeasPage() {
                 key={option.value}
                 type="button"
                 className={`${filter ===
-                    option.value
-                    ? 'is-active'
-                    : ''
+                  option.value
+                  ? 'is-active'
+                  : ''
                   }${option.value ===
                     'accepted'
                     ? ' is-accepted-filter'
                     : option.value === 'published'
                       ? ' is-published-filter'
                       : option.value === 'favorites'
-                      ? ' is-favorites-filter'
-                      : ''
+                        ? ' is-favorites-filter'
+                        : ''
                   }`}
                 onPointerEnter={() => warmFilter(option.value)}
                 onFocus={() => warmFilter(option.value)}
@@ -1238,10 +1239,10 @@ export default function MyIdeasPage() {
       ) : items.length === 0 ? (
         <div
           className={`ideas-state${isAcceptedView
-              ? ' ideas-state--accepted'
-              : isPublishedView
-                ? ' ideas-state--published'
-                : ''
+            ? ' ideas-state--accepted'
+            : isPublishedView
+              ? ' ideas-state--published'
+              : ''
             }`}
         >
           {isAcceptedView ? (
@@ -1273,10 +1274,10 @@ export default function MyIdeasPage() {
             onClick={() =>
               navigate(
                 isAcceptedView
-                  ? '/normal/discover'
+                  ? workspacePath('/normal/discover')
                   : isPublishedView
-                    ? '/normal/ideas'
-                    : '/normal/generate',
+                    ? workspacePath('/normal/ideas')
+                    : workspacePath('/normal/generate'),
               )
             }
           >
@@ -1304,7 +1305,7 @@ export default function MyIdeasPage() {
               onDelete={
                 idea.__libraryKind ===
                   'accepted' ||
-                idea.__libraryKind ===
+                  idea.__libraryKind ===
                   'published'
                   ? undefined
                   : () =>
