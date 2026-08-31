@@ -22,6 +22,7 @@ export class EvidenceSourceIdentityUtil {
     readonly title?: string | null;
     readonly text?: string | null;
     readonly id?: string | null;
+    readonly jointSourceIdentities?: readonly string[];
   }): string {
     const sourceKey = this.normalizeToken(input.sourceKey) || 'unknown';
 
@@ -42,15 +43,29 @@ export class EvidenceSourceIdentityUtil {
     return sourceKey;
   }
 
+  static resolveAll(input: {
+    readonly sourceKey: string;
+    readonly title?: string | null;
+    readonly text?: string | null;
+    readonly id?: string | null;
+    readonly jointSourceIdentities?: readonly string[];
+  }): readonly string[] {
+    const joint = (input.jointSourceIdentities ?? [])
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return joint.length > 0 ? [...new Set(joint)] : [this.resolve(input)];
+  }
+
   static count(
     items: readonly {
       readonly sourceKey: string;
       readonly title?: string | null;
       readonly text?: string | null;
       readonly id?: string | null;
+      readonly jointSourceIdentities?: readonly string[];
     }[],
   ): number {
-    return new Set(items.map((item) => this.resolve(item))).size;
+    return new Set(items.flatMap((item) => this.resolveAll(item))).size;
   }
 
   private static extractHostname(value?: string | null): string | null {

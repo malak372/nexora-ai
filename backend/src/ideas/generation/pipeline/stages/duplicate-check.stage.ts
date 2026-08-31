@@ -1632,10 +1632,53 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
     primary: readonly string[],
     supplemental: readonly string[],
   ): string[] {
-    return TargetUserDeduplicationUtil.deduplicate(
-      [...primary, ...supplemental],
-      5,
+    const authoritativePrimary = TargetUserDeduplicationUtil.deduplicate(
+      primary.map((value) => value.trim()).filter(Boolean),
+      4,
     );
+
+    if (authoritativePrimary.length >= 2) {
+      return authoritativePrimary;
+    }
+
+    const supplementalCandidates = TargetUserDeduplicationUtil.deduplicate(
+      supplemental.map((value) => value.trim()).filter(Boolean),
+      4,
+    );
+
+    if (authoritativePrimary.length === 0) {
+      return supplementalCandidates.slice(0, 3);
+    }
+
+    const normalize = (value: string): Set<string> =>
+      new Set(
+        value
+          .normalize('NFKC')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .split(/\s+/u)
+          .map((token) => token.trim())
+          .filter(
+            (token) =>
+              token.length >= 4 &&
+              !/^(?:team|teams|staff|user|users|operator|operators|professional|professionals|workflow|pilot|reviewer|reviewers)$/u.test(
+                token,
+              ),
+          ),
+      );
+
+    const primaryTokens = normalize(authoritativePrimary[0]);
+    const compatibleSupplement = supplementalCandidates.find((candidate) => {
+      const candidateTokens = normalize(candidate);
+      return [...candidateTokens].some((token) => primaryTokens.has(token));
+    });
+
+    return compatibleSupplement
+      ? TargetUserDeduplicationUtil.deduplicate(
+          [...authoritativePrimary, compatibleSupplement],
+          2,
+        )
+      : authoritativePrimary;
   }
 
   private escapeRegExp(value: string): string {

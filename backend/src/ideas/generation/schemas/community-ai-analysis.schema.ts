@@ -116,7 +116,7 @@ export function buildCommunityAiAnalysisSchema(options?: {
                   },
                   confidence: { type: 'number', minimum: 0, maximum: 100 },
                   reason: { type: 'string', maxLength: 220 },
-                  problemFamily: { type: 'string', maxLength: 120 },
+                  problemFamily: { type: 'string', maxLength: 220 },
                 },
               },
             },
@@ -158,6 +158,14 @@ export function buildCommunityAiEvidenceTriageSchema(): AiJsonSchema {
         type: 'array',
         minItems: 1,
         maxItems: COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_ITEMS_PER_REQUEST,
+        items: {
+          type: 'object',
+          additionalProperties: true,
+        },
+      },
+      jointEvidenceGroups: {
+        type: 'array',
+        maxItems: 4,
         items: {
           type: 'object',
           additionalProperties: true,

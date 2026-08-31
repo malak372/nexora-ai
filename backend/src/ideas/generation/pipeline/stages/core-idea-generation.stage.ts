@@ -49,6 +49,8 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
     const benchmark = await this.benchmarkService.benchmark(context, signal);
     const benchmarkDurationMs = Date.now() - benchmarkStartedAt;
     const winner = benchmark.winner;
+    const deterministicContinuityFallbackUsed =
+      winner.aiResult.apiModelId === 'deterministic-continuity-v1';
     const ranking = context.opportunityRanking;
     const winnerOpportunity = ranking
       ? [ranking.selected, ...ranking.alternatives].find(
@@ -75,8 +77,6 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
         opportunityRank: candidate.opportunityRank,
         opportunityTitle: candidate.opportunityTitle,
         parsedOutput: candidate.parsedOutput,
-        deterministicEmergencyFallback:
-          candidate.deterministicEmergencyFallback,
       })),
       advancedOutputs: this.mergeAdvancedOutputs(
         context.advancedOutputs,
@@ -104,9 +104,9 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
     return {
       context: updatedContext,
       resultPreview: [
-        winner.deterministicEmergencyFallback
-          ? `All bounded AI model requests were unavailable, so the deterministic emergency fallback completed the immutable opportunity #${winner.opportunityRank} \"${winner.opportunityTitle}\" without failing the run.`
-          : `Benchmark selected the best model execution for the immutable opportunity #${winner.opportunityRank} \"${winner.opportunityTitle}\".`,
+        deterministicContinuityFallbackUsed
+          ? `Online and configured local AI routes were unavailable, so deterministic continuity generation preserved immutable opportunity #${winner.opportunityRank} "${winner.opportunityTitle}" and allowed the run to complete without fabricating evidence.`
+          : `Benchmark selected the best AI model execution for the immutable opportunity #${winner.opportunityRank} "${winner.opportunityTitle}".`,
         this.createResponsePreview(winner.aiResult.text),
       ].join(' '),
       metadata: {
@@ -119,9 +119,7 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           deterministicScore: winner.quality.score,
           qualityThresholdAccepted: winner.quality.accepted,
           availabilityFallbackUsed:
-            winner.deterministicEmergencyFallback || !winner.quality.accepted,
-          deterministicEmergencyFallbackUsed:
-            winner.deterministicEmergencyFallback,
+            deterministicContinuityFallbackUsed || !winner.quality.accepted,
           semanticDiversityAdjustedScore: winner.semanticDiversityAdjustedScore,
           aiJudgeScore: winner.aiJudge?.overallScore ?? null,
           hybridFinalScore: winner.hybridFinalScore,
@@ -141,9 +139,10 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           responseTimeMs: winner.aiResult.responseTimeMs,
         },
         benchmarkDurationMs,
-        modelExecutionMode: winner.deterministicEmergencyFallback
-          ? 'DETERMINISTIC_EMERGENCY_FALLBACK'
+        modelExecutionMode: deterministicContinuityFallbackUsed
+          ? 'DETERMINISTIC_CONTINUITY_FALLBACK'
           : 'PARALLEL_PER_BATCH',
+        deterministicContinuityFallbackUsed,
         modelTimings,
         fastestModelResponseMs:
           measuredModelTimes.length > 0 ? Math.min(...measuredModelTimes) : null,
@@ -198,9 +197,8 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           validationScore: candidate.quality.score,
           qualityThresholdAccepted: candidate.quality.accepted,
           availabilityFallbackUsed:
-            candidate.deterministicEmergencyFallback || !candidate.quality.accepted,
-          deterministicEmergencyFallbackUsed:
-            candidate.deterministicEmergencyFallback,
+            candidate.aiResult.apiModelId === 'deterministic-continuity-v1' ||
+            !candidate.quality.accepted,
           validationIssues: candidate.quality.issues.map((issue) => issue.code),
           semanticDiversityScore:
             candidate.semanticDiversity?.diversityScore ?? null,

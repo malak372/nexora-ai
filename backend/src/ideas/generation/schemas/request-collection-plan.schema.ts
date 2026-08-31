@@ -49,7 +49,7 @@ export function buildRequestCollectionPlanSchema(): AiJsonSchema {
         additionalProperties: false,
         required: ['mode', 'summary', 'explicitProblem', 'desiredOutcome'],
         properties: {
-          mode: { type: 'string', enum: ['EXPLICIT_PROBLEM', 'DISCOVERY_INTENT'] },
+          mode: { type: 'string', enum: ['EXPLICIT_PROBLEM', 'EXPLICIT_PROBLEM_DISCOVERY', 'DISCOVERY_INTENT'] },
           summary: { type: 'string', minLength: 1, maxLength: 360 },
           explicitProblem: { type: 'string', maxLength: 600 },
           desiredOutcome: { type: 'string', maxLength: 360 },
@@ -73,13 +73,13 @@ export function buildRequestCollectionPlanSchema(): AiJsonSchema {
         // RequestCollectionPlanningService enrich missing lanes locally instead
         // of throwing away the AI plan and marking the whole stage as fallback.
         minItems: 1,
-        maxItems: 10,
+        maxItems: 12,
         items: { type: 'string', minLength: 8, maxLength: 140 },
       },
       selectedSourceKeys: {
         type: 'array',
         minItems: 1,
-        maxItems: 8,
+        maxItems: 9,
         uniqueItems: true,
         items: { type: 'string', minLength: 2, maxLength: 80 },
       },
@@ -88,6 +88,29 @@ export function buildRequestCollectionPlanSchema(): AiJsonSchema {
         maxItems: 12,
         uniqueItems: true,
         items: { type: 'string', minLength: 2, maxLength: 80 },
+      },
+      causalSearchProbes: {
+        type: 'array',
+        maxItems: 6,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['relationType', 'query'],
+          properties: {
+            relationType: {
+              type: 'string',
+              enum: [
+                'STATED_CAUSE',
+                'FAILURE_CHAIN',
+                'OBSERVED_SYMPTOM',
+                'CONSEQUENCE',
+                'PRACTITIONER_LANGUAGE',
+                'DOCUMENTARY_LANGUAGE',
+              ],
+            },
+            query: { type: 'string', minLength: 8, maxLength: 160 },
+          },
+        },
       },
       confidence: { type: 'number', minimum: 0, maximum: 100 },
     },

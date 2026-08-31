@@ -142,14 +142,33 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
   }
 
   private isTechnicalRequest(input: CollectorRequestSupportInput): boolean {
-    const text = this.cleanNormalizedText([
-      input.requestDescription ?? '',
-      input.domainName ?? '',
-      ...(input.plannedQueries ?? []),
-      ...(input.sourceHints ?? []),
-    ].join(' '));
-    return /\b(?:api|sdk|source code|codebase|stack trace|exception|docker|kubernetes|container|database schema|webhook|endpoint|repository|github|programming|developer|software engineering|frontend|backend|javascript|typescript|python|java|linux|ubuntu|fedora|grafana|elastic)\b/u.test(text) ||
-      /\b(?:software|application|app|server|container|node|javascript|typescript|python|java)\s+runtime\b|\bruntime\s+(?:error|exception|environment|version|dependency|crash)\b/u.test(text);
+    const requestDescription = input.requestDescription?.trim() ?? '';
+    /*
+     * With explicit requester text, that text is the semantic authority for
+     * workflow type. AI-generated queries/hints are retrieval vocabulary and
+     * must not turn a physical/service workflow into a developer workflow.
+     * This is especially important for polysemous nouns such as "container":
+     * candle/food/product containers are physical supplies, while Docker/
+     * Kubernetes containers are technical infrastructure.
+     */
+    const semanticText = requestDescription
+      ? [requestDescription, input.domainName ?? '']
+      : [
+          input.domainName ?? '',
+          ...(input.plannedQueries ?? []),
+          ...(input.sourceHints ?? []),
+        ];
+    const text = this.cleanNormalizedText(semanticText.join(' '));
+    const strongTechnicalSignal =
+      /\b(?:api|sdk|source code|codebase|stack trace|exception|docker|kubernetes|database schema|webhook|endpoint|repository|github|programming|developer|software engineering|frontend|backend|javascript|typescript|python|java|linux|ubuntu|fedora|grafana|elastic)\b/u.test(text);
+    const technicalContainerSignal =
+      /\b(?:docker|kubernetes|containerized|container image|container registry|container orchestration|container runtime)\b/u.test(text) ||
+      /\bcontainers?\b.{0,48}\b(?:docker|kubernetes|runtime|image|registry|orchestration|cluster|pod|deployment)\b/u.test(text) ||
+      /\b(?:docker|kubernetes|runtime|image|registry|orchestration|cluster|pod|deployment)\b.{0,48}\bcontainers?\b/u.test(text);
+    const runtimeSignal =
+      /\b(?:software|application|app|server|node|javascript|typescript|python|java)\s+runtime\b|\bruntime\s+(?:error|exception|environment|version|dependency|crash)\b/u.test(text);
+
+    return strongTechnicalSignal || technicalContainerSignal || runtimeSignal;
   }
 
   /**
@@ -380,7 +399,10 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       if (/https?:\/\//iu.test(hint) || /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/iu.test(hint)) {
         continue;
       }
-      add(`${hint.split(/\s+/u).slice(0, 8).join(' ')} forum discussion`);
+      const compactHint = hint.split(/\s+/u).slice(0, 8).join(' ');
+      add(`${compactHint} forum discussion`);
+      add(`${compactHint} practitioner community`);
+      if (queries.length >= 5) break;
     }
 
     for (const query of input.plannedQueries ?? []) {

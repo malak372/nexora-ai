@@ -1361,10 +1361,6 @@
     }
 }
 
-/* ========================================================================== */
-/* System settings — polished mockup match                                     */
-/* Strong contrast / readable typography / card-only presentation              */
-/* ========================================================================== */
 .admin-settings-page {
     --settings-ink: #173d3a;
     --settings-text: #365953;
@@ -1893,9 +1889,6 @@
     }
 }
 
-/* ========================================================================== */
-/* Final readability pass — stronger contrast, no washed-out text             */
-/* ========================================================================== */
 .admin-settings-page {
     --settings-text: #294f49;
     --settings-muted: #4f6d66;
@@ -2127,9 +2120,7 @@
     }
 }
 
-/* ========================================================================== */
-/* Stronger lower-card colors — clearer contrast without changing layout       */
-/* ========================================================================== */
+
 .admin-settings-page .admin-settings-card {
     border-color: #cbded9;
     background: #ffffff;
@@ -2209,11 +2200,7 @@
     font-weight: 900;
 }
 
-/* ========================================================================== */
-/* Dark theme only — System settings                                          */
-/* Keeps the existing light theme untouched while making every dark surface   */
-/* consistently dark in both English and Arabic.                              */
-/* ========================================================================== */
+
 html.vox-user-dark .admin-shell .admin-settings-page {
     --settings-dark-bg: #0d1715;
     --settings-dark-surface: #14201d;

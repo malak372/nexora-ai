@@ -1125,7 +1125,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       description: description ?? '',
       domainIds: this.normalizeExplicitDomainIds(dto.domainIds, dto.domainId),
       domainNames: this.normalizeStringArray(dto.domainNames),
-      keywords: this.normalizeStringArray(dto.keywords),
+      keywords: this.normalizeRequestScopedKeywords(description, dto.keywords),
       country: this.normalizeRequiredValue(dto.country, 'Country'),
       city: this.normalizeOptionalValue(dto.city) ?? '',
       region: this.normalizeOptionalValue(dto.region) ?? '',
@@ -1142,7 +1142,7 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       generationType: IdeaGenerationType.GUEST_FREE,
       description: description ?? '',
       domainIds: this.normalizeExplicitDomainIds(undefined, dto.domainId),
-      keywords: this.normalizeStringArray(dto.keywords),
+      keywords: this.normalizeRequestScopedKeywords(description, dto.keywords),
       country: this.normalizeRequiredValue(dto.country, 'Country'),
       city: this.normalizeOptionalValue(dto.city) ?? '',
       region: this.normalizeOptionalValue(dto.region) ?? '',
@@ -1485,7 +1485,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestedDomainIds,
       requestedDomainNames,
       collectionPlan: null,
-      keywords: this.normalizeStringArray(input.dto.keywords),
+      keywords: this.normalizeRequestScopedKeywords(
+        requestDescription,
+        input.dto.keywords,
+      ),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -1551,7 +1554,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestedDomainIds,
       requestedDomainNames: [],
       collectionPlan: null,
-      keywords: this.normalizeStringArray(input.dto.keywords),
+      keywords: this.normalizeRequestScopedKeywords(
+        requestDescription,
+        input.dto.keywords,
+      ),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -1615,7 +1621,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestedDomainIds,
       requestedDomainNames,
       collectionPlan: null,
-      keywords: this.normalizeStringArray(input.dto.keywords),
+      keywords: this.normalizeRequestScopedKeywords(
+        requestDescription,
+        input.dto.keywords,
+      ),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -1670,7 +1679,10 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       requestedDomainIds,
       requestedDomainNames: [],
       collectionPlan: null,
-      keywords: this.normalizeStringArray(input.dto.keywords),
+      keywords: this.normalizeRequestScopedKeywords(
+        requestDescription,
+        input.dto.keywords,
+      ),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -2602,6 +2614,67 @@ export class IdeaGenerationOrchestratorService implements OnApplicationShutdown 
       );
     }
     return normalized.text;
+  }
+
+  private normalizeRequestScopedKeywords(
+    description: string | null | undefined,
+    values?: readonly string[],
+  ): string[] {
+    const keywords = this.normalizeStringArray(values);
+    const requestText = description
+      ?.normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    if (!requestText) return keywords;
+
+    const generic = new Set([
+      'system', 'systems', 'platform', 'software', 'application', 'applications',
+      'workflow', 'workflows', 'management', 'service', 'services', 'business',
+      'user', 'users', 'customer', 'customers', 'data', 'operations', 'process',
+      'processes', 'support', 'tool', 'tools', 'problem', 'problems', 'difficulty',
+      'struggle', 'struggles', 'often', 'across', 'multiple',
+      'and', 'the', 'for', 'with', 'from', 'that', 'this', 'when', 'where',
+      'into', 'while', 'because', 'are', 'was', 'were', 'has', 'have', 'had',
+      'can', 'could', 'would', 'should', 'each', 'their', 'them', 'they',
+      'our', 'your', 'its', 'which', 'who', 'how', 'more', 'most', 'also',
+      'between', 'through', 'without', 'using', 'used', 'use',
+    ]);
+    const requestTokens = new Set(
+      requestText
+        .split(' ')
+        .filter((token) => token.length >= 3 && !generic.has(token)),
+    );
+
+    const scoped = keywords.filter((keyword) => {
+      const normalized = keyword
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      if (!normalized) return false;
+      if (requestText.includes(normalized)) return true;
+
+      const tokens = normalized
+        .split(' ')
+        .filter((token) => token.length >= 3 && !generic.has(token));
+      if (tokens.length === 0) return false;
+      const overlap = tokens.filter((token) => requestTokens.has(token)).length;
+
+      // Short supplemental tags need one concrete request anchor. Longer
+      // phrases must share at least two request concepts so stale text from a
+      // previous Generate form cannot leak into the immutable new run.
+      return tokens.length <= 2 ? overlap >= 1 : overlap >= 2;
+    });
+
+    if (scoped.length !== keywords.length) {
+      this.logger.warn(
+        `Generation request keyword isolation dropped ${keywords.length - scoped.length} stale/out-of-scope keyword(s) before fingerprinting and queue creation.`,
+      );
+    }
+    return scoped;
   }
 
   /**

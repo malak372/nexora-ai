@@ -440,6 +440,10 @@ export type IdeaGenerationCanonicalEvidenceItem = {
   readonly evidenceNature?: 'LIVED_EXPERIENCE' | 'DOCUMENTED_FINDING' | 'MARKET_RESEARCH' | 'PROMOTIONAL' | 'NEUTRAL_CONTEXT' | 'OTHER';
   readonly domainAlignment?: 'MATCH' | 'PARTIAL' | 'NONE';
   readonly problemAlignment?: 'MATCH' | 'PARTIAL' | 'NONE';
+  readonly actorAlignment?: 'MATCH' | 'PARTIAL' | 'NONE';
+  readonly objectAlignment?: 'MATCH' | 'PARTIAL' | 'NONE';
+  readonly workflowAlignment?: 'MATCH' | 'PARTIAL' | 'NONE';
+  readonly failureAlignment?: 'MATCH' | 'PARTIAL' | 'NONE';
   readonly familyBasis?: 'OBSERVED_PROBLEM' | 'CAUSAL_EXPLANATION' | 'SOLUTION_OPINION' | 'NONE';
   readonly observedProblem?: string | null;
   readonly causalExplanation?: string | null;
@@ -455,7 +459,11 @@ export type IdeaGenerationCanonicalEvidenceItem = {
     | 'AI_ABORTED'
     | 'AI_MISSING_VERDICT'
     | null;
-  readonly origin: 'COMMUNITY_AI' | 'DOMAIN_DIRECT_FALLBACK' | 'DETERMINISTIC_FALLBACK' | 'RECOVERY';
+  readonly origin: 'COMMUNITY_AI' | 'JOINT_COMPOSITION' | 'DOMAIN_DIRECT_FALLBACK' | 'DETERMINISTIC_FALLBACK' | 'RECOVERY';
+  /** Member ids when this row represents a verified joint evidence composition. */
+  readonly jointEvidenceMemberIds?: readonly string[];
+  /** Provenance-aware source identities represented inside a joint composition. */
+  readonly jointSourceIdentities?: readonly string[];
   readonly matchedDomainIds: readonly string[];
   readonly matchedFacetIds: readonly string[];
   readonly discoveryDomainId: string | null;
@@ -476,8 +484,6 @@ export type IdeaGenerationBenchmarkCandidateSnapshot = {
   opportunityRank: number;
   opportunityTitle: string;
   parsedOutput: ParsedIdeaAiOutput;
-  /** True only for the in-process requester-locked continuity candidate. */
-  deterministicEmergencyFallback?: boolean;
 };
 
 export type IdeaGenerationContext = {

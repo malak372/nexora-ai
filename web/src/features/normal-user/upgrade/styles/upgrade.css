@@ -2151,9 +2151,6 @@ html.vox-user-rtl .upgrade-order-summary {
   text-align: right;
 }
 
-/* ========================================================================== */
-/* FINAL_20260827_UPGRADE_DARK_RTL_MATCH_ENGLISH                              */
-/* ========================================================================== */
 html.vox-user-dark .upgrade-page {
   background: #091511 !important;
 }

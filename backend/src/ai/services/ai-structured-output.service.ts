@@ -375,12 +375,48 @@ export class AiStructuredOutputService {
       } {
     const candidates: unknown[] = [];
 
-    if (Array.isArray(value) && value.length === 1) {
-      candidates.push(value[0]);
+    if (Array.isArray(value)) {
+      if (value.length === 1) {
+        candidates.push(value[0]);
+      }
+
+      /*
+       * A few OpenAI-compatible models emit the requested root `items` array
+       * directly even though the caller contract is an object containing that
+       * array. Trying { items: value } is transport-only normalization: it is
+       * accepted only when the exact caller-owned schema validates the wrapped
+       * object unchanged. This notably rescues full-corpus evidence triage
+       * responses without inventing or coercing any verdict fields.
+       */
+      candidates.push({ items: value });
+
+      /*
+       * Some OpenAI-compatible hosted models wrap one root response in an
+       * array alongside transport metadata or emit an array containing exactly
+       * one schema-valid object plus unrelated wrapper entries. Trying each
+       * element is safe because no candidate is accepted unless it independently
+       * passes the exact caller-owned schema unchanged.
+       */
+      for (const item of value) {
+        candidates.push(item);
+      }
     }
 
     if (this.isPlainRecord(value)) {
-      for (const key of ['plan', 'result', 'data', 'output', 'response', 'payload']) {
+      for (const key of [
+        'plan',
+        'result',
+        'data',
+        'output',
+        'response',
+        'payload',
+        'analysis',
+        'triage',
+        'communityAnalysis',
+        'community_ai_analysis',
+        'json',
+        'content',
+      ]) {
         if (Object.prototype.hasOwnProperty.call(value, key)) {
           candidates.push(value[key]);
         }
@@ -389,7 +425,11 @@ export class AiStructuredOutputService {
 
     if (typeof value === 'string' && value.trim()) {
       try {
-        candidates.push(this.parser.parseJson(value));
+        const parsedStringValue = this.parser.parseJson(value);
+        candidates.push(parsedStringValue);
+        if (Array.isArray(parsedStringValue)) {
+          candidates.push({ items: parsedStringValue });
+        }
       } catch {
         // The original structured-output failure remains authoritative.
       }

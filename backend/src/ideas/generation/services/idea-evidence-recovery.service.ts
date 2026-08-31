@@ -16,11 +16,13 @@ import {
   resolvePrimaryProblemFamily,
 } from '../../../nlp/common/utils/problem-family-matching.util';
 import { CollectorsFactory } from '../../../collectors/collectors.factory';
+import { CollectorRequestCapabilityUtil } from '../../../collectors/base/collector-request-capability.util';
 import { RequestEvidenceAlignmentUtil } from '../utils/request-evidence-alignment.util';
 import { SelectedDomainEvidenceAlignmentUtil } from '../utils/selected-domain-evidence-alignment.util';
 import { RequestDynamicQueryUtil } from '../utils/request-dynamic-query.util';
 import { RequestQueryProvenanceUtil } from '../utils/request-query-provenance.util';
 import { SourceSpecificEvidenceQueryUtil } from '../utils/source-specific-evidence-query.util';
+import { RequestWorkflowSourcePolicyUtil } from '../utils/request-workflow-source-policy.util';
 import { EvidenceSourceIdentityUtil } from '../utils/evidence-source-identity.util';
 import { CollectionJobResolverService } from './collection-job-resolver.service';
 import { CommunityAiAnalysisService } from './community-ai-analysis.service';
@@ -33,7 +35,10 @@ import type {
   SelectedIdeaDataSource,
 } from '../types/idea-generation-context.type';
 import type { RankedIdeaOpportunity } from '../types/idea-opportunity-ranking.type';
-import type { RequestCollectionPlan } from '../types/request-collection-plan.type';
+import type {
+  RequestCollectionPlan,
+  RequestCausalSearchProbe,
+} from '../types/request-collection-plan.type';
 import type {
   CommunityAiAnalysis,
   CommunityAiOpportunity,
@@ -94,6 +99,8 @@ export type IdeaEvidenceRecoveryResult = {
   readonly rawEvidenceCorpus: readonly IdeaGenerationRawEvidenceItem[];
   readonly recoveryOutcome: EvidenceRecoveryOutcome;
   readonly communityAiRecoveryExecuted: boolean;
+  /** Non-null only when this wave corroborated an already evidence-selected canonical family. */
+  readonly corroborationTargetFamily?: string | null;
   readonly nlp: IdeaGenerationNlpContext;
   readonly communityAiAnalysis: CommunityAiAnalysis | null;
 };
@@ -126,15 +133,15 @@ export class IdeaEvidenceRecoveryService {
    * requests may invoke a second rotated wave from OpportunityRankingStage,
    * while discovery-only paths remain single-wave.
    */
-  private readonly maximumRecoveryKeywords = 8;
+  private readonly maximumRecoveryKeywords = 20;
   /*
-   * Keep each recovery wave bounded to three healthy lanes in parallel.  Very
+   * Keep each zero-trusted text recovery wave bounded to four healthy lanes in parallel.  Very
    * sparse workflows frequently lose a preferred source to rate limiting and
    * have no dedicated forum result; a third professional/secondary lane gives
    * the same bounded wave a realistic chance to find supporting evidence
    * without adding a second serial recovery cycle.
    */
-  private readonly maximumRecoverySourcesPerWave = 3;
+  private readonly maximumRecoverySourcesPerWave = 4;
 
   constructor(
     private readonly configService: ConfigService,
@@ -179,6 +186,91 @@ export class IdeaEvidenceRecoveryService {
       preflightSelectedTrusted.length > 0 &&
         preflightSelectedSourceCount < 2,
     );
+    const preflightSelectedSourceIdentities = new Set(
+      preflightSelectedTrusted.map((item) => EvidenceSourceIdentityUtil.resolve(item)),
+    );
+    const independentlyReviewedAlternativeSources = new Set(
+      (context.canonicalEvidenceLedger ?? [])
+        .filter(
+          (item) =>
+            item.adjudicationStatus === 'ADJUDICATED' &&
+            item.classification !== 'UNADJUDICATED' &&
+            !preflightSelectedFamilyIds.has(item.id),
+        )
+        .map((item) => EvidenceSourceIdentityUtil.resolve(item))
+        .filter((identity) => !preflightSelectedSourceIdentities.has(identity)),
+    );
+    const preflightGlobalTrustedCount = (context.canonicalEvidenceLedger ?? []).filter(
+      (item) =>
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    ).length;
+    const requesterScopedRecovery = Boolean(context.requestDescription?.trim());
+    const zeroTrustedDiscoveryRecovery = Boolean(
+      !requesterScopedRecovery && preflightGlobalTrustedCount === 0,
+    );
+    const evidenceGuaranteeRecovery = preflightGlobalTrustedCount === 0;
+    const lowExpectedYieldCorroboration = Boolean(
+      corroborationOnlyRecovery &&
+        context.evidenceRecoveryAttempts === 0 &&
+        preflightSelectedTrusted.length >= 3 &&
+        (context.rawEvidenceCorpus?.length ?? 0) >= 12 &&
+        independentlyReviewedAlternativeSources.size >= 2,
+    );
+    const broadDiscoverySingleSourceCorroboration = Boolean(
+      corroborationOnlyRecovery &&
+        !context.requestDescription?.trim() &&
+        context.evidenceRecoveryAttempts === 0 &&
+        (context.rawEvidenceCorpus?.length ?? 0) >= 8 &&
+        preflightGlobalTrustedCount >= 1 &&
+        independentlyReviewedAlternativeSources.size >= 1 &&
+        preflightSelectedTrusted.length === 1 &&
+        preflightSelectedTrusted.every(
+          (item) => item.classification === 'SUPPORTING_SIGNAL',
+        ),
+    );
+    const broadDiscoveryRepeatedFamilySupport = Boolean(
+      corroborationOnlyRecovery &&
+        !context.requestDescription?.trim() &&
+        context.evidenceRecoveryAttempts === 0 &&
+        preflightSelectedTrusted.length >= 2 &&
+        (context.rawEvidenceCorpus?.length ?? 0) >= 10 &&
+        independentlyReviewedAlternativeSources.size >= 2,
+    );
+    if (
+      lowExpectedYieldCorroboration ||
+      broadDiscoverySingleSourceCorroboration ||
+      broadDiscoveryRepeatedFamilySupport
+    ) {
+      this.logger.debug(
+        broadDiscoveryRepeatedFamilySupport
+          ? `Skipping single-source corroboration micro-wave because the selected discovery family already has ${preflightSelectedTrusted.length} trusted row(s) and the broad primary corpus reviewed ${independentlyReviewedAlternativeSources.size} alternative source(s). The family remains explicitly single-source/preliminary without paying another serial recovery tail.`
+          : broadDiscoverySingleSourceCorroboration
+            ? `Skipping single-source corroboration micro-wave because discovery already reviewed a broad ${context.rawEvidenceCorpus?.length ?? 0}-row corpus with ${preflightGlobalTrustedCount} trusted signal(s) and at least ${independentlyReviewedAlternativeSources.size} independently reviewed alternative source(s). The selected family has preliminary supporting evidence but no DIRECT_PROBLEM signal, so another serial source chase has low expected marginal value.`
+            : `Skipping targeted corroboration recovery because the broad primary pass already reviewed ${independentlyReviewedAlternativeSources.size} independent alternative source(s) without adding family-matched evidence, while the selected family already has ${preflightSelectedTrusted.length} trusted signal(s) from ${preflightSelectedSourceCount} source(s). Expected marginal yield is too low for another serial wave.`,
+      );
+      return {
+        collectionJobId: context.collection?.collectionJobId ?? 'recovery-skipped',
+        selectedDataSourceKeys: [],
+        recoveryKeywords: [],
+        evidenceFamilies: [],
+        totalPosts: 0,
+        totalComments: 0,
+        usefulCleanTextCount: 0,
+        complaintEvidenceCount: 0,
+        newCorpusEvidenceSampleCount: 0,
+        newEvidenceSampleCount: 0,
+        novelEvidenceSamples: [],
+        supportingExternalSamples: [],
+        supportingExternalEvidence: [],
+        rawEvidenceCorpus: [],
+        recoveryOutcome: 'RECOVERY_RETURNED_NO_USABLE_EVIDENCE',
+        communityAiRecoveryExecuted: false,
+        nlp: context.nlp!,
+        communityAiAnalysis: null,
+      };
+    }
     /*
      * Recovery previously used one 5.8s wall-clock for source-health reads,
      * AI re-planning, collection, persistence, and recovery triage. A healthy
@@ -191,11 +283,23 @@ export class IdeaEvidenceRecoveryService {
      */
     const configuredRecoveryBudgetMs = this.readPositiveConfig(
       'IDEA_EVIDENCE_RECOVERY_TIMEOUT_MS',
-      8_000,
+      10_500,
     );
     const recoveryBudgetMs = corroborationOnlyRecovery
-      ? Math.max(4_800, Math.min(6_000, configuredRecoveryBudgetMs))
-      : Math.max(6_000, Math.min(8_000, configuredRecoveryBudgetMs));
+      ? Math.max(3_000, Math.min(3_600, configuredRecoveryBudgetMs))
+      : zeroTrustedDiscoveryRecovery
+        ? Math.max(8_500, Math.min(10_500, configuredRecoveryBudgetMs))
+        : requesterScopedRecovery && evidenceGuaranteeRecovery
+          ? Math.max(9_500, Math.min(10_500, configuredRecoveryBudgetMs))
+          : requesterScopedRecovery
+            ? Math.max(6_800, Math.min(8_500, configuredRecoveryBudgetMs))
+            : Math.max(4_800, Math.min(5_800, configuredRecoveryBudgetMs));
+    const recoveryTotalDeadlineAt = recoveryStartedAt +
+      (zeroTrustedDiscoveryRecovery
+        ? 15_000
+        : requesterScopedRecovery
+          ? 12_500
+          : 9_000);
     const recoveryDeadlineAt = recoveryStartedAt + recoveryBudgetMs;
     const recoveryController = new AbortController();
     const abortRecovery = () => {
@@ -256,63 +360,356 @@ export class IdeaEvidenceRecoveryService {
      * scheduling, or Stack Overflow for municipal permit delays) from winning
      * a recovery slot just because an AI planner named it.
      */
-    const recoveryRoutingDescription =
-      context.requestDescription?.trim() ||
+    const recoveryIntentMode = context.collectionPlan?.requestIntent?.mode;
+    const internalProblemLockedRecovery = recoveryIntentMode === 'EXPLICIT_PROBLEM';
+    const discoveryRoutingDescription = [
+      ...context.selectedDomains.map((domain) => domain.name.trim()),
+      context.domainName?.trim() ?? '',
+      context.collectionPlan?.domainIdentity?.actor ?? '',
+      context.collectionPlan?.domainIdentity?.object ?? '',
+      context.collectionPlan?.domainIdentity?.workflow ?? '',
+      ...(context.collectionPlan?.retrievalVocabulary ?? []).slice(0, 6),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const canonicalRoutingFamily =
       context.communityAiAnalysis?.canonicalProblemFamilyLabel?.trim() ||
       context.communityAiAnalysis?.selectedProblemFamily?.trim() ||
       selectedOpportunity?.problem?.trim() ||
       selectedOpportunity?.title?.trim() ||
       '';
+    const recoveryRoutingDescription = internalProblemLockedRecovery
+      ? context.requestDescription?.trim() || canonicalRoutingFamily
+      : corroborationOnlyRecovery && canonicalRoutingFamily
+        ? canonicalRoutingFamily
+        : discoveryRoutingDescription || canonicalRoutingFamily;
     const lockedProblemFamily =
       context.communityAiAnalysis?.canonicalProblemFamilyLabel?.trim() ||
       context.communityAiAnalysis?.selectedProblemFamily?.trim() ||
       selectedOpportunity?.problem?.trim() ||
       selectedOpportunity?.title?.trim() ||
       '';
+    const primaryReturnedNoRawEvidence =
+      (context.rawEvidenceCorpus?.length ?? 0) === 0;
+    /*
+     * A literal zero-row first pass means request-fit ranking never got a chance
+     * to be validated by evidence yield. Keep runtime executability/health hard,
+     * but lower only the generic fit floor so a healthy UNUSED reserve corpus can
+     * be tried. This is source-routing resilience, not semantic classification.
+     */
+    const recoveryRequestFitFloor = primaryReturnedNoRawEvidence ? 0.24 : 0.42;
+    const preflightRecoveryOutcomeBySource = new Map(
+      this.buildRecoverySourceOutcomes(context).map(
+        (outcome) => [outcome.sourceKey, outcome.status] as const,
+      ),
+    );
+    const primaryAttemptedSourceKeys = new Set(
+      [
+        ...(context.selectedDataSources ?? []).map((source) => source.key),
+        ...(context.rawEvidenceCorpus ?? []).map((item) => item.sourceKey),
+      ]
+        .map((key) => key.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
 
-    const selectedRecoverySources = recoveryCandidateSources
-      .filter((source) => {
-        const key = source.key.trim().toLocaleLowerCase();
-        if (excludedSourceKeys.has(key) || excludedSourceKeys.has(source.key)) {
-          return false;
-        }
-        if (!this.collectorsFactory.isCollectorRuntimeAvailable(source.key)) {
-          return false;
-        }
-        if (!this.collectorSourceHealth.isHealthy(source.key)) {
-          return false;
-        }
+    const resolveEligibleRecoverySources = (
+      fitFloor: number,
+      maximumSources = this.maximumRecoverySourcesPerWave,
+      allowZeroTrustedPrimaryReplay = false,
+    ): SelectedIdeaDataSource[] =>
+      recoveryCandidateSources
+        .filter((source) => {
+          const key = source.key.trim().toLocaleLowerCase();
+          if (excludedSourceKeys.has(key) || excludedSourceKeys.has(source.key)) {
+            return false;
+          }
+          if (!this.collectorsFactory.isCollectorRuntimeAvailable(source.key)) {
+            return false;
+          }
+          if (!this.collectorSourceHealth.isHealthy(source.key)) {
+            return false;
+          }
+          const priorOutcome = preflightRecoveryOutcomeBySource.get(key);
+          if (
+            requesterScopedRecovery &&
+            evidenceGuaranteeRecovery &&
+            !allowZeroTrustedPrimaryReplay &&
+            primaryAttemptedSourceKeys.has(key) &&
+            (priorOutcome === 'EMPTY' || priorOutcome === 'UNRELATED_ONLY')
+          ) {
+            return false;
+          }
+          if (
+            RequestWorkflowSourcePolicyUtil.shouldSuppressAppReviewLanes({
+              requestDescription: context.requestDescription,
+              problemProfile: context.collectionPlan?.problemProfile,
+            }) &&
+            RequestWorkflowSourcePolicyUtil.isAppReviewSource(key)
+          ) {
+            return false;
+          }
+          if (
+            RequestWorkflowSourcePolicyUtil.shouldSuppressDeveloperCommunityLanes({
+              requestDescription: context.requestDescription,
+              problemProfile: context.collectionPlan?.problemProfile,
+            }) &&
+            RequestWorkflowSourcePolicyUtil.isDeveloperCommunitySource(key)
+          ) {
+            return false;
+          }
 
-        const capabilityInput = {
-          requestDescription:
-            recoveryRoutingDescription || context.requestDescription,
-          domainName: context.domainName,
-          keywords: context.keywords,
-          plannedQueries: context.collectionPlan?.searchQueries ?? [],
-          collectionMode: 'TARGETED_RECOVERY' as const,
-        };
-        if (
-          recoveryRoutingDescription &&
-          this.collectorsFactory.getCollectorRequestFitScore(
-            key,
+          const capabilityInput = {
+            requestDescription:
+              recoveryRoutingDescription || context.requestDescription,
+            domainName: context.requestDescription?.trim()
+              ? undefined
+              : context.domainName,
+            keywords: context.collectionPlan?.problemProfile
+              ? [
+                  context.collectionPlan.problemProfile.actor,
+                  context.collectionPlan.problemProfile.object,
+                  context.collectionPlan.problemProfile.workflow,
+                  context.collectionPlan.problemProfile.friction ?? '',
+                  ...context.collectionPlan.problemProfile.failureModes,
+                  ...context.collectionPlan.problemProfile.consequences,
+                ]
+              : context.collectionPlan?.intentConcepts ?? [],
+            plannedQueries: context.collectionPlan?.searchQueries ?? [],
+            collectionMode: 'TARGETED_RECOVERY' as const,
+          };
+          if (
+            recoveryRoutingDescription &&
+            this.collectorsFactory.getCollectorRequestFitScore(
+              key,
+              capabilityInput,
+            ) < fitFloor
+          ) {
+            return false;
+          }
+
+          return this.collectorsFactory.isCollectorRouteExecutable(
+            source.key,
             capabilityInput,
-          ) < 0.42
-        ) {
-          return false;
-        }
+          );
+        })
+        .sort((left, right) => {
+          const guaranteePriority = (source: SelectedIdeaDataSource): number => {
+            if (!evidenceGuaranteeRecovery) return 0;
+            const key = source.key.trim().toLocaleLowerCase();
+            const status = preflightRecoveryOutcomeBySource.get(key);
+            /*
+             * Zero-trusted text recovery should expose at least one new
+             * evidence surface when available. Unseen executable sources rank
+             * first here, then the balanced-wave selector below reserves room
+             * for productive/context-bearing primary sources with exact-new
+             * atomic probes. Semantic gates stay unchanged.
+             */
+            if (
+              requesterScopedRecovery &&
+              !primaryAttemptedSourceKeys.has(key)
+            ) {
+              return 8;
+            }
+            if (!status) return 4;
+            if (status === 'USEFUL') return 3;
+            if (status === 'CONTEXT_ONLY') return 2;
+            if (status === 'EMPTY') return 0;
+            if (status === 'UNRELATED_ONLY') return -1;
+            return -2;
+          };
+          return (
+            guaranteePriority(right) - guaranteePriority(left) ||
+            this.scoreRecoverySource(context, right, null, recoveryRoutingDescription) -
+              this.scoreRecoverySource(context, left, null, recoveryRoutingDescription) ||
+            left.key.localeCompare(right.key)
+          );
+        })
+        .slice(0, Math.max(1, maximumSources));
 
-        return this.collectorsFactory.isCollectorRouteExecutable(
-          source.key,
-          capabilityInput,
+    let selectedRecoverySources = resolveEligibleRecoverySources(
+      recoveryRequestFitFloor,
+      zeroTrustedDiscoveryRecovery ? 3 : this.maximumRecoverySourcesPerWave,
+    );
+
+    /*
+     * Niche text requests can legitimately have no route above the normal
+     * request-fit floor even though a healthy reserve source is executable.
+     * When the run still has zero canonical trusted evidence, relax only source
+     * ROUTING (never evidence verification) and try at most two healthy reserve
+     * lanes. Failed, timed-out, rate-limited and run-locally unrelated sources
+     * remain excluded. The AI recovery plan still has to provide materially
+     * novel problem-focused queries before either lane executes.
+     */
+    const preflightExactRequesterTrustedCount =
+      (context.canonicalEvidenceLedger ?? []).filter(
+        (item) =>
+          item.verified &&
+          item.problemAlignment === 'MATCH' &&
+          (item.classification === 'DIRECT_PROBLEM' ||
+            item.classification === 'SUPPORTING_SIGNAL'),
+      ).length;
+    if (
+      selectedRecoverySources.length === 0 &&
+      Boolean(context.requestDescription?.trim()) &&
+      preflightExactRequesterTrustedCount === 0 &&
+      !primaryReturnedNoRawEvidence
+    ) {
+      selectedRecoverySources = resolveEligibleRecoverySources(0.30, 3);
+      if (selectedRecoverySources.length > 0) {
+        this.logger.debug(
+          `Targeted text recovery activated ${selectedRecoverySources.length} healthy reserve source lane(s) below the normal fit floor because no exact requester-matched canonical trusted evidence survived the primary pass. Semantic trust thresholds remain unchanged.`,
         );
-      })
-      .sort(
-        (left, right) =>
-          this.scoreRecoverySource(context, right, null, recoveryRoutingDescription) -
-            this.scoreRecoverySource(context, left, null, recoveryRoutingDescription) ||
-          left.key.localeCompare(right.key),
-      )
-      .slice(0, this.maximumRecoverySourcesPerWave);
+      }
+    }
+    if (selectedRecoverySources.length === 0 && evidenceGuaranteeRecovery) {
+      selectedRecoverySources = resolveEligibleRecoverySources(
+        0.22,
+        zeroTrustedDiscoveryRecovery ? 3 : 3,
+      );
+      if (selectedRecoverySources.length > 0) {
+        this.logger.debug(
+          `Evidence-guarantee recovery activated ${selectedRecoverySources.length} healthy reserve source lane(s) after the normal novelty/fit surface retained zero trusted evidence. This relaxes source routing only; canonical evidence verification remains unchanged.`,
+        );
+      }
+    }
+
+    /*
+     * For a zero-trusted TEXT run, one entirely new source is useful, but it
+     * must not crowd out primary sources that already returned productive or
+     * context-bearing rows. The single bounded wave therefore mixes provenance
+     * novelty with exact-new atomic re-queries on productive sources. This keeps
+     * recovery from collapsing to two unseen but empty lanes while preserving
+     * strict canonical evidence admission.
+     */
+    if (requesterScopedRecovery && evidenceGuaranteeRecovery) {
+      const replayPriority = (source: SelectedIdeaDataSource): number => {
+        const status = preflightRecoveryOutcomeBySource.get(
+          source.key.trim().toLocaleLowerCase(),
+        );
+        if (status === 'USEFUL') return 6;
+        if (status === 'CONTEXT_ONLY') return 5;
+        if (status === 'EMPTY') return 2;
+        if (status === 'UNRELATED_ONLY') return 1;
+        return 0;
+      };
+      const allEligibleRecoverySources = resolveEligibleRecoverySources(
+        0.18,
+        Math.max(
+          this.maximumRecoverySourcesPerWave,
+          recoveryCandidateSources.length,
+        ),
+        true,
+      );
+      const novelRecoverySources = allEligibleRecoverySources.filter(
+        (source) =>
+          !primaryAttemptedSourceKeys.has(
+            source.key.trim().toLocaleLowerCase(),
+          ),
+      );
+      const productiveReplaySources = allEligibleRecoverySources
+        .filter((source) => {
+          const key = source.key.trim().toLocaleLowerCase();
+          return (
+            primaryAttemptedSourceKeys.has(key) &&
+            replayPriority(source) >= 5
+          );
+        })
+        .sort(
+          (left, right) =>
+            replayPriority(right) - replayPriority(left) ||
+            this.scoreRecoverySource(
+              context,
+              right,
+              null,
+              recoveryRoutingDescription,
+            ) -
+              this.scoreRecoverySource(
+                context,
+                left,
+                null,
+                recoveryRoutingDescription,
+              ),
+        );
+      const reserveReplaySources = allEligibleRecoverySources
+        .filter((source) => {
+          const key = source.key.trim().toLocaleLowerCase();
+          return (
+            primaryAttemptedSourceKeys.has(key) &&
+            !productiveReplaySources.some(
+              (candidate) =>
+                candidate.key.trim().toLocaleLowerCase() === key,
+            ) &&
+            replayPriority(source) > 0
+          );
+        })
+        .sort(
+          (left, right) =>
+            replayPriority(right) - replayPriority(left) ||
+            this.scoreRecoverySource(
+              context,
+              right,
+              null,
+              recoveryRoutingDescription,
+            ) -
+              this.scoreRecoverySource(
+                context,
+                left,
+                null,
+                recoveryRoutingDescription,
+              ),
+        );
+
+      const diverseNovelRecoverySources: SelectedIdeaDataSource[] = [];
+      const usedNovelArchetypes = new Set<string>();
+      for (const source of novelRecoverySources) {
+        if (diverseNovelRecoverySources.length >= 2) break;
+        const archetype = CollectorRequestCapabilityUtil.sourceArchetype(
+          source.key,
+        );
+        if (usedNovelArchetypes.has(archetype)) continue;
+        usedNovelArchetypes.add(archetype);
+        diverseNovelRecoverySources.push(source);
+      }
+      for (const source of novelRecoverySources) {
+        if (diverseNovelRecoverySources.length >= 2) break;
+        if (
+          diverseNovelRecoverySources.some(
+            (candidate) =>
+              candidate.key.trim().toLocaleLowerCase() ===
+              source.key.trim().toLocaleLowerCase(),
+          )
+        ) {
+          continue;
+        }
+        diverseNovelRecoverySources.push(source);
+      }
+
+      const balancedRecoverySources = [
+        ...diverseNovelRecoverySources.slice(0, 2),
+        ...productiveReplaySources.slice(0, 1),
+        ...novelRecoverySources,
+        ...productiveReplaySources.slice(1),
+        ...reserveReplaySources,
+        ...selectedRecoverySources,
+      ].filter(
+        (source, index, all) =>
+          all.findIndex(
+            (candidate) =>
+              candidate.key.trim().toLocaleLowerCase() ===
+              source.key.trim().toLocaleLowerCase(),
+          ) === index,
+      );
+
+      selectedRecoverySources = balancedRecoverySources.slice(
+        0,
+        this.maximumRecoverySourcesPerWave,
+      );
+      if (selectedRecoverySources.length > 0) {
+        this.logger.debug(
+          `Zero-trusted text recovery selected a balanced ${selectedRecoverySources.length}-source wave: novel=${selectedRecoverySources.filter((source) => !primaryAttemptedSourceKeys.has(source.key.trim().toLocaleLowerCase())).length}, productiveReplay=${selectedRecoverySources.filter((source) => productiveReplaySources.some((candidate) => candidate.key.trim().toLocaleLowerCase() === source.key.trim().toLocaleLowerCase())).length}, archetypes=${[...new Set(selectedRecoverySources.map((source) => CollectorRequestCapabilityUtil.sourceArchetype(source.key)))].join(',')}. The bounded wave prefers two provenance-new evidence archetypes plus one productive replay when available; semantic evidence thresholds remain unchanged.`,
+        );
+      }
+    }
 
     /*
      * Source health/executability is a hard precondition for AI recovery
@@ -364,14 +761,6 @@ export class IdeaEvidenceRecoveryService {
       };
     }
 
-    const primaryAttemptedSourceKeys = new Set(
-      [
-        ...(context.selectedDataSources ?? []).map((source) => source.key),
-        ...(context.collectionPlan?.sourcePlans ?? []).map((plan) => plan.sourceKey),
-      ]
-        .map((key) => key.trim().toLocaleLowerCase())
-        .filter(Boolean),
-    );
     const primaryClassifications =
       context.communityAiAnalysis?.evidenceClassifications ?? [];
     const primaryClassificationById = new Map(
@@ -406,24 +795,24 @@ export class IdeaEvidenceRecoveryService {
         (outcome) => [outcome.sourceKey, outcome.status] as const,
       ),
     );
-    const remainingSourcesWereAlreadyNonProductive =
+    const remainingSourcesAreHardDegraded =
       selectedRecoverySources.length > 0 &&
       selectedRecoverySources.every((source) => {
         const status = sourceOutcomeByKey.get(
           source.key.trim().toLocaleLowerCase(),
         );
-        return status === 'EMPTY' || status === 'DEGRADED';
+        return status === 'DEGRADED';
       });
 
     /*
      * Stop BEFORE the first serial recovery wave when a successful AI-owned
      * text plan already produced a fully adjudicated, non-trivial corpus, no
      * trusted evidence survived, and recovery has no genuinely new source lane.
-     * Re-querying only empty/degraded sources has very low marginal value and
-     * was responsible for the 10-15 second zero-yield tail on sparse niche
-     * requests. A healthy source that returned only CONTEXT/UNRELATED material
-     * is not considered exhausted: a fresh AI-owned recovery query can still
-     * improve recall without changing semantic truth. Thin corpora,
+     * Re-querying hard-degraded sources has very low marginal value and was
+     * responsible for zero-yield tails on sparse niche requests. A healthy
+     * source that returned EMPTY or CONTEXT material is not exhausted: a fresh
+     * materially novel AI-owned recovery query can still improve recall without
+     * changing semantic truth. Thin corpora,
      * fallback-planned requests, or runs with a new healthy source remain
      * eligible for recovery.
      * No semantic meaning is inferred here; this is execution/yield accounting.
@@ -435,7 +824,7 @@ export class IdeaEvidenceRecoveryService {
         (context.rawEvidenceCorpus?.length ?? 0) >= 8 &&
         primaryTrustedCount === 0 &&
         !hasNovelRecoverySource &&
-        remainingSourcesWereAlreadyNonProductive,
+        remainingSourcesAreHardDegraded,
     );
     if (lowMarginalValueTextRecovery) {
       this.logger.debug(
@@ -475,6 +864,8 @@ export class IdeaEvidenceRecoveryService {
     const requestSpecificRecovery = Boolean(
       context.requestDescription?.trim(),
     );
+    const lockedRequesterProblemRecovery =
+      context.collectionPlan?.requestIntent?.mode === 'EXPLICIT_PROBLEM';
     const corroborationSelectedFamilyIds = new Set(
       (context.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
         .map((id) => id.trim())
@@ -489,11 +880,11 @@ export class IdeaEvidenceRecoveryService {
     );
 
     /*
-     * For an explicit requester problem, only the currently accepted canonical
-     * family counts as existing semantic coverage. A broad single-source row
-     * that was released by the request-intent gate must not suppress fresh AI
-     * recovery planning merely because its old classification is still kept in
-     * the audit ledger. Discovery paths can still use the global trusted pool.
+     * For a text-bearing discovery run, once evidence has selected a canonical
+     * family, only that family counts as existing semantic coverage for
+     * corroboration. Before a family exists, requester text remains retrieval
+     * context and cannot suppress discovery merely because an adjacent row is
+     * present in the audit ledger.
      */
     const qualifiedCommunityEvidenceCount = requestSpecificRecovery
       ? hasSelectedCanonicalFamily
@@ -531,38 +922,102 @@ export class IdeaEvidenceRecoveryService {
      * recovery is merely seeking an independent corroborating source, another
      * AI planning call adds latency without changing the semantic target. In
      * that case we reuse the existing AI-owned vocabulary/family and rotate it
-     * through new healthy source-specific lanes below. Zero-evidence recovery
-     * still receives fresh AI semantic re-planning.
+     * through new healthy source-specific lanes below. A zero-trusted text run
+     * always receives one semantic/query rotation, but a successful AI-owned
+     * primary plan reuses its accepted semantics instead of paying for another
+     * redundant planner call.
      */
     const rawEvidenceCount = context.rawEvidenceCorpus?.length ?? 0;
     const rawEvidenceSourceCount = new Set(
       (context.rawEvidenceCorpus ?? []).map((item) => item.sourceKey),
     ).size;
+    const adjudicatedPrimaryClassifications =
+      context.communityAiAnalysis?.evidenceClassifications?.filter(
+        (item) => item.adjudicationStatus === 'ADJUDICATED',
+      ) ?? [];
+    const primaryContextOnlyCount = adjudicatedPrimaryClassifications.filter(
+      (item) => item.classification === 'CONTEXT_ONLY',
+    ).length;
+    const primaryContextOnlyRatio =
+      primaryContextOnlyCount / Math.max(1, adjudicatedPrimaryClassifications.length);
+    const exactRequesterTrustedCount = adjudicatedPrimaryClassifications.filter(
+      (item) =>
+        item.verifiedByDeterministicGuard === true &&
+        item.problemAlignment === 'MATCH' &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    ).length;
+    const firstPassNeedsSemanticRotation = Boolean(
+      requestSpecificRecovery &&
+        context.evidenceRecoveryAttempts === 0 &&
+        (
+          primaryTrustedCount === 0 ||
+          needsExpandedRequestRecovery ||
+          exactRequesterTrustedCount === 0
+        ),
+    );
+    /*
+     * A broad first pass that was already AI-planned does not need to pay for a
+     * second 2.5-3.5s planning call just to paraphrase the same problem. Reuse
+     * its AI-owned causal probes and rotate them through exact-new source/facet
+     * combinations below. Fresh AI re-planning is reserved for genuinely thin
+     * corpora or requests whose primary plan was deterministic/fallback-owned.
+     */
+    const firstPassNeedsFreshAiSemanticPlan = Boolean(
+      firstPassNeedsSemanticRotation && !primaryPlanWasAiOwned,
+    );
     const shouldUseAiRecoveryPlan =
       context.evidenceRecoveryAttempts < MAX_EVIDENCE_RECOVERY_ATTEMPTS &&
       !singleSourceFamilyCorroboration &&
-      (needsExpandedRequestRecovery ||
-        (!requestSpecificRecovery && context.selectedDomains.length > 0));
+      (firstPassNeedsFreshAiSemanticPlan ||
+        (!primaryPlanWasAiOwned && needsExpandedRequestRecovery) ||
+        (!requestSpecificRecovery &&
+          context.selectedDomains.length > 0 &&
+          (!primaryPlanWasAiOwned || rawEvidenceCount < 8)));
     if (singleSourceFamilyCorroboration) {
       this.logger.debug(
         `Recovery corroboration reuses the canonical AI-owned family/vocabulary and skips redundant AI re-planning. family="${lockedProblemFamily || 'unknown'}" existingSources=${trustedCorroborationSourceKeys.size}.`,
       );
     }
+    if (firstPassNeedsSemanticRotation) {
+      const recoveryReason = primaryTrustedCount === 0
+        ? 'zero-trusted'
+        : exactRequesterTrustedCount === 0
+          ? 'partial-only-without-exact-match'
+          : 'insufficient-request-match';
+      this.logger.debug(
+        `Text recovery is requesting one bounded semantic rotation (${recoveryReason}) because the primary evidence surface was ${rawEvidenceCount < 8 ? 'thin' : 'mostly context-only'}: raw=${rawEvidenceCount}, trusted=${primaryTrustedCount}, exactMatch=${exactRequesterTrustedCount}, adjudicated=${adjudicatedPrimaryClassifications.length}, contextOnlyRatio=${primaryContextOnlyRatio.toFixed(2)}, freshAiReplan=${firstPassNeedsFreshAiSemanticPlan}. AI-owned first passes always reuse their accepted domain identity, causal probes, and retrieval vocabulary; fresh AI planning is reserved only for a deterministic/fallback-owned primary plan.`,
+      );
+    }
 
+    /*
+     * A first-pass semantic rotation needs slightly more provider time than a
+     * routine corroboration plan. Live Gemini responses commonly land around
+     * 2.6-3.1s; capping that lane at ~2.8-3.0s caused valid niche rotations to
+     * fall back deterministically just before the provider returned. Rebalance
+     * the SAME recovery envelope instead of extending it: semantic rotation may
+     * use up to 3.6s while still reserving 3.5s for bounded collectors. Other
+     * recovery modes keep the more conservative 4.4s collector reservation.
+     */
+    const collectorReserveMs = firstPassNeedsFreshAiSemanticPlan ? 3_500 : 4_400;
     const recoveryPlannerRemainingMs = Math.max(
       0,
-      recoveryDeadlineAt - Date.now() - 6_000,
+      recoveryDeadlineAt - Date.now() - collectorReserveMs,
     );
-    const recoveryPlannerBudgetMs = Math.min(3_200, recoveryPlannerRemainingMs);
+    const recoveryPlannerBudgetMs = Math.min(
+      firstPassNeedsFreshAiSemanticPlan ? 3_600 : 3_000,
+      recoveryPlannerRemainingMs,
+    );
+    const minimumAiPlannerBudgetMs = firstPassNeedsFreshAiSemanticPlan ? 2_300 : 900;
     let recoveryQueryPlan: RequestCollectionPlan | null = null;
-    if (shouldUseAiRecoveryPlan && recoveryPlannerBudgetMs >= 900) {
+    if (shouldUseAiRecoveryPlan && recoveryPlannerBudgetMs >= minimumAiPlannerBudgetMs) {
       const corroborationDescription = lockedProblemFamily;
       const planned = (
-        requestSpecificRecovery ||
+        lockedRequesterProblemRecovery ||
         (singleSourceFamilyCorroboration && Boolean(corroborationDescription))
       )
         ? await this.requestCollectionPlanningService.expandEvidenceSearch({
-            description: requestSpecificRecovery
+            description: lockedRequesterProblemRecovery
               ? context.requestDescription ?? ''
               : corroborationDescription,
             keywords: [
@@ -570,7 +1025,12 @@ export class IdeaEvidenceRecoveryService {
               ...(context.collectionPlan?.inferredSecondaryScopes ?? []),
               ...context.keywords,
             ].slice(0, 16),
-            previousQueries: context.collectionPlan?.searchQueries ?? [],
+            previousQueries: [
+              ...(context.collectionPlan?.searchQueries ?? []),
+              ...((context.collectionPlan?.causalSearchProbes ?? []).map(
+                (probe: RequestCausalSearchProbe) => probe.query,
+              )),
+            ],
             evidenceTargets: [
               ...(lockedProblemFamily ? [lockedProblemFamily] : []),
               ...(selectedOpportunity?.problem
@@ -579,9 +1039,9 @@ export class IdeaEvidenceRecoveryService {
               ...(selectedOpportunity?.title
                 ? [selectedOpportunity.title]
                 : []),
-              ...(singleSourceFamilyCorroboration
-                ? []
-                : context.collectionPlan?.evidenceTargets ?? []),
+              ...(lockedRequesterProblemRecovery && !singleSourceFamilyCorroboration
+                ? context.collectionPlan?.evidenceTargets ?? []
+                : []),
             ].slice(0, 10),
             sourceOutcomes: this.buildRecoverySourceOutcomes(context),
             generationType: context.generationType,
@@ -599,7 +1059,12 @@ export class IdeaEvidenceRecoveryService {
           })
         : await this.withSoftDeadline<RequestCollectionPlan | null>(
             this.requestCollectionPlanningService.buildDomainDiscoveryPlan({
-              domainNames: context.selectedDomains.map((domain) => domain.name),
+              domainNames: [
+                ...context.selectedDomains.map((domain) => domain.name),
+                ...(context.selectedDomains.length === 0 && context.domainName
+                  ? [context.domainName]
+                  : []),
+              ],
               language: context.location.language,
               generationType: context.generationType,
               userId:
@@ -636,7 +1101,7 @@ export class IdeaEvidenceRecoveryService {
      * hallucination/debugging queries during recovery.
      */
     const recoverySemanticDescription =
-      requestSpecificRecovery
+      lockedRequesterProblemRecovery
         ? context.requestDescription?.trim() ?? ''
         : singleSourceFamilyCorroboration
           ? lockedProblemFamily
@@ -650,14 +1115,262 @@ export class IdeaEvidenceRecoveryService {
      * a stale training-data/compliance query after the canonical winner has
      * already changed.
      */
-    const canonicalFamilyRecoveryQueries = singleSourceFamilyCorroboration
+    const requestWorkflowIdentity = context.collectionPlan?.domainIdentity;
+    const primaryRecoveryQueryKeys = new Set(
+      [
+        ...(context.collectionPlan?.searchQueries ?? []),
+        ...(context.collectionPlan?.sourcePlans ?? []).flatMap(
+          (plan) => plan.queries ?? [],
+        ),
+      ]
+        .map((query) => this.sanitizeRecoveryQuery(query).toLocaleLowerCase())
+        .filter(Boolean),
+    );
+    const recoveryDomainNames = [
+      ...context.selectedDomains.map((domain) => domain.name.trim()),
+      ...(context.domainName?.trim() ? [context.domainName.trim()] : []),
+    ]
+      .filter(Boolean)
+      .filter(
+        (name, index, values) =>
+          values.findIndex(
+            (candidate) =>
+              candidate.toLocaleLowerCase() === name.toLocaleLowerCase(),
+          ) === index,
+      )
+      .slice(0, 3);
+    const domainProblemDiscoveryRecoveryQueries = recoveryDomainNames
+      .flatMap((domainName) => [
+        `${domainName} common operational problems complaints`,
+        `${domainName} workflow bottlenecks delays failures`,
+        `${domainName} practitioner challenges recurring problems`,
+        `${domainName} staffing capacity service quality issues`,
+        `${domainName} scheduling coordination workload problems`,
+        `${domainName} delayed service missed follow ups`,
+        `${domainName} resource shortages operational disruption`,
+        `${domainName} communication handoff missed updates`,
+        `${domainName} recurring service complaints pain points`,
+        `${domainName} daily operations failure case`,
+      ])
+      .map((query) => this.sanitizeRecoveryQuery(query))
+      .filter(Boolean)
+      .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+      .filter(
+        (query, index, values) =>
+          !primaryRecoveryQueryKeys.has(query.toLocaleLowerCase()) &&
+          values.findIndex(
+            (candidate) =>
+              candidate.toLocaleLowerCase() === query.toLocaleLowerCase(),
+          ) === index,
+      )
+      .slice(0, 20);
+
+    const professionalDomainContextRecoveryQueries =
+      requestSpecificRecovery && !singleSourceFamilyCorroboration
+        ? RequestDynamicQueryUtil.buildProfessionalTerminologyQueries({
+            requestDescription: context.requestDescription,
+            intentConcepts: context.collectionPlan?.intentConcepts ?? [],
+            evidenceTargets: context.collectionPlan?.evidenceTargets ?? [],
+            plannedQueries: context.collectionPlan?.searchQueries ?? [],
+            maxQueries: 6,
+          })
+            .map((query) => this.sanitizeRecoveryQuery(query))
+            .filter(Boolean)
+            .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+            .filter(
+              (query, index, values) =>
+                !primaryRecoveryQueryKeys.has(query.toLocaleLowerCase()) &&
+                values.findIndex(
+                  (candidate) =>
+                    candidate.toLocaleLowerCase() === query.toLocaleLowerCase(),
+                ) === index,
+            )
+            .slice(0, 6)
+        : [];
+    const relaxedDomainContextRecoveryQueries =
+      requestSpecificRecovery && !singleSourceFamilyCorroboration
+        ? RequestDynamicQueryUtil.buildRelaxedRetrievalQueries({
+            requestDescription: context.requestDescription,
+            intentConcepts: context.collectionPlan?.intentConcepts ?? [],
+            evidenceTargets: context.collectionPlan?.evidenceTargets ?? [],
+            plannedQueries: [
+              ...(context.collectionPlan?.searchQueries ?? []),
+              ...domainProblemDiscoveryRecoveryQueries,
+            ],
+            maxQueries: 6,
+          })
+            .map((query) => this.sanitizeRecoveryQuery(query))
+            .filter(Boolean)
+            .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+            .filter(
+              (query, index, values) =>
+                !primaryRecoveryQueryKeys.has(query.toLocaleLowerCase()) &&
+                values.findIndex(
+                  (candidate) =>
+                    candidate.toLocaleLowerCase() === query.toLocaleLowerCase(),
+                ) === index,
+            )
+            .slice(0, 6)
+        : [];
+
+    const atomicRequesterRecoveryQueries =
+      requestSpecificRecovery && !singleSourceFamilyCorroboration
+        ? RequestDynamicQueryUtil.buildEvidenceFacetQueries({
+            requestDescription: context.requestDescription,
+            intentConcepts: [
+              ...(context.collectionPlan?.intentConcepts ?? []),
+              ...(requestWorkflowIdentity
+                ? [
+                    requestWorkflowIdentity.actor,
+                    requestWorkflowIdentity.object,
+                    requestWorkflowIdentity.workflow,
+                  ]
+                : []),
+            ],
+            evidenceTargets: [
+              ...(context.collectionPlan?.evidenceTargets ?? []),
+              ...(requestWorkflowIdentity?.failure
+                ? [requestWorkflowIdentity.failure]
+                : []),
+            ],
+            plannedQueries: context.collectionPlan?.searchQueries ?? [],
+            maxQueries: 16,
+          })
+            .map((query) => this.sanitizeRecoveryQuery(query))
+            .filter(Boolean)
+            .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+            .filter(
+              (query, index, values) =>
+                !primaryRecoveryQueryKeys.has(query.toLocaleLowerCase()) &&
+                values.findIndex(
+                  (candidate) =>
+                    candidate.toLocaleLowerCase() === query.toLocaleLowerCase(),
+                ) === index,
+            )
+            .slice(0, 12)
+        : [];
+    if (requestSpecificRecovery) {
+      this.logger.debug(
+        `Targeted text recovery prepared ${domainProblemDiscoveryRecoveryQueries.length} exact-new domain problem-discovery probe(s), ${professionalDomainContextRecoveryQueries.length} profession-native context probe(s), ${relaxedDomainContextRecoveryQueries.length} relaxed lexical probe(s), plus ${atomicRequesterRecoveryQueries.length} optional requester-context probe(s). Domain problem discovery is authoritative; text-derived probes are soft retrieval context and no query is treated as evidence itself.`,
+      );
+    }
+    const highConfidenceNearMissRows = adjudicatedPrimaryClassifications
+      .filter((item) => {
+        if (
+          item.classification !== 'CONTEXT_ONLY' ||
+          item.confidence < 62 ||
+          (context.requestMode !== 'TEXT_ONLY' && item.domainAlignment === 'NONE')
+        ) {
+          return false;
+        }
+        const facetAlignments = [
+          item.actorAlignment,
+          item.objectAlignment,
+          item.workflowAlignment,
+          item.failureAlignment,
+        ];
+        const exactFacetCount = facetAlignments.filter(
+          (alignment) => alignment === 'MATCH',
+        ).length;
+        return (
+          item.problemAlignment === 'PARTIAL' ||
+          item.problemAlignment === 'MATCH' ||
+          exactFacetCount >= 1
+        );
+      })
+      .sort((left, right) => right.confidence - left.confidence)
+      .slice(0, 4);
+    const nearMissFacetQueries = context.requestDescription?.trim() && requestWorkflowIdentity
+      ? this.deduplicateRecoveryQueries(
+          highConfidenceNearMissRows.flatMap((item) => {
+            const actor = this.sanitizeRecoveryQuery(requestWorkflowIdentity.actor);
+            const object = this.sanitizeRecoveryQuery(requestWorkflowIdentity.object);
+            const workflow = this.sanitizeRecoveryQuery(requestWorkflowIdentity.workflow);
+            const failure = this.sanitizeRecoveryQuery(requestWorkflowIdentity.failure);
+            const observed = this.sanitizeRecoveryQuery(item.observedProblem ?? '');
+            const candidates = [
+              observed ? `${observed} reported problem` : '',
+              `${actor} ${failure}`,
+              `${object} ${failure}`,
+              `${workflow} ${failure}`,
+              `${actor} ${workflow}`,
+              `${object} ${workflow}`,
+            ];
+            if (item.failureAlignment !== 'MATCH') {
+              candidates.unshift(
+                `${failure} reported incident`,
+                `${failure} operator complaint`,
+              );
+            }
+            if (item.workflowAlignment !== 'MATCH') {
+              candidates.unshift(
+                `${workflow} operational problems`,
+                `${workflow} workflow failures`,
+              );
+            }
+            if (item.objectAlignment !== 'MATCH') {
+              candidates.unshift(`${object} operational problem`);
+            }
+            return candidates;
+          }),
+        )
+          .map((query) => this.sanitizeRecoveryQuery(query))
+          .filter(Boolean)
+          .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+          .filter(
+            (query, index, values) =>
+              !primaryRecoveryQueryKeys.has(query.toLocaleLowerCase()) &&
+              values.findIndex(
+                (candidate) =>
+                  candidate.toLocaleLowerCase() === query.toLocaleLowerCase(),
+              ) === index,
+          )
+          .slice(0, 6)
+      : [];
+    if (nearMissFacetQueries.length > 0) {
+      this.logger.debug(
+        `Targeted text recovery prioritized ${nearMissFacetQueries.length} missing-facet query lane(s) from ${highConfidenceNearMissRows.length} high-confidence requester-facet near-miss row(s). Existing rows remain non-trusted; these queries search atomic workflow/failure/object facets without reclassifying the current corpus.`,
+      );
+    }
+    const requesterWorkflowAnchors = context.requestDescription?.trim() && requestWorkflowIdentity
       ? [
-          selectedCanonicalFamilyLabel,
-          ...canonicalTrustedForCorroboration.flatMap((item) => [
-            item.problemFamily ?? '',
-            item.observedProblem ?? '',
-          ]),
+          `${requestWorkflowIdentity.actor} ${requestWorkflowIdentity.workflow}`,
+          `${requestWorkflowIdentity.actor} ${requestWorkflowIdentity.object}`,
+          `${requestWorkflowIdentity.actor} ${requestWorkflowIdentity.failure}`,
+          `${requestWorkflowIdentity.object} ${requestWorkflowIdentity.workflow}`,
+          `${requestWorkflowIdentity.object} ${requestWorkflowIdentity.failure}`,
+          `${requestWorkflowIdentity.workflow} ${requestWorkflowIdentity.failure}`,
         ]
+          .map((value) => this.sanitizeRecoveryQuery(value))
+          .filter(Boolean)
+          .filter((value, index, values) =>
+            values.findIndex(
+              (candidate) => candidate.toLocaleLowerCase() === value.toLocaleLowerCase(),
+            ) === index,
+          )
+          .slice(0, 6)
+      : [];
+
+    const canonicalFamilyRecoveryQueries = singleSourceFamilyCorroboration
+      ? (requesterWorkflowAnchors.length > 0
+          ? requesterWorkflowAnchors.flatMap((anchor) => [
+              `${anchor} ${selectedCanonicalFamilyLabel}`,
+              `${anchor} ${selectedCanonicalFamilyLabel} reported problem`,
+            ])
+          : [
+              ...canonicalTrustedForCorroboration.flatMap((item) => [
+                item.observedProblem ?? '',
+                item.causalExplanation ?? '',
+              ]),
+              `${selectedCanonicalFamilyLabel} operational burden`,
+              `${selectedCanonicalFamilyLabel} recurring incident`,
+              `${selectedCanonicalFamilyLabel} affected operators`,
+              `${selectedCanonicalFamilyLabel} complaint`,
+              selectedCanonicalFamilyLabel,
+              ...canonicalTrustedForCorroboration.map(
+                (item) => item.problemFamily ?? '',
+              ),
+            ])
           .map((query) => this.sanitizeRecoveryQuery(query))
           .filter(Boolean)
           .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
@@ -669,6 +1382,12 @@ export class IdeaEvidenceRecoveryService {
                   query.trim().toLocaleLowerCase(),
               ) === index,
           )
+          .filter((query) =>
+            RequestQueryProvenanceUtil.isMateriallyNovelQuery({
+              query,
+              previousQueries: context.collectionPlan?.searchQueries ?? [],
+            }),
+          )
           .slice(0, this.maximumRecoveryKeywords)
       : [];
 
@@ -679,19 +1398,58 @@ export class IdeaEvidenceRecoveryService {
           )
         : [],
     );
+    const recoveryOutcomeBySource = preflightRecoveryOutcomeBySource;
     const aiSelectedRecoverySources = aiRecoverySourceKeys.size > 0
       ? recoveryCandidateSources.filter((source) => {
           const key = source.key.toLocaleLowerCase();
           if (!aiRecoverySourceKeys.has(key)) return false;
           if (excludedSourceKeys.has(key) || excludedSourceKeys.has(source.key)) return false;
           if (!this.collectorSourceHealth.isHealthy(key)) return false;
+          if (
+            evidenceGuaranteeRecovery &&
+            ['EMPTY', 'UNRELATED_ONLY', 'DEGRADED'].includes(
+              recoveryOutcomeBySource.get(key) ?? '',
+            )
+          ) {
+            return false;
+          }
+          if (
+            RequestWorkflowSourcePolicyUtil.shouldSuppressAppReviewLanes({
+              requestDescription: context.requestDescription,
+              problemProfile: context.collectionPlan?.problemProfile,
+            }) &&
+            RequestWorkflowSourcePolicyUtil.isAppReviewSource(key)
+          ) {
+            return false;
+          }
+          if (
+            RequestWorkflowSourcePolicyUtil.shouldSuppressDeveloperCommunityLanes({
+              requestDescription: context.requestDescription,
+              problemProfile: context.collectionPlan?.problemProfile,
+            }) &&
+            RequestWorkflowSourcePolicyUtil.isDeveloperCommunitySource(key)
+          ) {
+            return false;
+          }
           const sourcePlan = recoveryQueryPlan?.sourcePlans?.find(
             (plan) => plan.sourceKey.toLocaleLowerCase() === key,
           );
+          const problemOwnedKeywords = context.collectionPlan?.problemProfile
+            ? [
+                context.collectionPlan.problemProfile.actor,
+                context.collectionPlan.problemProfile.object,
+                context.collectionPlan.problemProfile.workflow,
+                context.collectionPlan.problemProfile.friction ?? '',
+                ...context.collectionPlan.problemProfile.failureModes,
+                ...context.collectionPlan.problemProfile.consequences,
+              ]
+            : context.collectionPlan?.intentConcepts ?? [];
           const capabilityInput = {
             requestDescription: recoverySemanticDescription || context.requestDescription,
-            domainName: context.domainName,
-            keywords: context.keywords,
+            domainName: context.requestDescription?.trim()
+              ? undefined
+              : context.domainName,
+            keywords: problemOwnedKeywords,
             plannedQueries:
               sourcePlan?.queries ?? recoveryQueryPlan?.searchQueries ?? [],
             sourceHints: sourcePlan?.routingHints ?? [],
@@ -711,7 +1469,7 @@ export class IdeaEvidenceRecoveryService {
             this.collectorsFactory.getCollectorRequestFitScore(
               key,
               capabilityInput,
-            ) < 0.42
+            ) < recoveryRequestFitFloor
           ) {
             return false;
           }
@@ -766,9 +1524,11 @@ export class IdeaEvidenceRecoveryService {
         ) === index,
     );
     const requesterRecoverySourceLimit =
-      requestSpecificRecovery && rawEvidenceSourceCount >= 2
-        ? 2
-        : this.maximumRecoverySourcesPerWave;
+      requestSpecificRecovery && evidenceGuaranteeRecovery
+        ? this.maximumRecoverySourcesPerWave
+        : requestSpecificRecovery && rawEvidenceSourceCount >= 2
+          ? 2
+          : this.maximumRecoverySourcesPerWave;
     const corroborationPreferredSources = singleSourceFamilyCorroboration
       ? preferredRecoverySources.filter(
           (source) =>
@@ -777,18 +1537,20 @@ export class IdeaEvidenceRecoveryService {
             ),
         )
       : preferredRecoverySources;
-    const recoverySources = (compactDomainsOnlySecondaryRecovery
-      ? corroborationPreferredSources.slice(0, 2)
-      : requestSpecificRecovery
-        /*
-         * A broad text first pass already covered multiple source families.
-         * Its single recovery wave therefore uses two rotated lanes instead of
-         * three; sparse text niches retain the third lane for recall. This cuts
-         * the slowest recovery tail without weakening verification.
-         */
-        ? corroborationPreferredSources.slice(0, requesterRecoverySourceLimit)
-        : singleSourceFamilyCorroboration
-          ? corroborationPreferredSources.slice(0, 1)
+    const recoverySources = (singleSourceFamilyCorroboration
+      ? corroborationPreferredSources.slice(0, 1)
+      : compactDomainsOnlySecondaryRecovery
+        ? corroborationPreferredSources.slice(0, 2)
+        : requestSpecificRecovery
+          /*
+           * A broad text first pass already covered multiple source families.
+           * Its single recovery wave therefore uses two rotated lanes instead of
+           * three; sparse text niches retain the third lane for recall. Once a
+           * verified family already exists from one source, the dedicated
+           * corroboration branch above takes precedence and uses exactly one
+           * new independent lane.
+           */
+          ? corroborationPreferredSources.slice(0, requesterRecoverySourceLimit)
           : corroborationPreferredSources.slice(0, this.maximumRecoverySourcesPerWave)
     ).filter((source) =>
       this.collectorsFactory.isCollectorRuntimeAvailable(source.key),
@@ -813,7 +1575,12 @@ export class IdeaEvidenceRecoveryService {
       }
       primaryQueriesBySource.set(sourceKey, sourceQueries);
     }
-    const plannedRecoveryKeywords = (recoveryQueryPlan?.searchQueries ?? [])
+    const plannedRecoveryKeywords = [
+      ...((recoveryQueryPlan?.causalSearchProbes ?? []).map(
+        (probe: RequestCausalSearchProbe) => probe.query,
+      )),
+      ...(recoveryQueryPlan?.searchQueries ?? []),
+    ]
       .map((query) => this.sanitizeRecoveryQuery(query))
       .filter(Boolean)
       .filter(
@@ -826,6 +1593,9 @@ export class IdeaEvidenceRecoveryService {
         (plan) => plan.queries ?? [],
       ),
       ...(context.collectionPlan?.retrievalVocabulary ?? []),
+      ...((context.collectionPlan?.causalSearchProbes ?? []).map(
+        (probe: RequestCausalSearchProbe) => probe.query,
+      )),
       ...(context.collectionPlan?.searchQueries ?? []),
     ]
       .map((query) => this.sanitizeRecoveryQuery(query))
@@ -833,14 +1603,32 @@ export class IdeaEvidenceRecoveryService {
       .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
       .slice(0, this.maximumRecoveryKeywords);
     const recoveryKeywords = (
-      plannedRecoveryKeywords.length > 0
-        ? plannedRecoveryKeywords
-        : canonicalFamilyRecoveryQueries.length > 0
-          ? canonicalFamilyRecoveryQueries
-          : aiOwnedFallbackQueries
+      singleSourceFamilyCorroboration
+        ? [
+            ...canonicalFamilyRecoveryQueries,
+            ...plannedRecoveryKeywords,
+            ...aiOwnedFallbackQueries,
+          ]
+        : [
+            ...domainProblemDiscoveryRecoveryQueries,
+            ...nearMissFacetQueries,
+            ...atomicRequesterRecoveryQueries,
+            ...requesterWorkflowAnchors,
+            ...plannedRecoveryKeywords,
+            ...canonicalFamilyRecoveryQueries,
+            ...aiOwnedFallbackQueries,
+          ]
     )
       .map((query) => this.sanitizeRecoveryQuery(query))
       .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+      .filter(
+        (query, index, values) =>
+          values.findIndex(
+            (candidate) =>
+              candidate.trim().toLocaleLowerCase() ===
+              query.trim().toLocaleLowerCase(),
+          ) === index,
+      )
       .slice(0, this.maximumRecoveryKeywords);
     if (recoverySources.length === 0) {
       this.logger.debug(
@@ -875,12 +1663,40 @@ export class IdeaEvidenceRecoveryService {
       recoveryQueryPlan?.aiUsed === true &&
       recoveryQueryPlan.fallbackUsed !== true &&
       (recoveryQueryPlan.searchQueries?.length ?? 0) > 0;
+    const interleavedDomainContextRecoveryQueries =
+      requestSpecificRecovery && !singleSourceFamilyCorroboration
+        ? this.deduplicateRecoveryQueries(
+            domainProblemDiscoveryRecoveryQueries.flatMap((query, index) => [
+              query,
+              professionalDomainContextRecoveryQueries[index] ?? '',
+              relaxedDomainContextRecoveryQueries[index] ?? '',
+            ]),
+          )
+        : domainProblemDiscoveryRecoveryQueries;
+    const requesterAtomicAuthoritativeQueries = [
+      ...interleavedDomainContextRecoveryQueries,
+      ...nearMissFacetQueries,
+      ...atomicRequesterRecoveryQueries,
+      ...requesterWorkflowAnchors,
+    ]
+      .map((query) => this.sanitizeRecoveryQuery(query))
+      .filter(Boolean)
+      .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+      .filter(
+        (query, index, values) =>
+          values.findIndex(
+            (candidate) =>
+              candidate.toLocaleLowerCase() === query.toLocaleLowerCase(),
+          ) === index,
+      );
     const authoritativeRecoveryQueries =
-      canonicalFamilyRecoveryQueries.length > 0
+      singleSourceFamilyCorroboration && canonicalFamilyRecoveryQueries.length > 0
         ? canonicalFamilyRecoveryQueries
-        : (recoveryQueryPlan?.searchQueries?.length ?? 0) > 0
-          ? [...(recoveryQueryPlan?.searchQueries ?? [])]
-          : recoveryKeywords;
+        : requestSpecificRecovery && requesterAtomicAuthoritativeQueries.length > 0
+          ? requesterAtomicAuthoritativeQueries
+          : (recoveryQueryPlan?.searchQueries?.length ?? 0) > 0
+            ? [...(recoveryQueryPlan?.searchQueries ?? [])]
+            : recoveryKeywords;
     const aiSourcePlans = usingAiRecoveryPlan
       ? recoveryQueryPlan?.sourcePlans ?? []
       : [];
@@ -888,6 +1704,7 @@ export class IdeaEvidenceRecoveryService {
       context,
       Math.max(1, recoverySources.length),
     );
+    const assignedRecoveryQueriesAcrossSources: string[] = [];
     const mergedRecoverySourcePlans = recoverySources.map((source, sourceIndex) => {
       const planned = aiSourcePlans.find(
         (plan) =>
@@ -914,44 +1731,234 @@ export class IdeaEvidenceRecoveryService {
             .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
             .slice(0, 4)
         : [];
-      const fallbackQueries = domainRecoveryQueries.length > 0
-        ? domainRecoveryQueries
-        : authoritativeRecoveryQueries.length > 0
+      const rotatedAuthoritativeQueries = authoritativeRecoveryQueries.length > 0
+        ? (singleSourceFamilyCorroboration
+            ? [0, 1, 2, 3]
+                .map(
+                  (offset) =>
+                    authoritativeRecoveryQueries[
+                      (sourceIndex + offset) % authoritativeRecoveryQueries.length
+                    ],
+                )
+                .filter((query): query is string => Boolean(query?.trim()))
+            : [
+                authoritativeRecoveryQueries[sourceIndex % authoritativeRecoveryQueries.length],
+                authoritativeRecoveryQueries[(sourceIndex + 1) % authoritativeRecoveryQueries.length],
+                authoritativeRecoveryQueries[(sourceIndex + 2) % authoritativeRecoveryQueries.length],
+              ].filter((query): query is string => Boolean(query?.trim())))
+        : [];
+      const fallbackQueries = requestSpecificRecovery && rotatedAuthoritativeQueries.length > 0
+        ? [...rotatedAuthoritativeQueries, ...domainRecoveryQueries]
+        : domainRecoveryQueries.length > 0
+          ? domainRecoveryQueries
+          : rotatedAuthoritativeQueries;
+      const rawQueryCandidates = singleSourceFamilyCorroboration
+        ? (planned?.queries?.length ? planned.queries : fallbackQueries)
+        : requestSpecificRecovery
           ? [
-              authoritativeRecoveryQueries[sourceIndex % authoritativeRecoveryQueries.length],
-              authoritativeRecoveryQueries[(sourceIndex + 1) % authoritativeRecoveryQueries.length],
-            ].filter((query): query is string => Boolean(query?.trim()))
-          : [];
+              ...rotatedAuthoritativeQueries,
+              ...(planned?.queries ?? []),
+              ...fallbackQueries,
+            ]
+          : (planned?.queries?.length ? planned.queries : fallbackQueries);
       const rawQueries: string[] = [...new Set<string>(
-        (planned?.queries?.length &&
-          (requestSpecificRecovery || singleSourceFamilyCorroboration)
-          ? planned.queries
-          : fallbackQueries)
+        rawQueryCandidates
           .map((query) => this.sanitizeRecoveryQuery(query))
           .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query)),
-      )];
+      )].slice(0, 6);
       const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
         sourceKey: source.key,
         baseQueries: rawQueries,
-        requestDescription:
-          recoverySemanticDescription || context.requestDescription,
-        problemProfile: context.collectionPlan?.problemProfile,
+        requestDescription: recoverySemanticDescription || undefined,
+        problemProfile: lockedRequesterProblemRecovery
+          ? context.collectionPlan?.problemProfile
+          : undefined,
         discoveryDomainName: recoveryDomain?.name ?? context.domainName,
-        maxQueries: 2,
+        discoveryIntent: !lockedRequesterProblemRecovery,
+        maxQueries: singleSourceFamilyCorroboration
+          ? 3
+          : firstPassNeedsSemanticRotation
+            ? 3
+            : 2,
         preserveBaseQueries: Boolean(
-          recoverySemanticDescription || context.requestDescription?.trim(),
+          recoverySemanticDescription || requestSpecificRecovery,
         ),
       });
       const previouslyUsedBySource =
         primaryQueriesBySource.get(source.key.trim().toLocaleLowerCase()) ??
         new Set<string>();
-      const sourceNovelQueries = (compiledQueries.length
+      const previousSourceQueries = [...previouslyUsedBySource];
+      let sourceNovelQueries = (compiledQueries.length
         ? compiledQueries
         : rawQueries.slice(0, 2)
       ).filter((query) => {
         const normalized = query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
-        return Boolean(normalized) && !previouslyUsedBySource.has(normalized);
+        if (!normalized || previouslyUsedBySource.has(normalized)) {
+          return false;
+        }
+
+        return RequestQueryProvenanceUtil.isMateriallyNovelQuery({
+          query,
+          previousQueries: previousSourceQueries,
+        });
       });
+
+      /*
+       * A provider-owned semantic rotation may intentionally keep most of the
+       * immutable requester vocabulary while changing the causal/failure facet.
+       * The generic novelty guard is conservative enough that these useful
+       * rotations can look "semantically equivalent" and collapse the entire
+       * recovery wave to zero collectors. For the FIRST bounded text rotation
+       * only, allow one exact-new grounded query per healthy source even when
+       * token similarity is high. Exact replay remains forbidden and the
+       * canonical evidence verifier is unchanged.
+       */
+      if (
+        sourceNovelQueries.length === 0 &&
+        (firstPassNeedsSemanticRotation || evidenceGuaranteeRecovery)
+      ) {
+        const profile = context.collectionPlan?.problemProfile;
+        const deterministicFacetSeeds =
+          requestSpecificRecovery && !lockedRequesterProblemRecovery
+            ? domainProblemDiscoveryRecoveryQueries
+            : profile
+              ? [
+              `${profile.actor} ${profile.failureModes[0] ?? profile.friction ?? profile.coreProblem}`,
+              `${profile.object} ${profile.failureModes[1] ?? profile.failureModes[0] ?? profile.coreProblem}`,
+              `${profile.workflow} ${profile.failureModes[0] ?? profile.friction ?? profile.coreProblem}`,
+              `${profile.actor} ${profile.workflow}`,
+                  ...(profile.evidenceFacets ?? []).slice(0, 2).map(
+                    (facet) => `${profile.object} ${facet}`,
+                  ),
+                ]
+              : [];
+        const normalizedSourceKey = source.key.trim().toLocaleLowerCase();
+        const sourceEvidenceTail =
+          normalizedSourceKey === 'crossref'
+            ? 'operational study evidence'
+            : ['news', 'gdelt', 'blog'].includes(normalizedSourceKey)
+              ? 'reported incident case'
+              : ['reddit', 'forum', 'youtube', 'hacker-news'].includes(normalizedSourceKey)
+                ? 'practitioner experience complaint'
+                : ['github', 'stackoverflow', 'dev-to'].includes(normalizedSourceKey)
+                  ? 'implementation failure issue'
+                  : 'operator problem report';
+        const guaranteeSeeds = evidenceGuaranteeRecovery
+          ? requestSpecificRecovery && !lockedRequesterProblemRecovery
+            ? recoveryDomainNames.flatMap((domainName) => [
+                `${domainName} operational problem ${sourceEvidenceTail}`,
+                `${domainName} workflow bottleneck ${sourceEvidenceTail}`,
+              ])
+            : profile
+              ? [
+                  `${profile.actor} ${profile.failureModes[0] ?? profile.friction ?? profile.coreProblem} ${sourceEvidenceTail}`,
+                  `${profile.object} ${profile.failureModes[1] ?? profile.failureModes[0] ?? profile.coreProblem} ${sourceEvidenceTail}`,
+                  `${profile.workflow} ${profile.failureModes[0] ?? profile.friction ?? profile.coreProblem} ${sourceEvidenceTail}`,
+                  `${profile.actor} ${profile.workflow} ${sourceEvidenceTail}`,
+                ]
+              : []
+          : [];
+        const relaxedRotationCandidates = [
+          ...guaranteeSeeds,
+          ...(planned?.queries ?? []),
+          ...((recoveryQueryPlan?.causalSearchProbes ?? []).map(
+            (probe: RequestCausalSearchProbe) => probe.query,
+          )),
+          ...plannedRecoveryKeywords,
+          ...compiledQueries,
+          ...deterministicFacetSeeds,
+          ...authoritativeRecoveryQueries,
+        ]
+          .map((query) => this.sanitizeRecoveryQuery(query))
+          .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+          .filter((query) =>
+            !lockedRequesterProblemRecovery ||
+            !context.requestDescription?.trim() ||
+            RequestQueryProvenanceUtil.isQueryGrounded({
+              requestDescription: context.requestDescription,
+              query,
+            }),
+          )
+          .filter((query, index, values) => {
+            const normalized = query
+              .replace(/\s+/gu, ' ')
+              .trim()
+              .toLocaleLowerCase();
+            if (!normalized || previouslyUsedBySource.has(normalized)) {
+              return false;
+            }
+            if (!evidenceGuaranteeRecovery && primaryQueryKeys.has(normalized)) {
+              return false;
+            }
+            return (
+              values.findIndex(
+                (candidate) =>
+                  candidate
+                    .replace(/\s+/gu, ' ')
+                    .trim()
+                    .toLocaleLowerCase() === normalized,
+              ) === index
+            );
+          })
+          .slice(0, evidenceGuaranteeRecovery ? 2 : 1);
+
+        if (relaxedRotationCandidates.length > 0) {
+          sourceNovelQueries = relaxedRotationCandidates;
+          this.logger.debug(
+            evidenceGuaranteeRecovery
+              ? `Evidence-guarantee recovery admitted ${relaxedRotationCandidates.length} source/facet/provenance-new query lane(s) for source=${source.key}. Global lexical similarity no longer blocks the final zero-trusted rescue, while exact per-source replay and canonical evidence admission remain strict.`
+              : `Recovery novelty guard admitted one exact-new AI/facet rotation for source=${source.key}; semantic similarity to the primary vocabulary is allowed only for this first bounded rotation and does not change evidence admission.`,
+          );
+        }
+      }
+
+      /*
+       * Recovery uses a tiny source budget, so spending two or three collectors
+       * on near-identical facet wording wastes the whole wave. Keep per-source
+       * provenance novelty above, then also prefer queries materially novel from
+       * the lanes already assigned to earlier recovery sources. This is generic
+       * query-shape diversification only; it never changes evidence semantics or
+       * admission thresholds.
+       */
+      const crossSourceNovelQueries = sourceNovelQueries.filter((query) =>
+        RequestQueryProvenanceUtil.isMateriallyNovelQuery({
+          query,
+          previousQueries: assignedRecoveryQueriesAcrossSources,
+        }),
+      );
+      if (assignedRecoveryQueriesAcrossSources.length > 0) {
+        const desiredQueryCount = singleSourceFamilyCorroboration
+          ? 3
+          : firstPassNeedsSemanticRotation
+            ? 3
+            : 2;
+        const alternativePool = [
+          ...compiledQueries,
+          ...rawQueries,
+          ...plannedRecoveryKeywords,
+          ...recoveryKeywords,
+        ]
+          .map((query) => this.sanitizeRecoveryQuery(query))
+          .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+          .filter((query) => {
+            const normalized = query.replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
+            return Boolean(normalized) && !previouslyUsedBySource.has(normalized);
+          })
+          .filter((query) =>
+            RequestQueryProvenanceUtil.isMateriallyNovelQuery({
+              query,
+              previousQueries: assignedRecoveryQueriesAcrossSources,
+            }),
+          );
+        sourceNovelQueries = [...new Set([
+          ...crossSourceNovelQueries,
+          ...alternativePool,
+        ])].slice(0, desiredQueryCount);
+      }
+      if (sourceNovelQueries.length > 0) {
+        assignedRecoveryQueriesAcrossSources.push(...sourceNovelQueries);
+      }
+
       return {
         sourceKey: source.key,
         queries: sourceNovelQueries,
@@ -967,11 +1974,13 @@ export class IdeaEvidenceRecoveryService {
         discoveryDomainName: recoveryDomain?.name ?? context.domainName,
         queryIntentId: `recovery:${context.evidenceRecoveryAttempts + 1}:${source.key}:${sourceIndex + 1}`,
         /*
-         * Recovery is semantically deeper, not volume-broader. SECONDARY keeps
-         * the source bounded while still allowing a little more depth than a
-         * MICRO_PROBE.
+         * Recovery is semantically deeper, not volume-broader. A pure
+         * second-source corroboration request is a MICRO_PROBE; broader
+         * zero-evidence recovery retains the bounded SECONDARY tier.
          */
-        sourceTier: 'SECONDARY' as const,
+        sourceTier: singleSourceFamilyCorroboration
+          ? ('MICRO_PROBE' as const)
+          : ('SECONDARY' as const),
         problemFacetIds: context.canonicalProblemSpec?.facets.map((facet) => facet.id) ?? [],
       };
     }).filter(
@@ -979,6 +1988,14 @@ export class IdeaEvidenceRecoveryService {
         recoverySourceKeys.has(plan.sourceKey.toLocaleLowerCase()) &&
         plan.queries.length > 0,
     );
+    if (singleSourceFamilyCorroboration && mergedRecoverySourcePlans.length > 0) {
+      this.logger.debug(
+        `Canonical family corroboration probes | family="${selectedCanonicalFamilyLabel}" | ${mergedRecoverySourcePlans
+          .map((plan) => `${plan.sourceKey}=[${plan.queries.join(' || ')}]`)
+          .join(' | ')}.`,
+      );
+    }
+
     const plannedRecoverySourceKeys = new Set(
       mergedRecoverySourcePlans.map((plan) =>
         plan.sourceKey.trim().toLocaleLowerCase(),
@@ -989,7 +2006,7 @@ export class IdeaEvidenceRecoveryService {
     );
     if (plannedRecoverySources.length === 0) {
       this.logger.debug(
-        'Skipping targeted recovery because every healthy candidate source would replay an already-used source/query pair; no novel executable provenance lane remains.',
+        'Skipping targeted recovery because every healthy candidate source would replay an exact or semantically equivalent source/query lane; no materially novel executable provenance lane remains.',
       );
       return {
         collectionJobId: context.collection?.collectionJobId ?? 'recovery-skipped',
@@ -1023,6 +2040,7 @@ export class IdeaEvidenceRecoveryService {
      * wave.
      */
     let result: Awaited<ReturnType<CollectionJobResolverService['resolve']>>;
+    let executedRecoverySources = [...plannedRecoverySources];
     try {
       result = await this.collectionJobResolver.resolve({
       userId:
@@ -1051,6 +2069,7 @@ export class IdeaEvidenceRecoveryService {
       collectorLimits: this.resolveRecoveryCollectorLimits(
         compactDomainsOnlySecondaryRecovery,
         requestSpecificRecovery,
+        corroborationOnlyRecovery,
       ),
       signal: recoveryController.signal,
       ...(resolvedDomain
@@ -1079,7 +2098,7 @@ export class IdeaEvidenceRecoveryService {
       );
       return {
         collectionJobId: 'recovery-collection-failed',
-        selectedDataSourceKeys: plannedRecoverySources.map((source) => source.key),
+        selectedDataSourceKeys: executedRecoverySources.map((source) => source.key),
         recoveryKeywords,
         evidenceFamilies,
         totalPosts: 0,
@@ -1097,6 +2116,250 @@ export class IdeaEvidenceRecoveryService {
         nlp: context.nlp!,
         communityAiAnalysis: null,
       };
+    }
+
+    /*
+     * Zero-row requester recovery must not terminate merely because the first
+     * bounded source wave was empty. Within the SAME bounded recovery deadline,
+     * rotate once to at most two healthy documentary/research lanes that were
+     * not used in this recovery wave. No second AI plan is requested and no
+     * evidence threshold is relaxed.
+     */
+    if (
+      requestSpecificRecovery &&
+      evidenceGuaranteeRecovery &&
+      (result.rawEvidenceInputs?.length ?? 0) === 0 &&
+      !recoveryController.signal.aborted &&
+      recoveryDeadlineAt - Date.now() >= 900
+    ) {
+      const alreadyExecutedKeys = new Set(
+        plannedRecoverySources.map((source) =>
+          source.key.trim().toLocaleLowerCase(),
+        ),
+      );
+      const documentaryPriority = (source: SelectedIdeaDataSource): number => {
+        const key = source.key.trim().toLocaleLowerCase();
+        if (key === 'crossref') return 8;
+        if (key === 'news') return 7;
+        if (key === 'blog') return 6;
+        if (key === 'gdelt') return 5;
+        if (key === 'reddit') return 4;
+        if (key === 'forum') return 3;
+        if (key === 'youtube') return 2;
+        return 1;
+      };
+      const fallbackSources = resolveEligibleRecoverySources(
+        0.18,
+        Math.max(
+          this.maximumRecoverySourcesPerWave,
+          recoveryCandidateSources.length,
+        ),
+        true,
+      )
+        .filter(
+          (source) =>
+            !alreadyExecutedKeys.has(
+              source.key.trim().toLocaleLowerCase(),
+            ),
+        )
+        .sort(
+          (left, right) =>
+            documentaryPriority(right) - documentaryPriority(left) ||
+            this.scoreRecoverySource(
+              context,
+              right,
+              recoveryQueryPlan?.sourcePlans?.find(
+                (plan) =>
+                  plan.sourceKey.trim().toLocaleLowerCase() ===
+                  right.key.trim().toLocaleLowerCase(),
+              ) ?? null,
+              recoverySemanticDescription || recoveryRoutingDescription,
+            ) -
+              this.scoreRecoverySource(
+                context,
+                left,
+                recoveryQueryPlan?.sourcePlans?.find(
+                  (plan) =>
+                    plan.sourceKey.trim().toLocaleLowerCase() ===
+                    left.key.trim().toLocaleLowerCase(),
+                ) ?? null,
+                recoverySemanticDescription || recoveryRoutingDescription,
+              ),
+        )
+        .slice(0, 2);
+
+      const fallbackSourcePlans = fallbackSources
+        .map((source, sourceIndex) => {
+          const sourceKey = source.key.trim().toLocaleLowerCase();
+          const previouslyUsedBySource =
+            primaryQueriesBySource.get(sourceKey) ?? new Set<string>();
+          const atomicBase = [
+            ...domainProblemDiscoveryRecoveryQueries,
+            ...atomicRequesterRecoveryQueries,
+            ...plannedRecoveryKeywords,
+            ...authoritativeRecoveryQueries,
+            ...recoveryKeywords,
+          ]
+            .map((query) => this.sanitizeRecoveryQuery(query))
+            .filter(Boolean)
+            .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query))
+            .filter((query, index, all) => {
+              const normalized = query
+                .replace(/\s+/gu, ' ')
+                .trim()
+                .toLocaleLowerCase();
+              return (
+                Boolean(normalized) &&
+                !previouslyUsedBySource.has(normalized) &&
+                all.findIndex(
+                  (candidate) =>
+                    candidate
+                      .replace(/\s+/gu, ' ')
+                      .trim()
+                      .toLocaleLowerCase() === normalized,
+                ) === index
+              );
+            })
+            .slice(0, 8);
+
+          const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
+            sourceKey: source.key,
+            baseQueries: atomicBase,
+            causalQueries:
+              recoveryQueryPlan?.causalSearchProbes?.map(
+                (probe: RequestCausalSearchProbe) => probe.query,
+              ) ?? [],
+            requestDescription: lockedRequesterProblemRecovery
+              ? context.requestDescription
+              : undefined,
+            problemProfile: lockedRequesterProblemRecovery
+              ? context.collectionPlan?.problemProfile ?? null
+              : null,
+            discoveryDomainName:
+              resolvedDomain?.name ?? context.domainName ?? null,
+            maxQueries: 5,
+            preserveBaseQueries: true,
+            discoveryIntent: true,
+          })
+            .map((query) => this.sanitizeRecoveryQuery(query))
+            .filter((query) => {
+              const normalized = query
+                .replace(/\s+/gu, ' ')
+                .trim()
+                .toLocaleLowerCase();
+              return Boolean(normalized) && !previouslyUsedBySource.has(normalized);
+            })
+            .slice(0, 5);
+
+          return {
+            sourceKey: source.key,
+            queries: compiledQueries,
+            routingHints:
+              sourceKey === 'forum'
+                ? ['discover specialist practitioner forums from planned queries']
+                : [],
+            discoveryDomainId: resolvedDomain?.id ?? context.domainId,
+            discoveryDomainName: resolvedDomain?.name ?? context.domainName,
+            queryIntentId: `recovery:${context.evidenceRecoveryAttempts + 1}:fallback:${source.key}:${sourceIndex + 1}`,
+            sourceTier: 'SECONDARY' as const,
+            problemFacetIds:
+              context.canonicalProblemSpec?.facets.map((facet) => facet.id) ?? [],
+          };
+        })
+        .filter((plan) => plan.queries.length > 0);
+
+      const fallbackPlanKeys = new Set(
+        fallbackSourcePlans.map((plan) =>
+          plan.sourceKey.trim().toLocaleLowerCase(),
+        ),
+      );
+      const executableFallbackSources = fallbackSources.filter((source) =>
+        fallbackPlanKeys.has(source.key.trim().toLocaleLowerCase()),
+      );
+
+      if (
+        executableFallbackSources.length > 0 &&
+        recoveryDeadlineAt - Date.now() >= 700
+      ) {
+        this.logger.debug(
+          `Zero-row text recovery rotating within the same bounded attempt to ${executableFallbackSources.length} documentary/research fallback source lane(s): ${executableFallbackSources.map((source) => source.key).join(', ')}. No AI re-plan or evidence-threshold relaxation is applied.`,
+        );
+        try {
+          const fallbackResult = await this.collectionJobResolver.resolve({
+            userId:
+              context.owner.type === IDEA_OWNER_TYPES.USER
+                ? context.owner.userId
+                : undefined,
+            domainId: context.domainId,
+            country: context.location.country,
+            city: context.location.city ?? undefined,
+            region: context.location.region ?? undefined,
+            language: context.location.language,
+            radiusKm: context.location.radiusKm ?? undefined,
+            dataSourceKeys: executableFallbackSources.map(
+              (source) => source.key,
+            ),
+            keywords: recoveryKeywords,
+            plannedQueries: domainProblemDiscoveryRecoveryQueries.length > 0
+              ? domainProblemDiscoveryRecoveryQueries
+              : atomicRequesterRecoveryQueries.length > 0
+                ? atomicRequesterRecoveryQueries
+                : authoritativeRecoveryQueries,
+            queriesGeneratedByAi: usingAiRecoveryPlan,
+            sourcePlans: fallbackSourcePlans,
+            userDescription: requestSpecificRecovery
+              ? context.requestDescription ?? undefined
+              : undefined,
+            forceRefresh: true,
+            collectionMode: 'TARGETED_RECOVERY',
+            collectorLimits: this.resolveRecoveryCollectorLimits(
+              compactDomainsOnlySecondaryRecovery,
+              requestSpecificRecovery,
+              corroborationOnlyRecovery,
+            ),
+            signal: recoveryController.signal,
+            ...(resolvedDomain
+              ? {
+                  resolvedDomain: {
+                    id: resolvedDomain.id,
+                    name: resolvedDomain.name,
+                    keywords: [
+                      ...(resolvedDomain.effectiveSearchKeywords ?? []),
+                      ...resolvedDomain.keywords,
+                    ],
+                  },
+                }
+              : {}),
+            resolvedDataSources: executableFallbackSources.map((source) => ({
+              id: source.id,
+              key: source.key,
+              displayName: source.displayName,
+            })),
+          });
+          if ((fallbackResult.rawEvidenceInputs?.length ?? 0) > 0) {
+            result = fallbackResult;
+            executedRecoverySources = [
+              ...plannedRecoverySources,
+              ...executableFallbackSources,
+            ].filter(
+              (source, index, all) =>
+                all.findIndex(
+                  (candidate) =>
+                    candidate.key.trim().toLocaleLowerCase() ===
+                    source.key.trim().toLocaleLowerCase(),
+                ) === index,
+            );
+          }
+        } catch (fallbackError: unknown) {
+          this.logger.debug(
+            `Zero-row documentary/research fallback produced no usable collector result inside the shared deadline: ${
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : String(fallbackError)
+            }`,
+          );
+        }
+      }
     }
 
     const nlp = this.mapNlpContext(
@@ -1209,29 +2472,10 @@ export class IdeaEvidenceRecoveryService {
     );
 
     /*
-     * Keep deterministic candidates as a non-AI emergency fallback only. When
-     * the provider returns semantic classifications, those classifications are
-     * authoritative subject to deterministic request/workflow verification.
+     * Deterministic request-fit helpers are intentionally not used as semantic
+     * evidence fallback. Community AI remains the authority for DIRECT /
+     * SUPPORTING admission; unadjudicated recovery rows stay unknown.
      */
-    const deterministicRequestAlignedEvidence = canonicalNovelRawRecoveryEvidence.filter(
-      (evidence) =>
-        this.looksLikeUsableProblemEvidence(evidence.text) &&
-        this.isEvidenceAcceptableForRecovery(
-          evidence.text,
-          context,
-          requestSpecificRecovery,
-        ),
-    );
-    const deterministicWorkflowAdjacentEvidence =
-      canonicalNovelRawRecoveryEvidence.filter(
-        (evidence) =>
-          this.looksLikeUsableProblemEvidence(evidence.text) &&
-          !deterministicRequestAlignedEvidence.some((accepted) =>
-            this.areEquivalentEvidenceSamples(accepted.text, evidence.text),
-          ) &&
-          this.isWorkflowAdjacentSupportingEvidence(evidence.text, context),
-      );
-
     const rawRecoveryNlp = this.filterNlpContextToNovelEvidence(
       nlp,
       canonicalNovelRecoverySamples,
@@ -1255,24 +2499,56 @@ export class IdeaEvidenceRecoveryService {
      * to avoid turning a transient 8-12s provider slowdown into false
      * AI_UNAVAILABLE / EVIDENCE_ADJUDICATION_UNAVAILABLE.
      */
-    const recoveryAdjudicationBudgetMs = corroborationOnlyRecovery
+    const requestedRecoveryAdjudicationBudgetMs = corroborationOnlyRecovery
       ? Math.min(
-          7_000,
-          Math.max(5_500, 5_500 + rawEvidenceCorpus.length * 220),
+          6_200,
+          Math.max(5_200, 5_200 + rawEvidenceCorpus.length * 180),
         )
-      : Math.min(
-          8_500,
-          Math.max(6_500, 6_500 + rawEvidenceCorpus.length * 260),
-        );
+      : evidenceGuaranteeRecovery
+        ? Math.min(
+            8_400,
+            Math.max(7_400, 7_400 + rawEvidenceCorpus.length * 220),
+          )
+        : Math.min(
+            8_200,
+            Math.max(6_800, 6_800 + rawEvidenceCorpus.length * 220),
+          );
+    const remainingRecoveryWallClockMs = Math.max(
+      0,
+      recoveryTotalDeadlineAt - Date.now(),
+    );
+
+    /*
+     * Once collection has returned genuinely new provenance, semantic
+     * adjudication gets its own bounded grace window. Clamping this phase to the
+     * collection deadline was leaving exactly the useful recovery rows as
+     * UNADJUDICATED when persistence consumed the last 2-3 seconds.
+     */
+    const recoveryAdjudicationBudgetMs = shouldRunCommunityAiRecovery
+      ? requestedRecoveryAdjudicationBudgetMs
+      : 0;
+    const recoveryAdjudicationGraceExtensionMs = Math.max(
+      0,
+      recoveryAdjudicationBudgetMs - remainingRecoveryWallClockMs,
+    );
+    const canRunBoundedRecoveryAdjudication = Boolean(
+      shouldRunCommunityAiRecovery && recoveryAdjudicationBudgetMs >= 2_400,
+    );
+    if (recoveryAdjudicationGraceExtensionMs > 0) {
+      this.logger.debug(
+        `Recovery Community AI adjudication reserved a post-collection grace window: remainingCollectionEnvelope=${remainingRecoveryWallClockMs}ms, adjudicationBudget=${recoveryAdjudicationBudgetMs}ms, graceExtension=${recoveryAdjudicationGraceExtensionMs}ms, canonicalNewRows=${rawEvidenceCorpus.length}.`,
+      );
+    }
     const recoveryAdjudicationDeadlineAt =
       Date.now() + recoveryAdjudicationBudgetMs;
-    const rawCommunityAiAnalysis = shouldRunCommunityAiRecovery
+    const rawCommunityAiAnalysis = canRunBoundedRecoveryAdjudication
       ? await this.analyzeRecoveredEvidenceWithCommunityAi(
           context,
           rawRecoveryNlp,
           rawEvidenceCorpus,
           parentSignal,
           recoveryAdjudicationDeadlineAt,
+          corroborationOnlyRecovery ? selectedCanonicalFamilyLabel : null,
         )
       : null;
 
@@ -1320,26 +2596,27 @@ export class IdeaEvidenceRecoveryService {
       )
       .map((item) => item.evidence);
 
+    /*
+     * Recovery semantic trust remains AI-owned. Deterministic request-fit
+     * diagnostics may help routing/logging, but they never promote a row when
+     * Community AI produced no usable verdict. Those rows remain raw/unknown
+     * and can be retried later without being fabricated into evidence.
+     */
     const selectedExternalEvidence = this.deduplicateRecoveredEvidence(
       hasAiEvidenceClassifications
         ? [...aiDirectEvidence, ...aiSupportingEvidence]
-        : [
-            ...deterministicRequestAlignedEvidence,
-            ...deterministicWorkflowAdjacentEvidence,
-          ],
+        : [],
     );
 
     const directEvidenceSamples = this.deduplicateEvidenceSamples(
-      (hasAiEvidenceClassifications
-        ? aiDirectEvidence
-        : deterministicRequestAlignedEvidence
-      ).map((evidence) => evidence.text),
+      (hasAiEvidenceClassifications ? aiDirectEvidence : []).map(
+        (evidence) => evidence.text,
+      ),
     );
     const supportingEvidenceSamples = this.deduplicateEvidenceSamples(
-      (hasAiEvidenceClassifications
-        ? aiSupportingEvidence
-        : deterministicWorkflowAdjacentEvidence
-      ).map((evidence) => evidence.text),
+      (hasAiEvidenceClassifications ? aiSupportingEvidence : []).map(
+        (evidence) => evidence.text,
+      ),
     );
 
     const compositeEvidenceSamples = requestSpecificRecovery
@@ -1447,7 +2724,7 @@ export class IdeaEvidenceRecoveryService {
 
     return {
       collectionJobId: result.job.id,
-      selectedDataSourceKeys: plannedRecoverySources.map((source) => source.key),
+      selectedDataSourceKeys: executedRecoverySources.map((source) => source.key),
       recoveryKeywords,
       evidenceFamilies,
       totalPosts: result.nlpOutput.totalPostsAnalyzed,
@@ -1465,6 +2742,10 @@ export class IdeaEvidenceRecoveryService {
       rawEvidenceCorpus,
       recoveryOutcome,
       communityAiRecoveryExecuted: shouldRunCommunityAiRecovery,
+      corroborationTargetFamily:
+        corroborationOnlyRecovery && selectedCanonicalFamilyLabel
+          ? selectedCanonicalFamilyLabel
+          : null,
       nlp: {
         ...novelNlp,
         aiUsed:
@@ -1568,7 +2849,12 @@ export class IdeaEvidenceRecoveryService {
 
         for (const comment of post.comments) {
           const commentText = comment.content.replace(/\s+/gu, ' ').trim();
-          if (commentText.length < 8) continue;
+          const contextualEmojiReaction = Boolean(
+            commentPrefix &&
+              commentText.length >= 1 &&
+              /\p{Extended_Pictographic}/u.test(commentText),
+          );
+          if (commentText.length < 8 && !contextualEmojiReaction) continue;
           evidence.push({
             text: commentPrefix
               ? `${commentPrefix}. Community comment: ${commentText}`
@@ -1737,10 +3023,7 @@ export class IdeaEvidenceRecoveryService {
         const timedOut = /(?:timeout|timed out|exceeded \d+ms)/iu.test(
           entry.failureReason ?? '',
         );
-        const zeroYield =
-          entry.status === CollectionJobStatus.COMPLETED &&
-          entry.totalPosts + entry.totalComments === 0;
-        if (failed || rateLimited || timedOut || zeroYield) {
+        if (failed || rateLimited || timedOut) {
           excluded.add(entry.dataSource.key);
         }
       }
@@ -1772,17 +3055,12 @@ export class IdeaEvidenceRecoveryService {
     context: IdeaGenerationContext,
   ): ReadonlySet<string> {
     const excluded = new Set<string>();
-    const rawSourceKeys = new Set(
-      (context.rawEvidenceCorpus ?? [])
-        .map((item) => item.sourceKey.trim().toLocaleLowerCase())
-        .filter(Boolean),
-    );
     const attemptedSourceKeys = new Set([
       ...(context.selectedDataSources ?? [])
         .map((source) => source.key.trim().toLocaleLowerCase())
         .filter(Boolean),
-      ...(context.collectionPlan?.sourcePlans ?? [])
-        .map((plan) => plan.sourceKey.trim().toLocaleLowerCase())
+      ...(context.rawEvidenceCorpus ?? [])
+        .map((item) => item.sourceKey.trim().toLocaleLowerCase())
         .filter(Boolean),
     ]);
     const canonicalBySource = new Map<
@@ -1799,20 +3077,44 @@ export class IdeaEvidenceRecoveryService {
       const key = item.sourceKey.trim().toLocaleLowerCase();
       rawCountsBySource.set(key, (rawCountsBySource.get(key) ?? 0) + 1);
     }
+    const requesterScoped = Boolean(context.requestDescription?.trim());
+    const zeroTrustedRequester = Boolean(
+      requesterScoped &&
+        !(context.canonicalEvidenceLedger ?? []).some(
+          (item) =>
+            item.verified &&
+            (item.classification === 'DIRECT_PROBLEM' ||
+              item.classification === 'SUPPORTING_SIGNAL'),
+        ),
+    );
+
     for (const key of attemptedSourceKeys) {
       /*
-       * A healthy source that returned raw/context material is not exhausted.
-       * Recovery uses a novel, problem-focused query and may legitimately turn
-       * the same source into a useful direct/supporting lane. Exclude only
-       * sources that returned no raw material at all or are currently degraded.
-       * Database diagnostics below still exclude failed/rate-limited/timeouts.
+       * Text recovery is a single bounded rescue wave. Replaying a primary
+       * source that returned ZERO rows is almost always a latency-only tail when
+       * unused healthy sources are available, and replaying a source whose
+       * broad corpus produced only CONTEXT rows frequently returns the same
+       * provenance again. For text-bearing requests mark those surfaces
+       * exhausted run-locally so recovery rotates to a genuinely new source.
+       * Domain-only / no-input discovery keeps the older broader behavior.
        */
-      if (!rawSourceKeys.has(key)) {
-        excluded.add(key);
-      }
       const canonicalRows = canonicalBySource.get(key) ?? [];
       const rawCount = rawCountsBySource.get(key) ?? 0;
+      const primarySourceReturnedNothing =
+        requesterScoped && !zeroTrustedRequester && rawCount === 0;
+      const broadContextOnlySurface =
+        requesterScoped &&
+        !zeroTrustedRequester &&
+        rawCount >= 4 &&
+        canonicalRows.length >= 4 &&
+        canonicalRows.every(
+          (item) => item.classification === 'CONTEXT_ONLY',
+        );
+      if (primarySourceReturnedNothing || broadContextOnlySurface) {
+        excluded.add(key);
+      }
       const everyReviewedRowWasUnrelated =
+        !zeroTrustedRequester &&
         rawCount >= 2 &&
         canonicalRows.length > 0 &&
         canonicalRows.every((item) => item.classification === 'UNRELATED');
@@ -1848,13 +3150,51 @@ export class IdeaEvidenceRecoveryService {
     } | null,
     semanticDescription?: string,
   ): number {
+    const discoveryMode =
+      context.collectionPlan?.requestIntent?.mode !== 'EXPLICIT_PROBLEM';
+    const resolvedDomainNames = [
+      ...context.selectedDomains.map((domain) => domain.name.trim()),
+      ...(context.domainName?.trim() ? [context.domainName.trim()] : []),
+    ].filter(Boolean);
+    const discoveryScopeDescription = [
+      ...resolvedDomainNames,
+      context.collectionPlan?.domainIdentity?.actor ?? '',
+      context.collectionPlan?.domainIdentity?.object ?? '',
+      context.collectionPlan?.domainIdentity?.workflow ?? '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const problemOwnedKeywords = discoveryMode
+      ? [
+          ...resolvedDomainNames,
+          ...(context.collectionPlan?.retrievalVocabulary ?? []),
+          context.collectionPlan?.domainIdentity?.actor ?? '',
+          context.collectionPlan?.domainIdentity?.object ?? '',
+          context.collectionPlan?.domainIdentity?.workflow ?? '',
+        ]
+      : context.collectionPlan?.problemProfile
+        ? [
+            context.collectionPlan.problemProfile.actor,
+            context.collectionPlan.problemProfile.object,
+            context.collectionPlan.problemProfile.workflow,
+            context.collectionPlan.problemProfile.friction ?? '',
+            ...context.collectionPlan.problemProfile.failureModes,
+            ...context.collectionPlan.problemProfile.consequences,
+          ]
+        : context.collectionPlan?.intentConcepts ?? [];
     const semanticFit = this.collectorsFactory.getCollectorRequestFitScore(
       source.key,
       {
         requestDescription:
-          semanticDescription?.trim() || context.requestDescription,
-        domainName: context.domainName,
-        keywords: context.keywords,
+          semanticDescription?.trim() ||
+          (discoveryMode
+            ? discoveryScopeDescription
+            : context.requestDescription),
+        domainName:
+          context.domainName?.trim() ||
+          context.selectedDomains[0]?.name?.trim() ||
+          undefined,
+        keywords: problemOwnedKeywords,
         plannedQueries:
           sourcePlan?.queries ?? context.collectionPlan?.searchQueries ?? [],
         sourceHints: sourcePlan?.routingHints ?? [],
@@ -1888,24 +3228,24 @@ export class IdeaEvidenceRecoveryService {
      */
     const observedYieldAdjustment =
       priorOutcome === 'USEFUL'
-        ? 0.04
+        ? 0.08
         : priorOutcome === 'CONTEXT_ONLY'
-          ? -0.14
+          ? -0.10
           : priorOutcome === 'UNRELATED_ONLY'
-            ? -0.28
+            ? -0.62
             : priorOutcome === 'EMPTY'
-              ? -0.18
+              ? -0.72
               : priorOutcome === 'DEGRADED'
-                ? -0.45
+                ? -0.55
                 : 0;
     const attemptedSourceKeys = new Set([
       ...(context.selectedDataSources ?? []).map((item) => item.key),
-      ...(context.collectionPlan?.sourcePlans ?? []).map((plan) => plan.sourceKey),
+      ...(context.rawEvidenceCorpus ?? []).map((item) => item.sourceKey),
     ].map((key) => key.trim().toLocaleLowerCase()).filter(Boolean));
     const sourceKey = source.key.trim().toLocaleLowerCase();
     const provenanceNoveltyAdjustment = attemptedSourceKeys.has(sourceKey)
-      ? -0.08
-      : 0.14;
+      ? -0.12
+      : 0.24;
     return (
       semanticFit * 0.68 +
       health * 0.20 +
@@ -2075,6 +3415,20 @@ export class IdeaEvidenceRecoveryService {
     return identityOverlap >= 1 || workflowOverlap + painOverlap >= 2;
   }
 
+  private deduplicateRecoveryQueries(queries: readonly string[]): string[] {
+    const seen = new Set<string>();
+    const output: string[] = [];
+    for (const query of queries) {
+      const cleaned = query.replace(/\s+/gu, ' ').trim();
+      if (!cleaned) continue;
+      const key = cleaned.toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(cleaned);
+    }
+    return output;
+  }
+
   private sanitizeRecoveryQuery(value: string): string {
     let cleaned = value
       .normalize('NFKC')
@@ -2174,6 +3528,7 @@ export class IdeaEvidenceRecoveryService {
     recoveryRawCorpus: readonly IdeaGenerationRawEvidenceItem[],
     signal?: AbortSignal,
     deadlineAt?: number,
+    corroborationTargetFamily?: string | null,
   ): Promise<CommunityAiAnalysis | null> {
     if (recoveryRawCorpus.length === 0) return null;
 
@@ -2191,8 +3546,25 @@ export class IdeaEvidenceRecoveryService {
         text: entry.text,
         sentiment: 'NEUTRAL',
       }));
+    const normalizedCorroborationTarget =
+      corroborationTargetFamily?.replace(/\s+/gu, ' ').trim() ?? '';
+    const recoveryCollectionPlan = normalizedCorroborationTarget && context.collectionPlan
+      ? {
+          ...context.collectionPlan,
+          requestIntent: {
+            mode: 'EXPLICIT_PROBLEM' as const,
+            summary: `Corroborate the already-selected canonical problem family: ${normalizedCorroborationTarget}`,
+            explicitProblem: normalizedCorroborationTarget,
+            desiredOutcome: null,
+          },
+          problemProfile: undefined,
+        }
+      : context.collectionPlan;
     const recoveryContext: IdeaGenerationContext = {
       ...context,
+      requestDescription:
+        normalizedCorroborationTarget || context.requestDescription,
+      collectionPlan: recoveryCollectionPlan,
       nlp: {
         ...nlp,
         totalTextsAnalyzed: recoveryRawCorpus.length,
@@ -3179,6 +4551,7 @@ export class IdeaEvidenceRecoveryService {
   }  private resolveRecoveryCollectorLimits(
     _compact = false,
     _requestSpecific = false,
+    corroborationOnly = false,
   ): {
     readonly maxFetchedPosts: number;
     readonly maxSavedPosts: number;
@@ -3188,6 +4561,26 @@ export class IdeaEvidenceRecoveryService {
     // Recovery is an exceptional sparse-first-pass rescue only. The main
     // collection wave already performs broad source-diverse retrieval, so a
     // recovery wave must stay tiny and cannot become a second broad crawl.
+    if (corroborationOnly) {
+      return {
+        maxFetchedPosts: Math.min(
+          this.readPositiveConfig('RECOVERY_CORROBORATION_MAX_FETCHED_POSTS', 2),
+          2,
+        ),
+        maxSavedPosts: Math.min(
+          this.readPositiveConfig('RECOVERY_CORROBORATION_MAX_SAVED_POSTS', 1),
+          1,
+        ),
+        maxFetchedComments: Math.min(
+          this.readPositiveConfig('RECOVERY_CORROBORATION_MAX_FETCHED_COMMENTS', 2),
+          2,
+        ),
+        maxSavedComments: Math.min(
+          this.readPositiveConfig('RECOVERY_CORROBORATION_MAX_SAVED_COMMENTS', 1),
+          1,
+        ),
+      };
+    }
     return {
       maxFetchedPosts: Math.min(
         this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 3),

@@ -32,7 +32,7 @@ export const COMMUNITY_AI_ANALYSIS_TEMPERATURE = 0.1;
  * collector corpus from exhausting the synthesis response token budget.
  */
 export const COMMUNITY_AI_EVIDENCE_TRIAGE_SCHEMA_NAME =
-  'nexora_community_evidence_triage_v12_transport_envelope_per_item_admission';
+  'nexora_community_evidence_triage_v13_compact_transport_per_item_admission';
 
 /** Canonical provider-facing semantic labels. Keep prompt/schema/parser in sync by importing these arrays. */
 export const COMMUNITY_AI_PROVIDER_EVIDENCE_CLASSIFICATIONS = [
@@ -108,13 +108,13 @@ export const COMMUNITY_AI_EVIDENCE_TRIAGE_MAX_OUTPUT_TOKENS = 12_000;
  * complete per-item-valid model response arrives, so this cap prevents provider
  * hangs without turning a normal slow response into lost evidence.
  */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_REQUEST_TIMEOUT_MS = 24_000;
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_REQUEST_TIMEOUT_MS = 28_000;
 
-/** Absolute safety ceiling for the three-model first-complete race. */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_TOTAL_TIMEOUT_MS = 42_000;
+/** Absolute safety ceiling for the provider-diverse first-complete race. */
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_TOTAL_TIMEOUT_MS = 52_000;
 
-/** Number of parallel online models allowed for the full-corpus triage race. */
-export const COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS = 3;
+/** Number of parallel online models allowed for the full-corpus triage availability race. */
+export const COMMUNITY_AI_EVIDENCE_TRIAGE_PARALLEL_MODELS = 4;
 
 /** Number of accepted classified items sent to opportunity synthesis. */
 export const COMMUNITY_AI_EVIDENCE_SYNTHESIS_MAX_ITEMS = 36;
@@ -148,21 +148,16 @@ export const COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES = 2;
 /**
  * Number of domain-validation attempts using different online models.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 3;
+export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 4;
 
 /**
- * Core-generation-oriented models kept out of the short community-extraction
- * lane. They remain active for workloads whose request budget matches their
- * observed latency, while faster structured extractors handle this stage.
+ * Only routes with a known hard transport/configuration failure are excluded
+ * from the Community race. Slower structured-output models remain eligible as
+ * parallel availability hedges; the first complete valid verdict cancels them,
+ * so they improve provider resilience without adding a serial timeout window.
  */
 export const COMMUNITY_AI_ANALYSIS_EXCLUDED_MODEL_API_IDS = new Set<string>([
-  /* The configured OpenRouter route currently resolves to MODEL_NOT_FOUND. */
   'nvidia/nemotron-nano-9b-v2:free',
-  'openai/gpt-5.4-nano',
-  'openai/gpt-5-mini',
-  'qwen/qwen3.6-35b-a3b',
-  'qwen/qwen3.5-flash-02-23',
-  'anthropic/claude-haiku-4.5',
 ]);
 
 /**

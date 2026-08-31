@@ -93,10 +93,10 @@ export const IDEA_CORE_MODEL_TIMEOUT_MS = 12_000;
  * Provider-specific core-generation deadlines. OpenRouter remains tightly
  * bounded because connection failures are usually detected quickly. Direct
  * Google receives a slightly wider window because production runs have shown
- * valid Gemini responses arriving just after the previous 18.5-second cutoff.
+ * valid Gemini responses arriving just after the previous 12-second cutoff.
  */
 export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 11_000;
-export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 12_000;
+export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 14_500;
 
 /** Use a configured local model only after every online core model fails. */
 export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = true;
@@ -591,10 +591,12 @@ export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 45;
 /**
  * Number of AI models launched in the first provider-diverse wave.
  *
- * Keeping the first wave at two prevents transient failures from consuming the
- * complete model-attempt budget before late fallback models can be tried.
+ * The first wave uses three latency-hedged models. Provider-diverse models
+ * are selected first; same-provider siblings fill any remaining slot. The
+ * first accepted candidate still cancels slower peers, so resilience improves
+ * without adding a serial provider window.
  */
-export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 2;
+export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
 
 /**
  * Number of highest-ranked opportunities forwarded to the multi-model
@@ -625,7 +627,7 @@ export const IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY =
  * - One opportunity is attempted on the fast path.
  * - One additional opportunity is attempted only when the first opportunity
  *   does not produce enough accepted candidates.
- * - Two AI models are targeted per opportunity.
+ * - Up to three AI models are latency-hedged per opportunity.
  * - Additional models may be attempted only to replace failed candidate slots.
  * - The global attempt budget remains independently bounded.
  */

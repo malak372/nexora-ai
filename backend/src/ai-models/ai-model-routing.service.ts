@@ -30,11 +30,9 @@ const DEFAULT_MODEL_HARD_COOLDOWN_MINUTES = 6 * 60;
 const MIN_MODEL_HARD_COOLDOWN_MINUTES = 15;
 const MAX_MODEL_HARD_COOLDOWN_MINUTES = 7 * 24 * 60;
 
-const MODEL_TRANSIENT_ERROR_CODES = new Set([
+const MODEL_CROSS_RUN_TRANSIENT_ERROR_CODES = new Set([
   'RATE_LIMIT',
   'PROVIDER_UNAVAILABLE',
-  'TIMEOUT',
-  'NETWORK',
 ]);
 
 /**
@@ -397,8 +395,12 @@ export class AiModelRoutingService implements OnModuleInit {
    * failures (quota/auth/forbidden), because a
    * generic OpenRouter 429 may affect only one free model or upstream host.
    * RATE_LIMIT and PROVIDER_UNAVAILABLE therefore create a model-level
-   * cooldown only after repeated consecutive transient failures. Other models
-   * from the same provider remain eligible, and a later success resets the run.
+   * cooldown only after repeated consecutive transient failures. TIMEOUT and
+   * NETWORK failures are handled inside the current bounded caller and never
+   * become cross-run blockers by themselves. Provider-wide blocking is based
+   * only on provider-scoped logs (aiModelId=null), so one model-specific quota
+   * failure cannot disable healthy sibling models from the same provider. Other
+   * models remain eligible, and a later success resets the run.
    */
   async filterTemporarilyUnavailableProviders(
     models: readonly AiModel[],
@@ -458,6 +460,7 @@ export class AiModelRoutingService implements OnModuleInit {
     for (const log of recentLogs) {
       if (
         log.createdAt >= providerCutoff &&
+        log.aiModelId === null &&
         (
           log.isSuccess ||
           (log.errorCode !== null &&
@@ -521,7 +524,7 @@ export class AiModelRoutingService implements OnModuleInit {
 
         if (
           log.errorCode === null ||
-          !MODEL_TRANSIENT_ERROR_CODES.has(log.errorCode)
+          !MODEL_CROSS_RUN_TRANSIENT_ERROR_CODES.has(log.errorCode)
         ) {
           break;
         }

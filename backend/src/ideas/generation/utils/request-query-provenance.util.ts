@@ -35,6 +35,40 @@ export class RequestQueryProvenanceUtil {
     );
   }
 
+  static isMateriallyNovelQuery(input: {
+    readonly query: string;
+    readonly previousQueries: readonly string[];
+  }): boolean {
+    const candidateTokens = this.semanticTokens(input.query);
+    if (candidateTokens.length === 0) return false;
+
+    for (const previousQuery of input.previousQueries) {
+      const previousTokens = this.semanticTokens(previousQuery);
+      if (previousTokens.length === 0) continue;
+
+      const previousSet = new Set(previousTokens);
+      const intersectionCount = candidateTokens.filter((token) =>
+        previousSet.has(token),
+      ).length;
+      const candidateNovelTokenCount =
+        candidateTokens.length - intersectionCount;
+      const unionCount = new Set([...candidateTokens, ...previousTokens]).size;
+      const containment =
+        intersectionCount /
+        Math.max(1, Math.min(candidateTokens.length, previousTokens.length));
+      const jaccard = intersectionCount / Math.max(1, unionCount);
+
+      if (
+        (containment >= 0.82 && candidateNovelTokenCount <= 1) ||
+        (jaccard >= 0.72 && candidateNovelTokenCount <= 2)
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   static extractObjectIdentityTokens(value: string): string[] {
     return this.semanticTokens(value).slice(0, 10);
   }

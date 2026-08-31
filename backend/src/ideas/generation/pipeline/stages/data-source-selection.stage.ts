@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { CollectorSourceHealthService } from '../../../../data-collection/collector-source-health.service';
 import { CollectorsFactory } from '../../../../collectors/collectors.factory';
+import { CollectorRequestCapabilityUtil } from '../../../../collectors/base/collector-request-capability.util';
 import {
   findIdeaGenerationStageDefinition,
   IDEA_GENERATION_STAGE_KEYS,
@@ -14,6 +15,7 @@ import type {
 import { IdeaGenerationSelectionService } from '../../services/idea-generation-selection.service';
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 import { mergeGenerationStringArrays } from '../../utils/idea-generation-normalizer.util';
+import { RequestWorkflowSourcePolicyUtil } from '../../utils/request-workflow-source-policy.util';
 
 @Injectable()
 export class DataSourceSelectionStage implements IdeaGenerationStage {
@@ -144,6 +146,13 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       ...(context.collectionPlan?.sourcePlans ?? []).map((plan) => plan.sourceKey),
     ]);
     const maxAutomatic = 9;
+    const textOnlyRequest = context.requestMode === 'TEXT_ONLY';
+    const textAndDomainsRequest = context.requestMode === 'TEXT_AND_DOMAINS';
+    const requestedAutomaticTarget = textOnlyRequest
+      ? 7
+      : textAndDomainsRequest
+        ? 8
+        : Math.max(1, plannerKeys.length);
 
     const selected: T[] = [];
     const selectedKeys = new Set<string>();
@@ -156,13 +165,44 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       if (!allowDegraded && !this.collectorSourceHealth.isHealthy(source.key)) {
         return;
       }
+      const explicitlyRequested = explicitKeys.includes(normalized);
+      if (
+        !explicitlyRequested &&
+        RequestWorkflowSourcePolicyUtil.shouldSuppressAppReviewLanes({
+          requestDescription: context.requestDescription,
+          problemProfile: context.collectionPlan?.problemProfile,
+        }) &&
+        RequestWorkflowSourcePolicyUtil.isAppReviewSource(normalized)
+      ) {
+        return;
+      }
+      if (
+        !explicitlyRequested &&
+        RequestWorkflowSourcePolicyUtil.shouldSuppressDeveloperCommunityLanes({
+          requestDescription: context.requestDescription,
+          problemProfile: context.collectionPlan?.problemProfile,
+        }) &&
+        RequestWorkflowSourcePolicyUtil.isDeveloperCommunitySource(normalized)
+      ) {
+        return;
+      }
       const sourcePlan = context.collectionPlan?.sourcePlans?.find(
         (plan) => plan.sourceKey.toLocaleLowerCase() === normalized,
       );
+      const problemOwnedKeywords = context.collectionPlan?.problemProfile
+        ? [
+            context.collectionPlan.problemProfile.actor,
+            context.collectionPlan.problemProfile.object,
+            context.collectionPlan.problemProfile.workflow,
+            context.collectionPlan.problemProfile.friction ?? '',
+            ...context.collectionPlan.problemProfile.failureModes,
+            ...context.collectionPlan.problemProfile.consequences,
+          ]
+        : context.collectionPlan?.intentConcepts ?? [];
       const capabilityInput = {
         requestDescription: context.requestDescription,
-        domainName: context.domainName,
-        keywords: context.keywords,
+        domainName: context.requestDescription?.trim() ? undefined : context.domainName,
+        keywords: problemOwnedKeywords,
         plannedQueries: sourcePlan?.queries ?? context.collectionPlan?.searchQueries ?? [],
         sourceHints: sourcePlan?.routingHints ?? [],
         collectionMode: 'FAST_GENERATION' as const,
@@ -200,15 +240,72 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
     plannerKeys.forEach((key) => add(key, false));
 
     /*
+     * TEXT_ONLY operational requests need at least one research/technical lane
+     * in the actual executable portfolio, not only in the PREPARING plan. The
+     * source still passes the same request-fit, health and downstream semantic
+     * evidence gates.
+     */
+    if (
+      textOnlyRequest &&
+      context.collectionPlan?.domainIdentity?.workflow?.trim() &&
+      context.collectionPlan?.domainIdentity?.failure?.trim()
+    ) {
+      add('crossref', false);
+    }
+
+    const plannedAutomaticTarget = Math.min(
+      maxAutomatic,
+      Math.max(plannerKeys.length, requestedAutomaticTarget),
+    );
+    const missingPlannerKeys = plannerKeys.filter((key) => !selectedKeys.has(key));
+
+    if (missingPlannerKeys.length > 0 && selected.length < plannedAutomaticTarget) {
+      const missingArchetypes = missingPlannerKeys
+        .map((key) => CollectorRequestCapabilityUtil.sourceArchetype(key))
+        .filter((archetype) => archetype !== 'OTHER');
+
+      for (const archetype of missingArchetypes) {
+        if (selected.length >= plannedAutomaticTarget) break;
+
+        const substitute = [...dataSources]
+          .filter(
+            (source) =>
+              !selectedKeys.has(source.key.toLocaleLowerCase()) &&
+              CollectorRequestCapabilityUtil.sourceArchetype(source.key) === archetype,
+          )
+          .sort(
+            (left, right) =>
+              this.scoreAutomaticSource(context, right) -
+                this.scoreAutomaticSource(context, left) ||
+              left.key.localeCompare(right.key),
+          )
+          .find((source) => {
+            const before = selected.length;
+            add(source.key, false);
+            return selected.length > before;
+          });
+
+        if (!substitute) continue;
+      }
+    }
+
+    const missingPlannerLaneCount = Math.max(
+      0,
+      plannedAutomaticTarget - selected.length,
+    );
+
+    /*
      * DIRECT_PROBLEM evidence is usually found in user/practitioner comments,
      * not publisher metadata. Keep at least two healthy comment-capable lanes
-     * whenever the installed source set supports them. They still pass the
-     * normal request-capability guard, so this does not force app stores or
-     * developer communities into unrelated workflows.
+     * whenever no AI plan exists. When an AI plan exists it owns the portfolio;
+     * runtime comment-lane supplementation is allowed only to replace a planned
+     * lane that was vetoed by health/capability/policy, never to expand a fully
+     * executable AI portfolio.
      */
     const discoveryMode = !context.requestDescription?.trim();
     const desiredCommentLanes = discoveryMode ? 3 : 2;
     if (
+      (plannerKeys.length === 0 || missingPlannerLaneCount > 0) &&
       selected.filter((source) => source.supportsComments === true).length <
       desiredCommentLanes
     ) {
@@ -239,13 +336,14 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
     const targetAutomaticCount = Math.min(
       maxAutomatic,
       Math.max(
-        1,
-        plannerKeys.length > 0
-          ? plannerKeys.length + (discoveryMode ? 2 : 1)
-          : 1,
+        requestedAutomaticTarget,
+        plannerKeys.length > 0 ? plannerKeys.length : 1,
       ),
     );
-    if (plannerKeys.length > 0 && selected.length < targetAutomaticCount) {
+    if (
+      (plannerKeys.length > 0 || textOnlyRequest || textAndDomainsRequest) &&
+      selected.length < targetAutomaticCount
+    ) {
       [...dataSources]
         .sort(
           (left, right) =>
@@ -291,12 +389,22 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       (plan) =>
         plan.sourceKey.toLocaleLowerCase() === source.key.toLocaleLowerCase(),
     );
+    const problemOwnedKeywords = context.collectionPlan?.problemProfile
+      ? [
+          context.collectionPlan.problemProfile.actor,
+          context.collectionPlan.problemProfile.object,
+          context.collectionPlan.problemProfile.workflow,
+          context.collectionPlan.problemProfile.friction ?? '',
+          ...context.collectionPlan.problemProfile.failureModes,
+          ...context.collectionPlan.problemProfile.consequences,
+        ]
+      : context.collectionPlan?.intentConcepts ?? [];
     const requestFit = this.collectorsFactory.getCollectorRequestFitScore(
       source.key,
       {
         requestDescription: context.requestDescription,
-        domainName: context.domainName,
-        keywords: context.keywords,
+        domainName: context.requestDescription?.trim() ? undefined : context.domainName,
+        keywords: problemOwnedKeywords,
         plannedQueries:
           sourcePlan?.queries ?? context.collectionPlan?.searchQueries ?? [],
         sourceHints: sourcePlan?.routingHints ?? [],

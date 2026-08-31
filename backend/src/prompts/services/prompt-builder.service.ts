@@ -479,9 +479,14 @@ export class PromptBuilderService {
       ].filter(Boolean).join('\n');
     }
 
+    const discoveryModeLabel =
+      interpretation?.mode === 'EXPLICIT_PROBLEM_DISCOVERY'
+        ? 'EXPLICIT_PROBLEM_DISCOVERY'
+        : 'DISCOVERY_INTENT';
+
     return [
       'APPLICATION-ENFORCED REQUEST INTERPRETATION:',
-      '- PREPARING AI classified the requester text as DISCOVERY_INTENT, not as a verified problem statement.',
+      `- PREPARING AI classified the requester text as ${discoveryModeLabel}. This is domain/workflow discovery context, not a verified problem statement.`,
       requestDescription
         ? `- Requester intent/context: ${requestDescription}`
         : '',
@@ -493,7 +498,8 @@ export class PromptBuilderService {
         : '',
       '- Use the requester text only to constrain the actor, workflow, desired direction, exclusions, and domain search space. It is not evidence and must not be restated as the final problem merely because it was provided by the requester.',
       '- The final software problem must come from the canonical problem family selected after collection by Community AI and deterministic evidence verification.',
-      '- Build the product around that evidence-backed selected problem while preserving compatible requester goals and constraints.',
+      '- Build the product around that evidence-backed selected problem. After the problem is selected, use compatible requester goals, actors, workflow preferences, and desired capabilities to tailor the solution; never let them replace or broaden the evidence-selected problem.',
+      '- Keep the evidence-selected problem and requester-authored context narratively separate. Never write that the evidence-selected problem causes, leads to, results in, drives, or explains requester-described failures unless retained trusted evidence explicitly states that same causal link. When requester context is useful for product design, introduce it separately with wording such as "The requester context additionally highlights ..." or "As a separate pilot-design constraint ...".',
       '- If no DIRECT_PROBLEM or SUPPORTING_SIGNAL survives, do not fabricate a concrete market problem; return a clearly validation-stage direction consistent with the requester intent.',
     ].filter(Boolean).join('\n');
   }
@@ -598,6 +604,7 @@ export class PromptBuilderService {
     const unvalidatedFacetIds = allFacetIds.filter(
       (facetId) => !verifiedFacetIds.includes(facetId),
     );
+    const discoveryIntent = input.requestIntent?.mode !== 'EXPLICIT_PROBLEM';
 
     return [
       'APPLICATION-ENFORCED CANONICAL EVIDENCE CONTRACT:',
@@ -605,18 +612,22 @@ export class PromptBuilderService {
       `- Authoritative trustedCount=${trusted.length}, directCount=${directCount}, supportingCount=${supportingCount}.`,
       '- These counts come only from canonicalEvidenceLedger. Never infer, add, upgrade, or downgrade evidence from ranking prose, domain selection, requester text, or generic NLP totals.',
       ...(verifiedFacetIds.length
-        ? [`- Verified requester facets only: ${verifiedFacetIds.join(', ')}.`]
+        ? [`- Verified retrieval/evidence facets only: ${verifiedFacetIds.join(', ')}.`]
         : []),
       ...(unvalidatedFacetIds.length
-        ? [`- Unvalidated requester facets: ${unvalidatedFacetIds.join(', ')}. Do not present these as evidence-proven.`]
+        ? [`- Unvalidated text-derived retrieval facets: ${unvalidatedFacetIds.join(', ')}. They are search context only and must not be presented as the final problem or as evidence-proven.`]
         : []),
       state === 'EVIDENCE_ADJUDICATION_UNAVAILABLE'
         ? '- ADJUDICATION-UNAVAILABLE language lock: raw external material exists, but semantic triage did not complete for part or all of it. Never say the material was unrelated or that no evidence exists. Describe the problem only as requester-described/discovery hypothesis and explicitly keep external grounding unconfirmed.'
         : state === 'NO_VALID_EVIDENCE_FOUND'
           ? '- NO-VALID-EVIDENCE language lock: semantic adjudication completed without retaining trusted DIRECT/SUPPORTING evidence. Describe the problem only as requester-described/discovery hypothesis. Use may/could/if confirmed and never imply validated or recurring demand.'
         : state === 'SUPPORTING_VALIDATED'
-          ? '- SUPPORTING-only lock: evidence validates only the matched facet(s). Preserve the full canonical requester problem as scope, but mark unmatched facets as unvalidated. Never claim the entire problem chain or every selected domain is proven.'
-          : '- DIRECT state: strong wording is allowed only for the exact verified problem/facet and verified domain(s); do not generalize prevalence or recurrence beyond the retained evidence.',
+          ? discoveryIntent
+            ? '- SUPPORTING-only discovery lock: build the product around the strongest verified evidence-selected problem family. Requester text remains retrieval context and must not override or enlarge that family. Do not claim prevalence or unverified selected-domain coverage.'
+            : '- SUPPORTING-only corroboration lock: evidence validates only the matched facet(s) of the already evidence-selected family; unmatched facets remain unvalidated.'
+          : discoveryIntent
+            ? '- DIRECT discovery state: build around the exact verified evidence-selected problem family. Requester text may guide implementation context but cannot replace, broaden, or rename the evidence-selected problem.'
+            : '- DIRECT corroboration state: strong wording is allowed only for the exact verified locked family/facet; do not generalize prevalence or recurrence beyond the retained evidence.',
     ].join('\n');
   }
 
@@ -718,6 +729,7 @@ export class PromptBuilderService {
       evidenceLanguageDirective,
       problemMatchDirective,
       '- Keep evidence and intervention logic separate: evidence supports the observed problem only. Any mechanism not explicitly described by retained evidence (for example calendar scheduling, micro-break duration, automation, or a presumed root cause) must be labeled as a bounded pilot hypothesis to test.',
+      '- In discovery modes with requester text, never use causal bridge wording to connect the evidence-selected problem to a requester-described consequence or workflow pain unless that exact relationship is present in retained trusted evidence. If both are mentioned, present the requester material as separate design context rather than an evidence-backed consequence.',
       '- Whenever the NLP executive summary mentions dataset size, it must state all three exact totals above.',
       '- Never describe the comment count as the total number of comments and posts.',
       '- Store listings, feature catalogues, promotional copy, and product descriptions are contextual market material, not direct proof of a complaint or unmet need.',
@@ -971,7 +983,9 @@ export class PromptBuilderService {
                 ? `- The allowed validation scope spans ${winnerDomainNames.join(' and ')}. Refer to these as requester-selected pilot dimensions, never as domains where evidence already verified the problem.`
                 : `- When referring to the evidence source in prose, use "across ${winnerDomainNames.join(' and ')}" because the selected opportunity itself is verified across those domains.`
               : validationOnly
-                ? `- ${winnerDomainNames[0]} is an allowed validation-scope domain, not a verified evidence source for the requester-defined problem.`
+                ? explicitRequesterProblem
+                  ? `- ${winnerDomainNames[0]} is an allowed validation-scope domain, not a verified evidence source for the requester-defined problem.`
+                  : `- ${winnerDomainNames[0]} is an allowed validation-scope domain only. Requester text and selected-domain membership are discovery context, not problem evidence.`
                 : `- When referring to the evidence source in prose, use the single verified winner domain ${winnerDomainNames[0]}. Do not describe the product as cross-domain merely because other selected domains produced separate evidence.`,
           ]
         : []),

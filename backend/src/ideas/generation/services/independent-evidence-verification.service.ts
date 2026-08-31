@@ -842,16 +842,23 @@ export class IndependentEvidenceVerificationService {
       rawCandidate && typeof rawCandidate.requestDescription === 'string'
         ? rawCandidate.requestDescription.trim()
         : '';
+    const rawRequestIntentMode =
+      rawCandidate && typeof rawCandidate.requestIntentMode === 'string'
+        ? rawCandidate.requestIntentMode.trim().toUpperCase()
+        : '';
     const rawSource =
       rawCandidate && typeof rawCandidate.source === 'string'
         ? rawCandidate.source.trim().toUpperCase()
         : '';
+    const lockedRequesterProblemCandidate =
+      rawRequestIntentMode === 'EXPLICIT_PROBLEM';
     const requesterDefinedCandidate =
-      rawSource === 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS' ||
-      candidate.title.trim().toLocaleLowerCase() ===
-        'requester-defined workflow opportunity';
+      lockedRequesterProblemCandidate &&
+      (rawSource === 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS' ||
+        candidate.title.trim().toLocaleLowerCase() ===
+          'requester-defined workflow opportunity');
 
-    const requestScopedEvidence = requesterDescription
+    const requestScopedEvidence = lockedRequesterProblemCandidate && requesterDescription
       ? evidence.flatMap((item) => {
           if (
             !RequestEvidenceAlignmentUtil.passesPostAiPainAwareEvidenceGuard({
@@ -923,7 +930,10 @@ export class IndependentEvidenceVerificationService {
     }
     const compositeEvidence =
       RequestEvidenceAlignmentUtil.selectCompositeAlignedEvidence({
-        requestDescription: requesterDescription || problemDescriptor,
+        requestDescription:
+          lockedRequesterProblemCandidate && requesterDescription
+            ? requesterDescription
+            : problemDescriptor,
         evidenceTexts: evidenceForSelection.map((item) => item.text),
         maxSamples: MAX_VERIFIED_EVIDENCE_SAMPLES,
       });

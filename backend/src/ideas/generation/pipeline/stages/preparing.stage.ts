@@ -18,6 +18,7 @@ import type {
   SelectedGenerationDomain,
 } from '../../types/idea-generation-context.type';
 import type { RequestCollectionPlan } from '../../types/request-collection-plan.type';
+import type { IdeaGenerationRequestMode } from '../../types/canonical-problem-spec.type';
 import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 import { CanonicalProblemSpecUtil } from '../../utils/canonical-problem-spec.util';
 
@@ -227,7 +228,7 @@ export class PreparingStage implements IdeaGenerationStage {
     const primaryResolutionStartedAt = Date.now();
     const warmPlannedPrimary =
       requestedDomainIds.length === 0
-        ? this.resolveWarmPlannedExistingPrimary(collectionPlan)
+        ? this.resolveWarmPlannedExistingPrimary(collectionPlan, description)
         : null;
     const primary = requestedDomainIds.length > 0
       ? this.resolveExplicitPrimaryDomain(
@@ -315,6 +316,7 @@ export class PreparingStage implements IdeaGenerationStage {
         },
         requestKeywords: rawKeywords,
         preferenceTerms: primary.trace.matchedInterests,
+        requestMode,
       },
     );
 
@@ -330,6 +332,11 @@ export class PreparingStage implements IdeaGenerationStage {
       selectedDomains,
       canonicalProblemSpec.facets.map((facet) => facet.id),
       primary.domainId,
+    );
+    this.assertTextAndDomainsSourcePlanInvariant(
+      requestMode,
+      selectedDomains,
+      collectionPlan,
     );
 
     const keywords = this.buildRunKeywords(
@@ -407,35 +414,49 @@ export class PreparingStage implements IdeaGenerationStage {
 
   private resolveWarmPlannedExistingPrimary(
     collectionPlan: RequestCollectionPlan | null,
+    description: string,
   ): Awaited<ReturnType<DomainResolutionService['resolve']>> | null {
-    if (!collectionPlan) return null;
+    if (!collectionPlan || !description.trim()) return null;
 
     const normalizedConfidence =
       collectionPlan.confidence > 1
         ? collectionPlan.confidence / 100
         : collectionPlan.confidence;
 
-    const exactExisting =
+    const exactExistingCandidate =
       collectionPlan.domainSelectionMode === 'EXISTING' &&
       collectionPlan.selectedExistingDomainId?.trim()
         ? this.requestCollectionPlanningService.resolveActiveDomainByIdImmediate(
             collectionPlan.selectedExistingDomainId,
           )
         : null;
+    const exactExisting =
+      exactExistingCandidate &&
+      this.warmDomainIdentityMatchesCurrentRequest(
+        exactExistingCandidate.name,
+        collectionPlan,
+        description,
+      )
+        ? exactExistingCandidate
+        : null;
 
-    /*
-     * A deterministic/AI plan can occasionally call an exact hidden
-     * auto-generated domain "NEW" even though that same domain was created by
-     * an earlier run and is already present in the warmed active-domain
-     * catalog. Reusing an exact name is an identity lookup, not a semantic
-     * guess, and removes the extra remote resolve/create round trip that made
-     * Text Only PREPARING wait once for planning and then again for the DB.
-     */
-    const exactNamed =
-      !exactExisting && collectionPlan.suggestedDomainName?.trim()
+    const reusableSuggestedName = this.normalizeWarmReusableDomainName(
+      collectionPlan.suggestedDomainName,
+    );
+    const exactNamedCandidate =
+      !exactExisting && reusableSuggestedName
         ? this.requestCollectionPlanningService.resolveActiveDomainByNameImmediate(
-            collectionPlan.suggestedDomainName,
+            reusableSuggestedName,
           )
+        : null;
+    const exactNamed =
+      exactNamedCandidate &&
+      this.warmDomainIdentityMatchesCurrentRequest(
+        exactNamedCandidate.name,
+        collectionPlan,
+        description,
+      )
+        ? exactNamedCandidate
         : null;
     const cached = exactExisting ?? exactNamed;
     if (!cached) return null;
@@ -451,8 +472,8 @@ export class PreparingStage implements IdeaGenerationStage {
       trace: {
         reasons: [
           exactExisting
-            ? 'Reused the exact active existing domain selected by the PREPARING plan from the warm active-domain catalog; no duplicate database lookup was required.'
-            : 'Reused the exact active domain name already present in the warm PREPARING catalog; the plan did not trigger a duplicate remote resolve/create round trip.',
+            ? 'Reused the exact active existing domain selected by the PREPARING plan only after verifying that its semantic identity is grounded in the current requester text.'
+            : 'Reused an exact warm-catalog domain name only after verifying that the domain identity is grounded in the current requester text.',
         ],
         matchedInterests: [],
         candidates: [
@@ -460,15 +481,68 @@ export class PreparingStage implements IdeaGenerationStage {
             domainId: cached.id,
             domainName: cached.name,
             score: 1,
-            reasons: [
-              exactExisting
-                ? 'Exact warm-catalog domain-id selection'
-                : 'Exact warm-catalog domain-name identity match',
-            ],
+            reasons: ['Current-request-verified warm domain identity'],
           },
         ],
       },
     };
+  }
+
+  private normalizeWarmReusableDomainName(value: string | null | undefined): string | null {
+    const normalized = value
+      ?.normalize('NFKC')
+      .replace(/[-_/]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .replace(/[.!?,;:]+$/gu, '')
+      .trim();
+    if (!normalized || normalized.length > 80) return null;
+    if (
+      /\b(?:often|usually|frequently|commonly|struggle|struggles|struggling|want to|need to|who|regularly)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return null;
+    }
+    return normalized;
+  }
+
+  private warmDomainIdentityMatchesCurrentRequest(
+    domainName: string,
+    collectionPlan: RequestCollectionPlan,
+    description: string,
+  ): boolean {
+    const normalizeTokens = (value: string): Set<string> => {
+      const generic = new Set([
+        'system', 'systems', 'platform', 'platforms', 'management', 'operations',
+        'operation', 'workflow', 'workflows', 'service', 'services', 'business',
+        'businesses', 'company', 'companies', 'user', 'users', 'customer',
+        'customers', 'owner', 'owners', 'manager', 'managers', 'operator',
+        'operators', 'team', 'teams', 'staff', 'people', 'often', 'usually',
+        'frequently', 'commonly', 'struggle', 'struggles', 'struggling',
+      ]);
+      return new Set(
+        value
+          .normalize('NFKC')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .split(/\s+/u)
+          .filter((token) => token.length >= 3 && !generic.has(token)),
+      );
+    };
+
+    const domainTokens = normalizeTokens(domainName);
+    if (domainTokens.size === 0) return false;
+    const currentScopeTokens = normalizeTokens([
+      description,
+      collectionPlan.domainIdentity?.actor ?? '',
+      collectionPlan.domainIdentity?.object ?? '',
+      collectionPlan.domainIdentity?.workflow ?? '',
+      ...(collectionPlan.retrievalVocabulary ?? []),
+    ].join(' '));
+    if (currentScopeTokens.size === 0) return false;
+
+    const overlap = [...domainTokens].filter((token) => currentScopeTokens.has(token)).length;
+    return overlap >= Math.max(1, Math.ceil(domainTokens.size * 0.34));
   }
 
   private resolveExplicitPrimaryDomain(
@@ -855,13 +929,12 @@ export class PreparingStage implements IdeaGenerationStage {
   }
 
   /**
-   * Treats the client-provided ordered domain names as an ordering assertion,
-   * not as a reason to fail a semantically valid request when the parallel id
-   * array was serialized in a different order. When both arrays describe the
-   * exact same active domain set, rebuild the canonical id/domain order from
-   * the UI names before any primary-domain or collection decision is made.
-   *
-   * A true id/name set mismatch still fails closed before collection.
+   * Treat client-provided ordered domain names as strict one-to-one assertions
+   * for the submitted domain ids. PREPARING never repairs, reorders, promotes,
+   * or substitutes an explicit domain based on request text. If a client sends
+   * a stale UUID/name pair, generation fails closed before any collector runs.
+   * Legacy id-only requests remain compatible and are resolved from the active
+   * backend domain table.
    */
   private reconcileExplicitDomainBoundary(
     requestedDomainIds: readonly string[],
@@ -896,69 +969,91 @@ export class PreparingStage implements IdeaGenerationStage {
         .toLocaleLowerCase()
         .replace(/\s+/gu, ' ')
         .trim();
-    const byNormalizedName = new Map<string, PreparedExplicitDomain>();
-    for (const domain of explicitDomains) {
-      byNormalizedName.set(normalize(domain.name), domain);
-    }
-
-    const orderedDomains = requestedDomainNames.map((name) =>
-      byNormalizedName.get(normalize(name)),
-    );
-    const missingAssertions = requestedDomainNames.flatMap((name, index) =>
-      orderedDomains[index]
-        ? []
-        : [{ index, assertedName: name }],
-    );
-    const resolvedIdSet = new Set(explicitDomains.map((domain) => domain.id));
-    const assertedIdSet = new Set(
-      orderedDomains
-        .filter((domain): domain is PreparedExplicitDomain => Boolean(domain))
-        .map((domain) => domain.id),
-    );
-    const exactSetMatch =
-      missingAssertions.length === 0 &&
-      assertedIdSet.size === resolvedIdSet.size &&
-      [...resolvedIdSet].every((id) => assertedIdSet.has(id));
-
-    if (!exactSetMatch) {
-      const mismatches = requestedDomainNames.map((assertedName, index) => ({
+    const pairMismatches = requestedDomainIds.flatMap((domainId, index) => {
+      const resolved = explicitDomains[index];
+      const assertedName = requestedDomainNames[index] ?? '';
+      if (
+        resolved &&
+        resolved.id === domainId &&
+        normalize(resolved.name) === normalize(assertedName)
+      ) {
+        return [];
+      }
+      return [{
         index,
-        domainId: requestedDomainIds[index] ?? null,
+        domainId,
         assertedName,
-        resolvedName: explicitDomains[index]?.name ?? null,
-      }));
+        resolvedDomainId: resolved?.id ?? null,
+        resolvedName: resolved?.name ?? null,
+      }];
+    });
+
+    if (pairMismatches.length > 0) {
       this.logger.error(
-        `[PREPARING] DOMAIN PAYLOAD MISMATCH | ${mismatches
-          .map((item) => `${item.domainId ?? 'missing-id'}: ui="${item.assertedName}" db="${item.resolvedName ?? 'unresolved'}"`)
+        `[PREPARING] DOMAIN PAYLOAD PAIR MISMATCH | ${pairMismatches
+          .map((item) => `${item.domainId}: ui="${item.assertedName}" db="${item.resolvedName ?? 'unresolved'}"`)
           .join(' | ')}.`,
       );
       throw new BadRequestException({
         code: 'DOMAIN_SELECTION_MAPPING_MISMATCH',
         message:
-          'The submitted domain UUIDs and domain names do not resolve to the same active domain set. Generation was stopped before collection.',
-        mismatches,
+          'The submitted domain UUID/name pairs do not match the active backend domain catalog in the same order. Generation was stopped before collection.',
+        mismatches: pairMismatches,
       });
     }
 
-    const canonicalDomains = orderedDomains.filter(
-      (domain): domain is PreparedExplicitDomain => Boolean(domain),
-    );
-    const canonicalIds = canonicalDomains.map((domain) => domain.id);
-    const orderReconciled = canonicalIds.some(
-      (id, index) => requestedDomainIds[index] !== id,
-    );
+    return {
+      requestedDomainIds: [...requestedDomainIds],
+      explicitDomains: [...explicitDomains],
+      orderReconciled: false,
+    };
+  }
 
-    if (orderReconciled) {
-      this.logger.warn(
-        `[PREPARING] Reconciled explicit-domain id order from the authoritative UI name order before planning handoff. submittedIds=${requestedDomainIds.join(' | ')} canonicalIds=${canonicalIds.join(' | ')}.`,
-      );
+  private assertTextAndDomainsSourcePlanInvariant(
+    requestMode: IdeaGenerationRequestMode,
+    selectedDomains: readonly SelectedGenerationDomain[],
+    plan: RequestCollectionPlan,
+  ): void {
+    if (requestMode !== 'TEXT_AND_DOMAINS' || selectedDomains.length === 0) {
+      return;
     }
 
-    return {
-      requestedDomainIds: canonicalIds,
-      explicitDomains: canonicalDomains,
-      orderReconciled,
-    };
+    const allowedIds = new Set(selectedDomains.map((domain) => domain.id));
+    const allowedNames = new Set(
+      selectedDomains.map((domain) =>
+        domain.name.normalize('NFKC').toLocaleLowerCase().replace(/\s+/gu, ' ').trim(),
+      ),
+    );
+    const coveredIds = new Set<string>();
+
+    for (const sourcePlan of plan.sourcePlans ?? []) {
+      const ids = [
+        ...(sourcePlan.discoveryDomainIds ?? []),
+        ...(sourcePlan.discoveryDomainId ? [sourcePlan.discoveryDomainId] : []),
+      ].filter(Boolean);
+      const names = [
+        ...(sourcePlan.discoveryDomainNames ?? []),
+        ...(sourcePlan.discoveryDomainName ? [sourcePlan.discoveryDomainName] : []),
+      ]
+        .map((name) =>
+          name.normalize('NFKC').toLocaleLowerCase().replace(/\s+/gu, ' ').trim(),
+        )
+        .filter(Boolean);
+
+      if (ids.some((id) => !allowedIds.has(id)) || names.some((name) => !allowedNames.has(name))) {
+        throw new Error(
+          `TEXT_AND_DOMAINS source-plan invariant failed: source "${sourcePlan.sourceKey}" was bound to a domain outside the requester-selected set.`,
+        );
+      }
+      ids.forEach((id) => coveredIds.add(id));
+    }
+
+    const missingDomains = selectedDomains.filter((domain) => !coveredIds.has(domain.id));
+    if (missingDomains.length > 0) {
+      throw new Error(
+        `TEXT_AND_DOMAINS source-plan invariant failed: no executable search lane was bound to selected domain(s): ${missingDomains.map((domain) => domain.name).join(', ')}.`,
+      );
+    }
   }
 
   private assertExplicitDomainInvariant(
@@ -1002,6 +1097,11 @@ export class PreparingStage implements IdeaGenerationStage {
       'workflow', 'workflows', 'management', 'service', 'services', 'business',
       'user', 'users', 'customer', 'customers', 'data', 'operations', 'process',
       'processes', 'support', 'tool', 'tools',
+      'and', 'the', 'for', 'with', 'from', 'that', 'this', 'when', 'where',
+      'into', 'while', 'because', 'are', 'was', 'were', 'has', 'have', 'had',
+      'can', 'could', 'would', 'should', 'each', 'their', 'them', 'they',
+      'our', 'your', 'its', 'which', 'who', 'how', 'more', 'most', 'also',
+      'between', 'through', 'without', 'using', 'used', 'use',
     ]);
     const descriptionTokens = new Set(
       descriptionText

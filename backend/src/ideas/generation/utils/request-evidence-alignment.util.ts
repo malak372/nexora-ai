@@ -45,7 +45,29 @@ export class RequestEvidenceAlignmentUtil {
     if (!this.passesRawCorpusLexicalHygieneGuard(input)) return false;
     const request = this.normalize(input.requestDescription ?? '');
     if (!request) return true;
-    return this.alignmentScore(input) >= 0.08;
+
+    const candidateScore = this.candidateAlignmentScore(input);
+    const problemBearing = this.hasProblemBearingClaim(input.evidenceText);
+    return this.hasCandidateConceptAlignment(input) &&
+      (problemBearing ? candidateScore >= 0.14 : candidateScore >= 0.42);
+  }
+
+  /**
+   * Broad pre-AI atomic admission is intentionally separate from the stricter
+   * post-AI evidence role. It allows one concrete requester pain/workflow facet
+   * to reach semantic adjudication without upgrading that row to trusted
+   * evidence deterministically.
+   */
+  static passesAtomicPreAiCandidateGuard(input: {
+    readonly requestDescription?: string | null;
+    readonly evidenceText: string;
+    readonly plannedQueries?: readonly string[];
+  }): boolean {
+    return this.passesRawCorpusLexicalHygieneGuard(input) &&
+      this.passesEvidenceAuthenticityGuard(input) &&
+      this.hasProblemBearingClaim(input.evidenceText) &&
+      this.hasCandidateConceptAlignment(input) &&
+      this.candidateAlignmentScore(input) >= 0.2;
   }
 
   static passesAtomicSupportingProblemGuard(input: {
@@ -72,9 +94,17 @@ export class RequestEvidenceAlignmentUtil {
     readonly evidenceText: string;
     readonly plannedQueries?: readonly string[];
   }): boolean {
-    return this.passesRawCorpusLexicalHygieneGuard(input) &&
-      this.passesEvidenceAuthenticityGuard(input) &&
-      this.alignmentScore(input) >= 0.18;
+    if (
+      !this.passesRawCorpusLexicalHygieneGuard(input) ||
+      !this.passesEvidenceAuthenticityGuard(input) ||
+      !this.hasCandidateConceptAlignment(input)
+    ) {
+      return false;
+    }
+    const candidateScore = this.candidateAlignmentScore(input);
+    return this.hasProblemBearingClaim(input.evidenceText)
+      ? candidateScore >= 0.16
+      : candidateScore >= 0.44;
   }
 
   static passesPostAiPainAwareEvidenceGuard(input: {
@@ -88,7 +118,7 @@ export class RequestEvidenceAlignmentUtil {
   static hasProblemBearingClaim(evidenceText: string): boolean {
     const text = this.normalize(evidenceText);
     if (!text) return false;
-    return /\b(?:problem|problems|issue|issues|fail|fails|failed|failure|failures|error|errors|wrong|incorrect|missing|lost|delay|delayed|slow|difficult|difficulty|struggle|struggles|pain|complaint|complaints|risk|risks|waste|wasted|rework|costly|higher cost|higher costs|downtime|shortage|shortages|fragmented|scattered|inconsistent|unable|cannot|can't|inefficient|inefficiency|unreliable|overloaded|bottleneck|bottlenecks|manual burden|time consuming|time-consuming|unmet need|unmet needs)\b/u.test(text);
+    return /\b(?:problem|problems|issue|issues|fail|fails|failed|failure|failures|fault|faults|error|errors|wrong|incorrect|missing|lost|delay|delayed|slow|difficult|difficulty|struggle|struggles|pain|complaint|complaints|risk|risks|waste|wasted|rework|costly|higher cost|higher costs|downtime|outage|outages|defect|defects|conflict|conflicts|anomaly|anomalies|unauthorized|unauthorised|unapproved|overdue|shortage|shortages|fragmented|scattered|inconsistent|unable|cannot|can't|inefficient|inefficiency|unreliable|overloaded|bottleneck|bottlenecks|manual burden|time consuming|time-consuming|unmet need|unmet needs)\b/u.test(text);
   }
 
   static isResearchContextOnlyEvidence(evidenceText: string): boolean {
@@ -193,6 +223,78 @@ export class RequestEvidenceAlignmentUtil {
     return true;
   }
 
+  private static hasCandidateConceptAlignment(input: {
+    readonly requestDescription?: string | null;
+    readonly evidenceText: string;
+    readonly plannedQueries?: readonly string[];
+  }): boolean {
+    const evidence = new Set(this.tokens(input.evidenceText));
+    if (evidence.size === 0) return false;
+
+    const requestTokens = this.tokens(input.requestDescription ?? '');
+    const requestOverlap = new Set(
+      requestTokens.filter((token) => evidence.has(token)),
+    ).size;
+    if (requestOverlap >= 3) return true;
+    if (requestOverlap >= 2 && this.hasProblemBearingClaim(input.evidenceText)) {
+      return true;
+    }
+
+    return (input.plannedQueries ?? []).some((query) => {
+      const tokens = [...new Set(this.tokens(query))];
+      if (tokens.length < 2) return false;
+      const overlap = tokens.filter((token) => evidence.has(token)).length;
+      const minimum = tokens.length <= 4
+        ? 2
+        : Math.min(3, Math.max(2, Math.ceil(tokens.length * 0.34)));
+      return overlap >= minimum;
+    });
+  }
+
+  /**
+   * Candidate routing must not score against the union of every planned query.
+   * A noisy document can accidentally share three unrelated words with an
+   * 18-query plan even though it matches no actual search lane. The pre-AI score
+   * therefore uses the single best coherent query plus requester overlap.
+   */
+  private static candidateAlignmentScore(input: {
+    readonly requestDescription?: string | null;
+    readonly evidenceText: string;
+    readonly plannedQueries?: readonly string[];
+  }): number {
+    const requestTokens = this.tokens(input.requestDescription ?? '');
+    const evidenceTokens = this.tokens(input.evidenceText);
+    if (evidenceTokens.length === 0) return 0;
+
+    const evidenceSet = new Set(evidenceTokens);
+    const requestSet = new Set(requestTokens);
+    const requestOverlap = [...evidenceSet].filter((token) =>
+      requestSet.has(token),
+    ).length;
+    const requestDenominator = Math.max(4, Math.min(requestSet.size, 14));
+    const requestScore = requestSet.size > 0
+      ? requestOverlap / requestDenominator
+      : 0;
+
+    let bestQueryScore = 0;
+    for (const query of input.plannedQueries ?? []) {
+      const queryTokens = [...new Set(this.tokens(query))];
+      if (queryTokens.length === 0) continue;
+      const overlap = queryTokens.filter((token) => evidenceSet.has(token)).length;
+      const denominator = Math.max(2, Math.min(queryTokens.length, 7));
+      bestQueryScore = Math.max(bestQueryScore, overlap / denominator);
+    }
+
+    if (requestSet.size === 0) {
+      return Math.min(1, bestQueryScore);
+    }
+    if (!(input.plannedQueries?.length)) {
+      return Math.min(1, requestScore);
+    }
+
+    return Math.min(1, requestScore * 0.55 + bestQueryScore * 0.45);
+  }
+
   private static hasMinimumConceptAlignment(input: {
     readonly requestDescription?: string | null;
     readonly evidenceText: string;
@@ -288,7 +390,8 @@ export class RequestEvidenceAlignmentUtil {
     return value
       .normalize('NFKC')
       .toLocaleLowerCase()
-      .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
+      .replace(/[-‐‑‒–—]+/gu, ' ')
+      .replace(/[^\p{L}\p{N}\s']+/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
   }

@@ -1,5 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
+import { Prisma } from '@prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -26,6 +32,8 @@ type JwtPayload = {
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(private readonly prisma: PrismaService) {
     const accessTokenSecret = process.env.JWT_ACCESS_SECRET?.trim();
 
@@ -62,23 +70,51 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Unauthorized');
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: {
-        id: payload.sub,
-      },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        accountStatus: true,
-        userType: true,
-        isActive: true,
-        isVerified: true,
-        deletedAt: true,
-        passwordChangedAt: true,
-      },
-    });
+    const loadUser = () =>
+      this.prisma.user.findUnique({
+        where: {
+          id: payload.sub,
+        },
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+          accountStatus: true,
+          userType: true,
+          isActive: true,
+          isVerified: true,
+          deletedAt: true,
+          passwordChangedAt: true,
+        },
+      });
+
+    let user: Awaited<ReturnType<typeof loadUser>>;
+
+    try {
+      user = await loadUser();
+    } catch (error) {
+      if (!this.isTransientDatabaseFailure(error)) {
+        throw error;
+      }
+
+      this.logger.warn(
+        'Transient database connectivity failure during JWT validation; attempting one bounded Prisma reconnect before failing the request.',
+      );
+
+      try {
+        await this.prisma.recoverConnection(error);
+        user = await loadUser();
+      } catch (retryError) {
+        if (!this.isTransientDatabaseFailure(retryError)) {
+          throw retryError;
+        }
+
+        throw new ServiceUnavailableException(
+          'Authentication service is temporarily unavailable. Please retry shortly.',
+        );
+      }
+    }
 
     if (!user || !user.isActive || !user.isVerified || user.deletedAt) {
       throw new UnauthorizedException('Unauthorized');
@@ -101,6 +137,27 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       isActive: user.isActive,
       isVerified: user.isVerified,
     };
+  }
+
+  private isTransientDatabaseFailure(error: unknown): boolean {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      return ['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(
+        error.code,
+      );
+    }
+
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+      return ['P1001', 'P1002', 'P1017'].includes(error.errorCode ?? '');
+    }
+
+    const message =
+      error instanceof Error
+        ? error.message.toLocaleLowerCase()
+        : String(error).toLocaleLowerCase();
+
+    return /can't reach database server|connection (?:closed|reset|refused)|connection pool|timed out fetching a new connection|socket hang up|econnreset|econnrefused|engine is not yet connected/iu.test(
+      message,
+    );
   }
 
   /**
