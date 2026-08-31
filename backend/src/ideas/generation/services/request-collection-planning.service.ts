@@ -2973,12 +2973,21 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         })
       : [];
 
-    const domainAtomicLanes = domains.flatMap((domainName, domainIndex) => {
+    const domainAtomicPrimaryLanes = domains.flatMap((domainName, domainIndex) => {
       const domain = compact(domainName, 3);
       const rotated = atomicFacets.filter(
         (_, index) => index % Math.max(1, domains.length) === domainIndex,
       );
-      return rotated.slice(0, 3).map((query) =>
+      return rotated.slice(0, 1).map((query) =>
+        compact(`${domain} ${query}`, 8),
+      );
+    });
+    const domainAtomicSecondaryLanes = domains.flatMap((domainName, domainIndex) => {
+      const domain = compact(domainName, 3);
+      const rotated = atomicFacets.filter(
+        (_, index) => index % Math.max(1, domains.length) === domainIndex,
+      );
+      return rotated.slice(1, 3).map((query) =>
         compact(`${domain} ${query}`, 8),
       );
     });
@@ -3003,6 +3012,14 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       ];
     });
 
+    const requesterAnchoredDomainRecall = domains.flatMap((domainName) => {
+      const domain = compact(domainName, 3);
+      return [
+        compact(`${domain} ${actor || object} ${failure || workflow}`, 8),
+        compact(`${domain} ${object || actor} ${workflow} ${failure}`, 8),
+      ];
+    });
+
     const domainProblemDiscovery = domains.flatMap((domainName) => {
       const domain = compact(domainName, 3);
       return [
@@ -3015,18 +3032,91 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     const causalQueries = this.deduplicateQueries(
       input.causalSearchProbes.map((probe) => compact(probe.query, 8)),
     ).slice(0, 2);
+    const primaryDomainDiscovery = domainProblemDiscovery.filter(
+      (_, index) => index % 3 === 0,
+    );
+    const secondaryDomainDiscovery = domainProblemDiscovery.filter(
+      (_, index) => index % 3 !== 0,
+    );
 
+    /*
+     * Text + Domains needs both sides of the contract in the retrieval pool:
+     * selected-domain coverage and requester problem/workflow alignment. Put
+     * one requester-anchored pair and one broad discovery query per domain
+     * ahead of the generic tail so broad Healthcare/Government/etc. results do
+     * not crowd out the clinic/workflow-specific probes. Queries remain
+     * retrieval context only; evidence admission thresholds are unchanged.
+     */
     return this.deduplicateQueries([
-      ...domainProblemDiscovery,
+      ...requesterAnchoredDomainRecall,
+      ...domainAtomicPrimaryLanes,
       ...domainRecall,
-      ...input.baseQueries.slice(0, 4).map((query) => compact(query, 8)),
-      ...domainAtomicLanes,
-      ...atomicFacets.slice(0, 5).map((query) => compact(query, 7)),
+      ...primaryDomainDiscovery,
       ...causalQueries,
-      ...input.baseQueries.slice(4).map((query) => compact(query, 8)),
+      ...atomicFacets.slice(0, 2).map((query) => compact(query, 7)),
+      ...secondaryDomainDiscovery,
+      ...domainAtomicSecondaryLanes,
+      ...input.baseQueries.map((query) => compact(query, 8)),
     ])
       .filter((query) => query.split(/\s+/u).length >= 2)
       .slice(0, 18);
+  }
+
+  private buildRetrievalDomainAliases(
+    primaryDomainName: string,
+    retrievalVocabulary: readonly string[],
+  ): string[] {
+    const clean = (value: string): string =>
+      value
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+    const primary = clean(primaryDomainName);
+    if (!primary) return [];
+
+    const candidates: string[] = [];
+    const add = (value: string): void => {
+      const normalized = clean(value);
+      if (!normalized) return;
+      if (normalized.toLocaleLowerCase() === primary.toLocaleLowerCase()) return;
+      candidates.push(normalized);
+    };
+
+    const modifierFree = primary
+      .replace(
+        /^(?:(?:small|small-scale|local|independent|private|specialty|specialized|community|regional|neighborhood|boutique)\s+)+/iu,
+        '',
+      )
+      .trim();
+    add(modifierFree);
+
+    const professionRoot = modifierFree
+      .replace(
+        /\b(?:clinics?|practices?|hospitals?|facilities|centers?|centres?|businesses?|companies?|organizations?|organisations?|workshops?|studios?)\b$/iu,
+        '',
+      )
+      .trim();
+    if (professionRoot) {
+      if (/\bclinics?\b/iu.test(modifierFree)) add(`${professionRoot} practice`);
+      if (/\bpractices?\b/iu.test(modifierFree)) add(`${professionRoot} clinic`);
+      if (/\bworkshops?\b/iu.test(modifierFree)) add(`${professionRoot} studio`);
+      if (/\bstudios?\b/iu.test(modifierFree)) add(`${professionRoot} workshop`);
+    }
+
+    const anchorTokens = new Set(
+      professionRoot
+        .toLocaleLowerCase()
+        .split(/\s+/u)
+        .filter((token) => token.length >= 4),
+    );
+    for (const vocabularyItem of retrievalVocabulary) {
+      const vocabulary = clean(vocabularyItem);
+      const vocabularyTokens = vocabulary.toLocaleLowerCase().split(/\s+/u);
+      if (vocabularyTokens.some((token) => anchorTokens.has(token))) add(vocabulary);
+    }
+
+    return this.deduplicatePhrases(candidates).slice(0, 5);
   }
 
   private buildTextOnlyExpandedSearchPortfolio(input: {
@@ -3095,6 +3185,12 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     ]);
 
     const primaryDomain = compact(input.inferredPrimaryDomainName ?? '', 4);
+    const domainAliases = this.buildRetrievalDomainAliases(
+      input.inferredPrimaryDomainName ?? '',
+      input.retrievalVocabulary,
+    )
+      .map((value) => compact(value, 4))
+      .filter(Boolean);
     const domainProblemDiscovery = primaryDomain
       ? [
           compact(`${primaryDomain} common operational problems complaints`, 8),
@@ -3109,6 +3205,30 @@ export class RequestCollectionPlanningService implements OnModuleInit {
           compact(`${primaryDomain} daily operations failure case`, 8),
         ]
       : [];
+    const domainAliasDiscovery = domainAliases.flatMap((alias) => [
+      compact(`${alias} common operational problems complaints`, 8),
+      compact(`${alias} scheduling workflow delays failures`, 8),
+    ]).slice(0, 6);
+
+    const requestAnchoredRecall = this.deduplicateQueries([
+      compact(
+        `${domainAliases[0] ?? primaryDomain} ${object || actor} ${failure}`,
+        8,
+      ),
+      compact(
+        `${domainAliases[1] ?? domainAliases[0] ?? primaryDomain} ${workflow} ${failure}`,
+        8,
+      ),
+      compact(`${primaryDomain} ${object || actor} ${workflow}`, 8),
+      compact(`${actor || primaryDomain} ${object} ${failure}`, 8),
+      compact(`${object || primaryDomain} ${failure}`, 7),
+      ...domainAliases.slice(0, 3).map((alias, index) =>
+        compact(
+          `${alias} ${index % 2 === 0 ? failure || workflow : workflow || failure}`,
+          7,
+        ),
+      ),
+    ]).filter((query) => query.split(/\s+/u).length >= 2);
 
     const professionRecall = this.deduplicateQueries([
       compact(`${actor || object} ${workflow} reported problems`, 8),
@@ -3119,16 +3239,22 @@ export class RequestCollectionPlanningService implements OnModuleInit {
     ]);
 
     /*
-     * Domain/profession problem discovery is intentionally first. Requester
-     * facets remain a bounded recall tail so they can help solution fit and
-     * vocabulary without deciding which problem the external evidence selects.
+     * Keep evidence discovery profession-first, but do not let a niche inferred
+     * taxonomy label monopolize the first retrieval slots. Modifier-free and
+     * profession/facility aliases are retrieval-only recall lanes (for example
+     * "Small Veterinary Clinic" -> "Veterinary Clinic" / "Veterinary Practice").
+     * Requester text still never counts as evidence and downstream semantic
+     * verification remains unchanged.
      */
     return this.deduplicateQueries([
-      ...domainProblemDiscovery,
+      ...requestAnchoredRecall,
+      ...domainAliasDiscovery,
       ...professionRecall,
-      ...scopeRecall,
-      ...input.baseQueries.slice(0, 6).map((query) => compact(query, 8)),
       ...atomicFacets.slice(0, 10).map((query) => compact(query, 7)),
+      ...scopeRecall,
+      ...domainProblemDiscovery.slice(0, 6),
+      ...domainProblemDiscovery.slice(6),
+      ...input.baseQueries.slice(0, 6).map((query) => compact(query, 8)),
       ...input.baseQueries.slice(6).map((query) => compact(query, 8)),
       ...atomicFacets.slice(10).map((query) => compact(query, 7)),
     ])
@@ -3208,6 +3334,8 @@ export class RequestCollectionPlanningService implements OnModuleInit {
       const sourceQueries = SourceSpecificEvidenceQueryUtil.compile({
         sourceKey,
         baseQueries,
+        requestDescription: input.description,
+        problemProfile: input.problemProfile,
         discoveryDomainName: first.name,
         maxQueries: budget,
         preserveBaseQueries: true,
@@ -6073,11 +6201,11 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         ].includes(sourceKey);
         const textDiscovery = discoveryIntent && Boolean(description.trim());
         const budget = problemProfile && priority.has(sourceKey) && painRecallSource
-          ? 8
+          ? 10
           : textDiscovery
             ? priority.has(sourceKey)
-              ? 8
-              : 6
+              ? 10
+              : 8
             : Math.max(1, Math.min(priority.has(sourceKey) ? 5 : 4, 5));
         const sourceVocabulary = vocabularyQueries.length > 0
           ? [
@@ -6108,25 +6236,35 @@ export class RequestCollectionPlanningService implements OnModuleInit {
         const baseQueries = this.deduplicateQueries(
           discoveryIntent
             ? [
+                ...sourceVocabulary,
                 ...assigned,
                 ...rotatedDiscoveryQueries,
-                ...sourceVocabulary,
                 ...sourceCausalQueries,
                 ...queries,
               ]
             : [
                 ...sourceCausalQueries,
-                ...assigned,
                 ...sourceVocabulary,
+                ...assigned,
                 ...queries,
               ],
-        ).slice(0, Math.max(10, budget * 3));
+        ).slice(0, Math.max(16, budget * 4));
         const sourceQueries = SourceSpecificEvidenceQueryUtil.compile({
           sourceKey,
           baseQueries,
           causalQueries: discoveryIntent ? [] : sourceCausalQueries,
-          requestDescription: discoveryIntent ? undefined : description,
-          problemProfile: discoveryIntent ? undefined : problemProfile,
+          requestDescription:
+            discoveryIntent && description.trim()
+              ? description
+              : discoveryIntent
+                ? undefined
+                : description,
+          problemProfile:
+            discoveryIntent && description.trim()
+              ? problemProfile
+              : discoveryIntent
+                ? undefined
+                : problemProfile,
           discoveryDomainName: discoveryIntent ? discoveryDomainName : undefined,
           maxQueries: budget,
           preserveBaseQueries: true,

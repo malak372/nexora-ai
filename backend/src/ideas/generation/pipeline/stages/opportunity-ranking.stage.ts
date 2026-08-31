@@ -113,6 +113,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     // downstream verifier/ranker is allowed to resurrect evidence that is not
     // present as a verified DIRECT/SUPPORTING row in this ledger.
     context = this.synchronizeCanonicalEvidenceState(context);
+    context = this.preferRequesterAlignedCanonicalFamily(context);
+    context = this.synchronizeCanonicalEvidenceState(context);
 
     const explicitDomainsOnlyCompetition =
       !this.hasExplicitRequesterProblem(context) &&
@@ -501,6 +503,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           recovery.collectionJobId,
         ],
       });
+      workingContext = this.preferRequesterAlignedCanonicalFamily(workingContext);
+      workingContext = this.synchronizeCanonicalEvidenceState(workingContext);
 
       const canonicalRecoverySupportingExternalEvidence =
         this.buildCanonicalTrustedRecoveredExternalEvidence(
@@ -1053,17 +1057,18 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         rawEvidenceCount >= Math.max(10, minimumBroadRawCount) &&
         rawSourceCount >= Math.min(3, minimumBroadSourceCount),
     );
-    const textAndDomainsIntentRecoveryNeeded = Boolean(
-      context.requestMode === 'TEXT_AND_DOMAINS' &&
+    const textIntentRecoveryNeeded = Boolean(
+      (context.requestMode === 'TEXT_ONLY' ||
+        context.requestMode === 'TEXT_AND_DOMAINS') &&
         context.requestDescription?.trim() &&
         selectedIds.size === 0 &&
         ranking?.selected.disqualificationReasons.includes(
           'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
         ),
     );
-    if (textAndDomainsIntentRecoveryNeeded) {
+    if (textIntentRecoveryNeeded) {
       this.logger.debug(
-        `TEXT_AND_DOMAINS recovery remains eligible because trusted rows exist globally but none survived as a requester-context-compatible canonical family. Global trusted rows remain trusted audit evidence; recovery searches a better domain/workflow family without reclassifying them.`,
+        `${context.requestMode} requester-aligned recovery remains eligible because trusted rows exist globally but none survived as a requester-compatible canonical family. Global trusted rows remain audit evidence; recovery searches a closer actor/object/workflow/problem family without reclassifying them.`,
       );
     }
 
@@ -1076,7 +1081,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
      * re-planning and excludes the already represented family source. This is
      * structural provenance logic only — no domain/problem meaning is inferred.
      */
-    if (trustedEvidenceCount > 0 && !textAndDomainsIntentRecoveryNeeded) {
+    if (trustedEvidenceCount > 0 && !textIntentRecoveryNeeded) {
       const explicitRequesterHasBroadReviewedSupport = Boolean(
         context.requestDescription?.trim() &&
           selectedTrustedEvidence.length > 0 &&
@@ -6749,7 +6754,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       readonly rejectedRecoveredEvidenceCount?: number;
     } | null,
   ): IdeaGenerationStageExecutionResult {
-    let synchronizedContext = this.synchronizeCanonicalEvidenceState(context);
+    let synchronizedContext = this.preferRequesterAlignedCanonicalFamily(context);
+    synchronizedContext = this.synchronizeCanonicalEvidenceState(synchronizedContext);
     let intentAlignedRanking = this.applyRequestIntentAlignment(ranking, synchronizedContext);
     /*
      * Final request-scope reconciliation: if an explicit-problem candidate is
@@ -6955,11 +6961,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         .map((id) => id.trim())
         .filter(Boolean),
     );
-    const explicitRequesterProblem = this.hasExplicitRequesterProblem(context);
+    const requesterScopedSelection = Boolean(context.requestDescription?.trim());
     const selectedTrusted =
       selectedIds.size > 0
         ? canonicalTrusted.filter((item) => selectedIds.has(item.id))
-        : explicitRequesterProblem
+        : requesterScopedSelection
           ? []
           : canonicalTrusted;
 
@@ -7044,18 +7050,26 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
     if (selectedTrusted.length === 0) {
       const selected = clearNonCanonicalCandidate(ranking.selected, true);
+      const auditOnlyTrustedCount = requesterScopedSelection
+        ? canonicalTrusted.length
+        : 0;
+      const noSelectedFamilyMessage = auditOnlyTrustedCount > 0
+        ? `Canonical handoff found zero trusted DIRECT/SUPPORTING evidence assigned to a requester-aligned selected problem family. ${auditOnlyTrustedCount} globally trusted row(s) remain audit-only and are excluded from product grounding.`
+        : 'Canonical handoff verified zero trusted DIRECT/SUPPORTING evidence for the selected problem; all downstream evidence counters were reset to zero.';
+      const warning = auditOnlyTrustedCount > 0
+        ? `The canonical audit ledger retains ${auditOnlyTrustedCount} verified DIRECT_PROBLEM/SUPPORTING_SIGNAL item(s), but no requester-aligned canonical problem family is selected. Those rows remain audit-only and cannot populate verifiedProblemMatchedEvidence, selected-opportunity evidence, or Core grounding.`
+        : 'The canonical evidence ledger contains no verified DIRECT_PROBLEM or SUPPORTING_SIGNAL item for the selected problem; downstream ranking cannot promote context-only, analogous, or independently reconstructed evidence.';
       return {
         ...ranking,
         selected,
         alternatives: ranking.alternatives.map((candidate) =>
-          clearNonCanonicalCandidate(candidate, false),
+          clearNonCanonicalCandidate(candidate, requesterScopedSelection),
         ),
         evidenceCoverage: 0,
-        selectionReason:
-          `${ranking.selectionReason} Canonical handoff verified zero trusted DIRECT/SUPPORTING evidence; all downstream evidence counters were reset to zero.`,
+        selectionReason: `${ranking.selectionReason} ${noSelectedFamilyMessage}`,
         qualityWarnings: Array.from(new Set([
           ...ranking.qualityWarnings,
-          'The canonical evidence ledger contains no verified DIRECT_PROBLEM or SUPPORTING_SIGNAL item; downstream ranking cannot promote context-only, analogous, or independently reconstructed evidence.',
+          warning,
         ])),
       };
     }
@@ -7508,6 +7522,521 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     };
   }
 
+  private preferRequesterAlignedCanonicalFamily(
+    context: IdeaGenerationContext,
+  ): IdeaGenerationContext {
+    if (
+      (context.requestMode !== 'TEXT_ONLY' &&
+        context.requestMode !== 'TEXT_AND_DOMAINS') ||
+      !context.requestDescription?.trim()
+    ) {
+      return context;
+    }
+
+    const analysis = context.communityAiAnalysis;
+    if (!analysis) return context;
+
+    const trusted = (context.canonicalEvidenceLedger ?? []).filter(
+      (item) =>
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL') &&
+        Boolean(item.problemFamily?.trim()),
+    );
+    if (trusted.length === 0) return context;
+
+    const explicitDomainNames = new Set(
+      context.selectedDomains
+        .filter((domain) => domain.isExplicitlySelected)
+        .map((domain) => domain.name.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+    const explicitDomainIds = new Set(
+      context.selectedDomains
+        .filter((domain) => domain.isExplicitlySelected)
+        .map((domain) => domain.id.trim())
+        .filter(Boolean),
+    );
+
+    type RequestAlignedFamilyGroup = {
+      readonly label: string;
+      readonly items: IdeaGenerationCanonicalEvidenceItem[];
+      readonly alignment: number;
+      readonly semanticFit: number;
+      readonly sourceCount: number;
+      readonly directCount: number;
+      readonly score: number;
+    };
+
+    const grouped = new Map<
+      string,
+      { label: string; items: IdeaGenerationCanonicalEvidenceItem[] }
+    >();
+    for (const item of trusted) {
+      const label = item.problemFamily?.replace(/\s+/gu, ' ').trim() ?? '';
+      if (!label) continue;
+      const key = this.normalizeIntentText(label);
+      if (!key) continue;
+      const current = grouped.get(key) ?? { label, items: [] };
+      current.items.push(item);
+      grouped.set(key, current);
+    }
+
+    const candidates: RequestAlignedFamilyGroup[] = [];
+    for (const group of grouped.values()) {
+      const selectedDomainCompatible =
+        explicitDomainNames.size === 0 ||
+        group.items.some((item) => {
+          const nameMatch = (item.matchedDomainNames ?? []).some((name) =>
+            explicitDomainNames.has(name.trim().toLocaleLowerCase()),
+          );
+          const idMatch = (item.matchedDomainIds ?? []).some((id) =>
+            explicitDomainIds.has(id.trim()),
+          );
+          return nameMatch || idMatch;
+        });
+      if (!selectedDomainCompatible) continue;
+
+      const alignment = this.calculateCanonicalFamilyRequestAlignment(
+        context,
+        group.label,
+        group.items,
+      );
+      const semanticFit = this.calculateCanonicalFamilyRequesterSemanticFit(
+        context,
+        group.label,
+        group.items,
+      );
+      const sourceCount = EvidenceSourceIdentityUtil.count(group.items);
+      const directCount = group.items.filter(
+        (item) => item.classification === 'DIRECT_PROBLEM',
+      ).length;
+      const evidenceStrength = Math.min(1, group.items.length / 3);
+      const sourceStrength = Math.min(1, sourceCount / 2);
+      const directStrength = Math.min(1, directCount);
+      const score =
+        alignment * 0.62 +
+        semanticFit * 0.18 +
+        evidenceStrength * 0.08 +
+        sourceStrength * 0.07 +
+        directStrength * 0.05;
+      candidates.push({
+        label: group.label,
+        items: group.items,
+        alignment,
+        semanticFit,
+        sourceCount,
+        directCount,
+        score,
+      });
+    }
+
+    if (candidates.length === 0) return context;
+
+    candidates.sort(
+      (left, right) =>
+        right.score - left.score ||
+        right.semanticFit - left.semanticFit ||
+        right.alignment - left.alignment ||
+        right.sourceCount - left.sourceCount ||
+        right.items.length - left.items.length,
+    );
+
+    const minimumAlignment = this.minimumTextRequestFamilyAlignment(context);
+    const minimumSemanticFit = this.minimumTextRequesterSemanticFit();
+    const best = candidates.find(
+      (candidate) =>
+        candidate.alignment >= minimumAlignment &&
+        candidate.semanticFit >= minimumSemanticFit,
+    );
+    if (!best) return context;
+
+    const currentFamily =
+      analysis.canonicalProblemFamilyLabel?.trim() ||
+      analysis.selectedProblemFamily?.trim() ||
+      '';
+    const currentKey = this.normalizeIntentText(currentFamily);
+    const current = candidates.find(
+      (candidate) => this.normalizeIntentText(candidate.label) === currentKey,
+    );
+    if (
+      current &&
+      current.alignment >= minimumAlignment &&
+      current.semanticFit >= minimumSemanticFit &&
+      current.score >= best.score - 0.04
+    ) {
+      return context;
+    }
+    if (currentKey === this.normalizeIntentText(best.label)) return context;
+
+    const evidenceIds = best.items.map((item) => item.id);
+    const evidenceSamples = best.items.map((item) => item.text).filter(Boolean);
+    const matchedDomainNames = [
+      ...new Set(
+        best.items.flatMap((item) => item.matchedDomainNames ?? []),
+      ),
+    ];
+    const domainName =
+      matchedDomainNames[0]?.trim() ||
+      best.items.find((item) => item.discoveryDomainName?.trim())
+        ?.discoveryDomainName?.trim() ||
+      context.domainName?.trim() ||
+      context.selectedDomains[0]?.name?.trim() ||
+      'General';
+    const existingOpportunity = analysis.opportunities.find(
+      (opportunity) =>
+        this.canonicalEvidenceSupportsFamily(
+          best.label,
+          opportunity.title,
+          opportunity.problem,
+        ),
+    );
+    const confidence = Math.max(
+      55,
+      Math.min(
+        95,
+        Math.round(
+          best.items.reduce((sum, item) => sum + item.confidence, 0) /
+            Math.max(1, best.items.length),
+        ),
+      ),
+    );
+    const requesterActor =
+      context.canonicalProblemSpec?.actor?.trim() ?? '';
+    const alignedOpportunity = existingOpportunity
+      ? {
+          ...existingOpportunity,
+          domainName,
+          title: best.label,
+          problem: best.label,
+          evidenceSamples,
+          frequency: best.items.length,
+          confidence,
+          groundingScore: 100,
+          risks: [
+            `The requester-aligned family is grounded by ${best.items.length} retained verified evidence item(s) across ${best.sourceCount} distinct source(s); broader prevalence remains unproven.`,
+          ],
+        }
+      : {
+          domainName,
+          title: best.label,
+          problem: best.label,
+          unmetNeed: `A focused software workflow that addresses ${best.label} while preserving human review and validating how broadly the problem occurs.`,
+          solutionArea: `Evidence-grounded workflow for ${best.label}`,
+          affectedUsers: requesterActor
+            ? [requesterActor]
+            : ['Users or operators represented by the retained external evidence'],
+          evidenceSamples,
+          frequency: best.items.length,
+          severity: 'MEDIUM' as const,
+          confidence,
+          problemImportance: 54,
+          localEvidenceAvailable: false,
+          localEvidenceSamples: [],
+          localRelevance: 20,
+          groundingScore: 100,
+          technicalFeasibility: 65,
+          marketPotential: 40,
+          innovationPotential: 50,
+          risks: [
+            `The requester-aligned family is grounded by ${best.items.length} retained verified evidence item(s) across ${best.sourceCount} distinct source(s); broader prevalence remains unproven.`,
+          ],
+        };
+
+    const warning =
+      `Requester-intent selection changed the canonical family from "${currentFamily || 'none'}" to "${best.label}" because the retained family scored structuredAlignment=${best.alignment.toFixed(3)} and semanticFit=${best.semanticFit.toFixed(3)} against the text request. All evidence classifications remain unchanged; only the product-selection lock changed.`;
+    this.logger.debug(warning);
+
+    return {
+      ...context,
+      communityAiAnalysis: {
+        ...analysis,
+        summary: `Canonical evidence verification selected the requester-aligned problem family "${best.label}" using ${best.items.length} verified signal(s) across ${best.sourceCount} distinct source(s).`,
+        dominantProblems: [best.label],
+        unmetNeeds: [alignedOpportunity.unmetNeed],
+        opportunities: [alignedOpportunity],
+        selectedProblemFamily: best.label,
+        selectedProblemFamilySelectionSource: 'DETERMINISTIC_VERIFIED_FALLBACK',
+        selectedProblemFamilyTrustedEvidenceCount: best.items.length,
+        selectedProblemFamilyDistinctSourceCount: best.sourceCount,
+        selectedProblemFamilyEvidenceIds: evidenceIds,
+        canonicalProblemFamilyId: this.createCanonicalProblemFamilyId(
+          best.label,
+          evidenceIds,
+        ),
+        canonicalProblemFamilyLabel: best.label,
+        canonicalProblemFamilyEvidenceIds: evidenceIds,
+        qualityWarnings: Array.from(
+          new Set([...analysis.qualityWarnings, warning]),
+        ),
+      },
+    };
+  }
+
+  private minimumTextRequestFamilyAlignment(
+    context: IdeaGenerationContext,
+  ): number {
+    const materialFacetCount = Math.max(
+      context.canonicalProblemSpec?.failureModes.length ?? 0,
+      context.canonicalProblemSpec?.facets.length ?? 0,
+    );
+
+    // Text requests may describe several facets of one real operational problem.
+    // Requiring every facet to be present in the same external report creates
+    // false negatives, so the family gate accepts materially close evidence while
+    // still keeping weak same-domain analogies below the product-selection floor.
+    return materialFacetCount >= 4
+      ? 0.4
+      : materialFacetCount >= 2
+        ? 0.34
+        : 0.28;
+  }
+
+  private minimumTextRequesterSemanticFit(): number {
+    // This mirrors the Community-AI family diagnostic scale. In the observed
+    // runs, genuinely requester-adjacent medicine/logistics evidence scored
+    // around 0.38 while broad same-domain dental operations evidence scored
+    // around 0.22. Keep a small margin between the two so close evidence can
+    // ground a preliminary product without allowing generic domain drift.
+    return 0.27;
+  }
+
+  private calculateCanonicalFamilyRequesterSemanticFit(
+    context: IdeaGenerationContext,
+    family: string,
+    items: readonly IdeaGenerationCanonicalEvidenceItem[],
+  ): number {
+    const request = this.normalizeIntentText(
+      context.requestDescription?.trim() ?? '',
+    );
+    if (!request || items.length === 0) return 0;
+
+    const ignored = new Set([
+      'the',
+      'and',
+      'for',
+      'with',
+      'that',
+      'this',
+      'from',
+      'have',
+      'has',
+      'are',
+      'was',
+      'were',
+      'user',
+      'users',
+      'app',
+      'application',
+      'system',
+    ]);
+    const tokenOverlap = (first: string, second: string): number => {
+      const firstTokens = new Set(
+        first
+          .split(' ')
+          .filter((token) => token.length >= 3 && !ignored.has(token)),
+      );
+      const secondTokens = new Set(
+        second
+          .split(' ')
+          .filter((token) => token.length >= 3 && !ignored.has(token)),
+      );
+      if (firstTokens.size === 0 || secondTokens.size === 0) return 0;
+      let intersection = 0;
+      for (const token of firstTokens) {
+        if (secondTokens.has(token)) intersection += 1;
+      }
+      return intersection / Math.min(firstTokens.size, secondTokens.size);
+    };
+
+    return Math.max(
+      0,
+      ...items.map((item) =>
+        tokenOverlap(
+          request,
+          this.normalizeIntentText(
+            [
+              family,
+              item.observedProblem ?? '',
+              item.causalExplanation ?? '',
+            ].join(' '),
+          ),
+        ),
+      ),
+    );
+  }
+
+  private resolveCandidateCanonicalFamilyRequestFit(
+    context: IdeaGenerationContext,
+    candidate: IdeaOpportunityRanking['selected'],
+  ): { readonly alignment: number; readonly semanticFit: number } | null {
+    if (
+      (context.requestMode !== 'TEXT_ONLY' &&
+        context.requestMode !== 'TEXT_AND_DOMAINS') ||
+      !context.requestDescription?.trim()
+    ) {
+      return null;
+    }
+
+    const trusted = (context.canonicalEvidenceLedger ?? []).filter(
+      (item) =>
+        item.verified &&
+        Boolean(item.problemFamily?.trim()) &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    );
+    if (trusted.length === 0) return null;
+
+    const candidateText = [
+      candidate.title,
+      candidate.problem ?? '',
+      candidate.need ?? '',
+      candidate.solutionArea ?? '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const groups = new Map<
+      string,
+      { label: string; items: IdeaGenerationCanonicalEvidenceItem[] }
+    >();
+    for (const item of trusted) {
+      const label = item.problemFamily?.replace(/\s+/gu, ' ').trim() ?? '';
+      const key = this.normalizeIntentText(label);
+      if (!key) continue;
+      const current = groups.get(key) ?? { label, items: [] };
+      current.items.push(item);
+      groups.set(key, current);
+    }
+
+    let best: { alignment: number; semanticFit: number } | null = null;
+    for (const group of groups.values()) {
+      const familyMatchesCandidate =
+        this.canonicalEvidenceSupportsFamily(
+          group.label,
+          candidate.title,
+          candidateText,
+        ) ||
+        this.canonicalEvidenceSupportsFamily(
+          group.label,
+          candidate.problem ?? null,
+          candidateText,
+        );
+      if (!familyMatchesCandidate) continue;
+
+      const alignment = this.calculateCanonicalFamilyRequestAlignment(
+        context,
+        group.label,
+        group.items,
+      );
+      const semanticFit = this.calculateCanonicalFamilyRequesterSemanticFit(
+        context,
+        group.label,
+        group.items,
+      );
+      if (
+        best === null ||
+        semanticFit > best.semanticFit ||
+        (semanticFit === best.semanticFit && alignment > best.alignment)
+      ) {
+        best = { alignment, semanticFit };
+      }
+    }
+
+    return best;
+  }
+
+  private calculateCanonicalFamilyRequestAlignment(
+    context: IdeaGenerationContext,
+    family: string,
+    items: readonly IdeaGenerationCanonicalEvidenceItem[],
+  ): number {
+    const description = context.requestDescription?.trim() ?? '';
+    if (!description || items.length === 0) return 0;
+
+    const candidateText = this.normalizeIntentText(
+      [
+        family,
+        ...items.flatMap((item) => [
+          item.observedProblem ?? '',
+          item.causalExplanation ?? '',
+          item.text,
+        ]),
+      ].join(' '),
+    );
+    const lexicalAlignment = this.calculateExternalSampleIntentAlignment(
+      candidateText,
+      description,
+    );
+    const spec = context.canonicalProblemSpec;
+    if (!spec) return lexicalAlignment;
+
+    const scoreConcepts = (concepts: readonly string[]): number => {
+      let best = 0;
+      const candidateTokens = this.extractIntentTokens(candidateText);
+      for (const concept of concepts) {
+        const normalized = this.normalizeIntentText(concept);
+        if (!normalized) continue;
+        if (candidateText.includes(normalized)) return 1;
+        const conceptTokens = this.extractIntentTokens(normalized);
+        if (conceptTokens.size === 0) continue;
+        const overlap = [...conceptTokens].filter((token) =>
+          candidateTokens.has(token),
+        ).length / conceptTokens.size;
+        best = Math.max(best, overlap);
+      }
+      return best;
+    };
+
+    const actorTerms = [spec.actor ?? '', ...spec.actorAliases].filter(Boolean);
+    const objectTerms = [spec.object ?? '', ...spec.objectAliases].filter(Boolean);
+    const workflowTerms = [
+      spec.workflow ?? '',
+      ...spec.facets
+        .filter((facet) =>
+          ['WORKFLOW', 'COORDINATION', 'DECISION', 'DATA_GAP', 'VISIBILITY'].includes(
+            facet.type,
+          ),
+        )
+        .map((facet) => facet.statement),
+    ].filter(Boolean);
+    const problemTerms = [
+      spec.friction ?? '',
+      ...spec.failureModes,
+      ...spec.facets
+        .filter((facet) =>
+          ['FAILURE', 'RISK', 'DELAY', 'COST', 'ACCESS', 'REWORK'].includes(
+            facet.type,
+          ),
+        )
+        .map((facet) => facet.statement),
+    ].filter(Boolean);
+    const consequenceTerms = [...spec.consequences].filter(Boolean);
+
+    const dimensions = [
+      { weight: 0.14, score: scoreConcepts(actorTerms), active: actorTerms.length > 0 },
+      { weight: 0.2, score: scoreConcepts(objectTerms), active: objectTerms.length > 0 },
+      { weight: 0.2, score: scoreConcepts(workflowTerms), active: workflowTerms.length > 0 },
+      { weight: 0.36, score: scoreConcepts(problemTerms), active: problemTerms.length > 0 },
+      { weight: 0.1, score: scoreConcepts(consequenceTerms), active: consequenceTerms.length > 0 },
+    ].filter((dimension) => dimension.active);
+
+    if (dimensions.length === 0) return lexicalAlignment;
+    const activeWeight = dimensions.reduce(
+      (sum, dimension) => sum + dimension.weight,
+      0,
+    );
+    const structuredAlignment = dimensions.reduce(
+      (sum, dimension) => sum + dimension.score * dimension.weight,
+      0,
+    ) / Math.max(0.01, activeWeight);
+
+    return Math.max(
+      0,
+      Math.min(1, structuredAlignment * 0.82 + lexicalAlignment * 0.18),
+    );
+  }
+
   /**
    * Removes stale pre-verification fallback warnings once independent evidence
    * verification has promoted the selected candidate to an eligible, traceable
@@ -7669,7 +8198,8 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     ranking: IdeaOpportunityRanking,
   ): IdeaGenerationContext {
     if (
-      context.requestMode !== 'TEXT_AND_DOMAINS' ||
+      (context.requestMode !== 'TEXT_ONLY' &&
+        context.requestMode !== 'TEXT_AND_DOMAINS') ||
       !context.requestDescription?.trim() ||
       this.hasExplicitRequesterProblem(context)
     ) {
@@ -7689,6 +8219,36 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const normalizedFamily = this.normalizeIntentText(
       analysis.selectedProblemFamily,
     );
+    const selectedIdSet = new Set(selectedIds);
+    const selectedTrustedFamilyItems = (context.canonicalEvidenceLedger ?? []).filter(
+      (item) =>
+        selectedIdSet.has(item.id) &&
+        item.verified &&
+        (item.classification === 'DIRECT_PROBLEM' ||
+          item.classification === 'SUPPORTING_SIGNAL'),
+    );
+    if (selectedTrustedFamilyItems.length > 0) {
+      const canonicalFamilyAlignment =
+        this.calculateCanonicalFamilyRequestAlignment(
+          context,
+          analysis.selectedProblemFamily,
+          selectedTrustedFamilyItems,
+        );
+      const canonicalFamilySemanticFit =
+        this.calculateCanonicalFamilyRequesterSemanticFit(
+          context,
+          analysis.selectedProblemFamily,
+          selectedTrustedFamilyItems,
+        );
+      if (
+        canonicalFamilyAlignment >=
+          this.minimumTextRequestFamilyAlignment(context) &&
+        canonicalFamilySemanticFit >= this.minimumTextRequesterSemanticFit()
+      ) {
+        return context;
+      }
+    }
+
     const familyCandidate = [ranking.selected, ...ranking.alternatives].find(
       (candidate) =>
         this.normalizeIntentText(candidate.title) === normalizedFamily ||
@@ -7712,7 +8272,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     if (!weakRequesterContext) return context;
 
     const warning =
-      `The evidence remains trusted in the canonical audit ledger, but the Text+Domains family "${analysis.selectedProblemFamily}" was released as a selection lock because it was classified as requester-context mismatch. Recovery may search the same selected domains with requester actor/object/workflow vocabulary; no evidence threshold is changed.`;
+      `The evidence remains trusted in the canonical audit ledger, but the text-request family "${analysis.selectedProblemFamily}" was released as a selection lock because it did not meet the requester-alignment gate. Recovery may search with requester actor/object/workflow/problem vocabulary; no evidence threshold is changed.`;
 
     this.logger.debug(warning);
     return {
@@ -7745,17 +8305,27 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     if (!description) return ranking;
 
     /*
-     * Only internal EXPLICIT_PROBLEM corroboration uses requester intent as a
-     * selection gate. In normal text discovery the text resolves domain/workflow
-     * context and remains diagnostic; evidence strength selects the problem.
+     * Every request that contains text uses requester intent as a selection
+     * constraint. The text is still not evidence and never upgrades an external
+     * row, but a verified family must materially support the described
+     * actor/object/workflow/problem before it can become the product winner.
      */
     const normalizedDescription = this.normalizeIntentText(description);
     const intentConceptCount =
       this.resolveIntentConceptGroups(normalizedDescription).length;
+    const textBearingDiscovery = Boolean(
+      !explicitRequesterProblem &&
+        (context.requestMode === 'TEXT_ONLY' ||
+          context.requestMode === 'TEXT_AND_DOMAINS') &&
+        context.requestDescription?.trim(),
+    );
     const STRONG_INTENT_ALIGNMENT =
       intentConceptCount >= 3 ? 0.58 : intentConceptCount === 2 ? 0.52 : 0.45;
-    const PRELIMINARY_INTENT_ALIGNMENT =
+    const basePreliminaryIntentAlignment =
       intentConceptCount >= 3 ? 0.46 : intentConceptCount === 2 ? 0.36 : 0.28;
+    const PRELIMINARY_INTENT_ALIGNMENT = textBearingDiscovery
+      ? this.minimumTextRequestFamilyAlignment(context)
+      : basePreliminaryIntentAlignment;
     const originalCandidates = [ranking.selected, ...ranking.alternatives];
     const explicitDomainNames = new Set(
       context.selectedDomains
@@ -7764,12 +8334,6 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         .filter(Boolean),
     );
     const textPlusDomains = explicitDomainNames.size > 0;
-    const textAndDomainsDiscovery = Boolean(
-      !explicitRequesterProblem &&
-        context.requestMode === 'TEXT_AND_DOMAINS' &&
-        explicitDomainNames.size > 0,
-    );
-
     const scored = originalCandidates.map((candidate) => {
       const rawCandidate =
         candidate.raw && typeof candidate.raw === 'object' && !Array.isArray(candidate.raw)
@@ -7791,11 +8355,25 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         rawSource === 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS' &&
         rawRequestDescription.length > 0 &&
         this.normalizeIntentText(rawRequestDescription) === normalizedDescription;
-      const alignment = isCanonicalRequesterHypothesis
+      const baseAlignment = isCanonicalRequesterHypothesis
         ? 1
         : explicitRequesterProblem
           ? this.calculateRequestIntentAlignment(candidate, description)
           : this.calculateDiscoveryIntentAlignment(candidate, context);
+      const canonicalFamilyRequestFit = textBearingDiscovery
+        ? this.resolveCandidateCanonicalFamilyRequestFit(context, candidate)
+        : null;
+      const canonicalFamilyAlignment =
+        canonicalFamilyRequestFit?.alignment ?? null;
+      const canonicalFamilySemanticFit =
+        canonicalFamilyRequestFit?.semanticFit ?? null;
+      const alignment =
+        canonicalFamilyAlignment === null
+          ? baseAlignment
+          : Math.max(baseAlignment, canonicalFamilyAlignment);
+      const canonicalFamilySemanticFitEligible =
+        canonicalFamilySemanticFit === null ||
+        canonicalFamilySemanticFit >= this.minimumTextRequesterSemanticFit();
       const adjusted = Math.max(
         0,
         Math.min(
@@ -7863,7 +8441,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         !isWorkflowAdjacentRaw;
       const isPreliminaryAligned =
         isSemanticallyVerifiedWorkflowAdjacent ||
-        (alignment >= PRELIMINARY_INTENT_ALIGNMENT && strictWorkflowAligned);
+        (alignment >= PRELIMINARY_INTENT_ALIGNMENT &&
+          strictWorkflowAligned &&
+          canonicalFamilySemanticFitEligible);
       const requestIntentSupportTier = isStronglyAligned
         ? 'FULL_REQUEST_MATCH' as const
         : isPreliminaryAligned || alignment >= 0.24
@@ -7907,13 +8487,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         (verifiedProblemMatchedEvidenceCount > 0 ||
           qualifiedExternalSupportingEvidenceCount > 0);
       /*
-       * Explicit-problem text keeps its strict problem-first selection gate.
-       * Discovery-intent text only constrains the search/actor/domain scope;
-       * verified evidence is allowed to choose the actual software problem.
+       * Explicit-problem text keeps the strong gate. Normal Text Only and
+       * Text+Domains discovery accept preliminary evidence-backed families too,
+       * but never a family below the material requester-alignment floor.
        */
       const discoveryContextCompatible =
-        !textAndDomainsDiscovery ||
-        requestIntentSupportTier !== 'WEAK_OR_UNRELATED';
+        !textBearingDiscovery ||
+        (isPreliminaryAligned &&
+          requestIntentSupportTier !== 'WEAK_OR_UNRELATED');
       const selectionEligible =
         candidate.selectionEligible &&
         !isOffSelectedDomain &&
@@ -7925,6 +8506,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           ? {
               ...(candidate.raw as Prisma.JsonObject),
               requestIntentAlignmentScore: alignment,
+              requestIntentCanonicalFamilyAlignmentScore:
+                canonicalFamilyAlignment,
+              requestIntentCanonicalFamilySemanticFit:
+                canonicalFamilySemanticFit,
               requestIntentAdjustedScore: adjusted,
               requestIntentAlignmentApplied: true,
               requestIntentSupportTier,
@@ -8255,15 +8840,25 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     );
     const candidateTokens = this.extractIntentTokens(candidateText);
     const identity = context.collectionPlan?.domainIdentity;
+    const problemSpec = context.canonicalProblemSpec;
     const rawConcepts = [
       identity?.actor,
       identity?.object,
       identity?.workflow,
+      problemSpec?.actor,
+      ...(problemSpec?.actorAliases ?? []),
+      problemSpec?.object,
+      ...(problemSpec?.objectAliases ?? []),
+      problemSpec?.workflow,
+      problemSpec?.friction,
+      ...(problemSpec?.failureModes ?? []),
+      ...(problemSpec?.consequences ?? []),
+      ...(problemSpec?.facets ?? []).map((facet) => facet.statement),
       ...(context.collectionPlan?.intentConcepts ?? []),
     ]
       .map((value) => value?.replace(/\s+/gu, ' ').trim() ?? '')
       .filter(Boolean);
-    const concepts = [...new Set(rawConcepts)].slice(0, 10);
+    const concepts = [...new Set(rawConcepts)].slice(0, 18);
 
     if (concepts.length === 0) {
       return candidate.matchedDomainNames?.length ? 0.7 : 0.5;

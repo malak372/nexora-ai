@@ -449,13 +449,24 @@ export class DataCollectionService {
               collectionMode,
             );
             const multiDomainLaneCount = sourcePlan?.discoveryDomainNames?.length ?? 0;
+            const requesterTextPlan = Boolean(requestDescription.trim());
+            const rateSensitiveSource = ['reddit', 'crossref', 'youtube'].includes(
+              dataSource.key.trim().toLocaleLowerCase(),
+            );
+            const healthyTextQueryBudget = requesterTextPlan
+              ? rateSensitiveSource
+                ? 6
+                : this.collectorSourceHealth.score(dataSource.key) >= 0.55
+                  ? 8
+                  : 6
+              : 6;
             const sourceQueryBudget = sourcePlan?.queries?.length
               ? sourcePlan.sourceTier === 'PRIMARY'
                 ? multiDomainLaneCount > 1
-                  ? Math.min(7, Math.max(6, multiDomainLaneCount * 2 + 1))
-                  : 6
+                  ? Math.min(8, Math.max(6, multiDomainLaneCount * 2 + 1))
+                  : healthyTextQueryBudget
                 : sourcePlan.sourceTier === 'SECONDARY'
-                  ? 4
+                  ? requesterTextPlan ? 5 : 4
                   : 1
               : 1;
             const sourceSpecificAiQueries = this.unique(
@@ -3492,7 +3503,7 @@ export class DataCollectionService {
           : withCaps(8, 5, 12, 5);
     }
 
-    if (key === 'crossref' || key === 'news') {
+    if (key === 'crossref') {
       return exploratoryScale
         ? withCaps(4, 2, 1, 1)
         : recovery
@@ -3500,12 +3511,24 @@ export class DataCollectionService {
           : withCaps(10, 6, 1, 1);
     }
 
+    if (key === 'news') {
+      return exploratoryScale
+        ? withCaps(5, 3, 1, 1)
+        : recovery
+          ? withCaps(8, 5, 1, 1)
+          : requesterText && aiOwnedTextPlan
+            ? withCaps(14, 9, 1, 1)
+            : withCaps(10, 6, 1, 1);
+    }
+
     if (key === 'blog' || key === 'gdelt') {
       return exploratoryScale
         ? withCaps(3, 2, 1, 1)
         : recovery
-          ? withCaps(5, 3, 1, 1)
-          : withCaps(8, 5, 1, 1);
+          ? withCaps(6, 4, 1, 1)
+          : requesterText && aiOwnedTextPlan
+            ? withCaps(10, 6, 1, 1)
+            : withCaps(8, 5, 1, 1);
     }
 
     if (
