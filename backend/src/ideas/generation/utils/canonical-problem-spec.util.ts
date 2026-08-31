@@ -33,13 +33,19 @@ export class CanonicalProblemSpecUtil {
       (requestIntent?.mode === 'EXPLICIT_PROBLEM_DISCOVERY' ||
         requestIntent?.mode === 'EXPLICIT_PROBLEM') &&
       Boolean(requestIntent.explicitProblem?.trim());
-    const profile = requesterProblemHypothesis
+    const textBearingRequest =
+      input.mode === 'TEXT_ONLY' || input.mode === 'TEXT_AND_DOMAINS';
+    const profile = textBearingRequest
       ? input.collectionPlan?.problemProfile
       : undefined;
     const identity = input.collectionPlan?.domainIdentity;
     const description = this.clean(input.description ?? '');
     const problemText = this.clean([
-      requestIntent?.explicitProblem ?? '',
+      requesterProblemHypothesis
+        ? requestIntent?.explicitProblem ?? ''
+        : textBearingRequest
+          ? description
+          : '',
       profile?.friction ?? '',
       ...(profile?.failureModes ?? []),
       ...(profile?.consequences ?? []),
@@ -48,15 +54,17 @@ export class CanonicalProblemSpecUtil {
     const actor = this.firstNonEmpty(profile?.actor, identity?.actor);
     const object = this.firstNonEmpty(profile?.object, identity?.object);
     const workflow = this.firstNonEmpty(profile?.workflow, identity?.workflow);
-    const friction = requesterProblemHypothesis
+    const friction = textBearingRequest
       ? this.firstNonEmpty(
           profile?.friction,
           profile?.failureModes?.[0],
           identity?.failure,
-          requestIntent?.explicitProblem,
+          requesterProblemHypothesis ? requestIntent?.explicitProblem : undefined,
+          RequestDynamicQueryUtil.extractPainTerms(problemText || description)
+            .find((value) => this.isMaterialProblemFacet(value)),
         )
       : '';
-    const failureModes = requesterProblemHypothesis
+    const failureModes = textBearingRequest
       ? this.unique([
           ...(profile?.failureModes ?? []),
           ...(identity?.failure ? [identity.failure] : []),
@@ -65,7 +73,7 @@ export class CanonicalProblemSpecUtil {
             .filter((value) => this.isMaterialProblemFacet(value)),
         ]).slice(0, 10)
       : [];
-    const consequences = requesterProblemHypothesis
+    const consequences = textBearingRequest
       ? this.unique(profile?.consequences ?? []).slice(0, 8)
       : [];
 
@@ -90,7 +98,7 @@ export class CanonicalProblemSpecUtil {
       });
     };
 
-    if (requesterProblemHypothesis) {
+    if (textBearingRequest) {
       const canonicalFacetText = problemText || description;
       const dynamicWorkflowFacets = RequestDynamicQueryUtil.extractWorkflowTerms(
         canonicalFacetText,

@@ -133,7 +133,7 @@ export class IdeaEvidenceRecoveryService {
    * requests may invoke a second rotated wave from OpportunityRankingStage,
    * while discovery-only paths remain single-wave.
    */
-  private readonly maximumRecoveryKeywords = 20;
+  private readonly maximumRecoveryKeywords = 28;
   /*
    * Keep each zero-trusted text recovery wave bounded to four healthy lanes in parallel.  Very
    * sparse workflows frequently lose a preferred source to rate limiting and
@@ -207,10 +207,15 @@ export class IdeaEvidenceRecoveryService {
           item.classification === 'SUPPORTING_SIGNAL'),
     ).length;
     const requesterScopedRecovery = Boolean(context.requestDescription?.trim());
+    const requesterSelectedEvidenceGap = Boolean(
+      requesterScopedRecovery && preflightSelectedTrusted.length === 0,
+    );
     const zeroTrustedDiscoveryRecovery = Boolean(
       !requesterScopedRecovery && preflightGlobalTrustedCount === 0,
     );
-    const evidenceGuaranteeRecovery = preflightGlobalTrustedCount === 0;
+    const evidenceGuaranteeRecovery = Boolean(
+      preflightGlobalTrustedCount === 0 || requesterSelectedEvidenceGap,
+    );
     const lowExpectedYieldCorroboration = Boolean(
       corroborationOnlyRecovery &&
         context.evidenceRecoveryAttempts === 0 &&
@@ -574,7 +579,7 @@ export class IdeaEvidenceRecoveryService {
     }
 
     /*
-     * For a zero-trusted TEXT run, one entirely new source is useful, but it
+     * For a requester-scoped run with no selected-family trusted evidence, one entirely new source is useful, but it
      * must not crowd out primary sources that already returned productive or
      * context-bearing rows. The single bounded wave therefore mixes provenance
      * novelty with exact-new atomic re-queries on productive sources. This keeps
@@ -706,7 +711,7 @@ export class IdeaEvidenceRecoveryService {
       );
       if (selectedRecoverySources.length > 0) {
         this.logger.debug(
-          `Zero-trusted text recovery selected a balanced ${selectedRecoverySources.length}-source wave: novel=${selectedRecoverySources.filter((source) => !primaryAttemptedSourceKeys.has(source.key.trim().toLocaleLowerCase())).length}, productiveReplay=${selectedRecoverySources.filter((source) => productiveReplaySources.some((candidate) => candidate.key.trim().toLocaleLowerCase() === source.key.trim().toLocaleLowerCase())).length}, archetypes=${[...new Set(selectedRecoverySources.map((source) => CollectorRequestCapabilityUtil.sourceArchetype(source.key)))].join(',')}. The bounded wave prefers two provenance-new evidence archetypes plus one productive replay when available; semantic evidence thresholds remain unchanged.`,
+          `Requester-scoped evidence-gap recovery selected a balanced ${selectedRecoverySources.length}-source wave: novel=${selectedRecoverySources.filter((source) => !primaryAttemptedSourceKeys.has(source.key.trim().toLocaleLowerCase())).length}, productiveReplay=${selectedRecoverySources.filter((source) => productiveReplaySources.some((candidate) => candidate.key.trim().toLocaleLowerCase() === source.key.trim().toLocaleLowerCase())).length}, archetypes=${[...new Set(selectedRecoverySources.map((source) => CollectorRequestCapabilityUtil.sourceArchetype(source.key)))].join(',')}. The bounded wave prefers two provenance-new evidence archetypes plus one productive replay when available; globally trusted mismatch rows do not satisfy this requester-selected evidence gap, and semantic evidence thresholds remain unchanged.`,
         );
       }
     }
@@ -1741,11 +1746,14 @@ export class IdeaEvidenceRecoveryService {
                     ],
                 )
                 .filter((query): query is string => Boolean(query?.trim()))
-            : [
-                authoritativeRecoveryQueries[sourceIndex % authoritativeRecoveryQueries.length],
-                authoritativeRecoveryQueries[(sourceIndex + 1) % authoritativeRecoveryQueries.length],
-                authoritativeRecoveryQueries[(sourceIndex + 2) % authoritativeRecoveryQueries.length],
-              ].filter((query): query is string => Boolean(query?.trim())))
+            : [0, 1, 2, 3]
+                .map(
+                  (offset) =>
+                    authoritativeRecoveryQueries[
+                      (sourceIndex + offset) % authoritativeRecoveryQueries.length
+                    ],
+                )
+                .filter((query): query is string => Boolean(query?.trim())))
         : [];
       const fallbackQueries = requestSpecificRecovery && rotatedAuthoritativeQueries.length > 0
         ? [...rotatedAuthoritativeQueries, ...domainRecoveryQueries]
@@ -1765,21 +1773,29 @@ export class IdeaEvidenceRecoveryService {
         rawQueryCandidates
           .map((query) => this.sanitizeRecoveryQuery(query))
           .filter((query) => SourceSpecificEvidenceQueryUtil.isSafe(query)),
-      )].slice(0, 6);
+      )].slice(0, 8);
       const compiledQueries = SourceSpecificEvidenceQueryUtil.compile({
         sourceKey: source.key,
         baseQueries: rawQueries,
-        requestDescription: recoverySemanticDescription || undefined,
-        problemProfile: lockedRequesterProblemRecovery
+        requestDescription: requestSpecificRecovery
+          ? context.requestDescription ?? undefined
+          : recoverySemanticDescription || undefined,
+        problemProfile: requestSpecificRecovery
           ? context.collectionPlan?.problemProfile
-          : undefined,
+          : lockedRequesterProblemRecovery
+            ? context.collectionPlan?.problemProfile
+            : undefined,
         discoveryDomainName: recoveryDomain?.name ?? context.domainName,
         discoveryIntent: !lockedRequesterProblemRecovery,
         maxQueries: singleSourceFamilyCorroboration
           ? 3
+          : evidenceGuaranteeRecovery
+            ? 5
           : firstPassNeedsSemanticRotation
-            ? 3
-            : 2,
+            ? 4
+            : requestSpecificRecovery
+              ? 3
+              : 2,
         preserveBaseQueries: Boolean(
           recoverySemanticDescription || requestSpecificRecovery,
         ),
@@ -1929,6 +1945,8 @@ export class IdeaEvidenceRecoveryService {
       if (assignedRecoveryQueriesAcrossSources.length > 0) {
         const desiredQueryCount = singleSourceFamilyCorroboration
           ? 3
+          : evidenceGuaranteeRecovery
+            ? 4
           : firstPassNeedsSemanticRotation
             ? 3
             : 2;
@@ -2186,7 +2204,7 @@ export class IdeaEvidenceRecoveryService {
                 recoverySemanticDescription || recoveryRoutingDescription,
               ),
         )
-        .slice(0, 2);
+        .slice(0, requestSpecificRecovery ? 3 : 2);
 
       const fallbackSourcePlans = fallbackSources
         .map((source, sourceIndex) => {
@@ -2229,12 +2247,16 @@ export class IdeaEvidenceRecoveryService {
               recoveryQueryPlan?.causalSearchProbes?.map(
                 (probe: RequestCausalSearchProbe) => probe.query,
               ) ?? [],
-            requestDescription: lockedRequesterProblemRecovery
+            requestDescription: requestSpecificRecovery
               ? context.requestDescription
-              : undefined,
-            problemProfile: lockedRequesterProblemRecovery
+              : lockedRequesterProblemRecovery
+                ? context.requestDescription
+                : undefined,
+            problemProfile: requestSpecificRecovery
               ? context.collectionPlan?.problemProfile ?? null
-              : null,
+              : lockedRequesterProblemRecovery
+                ? context.collectionPlan?.problemProfile ?? null
+                : null,
             discoveryDomainName:
               resolvedDomain?.name ?? context.domainName ?? null,
             maxQueries: 5,
@@ -3078,14 +3100,22 @@ export class IdeaEvidenceRecoveryService {
       rawCountsBySource.set(key, (rawCountsBySource.get(key) ?? 0) + 1);
     }
     const requesterScoped = Boolean(context.requestDescription?.trim());
+    const selectedFamilyEvidenceIds = new Set(
+      (context.communityAiAnalysis?.selectedProblemFamilyEvidenceIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    const requesterSelectedTrustedExists =
+      selectedFamilyEvidenceIds.size > 0 &&
+      (context.canonicalEvidenceLedger ?? []).some(
+        (item) =>
+          item.verified &&
+          selectedFamilyEvidenceIds.has(item.id) &&
+          (item.classification === 'DIRECT_PROBLEM' ||
+            item.classification === 'SUPPORTING_SIGNAL'),
+      );
     const zeroTrustedRequester = Boolean(
-      requesterScoped &&
-        !(context.canonicalEvidenceLedger ?? []).some(
-          (item) =>
-            item.verified &&
-            (item.classification === 'DIRECT_PROBLEM' ||
-              item.classification === 'SUPPORTING_SIGNAL'),
-        ),
+      requesterScoped && !requesterSelectedTrustedExists,
     );
 
     for (const key of attemptedSourceKeys) {

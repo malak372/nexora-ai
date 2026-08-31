@@ -680,8 +680,30 @@ export class RequestDynamicQueryUtil {
     if (!normalized) return [];
 
     const aliases = [normalized];
+    const organizationalMatch = normalized.match(
+      /^(.*?)(?:\s+)(clinics?|practices?|hospitals?|facilities|centers?|centres?|workshops?|studios?)$/iu,
+    );
+    if (organizationalMatch) {
+      const root = (organizationalMatch[1] ?? '').replace(/\s+/gu, ' ').trim();
+      const suffix = (organizationalMatch[2] ?? '').toLocaleLowerCase();
+      if (root) {
+        if (/^clinics?$/u.test(suffix)) {
+          aliases.push(`${root} practice`, `${root} hospital`);
+        } else if (/^practices?$/u.test(suffix)) {
+          aliases.push(`${root} clinic`, `${root} hospital`);
+        } else if (/^hospitals?$/u.test(suffix)) {
+          aliases.push(`${root} clinic`, `${root} practice`);
+        } else if (/^(?:centers?|centres?|facilities)$/u.test(suffix)) {
+          aliases.push(`${root} center`, `${root} facility`);
+        } else if (/^workshops?$/u.test(suffix)) {
+          aliases.push(`${root} studio`);
+        } else if (/^studios?$/u.test(suffix)) {
+          aliases.push(`${root} workshop`);
+        }
+      }
+    }
     const withoutOrgSuffix = normalized
-      .replace(/\b(?:companies?|businesses?|organizations?|organisations?|providers?|operators?|teams?|departments?|agencies|authorities|networks?|facilities|workshops?|shops?|studios?)\b$/iu, '')
+      .replace(/\b(?:companies?|businesses?|organizations?|organisations?|providers?|operators?|teams?|departments?|agencies|authorities|networks?|facilities|clinics?|practices?|hospitals?|workshops?|shops?|studios?)\b$/iu, '')
       .replace(/\s+/gu, ' ')
       .trim();
     if (withoutOrgSuffix) aliases.push(withoutOrgSuffix);

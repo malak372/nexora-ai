@@ -1,4 +1,5 @@
 import type { RequestCanonicalProblemProfile } from '../types/request-collection-plan.type';
+import { RequestDynamicQueryUtil } from './request-dynamic-query.util';
 
 /**
  * Adapts request-grounded search seeds to the retrieval semantics of each
@@ -28,7 +29,7 @@ export class SourceSpecificEvidenceQueryUtil {
     /** Initial discovery keeps AI-planned facet diversity ahead of problem-axis rewrites. */
     readonly discoveryIntent?: boolean;
   }): string[] {
-    const maxQueries = Math.max(1, Math.min(6, input.maxQueries ?? 3));
+    const maxQueries = Math.max(1, Math.min(10, input.maxQueries ?? 3));
     const causal = this.unique(input.causalQueries ?? [])
       .map((query) => this.sanitize(query))
       .filter((query) => this.isSafe(query));
@@ -63,14 +64,13 @@ export class SourceSpecificEvidenceQueryUtil {
     );
 
     const preferProblemNativeProbe = Boolean(input.problemProfile) &&
-      !input.discoveryIntent &&
       ['crossref', 'news', 'gdelt', 'blog', 'reddit', 'forum', 'youtube', 'hacker-news', 'app-store', 'google-play'].includes(sourceKey);
     const prioritizedCandidates = input.preserveBaseQueries
       ? this.interleavePreservingBase(
           candidates,
           base,
           input.discoveryIntent
-            ? false
+            ? preferProblemNativeProbe
             : sourceNativeCausal.length > 0
               ? true
               : preferProblemNativeProbe,
@@ -152,12 +152,13 @@ export class SourceSpecificEvidenceQueryUtil {
         : [...adaptedBase, ...baseQueries];
     }
 
+    const actorVariants = this.buildRetrievalActorVariants(profile);
     const identity = this.join(
-      this.compact(profile.actor, 3),
+      this.compact(actorVariants[0] ?? profile.actor, 3),
       this.compact(profile.object, 3),
     );
     const alternateIdentity = this.join(
-      this.compact(profile.actorAliases?.[0] ?? profile.actor, 3),
+      this.compact(actorVariants[1] ?? actorVariants[0] ?? profile.actor, 3),
       this.compact(profile.objectAliases?.[0] ?? profile.object, 3),
     );
     const workflow = this.compact(profile.workflow, 4);
@@ -174,7 +175,8 @@ export class SourceSpecificEvidenceQueryUtil {
       ...this.buildProblemAxisProbes(profile, 'ACADEMIC'),
       this.join(compactObject, workflow, 'study'),
       this.join(compactObject, compactFailure, 'operational bottleneck research'),
-      this.join(this.compact(profile.actor, 3), compactFailure, 'workflow challenge'),
+      this.join(this.compact(actorVariants[0] ?? profile.actor, 3), compactFailure, 'workflow challenge'),
+      this.join(this.compact(actorVariants[1] ?? '', 3), compactObject, 'operational workflow study'),
       this.join(alternateIdentity, failures[1] ?? compactFailure, 'study'),
       this.join(compactObject, this.compact(profile.consequences[0] ?? '', 3), 'service delay'),
       this.join(identity, workflow, 'challenges'),
@@ -218,8 +220,9 @@ export class SourceSpecificEvidenceQueryUtil {
           ]
         : [...adaptedBase, ...baseQueries];
     }
+    const actorVariants = this.buildRetrievalActorVariants(profile);
     const identity = this.join(
-      this.compact(profile.actor, 3),
+      this.compact(actorVariants[0] ?? profile.actor, 3),
       this.compact(profile.object, 3),
       this.compact(input.discoveryDomainName ?? '', 2),
     );
@@ -235,7 +238,8 @@ export class SourceSpecificEvidenceQueryUtil {
       this.join(object, failure, 'reported problem'),
       this.join(shortWorkflow, failure, 'delay bottleneck'),
       this.join(object, consequence, 'service delay'),
-      this.join(this.compact(profile.actor, 3), failure, 'case report'),
+      this.join(this.compact(actorVariants[0] ?? profile.actor, 3), failure, 'case report'),
+      this.join(this.compact(actorVariants[1] ?? '', 3), object, failure),
       this.join(identity, failure, 'reported incident'),
       this.join(object, shortWorkflow, 'operational challenge'),
       ...baseQueries.map((query) => this.join(object, this.compact(query, 6))),
@@ -277,9 +281,10 @@ export class SourceSpecificEvidenceQueryUtil {
         : [...adaptedBase, ...baseQueries];
     }
 
-    const actor = this.compact(profile.actor, 3);
+    const actorVariants = this.buildRetrievalActorVariants(profile);
+    const actor = this.compact(actorVariants[0] ?? profile.actor, 3);
     const alternateActor = this.compact(
-      profile.actorAliases?.[0] ?? profile.actor,
+      actorVariants[1] ?? actorVariants[0] ?? profile.actor,
       3,
     );
     const object = this.compact(
@@ -320,14 +325,23 @@ export class SourceSpecificEvidenceQueryUtil {
     profile: RequestCanonicalProblemProfile,
     lane: 'ACADEMIC' | 'REPORT' | 'COMMUNITY',
   ): string[] {
-    const actor = this.compact(profile.actor, 3);
+    const actorVariants = this.buildRetrievalActorVariants(profile);
+    const actor = this.compact(actorVariants[0] ?? profile.actor, 3);
     const alternateActor = this.compact(
-      profile.actorAliases?.[0] ?? profile.actor,
+      actorVariants[1] ?? actorVariants[0] ?? profile.actor,
       3,
     );
-    const object = this.compact(profile.object, 4);
+    const broaderActor = this.compact(
+      actorVariants[2] ?? actorVariants[1] ?? actorVariants[0] ?? profile.actor,
+      3,
+    );
+    const objectPhrases = this.buildAtomicObjectPhrases(
+      profile.object,
+      profile.objectAliases ?? [],
+    );
+    const object = this.compact(objectPhrases[0] ?? profile.object, 4);
     const alternateObject = this.compact(
-      profile.objectAliases?.[0] ?? profile.object,
+      objectPhrases[1] ?? profile.objectAliases?.[0] ?? profile.object,
       4,
     );
     const workflow = this.compact(profile.workflow, 4);
@@ -340,6 +354,11 @@ export class SourceSpecificEvidenceQueryUtil {
       4,
     );
     const consequence = this.compact(profile.consequences[0] ?? '', 3);
+    const operationalVocabulary = this.buildOperationalVocabularyProbes(
+      profile,
+      actorVariants,
+      objectPhrases,
+    );
 
     /*
      * Tiny source budgets should test separate observable axes rather than one
@@ -348,6 +367,9 @@ export class SourceSpecificEvidenceQueryUtil {
      */
     if (lane === 'ACADEMIC') {
       return [
+        ...operationalVocabulary.slice(0, 4).map((query) => this.join(query, 'study')),
+        this.join(broaderActor || alternateActor || actor, object, 'study'),
+        this.join(alternateActor || actor, alternateObject || object, 'research'),
         this.join(object, primaryFailure, 'study'),
         this.join(workflow, secondaryFailure, 'research'),
         this.join(actor || alternateActor, primaryFailure, 'study'),
@@ -357,6 +379,9 @@ export class SourceSpecificEvidenceQueryUtil {
 
     if (lane === 'REPORT') {
       return [
+        ...operationalVocabulary.slice(0, 4).map((query) => this.join(query, 'reported problem')),
+        this.join(broaderActor || alternateActor || actor, object, 'reported problem'),
+        this.join(alternateActor || actor, alternateObject || object, 'case'),
         this.join(object, primaryFailure, 'incident'),
         this.join(workflow, secondaryFailure, 'case'),
         this.join(actor || alternateActor, primaryFailure, 'report'),
@@ -365,11 +390,100 @@ export class SourceSpecificEvidenceQueryUtil {
     }
 
     return [
+      ...operationalVocabulary,
+      this.join(broaderActor || alternateActor || actor, object),
+      this.join(alternateActor || actor, alternateObject || object),
       this.join(actor || alternateActor, primaryFailure),
       this.join(object, primaryFailure),
       this.join(workflow, secondaryFailure),
       this.join(alternateObject || object, consequence || secondaryFailure),
     ];
+  }
+
+  private static buildAtomicObjectPhrases(
+    object: string,
+    aliases: readonly string[],
+  ): string[] {
+    const output: string[] = [];
+    for (const raw of [object, ...aliases]) {
+      const normalized = this.sanitize(raw);
+      if (!normalized) continue;
+      const parts = normalized
+        .split(/\b(?:and|or|plus|versus|vs)\b|[,/&;+]/iu)
+        .map((part) => this.sanitize(part))
+        .filter(Boolean);
+      for (const part of parts) {
+        const compactPart = this.compact(part, 4);
+        if (compactPart) output.push(compactPart);
+        const withoutContainer = part
+          .replace(/\b(?:requests?|tickets?|tasks?|reports?|records?|items?)\b$/iu, '')
+          .replace(/\s+/gu, ' ')
+          .trim();
+        if (withoutContainer.split(/\s+/u).length >= 2) {
+          output.push(this.compact(withoutContainer, 4));
+        }
+      }
+      output.push(this.compact(normalized, 5));
+    }
+    return this.unique(output).filter(Boolean).slice(0, 8);
+  }
+
+  private static buildOperationalVocabularyProbes(
+    profile: RequestCanonicalProblemProfile,
+    actorVariants: readonly string[],
+    objectPhrases: readonly string[],
+  ): string[] {
+    const text = this.sanitize([
+      profile.object,
+      profile.workflow,
+      profile.coreProblem,
+      profile.friction ?? '',
+      ...profile.failureModes,
+      ...profile.consequences,
+    ].join(' ')).toLocaleLowerCase();
+    const actor = this.compact(actorVariants[0] ?? profile.actor, 3);
+    const alternateActor = this.compact(
+      actorVariants[1] ?? actorVariants[0] ?? profile.actor,
+      3,
+    );
+    const broaderActor = this.compact(
+      actorVariants[2] ?? actorVariants[1] ?? actorVariants[0] ?? profile.actor,
+      3,
+    );
+    const queries: string[] = [];
+    const add = (...parts: string[]) => {
+      const query = this.join(...parts);
+      if (query.split(/\s+/u).length >= 2) queries.push(query);
+    };
+
+    for (let index = 0; index < Math.min(3, objectPhrases.length); index += 1) {
+      const object = this.compact(objectPhrases[index] ?? '', 3);
+      add(index === 0 ? actor : index === 1 ? alternateActor : broaderActor, object);
+    }
+
+    if (/\bmaintenance\b/u.test(text)) {
+      add(actor, 'maintenance requests');
+      add(alternateActor, 'maintenance workflow');
+      if (/\bprioriti[sz]\w*\b/u.test(text)) add(actor, 'maintenance prioritization');
+    }
+    if (/\brepair\w*\b/u.test(text)) {
+      add(actor, 'repair requests');
+      add(alternateActor, 'repair workflow');
+      if (/\bprioriti[sz]\w*\b/u.test(text)) add(alternateActor, 'repair prioritization');
+    }
+    if (/\b(?:maintenance|repair\w*)\b/u.test(text) && /\brequests?\b/u.test(text)) {
+      add(broaderActor || alternateActor || actor, 'work orders');
+      add(actor, 'service requests');
+    }
+    if (/\bequipment\b/u.test(text)) {
+      if (/\bmaintenance\b/u.test(text)) add(actor, 'equipment maintenance');
+      if (/\brepair\w*\b/u.test(text)) add(alternateActor, 'equipment repair');
+    }
+    if (/\bfacilit(?:y|ies)\b/u.test(text) && /\bmaintenance\b/u.test(text)) {
+      add(actor, 'facility maintenance');
+    }
+
+    return this.unique(queries).slice(0, 10);
   }
 
   /** App-store search benefits from product/workflow nouns plus failure terms. */
@@ -489,13 +603,23 @@ export class SourceSpecificEvidenceQueryUtil {
       .trim();
   }
 
+  private static buildRetrievalActorVariants(
+    profile: RequestCanonicalProblemProfile,
+  ): string[] {
+    return this.unique([
+      profile.actor,
+      ...(profile.actorAliases ?? []),
+      ...RequestDynamicQueryUtil.buildActorAliases(profile.actor),
+    ]).slice(0, 6);
+  }
+
   private static compact(value: string, maxWords: number): string {
     const stop = new Set([
       'the', 'a', 'an', 'and', 'or', 'of', 'to', 'for', 'with', 'from',
       'often', 'frequently', 'usually', 'commonly', 'making', 'difficult',
       'difficulty',
       'smarter', 'smart', 'platform', 'system', 'solution', 'could',
-      'because', 'due',
+      'can', 'be', 'may', 'might', 'because', 'due',
     ]);
     return this.sanitize(value)
       .replace(/[,:;()\[\]{}]+/gu, ' ')

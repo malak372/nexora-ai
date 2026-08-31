@@ -149,9 +149,9 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
     const textOnlyRequest = context.requestMode === 'TEXT_ONLY';
     const textAndDomainsRequest = context.requestMode === 'TEXT_AND_DOMAINS';
     const requestedAutomaticTarget = textOnlyRequest
-      ? 7
+      ? 9
       : textAndDomainsRequest
-        ? 8
+        ? 9
         : Math.max(1, plannerKeys.length);
 
     const selected: T[] = [];
