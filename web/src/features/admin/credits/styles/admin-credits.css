@@ -4137,3 +4137,115 @@ html.vox-user-rtl .admin-shell .admin-credit-table tbody>tr>td:nth-child(5) {
 html.vox-user-rtl .admin-shell .admin-credit-table tbody>tr>td:nth-child(6) {
   --record-label: 'الإجراءات';
 }
+/* ========================================================================== */
+/* Credit inspect modal — keep actions visible while details scroll           */
+/* ========================================================================== */
+.admin-credit-modal {
+  height: min(760px, calc(100dvh - 40px));
+  max-height: calc(100dvh - 40px);
+}
+
+.admin-credit-modal__body {
+  height: calc(100% - 92px);
+  max-height: none;
+}
+
+.admin-credit-modal__details {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-credit-modal__section-head {
+  flex: 0 0 auto;
+}
+
+.admin-credit-detail-grid {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding-right: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 169, 164, .32) transparent;
+}
+
+.admin-credit-detail-grid::-webkit-scrollbar {
+  width: 7px;
+}
+
+.admin-credit-detail-grid::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(79, 169, 164, .28);
+}
+
+.admin-credit-modal__footer {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  margin-top: 12px;
+  padding-top: 13px;
+  background: #fffdfc;
+  box-shadow: 0 -12px 24px -22px rgba(47, 119, 116, .42);
+}
+
+html.vox-user-dark .admin-credit-modal__footer {
+  background: #172a24 !important;
+}
+
+@media (max-height: 760px) and (min-width: 761px) {
+  .admin-credit-modal-backdrop {
+    padding: 14px;
+  }
+
+  .admin-credit-modal {
+    height: calc(100dvh - 28px);
+    max-height: calc(100dvh - 28px);
+  }
+
+  .admin-credit-modal__head {
+    min-height: 78px;
+    padding-block: 12px;
+  }
+
+  .admin-credit-modal__body {
+    height: calc(100% - 78px);
+  }
+
+  .admin-credit-modal__summary,
+  .admin-credit-modal__details {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-credit-modal {
+    height: auto;
+    max-height: calc(100dvh - 20px);
+  }
+
+  .admin-credit-modal__body {
+    height: auto;
+    max-height: calc(100dvh - 120px);
+    overflow-y: auto;
+  }
+
+  .admin-credit-modal__details {
+    display: block;
+    overflow: visible;
+  }
+
+  .admin-credit-detail-grid {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .admin-credit-modal__footer {
+    position: sticky;
+    bottom: 0;
+    margin-inline: -20px;
+    padding: 12px 20px 2px;
+  }
+}

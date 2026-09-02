@@ -2155,3 +2155,1370 @@ html.vox-user-dark .discover-page :is(
   background: #20322b !important;
   background-image: none !important;
 }
+
+/* ========================================================================== */
+/* FINAL_20260902_DISCOVER_REFINED_GALLERY                                    */
+/* Equal-height cards, brighter Voxidence accents, and quieter premium motion. */
+/* ========================================================================== */
+
+.discover-page .discover-grid {
+  align-items: stretch;
+  grid-auto-rows: 1fr;
+  gap: 20px;
+}
+
+.discover-page .discovery-story {
+  --story-a: #2f7774;
+  --story-b: #55bdb6;
+  --story-c: #f1a8ba;
+  display: grid;
+  grid-template-rows: 154px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  overflow: hidden;
+  border: 1px solid rgba(47, 119, 116, .13);
+  border-radius: 26px;
+  background: linear-gradient(155deg, #fffefd 0%, #ffffff 62%, #f7fbfa 100%);
+  box-shadow:
+    0 18px 44px rgba(47, 119, 116, .075),
+    inset 0 1px 0 rgba(255,255,255,.96);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.discover-page .discovery-story:nth-child(6n + 1) {
+  --story-a: #278d88;
+  --story-b: #61c8c1;
+  --story-c: #f0a4b7;
+}
+
+.discover-page .discovery-story:nth-child(6n + 2) {
+  --story-a: #307e92;
+  --story-b: #77c8d2;
+  --story-c: #ffd0b5;
+}
+
+.discover-page .discovery-story:nth-child(6n + 3) {
+  --story-a: #497f70;
+  --story-b: #8fc8a8;
+  --story-c: #f0b4c3;
+}
+
+.discover-page .discovery-story:nth-child(6n + 4) {
+  --story-a: #386f8a;
+  --story-b: #8fc9e0;
+  --story-c: #f2a9bb;
+}
+
+.discover-page .discovery-story:nth-child(6n + 5) {
+  --story-a: #4a7b6f;
+  --story-b: #9ed0b9;
+  --story-c: #efc180;
+}
+
+.discover-page .discovery-story:nth-child(6n + 6) {
+  --story-a: #44778a;
+  --story-b: #7fc6bc;
+  --story-c: #ed9fb4;
+}
+
+.discover-page .discovery-story:hover {
+  border-color: color-mix(in srgb, var(--story-a) 30%, transparent);
+  box-shadow:
+    0 24px 54px color-mix(in srgb, var(--story-a) 14%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--story-c) 14%, transparent);
+}
+
+.discover-page .discovery-story__art {
+  height: 154px;
+  background:
+    radial-gradient(circle at 82% 18%, rgba(255,255,255,.34), transparent 24%),
+    radial-gradient(circle at 14% 88%, color-mix(in srgb, var(--story-c) 55%, transparent), transparent 33%),
+    linear-gradient(128deg, var(--story-a) 0%, var(--story-b) 66%, var(--story-c) 125%);
+}
+
+.discover-page .discovery-story__mesh {
+  opacity: .28;
+  background-size: 24px 24px;
+}
+
+/* The former sweeping beam and constantly rotating rings made the cards feel
+   busy. Keep the same visual vocabulary, but turn it into quiet static depth. */
+.discover-page .discovery-story__beam {
+  top: 22%;
+  left: 58%;
+  width: 52%;
+  height: 1px;
+  opacity: .5;
+  background: linear-gradient(90deg, rgba(255,255,255,.72), transparent);
+  transform: rotate(34deg);
+  animation: none !important;
+}
+
+.discover-page .discovery-story__ring,
+.discover-page .discovery-story__ring--two {
+  animation: none !important;
+  border-color: rgba(255,255,255,.28);
+}
+
+.discover-page .discovery-story__ring {
+  top: -60px;
+  right: -26px;
+  width: 190px;
+  height: 190px;
+}
+
+.discover-page .discovery-story__ring--two {
+  top: 38px;
+  right: 54px;
+  width: 74px;
+  height: 74px;
+  border-style: dashed;
+  opacity: .74;
+}
+
+.discover-page .discovery-story__planet {
+  left: 20px;
+  bottom: 18px;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.20);
+  box-shadow:
+    0 12px 28px rgba(24,70,68,.17),
+    inset 0 1px 0 rgba(255,255,255,.35);
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.discover-page .discovery-story:hover .discovery-story__planet {
+  transform: translateY(-2px);
+  background: rgba(255,255,255,.25);
+}
+
+.discover-page .discovery-story__content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding: 20px 20px 18px;
+}
+
+.discover-page .discovery-story__author {
+  margin-bottom: 12px;
+}
+
+.discover-page .discovery-story__author>span {
+  border: 1px solid color-mix(in srgb, var(--story-a) 14%, transparent);
+  background: linear-gradient(145deg, #fff8fa, #edf8f5);
+  color: var(--story-a);
+}
+
+.discover-page .discovery-story__label {
+  width: fit-content;
+  min-height: 27px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--story-a) 13%, transparent);
+  border-radius: 999px;
+  color: var(--story-a);
+  background: color-mix(in srgb, var(--story-b) 9%, #fff);
+}
+
+.discover-page .discovery-story h2 {
+  display: -webkit-box;
+  min-height: calc(1.32em * 2);
+  margin: 12px 0 9px;
+  overflow: hidden;
+  color: #31423e;
+  font-size: 1.12rem;
+  line-height: 1.32;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.discover-page .discovery-story p {
+  display: -webkit-box;
+  height: calc(1.58em * 4);
+  min-height: calc(1.58em * 4);
+  overflow: hidden;
+  color: #71807b;
+  font-size: .80rem;
+  line-height: 1.58;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+}
+
+.discover-page .discovery-story__metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  margin: auto 0 14px;
+}
+
+.discover-page .discovery-story__metrics span {
+  min-width: 0;
+  min-height: 32px;
+  justify-content: center;
+  padding: 0 5px;
+  border-color: color-mix(in srgb, var(--story-a) 10%, transparent);
+  border-radius: 10px;
+  color: #52645e;
+  background: linear-gradient(145deg, #fff, color-mix(in srgb, var(--story-b) 8%, #f6fbf9));
+}
+
+.discover-page .discovery-story__metrics .is-accepted-count {
+  border-color: rgba(217,143,160,.18);
+  color: #7c5963;
+  background: #fff6f8;
+}
+
+.discover-page .discovery-story__metrics .is-accepted-count small {
+  display: none;
+}
+
+.discover-page .discovery-story__content>button {
+  min-height: 43px;
+  margin-top: 0;
+  border-color: color-mix(in srgb, var(--story-a) 17%, transparent);
+  border-radius: 13px;
+  color: var(--story-a);
+  background: linear-gradient(145deg, #ffffff, color-mix(in srgb, var(--story-b) 11%, #f4fbf9));
+  box-shadow: none;
+}
+
+.discover-page .discovery-story__content>button:hover {
+  color: #fff;
+  background: linear-gradient(135deg, var(--story-a), var(--story-b));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--story-a) 20%, transparent);
+}
+
+/* Featured opportunity: keep a premium visual without perpetual orbital motion. */
+.discover-page .discover-featured {
+  border-color: rgba(47,119,116,.14);
+  background: linear-gradient(145deg, #fffefd, #fbfffd);
+}
+
+.discover-page .discover-featured__visual {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255,255,255,.24), transparent 24%),
+    radial-gradient(circle at 82% 20%, rgba(141,212,223,.42), transparent 30%),
+    radial-gradient(circle at 25% 85%, rgba(241,168,186,.40), transparent 34%),
+    linear-gradient(135deg, #267d78 0%, #55bdb6 48%, #5f8795 73%, #d8899d 120%);
+}
+
+.discover-page .discover-featured__orbit,
+.discover-page .discover-featured__core {
+  animation: none !important;
+}
+
+.discover-page .discover-featured__orbit {
+  opacity: .72;
+}
+
+.discover-page .discover-featured__core {
+  box-shadow: 0 18px 42px rgba(22,90,87,.23), inset 0 1px 0 rgba(255,255,255,.35);
+}
+
+@media (max-width: 1180px) {
+  .discover-page .discovery-story {
+    min-height: 485px;
+  }
+}
+
+@media (max-width: 720px) {
+  .discover-page .discovery-story {
+    min-height: 0;
+  }
+  .discover-page .discovery-story__metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+html.vox-user-dark .discover-page .discovery-story {
+  border-color: rgba(112,205,198,.16) !important;
+  background: linear-gradient(145deg, #192b25, #14241f) !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.14) !important;
+}
+
+html.vox-user-dark .discover-page .discovery-story :is(h2,.discovery-story__author strong) {
+  color: #eef8f5 !important;
+}
+
+html.vox-user-dark .discover-page .discovery-story p,
+html.vox-user-dark .discover-page .discovery-story__author small {
+  color: #a9bbb5 !important;
+}
+
+html.vox-user-dark .discover-page .discovery-story__metrics span,
+html.vox-user-dark .discover-page .discovery-story__content>button,
+html.vox-user-dark .discover-page .discovery-story__label {
+  border-color: rgba(112,205,198,.16) !important;
+  background: #20362e !important;
+  color: #cce3de !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260902_DISCOVER_PREMIUM_ART_AND_COMPACT_CARDS                      */
+/* Compact equal cards with refined, slow motion instead of busy animation.   */
+/* ========================================================================== */
+
+.discover-page .discover-grid {
+  align-items: stretch;
+  grid-auto-rows: 1fr;
+  gap: 18px;
+}
+
+.discover-page .discovery-story {
+  grid-template-rows: 132px minmax(0, 1fr);
+  min-height: 450px;
+  border-radius: 24px;
+  border-color: rgba(47, 119, 116, .14);
+  background:
+    radial-gradient(circle at 100% 0, rgba(183, 221, 216, .12), transparent 29%),
+    linear-gradient(155deg, #fffefd 0%, #ffffff 66%, #f7fbfa 100%);
+  box-shadow:
+    0 16px 38px rgba(47, 119, 116, .07),
+    inset 0 1px 0 rgba(255, 255, 255, .97);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.discover-page .discovery-story:hover {
+  border-color: color-mix(in srgb, var(--story-a) 27%, transparent);
+  box-shadow:
+    0 21px 46px color-mix(in srgb, var(--story-a) 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--story-c) 10%, transparent);
+}
+
+.discover-page .discovery-story__art {
+  height: 132px;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, .30), transparent 22%),
+    radial-gradient(circle at 86% 86%, color-mix(in srgb, var(--story-c) 62%, transparent), transparent 37%),
+    linear-gradient(128deg, var(--story-a) 0%, var(--story-b) 66%, var(--story-c) 132%);
+}
+
+.discover-page .discovery-story__art::before,
+.discover-page .discovery-story__art::after {
+  position: absolute;
+  z-index: 0;
+  content: '';
+  pointer-events: none;
+}
+
+.discover-page .discovery-story__art::before {
+  right: 18px;
+  top: 17px;
+  width: 86px;
+  height: 54px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.03));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+  animation: discoverGlassDrift 7.5s ease-in-out infinite;
+}
+
+.discover-page .discovery-story__art::after {
+  right: 43px;
+  top: 42px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff5f7;
+  box-shadow:
+    -31px 13px 0 -2px rgba(255,255,255,.76),
+    27px 21px 0 -1px rgba(255,255,255,.60),
+    13px -22px 0 -2px rgba(255,255,255,.72);
+  animation: discoverSignalGlow 5.8s ease-in-out infinite;
+}
+
+.discover-page .discovery-story__mesh {
+  z-index: 0;
+  opacity: .20;
+  background-size: 25px 25px;
+  animation: discoverMeshDrift 18s linear infinite alternate;
+}
+
+.discover-page .discovery-story__beam {
+  z-index: 0;
+  top: 64%;
+  left: 34%;
+  width: 72%;
+  height: 1px;
+  opacity: .42;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.76), transparent);
+  transform: rotate(-18deg);
+  animation: discoverLineBreathe 7s ease-in-out infinite !important;
+}
+
+.discover-page .discovery-story__ring {
+  z-index: 0;
+  top: -68px;
+  right: -38px;
+  width: 185px;
+  height: 185px;
+  border-color: rgba(255,255,255,.24);
+  animation: discoverHaloBreathe 8s ease-in-out infinite !important;
+}
+
+.discover-page .discovery-story__ring--two {
+  top: 40px;
+  right: 76px;
+  width: 62px;
+  height: 62px;
+  opacity: .52;
+  border-style: solid;
+  animation-delay: -3s !important;
+}
+
+.discover-page .discovery-story__planet {
+  z-index: 2;
+  left: 18px;
+  bottom: 16px;
+  width: 54px;
+  height: 54px;
+  border-radius: 17px;
+  border-color: rgba(255,255,255,.35);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.27), rgba(255,255,255,.10));
+  box-shadow:
+    0 12px 28px rgba(24,70,68,.16),
+    inset 0 1px 0 rgba(255,255,255,.35);
+  animation: discoverCoreFloat 6.2s ease-in-out infinite;
+}
+
+.discover-page .discovery-story:hover .discovery-story__planet {
+  transform: none;
+  background: linear-gradient(145deg, rgba(255,255,255,.31), rgba(255,255,255,.13));
+}
+
+.discover-page .discovery-story__art>small {
+  z-index: 2;
+  top: 15px;
+  left: 17px;
+  bottom: auto;
+  color: rgba(255,255,255,.84);
+  font-size: .60rem;
+  letter-spacing: .12em;
+}
+
+.discover-page .discovery-story__content {
+  padding: 17px 18px 17px;
+}
+
+.discover-page .discovery-story__author {
+  margin-bottom: 9px;
+}
+
+.discover-page .discovery-story__author>span {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+}
+
+.discover-page .discovery-story__label {
+  min-height: 25px;
+  padding-inline: 8px;
+  font-size: .62rem;
+}
+
+.discover-page .discovery-story h2 {
+  min-height: calc(1.28em * 2);
+  margin: 10px 0 7px;
+  font-size: 1.04rem;
+  line-height: 1.28;
+}
+
+.discover-page .discovery-story p {
+  height: calc(1.52em * 3);
+  min-height: calc(1.52em * 3);
+  font-size: .77rem;
+  line-height: 1.52;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.discover-page .discovery-story__metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin: auto 0 11px;
+}
+
+.discover-page .discovery-story__metrics span {
+  min-height: 29px;
+  border-radius: 9px;
+  font-size: .67rem;
+}
+
+.discover-page .discovery-story__content>button {
+  min-height: 40px;
+  border-radius: 12px;
+  font-size: .72rem;
+}
+
+/* Featured discovery keeps the same layout, but uses a refined signal field. */
+.discover-page .discover-featured__visual {
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 20% 18%, rgba(255,255,255,.25), transparent 23%),
+    radial-gradient(circle at 82% 20%, rgba(143,218,225,.44), transparent 28%),
+    radial-gradient(circle at 24% 84%, rgba(244,174,191,.42), transparent 34%),
+    linear-gradient(136deg, #277d78 0%, #52b9b2 48%, #608b98 76%, #d98fa0 124%);
+}
+
+.discover-page .discover-featured__mesh {
+  opacity: .23;
+  animation: discoverMeshDrift 22s linear infinite alternate;
+}
+
+.discover-page .discover-featured__orbit {
+  animation: discoverFeaturedHalo 10s ease-in-out infinite !important;
+}
+
+.discover-page .discover-featured__orbit--two {
+  animation-delay: -4s !important;
+}
+
+.discover-page .discover-featured__core {
+  animation: discoverCoreFloat 6.8s ease-in-out infinite !important;
+}
+
+@keyframes discoverCoreFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes discoverGlassDrift {
+  0%, 100% { transform: translate3d(0, 0, 0); opacity: .72; }
+  50% { transform: translate3d(-5px, 3px, 0); opacity: 1; }
+}
+
+@keyframes discoverSignalGlow {
+  0%, 100% { opacity: .62; transform: scale(.96); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes discoverMeshDrift {
+  from { background-position: 0 0; }
+  to { background-position: 20px 12px; }
+}
+
+@keyframes discoverLineBreathe {
+  0%, 100% { opacity: .24; }
+  50% { opacity: .62; }
+}
+
+@keyframes discoverHaloBreathe {
+  0%, 100% { transform: scale(.98); opacity: .50; }
+  50% { transform: scale(1.035); opacity: .78; }
+}
+
+@keyframes discoverFeaturedHalo {
+  0%, 100% { transform: scale(.985); opacity: .60; }
+  50% { transform: scale(1.025); opacity: .82; }
+}
+
+@media (max-width: 1180px) {
+  .discover-page .discovery-story { min-height: 438px; }
+}
+
+@media (max-width: 720px) {
+  .discover-page .discovery-story {
+    grid-template-rows: 124px minmax(0, 1fr);
+    min-height: 0;
+  }
+  .discover-page .discovery-story__art { height: 124px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .discover-page .discovery-story__art::before,
+  .discover-page .discovery-story__art::after,
+  .discover-page .discovery-story__mesh,
+  .discover-page .discovery-story__beam,
+  .discover-page .discovery-story__ring,
+  .discover-page .discovery-story__planet,
+  .discover-page .discover-featured__mesh,
+  .discover-page .discover-featured__orbit,
+  .discover-page .discover-featured__core {
+    animation: none !important;
+  }
+}
+
+html.vox-user-dark .discover-page .discovery-story {
+  border-color: rgba(112,205,198,.17) !important;
+  background: linear-gradient(150deg, #192b25, #14241f) !important;
+  box-shadow: 0 16px 38px rgba(0,0,0,.14) !important;
+}
+
+/* ========================================================================== */
+/* FINAL_20260902_DISCOVER_FEATURED_PREMIUM_MOTION                            */
+/* Refines only the featured Discover card artwork and presentation layer.    */
+/* ========================================================================== */
+
+.discover-page .discover-featured {
+  position: relative;
+  isolation: isolate;
+  grid-template-columns: minmax(330px, .79fr) minmax(0, 1.21fr);
+  overflow: hidden;
+  border: 1px solid rgba(47, 119, 116, .16);
+  border-radius: 31px;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(183, 221, 216, .25), transparent 24%),
+    radial-gradient(circle at 58% 110%, rgba(243, 201, 211, .18), transparent 30%),
+    linear-gradient(145deg, rgba(255,255,255,.99), rgba(255,253,252,.97) 56%, rgba(242,250,248,.97));
+  box-shadow:
+    0 28px 68px rgba(47, 119, 116, .105),
+    0 8px 22px rgba(52, 65, 63, .035),
+    inset 0 1px 0 rgba(255,255,255,.98);
+}
+
+.discover-page .discover-featured::after {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.38);
+}
+
+.discover-page .discover-featured__visual {
+  isolation: isolate;
+  min-height: 390px;
+  background:
+    radial-gradient(circle at 19% 15%, rgba(255,255,255,.25), transparent 23%),
+    radial-gradient(circle at 76% 74%, rgba(244,174,191,.33), transparent 34%),
+    radial-gradient(circle at 82% 18%, rgba(163,229,224,.30), transparent 28%),
+    linear-gradient(140deg, #267b77 0%, #55b7b2 51%, #73939b 79%, #d690a1 128%);
+}
+
+.discover-page .discover-featured__visual::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.10), transparent 26%, transparent 70%, rgba(255,255,255,.07)),
+    radial-gradient(circle at 50% 50%, transparent 45%, rgba(18,89,85,.10) 100%);
+}
+
+.discover-page .discover-featured__mesh {
+  z-index: 0;
+  opacity: .22;
+  background-size: 26px 26px;
+  animation: discoverFeaturedMeshDrift 22s linear infinite alternate;
+}
+
+.discover-page .discover-featured__aura {
+  position: absolute;
+  z-index: 0;
+  width: 250px;
+  height: 250px;
+  border-radius: 50%;
+  filter: blur(12px);
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.discover-page .discover-featured__aura--mint {
+  top: -90px;
+  right: -62px;
+  background: radial-gradient(circle, rgba(196,255,246,.42), rgba(149,225,219,.13) 48%, transparent 70%);
+  animation: discoverFeaturedAuraMint 9s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__aura--rose {
+  left: -105px;
+  bottom: -92px;
+  background: radial-gradient(circle, rgba(255,207,219,.34), rgba(236,154,176,.13) 50%, transparent 72%);
+  animation: discoverFeaturedAuraRose 11s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__scan {
+  position: absolute;
+  z-index: 2;
+  top: 52%;
+  left: -28%;
+  width: 156%;
+  height: 58px;
+  opacity: .38;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.03) 30%, rgba(255,255,255,.26) 50%, rgba(255,255,255,.03) 70%, transparent);
+  filter: blur(.2px);
+  transform: rotate(-18deg) translateX(-12%);
+  animation: discoverFeaturedScan 8.8s cubic-bezier(.45, 0, .2, 1) infinite;
+}
+
+.discover-page .discover-featured__orbit {
+  z-index: 2;
+  inset: 17%;
+  border-color: rgba(255,255,255,.24);
+  animation-duration: 18s;
+}
+
+.discover-page .discover-featured__orbit::after {
+  width: 9px;
+  height: 9px;
+  background: rgba(234,255,252,.96);
+  box-shadow:
+    0 0 0 4px rgba(255,255,255,.08),
+    0 0 22px rgba(204,255,248,.78);
+}
+
+.discover-page .discover-featured__orbit--two {
+  inset: 29%;
+  opacity: .78;
+  border-color: rgba(255,255,255,.20);
+  animation-duration: 13s;
+}
+
+.discover-page .discover-featured__orbit--two::after {
+  top: auto;
+  right: auto;
+  left: 4%;
+  bottom: 18%;
+  width: 7px;
+  height: 7px;
+  background: #ffd9e2;
+  box-shadow: 0 0 18px rgba(255,217,226,.72);
+}
+
+.discover-page .discover-featured__orbit--three {
+  inset: 38.5%;
+  opacity: .48;
+  border-style: dashed;
+  animation-duration: 9s;
+  animation-direction: reverse;
+}
+
+.discover-page .discover-featured__orbit--three::after {
+  top: 48%;
+  right: -4px;
+  width: 6px;
+  height: 6px;
+  background: #fff;
+  box-shadow: 0 0 16px rgba(255,255,255,.75);
+}
+
+.discover-page .discover-featured__core {
+  z-index: 5;
+  width: 92px;
+  height: 92px;
+  overflow: visible;
+  border-color: rgba(255,255,255,.34);
+  border-radius: 27px;
+  background: linear-gradient(145deg, rgba(255,255,255,.25), rgba(255,255,255,.11));
+  box-shadow:
+    0 22px 48px rgba(23,90,86,.23),
+    0 0 46px rgba(215,255,250,.18),
+    inset 0 1px 0 rgba(255,255,255,.37);
+  animation: discoverFeaturedCoreFloat 6.2s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__core::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(255,255,255,.17);
+  border-radius: 21px;
+}
+
+.discover-page .discover-featured__core-halo {
+  position: absolute;
+  inset: -16px;
+  z-index: -1;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 34px;
+  box-shadow: 0 0 30px rgba(220,255,251,.08);
+  animation: discoverFeaturedCoreHalo 4.8s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__core svg {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 4px 10px rgba(22,87,84,.16));
+}
+
+.discover-page .discover-featured__particle {
+  position: absolute;
+  z-index: 3;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 0 14px rgba(255,255,255,.62);
+  pointer-events: none;
+}
+
+.discover-page .discover-featured__particle--one {
+  top: 20%;
+  left: 23%;
+  animation: discoverFeaturedParticleOne 6.8s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__particle--two {
+  top: 29%;
+  right: 18%;
+  width: 5px;
+  height: 5px;
+  background: #ffe0e7;
+  box-shadow: 0 0 14px rgba(255,224,231,.75);
+  animation: discoverFeaturedParticleTwo 8s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__particle--three {
+  right: 28%;
+  bottom: 21%;
+  width: 4px;
+  height: 4px;
+  animation: discoverFeaturedParticleOne 7.5s ease-in-out -2s infinite reverse;
+}
+
+.discover-page .discover-featured__particle--four {
+  left: 17%;
+  bottom: 30%;
+  width: 4px;
+  height: 4px;
+  background: #d8fff8;
+  animation: discoverFeaturedParticleTwo 9s ease-in-out -3s infinite reverse;
+}
+
+.discover-page .discover-featured__signal {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  width: 38px;
+  height: 28px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255,255,255,.24);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(255,255,255,.17), rgba(255,255,255,.07));
+  box-shadow: 0 10px 30px rgba(24,83,80,.14), inset 0 1px 0 rgba(255,255,255,.22);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.discover-page .discover-featured__signal i {
+  display: block;
+  flex: 1 1 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,.85);
+  transform-origin: bottom;
+  animation: discoverFeaturedBars 1.8s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__signal i:nth-child(1) { height: 38%; }
+.discover-page .discover-featured__signal i:nth-child(2) { height: 72%; animation-delay: -.45s; }
+.discover-page .discover-featured__signal i:nth-child(3) { height: 100%; animation-delay: -.9s; }
+
+.discover-page .discover-featured__signal--one {
+  top: 17%;
+  left: 12%;
+  animation: discoverFeaturedSignalOne 7.4s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__signal--two {
+  right: 11%;
+  bottom: 16%;
+  transform: scale(.88);
+  animation: discoverFeaturedSignalTwo 8.2s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__visual>small {
+  z-index: 6;
+  left: 24px;
+  bottom: 21px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 27px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  color: rgba(255,255,255,.87);
+  background: rgba(31,101,97,.15);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.13);
+  backdrop-filter: blur(10px);
+}
+
+.discover-page .discover-featured__content {
+  position: relative;
+  z-index: 2;
+  padding: clamp(34px, 4.4vw, 58px);
+}
+
+.discover-page .discover-featured__content>span {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 29px;
+  padding: 0 10px;
+  border: 1px solid rgba(47,119,116,.11);
+  border-radius: 999px;
+  color: #2f7774;
+  background: linear-gradient(145deg, #fff8fa, #eef8f5);
+  letter-spacing: .11em;
+}
+
+.discover-page .discover-featured__content h2 {
+  color: #30413d;
+  font-weight: 540;
+}
+
+.discover-page .discover-featured__content p {
+  color: #718078;
+}
+
+.discover-page .discover-featured__metrics strong {
+  border-color: rgba(47,119,116,.12);
+  color: #356f69;
+  background: linear-gradient(145deg, #fff, #eef8f5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.92);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.discover-page .discover-featured__metrics strong:hover {
+  transform: translateY(-2px);
+  border-color: rgba(217,143,160,.24);
+  box-shadow: 0 10px 22px rgba(47,119,116,.07);
+}
+
+.discover-page .discover-featured__content button {
+  position: relative;
+  overflow: hidden;
+  min-height: 47px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #55b7b2 0%, #46aaa5 58%, #2f8f8a 100%);
+  box-shadow: 0 15px 32px rgba(47,119,116,.22);
+}
+
+.discover-page .discover-featured__content button::before {
+  content: "";
+  position: absolute;
+  top: -30%;
+  left: -38%;
+  width: 28%;
+  height: 160%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.38), transparent);
+  transform: skewX(-18deg);
+  transition: left 520ms ease;
+}
+
+.discover-page .discover-featured__content button:hover::before {
+  left: 112%;
+}
+
+.discover-page .discover-featured__content button svg {
+  transition: transform 180ms ease;
+}
+
+.discover-page .discover-featured__content button:hover svg {
+  transform: translateX(3px);
+}
+
+@keyframes discoverFeaturedMeshDrift {
+  from { background-position: 0 0; }
+  to { background-position: 26px 17px; }
+}
+
+@keyframes discoverFeaturedAuraMint {
+  0%, 100% { transform: translate3d(0,0,0) scale(1); opacity: .72; }
+  50% { transform: translate3d(-18px,19px,0) scale(1.08); opacity: 1; }
+}
+
+@keyframes discoverFeaturedAuraRose {
+  0%, 100% { transform: translate3d(0,0,0) scale(1); opacity: .70; }
+  50% { transform: translate3d(20px,-16px,0) scale(1.10); opacity: .94; }
+}
+
+@keyframes discoverFeaturedScan {
+  0%, 16% { transform: rotate(-18deg) translateX(-34%); opacity: 0; }
+  38% { opacity: .40; }
+  68% { opacity: .22; }
+  82%, 100% { transform: rotate(-18deg) translateX(34%); opacity: 0; }
+}
+
+@keyframes discoverFeaturedCoreFloat {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0) rotate(0deg); }
+  50% { transform: translate(-50%, -50%) translateY(-6px) rotate(1.5deg); }
+}
+
+@keyframes discoverFeaturedCoreHalo {
+  0%, 100% { transform: scale(.96); opacity: .28; }
+  50% { transform: scale(1.055); opacity: .67; }
+}
+
+@keyframes discoverFeaturedParticleOne {
+  0%, 100% { transform: translate3d(0,0,0) scale(.86); opacity: .42; }
+  50% { transform: translate3d(9px,-12px,0) scale(1.18); opacity: 1; }
+}
+
+@keyframes discoverFeaturedParticleTwo {
+  0%, 100% { transform: translate3d(0,0,0) scale(.9); opacity: .4; }
+  50% { transform: translate3d(-10px,10px,0) scale(1.12); opacity: .9; }
+}
+
+@keyframes discoverFeaturedBars {
+  0%, 100% { transform: scaleY(.55); opacity: .55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+@keyframes discoverFeaturedSignalOne {
+  0%, 100% { transform: translate3d(0,0,0) rotate(-2deg); }
+  50% { transform: translate3d(6px,-7px,0) rotate(2deg); }
+}
+
+@keyframes discoverFeaturedSignalTwo {
+  0%, 100% { transform: translate3d(0,0,0) scale(.88) rotate(2deg); }
+  50% { transform: translate3d(-7px,6px,0) scale(.88) rotate(-2deg); }
+}
+
+@media (max-width: 1100px) {
+  .discover-page .discover-featured {
+    grid-template-columns: 1fr;
+  }
+
+  .discover-page .discover-featured__visual {
+    min-height: 285px;
+  }
+}
+
+@media (max-width: 560px) {
+  .discover-page .discover-featured__visual {
+    min-height: 245px;
+  }
+
+  .discover-page .discover-featured__signal--one {
+    top: 13%;
+    left: 8%;
+  }
+
+  .discover-page .discover-featured__signal--two {
+    right: 8%;
+    bottom: 13%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .discover-page .discover-featured__mesh,
+  .discover-page .discover-featured__aura,
+  .discover-page .discover-featured__scan,
+  .discover-page .discover-featured__orbit,
+  .discover-page .discover-featured__particle,
+  .discover-page .discover-featured__signal,
+  .discover-page .discover-featured__signal i,
+  .discover-page .discover-featured__core,
+  .discover-page .discover-featured__core-halo {
+    animation: none !important;
+  }
+}
+
+
+/* Discover featured artwork synchronized with Open Discover motion. */
+.discover-page .discover-featured__visual {
+  display: grid;
+  place-items: center;
+}
+
+.discover-page .discover-featured__visual::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 51%;
+  left: -30%;
+  width: 160%;
+  height: 58px;
+  opacity: .34;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.03) 30%, rgba(255,255,255,.27) 50%, rgba(255,255,255,.03) 70%, transparent);
+  filter: blur(.2px);
+  transform: rotate(-18deg) translateX(-12%);
+  animation: discoverOpenBeamScan 9s cubic-bezier(.45,0,.2,1) infinite;
+}
+
+.discover-page .discover-featured__mesh {
+  z-index: 0;
+  opacity: .21;
+  background-size: 26px 26px;
+  animation: discoverFeaturedMeshDrift 22s linear infinite alternate;
+}
+
+.discover-page .discover-featured__aura {
+  width: 245px;
+  height: 245px;
+}
+
+.discover-page .discover-featured__aura--mint {
+  top: -88px;
+  right: -68px;
+  background: radial-gradient(circle, rgba(198,255,247,.43), rgba(150,227,220,.13) 48%, transparent 70%);
+  animation: discoverOpenAuraMint 9.5s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__aura--rose {
+  left: -105px;
+  bottom: -96px;
+  background: radial-gradient(circle, rgba(255,207,219,.34), rgba(236,154,176,.13) 50%, transparent 72%);
+  animation: discoverOpenAuraRose 11.5s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__orbit {
+  inset: auto;
+  width: 225px;
+  height: 225px;
+  z-index: 2;
+  opacity: 1;
+  border-color: rgba(255,255,255,.24);
+  border-style: solid;
+  animation: discoverOpenOrbit 18s linear infinite;
+}
+
+.discover-page .discover-featured__orbit::after {
+  top: 15%;
+  right: 5%;
+  bottom: auto;
+  left: auto;
+  width: 9px;
+  height: 9px;
+  background: rgba(236,255,252,.97);
+  box-shadow: 0 0 0 4px rgba(255,255,255,.08), 0 0 22px rgba(206,255,249,.74);
+}
+
+.discover-page .discover-featured__orbit--two {
+  inset: auto;
+  width: 355px;
+  height: 355px;
+  opacity: .62;
+  border-color: rgba(255,255,255,.24);
+  animation: discoverOpenOrbit 24s linear infinite reverse;
+}
+
+.discover-page .discover-featured__orbit--two::after {
+  top: auto;
+  right: auto;
+  left: 7%;
+  bottom: 20%;
+  width: 7px;
+  height: 7px;
+  background: #ffdce4;
+  box-shadow: 0 0 18px rgba(255,220,228,.74);
+}
+
+.discover-page .discover-featured__scan {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  width: 285px;
+  height: 285px;
+  opacity: 1;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 50%;
+  background: transparent;
+  filter: none;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: discoverOpenScanHalo 7.2s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__scan::before,
+.discover-page .discover-featured__scan::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+
+.discover-page .discover-featured__scan::before {
+  inset: -24px;
+  border: 1px solid rgba(255,255,255,.055);
+}
+
+.discover-page .discover-featured__scan::after {
+  top: 50%;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 0 18px rgba(255,255,255,.68);
+  transform: translateY(-50%);
+}
+
+.discover-page .discover-featured__core {
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: 5;
+  width: 92px;
+  height: 92px;
+  overflow: visible;
+  border-color: rgba(255,255,255,.34);
+  border-radius: 27px;
+  background: linear-gradient(145deg, rgba(255,255,255,.25), rgba(255,255,255,.11));
+  box-shadow:
+    0 22px 48px rgba(23,90,86,.23),
+    0 0 46px rgba(215,255,250,.18),
+    inset 0 1px 0 rgba(255,255,255,.37);
+  transform: none;
+  animation: discoverOpenCore 6.4s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__core-halo {
+  inset: -16px;
+  border-radius: 35px;
+  animation: discoverOpenCoreHalo 4.9s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__particle--one {
+  top: 20%;
+  left: 21%;
+  animation: discoverOpenParticleA 6.8s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__particle--two {
+  top: 29%;
+  right: 17%;
+  width: 5px;
+  height: 5px;
+  background: #ffe0e7;
+  box-shadow: 0 0 14px rgba(255,224,231,.75);
+  animation: discoverOpenParticleB 8s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__particle--three {
+  right: 26%;
+  bottom: 20%;
+  width: 4px;
+  height: 4px;
+  animation: discoverOpenParticleA 7.6s ease-in-out -2s infinite reverse;
+}
+
+.discover-page .discover-featured__particle--four {
+  left: 16%;
+  bottom: 29%;
+  width: 4px;
+  height: 4px;
+  background: #d8fff8;
+  animation: discoverOpenParticleB 9.1s ease-in-out -3s infinite reverse;
+}
+
+.discover-page .discover-featured__signal--one {
+  top: 16%;
+  left: 11%;
+  animation: discoverOpenSignalA 7.4s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__signal--two {
+  right: 10%;
+  bottom: 16%;
+  transform: scale(.88);
+  animation: discoverOpenSignalB 8.2s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__signal i {
+  animation: discoverOpenBars 1.8s ease-in-out infinite;
+}
+
+.discover-page .discover-featured__signal i:nth-child(1) {
+  height: 38%;
+}
+
+.discover-page .discover-featured__signal i:nth-child(2) {
+  height: 72%;
+  animation-delay: -.45s;
+}
+
+.discover-page .discover-featured__signal i:nth-child(3) {
+  height: 100%;
+  animation-delay: -.9s;
+}
+
+@keyframes discoverOpenBeamScan {
+  0%, 16% { transform: rotate(-18deg) translateX(-34%); opacity: 0; }
+  38% { opacity: .40; }
+  68% { opacity: .22; }
+  82%, 100% { transform: rotate(-18deg) translateX(34%); opacity: 0; }
+}
+
+@keyframes discoverOpenAuraMint {
+  0%, 100% { transform: translate3d(0,0,0) scale(1); opacity: .72; }
+  50% { transform: translate3d(-18px,19px,0) scale(1.08); opacity: 1; }
+}
+
+@keyframes discoverOpenAuraRose {
+  0%, 100% { transform: translate3d(0,0,0) scale(1); opacity: .70; }
+  50% { transform: translate3d(20px,-16px,0) scale(1.10); opacity: .94; }
+}
+
+@keyframes discoverOpenOrbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes discoverOpenScanHalo {
+  0%, 100% { opacity: .34; transform: translate(-50%, -50%) rotate(0deg) scale(.98); }
+  50% { opacity: .68; transform: translate(-50%, -50%) rotate(180deg) scale(1.03); }
+}
+
+@keyframes discoverOpenCore {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-6px) rotate(1.5deg); }
+}
+
+@keyframes discoverOpenCoreHalo {
+  0%, 100% { transform: scale(.96); opacity: .28; }
+  50% { transform: scale(1.055); opacity: .67; }
+}
+
+@keyframes discoverOpenParticleA {
+  0%, 100% { transform: translate3d(0,0,0) scale(.86); opacity: .42; }
+  50% { transform: translate3d(9px,-12px,0) scale(1.18); opacity: 1; }
+}
+
+@keyframes discoverOpenParticleB {
+  0%, 100% { transform: translate3d(0,0,0) scale(.9); opacity: .4; }
+  50% { transform: translate3d(-10px,10px,0) scale(1.12); opacity: .9; }
+}
+
+@keyframes discoverOpenBars {
+  0%, 100% { transform: scaleY(.55); opacity: .55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+@keyframes discoverOpenSignalA {
+  0%, 100% { transform: translate3d(0,0,0) rotate(-2deg); }
+  50% { transform: translate3d(6px,-7px,0) rotate(2deg); }
+}
+
+@keyframes discoverOpenSignalB {
+  0%, 100% { transform: translate3d(0,0,0) scale(.88) rotate(2deg); }
+  50% { transform: translate3d(-7px,6px,0) scale(.88) rotate(-2deg); }
+}
+
+@media (max-width: 560px) {
+  .discover-page .discover-featured__signal--one {
+    top: 12%;
+    left: 8%;
+  }
+
+  .discover-page .discover-featured__signal--two {
+    right: 8%;
+    bottom: 12%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .discover-page .discover-featured__visual::after,
+  .discover-page .discover-featured__mesh,
+  .discover-page .discover-featured__aura,
+  .discover-page .discover-featured__scan,
+  .discover-page .discover-featured__orbit,
+  .discover-page .discover-featured__particle,
+  .discover-page .discover-featured__signal,
+  .discover-page .discover-featured__signal i,
+  .discover-page .discover-featured__core,
+  .discover-page .discover-featured__core-halo {
+    animation: none !important;
+  }
+}

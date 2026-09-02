@@ -115,6 +115,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   technologyStack: {
     type: 'array',
+    description:
+      'Return only concrete technology, framework, database, infrastructure, and tooling names as a stable list. Do not mix architecture narrative or evidence qualifiers into this array.',
     minItems: 1,
     maxItems: 12,
     items: {
@@ -129,6 +131,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   systemArchitecture: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Architecture Style, Request Flow, Application Services, Data Persistence, Background Processing, Access & Security, Integrations. Format every section as "Label: content." Do not rename or reorder labels. If a section is not applicable, state that briefly instead of omitting it.',
     minLength: 20,
     maxLength: 4_000,
   },
@@ -138,6 +142,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   databaseDesign: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Schema Foundation, Core Entities, Relationships, Indexes & Lookup. Format every section as "Label: content." Do not rename or reorder labels.',
     minLength: 20,
     maxLength: 4_000,
   },
@@ -147,6 +153,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   mvpFeatures: {
     type: 'array',
+    description:
+      'Return one concrete MVP capability per array item. Every item must use the same concise feature style: capability first, then the user or operational outcome. Do not add headings, numbering, or duplicate features.',
     minItems: 3,
     maxItems: 15,
     items: {
@@ -161,6 +169,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   revenueModel: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Primary Revenue, Secondary Revenue, Pricing Logic, Buyer. Format every section as "Label: content." Do not invent a revenue stream that the proposed product could not plausibly support.',
     minLength: 20,
     maxLength: 2_000,
   },
@@ -170,6 +180,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   budgetEstimation: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Budget Range, Cost Structure, Assumptions, Excluded Costs. Format every section as "Label: content." Any numeric amount must be clearly framed as a preliminary estimate or planning assumption, never an observed fact.',
     minLength: 20,
     maxLength: 2_000,
   },
@@ -179,6 +191,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   implementationTimeline: {
     type: 'string',
+    description:
+      'Use exactly four implementation phases in this exact order: Phase 1, Phase 2, Phase 3, Phase 4. Format each as "Phase N: content." Include timing or duration inside the content when useful, and keep the phases sequential from planning through validation or rollout.',
     minLength: 20,
     maxLength: 2_000,
   },
@@ -188,6 +202,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   feasibilityAssessment: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Technical Feasibility, Operational Feasibility, Economic Feasibility, Regulatory Feasibility, Delivery Feasibility. Format every section as "Label: content." Preserve uncertainty where evidence is limited.',
     minLength: 20,
     maxLength: 2_500,
   },
@@ -197,6 +213,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   marketPotential: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Demand Status, Evidence Coverage, Direct-user Validation, Next Validation Step. Format every section as "Label: content." Never convert secondary evidence into verified market-wide demand.',
     minLength: 20,
     maxLength: 2_500,
   },
@@ -208,6 +226,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   localRegulations: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Data Protection & Privacy, Record-Keeping, Domain Regulations, Deployment Review. Format every section as "Label: content." Keep all regulatory statements preliminary and recommend local verification where appropriate.',
     minLength: 20,
     maxLength: 2_000,
   },
@@ -217,6 +237,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   valueProposition: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Primary Value, User Outcome, Differentiation. Format every section as "Label: content." Keep the value tied to the evidence-backed workflow.',
     minLength: 20,
     maxLength: 1_800,
   },
@@ -226,6 +248,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   nlpExecutiveSummary: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Processing Coverage, Evidence Retained, Language Synthesis, Excluded Corpus. Format every section as "Label: content." Use only trusted NLP values supplied in context and do not fabricate counts.',
     minLength: 20,
     maxLength: 2_500,
   },
@@ -235,6 +259,8 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
    */
   communityFeedbackSummary: {
     type: 'string',
+    description:
+      'Use these exact labeled sections in this exact order, each as one complete sentence: Retained Evidence, Scope Interpretation, Community Signal, Excluded Findings. Format every section as "Label: content." Distinguish supporting evidence from context-only or unrelated material.',
     minLength: 20,
     maxLength: 1_500,
   },
@@ -276,17 +302,28 @@ export const BASE_IDEA_OUTPUT_FORMAT = {
  * generation.
  */
 export const ADVANCED_IDEA_OUTPUT_FORMAT = {
-  technologyStack: ['string'],
-  systemArchitecture: 'string',
-  databaseDesign: 'string',
-  mvpFeatures: ['string'],
-  revenueModel: 'string',
-  budgetEstimation: 'string',
-  implementationTimeline: 'string',
-  feasibilityAssessment: 'string',
-  marketPotential: 'string',
-  localRegulations: 'string',
-  valueProposition: 'string',
-  nlpExecutiveSummary: 'string',
-  communityFeedbackSummary: 'string',
+  technologyStack: ['technology name'],
+  systemArchitecture:
+    'Architecture Style: ... . Request Flow: ... . Application Services: ... . Data Persistence: ... . Background Processing: ... . Access & Security: ... . Integrations: ... .',
+  databaseDesign:
+    'Schema Foundation: ... . Core Entities: ... . Relationships: ... . Indexes & Lookup: ... .',
+  mvpFeatures: ['one concrete MVP capability per item'],
+  revenueModel:
+    'Primary Revenue: ... . Secondary Revenue: ... . Pricing Logic: ... . Buyer: ... .',
+  budgetEstimation:
+    'Budget Range: ... . Cost Structure: ... . Assumptions: ... . Excluded Costs: ... .',
+  implementationTimeline:
+    'Phase 1: ... . Phase 2: ... . Phase 3: ... . Phase 4: ... .',
+  feasibilityAssessment:
+    'Technical Feasibility: ... . Operational Feasibility: ... . Economic Feasibility: ... . Regulatory Feasibility: ... . Delivery Feasibility: ... .',
+  marketPotential:
+    'Demand Status: ... . Evidence Coverage: ... . Direct-user Validation: ... . Next Validation Step: ... .',
+  localRegulations:
+    'Data Protection & Privacy: ... . Record-Keeping: ... . Domain Regulations: ... . Deployment Review: ... .',
+  valueProposition:
+    'Primary Value: ... . User Outcome: ... . Differentiation: ... .',
+  nlpExecutiveSummary:
+    'Processing Coverage: ... . Evidence Retained: ... . Language Synthesis: ... . Excluded Corpus: ... .',
+  communityFeedbackSummary:
+    'Retained Evidence: ... . Scope Interpretation: ... . Community Signal: ... . Excluded Findings: ... .',
 } as const;

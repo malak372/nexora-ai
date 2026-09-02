@@ -1,3 +1,4 @@
+// @refresh reset
 /**
  * Accepted publication workspace rendered with the same visual language as
  * the private Open Idea workspace. Advanced outputs stay protected by the
@@ -25,6 +26,11 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import { getDiscoveryById, getMyAcceptance } from '../api/discoveriesApi';
+import {
+  AdvancedOutputContent,
+  getAdvancedOutputPresentation,
+  WorkspaceSectionArtwork as AdvancedWorkspaceSectionArtwork,
+} from '../../idea-workspace/components/AdvancedOutputRenderer';
 import '../../idea-workspace/styles/idea-workspace.css';
 import '../styles/accepted-idea-workspace.css';
 
@@ -148,6 +154,10 @@ function LoadingState() {
       <span className="workspace-state__progress" aria-hidden="true"><i /></span>
     </section>
   );
+}
+
+function WorkspaceSectionArtwork(props) {
+  return <AdvancedWorkspaceSectionArtwork {...props} />;
 }
 
 export default function AcceptedIdeaWorkspacePage() {
@@ -285,23 +295,33 @@ export default function AcceptedIdeaWorkspacePage() {
           (output) =>
             output !== legacyBusinessModelOutput,
         )
-        .map((output) => ({
-          key: output.outputKey || output.key || output.id,
-          title: output.title || humanizeKey(output.outputKey || output.key),
-          caption: 'Advanced execution output',
-          icon: Sparkles,
-          content: getOutputContent(output),
-          preserveTitle: Boolean(output.title),
-        })),
+        .map((output) => {
+          const presentation = getAdvancedOutputPresentation(output);
+
+          return {
+            key: output.outputKey || output.key || output.id,
+            outputKey: output.outputKey || output.key || output.id,
+            title: output.title || humanizeKey(output.outputKey || output.key),
+            caption: 'Advanced execution output',
+            icon: presentation.icon,
+            outputVariant: presentation.variant,
+            isAdvanced: true,
+            content: getOutputContent(output),
+            preserveTitle: Boolean(output.title),
+          };
+        }),
       ...(hasBusinessModel
         ? [
           {
             key: 'business-model',
+            outputKey: 'business-model',
             title: businessModel?.businessModelTemplate?.name || 'Business model',
             caption:
               businessModel?.businessModelTemplate?.description ||
               'Business strategy and operating model',
             icon: BriefcaseBusiness,
+            outputVariant: 'business',
+            isAdvanced: true,
             content: businessModelContent,
           },
         ]
@@ -310,6 +330,7 @@ export default function AcceptedIdeaWorkspacePage() {
   }, [publication]);
 
   const current = sections.find((section) => section.key === activeKey) ?? sections[0];
+  const currentIndex = Math.max(0, sections.findIndex((section) => section.key === current?.key));
   const sourceIdeaId = getSourceIdeaId(publication, acceptance);
   const businessModelSection = sections.find((section) =>
     /business[-_ ]?model/i.test(`${section.key} ${section.title}`),
@@ -533,9 +554,12 @@ export default function AcceptedIdeaWorkspacePage() {
           </div>
         </aside>
 
-        <article className="workspace-document accepted-open-idea__document">
+        <article
+          className={`workspace-document accepted-open-idea__document${current.isAdvanced ? ' workspace-document--advanced' : ''}`}
+          data-output-variant={current.outputVariant || undefined}
+        >
           <div className="workspace-document__header">
-            <div>
+            <div className="workspace-document__heading">
               <span>Accepted idea workspace</span>
               {current.preserveTitle ? (
                 <h2 dir="auto" data-idea-content="true">{current.title}</h2>
@@ -543,10 +567,20 @@ export default function AcceptedIdeaWorkspacePage() {
                 <h2>{current.title}</h2>
               )}
               <p>{current.caption}</p>
+
+              <div className="workspace-document__chapter">
+                <span>Chapter {String(currentIndex + 1).padStart(2, '0')}</span>
+                <i aria-hidden="true" />
+                <span>{current.isAdvanced ? 'Execution output' : 'Core narrative'}</span>
+              </div>
             </div>
-            <span className="workspace-document__badge">
-              {String(Math.max(1, sections.findIndex((section) => section.key === current.key) + 1)).padStart(2, '0')}
-            </span>
+
+            <div className="workspace-document__visual">
+              <WorkspaceSectionArtwork section={current} index={currentIndex} label="Idea signal" />
+              <span className="workspace-document__badge">
+                {String(currentIndex + 1).padStart(2, '0')}
+              </span>
+            </div>
           </div>
 
           <motion.div
@@ -556,7 +590,13 @@ export default function AcceptedIdeaWorkspacePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
           >
-            <div data-idea-content="true" dir="auto"><WorkspaceContent value={current.content} /></div>
+            <div data-idea-content="true" dir="auto">
+              {current.isAdvanced ? (
+                <AdvancedOutputContent section={current} value={current.content} />
+              ) : (
+                <WorkspaceContent value={current.content} />
+              )}
+            </div>
           </motion.div>
         </article>
       </motion.section>

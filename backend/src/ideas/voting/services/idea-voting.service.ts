@@ -151,8 +151,6 @@ export class IdeaVotingService {
   }
 
   async deleteVote(actor: PublicationEngagementActor, publicationId: string) {
-    await this.ensureAccessible(actor, publicationId);
-
     const existing = await this.getMyVote(actor, publicationId);
 
     if (!existing) {

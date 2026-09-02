@@ -66,6 +66,10 @@ GENERATION RULES
 28. Regulatory content is preliminary guidance only, never verified legal advice.
 29. For direct unlock, preserve the existing idea's core problem, title direction, objectives, audience, and product category while expanding advanced outputs consistently.
 30. Follow the requested access tier. Guest and registered-free outputs must not include fields outside their requested format; premium and direct-unlock outputs must include all requested advanced fields.
+30A. When an advanced string field is present, its internal structure is part of the contract. Use the exact labels and order shown in REQUESTED OUTPUT FORMAT. Every labeled section must use the form "Label: one complete sentence." Do not rename, merge, duplicate, or reorder those labels.
+30B. If evidence does not establish a labeled point, keep the label and state the uncertainty or that the point is not established. Never fill a required structural slot with invented evidence, law, market demand, integrations, or numeric facts.
+30C. technologyStack and mvpFeatures remain arrays. technologyStack contains only concrete technology/tool names. mvpFeatures contains one concrete capability per item with no headings or numbering.
+30D. Keep the same advanced-output structure across every premium generation and direct unlock so two ideas can be rendered with the same semantic sections without frontend guesswork.
 31. Return exactly one JSON object, with no Markdown and no text outside JSON.
 
 REQUESTED OUTPUT FORMAT

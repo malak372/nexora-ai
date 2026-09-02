@@ -7182,3 +7182,92 @@ html.vox-user-dark body .admin-publication-reports-hero--creative .admin-report-
     background: #e47b99 !important;
     box-shadow: 0 0 0 2px rgba(228, 123, 153, .10) !important;
 }
+/* Publication-center side review: keep every tab inside the drawer width. */
+.admin-report-review-drawer {
+    max-width: calc(100vw - 24px);
+    overflow-x: hidden;
+}
+
+.admin-report-review-drawer > header,
+.admin-report-review-drawer__body,
+.admin-report-idea-detail,
+.admin-report-insights-view,
+.admin-report-insight-strip,
+.admin-report-publication-snapshot,
+.admin-report-feedback-preview {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.admin-report-review-drawer > header {
+    overflow: hidden;
+}
+
+.admin-report-review-drawer > header > div {
+    flex: 1 1 auto;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.admin-report-review-drawer > header h3 {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
+.admin-report-review-drawer__body {
+    overflow-x: hidden;
+}
+
+.admin-report-insight-strip,
+.admin-report-publication-snapshot dl {
+    min-width: 0;
+}
+
+.admin-report-insight-strip > div,
+.admin-report-publication-snapshot dl > div,
+.admin-report-feedback-preview article,
+.admin-report-publication-snapshot > header > div {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.admin-report-insight-strip strong,
+.admin-report-insight-strip span,
+.admin-report-publication-snapshot dt,
+.admin-report-publication-snapshot dd,
+.admin-report-publication-snapshot > p,
+.admin-report-feedback-preview strong,
+.admin-report-feedback-preview p {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
+.admin-report-publication-snapshot dd {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+@media (max-width: 900px) {
+    .admin-report-review-drawer {
+        max-width: 100vw;
+    }
+
+    .admin-report-insight-strip,
+    .admin-report-publication-snapshot dl {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 520px) {
+    .admin-report-insight-strip,
+    .admin-report-publication-snapshot dl {
+        grid-template-columns: 1fr;
+    }
+}

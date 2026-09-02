@@ -20,6 +20,7 @@ import {
     useState,
 } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 
 import { getStoredUser } from '../../../auth/shared/auth.storage';
 import { resolveMediaUrl } from '../../../../utils/mediaUrl';
@@ -177,9 +178,9 @@ function DirectMessageModal({
         );
     }, [availableAdministrators, query]);
 
-    if (!open) return null;
+    if (!open || typeof document === 'undefined') return null;
 
-    return (
+    return createPortal(
         <div
             className="admin-team-chat-modal-backdrop"
             onMouseDown={busyId ? undefined : onClose}
@@ -281,7 +282,8 @@ function DirectMessageModal({
                     )}
                 </div>
             </section>
-        </div>
+        </div>,
+        document.body,
     );
 }
 
@@ -332,7 +334,7 @@ function GroupModal({
             selected.includes(admin.id),
         );
 
-    if (!open) return null;
+    if (!open || typeof document === 'undefined') return null;
 
     /**
      * Adds or removes an administrator from the
@@ -348,7 +350,7 @@ function GroupModal({
         );
     };
 
-    return (
+    return createPortal(
         <div
             className="admin-team-chat-modal-backdrop"
             onMouseDown={onClose}
@@ -477,7 +479,8 @@ function GroupModal({
                     </button>
                 </footer>
             </section>
-        </div>
+        </div>,
+        document.body,
     );
 }
 
@@ -777,9 +780,13 @@ export default function AdminTeamChatPage() {
 
                 setConversations(nextConversations);
 
-                setActiveId(
-                    (current) =>
-                        current || nextConversations[0]?.id || '',
+                setActiveId((current) =>
+                    current &&
+                    nextConversations.some(
+                        (conversation) => conversation.id === current,
+                    )
+                        ? current
+                        : '',
                 );
 
                 setError('');
@@ -1220,7 +1227,7 @@ export default function AdminTeamChatPage() {
                 onClickCapture={handleLockedPageClick}
             >
                 <section className="admin-hero admin-team-chat-hero">
-                    <div>
+                    <div className="admin-team-chat-hero__copy">
                         <span className="admin-eyebrow">
                             <MessageCircleMore size={15} />
                             People & access
@@ -1229,55 +1236,99 @@ export default function AdminTeamChatPage() {
                         <h1>Team chat</h1>
 
                         <p>
-                            Private conversations between verified
-                            administrators inside Voxidence.
+                            A private workspace for verified administrators to
+                            coordinate, review, and resolve platform work together.
                         </p>
+
+                        <div className="admin-team-chat-hero__signals">
+                            <span>
+                                <MessageCircleMore size={14} />
+                                <b>{conversations.length}</b>
+                                active {conversations.length === 1 ? 'thread' : 'threads'}
+                            </span>
+
+                            <span>
+                                <UsersRound size={14} />
+                                <b>{unreadTotal}</b>
+                                unread
+                            </span>
+
+                            <span>
+                                <Check size={14} />
+                                Verified staff only
+                            </span>
+                        </div>
+
+                        <div className="admin-team-chat-hero__actions">
+                            <button
+                                type="button"
+                                className="admin-btn"
+                                onClick={() =>
+                                    loadConversations({
+                                        quiet: true,
+                                    })
+                                }
+                                disabled={refreshing}
+                            >
+                                <RefreshCw
+                                    size={14}
+                                    className={
+                                        refreshing
+                                            ? 'admin-spin'
+                                            : ''
+                                    }
+                                />
+
+                                Refresh
+                            </button>
+
+                            <button
+                                type="button"
+                                className="admin-btn admin-btn--primary"
+                                onClick={openDirectModal}
+                            >
+                                <MessageCircleMore size={15} />
+                                New message
+                            </button>
+
+                            <button
+                                type="button"
+                                className="admin-btn"
+                                onClick={openGroupModal}
+                            >
+                                <UsersRound size={15} />
+                                New group
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="admin-team-chat-hero__actions">
-                        <span className="admin-team-chat-unread">
-                            <b>{unreadTotal}</b> unread
-                        </span>
+                    <div className="admin-team-chat-hero__visual" aria-hidden="true">
+                        <span className="admin-team-chat-hero__visual-grid" />
+                        <span className="admin-team-chat-hero__orbit is-one" />
+                        <span className="admin-team-chat-hero__orbit is-two" />
 
-                        <button
-                            type="button"
-                            className="admin-btn"
-                            onClick={() =>
-                                loadConversations({
-                                    quiet: true,
-                                })
-                            }
-                            disabled={refreshing}
-                        >
-                            <RefreshCw
-                                size={14}
-                                className={
-                                    refreshing
-                                        ? 'admin-spin'
-                                        : ''
-                                }
-                            />
+                        <div className="admin-team-chat-hero__core">
+                            <span>
+                                <MessageCircleMore size={30} />
+                            </span>
+                            <strong>Private admin channel</strong>
+                            <small>Protected collaboration inside Voxidence</small>
+                        </div>
 
-                            Refresh
-                        </button>
-
-                        <button
-                            type="button"
-                            className="admin-btn admin-btn--primary"
-                            onClick={openDirectModal}
-                        >
+                        <div className="admin-team-chat-hero__float is-direct">
                             <MessageCircleMore size={15} />
-                            New message
-                        </button>
+                            <span>1:1 chats</span>
+                        </div>
 
-                        <button
-                            type="button"
-                            className="admin-btn"
-                            onClick={openGroupModal}
-                        >
+                        <div className="admin-team-chat-hero__float is-groups">
                             <UsersRound size={15} />
-                            New group
-                        </button>
+                            <span>Groups</span>
+                        </div>
+
+                        <div className="admin-team-chat-hero__secure">
+                            <span />
+                            Secure workspace
+                        </div>
                     </div>
                 </section>
 

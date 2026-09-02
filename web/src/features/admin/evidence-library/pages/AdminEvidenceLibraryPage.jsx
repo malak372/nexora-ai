@@ -27,7 +27,7 @@ import { adminApi, getApiErrorMessage } from '../../shared/api/adminApi';
 import '../../shared/styles/admin-pages.css';
 import '../styles/admin-evidence-library.css';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 const EVIDENCE_SORT_OPTIONS = [
   { key: 'createdAt', label: 'Added to library' },
@@ -64,11 +64,11 @@ function unwrapRows(payload) {
   return [];
 }
 
-function unwrapMeta(payload, itemCount) {
+function unwrapMeta(payload, itemCount, requestedPage = 1, requestedLimit = PAGE_SIZE) {
   const source = payload?.meta || payload?.pagination || payload?.data?.meta || {};
   const total = Number(source.total ?? source.totalItems ?? payload?.total ?? itemCount) || 0;
-  const page = Number(source.page ?? source.currentPage ?? 1) || 1;
-  const limit = Number(source.limit ?? source.pageSize ?? PAGE_SIZE) || PAGE_SIZE;
+  const page = Number(source.page ?? source.currentPage ?? requestedPage) || requestedPage;
+  const limit = Number(source.limit ?? source.pageSize ?? requestedLimit) || requestedLimit;
   const totalPages = Math.max(
     1,
     Number(source.totalPages ?? source.pages ?? Math.ceil(total / Math.max(1, limit))) || 1,
@@ -589,7 +589,7 @@ export default function AdminEvidenceLibraryPage() {
 
       const nextRows = unwrapRows(listPayload);
       setRows(nextRows);
-      setMeta(unwrapMeta(listPayload, nextRows.length));
+      setMeta(unwrapMeta(listPayload, nextRows.length, page, PAGE_SIZE));
       if (!quiet) setLoading(false);
 
       summaryLoader({
@@ -597,7 +597,27 @@ export default function AdminEvidenceLibraryPage() {
         ...(dataSourceId ? { dataSourceId } : {}),
       })
         .then((payload) => {
-          if (requestId === requestIdRef.current) setSummary(unwrapSummary(payload));
+          if (requestId !== requestIdRef.current) return;
+
+          const nextSummary = unwrapSummary(payload);
+          setSummary(nextSummary);
+
+          const summaryTotal = Number(
+            firstValue(nextSummary, ['total', 'totalComments', 'totalEvidence', 'count'], 0),
+          ) || 0;
+
+          if (summaryTotal > 0) {
+            setMeta((current) => ({
+              ...current,
+              total: Math.max(current.total, summaryTotal),
+              page,
+              limit: current.limit || PAGE_SIZE,
+              totalPages: Math.max(
+                current.totalPages,
+                Math.ceil(summaryTotal / Math.max(1, current.limit || PAGE_SIZE)),
+              ),
+            }));
+          }
         })
         .catch(() => null);
     } catch (requestError) {

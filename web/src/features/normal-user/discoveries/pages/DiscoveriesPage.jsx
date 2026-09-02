@@ -398,10 +398,32 @@ export default function DiscoveriesPage() {
               aria-hidden="true"
             >
               <span className="discover-featured__mesh" />
+              <span className="discover-featured__aura discover-featured__aura--mint" />
+              <span className="discover-featured__aura discover-featured__aura--rose" />
+              <span className="discover-featured__scan" />
+
               <span className="discover-featured__orbit" />
               <span className="discover-featured__orbit discover-featured__orbit--two" />
 
+              <span className="discover-featured__particle discover-featured__particle--one" />
+              <span className="discover-featured__particle discover-featured__particle--two" />
+              <span className="discover-featured__particle discover-featured__particle--three" />
+              <span className="discover-featured__particle discover-featured__particle--four" />
+
+              <span className="discover-featured__signal discover-featured__signal--one">
+                <i />
+                <i />
+                <i />
+              </span>
+
+              <span className="discover-featured__signal discover-featured__signal--two">
+                <i />
+                <i />
+                <i />
+              </span>
+
               <span className="discover-featured__core">
+                <span className="discover-featured__core-halo" />
                 <Sparkles size={34} />
               </span>
 

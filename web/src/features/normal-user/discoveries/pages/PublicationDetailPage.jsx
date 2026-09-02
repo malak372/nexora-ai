@@ -648,9 +648,36 @@ export default function PublicationDetailPage() {
 
       <section className="publication-detail-hero">
         <div className="publication-detail-visual" aria-hidden="true">
+          <div className="publication-detail-aura publication-detail-aura--mint" />
+          <div className="publication-detail-aura publication-detail-aura--rose" />
+          <div className="publication-detail-scan" />
+
           <span />
           <span />
-          <i><Sparkles size={42} /></i>
+
+          <div className="publication-detail-particles">
+            <b className="publication-detail-particle publication-detail-particle--one" />
+            <b className="publication-detail-particle publication-detail-particle--two" />
+            <b className="publication-detail-particle publication-detail-particle--three" />
+            <b className="publication-detail-particle publication-detail-particle--four" />
+          </div>
+
+          <div className="publication-detail-signal publication-detail-signal--one">
+            <b />
+            <b />
+            <b />
+          </div>
+
+          <div className="publication-detail-signal publication-detail-signal--two">
+            <b />
+            <b />
+            <b />
+          </div>
+
+          <i>
+            <b className="publication-detail-core-halo" />
+            <Sparkles size={42} />
+          </i>
         </div>
 
         <div className="publication-detail-copy">

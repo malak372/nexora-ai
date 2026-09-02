@@ -368,3 +368,244 @@ html.vox-user-rtl body [data-idea-content='true'][dir='ltr'] {
   unicode-bidi: isolate;
 }
 
+
+/* =========================================================
+   COLLAPSIBLE EXPERIENCE DOCK — AUTHENTICATED USER + ADMIN
+   Keeps the original language/theme logic untouched while
+   allowing the controls to tuck into the browser edge.
+   ========================================================= */
+
+.vox-experience-controls__panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.vox-experience-controls__handle {
+  display: none;
+}
+
+.vox-experience-controls--dock {
+  right: 0;
+  bottom: 18px;
+  flex-direction: row-reverse;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.vox-experience-controls--dock .vox-experience-controls__handle {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 34px;
+  height: 46px;
+  flex: 0 0 34px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(92, 189, 185, .28);
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+  color: #2f7774;
+  background: rgba(255, 253, 252, .96);
+  box-shadow: 0 10px 28px rgba(47, 119, 116, .14);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color 180ms ease,
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.vox-experience-controls--dock .vox-experience-controls__handle::after {
+  position: absolute;
+  left: 6px;
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(79, 169, 164, .34);
+  content: '';
+}
+
+.vox-experience-controls--dock .vox-experience-controls__handle svg {
+  transition: transform 260ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.vox-experience-controls--dock .vox-experience-controls__handle:hover {
+  color: #245f5c;
+  border-color: rgba(79, 169, 164, .45);
+  background: #eef9f7;
+  box-shadow: 0 12px 30px rgba(47, 119, 116, .18);
+}
+
+.vox-experience-controls--dock.is-open .vox-experience-controls__handle svg {
+  transform: rotate(90deg);
+}
+
+.vox-experience-controls--dock .vox-experience-controls__panel {
+  width: 0;
+  max-width: 0;
+  gap: 5px;
+  padding: 4px 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+  opacity: 0;
+  background: rgba(255, 253, 252, .96);
+  box-shadow: none;
+  pointer-events: none;
+  transform: translateX(8px);
+  transform-origin: right center;
+  white-space: nowrap;
+  transition:
+    width 280ms cubic-bezier(.22, 1, .36, 1),
+    max-width 280ms cubic-bezier(.22, 1, .36, 1),
+    padding 280ms cubic-bezier(.22, 1, .36, 1),
+    opacity 180ms ease,
+    transform 280ms cubic-bezier(.22, 1, .36, 1),
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+  backdrop-filter: blur(18px);
+}
+
+.vox-experience-controls--dock.is-open .vox-experience-controls__panel {
+  width: 104px;
+  max-width: 104px;
+  padding: 4px 4px 4px 5px;
+  border-color: rgba(92, 189, 185, .24);
+  opacity: 1;
+  box-shadow: 0 12px 30px rgba(47, 119, 116, .12);
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.vox-experience-controls--dock.is-open .vox-experience-controls__handle {
+  border-left-color: rgba(92, 189, 185, .18);
+  border-radius: 0;
+  box-shadow: 0 12px 30px rgba(47, 119, 116, .10);
+}
+
+html.vox-user-dark .vox-experience-controls--dock {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.vox-user-dark .vox-experience-controls--dock .vox-experience-controls__handle,
+html.vox-user-dark .vox-experience-controls--dock .vox-experience-controls__panel {
+  color: #c7ece7;
+  border-color: var(--vox-dark-border);
+  background: rgba(25, 39, 34, .97);
+}
+
+html.vox-user-dark .vox-experience-controls--dock .vox-experience-controls__handle {
+  border-right: 0;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .26);
+}
+
+html.vox-user-dark .vox-experience-controls--dock .vox-experience-controls__handle::after {
+  background: rgba(115, 208, 202, .42);
+}
+
+html.vox-user-dark .vox-experience-controls--dock .vox-experience-controls__handle:hover {
+  color: #e4faf7;
+  background: #20312b;
+}
+
+html.vox-user-dark .vox-experience-controls--dock.is-open .vox-experience-controls__panel {
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+}
+
+html.vox-user-rtl .vox-experience-controls--dock {
+  right: auto;
+  left: 0;
+  flex-direction: row;
+}
+
+html.vox-user-rtl .vox-experience-controls--dock .vox-experience-controls__handle {
+  border-right: 1px solid rgba(92, 189, 185, .28);
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+}
+
+html.vox-user-rtl .vox-experience-controls--dock .vox-experience-controls__handle::after {
+  right: 6px;
+  left: auto;
+}
+
+html.vox-user-rtl .vox-experience-controls--dock .vox-experience-controls__panel {
+  border-right: 1px solid transparent;
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+  transform: translateX(-8px);
+  transform-origin: left center;
+}
+
+html.vox-user-rtl .vox-experience-controls--dock.is-open .vox-experience-controls__panel {
+  border-right-color: rgba(92, 189, 185, .24);
+  transform: translateX(0);
+  padding: 4px 5px 4px 4px;
+}
+
+html.vox-user-rtl .vox-experience-controls--dock.is-open .vox-experience-controls__handle {
+  border-right-color: rgba(92, 189, 185, .18);
+  border-radius: 0;
+}
+
+html.vox-user-dark.vox-user-rtl .vox-experience-controls--dock .vox-experience-controls__handle {
+  border-right-color: var(--vox-dark-border);
+  border-left: 0;
+}
+
+html.vox-user-dark.vox-user-rtl .vox-experience-controls--dock .vox-experience-controls__panel {
+  border-right-color: var(--vox-dark-border);
+  border-left: 0;
+}
+
+@media (max-width: 720px) {
+  .vox-experience-controls--dock {
+    right: 0;
+    bottom: 10px;
+  }
+
+  .vox-experience-controls--dock .vox-experience-controls__handle {
+    width: 30px;
+    height: 40px;
+    flex-basis: 30px;
+    border-radius: 12px 0 0 12px;
+  }
+
+  .vox-experience-controls--dock.is-open .vox-experience-controls__panel {
+    width: 91px;
+    max-width: 91px;
+    padding: 3px 3px 3px 4px;
+  }
+
+  html.vox-user-rtl .vox-experience-controls--dock {
+    right: auto;
+    left: 0;
+  }
+
+  html.vox-user-rtl .vox-experience-controls--dock .vox-experience-controls__handle {
+    border-radius: 0 12px 12px 0;
+  }
+
+  html.vox-user-rtl .vox-experience-controls--dock.is-open .vox-experience-controls__panel {
+    padding: 3px 4px 3px 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vox-experience-controls--dock .vox-experience-controls__panel,
+  .vox-experience-controls--dock .vox-experience-controls__handle,
+  .vox-experience-controls--dock .vox-experience-controls__handle svg {
+    transition: none !important;
+  }
+}
