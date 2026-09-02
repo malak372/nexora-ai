@@ -741,7 +741,7 @@ export default function AdminIdeasPage() {
       <section className="admin-ideas-hero">
         <div className="admin-ideas-hero__copy">
           <div className="admin-hero__eyebrow"><Sparkles size={14} /> {tr('Idea intelligence')}</div>
-          <h2>{tr('Ideas, without the spreadsheet feeling.')}</h2>
+          <h2>{tr('Ideas')}</h2>
           <p>{tr('Filter access states, find published work, inspect ownership and open any idea in a focused admin view.')}</p>
           <div className="admin-ideas-hero__chips">
             <span><i /> {tr('Live directory')}</span>

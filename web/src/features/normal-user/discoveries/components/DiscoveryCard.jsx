@@ -66,8 +66,8 @@ export default function DiscoveryCard({
           ? undefined
           : {
               opacity: 0,
-              y: 26,
-              scale: 0.985,
+              y: 18,
+              scale: 0.995,
             }
       }
       whileInView={{
@@ -90,8 +90,7 @@ export default function DiscoveryCard({
         shouldReduceMotion
           ? undefined
           : {
-              y: -8,
-              scale: 1.008,
+              y: -2,
             }
       }
     >
@@ -177,7 +176,7 @@ export default function DiscoveryCard({
             shouldReduceMotion
               ? undefined
               : {
-                  x: 3,
+                  x: 2,
                 }
           }
           whileTap={

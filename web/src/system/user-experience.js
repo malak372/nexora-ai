@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from 'react';
-import { Languages, Moon, Sun } from 'lucide-react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { Languages, Moon, Settings2, Sun } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import {
   ADMIN_AI_MODELS_DARK_ARABIC_PHRASES,
   ADMIN_ARABIC_PHRASES,
@@ -486,6 +487,7 @@ const ARABIC_PHRASES = {
   'No notifications yet': 'لا توجد إشعارات بعد',
   'Welcome back': 'مرحبًا بعودتك',
   'Welcome back,': 'مرحبًا بعودتك،',
+  'Malak': 'ملاك',
   'Welcome Back': 'مرحبًا بعودتك',
   'Your premium workspace is ready.': 'مساحة بريميوم الخاصة بك جاهزة.',
   'Real voices. Better ideas.': 'أصوات حقيقية. أفكار أفضل.',
@@ -920,7 +922,7 @@ const ARABIC_PHRASES = {
   'Check originality': 'فحص الأصالة',
   'Persist idea': 'حفظ الفكرة',
   'Finalizing workspace': 'إنهاء تجهيز مساحة العمل',
-  'Premium intelligence workspace': 'مساحة ذكاء بريميوم',
+  'Premium intelligence workspace': 'مساحة العمل المتقدمة',
   'Intelligent discovery workspace': 'مساحة استكشاف ذكية',
   'Start discovering': 'ابدأ الاستكشاف',
   'AI discovery prompt': 'موجّه الاستكشاف بالذكاء الاصطناعي',
@@ -4192,6 +4194,7 @@ function translateDom(language) {
 }
 
 export function UserExperienceLayer() {
+  const location = useLocation();
   const {
     language,
     theme,
@@ -4201,6 +4204,11 @@ export function UserExperienceLayer() {
     isDark,
     t,
   } = useUserExperience();
+  const [controlsOpen, setControlsOpen] = useState(false);
+
+  useEffect(() => {
+    setControlsOpen(false);
+  }, [location.pathname]);
 
   useLayoutEffect(() => {
     const html = document.documentElement;
@@ -4273,52 +4281,96 @@ export function UserExperienceLayer() {
     };
   }, [language, theme]);
 
+  const dockClassName = [
+    'vox-experience-controls',
+    'vox-experience-controls--dock',
+    controlsOpen ? 'is-open' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <div
-      className="vox-experience-controls"
+      className={dockClassName}
       data-no-auto-translate="true"
       dir="ltr"
     >
       <button
         type="button"
-        className="vox-experience-button vox-experience-button--language"
-        onClick={toggleLanguage}
+        className="vox-experience-controls__handle"
+        onClick={() => setControlsOpen((current) => !current)}
+        aria-expanded={controlsOpen}
+        aria-controls="vox-experience-controls-panel"
         aria-label={
-          isArabic
-            ? 'Switch to English'
-            : 'التبديل إلى العربية'
+          controlsOpen
+            ? isArabic
+              ? 'إخفاء إعدادات العرض'
+              : 'Hide display controls'
+            : isArabic
+              ? 'إظهار إعدادات العرض'
+              : 'Show display controls'
         }
         title={
-          isArabic
-            ? 'Switch to English'
-            : 'التبديل إلى العربية'
+          controlsOpen
+            ? isArabic
+              ? 'إخفاء إعدادات العرض'
+              : 'Hide display controls'
+            : isArabic
+              ? 'إظهار إعدادات العرض'
+              : 'Show display controls'
         }
       >
-        <Languages size={16} aria-hidden="true" />
-        <span>{isArabic ? 'EN' : 'AR'}</span>
+        <Settings2 size={17} aria-hidden="true" />
       </button>
 
-      <button
-        type="button"
-        className="vox-experience-button"
-        onClick={toggleTheme}
-        aria-label={
-          isDark
-            ? t('Light mode')
-            : t('Dark mode')
-        }
-        title={
-          isDark
-            ? t('Light mode')
-            : t('Dark mode')
-        }
+      <div
+        id="vox-experience-controls-panel"
+        className="vox-experience-controls__panel"
+        aria-hidden={!controlsOpen}
       >
-        {isDark ? (
-          <Sun size={17} aria-hidden="true" />
-        ) : (
-          <Moon size={17} aria-hidden="true" />
-        )}
-      </button>
+        <button
+          type="button"
+          className="vox-experience-button vox-experience-button--language"
+          onClick={toggleLanguage}
+          tabIndex={!controlsOpen ? -1 : undefined}
+          aria-label={
+            isArabic
+              ? 'Switch to English'
+              : 'التبديل إلى العربية'
+          }
+          title={
+            isArabic
+              ? 'Switch to English'
+              : 'التبديل إلى العربية'
+          }
+        >
+          <Languages size={16} aria-hidden="true" />
+          <span>{isArabic ? 'EN' : 'AR'}</span>
+        </button>
+
+        <button
+          type="button"
+          className="vox-experience-button"
+          onClick={toggleTheme}
+          tabIndex={!controlsOpen ? -1 : undefined}
+          aria-label={
+            isDark
+              ? t('Light mode')
+              : t('Dark mode')
+          }
+          title={
+            isDark
+              ? t('Light mode')
+              : t('Dark mode')
+          }
+        >
+          {isDark ? (
+            <Sun size={17} aria-hidden="true" />
+          ) : (
+            <Moon size={17} aria-hidden="true" />
+          )}
+        </button>
+      </div>
     </div>
   );
 }

@@ -1304,9 +1304,13 @@
     inset: 0;
     z-index: 3000;
     display: grid;
-    padding: 28px;
+    width: 100vw;
+    height: 100dvh;
+    box-sizing: border-box;
+    padding: 24px;
     place-items: center;
     overflow-y: auto;
+    overscroll-behavior: contain;
     background: rgba(21, 15, 46, 0.58);
     backdrop-filter: blur(12px);
     animation: compliance-fade 0.24s ease both;
@@ -1316,7 +1320,8 @@
     display: grid;
     grid-template-columns: minmax(310px, 0.72fr) minmax(520px, 1.28fr);
     width: min(1120px, 100%);
-    min-height: 680px;
+    min-height: min(680px, calc(100dvh - 48px));
+    max-height: calc(100dvh - 48px);
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 34px;
@@ -1376,7 +1381,9 @@
 }
 
 .compliance-modal__content {
+    min-height: 0;
     padding: 34px 38px 36px;
+    overflow-y: auto;
 }
 
 .compliance-modal__content>header {
@@ -3372,4 +3379,236 @@ html.vox-user-dark .compliance-hero-launch {
   border-color: rgba(130,221,213,.25);
   background: linear-gradient(135deg,#55b9b2,#378d87);
   box-shadow: 0 12px 28px rgba(0,0,0,.16);
+}
+
+
+/* Keep the create-case portal anchored to the viewport in every theme. */
+.compliance-modal {
+    align-items: center;
+    justify-items: center;
+}
+
+html.vox-user-dark .compliance-modal {
+    background: rgba(5, 16, 13, .68) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+}
+
+
+/* ========================================================================== */
+/* New case modal — compact viewport-safe sizing                              */
+/* ========================================================================== */
+.compliance-modal {
+    padding: clamp(10px, 2vh, 18px);
+}
+
+.compliance-modal__dialog {
+    width: min(980px, calc(100vw - 36px));
+    min-height: 0;
+    max-height: calc(100dvh - 28px);
+    grid-template-columns: minmax(230px, 0.52fr) minmax(500px, 1.48fr);
+}
+
+.compliance-modal__visual > svg {
+    width: 92px;
+    height: 92px;
+    padding: 22px;
+    border-radius: 28px;
+}
+
+.compliance-modal__visual span {
+    width: 205px;
+    height: 205px;
+}
+
+.compliance-modal__visual span:last-of-type {
+    width: 300px;
+    height: 300px;
+}
+
+.compliance-modal__content {
+    min-height: 0;
+    padding: 23px 28px 21px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(79, 169, 164, 0.24) transparent;
+}
+
+.compliance-modal__content h2 {
+    margin: 7px 0 6px;
+    font-size: clamp(28px, 2.35vw, 32px);
+    line-height: 1.06;
+}
+
+.compliance-modal__content header p {
+    max-width: 570px;
+    font-size: 12px;
+    line-height: 1.52;
+}
+
+.compliance-modal form {
+    gap: 11px;
+    margin-top: 17px;
+}
+
+.compliance-modal label > span {
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+
+.compliance-modal input,
+.compliance-modal select {
+    min-height: 45px;
+    padding-inline: 14px;
+    border-radius: 14px;
+}
+
+.compliance-modal textarea {
+    height: 112px;
+    min-height: 100px;
+    max-height: 150px;
+    padding: 11px 14px;
+    border-radius: 14px;
+    line-height: 1.5;
+}
+
+.compliance-modal label > small {
+    margin-top: 4px;
+}
+
+.compliance-modal__actions {
+    gap: 9px;
+    margin-top: 0;
+}
+
+.compliance-modal__actions button {
+    min-height: 43px;
+    padding-inline: 17px;
+    border-radius: 13px;
+}
+
+/* Short laptop screens: keep the submit action visible without a huge modal. */
+@media (max-height: 760px) and (min-width: 961px) {
+    .compliance-modal {
+        padding: 10px 14px;
+    }
+
+    .compliance-modal__dialog {
+        width: min(940px, calc(100vw - 28px));
+        max-height: calc(100dvh - 20px);
+        grid-template-columns: minmax(205px, 0.46fr) minmax(500px, 1.54fr);
+        border-radius: 27px;
+    }
+
+    .compliance-modal__visual > svg {
+        width: 78px;
+        height: 78px;
+        padding: 18px;
+        border-radius: 23px;
+    }
+
+    .compliance-modal__visual span {
+        width: 170px;
+        height: 170px;
+    }
+
+    .compliance-modal__visual span:last-of-type {
+        width: 250px;
+        height: 250px;
+    }
+
+    .compliance-modal__content {
+        padding: 17px 23px 16px;
+    }
+
+    .compliance-modal__content h2 {
+        margin-top: 4px;
+        font-size: 28px;
+    }
+
+    .compliance-modal__content header p {
+        font-size: 11.5px;
+        line-height: 1.42;
+    }
+
+    .compliance-modal__close {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+    }
+
+    .compliance-modal form {
+        gap: 9px;
+        margin-top: 12px;
+    }
+
+    .compliance-modal input,
+    .compliance-modal select {
+        min-height: 41px;
+    }
+
+    .compliance-modal textarea {
+        height: 88px;
+        min-height: 82px;
+        max-height: 115px;
+    }
+
+    .compliance-modal__actions button {
+        min-height: 40px;
+    }
+}
+
+@media (max-width: 960px) {
+    .compliance-modal {
+        padding: 12px;
+    }
+
+    .compliance-modal__dialog {
+        width: min(720px, calc(100vw - 24px));
+        max-height: calc(100dvh - 24px);
+        grid-template-columns: 1fr;
+    }
+
+    .compliance-modal__visual {
+        display: none;
+    }
+
+    .compliance-modal__content {
+        padding: 24px 26px 21px;
+    }
+}
+
+@media (max-width: 680px) {
+    .compliance-modal {
+        padding: 8px;
+    }
+
+    .compliance-modal__dialog {
+        width: calc(100vw - 16px);
+        max-height: calc(100dvh - 16px);
+        border-radius: 21px;
+    }
+
+    .compliance-modal__content {
+        padding: 19px 17px 16px;
+    }
+
+    .compliance-modal__content h2 {
+        font-size: 27px;
+    }
+
+    .compliance-modal form {
+        gap: 10px;
+        margin-top: 14px;
+    }
+
+    .compliance-modal textarea {
+        height: 100px;
+        min-height: 92px;
+        max-height: 130px;
+    }
+
+    .compliance-modal__actions {
+        gap: 8px;
+    }
 }

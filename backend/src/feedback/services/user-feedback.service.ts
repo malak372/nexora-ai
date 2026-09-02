@@ -193,8 +193,6 @@ export class UserFeedbackService {
    * Deletes the current actor's rating and recalculates publication totals.
    */
   async deleteRating(actor: FeedbackActor, publicationId: string) {
-    await this.ensurePublicationAccessibleToActor(actor, publicationId);
-
     const existing = await this.getMyRating(actor, publicationId);
 
     if (!existing) {
@@ -330,8 +328,6 @@ export class UserFeedbackService {
    * Deletes the current actor's feedback and recalculates its count.
    */
   async deleteFeedback(actor: FeedbackActor, publicationId: string) {
-    await this.ensurePublicationAccessibleToActor(actor, publicationId);
-
     const existing = await this.getMyFeedback(actor, publicationId);
 
     if (!existing) {

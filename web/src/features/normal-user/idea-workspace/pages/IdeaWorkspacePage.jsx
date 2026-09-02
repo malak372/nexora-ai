@@ -1,3 +1,4 @@
+// @refresh reset
 /**
  * Voxidence normal-user idea workspace.
  *
@@ -30,6 +31,11 @@ import { getIdeaWorkspaceBundle } from '../api/ideaWorkspaceApi';
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import { preloadAiChatWorkspace } from '../../../../routes/routePreloaders';
 import { useUserExperience } from '../../../../system/user-experience';
+import {
+  AdvancedOutputContent,
+  getAdvancedOutputPresentation,
+  WorkspaceSectionArtwork as AdvancedWorkspaceSectionArtwork,
+} from '../components/AdvancedOutputRenderer';
 
 import '../styles/idea-workspace.css';
 
@@ -229,41 +235,8 @@ function WorkspaceLoadingState({ t }) {
   );
 }
 
-function WorkspaceSectionArtwork({ section, index, label }) {
-  const Icon = section?.icon || FileText;
-  const tone = ['mint', 'rose', 'sky', 'pearl'][index % 4];
-
-  return (
-    <div
-      className={`workspace-section-art workspace-section-art--${tone}`}
-      aria-hidden="true"
-    >
-      <span className="workspace-section-art__grid" />
-      <span className="workspace-section-art__orbit workspace-section-art__orbit--one" />
-      <span className="workspace-section-art__orbit workspace-section-art__orbit--two" />
-      <span className="workspace-section-art__line workspace-section-art__line--one" />
-      <span className="workspace-section-art__line workspace-section-art__line--two" />
-
-      <span className="workspace-section-art__node workspace-section-art__node--a">
-        <Sparkles size={13} />
-      </span>
-      <span className="workspace-section-art__node workspace-section-art__node--b">
-        <CheckCircle2 size={13} />
-      </span>
-      <span className="workspace-section-art__node workspace-section-art__node--c">
-        <Rocket size={13} />
-      </span>
-
-      <span className="workspace-section-art__core">
-        <Icon size={28} />
-      </span>
-
-      <span className="workspace-section-art__label">
-        <Sparkles size={11} />
-        {label}
-      </span>
-    </div>
-  );
+function WorkspaceSectionArtwork(props) {
+  return <AdvancedWorkspaceSectionArtwork {...props} />;
 }
 
 export default function IdeaWorkspacePage() {
@@ -411,14 +384,21 @@ export default function IdeaWorkspacePage() {
         icon: Globe2,
         content: idea.targetUsers,
       },
-      ...outputs.map((output) => ({
-        key: output.outputKey,
-        title: output.title,
-        caption: 'Advanced execution output',
-        icon: Sparkles,
-        content: output.content || output.structuredContent,
-        preserveTitle: Boolean(output.title),
-      })),
+      ...outputs.map((output) => {
+        const presentation = getAdvancedOutputPresentation(output);
+
+        return {
+          key: output.outputKey,
+          outputKey: output.outputKey,
+          title: output.title,
+          caption: 'Advanced execution output',
+          icon: presentation.icon,
+          outputVariant: presentation.variant,
+          isAdvanced: true,
+          content: output.structuredContent ?? output.content,
+          preserveTitle: Boolean(output.title),
+        };
+      }),
     ];
   }, [idea, outputs]);
 
@@ -809,7 +789,8 @@ export default function IdeaWorkspacePage() {
         </aside>
 
         <motion.article
-          className="workspace-document"
+          className={`workspace-document${current.isAdvanced ? ' workspace-document--advanced' : ''}`}
+          data-output-variant={current.outputVariant || undefined}
           initial={shouldReduceMotion ? undefined : { opacity: 0, x: 20 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true, amount: 0.18 }}
@@ -849,7 +830,13 @@ export default function IdeaWorkspacePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
           >
-            <div data-idea-content="true" dir="auto"><WorkspaceContent value={current.content} /></div>
+            <div data-idea-content="true" dir="auto">
+              {current.isAdvanced ? (
+                <AdvancedOutputContent section={current} value={current.content} />
+              ) : (
+                <WorkspaceContent value={current.content} />
+              )}
+            </div>
           </motion.div>
         </motion.article>
       </motion.section>

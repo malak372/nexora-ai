@@ -426,13 +426,62 @@ export default function PublishIdeaPage() {
             </button>
           </div>
 
-          <label>Public title<input dir="auto" value={form.publicTitle} maxLength={200} onChange={(event) => updateField('publicTitle', event.target.value)} /></label>
-          <label>Public abstract<textarea dir="auto" rows={6} value={form.publicAbstract} maxLength={5000} onChange={(event) => updateField('publicAbstract', event.target.value)} /></label>
-          <div className="publish-two">
-            <label>Public problem<textarea dir="auto" rows={5} value={form.publicProblem} onChange={(event) => updateField('publicProblem', event.target.value)} /></label>
-            <label>Target users<textarea dir="auto" rows={5} value={form.publicTargetUsers} onChange={(event) => updateField('publicTargetUsers', event.target.value)} /></label>
+          <div className="publish-story-composer publish-story-composer--editorial">
+            <label className="publish-story-field publish-story-field--title">
+              <span className="publish-story-field__label">Public title</span>
+              <input
+                dir="auto"
+                value={form.publicTitle}
+                maxLength={200}
+                onChange={(event) => updateField('publicTitle', event.target.value)}
+              />
+            </label>
+
+            <div className="publish-story-editorial-grid">
+              <label className="publish-story-field publish-story-field--abstract">
+                <span className="publish-story-field__label">Public abstract</span>
+                <textarea
+                  dir="auto"
+                  rows={7}
+                  value={form.publicAbstract}
+                  maxLength={5000}
+                  onChange={(event) => updateField('publicAbstract', event.target.value)}
+                />
+              </label>
+
+              <div className="publish-story-editorial-side">
+                <label className="publish-story-field publish-story-field--problem">
+                  <span className="publish-story-field__label">Public problem</span>
+                  <textarea
+                    dir="auto"
+                    rows={4}
+                    value={form.publicProblem}
+                    onChange={(event) => updateField('publicProblem', event.target.value)}
+                  />
+                </label>
+
+                <label className="publish-story-field publish-story-field--target">
+                  <span className="publish-story-field__label">Target users</span>
+                  <textarea
+                    dir="auto"
+                    rows={3}
+                    value={form.publicTargetUsers}
+                    onChange={(event) => updateField('publicTargetUsers', event.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <label className="publish-story-field publish-story-field--objectives">
+              <span className="publish-story-field__label">Public objectives</span>
+              <textarea
+                dir="auto"
+                rows={4}
+                value={form.publicObjectives}
+                onChange={(event) => updateField('publicObjectives', event.target.value)}
+              />
+            </label>
           </div>
-          <label>Public objectives<textarea dir="auto" rows={5} value={form.publicObjectives} onChange={(event) => updateField('publicObjectives', event.target.value)} /></label>
 
           <div className="publish-section-title"><div><span>02</span><h2>Visibility and community</h2></div></div>
           <div className="publish-visibility publish-visibility--three">
@@ -499,9 +548,13 @@ export default function PublishIdeaPage() {
                 icon: ShieldCheck,
               },
             ].map(({ key, label, description, icon: Icon }) => (
-              <label
+              <button
+                type="button"
                 key={key}
+                role="switch"
+                aria-checked={Boolean(form[key])}
                 className={form[key] ? 'publish-toggle is-enabled' : 'publish-toggle'}
+                onClick={() => updateField(key, !form[key])}
               >
                 <span className="publish-toggle__icon" aria-hidden="true">
                   <Icon size={18} strokeWidth={2.1} />
@@ -510,13 +563,10 @@ export default function PublishIdeaPage() {
                   <strong>{label}</strong>
                   <small>{description}</small>
                 </span>
-                <input
-                  type="checkbox"
-                  checked={form[key]}
-                  onChange={(event) => updateField(key, event.target.checked)}
-                  aria-label={label}
-                />
-              </label>
+                <span className="publish-toggle__control" aria-hidden="true">
+                  <span className="publish-toggle__check" />
+                </span>
+              </button>
             ))}
           </div>
 
@@ -542,19 +592,64 @@ export default function PublishIdeaPage() {
         </motion.form>
 
         <motion.aside
-          initial={shouldReduceMotion ? undefined : { opacity: 0, x: 20 }}
+          initial={shouldReduceMotion ? undefined : { opacity: 0, x: 16 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true, amount: 0.12 }}
-          transition={{ duration: 0.52, delay: shouldReduceMotion ? 0 : 0.08 }}
+          transition={{ duration: 0.48, delay: shouldReduceMotion ? 0 : 0.06 }}
         >
-          <span><Eye size={15} /> LIVE PREVIEW</span>
+          <div className="publish-preview-heading">
+            <span><Eye size={15} /> LIVE PREVIEW</span>
+            <small>{t('Community view')}</small>
+          </div>
+
           <article className="publish-preview-card">
-            <div className="publish-preview-card__shine" aria-hidden="true" />
-            <small dir="auto" data-idea-content="true">{idea?.domain?.name ?? t('Innovation')}</small>
-            <h2 dir="auto" data-idea-content="true">{form.publicTitle || t('Your public title')}</h2>
-            <p dir="auto" data-idea-content="true">{form.publicAbstract || t('Your public abstract will appear here.')}</p>
-            <div data-idea-content="true" dir="auto"><strong>{form.publicProblem || t('Problem statement')}</strong><span>{form.publicTargetUsers || t('Target audience')}</span></div>
+            <header className="publish-preview-card__header">
+              <span className="publish-preview-card__domain" dir="auto" data-idea-content="true">
+                {idea?.domain?.name ?? t('Innovation')}
+              </span>
+              <span className="publish-preview-card__status">
+                <Globe2 size={13} />
+                {t('Public snapshot')}
+              </span>
+            </header>
+
+            <div className="publish-preview-card__story">
+              <small>{t('PUBLIC STORY')}</small>
+              <h2 dir="auto" data-idea-content="true">
+                {form.publicTitle || t('Your public title')}
+              </h2>
+              <p dir="auto" data-idea-content="true">
+                {form.publicAbstract || t('Your public abstract will appear here.')}
+              </p>
+            </div>
+
+            <div className="publish-preview-card__brief">
+              <section>
+                <small>{t('Problem')}</small>
+                <strong dir="auto" data-idea-content="true">
+                  {form.publicProblem || t('Problem statement')}
+                </strong>
+              </section>
+              <section>
+                <small>{t('Audience')}</small>
+                <span dir="auto" data-idea-content="true">
+                  {form.publicTargetUsers || t('Target audience')}
+                </span>
+              </section>
+              <section className="publish-preview-card__objectives">
+                <small>{t('Objectives')}</small>
+                <span dir="auto" data-idea-content="true">
+                  {form.publicObjectives || t('Public objectives')}
+                </span>
+              </section>
+            </div>
+
+            <footer className="publish-preview-card__footer">
+              <ShieldCheck size={15} />
+              <span>{t('Protected execution details stay private')}</span>
+            </footer>
           </article>
+
           <p className="publish-safety"><ShieldCheck size={16} />Only the safe public snapshot is submitted.</p>
         </motion.aside>
       </motion.section>

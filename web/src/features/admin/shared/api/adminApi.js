@@ -12,7 +12,54 @@ const cleanParams = (params = {}) => Object.fromEntries(
   Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ''),
 );
 
-const get = async (url, params, config = {}) => extractApiData(await normalUserApi.get(url, {
+const extractAdminApiData = (response) => {
+  const body = response?.data;
+  const extracted = extractApiData(response);
+
+  if (!body || typeof body !== 'object' || Array.isArray(body) || body.data === undefined) {
+    return extracted;
+  }
+
+  const paginationKeys = [
+    'total',
+    'totalItems',
+    'totalPages',
+    'pages',
+    'page',
+    'currentPage',
+    'limit',
+    'pageSize',
+  ];
+
+  const inlinePagination = paginationKeys.reduce((meta, key) => {
+    if (body[key] !== undefined) meta[key] = body[key];
+    return meta;
+  }, {});
+
+  const pagination = body.meta
+    || body.pagination
+    || (Object.keys(inlinePagination).length ? inlinePagination : null);
+
+  if (!pagination) return extracted;
+
+  if (Array.isArray(body.data)) {
+    return {
+      data: body.data,
+      meta: pagination,
+    };
+  }
+
+  if (body.data && typeof body.data === 'object' && !Array.isArray(body.data)) {
+    return {
+      ...body.data,
+      meta: body.data.meta || body.data.pagination || pagination,
+    };
+  }
+
+  return extracted;
+};
+
+const get = async (url, params, config = {}) => extractAdminApiData(await normalUserApi.get(url, {
   ...config,
   params: cleanParams(params),
 }));

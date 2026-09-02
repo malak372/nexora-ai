@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { getMyIdeas } from '../../ideas/api/userIdeasApi';
 import NormalPageHero from '../../shared/components/NormalPageHero';
@@ -317,7 +318,18 @@ function NewCaseModal({ ideas, form, setForm, onClose, onSubmit, submitting }) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose, submitting]);
 
-  return (
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="compliance-modal" role="presentation" onMouseDown={onClose}>
       <div
         className="compliance-modal__dialog"
@@ -369,7 +381,7 @@ function NewCaseModal({ ideas, form, setForm, onClose, onSubmit, submitting }) {
               <span>What happened?</span>
               <textarea
                 dir="auto"
-                rows={7}
+                rows={5}
                 value={form.message}
                 minLength={10}
                 maxLength={2000}
@@ -418,7 +430,8 @@ function NewCaseModal({ ideas, form, setForm, onClose, onSubmit, submitting }) {
           </form>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

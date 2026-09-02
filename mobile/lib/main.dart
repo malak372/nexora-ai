@@ -731,6 +731,8 @@ class _AppBootstrap extends StatefulWidget {
 }
 
 class _AppBootstrapState extends State<_AppBootstrap> {
+  static const Duration _minimumSplashDuration = Duration(seconds: 3);
+
   final Completer<String> _bootstrapCompleter = Completer<String>();
 
   bool _bootstrapStarted = false;
@@ -754,7 +756,9 @@ class _AppBootstrapState extends State<_AppBootstrap> {
 
     unawaited(() async {
       try {
-        final target = await _resolveBootstrapTarget();
+        final targetFuture = _resolveBootstrapTarget();
+        await Future<void>.delayed(_minimumSplashDuration);
+        final target = await targetFuture;
 
         if (!_bootstrapCompleter.isCompleted) {
           _bootstrapCompleter.complete(target);
