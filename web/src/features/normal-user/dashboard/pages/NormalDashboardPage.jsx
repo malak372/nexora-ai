@@ -138,7 +138,7 @@ export default function NormalDashboardPage() {
         <div className="normal-dashboard-hero__mesh" aria-hidden="true" />
         <div className="normal-dashboard-hero__copy">
           <span className="normal-eyebrow"><Sparkles size={14} />{t(isPremium ? 'Premium intelligence workspace' : 'Intelligent discovery workspace')}</span>
-          <h1>{t('Welcome back,')} <span>{getFirstName(summary?.fullName)}.</span></h1>
+          <h1>{t('Welcome back,')} <span>{t(getFirstName(summary?.fullName))}.</span></h1>
           <p>{t('Describe a real need. Voxidence listens across communities, finds repeated evidence, compares multiple AI candidates, and returns one validated software direction.')}</p>
           <div className="normal-dashboard-hero__actions">
             <motion.button className="normal-primary-button" type="button" onClick={() => navigate(workspacePath('/normal/generate'))} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}><Rocket size={18} />{t('Start discovering')}</motion.button>

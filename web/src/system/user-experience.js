@@ -487,6 +487,7 @@ const ARABIC_PHRASES = {
   'No notifications yet': 'لا توجد إشعارات بعد',
   'Welcome back': 'مرحبًا بعودتك',
   'Welcome back,': 'مرحبًا بعودتك،',
+  'Malak': 'ملاك',
   'Welcome Back': 'مرحبًا بعودتك',
   'Your premium workspace is ready.': 'مساحة بريميوم الخاصة بك جاهزة.',
   'Real voices. Better ideas.': 'أصوات حقيقية. أفكار أفضل.',
@@ -921,7 +922,7 @@ const ARABIC_PHRASES = {
   'Check originality': 'فحص الأصالة',
   'Persist idea': 'حفظ الفكرة',
   'Finalizing workspace': 'إنهاء تجهيز مساحة العمل',
-  'Premium intelligence workspace': 'مساحة ذكاء بريميوم',
+  'Premium intelligence workspace': 'مساحة العمل المتقدمة',
   'Intelligent discovery workspace': 'مساحة استكشاف ذكية',
   'Start discovering': 'ابدأ الاستكشاف',
   'AI discovery prompt': 'موجّه الاستكشاف بالذكاء الاصطناعي',
@@ -4204,13 +4205,10 @@ export function UserExperienceLayer() {
     t,
   } = useUserExperience();
   const [controlsOpen, setControlsOpen] = useState(false);
-  const isWorkspaceRoute = /^\/(?:admin|normal|premium)(?:\/|$)/.test(location.pathname);
 
   useEffect(() => {
-    if (isWorkspaceRoute) {
-      setControlsOpen(false);
-    }
-  }, [isWorkspaceRoute, location.pathname]);
+    setControlsOpen(false);
+  }, [location.pathname]);
 
   useLayoutEffect(() => {
     const html = document.documentElement;
@@ -4285,8 +4283,8 @@ export function UserExperienceLayer() {
 
   const dockClassName = [
     'vox-experience-controls',
-    isWorkspaceRoute ? 'vox-experience-controls--dock' : '',
-    isWorkspaceRoute && controlsOpen ? 'is-open' : '',
+    'vox-experience-controls--dock',
+    controlsOpen ? 'is-open' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -4297,46 +4295,44 @@ export function UserExperienceLayer() {
       data-no-auto-translate="true"
       dir="ltr"
     >
-      {isWorkspaceRoute ? (
-        <button
-          type="button"
-          className="vox-experience-controls__handle"
-          onClick={() => setControlsOpen((current) => !current)}
-          aria-expanded={controlsOpen}
-          aria-controls="vox-experience-controls-panel"
-          aria-label={
-            controlsOpen
-              ? isArabic
-                ? 'إخفاء إعدادات العرض'
-                : 'Hide display controls'
-              : isArabic
-                ? 'إظهار إعدادات العرض'
-                : 'Show display controls'
-          }
-          title={
-            controlsOpen
-              ? isArabic
-                ? 'إخفاء إعدادات العرض'
-                : 'Hide display controls'
-              : isArabic
-                ? 'إظهار إعدادات العرض'
-                : 'Show display controls'
-          }
-        >
-          <Settings2 size={17} aria-hidden="true" />
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className="vox-experience-controls__handle"
+        onClick={() => setControlsOpen((current) => !current)}
+        aria-expanded={controlsOpen}
+        aria-controls="vox-experience-controls-panel"
+        aria-label={
+          controlsOpen
+            ? isArabic
+              ? 'إخفاء إعدادات العرض'
+              : 'Hide display controls'
+            : isArabic
+              ? 'إظهار إعدادات العرض'
+              : 'Show display controls'
+        }
+        title={
+          controlsOpen
+            ? isArabic
+              ? 'إخفاء إعدادات العرض'
+              : 'Hide display controls'
+            : isArabic
+              ? 'إظهار إعدادات العرض'
+              : 'Show display controls'
+        }
+      >
+        <Settings2 size={17} aria-hidden="true" />
+      </button>
 
       <div
         id="vox-experience-controls-panel"
         className="vox-experience-controls__panel"
-        aria-hidden={isWorkspaceRoute ? !controlsOpen : undefined}
+        aria-hidden={!controlsOpen}
       >
         <button
           type="button"
           className="vox-experience-button vox-experience-button--language"
           onClick={toggleLanguage}
-          tabIndex={isWorkspaceRoute && !controlsOpen ? -1 : undefined}
+          tabIndex={!controlsOpen ? -1 : undefined}
           aria-label={
             isArabic
               ? 'Switch to English'
@@ -4356,7 +4352,7 @@ export function UserExperienceLayer() {
           type="button"
           className="vox-experience-button"
           onClick={toggleTheme}
-          tabIndex={isWorkspaceRoute && !controlsOpen ? -1 : undefined}
+          tabIndex={!controlsOpen ? -1 : undefined}
           aria-label={
             isDark
               ? t('Light mode')
