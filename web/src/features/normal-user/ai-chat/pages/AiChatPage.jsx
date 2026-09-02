@@ -871,7 +871,7 @@ export default function AiChatPage() {
 
                 <button
                     type="button"
-                    onClick={() => navigate(workspacePath('/normal/credits'))}
+                    onClick={() => navigate(workspacePath('/normal/upgrade'))}
                 >
                     <Sparkles size={17} />
                     {t('View Premium credits')}

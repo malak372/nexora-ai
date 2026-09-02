@@ -920,7 +920,7 @@ export default function GenerateIdeaPage() {
             </div>
             <div className="vx-generate-modal__actions">
               <button type="button" className="is-secondary" onClick={() => setAccessModal(null)}>{t('Close')}</button>
-              <button type="button" onClick={() => navigate(workspacePath('/normal/credits'))}>{t(accessModal.isPremium ? 'Buy more credits' : 'Upgrade workspace')}<ArrowRight size={16} /></button>
+              <button type="button" onClick={() => navigate(workspacePath(accessModal.isPremium ? '/premium/buy-credits' : '/normal/upgrade'))}>{t(accessModal.isPremium ? 'Buy more credits' : 'Upgrade workspace')}<ArrowRight size={16} /></button>
             </div>
           </motion.section>
         </div>,

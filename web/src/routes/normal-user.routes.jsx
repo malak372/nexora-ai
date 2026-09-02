@@ -29,6 +29,7 @@ const CompliancePage = lazy(() => import('../features/normal-user/compliance/pag
 const NotificationsPage = lazy(() => import('../features/normal-user/notifications/pages/NotificationsPage'));
 const PreferencesPage = lazy(() => import('../features/normal-user/preferences/pages/PreferencesPage'));
 const UpgradePage = lazy(() => import('../features/normal-user/upgrade/pages/UpgradePage'));
+const BuyCreditsPage = lazy(() => import('../features/normal-user/credits/pages/BuyCreditsPage'));
 const BillingHistoryPage = lazy(() => import('../features/normal-user/billing/pages/BillingHistoryPage'));
 const AiChatPage = lazy(() => import('../features/normal-user/ai-chat/pages/AiChatPage'));
 
@@ -61,7 +62,17 @@ function createWorkspaceRoute(basePath) {
             <Route path="accepted" element={<Navigate to={`${basePath}/ideas?view=accepted`} replace />} />
             <Route path="compliance" element={<CompliancePage />} />
             <Route path="favorites" element={<TemporaryNormalPage title="Favorites" />} />
-            <Route path="credits" element={<UpgradePage />} />
+            <Route path="upgrade" element={<UpgradePage />} />
+            <Route path="buy-credits" element={<BuyCreditsPage />} />
+            <Route
+                path="credits"
+                element={
+                    <Navigate
+                        to={basePath === '/premium' ? `${basePath}/buy-credits` : `${basePath}/upgrade`}
+                        replace
+                    />
+                }
+            />
             <Route path="preferences" element={<PreferencesPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="billing" element={<BillingHistoryPage />} />
