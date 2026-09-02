@@ -1,371 +1,483 @@
-.upgrade-page {
-  --upgrade-ink: #3f514c;
-  --upgrade-muted: #788984;
-  --upgrade-line: rgba(71, 181, 176, 0.22);
-  --upgrade-eucalyptus: #4fb9b4;
-  --upgrade-eucalyptus-dark: #287f7a;
-  --upgrade-mint: #8fd4d0;
-  --upgrade-pearl: #fffdfc;
-  --upgrade-rose: #f8e7eb;
-  width: min(100%, 1480px);
-  height: calc(100dvh - 84px);
-  min-height: 0;
-  margin: 0 auto;
-  padding: 12px clamp(14px, 2vw, 28px) 14px;
+.upgrade-purchase-overlay {
+  --upgrade-ink: #274c48;
+  --upgrade-deep: #1d6864;
+  --upgrade-teal: #38aaa5;
+  --upgrade-mint: #86d9d2;
+  --upgrade-soft-mint: #eaf8f5;
+  --upgrade-line: rgba(62, 162, 156, 0.2);
+  --upgrade-muted: #7f908d;
+  --upgrade-cream: #fffdfa;
+  --upgrade-rose: #fbecef;
+  position: fixed;
+  inset: 0;
+  z-index: 500;
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(370px, 0.72fr);
-  gap: 16px;
-  overflow: hidden;
+  place-items: center;
+  padding: 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
   color: var(--upgrade-ink);
+  background: rgba(37, 60, 58, 0.48);
+  backdrop-filter: blur(8px) saturate(0.86);
+  -webkit-backdrop-filter: blur(8px) saturate(0.86);
 }
 
-.upgrade-page * {
+.upgrade-purchase-overlay * {
   box-sizing: border-box;
 }
 
-.upgrade-page button,
-.upgrade-page input {
+.upgrade-purchase-overlay button,
+.upgrade-purchase-overlay input {
   font: inherit;
 }
 
-.upgrade-story,
-.upgrade-checkout {
-  min-width: 0;
-  height: 100%;
-  min-height: 0;
-  border-radius: 30px;
-}
-
-.upgrade-story {
+.upgrade-modal {
   position: relative;
   isolation: isolate;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  overflow: hidden;
-  padding: clamp(25px, 3.2vw, 44px);
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  width: min(94vw, 980px);
+  max-height: min(92dvh, 790px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 27px 30px 24px;
+  border: 1px solid rgba(255, 255, 255, .92);
+  border-radius: 30px;
   background:
-    radial-gradient(circle at 86% 12%, rgba(220, 232, 226, 0.46), transparent 28%),
-    radial-gradient(circle at 8% 92%, rgba(250, 220, 227, 0.28), transparent 31%),
-    linear-gradient(145deg, #287b77 0%, #36958f 42%, #56b7b1 72%, #89d3cf 100%);
-  box-shadow: 0 28px 72px rgba(39, 126, 121, 0.18), inset 0 1px 0 rgba(255, 255, 255, .24);
-  color: #fff;
+    radial-gradient(circle at 84% 5%, rgba(196, 238, 232, .42), transparent 24%),
+    radial-gradient(circle at 8% 88%, rgba(249, 222, 229, .44), transparent 24%),
+    linear-gradient(145deg, rgba(255, 255, 255, .985), rgba(255, 252, 250, .98) 58%, rgba(246, 253, 251, .985));
+  box-shadow: 0 30px 84px rgba(21, 58, 55, .28), inset 0 1px 0 #fff;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 170, 165, .35) transparent;
 }
 
-.upgrade-story__grid {
-  position: absolute;
-  inset: 0;
-  z-index: -3;
-  opacity: .32;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, .055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, .055) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: linear-gradient(90deg, #000, rgba(0, 0, 0, .68) 66%, transparent);
+.upgrade-modal::-webkit-scrollbar {
+  width: 6px;
+  height: 0;
 }
 
-.upgrade-story__orb {
+.upgrade-modal::-webkit-scrollbar-thumb {
+  background: rgba(56, 170, 165, .3);
+  border-radius: 999px;
+}
+
+.upgrade-modal__glow {
   position: absolute;
-  z-index: -2;
+  z-index: -1;
   border-radius: 50%;
   pointer-events: none;
-  filter: blur(1px);
+  filter: blur(4px);
 }
 
-.upgrade-story__orb--one {
-  top: -150px;
-  right: 2%;
-  width: 350px;
-  height: 350px;
-  background: radial-gradient(circle, rgba(220, 232, 226, .30), transparent 68%);
-  animation: upgradeOrbOne 9s ease-in-out infinite;
+.upgrade-modal__glow--mint {
+  width: 300px;
+  height: 300px;
+  inset: -130px -90px auto auto;
+  background: rgba(114, 214, 205, .20);
+  animation: upgradeGlowMint 8s ease-in-out infinite;
 }
 
-.upgrade-story__orb--two {
-  left: -150px;
-  bottom: -190px;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(255, 219, 226, .2), transparent 68%);
-  animation: upgradeOrbTwo 11s ease-in-out infinite;
+.upgrade-modal__glow--rose {
+  width: 235px;
+  height: 235px;
+  inset: auto auto -110px -76px;
+  background: rgba(249, 209, 220, .23);
+  animation: upgradeGlowRose 9s ease-in-out .7s infinite;
 }
 
-.upgrade-story__content {
-  position: relative;
-  z-index: 1;
-  min-height: 0;
-}
-
-.upgrade-story__eyebrow {
-  display: inline-flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, .24);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .11);
-  color: #f1fffd;
-  font-size: .64rem;
-  font-weight: 900;
-  letter-spacing: .13em;
-  text-transform: uppercase;
-  backdrop-filter: blur(12px);
-}
-
-.upgrade-story h1 {
-  max-width: 760px;
-  margin: 18px 0 0;
-  color: #fff;
-  font-size: clamp(2.35rem, 4vw, 4.35rem);
-  font-weight: 540;
-  line-height: .96;
-  letter-spacing: -.058em;
-}
-
-.upgrade-story h1 em {
-  display: block;
-  margin-top: 7px;
-  color: transparent;
-  background: linear-gradient(90deg, #fff, #dff3ef 52%, #f7e5e9);
-  -webkit-background-clip: text;
-  background-clip: text;
-  font-style: normal;
-}
-
-.upgrade-story__content>p {
-  max-width: 680px;
-  margin: 14px 0 0;
-  color: rgba(244, 255, 253, .78);
-  font-size: .88rem;
-  line-height: 1.58;
-}
-
-.upgrade-benefits {
+.upgrade-modal__close {
+  position: absolute;
+  inset-block-start: 18px;
+  inset-inline-end: 18px;
+  z-index: 20;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-  margin-top: 19px;
-}
-
-.upgrade-benefits article {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 9px;
-  align-items: flex-start;
-  min-height: 88px;
-  padding: 11px;
-  border: 1px solid rgba(255, 255, 255, .16);
-  border-radius: 16px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .075));
-  box-shadow: 0 12px 28px rgba(56, 88, 80, .12), inset 0 1px 0 rgba(255, 255, 255, .14);
-  backdrop-filter: blur(13px);
-  transition: transform 200ms ease, background 200ms ease, border-color 200ms ease;
-}
-
-.upgrade-benefits article:hover {
-  transform: translateY(-3px);
-  border-color: rgba(255, 255, 255, .27);
-  background: linear-gradient(145deg, rgba(255, 255, 255, .19), rgba(255, 255, 255, .09));
-}
-
-.upgrade-benefits article>span {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  margin-top: 1px;
+  width: 38px;
+  height: 38px;
   place-items: center;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, .15);
-  color: #e2fffa;
+  border: 1px solid rgba(43, 139, 134, .26);
+  border-radius: 50%;
+  color: #2c5b57;
+  background: rgba(255, 255, 255, .82);
+  box-shadow: 0 8px 20px rgba(49, 102, 97, .08);
+  cursor: pointer;
+  transition: transform .18s ease, background .18s ease, border-color .18s ease;
 }
 
-.upgrade-benefits article>div {
+.upgrade-modal__close:hover {
+  transform: rotate(6deg) scale(1.05);
+  background: #fff;
+  border-color: rgba(43, 139, 134, .45);
+}
+
+.upgrade-modal__hero {
   display: grid;
-  gap: 2px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(245px, .75fr);
+  gap: 22px;
+  align-items: center;
+  padding: 2px 14px 18px 6px;
+}
+
+.upgrade-modal__intro {
   min-width: 0;
 }
 
-.upgrade-benefits small {
-  color: rgba(238, 255, 252, .56);
-  font-size: .52rem;
-  font-weight: 900;
-  letter-spacing: .09em;
-}
-
-.upgrade-benefits strong {
-  color: #fffdfd;
-  font-size: .7rem;
-  line-height: 1.32;
-}
-
-.upgrade-benefits article p {
-  margin: 2px 0 0;
-  color: rgba(241, 255, 252, .67);
-  font-size: .59rem;
-  font-weight: 540;
-  line-height: 1.38;
-}
-
-.upgrade-story__trust {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.upgrade-story__trust span {
+.upgrade-modal__eyebrow {
   display: inline-flex;
-  min-height: 31px;
+  min-height: 29px;
   align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, .17);
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid rgba(52, 167, 161, .35);
   border-radius: 999px;
-  background: rgba(255, 255, 255, .09);
-  color: rgba(249, 255, 254, .78);
-  font-size: .61rem;
-  font-weight: 760;
-}
-
-.upgrade-checkout {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  overflow: hidden;
-  padding: clamp(15px, 1.7vw, 22px);
-  border: 1px solid var(--upgrade-line);
-  background:
-    radial-gradient(circle at 92% 8%, rgba(169, 190, 180, .18), transparent 28%),
-    radial-gradient(circle at 8% 92%, rgba(246, 219, 224, .18), transparent 24%),
-    linear-gradient(150deg, rgba(255, 255, 255, .99), rgba(253, 250, 249, .98) 58%, rgba(240, 249, 247, .98));
-  box-shadow: 0 26px 66px rgba(72, 101, 94, .11), inset 0 1px 0 rgba(255, 255, 255, .98);
-}
-
-.upgrade-checkout::after {
-  content: "";
-  position: absolute;
-  right: -85px;
-  bottom: -105px;
-  width: 250px;
-  height: 250px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(79, 185, 180, .10), transparent 68%);
-  pointer-events: none;
-}
-
-.upgrade-checkout>* {
-  position: relative;
-  z-index: 1;
-}
-
-.upgrade-summary-kicker {
-  color: var(--upgrade-eucalyptus);
-  font-size: .63rem;
+  background: linear-gradient(180deg, rgba(244, 255, 253, .96), rgba(235, 249, 246, .9));
+  color: #258b85;
+  font-size: .62rem;
   font-weight: 900;
-  letter-spacing: .13em;
+  letter-spacing: .08em;
   text-transform: uppercase;
 }
 
-.upgrade-checkout h2 {
-  margin: 5px 0 4px;
-  color: var(--upgrade-ink);
-  font-size: clamp(1.55rem, 2.2vw, 2.05rem);
-  letter-spacing: -.045em;
+.upgrade-modal__intro h1 {
+  max-width: 660px;
+  margin: 9px 0 0;
+  color: #28514d;
+  font-size: clamp(2rem, 3.65vw, 3.25rem);
+  font-weight: 700;
+  line-height: .96;
+  letter-spacing: -.05em;
 }
 
-.upgrade-summary-copy {
-  margin: 0 0 9px;
-  color: var(--upgrade-muted);
-  font-size: .69rem;
-  line-height: 1.5;
+.upgrade-modal__intro>p {
+  max-width: 650px;
+  margin: 9px 0 0;
+  color: #738681;
+  font-size: .78rem;
+  line-height: 1.55;
+}
+
+.upgrade-mini-benefits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 13px;
+}
+
+.upgrade-mini-benefit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 4px 9px 4px 6px;
+  border: 1px solid rgba(74, 152, 146, .15);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .7);
+  color: #526964;
+  box-shadow: 0 7px 17px rgba(56, 99, 94, .045);
+}
+
+.upgrade-mini-benefit>span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 8px;
+  color: #2e9e98;
+  background: linear-gradient(145deg, #e7f8f4, #fff0f3);
+}
+
+.upgrade-mini-benefit {
+  transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+}
+
+.upgrade-mini-benefit:hover {
+  border-color: rgba(64, 170, 162, .3);
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 10px 22px rgba(56, 99, 94, .075);
+}
+
+.upgrade-mini-benefit strong {
+  font-size: .63rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.upgrade-premium-visual {
+  position: relative;
+  min-height: 176px;
+  display: grid;
+  place-items: center;
+}
+
+.upgrade-premium-visual::before {
+  content: '';
+  position: absolute;
+  width: 205px;
+  height: 108px;
+  bottom: 8px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(80, 176, 167, .18), transparent 68%);
+  filter: blur(5px);
+  animation: upgradeShadowBreath 4.4s ease-in-out infinite;
+}
+
+.upgrade-premium-visual::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  width: 210px;
+  height: 112px;
+  border: 1px dashed rgba(82, 188, 178, .2);
+  border-radius: 50%;
+  transform: rotate(-12deg);
+  animation: upgradeOrbit 12s linear infinite;
+}
+
+.upgrade-premium-visual__platform {
+  position: absolute;
+  z-index: 2;
+  width: 174px;
+  height: 46px;
+  bottom: 17px;
+  border: 1px solid rgba(116, 213, 204, .3);
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 34%, rgba(255, 255, 255, .96) 0 29%, rgba(203, 244, 238, .9) 30% 51%, rgba(116, 211, 202, .42) 52% 66%, transparent 67%),
+    linear-gradient(180deg, rgba(240, 255, 252, .96), rgba(168, 226, 218, .54));
+  box-shadow:
+    0 12px 22px rgba(61, 154, 146, .12),
+    0 5px 0 rgba(104, 202, 193, .10);
+  transform: perspective(220px) rotateX(56deg);
+  animation: upgradePlatformPulse 4.4s ease-in-out infinite;
+}
+
+.upgrade-premium-visual__card {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  width: 126px;
+  height: 126px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .9);
+  border-radius: 29px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, .3), transparent 30%),
+    linear-gradient(145deg, #8fddd5, #44b4ad 55%, #2d9690);
+  box-shadow:
+    0 23px 42px rgba(42, 147, 140, .25),
+    0 0 34px rgba(113, 220, 210, .16),
+    inset 0 1px 0 rgba(255, 255, 255, .64);
+  transform: rotate(7deg);
+  animation: upgradeVisualFloat 4.4s ease-in-out infinite;
+}
+
+.upgrade-premium-visual__card::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 21px;
+}
+
+.upgrade-premium-visual__coin {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border: 3px solid #fff8dc;
+  border-radius: 50%;
+  color: #b6812c;
+  background: linear-gradient(145deg, #ffe8a6, #f7c86f);
+  box-shadow: 0 10px 18px rgba(169, 122, 45, .18), inset 0 1px 4px rgba(255, 255, 255, .75);
+}
+
+.upgrade-premium-visual__coin--one {
+  width: 46px;
+  height: 46px;
+  left: 24px;
+  bottom: 17px;
+  transform: rotate(-12deg);
+  animation: upgradeCoinOne 3.8s ease-in-out infinite;
+}
+
+.upgrade-premium-visual__coin--two {
+  width: 37px;
+  height: 37px;
+  left: 58px;
+  bottom: 4px;
+  transform: rotate(9deg);
+  animation: upgradeCoinTwo 4.2s ease-in-out .35s infinite;
+}
+
+.upgrade-premium-visual__spark {
+  position: absolute;
+  z-index: 5;
+  color: #f5c96b;
+  font-size: 24px;
+  animation: upgradeTwinkle 2.6s ease-in-out infinite;
+}
+
+.upgrade-premium-visual__spark--one {
+  top: 11px;
+  left: 35px;
+}
+
+.upgrade-premium-visual__spark--two {
+  top: 38px;
+  right: 18px;
+  font-size: 18px;
+  animation-delay: .6s;
+}
+
+.upgrade-premium-visual__spark--three {
+  bottom: 30px;
+  right: 45px;
+  font-size: 14px;
+  color: #f0aebc;
+  animation-delay: 1.1s;
+}
+
+.upgrade-premium-visual__leaf {
+  position: absolute;
+  z-index: 1;
+  width: 34px;
+  height: 73px;
+  border-radius: 100% 0 100% 0;
+  background: linear-gradient(160deg, #bce8db, #72c3b4);
+  opacity: .72;
+}
+
+.upgrade-premium-visual__leaf--one {
+  left: 30px;
+  top: 65px;
+  transform-origin: 70% 90%;
+  animation: upgradeLeafOne 5.2s ease-in-out infinite;
+}
+
+.upgrade-premium-visual__leaf--two {
+  right: 27px;
+  top: 75px;
+  transform-origin: 30% 90%;
+  animation: upgradeLeafTwo 5.5s ease-in-out .4s infinite;
+}
+
+.upgrade-amount-card,
+.upgrade-payment-card,
+.upgrade-summary-card {
+  border: 1px solid var(--upgrade-line);
+  background: rgba(255, 255, 255, .76);
+  box-shadow: 0 14px 34px rgba(60, 101, 97, .07), inset 0 1px 0 #fff;
+  backdrop-filter: blur(16px);
+}
+
+.upgrade-amount-card {
+  padding: 15px 17px;
+  border-radius: 20px;
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.upgrade-amount-card:hover {
+  border-color: rgba(64, 165, 158, .28);
+  box-shadow: 0 18px 38px rgba(60, 101, 97, .085), inset 0 1px 0 #fff;
+}
+
+.upgrade-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+
+.upgrade-section-heading>div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.upgrade-section-heading h2 {
+  margin: 0;
+  color: #324f4b;
+  font-size: 1rem;
+  font-weight: 850;
+  letter-spacing: -.02em;
+}
+
+.upgrade-section-heading>small {
+  color: #98a6a3;
+  font-size: .64rem;
+}
+
+.upgrade-section-heading--compact {
+  align-items: center;
+}
+
+.upgrade-section-heading--compact>small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.upgrade-step {
+  display: grid;
+  min-width: 28px;
+  height: 22px;
+  place-items: center;
+  border-radius: 8px;
+  color: #2b9690;
+  background: #e8f7f4;
+  font-size: .58rem;
+  font-weight: 900;
+}
+
+.upgrade-amount-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 205px;
+  gap: 18px;
+  align-items: end;
 }
 
 .upgrade-quantity {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: 9px;
 }
 
 .upgrade-quantity button {
   position: relative;
-  display: grid;
-  min-height: 52px;
-  place-items: center;
-  align-content: center;
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid rgba(68, 111, 104, .14);
-  border-radius: 15px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(246, 251, 249, .92));
-  color: #344844;
+  min-height: 54px;
+  border: 1px solid rgba(79, 143, 138, .17);
+  border-radius: 14px;
+  color: #4a5c59;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(249, 252, 251, .94));
   cursor: pointer;
-  box-shadow:
-    0 8px 20px rgba(54, 91, 85, .045),
-    inset 0 1px 0 rgba(255, 255, 255, .96);
-  transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    background 180ms ease,
-    color 180ms ease;
-}
-
-.upgrade-quantity button::after {
-  content: "";
-  position: absolute;
-  inset: auto 12px 0;
-  height: 2px;
-  border-radius: 999px 999px 0 0;
-  background: transparent;
-}
-
-.upgrade-quantity button strong,
-.upgrade-quantity button small {
-  display: block;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease, transform .18s ease;
 }
 
 .upgrade-quantity button strong {
+  display: block;
   font-size: 1rem;
-  font-weight: 820;
-  letter-spacing: -.025em;
+  font-weight: 880;
+  line-height: 1;
 }
 
 .upgrade-quantity button small {
-  margin-top: 1px;
-  color: #8a9894;
-  font-size: .54rem;
-  font-weight: 650;
-}
-
-.upgrade-quantity__status {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  display: grid;
-  width: 17px;
-  height: 17px;
-  place-items: center;
-  color: #3e918a;
+  display: block;
+  margin-top: 5px;
+  color: #9aa8a5;
+  font-size: .58rem;
+  font-weight: 700;
 }
 
 .upgrade-quantity button.selected {
-  border-color: rgba(47, 129, 124, .42);
-  background:
-    radial-gradient(circle at 85% 12%, rgba(137, 210, 204, .18), transparent 34%),
-    linear-gradient(145deg, #f5faf7, #fff9f9);
-  color: #287f7a;
+  border-color: #45aaa4;
+  color: #258b85;
+  background: linear-gradient(145deg, #effbf8, #fffafa);
   box-shadow:
-    0 12px 26px rgba(45, 126, 120, .105),
-    inset 0 1px 0 rgba(255, 255, 255, .98);
-}
-
-.upgrade-quantity button.selected::after {
-  background: linear-gradient(90deg, #5eb9b2, #8bd0ca);
+    0 10px 24px rgba(54, 161, 154, .12),
+    0 0 0 3px rgba(69, 170, 164, .055),
+    inset 0 -2px 0 rgba(57, 171, 164, .55);
+  animation: upgradeSelectedBreath 2.8s ease-in-out infinite;
 }
 
 .upgrade-quantity button:disabled {
@@ -373,107 +485,152 @@
   cursor: not-allowed;
 }
 
-.upgrade-custom-quantity {
+.upgrade-quantity__status {
+  position: absolute;
+  top: 7px;
+  right: 7px;
   display: grid;
-  gap: 7px;
-  margin-top: 7px;
+  color: #2c9e98;
 }
 
-.upgrade-custom-quantity>div:first-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+[dir="rtl"] .upgrade-quantity__status {
+  right: auto;
+  left: 7px;
 }
 
-.upgrade-custom-quantity>div:first-child span {
-  color: #344a47;
-  font-size: .7rem;
-  font-weight: 820;
-}
-
-.upgrade-custom-quantity>div:first-child small {
-  color: #929c99;
-  font-size: .57rem;
+.upgrade-custom-quantity>span {
+  display: block;
+  margin-bottom: 7px;
+  color: #60726e;
+  font-size: .64rem;
+  font-weight: 800;
 }
 
 .upgrade-custom-quantity__control {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 34px;
-  gap: 7px;
-  align-items: center;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  height: 45px;
+  overflow: hidden;
+  border: 1px solid rgba(51, 159, 153, .35);
+  border-radius: 14px;
+  background: #fff;
 }
 
 .upgrade-custom-quantity__control button {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid rgba(47, 129, 124, .14);
-  border-radius: 12px;
-  background: #eef4f1;
-  color: var(--upgrade-eucalyptus);
+  border: 0;
+  color: #299992;
+  background: #eff9f7;
   cursor: pointer;
+}
+
+.upgrade-custom-quantity__control button:disabled {
+  color: #bcc9c6;
+  cursor: not-allowed;
 }
 
 .upgrade-custom-quantity__control input {
   width: 100%;
-  min-height: 34px;
-  border: 1px solid rgba(47, 129, 124, .2);
-  border-radius: 12px;
-  background: #fffdfc;
-  color: #2b403d;
-  text-align: center;
+  min-width: 0;
+  border: 0;
   outline: 0;
-}
-
-.upgrade-custom-quantity__control input:focus {
-  border-color: var(--upgrade-eucalyptus);
-  box-shadow: 0 0 0 4px rgba(47, 129, 124, .09);
-}
-
-.upgrade-section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 8px 0 6px;
-}
-
-.upgrade-section-title span {
-  color: #334945;
-  font-size: .71rem;
+  text-align: center;
+  color: #38544f;
+  background: #fff;
   font-weight: 850;
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
-.upgrade-section-title small {
-  color: #929b98;
-  font-size: .56rem;
+.upgrade-custom-quantity__control input::-webkit-inner-spin-button,
+.upgrade-custom-quantity__control input::-webkit-outer-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.upgrade-modal__bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(285px, .75fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.upgrade-payment-card,
+.upgrade-summary-card {
+  padding: 14px;
+  border-radius: 19px;
+}
+
+.upgrade-currency-preference {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 50px;
+  padding: 6px 9px;
+  border: 1px solid rgba(62, 143, 137, .14);
+  border-radius: 15px;
+  background: rgba(249, 253, 252, .95);
+}
+
+.upgrade-currency-preference__icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 12px;
+  color: #2a9a94;
+  background: linear-gradient(145deg, #e7f8f4, #fff1f3);
+}
+
+.upgrade-currency-preference div {
+  min-width: 0;
+}
+
+.upgrade-currency-preference small {
+  display: block;
+  color: #8b9a97;
+  font-size: .59rem;
+}
+
+.upgrade-currency-preference strong {
+  display: block;
+  margin-top: 2px;
+  color: #304f4b;
+  font-size: .82rem;
+}
+
+.upgrade-currency-preference a {
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: #258c87;
+  background: #fff;
+  font-size: .62rem;
+  font-weight: 850;
+  text-decoration: none;
+  box-shadow: 0 6px 14px rgba(56, 94, 90, .06);
 }
 
 .upgrade-methods {
-  display: grid;
-  gap: 7px;
+  margin-top: 10px;
 }
 
 .upgrade-methods label {
-  position: relative;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 23px;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 58px;
-  padding: 8px 10px;
-  border: 1px solid rgba(47, 129, 124, .13);
-  border-radius: 16px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(247, 252, 251, .88));
+  min-height: 60px;
+  padding: 6px 9px;
+  border: 1px solid rgba(62, 143, 137, .16);
+  border-radius: 15px;
+  background: #fff;
   cursor: pointer;
-  box-shadow: 0 9px 22px rgba(53, 106, 102, .045);
 }
 
 .upgrade-methods label.selected {
-  border-color: rgba(47, 129, 124, .48);
-  background: linear-gradient(145deg, #eef5f2, #fff6f7);
-  box-shadow: 0 13px 28px rgba(45, 126, 120, .12);
+  border-color: rgba(43, 157, 150, .58);
+  box-shadow: 0 9px 20px rgba(48, 150, 143, .08);
 }
 
 .upgrade-methods input {
@@ -484,243 +641,313 @@
 
 .upgrade-methods__icon {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   place-items: center;
-  border-radius: 12px;
-  background: linear-gradient(145deg, #e8f0ec, #fbecef);
-  color: var(--upgrade-eucalyptus);
+  border-radius: 11px;
+  color: #2d9993;
+  background: linear-gradient(145deg, #eef9f7, #fff0f3);
 }
 
 .upgrade-methods__copy {
-  display: grid;
-  gap: 3px;
+  min-width: 0;
 }
 
 .upgrade-methods__copy>span {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  flex-wrap: wrap;
 }
 
 .upgrade-methods__copy b {
-  color: #304541;
-  font-size: .77rem;
+  color: #344f4b;
+  font-size: .72rem;
 }
 
 .upgrade-methods__copy small {
-  display: inline-flex;
-  min-height: 19px;
-  align-items: center;
+  padding: 3px 6px;
   border-radius: 999px;
-  padding: 0 7px;
-  background: #eaf2ee;
-  color: var(--upgrade-eucalyptus-dark);
-  font-size: .49rem;
-  font-weight: 850;
+  color: #21867f;
+  background: #e6f6f3;
+  font-size: .48rem;
+  font-weight: 900;
   text-transform: uppercase;
 }
 
 .upgrade-methods__copy em {
-  color: #818d89;
-  font-size: .63rem;
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #91a09d;
+  font-size: .56rem;
   font-style: normal;
-  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .upgrade-methods__check {
+  color: #2faaa3;
+}
+
+.upgrade-summary-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.upgrade-summary-card__title>span {
   display: grid;
-  width: 23px;
-  height: 23px;
+  width: 30px;
+  height: 30px;
   place-items: center;
-  border-radius: 8px;
-  color: #fff;
+  border-radius: 10px;
+  color: #d6a54c;
+  background: #fff7df;
 }
 
-.upgrade-methods label.selected .upgrade-methods__check {
-  background: linear-gradient(135deg, #31938e, #63c2bc);
-  box-shadow: 0 7px 17px rgba(39, 111, 105, .2);
+.upgrade-summary-card__title h2 {
+  margin: 0;
+  color: #334f4b;
+  font-size: .88rem;
 }
 
-.upgrade-activation-fee {
+.upgrade-summary-card__rows {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 9px;
-  align-items: flex-start;
-  margin-top: 0;
-  padding: 8px 9px;
-  border: 1px solid rgba(47, 129, 124, .14);
-  border-radius: 13px;
-  background: linear-gradient(145deg, #f1f5f3, #fff7f8);
+  gap: 8px;
 }
 
-.upgrade-activation-fee>span {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: 11px;
-  background: #e8efec;
-  color: var(--upgrade-eucalyptus);
+.upgrade-summary-card__rows>div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
 }
 
-.upgrade-activation-fee>div {
-  display: grid;
-  gap: 3px;
+.upgrade-summary-card__rows span {
+  color: #84938f;
+  font-size: .65rem;
 }
 
-.upgrade-activation-fee strong {
-  color: #314743;
-  font-size: .7rem;
+.upgrade-summary-card__rows strong {
+  color: #405b56;
+  font-size: .67rem;
+  text-align: end;
 }
 
-.upgrade-activation-fee small {
-  color: #7f8c88;
-  font-size: .59rem;
-  line-height: 1.38;
-}
-
-.upgrade-activation-fee.is-inactive {
-  border-color: rgba(47, 129, 124, .16);
-  background: linear-gradient(145deg, #f0f4f2, #fafcfb);
-}
-
-.upgrade-activation-fee.is-inactive>span {
-  background: #e6eeea;
-  color: #237a67;
-}
-
-.upgrade-order-summary {
+.upgrade-summary-card__total {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 7px 0 0;
-  padding: 8px 10px;
-  border: 1px solid rgba(47, 129, 124, .13);
-  border-radius: 13px;
-  background: linear-gradient(135deg, #f1f6f3, #fff7f8);
+  margin-top: 11px;
+  padding-top: 13px;
+  border-top: 1px dashed rgba(78, 139, 134, .25);
 }
 
-.upgrade-order-summary>div {
-  display: grid;
-  gap: 3px;
+.upgrade-summary-card__total span {
+  color: #364e4a;
+  font-size: .75rem;
+  font-weight: 800;
 }
 
-.upgrade-order-summary span {
-  color: #788783;
-  font-size: .65rem;
-}
-
-.upgrade-order-summary>div>small {
-  max-width: 260px;
-  color: #929c99;
-  font-size: .52rem;
-  line-height: 1.33;
-}
-
-.upgrade-order-summary strong {
-  flex: none;
-  color: var(--upgrade-eucalyptus-dark);
-  font-size: .76rem;
+.upgrade-summary-card__total strong {
+  color: #248c86;
+  font-size: 1.02rem;
 }
 
 .upgrade-error {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin: 9px 0 0;
-  padding: 9px 10px 9px 12px;
-  border: 1px solid rgba(192, 57, 86, .13);
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(205, 96, 114, .22);
   border-radius: 13px;
-  background: linear-gradient(135deg, #fff3f5, #fff8f8);
-  color: #a84558;
-  font-size: .64rem;
-  line-height: 1.4;
-}
-
-.upgrade-error span {
-  min-width: 0;
+  color: #a64f60;
+  background: #fff4f6;
+  font-size: .65rem;
 }
 
 .upgrade-error button {
   display: inline-flex;
-  flex: none;
-  min-height: 28px;
   align-items: center;
   gap: 5px;
-  padding: 0 9px;
-  border: 1px solid rgba(168, 69, 88, .16);
-  border-radius: 9px;
-  background: rgba(255, 255, 255, .7);
-  color: #9b4355;
-  font-size: .57rem;
-  font-weight: 850;
-  cursor: pointer;
-}
-
-.upgrade-error button:disabled {
-  opacity: .55;
-  cursor: wait;
-}
-
-.upgrade-checkout-button {
-  display: inline-flex;
-  width: 100%;
-  min-height: 42px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 7px;
   border: 0;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #287f7a, #43a7a1 58%, #77cbc6);
-  color: #fff;
-  font-weight: 900;
+  border-radius: 9px;
+  padding: 7px 9px;
+  color: #99505d;
+  background: #fff;
   cursor: pointer;
-  box-shadow: 0 14px 30px rgba(45, 151, 145, .22), inset 0 1px 0 rgba(255, 255, 255, .2);
+  font-weight: 800;
 }
 
-.upgrade-checkout-button:disabled {
-  opacity: .62;
-  cursor: wait;
+.upgrade-modal__footer {
+  display: grid;
+  grid-template-columns: minmax(0, .82fr) minmax(340px, 1.18fr);
+  gap: 18px;
+  align-items: center;
+  margin-top: 14px;
 }
 
-.upgrade-secure {
+.upgrade-secure-note {
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 7px;
-  margin-top: 5px;
-  color: #82908c;
+  align-items: center;
+  gap: 9px;
+  color: #2eaaa3;
+  padding-inline-start: 4px;
 }
 
-.upgrade-secure>svg {
-  flex: none;
-  margin-top: 1px;
-  color: var(--upgrade-eucalyptus);
-}
-
-.upgrade-secure>span {
+.upgrade-secure-note>span {
   display: grid;
   gap: 2px;
 }
 
-.upgrade-secure strong {
-  color: #5f706c;
-  font-size: .63rem;
+.upgrade-secure-note strong {
+  color: #5f7470;
+  font-size: .66rem;
 }
 
-.upgrade-secure small {
-  color: #939d9a;
-  font-size: .56rem;
+.upgrade-secure-note small {
+  color: #9aa7a4;
+  font-size: .55rem;
   line-height: 1.35;
 }
 
+.upgrade-checkout-button {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(100deg, #238f89, #45b7b0 58%, #83d6cf);
+  box-shadow: 0 14px 28px rgba(43, 157, 150, .2), inset 0 1px 0 rgba(255, 255, 255, .23);
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 850;
+  transition: filter .18s ease, box-shadow .18s ease;
+}
+
+.upgrade-checkout-button:hover {
+  filter: saturate(1.06) brightness(1.02);
+  box-shadow: 0 17px 32px rgba(43, 157, 150, .26);
+}
+
+.upgrade-checkout-button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
 .upgrade-spin {
-  animation: upgradeSpin .85s linear infinite;
+  animation: upgradeSpin .8s linear infinite;
+}
+
+[dir="rtl"] .upgrade-modal__hero,
+[dir="rtl"] .upgrade-modal__bottom,
+[dir="rtl"] .upgrade-modal__footer {
+  direction: rtl;
+}
+
+[dir="rtl"] .upgrade-modal__intro,
+[dir="rtl"] .upgrade-payment-card,
+[dir="rtl"] .upgrade-summary-card,
+[dir="rtl"] .upgrade-amount-card {
+  text-align: right;
+}
+
+[dir="rtl"] .upgrade-checkout-button svg:last-child {
+  transform: rotate(180deg);
+}
+
+@keyframes upgradeTwinkle {
+
+  0%,
+  100% {
+    opacity: .45;
+    transform: scale(.85) rotate(0deg);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.12) rotate(12deg);
+  }
+}
+
+@keyframes upgradeVisualFloat {
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(7deg);
+  }
+
+  50% {
+    transform: translateY(-9px) rotate(4deg);
+  }
+}
+
+@keyframes upgradeCoinOne {
+
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(-12deg);
+  }
+
+  50% {
+    transform: translate(-5px, -8px) rotate(-2deg);
+  }
+}
+
+@keyframes upgradeCoinTwo {
+
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(9deg);
+  }
+
+  50% {
+    transform: translate(5px, -6px) rotate(17deg);
+  }
+}
+
+@keyframes upgradeLeafOne {
+
+  0%,
+  100% {
+    transform: rotate(-35deg);
+  }
+
+  50% {
+    transform: rotate(-27deg) translateY(-3px);
+  }
+}
+
+@keyframes upgradeLeafTwo {
+
+  0%,
+  100% {
+    transform: rotate(120deg);
+  }
+
+  50% {
+    transform: rotate(112deg) translateY(-3px);
+  }
+}
+
+@keyframes upgradeOrbit {
+  from {
+    transform: rotate(-12deg);
+  }
+
+  to {
+    transform: rotate(348deg);
+  }
 }
 
 @keyframes upgradeSpin {
@@ -729,1583 +956,412 @@
   }
 }
 
-@keyframes upgradeOrbOne {
+@keyframes upgradeGlowMint {
 
   0%,
   100% {
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: .9;
   }
 
   50% {
-    transform: translateY(16px) scale(1.06);
+    transform: translate3d(-16px, 12px, 0) scale(1.08);
+    opacity: 1;
   }
 }
 
-@keyframes upgradeOrbTwo {
+@keyframes upgradeGlowRose {
 
   0%,
   100% {
-    transform: translateX(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: .88;
   }
 
   50% {
-    transform: translateX(20px) scale(1.07);
+    transform: translate3d(13px, -10px, 0) scale(1.07);
+    opacity: 1;
   }
 }
 
-@media (max-height: 760px) and (min-width: 981px) {
-  .upgrade-page {
-    min-height: 590px;
-    padding-top: 10px;
-    padding-bottom: 12px;
+@keyframes upgradeShadowBreath {
+
+  0%,
+  100% {
+    transform: scale(.94);
+    opacity: .75;
   }
 
-  .upgrade-story,
-  .upgrade-checkout {
-    border-radius: 25px;
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes upgradePlatformPulse {
+
+  0%,
+  100% {
+    transform: perspective(220px) rotateX(56deg) scale(.97);
+    filter: saturate(.96);
   }
 
-  .upgrade-story {
-    padding: 24px 28px;
+  50% {
+    transform: perspective(220px) rotateX(56deg) scale(1.035);
+    filter: saturate(1.08);
+  }
+}
+
+@keyframes upgradeSelectedBreath {
+
+  0%,
+  100% {
+    box-shadow: 0 10px 24px rgba(54, 161, 154, .12), 0 0 0 3px rgba(69, 170, 164, .045), inset 0 -2px 0 rgba(57, 171, 164, .55);
   }
 
-  .upgrade-story h1 {
-    margin-top: 12px;
-    font-size: clamp(2rem, 3.45vw, 3.45rem);
+  50% {
+    box-shadow: 0 13px 28px rgba(54, 161, 154, .16), 0 0 0 5px rgba(69, 170, 164, .075), inset 0 -2px 0 rgba(57, 171, 164, .55);
+  }
+}
+
+@keyframes upgradeButtonShine {
+
+  0%,
+  58% {
+    transform: translateX(0) skewX(-18deg);
+    opacity: 0;
   }
 
-  .upgrade-story__content>p {
-    margin-top: 5px;
+  65% {
+    opacity: .9;
+  }
+
+  88%,
+  100% {
+    transform: translateX(560%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 920px) {
+  .upgrade-purchase-overlay {
+    padding: 14px;
+  }
+
+  .upgrade-modal {
+    width: min(94vw, 820px);
+    padding: 22px 20px;
+    border-radius: 26px;
+  }
+
+  .upgrade-modal__hero {
+    grid-template-columns: 1fr;
+    padding-inline-end: 4px;
+  }
+
+  .upgrade-premium-visual {
+    min-height: 142px;
+  }
+
+  .upgrade-premium-visual__card {
+    width: 108px;
+    height: 108px;
+  }
+
+  .upgrade-amount-row {
+    grid-template-columns: 1fr;
+  }
+
+  .upgrade-modal__bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .upgrade-modal__footer {
+    grid-template-columns: 1fr;
+  }
+
+  .upgrade-secure-note {
+    order: 2;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .upgrade-purchase-overlay {
+    place-items: start center;
+    padding: 10px;
+  }
+
+  .upgrade-modal {
+    width: 100%;
+    max-height: none;
+    min-height: calc(100dvh - 20px);
+    padding: 22px 14px 18px;
+    border-radius: 24px;
+  }
+
+  .upgrade-modal__close {
+    top: 13px;
+    right: 13px;
+    width: 34px;
+    height: 34px;
+  }
+
+  [dir="rtl"] .upgrade-modal__close {
+    right: auto;
+    left: 13px;
+  }
+
+  .upgrade-modal__hero {
+    gap: 8px;
+    padding: 3px 2px 14px;
+  }
+
+  .upgrade-modal__intro h1 {
+    padding-inline-end: 38px;
+    font-size: 2rem;
+  }
+
+  .upgrade-modal__intro>p {
     font-size: .78rem;
   }
 
-  .upgrade-benefits {
-    margin-top: 12px;
-    gap: 7px;
+  .upgrade-mini-benefits {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .upgrade-benefits article {
-    min-height: 72px;
-    padding: 8px 9px;
+  .upgrade-mini-benefit {
+    border-radius: 13px;
   }
 
-  .upgrade-benefits article p {
-    font-size: .53rem;
+  .upgrade-mini-benefit strong {
+    white-space: normal;
+    line-height: 1.2;
   }
 
-  .upgrade-story__trust {
-    margin-top: 8px;
+  .upgrade-premium-visual {
+    display: none;
   }
 
-  .upgrade-checkout {
-    padding: 18px 25px;
+  .upgrade-amount-card,
+  .upgrade-payment-card,
+  .upgrade-summary-card {
+    padding: 14px;
+    border-radius: 18px;
   }
 
-  .upgrade-quantity button {
-    min-height: 52px;
-  }
-
-  .upgrade-section-title {
-    margin-top: 5px;
-  }
-
-  .upgrade-activation-fee,
-  .upgrade-order-summary {
-    margin-top: 7px;
-  }
-
-  .upgrade-checkout-button {
-    min-height: 43px;
-    margin-top: 8px;
-  }
-
-  .upgrade-secure {
-    margin-top: 6px;
-  }
-}
-
-@media (max-width: 980px) {
-  .upgrade-page {
-    height: auto;
-    min-height: 0;
-    overflow: visible;
-    grid-template-columns: 1fr;
-    padding-bottom: 40px;
-  }
-
-  .upgrade-story,
-  .upgrade-checkout {
-    height: auto;
-    min-height: auto;
-  }
-}
-
-@media (max-width: 680px) {
-  .upgrade-page {
-    padding-inline: 13px;
-  }
-
-  .upgrade-story,
-  .upgrade-checkout {
-    padding: 25px 20px;
-    border-radius: 25px;
-  }
-
-  .upgrade-story h1 {
-    font-size: clamp(2.35rem, 13vw, 3.8rem);
-  }
-
-  .upgrade-benefits {
-    grid-template-columns: 1fr;
+  .upgrade-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
   }
 
   .upgrade-quantity {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
 
-
-.upgrade-payment-row {
-  display: grid;
-  grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
-  gap: 7px;
-}
-
-.upgrade-payment-row .upgrade-currency-preference,
-.upgrade-payment-row .upgrade-methods {
-  min-width: 0;
-}
-
-.upgrade-payment-row .upgrade-currency-preference {
-  height: 58px;
-  margin: 0;
-}
-
-.upgrade-payment-row .upgrade-methods label {
-  height: 58px;
-}
-
-.upgrade-pricing-grid {
-  display: grid;
-  grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
-  gap: 7px;
-  margin-top: 7px;
-}
-
-.upgrade-pricing-grid .upgrade-credit-price,
-.upgrade-pricing-grid .upgrade-activation-fee {
-  min-width: 0;
-  height: 70px;
-  margin: 0;
-}
-
-.upgrade-pricing-grid .upgrade-credit-price {
-  align-items: center;
-  padding: 8px 10px;
-}
-
-.upgrade-pricing-grid .upgrade-activation-fee {
-  align-items: center;
-}
-
-.upgrade-pricing-grid .upgrade-activation-fee small {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-}
-
-@media (max-height: 820px) and (min-width: 981px) {
-  .upgrade-page {
-    height: calc(100dvh - 72px);
-    padding-top: 8px;
-    padding-bottom: 9px;
+  .upgrade-currency-preference {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
   }
 
-  .upgrade-checkout {
-    padding: 14px 18px;
-  }
-
-  .upgrade-summary-kicker {
-    font-size: .57rem;
-  }
-
-  .upgrade-checkout h2 {
-    font-size: 1.65rem;
-  }
-
-  .upgrade-summary-copy {
-    margin-bottom: 7px;
-    font-size: .64rem;
-    line-height: 1.4;
-  }
-
-  .upgrade-quantity button {
-    min-height: 47px;
-  }
-
-  .upgrade-custom-quantity {
-    gap: 5px;
-    margin-top: 5px;
-  }
-
-  .upgrade-custom-quantity__control {
-    grid-template-columns: 32px minmax(0, 1fr) 32px;
-  }
-
-  .upgrade-custom-quantity__control button {
-    width: 32px;
-    height: 32px;
-  }
-
-  .upgrade-custom-quantity__control input {
-    min-height: 32px;
-  }
-
-  .upgrade-section-title {
-    margin: 6px 0 5px;
-  }
-
-  .upgrade-payment-row .upgrade-currency-preference,
-  .upgrade-payment-row .upgrade-methods label {
-    height: 54px;
-    min-height: 54px;
-  }
-
-  .upgrade-pricing-grid .upgrade-credit-price,
-  .upgrade-pricing-grid .upgrade-activation-fee {
-    height: 63px;
-  }
-
-  .upgrade-order-summary {
-    min-height: 47px;
-    margin-top: 6px;
+  .upgrade-methods__copy em {
+    white-space: normal;
   }
 
   .upgrade-checkout-button {
-    min-height: 39px;
-    margin-top: 6px;
-  }
-
-  .upgrade-secure {
-    margin-top: 4px;
+    width: 100%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .upgrade-story__orb {
+
+  .upgrade-premium-visual__spark,
+  .upgrade-premium-visual__card,
+  .upgrade-premium-visual__coin,
+  .upgrade-premium-visual__leaf,
+  .upgrade-premium-visual__platform,
+  .upgrade-premium-visual::before,
+  .upgrade-premium-visual::after,
+  .upgrade-modal__glow,
+  .upgrade-quantity button.selected,
+  .upgrade-checkout-button::after,
+  .upgrade-spin {
     animation: none !important;
   }
-
-  .upgrade-benefits article,
-  .upgrade-quantity button,
-  .upgrade-methods label,
-  .upgrade-checkout-button {
-    transition: none !important;
-  }
 }
 
-
-.upgrade-currency-preference {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  padding: 7px 8px;
-  border: 1px solid rgba(57, 143, 135, .16);
-  border-radius: 15px;
-  background: linear-gradient(145deg, rgba(238, 249, 245, .78), rgba(255, 249, 250, .78));
+html.vox-user-dark .upgrade-purchase-overlay {
+  background: rgba(5, 15, 13, .72);
 }
 
-.upgrade-currency-preference__icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 10px;
-  background: rgba(73, 172, 163, .10);
-  color: #388b84;
+html.vox-user-dark .upgrade-modal {
+  color: #eaf7f4;
+  border-color: rgba(173, 226, 216, .12);
+  background:
+    radial-gradient(circle at 84% 5%, rgba(56, 153, 145, .13), transparent 24%),
+    radial-gradient(circle at 8% 88%, rgba(161, 79, 103, .11), transparent 24%),
+    linear-gradient(145deg, rgba(17, 31, 27, .99), rgba(14, 26, 23, .99) 58%, rgba(12, 31, 27, .99));
+  box-shadow: 0 38px 100px rgba(0, 0, 0, .46), inset 0 1px 0 rgba(255, 255, 255, .035);
 }
 
-.upgrade-currency-preference > div {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
+html.vox-user-dark .upgrade-premium-visual__platform {
+  border-color: rgba(105, 203, 193, .16);
+  background:
+    radial-gradient(ellipse at 50% 34%, rgba(30, 61, 54, .9) 0 29%, rgba(33, 83, 74, .78) 30% 51%, rgba(62, 141, 130, .32) 52% 66%, transparent 67%),
+    linear-gradient(180deg, rgba(39, 84, 74, .72), rgba(22, 53, 47, .56));
+  box-shadow: 0 12px 25px rgba(0, 0, 0, .22), 0 5px 0 rgba(60, 130, 121, .08);
 }
 
-.upgrade-currency-preference small {
-  color: #8a9793;
-  font-size: .56rem;
-  font-weight: 700;
+html.vox-user-dark .upgrade-modal__close {
+  color: #cdeee8;
+  border-color: rgba(117, 211, 200, .18);
+  background: rgba(28, 47, 42, .88);
 }
 
-.upgrade-currency-preference strong {
-  color: #31504b;
-  font-size: .77rem;
-  font-weight: 900;
+html.vox-user-dark .upgrade-modal__eyebrow {
+  color: #8fddd5;
+  border-color: rgba(103, 205, 194, .25);
+  background: rgba(31, 65, 58, .66);
 }
 
-.upgrade-currency-preference p {
-  margin: 1px 0 0;
-  color: #86928f;
-  font-size: .56rem;
+html.vox-user-dark .upgrade-modal__intro h1,
+html.vox-user-dark .upgrade-section-heading h2,
+html.vox-user-dark .upgrade-summary-card__title h2,
+html.vox-user-dark .upgrade-summary-card__total span,
+html.vox-user-dark .upgrade-currency-preference strong,
+html.vox-user-dark .upgrade-methods__copy b {
+  color: #edf8f5;
 }
 
-.upgrade-currency-preference a {
-  padding: 7px 9px;
-  border-radius: 10px;
-  color: #3d8b84;
-  background: rgba(255, 255, 255, .72);
-  font-size: .56rem;
-  font-weight: 850;
-  text-decoration: none;
-  white-space: nowrap;
+html.vox-user-dark .upgrade-modal__intro>p,
+html.vox-user-dark .upgrade-section-heading>small,
+html.vox-user-dark .upgrade-summary-card__rows span,
+html.vox-user-dark .upgrade-secure-note small,
+html.vox-user-dark .upgrade-currency-preference small,
+html.vox-user-dark .upgrade-methods__copy em {
+  color: #8ea49f;
 }
 
-.upgrade-credit-price {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid rgba(68, 130, 121, .12);
-  border-radius: 14px;
-  background: rgba(247, 251, 249, .78);
+html.vox-user-dark .upgrade-mini-benefit,
+html.vox-user-dark .upgrade-amount-card,
+html.vox-user-dark .upgrade-payment-card,
+html.vox-user-dark .upgrade-summary-card,
+html.vox-user-dark .upgrade-currency-preference,
+html.vox-user-dark .upgrade-methods label,
+html.vox-user-dark .upgrade-quantity button {
+  border-color: rgba(112, 187, 178, .14);
+  background: rgba(25, 43, 38, .86);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
 }
 
-.upgrade-credit-price > div {
-  display: grid;
-  gap: 2px;
+html.vox-user-dark .upgrade-mini-benefit {
+  color: #bfd1cd;
 }
 
-.upgrade-credit-price span {
-  color: #3b504b;
-  font-size: .67rem;
-  font-weight: 850;
+html.vox-user-dark .upgrade-mini-benefit>span,
+html.vox-user-dark .upgrade-currency-preference__icon,
+html.vox-user-dark .upgrade-methods__icon,
+html.vox-user-dark .upgrade-step {
+  color: #77d4ca;
+  background: rgba(55, 128, 118, .17);
 }
 
-.upgrade-credit-price small {
-  color: #8c9895;
-  font-size: .55rem;
+html.vox-user-dark .upgrade-quantity button {
+  color: #c8d8d4;
 }
 
-.upgrade-credit-price strong {
-  flex: none;
-  color: #2d8780;
-  font-size: .72rem;
-  font-weight: 900;
+html.vox-user-dark .upgrade-quantity button small {
+  color: #829792;
 }
 
-@media (max-width: 680px) {
-  .upgrade-currency-preference {
-    grid-template-columns: 32px minmax(0, 1fr);
-  }
-
-  .upgrade-currency-preference a {
-    grid-column: 2;
-    justify-self: start;
-  }
+html.vox-user-dark .upgrade-quantity button.selected,
+html.vox-user-dark .upgrade-methods label.selected {
+  color: #91e2da;
+  border-color: rgba(85, 196, 185, .55);
+  background: linear-gradient(145deg, rgba(34, 75, 67, .9), rgba(32, 48, 44, .92));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .15), inset 0 -2px 0 rgba(83, 196, 185, .35);
 }
 
-.upgrade-page {
-  box-sizing: border-box;
-  overflow: hidden;
+html.vox-user-dark .upgrade-custom-quantity>span,
+html.vox-user-dark .upgrade-summary-card__rows strong,
+html.vox-user-dark .upgrade-secure-note strong {
+  color: #bdcfca;
 }
 
-.upgrade-story,
-.upgrade-checkout {
-  box-sizing: border-box;
-  overflow: hidden;
+html.vox-user-dark .upgrade-custom-quantity__control {
+  border-color: rgba(91, 196, 185, .28);
+  background: #172a25;
 }
 
-.upgrade-checkout {
-  justify-content: flex-start;
-  padding: clamp(18px, 1.8vw, 24px);
+html.vox-user-dark .upgrade-custom-quantity__control button {
+  color: #70d2c8;
+  background: #203b34;
 }
 
-.upgrade-summary-kicker {
-  font-size: .6rem;
+html.vox-user-dark .upgrade-custom-quantity__control input {
+  color: #edf8f5;
+  background: #172a25;
 }
 
-.upgrade-checkout h2 {
-  margin: 5px 0 5px;
-  font-size: clamp(1.65rem, 2vw, 2.05rem);
+html.vox-user-dark .upgrade-currency-preference a {
+  color: #8fddd5;
+  background: rgba(40, 73, 65, .85);
 }
 
-.upgrade-summary-copy {
-  margin: 0 0 10px;
-  font-size: .68rem;
-  line-height: 1.45;
+html.vox-user-dark .upgrade-methods__copy small {
+  color: #83d9d0;
+  background: rgba(53, 126, 116, .24);
 }
 
-.upgrade-quantity {
-  gap: 8px;
+html.vox-user-dark .upgrade-summary-card__title>span {
+  color: #e5bb65;
+  background: rgba(151, 110, 39, .17);
 }
 
-.upgrade-quantity button {
-  min-height: 54px;
+html.vox-user-dark .upgrade-summary-card__total {
+  border-top-color: rgba(122, 180, 172, .18);
 }
 
-.upgrade-custom-quantity {
-  grid-template-columns: minmax(150px, .72fr) minmax(260px, 1.28fr);
-  align-items: end;
-  gap: 12px;
-  margin-top: 8px;
-}
+/* Buy More Credits — compact premium top-up */
 
-.upgrade-custom-quantity > div:first-child {
-  display: grid;
-  gap: 2px;
-  align-content: center;
-  justify-content: stretch;
-}
-
-.upgrade-custom-quantity > div:first-child small {
-  line-height: 1.3;
-}
 
 .upgrade-custom-quantity__control {
-  grid-template-columns: 36px minmax(0, 1fr) 36px;
-  gap: 8px;
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
 }
 
-.upgrade-custom-quantity__control button {
-  width: 36px;
-  height: 36px;
+.upgrade-custom-quantity__control:focus-within {
+  border-color: rgba(47, 161, 154, .58);
+  box-shadow: 0 10px 24px rgba(47, 141, 135, .11), 0 0 0 3px rgba(72, 188, 179, .06);
+  transform: translateY(-1px);
 }
 
-.upgrade-custom-quantity__control input {
-  min-height: 36px;
+.upgrade-payment-card,
+.upgrade-summary-card {
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
 }
 
-.upgrade-section-title {
-  margin: 10px 0 6px;
-}
-
-.upgrade-payment-stack {
-  display: grid;
-  gap: 8px;
-}
-
-.upgrade-payment-stack .upgrade-currency-preference,
-.upgrade-payment-stack .upgrade-methods,
-.upgrade-payment-stack .upgrade-methods label {
-  min-width: 0;
-}
-
-.upgrade-payment-stack .upgrade-currency-preference {
-  min-height: 52px;
-  margin: 0;
-  padding: 8px 10px;
-}
-
-.upgrade-payment-stack .upgrade-currency-preference p {
-  margin: 0;
-  white-space: normal;
-}
-
-.upgrade-payment-stack .upgrade-methods label {
-  min-height: 62px;
-  height: auto;
-  padding: 9px 12px;
-}
-
-.upgrade-pricing-grid {
-  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.upgrade-pricing-grid .upgrade-credit-price,
-.upgrade-pricing-grid .upgrade-activation-fee {
-  min-width: 0;
-  min-height: 66px;
-  height: auto;
-  margin: 0;
-}
-
-.upgrade-credit-price {
-  padding: 10px 12px;
-}
-
-.upgrade-credit-price > div {
-  min-width: 0;
-}
-
-.upgrade-credit-price strong {
-  font-size: .75rem;
-  white-space: nowrap;
-}
-
-.upgrade-activation-fee {
-  align-items: center;
-  padding: 9px 11px;
-}
-
-.upgrade-activation-fee small {
-  display: block;
-  overflow: visible;
-  -webkit-line-clamp: unset;
-  line-clamp: unset;
-}
-
-.upgrade-order-summary {
-  min-height: 52px;
-  margin-top: 8px;
-  padding: 9px 12px;
+.upgrade-payment-card:hover,
+.upgrade-summary-card:hover {
+  border-color: rgba(64, 165, 158, .26);
+  box-shadow: 0 18px 38px rgba(60, 101, 97, .085), inset 0 1px 0 #fff;
 }
 
 .upgrade-checkout-button {
-  min-height: 45px;
-  margin-top: 8px;
+  position: relative;
+  overflow: hidden;
 }
 
-.upgrade-secure {
-  margin-top: 7px;
-}
-
-@media (max-height: 820px) and (min-width: 981px) {
-  .upgrade-page {
-    padding-top: 8px;
-    padding-bottom: 8px;
-  }
-
-  .upgrade-story {
-    padding: 25px 30px;
-  }
-
-  .upgrade-story__eyebrow {
-    min-height: 31px;
-  }
-
-  .upgrade-story h1 {
-    margin-top: 12px;
-    font-size: clamp(2.2rem, 3.45vw, 3.5rem);
-  }
-
-  .upgrade-story__content > p {
-    margin-top: 7px;
-    font-size: .78rem;
-    line-height: 1.45;
-  }
-
-  .upgrade-benefits {
-    gap: 7px;
-    margin-top: 13px;
-  }
-
-  .upgrade-benefits article {
-    min-height: 75px;
-    padding: 8px 9px;
-  }
-
-  .upgrade-benefits article p {
-    font-size: .54rem;
-    line-height: 1.3;
-  }
-
-  .upgrade-story__trust {
-    margin-top: 8px;
-  }
-
-  .upgrade-checkout {
-    padding: 14px 18px;
-  }
-
-  .upgrade-summary-kicker {
-    font-size: .55rem;
-  }
-
-  .upgrade-checkout h2 {
-    margin: 3px 0 3px;
-    font-size: 1.7rem;
-  }
-
-  .upgrade-summary-copy {
-    margin-bottom: 7px;
-    font-size: .62rem;
-    line-height: 1.35;
-  }
-
-  .upgrade-quantity button {
-    min-height: 47px;
-  }
-
-  .upgrade-custom-quantity {
-    grid-template-columns: minmax(145px, .7fr) minmax(250px, 1.3fr);
-    gap: 10px;
-    margin-top: 6px;
-  }
-
-  .upgrade-custom-quantity__control {
-    grid-template-columns: 32px minmax(0, 1fr) 32px;
-  }
-
-  .upgrade-custom-quantity__control button {
-    width: 32px;
-    height: 32px;
-  }
-
-  .upgrade-custom-quantity__control input {
-    min-height: 32px;
-  }
-
-  .upgrade-section-title {
-    margin: 7px 0 5px;
-  }
-
-  .upgrade-payment-stack {
-    gap: 6px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference {
-    min-height: 45px;
-    padding: 6px 9px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference__icon {
-    width: 30px;
-    height: 30px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference p {
-    font-size: .52rem;
-  }
-
-  .upgrade-payment-stack .upgrade-methods label {
-    min-height: 54px;
-    padding: 7px 10px;
-  }
-
-  .upgrade-pricing-grid {
-    gap: 6px;
-    margin-top: 6px;
-  }
-
-  .upgrade-pricing-grid .upgrade-credit-price,
-  .upgrade-pricing-grid .upgrade-activation-fee {
-    min-height: 58px;
-  }
-
-  .upgrade-credit-price,
-  .upgrade-activation-fee {
-    padding: 7px 9px;
-  }
-
-  .upgrade-credit-price small,
-  .upgrade-activation-fee small {
-    font-size: .53rem;
-    line-height: 1.28;
-  }
-
-  .upgrade-order-summary {
-    min-height: 45px;
-    margin-top: 6px;
-    padding: 7px 10px;
-  }
-
-  .upgrade-checkout-button {
-    min-height: 40px;
-    margin-top: 6px;
-  }
-
-  .upgrade-secure {
-    margin-top: 4px;
-  }
-
-  .upgrade-secure small {
-    font-size: .52rem;
-  }
-}
-
-@media (max-height: 700px) and (min-width: 981px) {
-  .upgrade-story {
-    padding: 18px 24px;
-  }
-
-  .upgrade-story h1 {
-    margin-top: 8px;
-    font-size: clamp(2rem, 3vw, 3rem);
-  }
-
-  .upgrade-story__content > p {
-    margin-top: 4px;
-    font-size: .72rem;
-  }
-
-  .upgrade-benefits {
-    margin-top: 9px;
-  }
-
-  .upgrade-benefits article {
-    min-height: 64px;
-    padding: 7px 8px;
-  }
-
-  .upgrade-benefits article p {
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-  }
-
-  .upgrade-checkout {
-    padding: 10px 15px;
-  }
-
-  .upgrade-summary-copy {
-    display: none;
-  }
-
-  .upgrade-quantity button {
-    min-height: 42px;
-  }
-
-  .upgrade-custom-quantity {
-    margin-top: 4px;
-  }
-
-  .upgrade-section-title {
-    margin: 5px 0 4px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference {
-    min-height: 42px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference p,
-  .upgrade-methods__copy em {
-    display: none;
-  }
-
-  .upgrade-payment-stack .upgrade-methods label {
-    min-height: 47px;
-  }
-
-  .upgrade-pricing-grid .upgrade-credit-price,
-  .upgrade-pricing-grid .upgrade-activation-fee {
-    min-height: 51px;
-  }
-
-  .upgrade-credit-price small,
-  .upgrade-activation-fee small {
-    display: none;
-  }
-
-  .upgrade-order-summary {
-    min-height: 42px;
-  }
-
-  .upgrade-order-summary > div > small {
-    display: none;
-  }
-
-  .upgrade-checkout-button {
-    min-height: 38px;
-  }
-
-  .upgrade-secure small {
-    display: none;
-  }
-}
-
-@media (max-width: 980px) {
-  .upgrade-page {
-    height: auto;
-    overflow: visible;
-  }
-
-  .upgrade-story,
-  .upgrade-checkout {
-    overflow: visible;
-  }
-
-  .upgrade-custom-quantity {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 680px) {
-  .upgrade-pricing-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Final custom quantity layout */
-@media (min-width: 981px) {
-  .upgrade-custom-quantity {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    align-items: stretch;
-    margin-top: 7px;
-  }
-
-  .upgrade-custom-quantity__heading,
-  .upgrade-custom-quantity > div:first-child {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-  }
-
-  .upgrade-custom-quantity__heading span,
-  .upgrade-custom-quantity > div:first-child span {
-    flex: none;
-    color: #344a47;
-    font-size: .69rem;
-    font-weight: 850;
-  }
-
-  .upgrade-custom-quantity__heading small,
-  .upgrade-custom-quantity > div:first-child small {
-    min-width: 0;
-    color: #929c99;
-    font-size: .55rem;
-    line-height: 1.25;
-    text-align: right;
-    white-space: nowrap;
-  }
-
-  .upgrade-custom-quantity__control {
-    display: grid;
-    grid-template-columns: 38px minmax(0, 1fr) 38px;
-    gap: 9px;
-    width: 100%;
-    align-items: center;
-  }
-
-  .upgrade-custom-quantity__control button {
-    width: 38px;
-    height: 36px;
-    border-radius: 12px;
-  }
-
-  .upgrade-custom-quantity__control input {
-    width: 100%;
-    min-height: 36px;
-    height: 36px;
-    border-radius: 12px;
-    font-size: .88rem;
-    font-weight: 700;
-  }
-}
-
-@media (max-height: 820px) and (min-width: 981px) {
-  .upgrade-custom-quantity {
-    gap: 4px;
-    margin-top: 5px;
-  }
-
-  .upgrade-custom-quantity__control {
-    grid-template-columns: 34px minmax(0, 1fr) 34px;
-    gap: 8px;
-  }
-
-  .upgrade-custom-quantity__control button {
-    width: 34px;
-    height: 32px;
-  }
-
-  .upgrade-custom-quantity__control input {
-    min-height: 32px;
-    height: 32px;
-  }
-}
-
-@media (max-height: 700px) and (min-width: 981px) {
-  .upgrade-custom-quantity__heading small,
-  .upgrade-custom-quantity > div:first-child small {
-    font-size: .51rem;
-  }
-
-  .upgrade-custom-quantity__control {
-    grid-template-columns: 32px minmax(0, 1fr) 32px;
-    gap: 7px;
-  }
-
-  .upgrade-custom-quantity__control button {
-    width: 32px;
-    height: 30px;
-  }
-
-  .upgrade-custom-quantity__control input {
-    min-height: 30px;
-    height: 30px;
-  }
-}
-
-@media (max-width: 980px) {
-  .upgrade-custom-quantity {
-    grid-template-columns: 1fr;
-  }
-
-  .upgrade-custom-quantity__heading,
-  .upgrade-custom-quantity > div:first-child {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .upgrade-custom-quantity__control {
-    width: 100%;
-  }
-}
-
-/* Final desktop sizing pass: use the remaining checkout space without scrolling */
-@media (min-width: 981px) and (min-height: 701px) {
-  .upgrade-checkout {
-    padding: 17px 20px 18px;
-  }
-
-  .upgrade-checkout h2 {
-    margin-top: 4px;
-    margin-bottom: 5px;
-    font-size: clamp(1.78rem, 2.15vw, 2.15rem);
-  }
-
-  .upgrade-summary-copy {
-    margin-bottom: 9px;
-    font-size: .66rem;
-    line-height: 1.42;
-  }
-
-  .upgrade-quantity {
-    gap: 9px;
-  }
-
-  .upgrade-quantity button {
-    min-height: 56px;
-    border-radius: 17px;
-  }
-
-  .upgrade-quantity button strong {
-    font-size: 1.18rem;
-  }
-
-  .upgrade-quantity button small {
-    margin-top: 2px;
-    font-size: .56rem;
-  }
-
-  .upgrade-custom-quantity {
-    gap: 6px;
-    margin-top: 8px;
-  }
-
-  .upgrade-custom-quantity__heading span,
-  .upgrade-custom-quantity > div:first-child span {
-    font-size: .72rem;
-  }
-
-  .upgrade-custom-quantity__heading small,
-  .upgrade-custom-quantity > div:first-child small {
-    font-size: .57rem;
-  }
-
-  .upgrade-custom-quantity__control {
-    grid-template-columns: 42px minmax(0, 1fr) 42px;
-    gap: 10px;
-  }
-
-  .upgrade-custom-quantity__control button {
-    width: 42px;
-    height: 40px;
-    border-radius: 13px;
-  }
-
-  .upgrade-custom-quantity__control input {
-    min-height: 40px;
-    height: 40px;
-    border-radius: 13px;
-    font-size: .94rem;
-  }
-
-  .upgrade-section-title {
-    margin: 10px 0 7px;
-    font-size: .72rem;
-  }
-
-  .upgrade-payment-stack {
-    gap: 9px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference {
-    min-height: 65px;
-    padding: 10px 13px;
-    border-radius: 17px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference__icon {
-    width: 38px;
-    height: 38px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference strong {
-    font-size: .78rem;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference p {
-    margin-top: 2px;
-    font-size: .56rem;
-  }
-
-  .upgrade-payment-stack .upgrade-methods label {
-    min-height: 70px;
-    padding: 11px 14px;
-    border-radius: 18px;
-  }
-
-  .upgrade-methods__icon {
-    width: 42px;
-    height: 42px;
-  }
-
-  .upgrade-methods__copy strong {
-    font-size: .78rem;
-  }
-
-  .upgrade-methods__copy em {
-    margin-top: 3px;
-    font-size: .58rem;
-  }
-
-  .upgrade-pricing-grid {
-    gap: 9px;
-    margin-top: 9px;
-  }
-
-  .upgrade-pricing-grid .upgrade-credit-price,
-  .upgrade-pricing-grid .upgrade-activation-fee {
-    min-height: 76px;
-    border-radius: 17px;
-  }
-
-  .upgrade-credit-price,
-  .upgrade-activation-fee {
-    padding: 11px 13px;
-  }
-
-  .upgrade-credit-price > div > span,
-  .upgrade-activation-fee strong {
-    font-size: .7rem;
-  }
-
-  .upgrade-credit-price small,
-  .upgrade-activation-fee small {
-    margin-top: 3px;
-    font-size: .56rem;
-    line-height: 1.35;
-  }
-
-  .upgrade-credit-price > strong {
-    font-size: .78rem;
-  }
-
-  .upgrade-order-summary {
-    min-height: 59px;
-    margin-top: 9px;
-    padding: 10px 13px;
-    border-radius: 16px;
-  }
-
-  .upgrade-order-summary span {
-    font-size: .68rem;
-  }
-
-  .upgrade-order-summary > div > small {
-    margin-top: 3px;
-    font-size: .55rem;
-  }
-
-  .upgrade-order-summary strong {
-    font-size: .78rem;
-  }
-
-  .upgrade-checkout-button {
-    min-height: 50px;
-    margin-top: 9px;
-    border-radius: 15px;
-    font-size: 1rem;
-  }
-
-  .upgrade-secure {
-    margin-top: 7px;
-  }
-
-  .upgrade-secure strong {
-    font-size: .63rem;
-  }
-
-  .upgrade-secure small {
-    margin-top: 2px;
-    font-size: .54rem;
-  }
-}
-
-@media (min-width: 981px) and (min-height: 760px) {
-  .upgrade-payment-stack .upgrade-currency-preference {
-    min-height: 68px;
-  }
-
-  .upgrade-payment-stack .upgrade-methods label {
-    min-height: 74px;
-  }
-
-  .upgrade-pricing-grid .upgrade-credit-price,
-  .upgrade-pricing-grid .upgrade-activation-fee {
-    min-height: 80px;
-  }
-
-  .upgrade-order-summary {
-    min-height: 62px;
-  }
-
-  .upgrade-checkout-button {
-    min-height: 52px;
-  }
-}
-
-/* Slightly smaller desktop sizing — keeps the full checkout visible without scroll */
-@media (min-width: 981px) and (min-height: 701px) {
-  .upgrade-checkout {
-    padding: 15px 18px 16px;
-  }
-
-  .upgrade-checkout h2 {
-    margin: 3px 0 4px;
-    font-size: clamp(1.66rem, 2vw, 2rem);
-  }
-
-  .upgrade-summary-copy {
-    margin-bottom: 8px;
-    font-size: .63rem;
-  }
-
-  .upgrade-quantity {
-    gap: 8px;
-  }
-
-  .upgrade-quantity button {
-    min-height: 51px;
-    border-radius: 16px;
-  }
-
-  .upgrade-quantity button strong {
-    font-size: 1.08rem;
-  }
-
-  .upgrade-quantity button small {
-    font-size: .53rem;
-  }
-
-  .upgrade-custom-quantity {
-    gap: 5px;
-    margin-top: 6px;
-  }
-
-  .upgrade-custom-quantity__heading span,
-  .upgrade-custom-quantity > div:first-child span {
-    font-size: .69rem;
-  }
-
-  .upgrade-custom-quantity__heading small,
-  .upgrade-custom-quantity > div:first-child small {
-    font-size: .54rem;
-  }
-
-  .upgrade-custom-quantity__control {
-    grid-template-columns: 38px minmax(0, 1fr) 38px;
-    gap: 9px;
-  }
-
-  .upgrade-custom-quantity__control button {
-    width: 38px;
-    height: 36px;
-    border-radius: 12px;
-  }
-
-  .upgrade-custom-quantity__control input {
-    min-height: 36px;
-    height: 36px;
-    border-radius: 12px;
-    font-size: .88rem;
-  }
-
-  .upgrade-section-title {
-    margin: 8px 0 6px;
-    font-size: .69rem;
-  }
-
-  .upgrade-payment-stack {
-    gap: 7px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference {
-    min-height: 58px;
-    padding: 8px 11px;
-    border-radius: 16px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference__icon {
-    width: 34px;
-    height: 34px;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference strong {
-    font-size: .73rem;
-  }
-
-  .upgrade-payment-stack .upgrade-currency-preference p {
-    margin-top: 1px;
-    font-size: .53rem;
-  }
-
-  .upgrade-payment-stack .upgrade-methods label {
-    min-height: 64px;
-    padding: 9px 12px;
-    border-radius: 17px;
-  }
-
-  .upgrade-methods__icon {
-    width: 38px;
-    height: 38px;
-  }
-
-  .upgrade-methods__copy strong {
-    font-size: .74rem;
-  }
-
-  .upgrade-methods__copy em {
-    margin-top: 2px;
-    font-size: .55rem;
-  }
-
-  .upgrade-pricing-grid {
-    gap: 8px;
-    margin-top: 7px;
-  }
-
-  .upgrade-pricing-grid .upgrade-credit-price,
-  .upgrade-pricing-grid .upgrade-activation-fee {
-    min-height: 68px;
-    border-radius: 16px;
-  }
-
-  .upgrade-credit-price,
-  .upgrade-activation-fee {
-    padding: 9px 11px;
-  }
-
-  .upgrade-credit-price > div > span,
-  .upgrade-activation-fee strong {
-    font-size: .67rem;
-  }
-
-  .upgrade-credit-price small,
-  .upgrade-activation-fee small {
-    margin-top: 2px;
-    font-size: .53rem;
-  }
-
-  .upgrade-credit-price > strong {
-    font-size: .74rem;
-  }
-
-  .upgrade-order-summary {
-    min-height: 53px;
-    margin-top: 7px;
-    padding: 8px 11px;
-    border-radius: 15px;
-  }
-
-  .upgrade-order-summary span {
-    font-size: .64rem;
-  }
-
-  .upgrade-order-summary > div > small {
-    margin-top: 2px;
-    font-size: .52rem;
-  }
-
-  .upgrade-order-summary strong {
-    font-size: .74rem;
-  }
-
-  .upgrade-checkout-button {
-    min-height: 45px;
-    margin-top: 7px;
-    border-radius: 14px;
-    font-size: .94rem;
-  }
-
-  .upgrade-secure {
-    margin-top: 5px;
-  }
-
-  .upgrade-secure strong {
-    font-size: .6rem;
-  }
-
-  .upgrade-secure small {
-    margin-top: 1px;
-    font-size: .51rem;
-  }
-}
-
-@media (min-width: 981px) and (min-height: 760px) {
-  .upgrade-payment-stack .upgrade-currency-preference {
-    min-height: 60px;
-  }
-
-  .upgrade-payment-stack .upgrade-methods label {
-    min-height: 66px;
-  }
-
-  .upgrade-pricing-grid .upgrade-credit-price,
-  .upgrade-pricing-grid .upgrade-activation-fee {
-    min-height: 70px;
-  }
-
-  .upgrade-order-summary {
-    min-height: 55px;
-  }
-
-  .upgrade-checkout-button {
-    min-height: 47px;
-  }
-}
-
-
-/* FINAL_UPGRADE_DARK_RTL_POLISH */
-html.vox-user-dark .upgrade-page { color:#edf7f4 !important; }
-html.vox-user-dark :is(
-  .upgrade-checkout,
-  .upgrade-currency-preference,
-  .upgrade-methods label,
-  .upgrade-credit-price,
-  .upgrade-activation-fee,
-  .upgrade-order-summary,
-  .upgrade-quantity > button,
-  .upgrade-custom-quantity__control,
-  .upgrade-payment-stack
-) {
-  color:#edf7f4 !important;
-  border-color:rgba(112,205,198,.18) !important;
-  background:#172a24 !important;
-  background-image:linear-gradient(145deg,#1b3129,#14251f) !important;
-  box-shadow:none !important;
-}
-html.vox-user-dark .upgrade-quantity > button.selected,
-html.vox-user-dark .upgrade-methods label.selected {
-  border-color:rgba(112,205,198,.46) !important;
-  background:linear-gradient(145deg,#29483d,#20382f) !important;
-}
-html.vox-user-dark :is(.upgrade-summary-copy,.upgrade-checkout p,.upgrade-benefits p,.upgrade-credit-price small,.upgrade-activation-fee small,.upgrade-order-summary small) {
-  color:#aec1bb !important;
-}
-html.vox-user-dark :is(.upgrade-currency-preference__icon,.upgrade-methods__icon,.upgrade-methods__check) {
-  color:#8edbd4 !important;
-  background:#203a31 !important;
-}
-html.vox-user-dark .upgrade-custom-quantity__control input { color:#f3faf8 !important; background:#10201b !important; }
-html.vox-user-rtl .upgrade-page { direction:rtl; }
-html.vox-user-rtl :is(.upgrade-story__content,.upgrade-checkout,.upgrade-benefits article) { text-align:right; }
-
-
-/* FINAL_UPGRADE_DARK_SURFACE_CHILD_FIX */
-html.vox-user-dark .upgrade-methods label,
-html.vox-user-dark .upgrade-currency-preference,
-html.vox-user-dark .upgrade-credit-price,
-html.vox-user-dark .upgrade-activation-fee,
-html.vox-user-dark .upgrade-order-summary {
-  color: #edf7f4 !important;
-  border-color: rgba(112,205,198,.18) !important;
-  background: #172a24 !important;
-  background-image: linear-gradient(145deg,#1b3129,#14251f) !important;
-  box-shadow: none !important;
-}
-html.vox-user-dark .upgrade-methods label.selected {
-  border-color: rgba(112,205,198,.5) !important;
-  background: linear-gradient(145deg,#29483d,#20382f) !important;
-}
-html.vox-user-dark .upgrade-currency-preference a {
-  color: #9fddd7 !important;
-  border-color: rgba(112,205,198,.18) !important;
-  background: #20382f !important;
-}
-html.vox-user-dark .upgrade-activation-fee.is-inactive {
-  opacity: .82;
-}
-html.vox-user-rtl .upgrade-story__trust,
-html.vox-user-rtl .upgrade-section-title,
-html.vox-user-rtl .upgrade-currency-preference,
-html.vox-user-rtl .upgrade-order-summary {
-  direction: rtl;
-  text-align: right;
-}
-
-html.vox-user-dark .upgrade-page {
-  background: #091511 !important;
-}
-html.vox-user-dark .upgrade-story,
-html.vox-user-dark .upgrade-checkout {
-  color: #eef8f5 !important;
-  border-color: rgba(112,205,198,.15) !important;
-  background: linear-gradient(145deg,#172b24,#10211b) !important;
-  background-image: linear-gradient(145deg,#172b24,#10211b) !important;
-  box-shadow: none !important;
-}
-html.vox-user-dark .upgrade-story__grid {
-  opacity: .08 !important;
-}
-html.vox-user-dark .upgrade-story__orb {
-  opacity: .12 !important;
-}
-html.vox-user-dark .upgrade-benefits article,
-html.vox-user-dark .upgrade-quantity button,
-html.vox-user-dark .upgrade-currency-preference,
-html.vox-user-dark .upgrade-methods label,
-html.vox-user-dark .upgrade-credit-price,
-html.vox-user-dark .upgrade-activation-fee,
-html.vox-user-dark .upgrade-order-summary,
-html.vox-user-dark .upgrade-custom-quantity__control {
-  color: #eef8f5 !important;
-  border-color: rgba(112,205,198,.15) !important;
-  background: #173028 !important;
-  background-image: none !important;
-  box-shadow: none !important;
-}
-html.vox-user-dark .upgrade-benefits article p,
-html.vox-user-dark .upgrade-summary-copy,
-html.vox-user-dark .upgrade-checkout p,
-html.vox-user-dark .upgrade-credit-price small,
-html.vox-user-dark .upgrade-activation-fee small,
-html.vox-user-dark .upgrade-order-summary small,
-html.vox-user-dark .upgrade-methods__copy em,
-html.vox-user-dark .upgrade-currency-preference p {
-  color: #a9bdb6 !important;
-}
-html.vox-user-dark .upgrade-quantity button.selected,
-html.vox-user-dark .upgrade-methods label.selected {
-  color: #f2faf8 !important;
-  border-color: rgba(112,205,198,.40) !important;
-  background: #1d3c32 !important;
-}
-html.vox-user-dark .upgrade-methods__icon,
-html.vox-user-dark .upgrade-currency-preference__icon,
-html.vox-user-dark .upgrade-methods__check {
-  color: #9fe1db !important;
-  border-color: rgba(112,205,198,.16) !important;
-  background: #1d3a31 !important;
-}
-html.vox-user-dark .upgrade-custom-quantity__control input {
-  color: #f1f9f7 !important;
-  background: #0f201a !important;
-}
-html.vox-user-dark .upgrade-checkout-button {
-  color: #fff !important;
-  background: linear-gradient(135deg,#55b8b2,#398d88) !important;
-  border-color: rgba(112,205,198,.30) !important;
-}
-
-/* Keep the same physical left/right composition used by English. */
-html.vox-user-rtl .upgrade-page {
-  direction: ltr !important;
-}
-html.vox-user-rtl .upgrade-story,
-html.vox-user-rtl .upgrade-checkout {
-  direction: rtl !important;
-  text-align: right !important;
-}
-html.vox-user-rtl .upgrade-benefits article,
-html.vox-user-rtl .upgrade-currency-preference,
-html.vox-user-rtl .upgrade-methods label,
-html.vox-user-rtl .upgrade-order-summary {
-  direction: rtl !important;
-  text-align: right !important;
-}
-
-html.vox-user-dark .upgrade-custom-quantity__heading > span,
-html.vox-user-dark .upgrade-section-title > span,
-html.vox-user-dark .upgrade-currency-preference small,
-html.vox-user-dark .upgrade-methods__copy b,
-html.vox-user-dark .upgrade-credit-price > div > span,
-html.vox-user-dark .upgrade-activation-fee > div > span,
-html.vox-user-dark .upgrade-order-summary > span,
-html.vox-user-dark .upgrade-checkout h2,
-html.vox-user-dark .upgrade-quantity button strong {
-  color: #eef8f5 !important;
-}
-
-html.vox-user-dark .upgrade-custom-quantity__heading > small,
-html.vox-user-dark .upgrade-section-title > small,
-html.vox-user-dark .upgrade-methods__copy em,
-html.vox-user-dark .upgrade-currency-preference p,
-html.vox-user-dark .upgrade-order-summary small {
-  color: #a8bdb6 !important;
-}
-
-.upgrade-custom-quantity__control input[type='number'] {
-  appearance: textfield;
-  -moz-appearance: textfield;
-  direction: ltr !important;
-  text-align: center !important;
-  padding-inline: 10px !important;
-}
-
-.upgrade-custom-quantity__control input[type='number']::-webkit-outer-spin-button,
-.upgrade-custom-quantity__control input[type='number']::-webkit-inner-spin-button {
-  margin: 0;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-html.vox-user-dark .upgrade-custom-quantity__control input[type='number'] {
-  border: 1px solid rgba(112, 205, 198, .18) !important;
-  outline: 0 !important;
-  color: #f4fbf9 !important;
-  background: #0d1e18 !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .015) !important;
-}
-
-html.vox-user-dark .upgrade-custom-quantity__control input[type='number']:focus {
-  border-color: rgba(112, 205, 198, .48) !important;
-  box-shadow: 0 0 0 3px rgba(112, 205, 198, .07) !important;
-}
-
-html.vox-user-rtl .upgrade-checkout,
-html.vox-user-rtl .upgrade-checkout :is(.upgrade-custom-quantity__heading,.upgrade-section-title,.upgrade-credit-price,.upgrade-activation-fee,.upgrade-order-summary),
-html.vox-user-rtl .upgrade-currency-preference > div,
-html.vox-user-rtl .upgrade-methods__copy {
-  direction: rtl !important;
-  text-align: right !important;
-}
-
-
-/* FINAL_20260828_LANGUAGE_AWARE_UPGRADE_COLUMNS
-   English checkout remains on the right; Arabic checkout moves to the left. */
-@media (min-width: 981px) {
-  html.vox-user-rtl .upgrade-page {
-    grid-template-columns: minmax(370px, .72fr) minmax(0, 1.08fr) !important;
-    direction: ltr !important;
-  }
-  html.vox-user-rtl .upgrade-checkout {
-    grid-column: 1 !important;
-    grid-row: 1 !important;
-    direction: rtl !important;
-    text-align: right !important;
-  }
-  html.vox-user-rtl .upgrade-story {
-    grid-column: 2 !important;
-    grid-row: 1 !important;
-    direction: rtl !important;
-    text-align: right !important;
-  }
+.upgrade-checkout-button::after {
+  content: '';
+  position: absolute;
+  top: -35%;
+  bottom: -35%;
+  left: -28%;
+  width: 24%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .38), transparent);
+  transform: skewX(-18deg);
+  animation: upgradeButtonShine 3.7s ease-in-out infinite;
+  pointer-events: none;
 }
