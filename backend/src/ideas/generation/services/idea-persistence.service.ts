@@ -41,6 +41,7 @@ import {
 import {
   IDEA_GENERATION_ERROR_CODES,
   MAX_DUPLICATE_TITLE_LENGTH,
+  PREMIUM_IDEA_NO_EVIDENCE_CHARGE_PERCENTAGE,
 } from '../constants/idea-generation.constants';
 
 import type {
@@ -49,6 +50,7 @@ import type {
   JsonValue,
   ParsedIdeaAiOutput,
 } from '../types/idea-ai-output.type';
+import type { IdeaGenerationEvidenceState } from '../types/canonical-problem-spec.type';
 
 import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 import { TargetUserDeduplicationUtil } from '../utils/target-user-deduplication.util';
@@ -181,6 +183,12 @@ export type PersistGeneratedIdeaInput = {
    * Passing it here removes a system-setting read from the write transaction.
    */
   readonly creditsToConsume: number;
+
+  /**
+   * Final canonical evidence state resolved by the existing generation pipeline.
+   * Premium billing uses this only to apply the no-evidence half-charge policy.
+   */
+  readonly evidenceState: IdeaGenerationEvidenceState;
 
   /**
    * Number of analyzed community comments already available in pipeline
@@ -569,6 +577,7 @@ export class IdeaPersistenceService {
         input.generationType === IdeaGenerationType.PREMIUM_CREDIT
           ? Math.max(1, Math.floor(input.creditsToConsume))
           : 0,
+      evidenceState: input.evidenceState,
       analyzedCommentsCount: Math.max(
         0,
         Math.floor(input.analyzedCommentsCount || 0),
@@ -1277,8 +1286,25 @@ export class IdeaPersistenceService {
     return this.creditBalanceService.consumeForIdeaGeneration(
       userId,
       ideaId,
-      input.creditsToConsume,
+      this.resolvePremiumCreditsToConsume(input),
       transaction,
+    );
+  }
+
+  private resolvePremiumCreditsToConsume(
+    input: PersistGeneratedIdeaInput,
+  ): number {
+    if (input.evidenceState !== 'NO_VALID_EVIDENCE_FOUND') {
+      return input.creditsToConsume;
+    }
+
+    return Math.max(
+      1,
+      Math.floor(
+        (input.creditsToConsume *
+          PREMIUM_IDEA_NO_EVIDENCE_CHARGE_PERCENTAGE) /
+          100,
+      ),
     );
   }
 

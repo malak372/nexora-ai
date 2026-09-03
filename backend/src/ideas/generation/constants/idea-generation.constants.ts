@@ -24,6 +24,14 @@
 export const PREMIUM_IDEA_CREDIT_COST = 15;
 
 /**
+ * Percentage of the configured Premium idea-generation credit cost charged
+ * when the completed run has no canonically validated DIRECT_PROBLEM or
+ * SUPPORTING_SIGNAL evidence. Any valid supporting evidence keeps the normal
+ * full charge.
+ */
+export const PREMIUM_IDEA_NO_EVIDENCE_CHARGE_PERCENTAGE = 50;
+
+/**
  * Default number of free idea generations available to a
  * registered user.
  *
