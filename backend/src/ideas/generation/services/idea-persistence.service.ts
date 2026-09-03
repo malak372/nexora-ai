@@ -41,7 +41,6 @@ import {
 import {
   IDEA_GENERATION_ERROR_CODES,
   MAX_DUPLICATE_TITLE_LENGTH,
-  PREMIUM_IDEA_NO_EVIDENCE_CHARGE_PERCENTAGE,
 } from '../constants/idea-generation.constants';
 
 import type {
@@ -1298,14 +1297,7 @@ export class IdeaPersistenceService {
       return input.creditsToConsume;
     }
 
-    return Math.max(
-      1,
-      Math.floor(
-        (input.creditsToConsume *
-          PREMIUM_IDEA_NO_EVIDENCE_CHARGE_PERCENTAGE) /
-          100,
-      ),
-    );
+    return Math.max(1, Math.floor(input.creditsToConsume / 2));
   }
 
   /**
