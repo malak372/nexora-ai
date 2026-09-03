@@ -326,6 +326,11 @@ export class PaymentCheckoutService {
           userId: true,
           generationType: true,
           isUnlocked: true,
+          generationRun: {
+            select: {
+              contextSnapshot: true,
+            },
+          },
         },
       }),
 
@@ -360,9 +365,14 @@ export class PaymentCheckoutService {
       settings.pricingCurrency,
     );
 
+    const directUnlockBasePrice = this.resolveDirectUnlockPrice(
+      settings.directUnlockPrice,
+      idea?.generationRun?.contextSnapshot ?? null,
+    );
+
     const directUnlockAmount =
       this.paymentCurrencyService.convert(
-        settings.directUnlockPrice,
+        directUnlockBasePrice,
         quote,
       );
 
@@ -1590,6 +1600,37 @@ export class PaymentCheckoutService {
         'The configured credit price must be greater than zero.',
       );
     }
+  }
+
+  /**
+   * Resolves the idea-specific direct-unlock price without changing the
+   * generation pipeline or its evidence decisions.
+   */
+  private resolveDirectUnlockPrice(
+    directUnlockPrice: Prisma.Decimal,
+    contextSnapshot: Prisma.JsonValue | null,
+  ): Prisma.Decimal {
+    if (!this.hasNoValidatedEvidence(contextSnapshot)) {
+      return directUnlockPrice;
+    }
+
+    return directUnlockPrice.div(2);
+  }
+
+  private hasNoValidatedEvidence(
+    contextSnapshot: Prisma.JsonValue | null,
+  ): boolean {
+    if (
+      contextSnapshot === null ||
+      typeof contextSnapshot !== 'object' ||
+      Array.isArray(contextSnapshot)
+    ) {
+      return false;
+    }
+
+    const evidenceState = (contextSnapshot as Prisma.JsonObject).evidenceState;
+
+    return evidenceState === 'NO_VALID_EVIDENCE_FOUND';
   }
 
   /**
