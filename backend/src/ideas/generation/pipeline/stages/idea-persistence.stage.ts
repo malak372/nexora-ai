@@ -191,6 +191,7 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
           collectionJobId: collection.collectionJobId,
           generationType: context.generationType,
           creditsToConsume: policy.creditsToConsume,
+          evidenceState: context.evidenceState,
           analyzedCommentsCount:
             context.nlp?.totalCommentsAnalyzed ?? collection.totalComments ?? 0,
           parsedOutput,
