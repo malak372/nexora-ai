@@ -11,6 +11,7 @@ import {
   ApiRequestType,
   CreditTransactionType,
   IdeaGenerationType,
+  Prisma,
   PromptType,
   UnlockMethod,
 } from '@prisma/client';
@@ -22,6 +23,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { PromptBuilderService } from '../../../prompts/services/prompt-builder.service';
 import { PromptHistoryService } from '../../../prompts/services/prompt-history.service';
 import { IdeaUnlockOutputParserService } from '../../generation/services/idea-unlock-output-parser.service';
+import type { IdeaGenerationNlpContext } from '../../generation/types/idea-generation-context.type';
 
 import type {
   UnlockIdeaWithCreditResult,
@@ -122,6 +124,11 @@ export class IdeaUnlockService {
           select: {
             accountStatus: true,
             creditBalance: true,
+          },
+        },
+        generationRun: {
+          select: {
+            contextSnapshot: true,
           },
         },
       },
@@ -250,6 +257,9 @@ export class IdeaUnlockService {
         collectionJobId: idea.collectionJobId,
         existingIdeaId: idea.id,
         requesterUserId: input.userId,
+        analysisOverride: this.readGenerationSnapshotNlp(
+          idea.generationRun?.contextSnapshot,
+        ),
       });
 
       await this.promptHistory.savePrompt({
@@ -272,6 +282,7 @@ export class IdeaUnlockService {
         responseSchema: prompt.responseSchema,
         responseSchemaName: prompt.responseSchemaName,
         strategy: AiRoutingStrategy.BALANCED,
+        timeoutMs: null,
         allowProviderFallbackOnInvalidPrompt: true,
       });
 
@@ -307,5 +318,92 @@ export class IdeaUnlockService {
 
       throw error;
     }
+  }
+
+  private readGenerationSnapshotNlp(
+    contextSnapshot: Prisma.JsonValue | null | undefined,
+  ): IdeaGenerationNlpContext | undefined {
+    const snapshot = this.readJsonRecord(contextSnapshot);
+    const nlp = this.readJsonRecord(
+      snapshot?.nlp as Prisma.JsonValue | undefined,
+    );
+
+    if (!nlp) {
+      return undefined;
+    }
+
+    const nlpAnalysisId =
+      typeof nlp.nlpAnalysisId === 'string' ? nlp.nlpAnalysisId.trim() : '';
+    const totalTextsAnalyzed = this.readNonNegativeNumber(
+      nlp.totalTextsAnalyzed,
+    );
+    const totalPostsAnalyzed = this.readNonNegativeNumber(
+      nlp.totalPostsAnalyzed,
+    );
+    const totalCommentsAnalyzed = this.readNonNegativeNumber(
+      nlp.totalCommentsAnalyzed,
+    );
+
+    if (
+      !nlpAnalysisId ||
+      totalTextsAnalyzed === null ||
+      totalPostsAnalyzed === null ||
+      totalCommentsAnalyzed === null ||
+      typeof nlp.aiUsed !== 'boolean'
+    ) {
+      return undefined;
+    }
+
+    const confidence =
+      nlp.confidence === null || nlp.confidence === undefined
+        ? null
+        : typeof nlp.confidence === 'number' && Number.isFinite(nlp.confidence)
+          ? nlp.confidence
+          : null;
+
+    return {
+      nlpAnalysisId,
+      totalTextsAnalyzed,
+      totalPostsAnalyzed,
+      totalCommentsAnalyzed,
+      sentimentStats: this.readJsonValue(nlp.sentimentStats),
+      keywords: this.readJsonValue(nlp.keywords),
+      topics: this.readJsonValue(nlp.topics),
+      recurringProblems: this.readJsonValue(nlp.recurringProblems),
+      extractedNeeds: this.readJsonValue(nlp.extractedNeeds),
+      featureRequests: this.readJsonValue(nlp.featureRequests),
+      opportunities: this.readJsonValue(nlp.opportunities),
+      insights: this.readJsonValue(nlp.insights),
+      dataQuality: this.readJsonValue(nlp.dataQuality),
+      samplePosts: this.readJsonValue(nlp.samplePosts),
+      sampleComments: this.readJsonValue(nlp.sampleComments),
+      aiUsed: nlp.aiUsed,
+      confidence,
+    };
+  }
+
+  private readJsonRecord(
+    value: Prisma.JsonValue | null | undefined,
+  ): Record<string, Prisma.JsonValue> | null {
+    return value !== null &&
+      value !== undefined &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+      ? (value as Record<string, Prisma.JsonValue>)
+      : null;
+  }
+
+  private readJsonValue(
+    value: Prisma.JsonValue | undefined,
+  ): Prisma.JsonValue | null {
+    return value === undefined ? null : value;
+  }
+
+  private readNonNegativeNumber(
+    value: Prisma.JsonValue | undefined,
+  ): number | null {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? value
+      : null;
   }
 }

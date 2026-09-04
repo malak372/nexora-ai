@@ -142,6 +142,18 @@ export type IdeaUnlockPromptInput = {
   readonly requesterUserId: string;
 
   /**
+   * Trusted NLP snapshot persisted on the completed generation run.
+   *
+   * Normal generation can complete from an in-memory merged NLP context even
+   * when the anchor CollectionJob has no persisted NlpAnalysis relation. The
+   * direct-unlock flow may supply that durable generation snapshot as a
+   * fallback so a successfully paid unlock does not fail solely because the
+   * anchor relation is absent. Persisted CollectionJob NLP remains preferred
+   * whenever it exists.
+   */
+  readonly analysisOverride?: IdeaGenerationNlpContext;
+
+  /**
    * Unlock output does not depend on a caller-provided
    * generation type.
    */

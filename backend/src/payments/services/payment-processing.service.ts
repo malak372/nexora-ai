@@ -32,6 +32,12 @@ const PAYMENT_TRANSACTION_MAX_WAIT_MS = 60 * 1000;
  */
 const PAYMENT_TRANSACTION_TIMEOUT_MS = 30 * 1000;
 
+/** Number of background attempts for a paid direct unlock. */
+const DIRECT_UNLOCK_BACKGROUND_MAX_ATTEMPTS = 3;
+
+/** Small backoff between transient direct-unlock generation failures. */
+const DIRECT_UNLOCK_RETRY_DELAY_MS = 1500;
+
 /**
  * Internal payment representation required while processing
  * a verified provider confirmation.
@@ -286,7 +292,7 @@ export class PaymentProcessingService {
       return;
     }
 
-    const task = this.completeDirectUnlockAfterCommit(result)
+    const task = this.completeDirectUnlockWithRetries(result)
       .then((completedResult) => {
         if (completedResult.ideaUnlocked) {
           this.logger.log(
@@ -296,7 +302,7 @@ export class PaymentProcessingService {
       })
       .catch((error: unknown) => {
         this.logger.error(
-          `Background direct unlock failed for payment ${result.paymentId}.`,
+          `Background direct unlock failed for payment ${result.paymentId} after ${DIRECT_UNLOCK_BACKGROUND_MAX_ATTEMPTS} attempts.`,
           error instanceof Error ? error.stack : undefined,
         );
       })
@@ -305,6 +311,54 @@ export class PaymentProcessingService {
       });
 
     this.directUnlockInFlight.set(result.paymentId, task);
+  }
+
+  /** Returns whether this process is still completing a paid direct unlock. */
+  isDirectUnlockInFlight(paymentId: string): boolean {
+    return this.directUnlockInFlight.has(paymentId);
+  }
+
+  /**
+   * Retries transient post-payment generation failures without asking the user
+   * to repeat checkout. IdeaUnlockService uses database claims, so retrying is
+   * idempotent and cannot charge the payment again.
+   */
+  private async completeDirectUnlockWithRetries(
+    result: PaymentProcessingResult,
+  ): Promise<PaymentProcessingResult> {
+    let lastError: unknown;
+
+    for (
+      let attempt = 1;
+      attempt <= DIRECT_UNLOCK_BACKGROUND_MAX_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        return await this.completeDirectUnlockAfterCommit(result);
+      } catch (error) {
+        lastError = error;
+
+        if (attempt >= DIRECT_UNLOCK_BACKGROUND_MAX_ATTEMPTS) {
+          throw error;
+        }
+
+        const retryDelayMs = DIRECT_UNLOCK_RETRY_DELAY_MS * attempt;
+
+        this.logger.warn(
+          `Direct unlock attempt ${attempt} failed for payment ${result.paymentId}; retrying automatically in ${retryDelayMs}ms.`,
+        );
+
+        await this.delay(retryDelayMs);
+      }
+    }
+
+    throw lastError;
+  }
+
+  private async delay(milliseconds: number): Promise<void> {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, milliseconds);
+    });
   }
 
   /**
@@ -357,6 +411,13 @@ export class PaymentProcessingService {
           unlockInProgress: true,
         };
       }
+
+      this.logger.error(
+        `Direct unlock generation failed for payment ${result.paymentId} and idea ${ideaId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error.stack : undefined,
+      );
 
       throw new PaymentProcessingError(
         PaymentErrorCode.DIRECT_UNLOCK_PROCESSING_FAILED,

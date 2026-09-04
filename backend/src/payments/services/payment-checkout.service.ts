@@ -1169,7 +1169,9 @@ export class PaymentCheckoutService {
         ...baseState,
         ideaUnlocked: idea?.isUnlocked ?? false,
         unlockInProgress:
-          !idea?.isUnlocked && Boolean(idea?.generatedOutputs.length),
+          !idea?.isUnlocked &&
+          (Boolean(idea?.generatedOutputs.length) ||
+            this.paymentProcessingService.isDirectUnlockInFlight(payment.id)),
         unlockMethod: idea?.unlockMethod ?? null,
         publicationAccepted: false,
         acceptanceId: null,
@@ -1228,11 +1230,17 @@ export class PaymentCheckoutService {
   }
 
   /**
-   * Reconciles one pending payment directly with the provider and returns the
-   * newest local state in the same request. This removes the long redirect-page
-   * polling window when a webhook is delayed or unavailable in local
-   * development. The provider session id is read from our database, never from
-   * an untrusted browser value.
+   * Starts provider reconciliation for one pending payment without making the
+   * browser wait for the external provider request to finish.
+   *
+   * The redirect page polls the trusted database-backed payment state. Stripe
+   * reconciliation may take several seconds, so awaiting it here would make a
+   * short frontend HTTP timeout look like a payment failure even though the
+   * provider is still being checked. Reconciliation therefore continues in the
+   * background while this endpoint returns the current local state immediately.
+   *
+   * The provider session id is read from our database, never from an untrusted
+   * browser value.
    */
   async reconcilePayment(userId: string, paymentId: string) {
     const payment = await this.prisma.payment.findFirst({
@@ -1257,16 +1265,43 @@ export class PaymentCheckoutService {
       payment.status === PaymentStatus.PENDING &&
       payment.providerSessionId
     ) {
-      await this.reconcileWithProvider(payment);
+      this.startReconciliationInBackground(payment);
     }
 
     return this.getPaymentState(userId, paymentId);
   }
 
   /**
+   * Starts provider reconciliation as detached server work.
+   *
+   * Any provider/network error is logged only. It must not turn the browser's
+   * payment-confirmation request into an HTTP error after the customer has
+   * already returned from checkout. A later poll may safely trigger another
+   * idempotent reconciliation attempt.
+   */
+  private startReconciliationInBackground(payment: {
+    readonly id: string;
+    readonly status: PaymentStatus;
+    readonly providerKey: string;
+    readonly providerSessionId: string | null;
+  }): void {
+    void this.reconcileWithProvider(payment).catch((error: unknown) => {
+      const message =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : 'Unknown payment reconciliation error.';
+
+      this.logger.warn(
+        `Background payment reconciliation failed for payment ${payment.id}: ${message}`,
+      );
+    });
+  }
+
+  /**
    * Runs at most one provider inspection per payment inside this process. If a
-   * webhook or another browser retry already started reconciliation, callers
-   * await that same promise instead of creating duplicate Stripe requests.
+   * webhook or another browser retry already started reconciliation, every
+   * server-side caller shares that same promise instead of creating duplicate
+   * provider requests. Browser requests do not await this work directly.
    */
   private async reconcileWithProvider(payment: {
     readonly id: string;

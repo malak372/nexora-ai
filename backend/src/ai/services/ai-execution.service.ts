@@ -1798,8 +1798,12 @@ export class AiExecutionService {
    */
   private resolveModelRequestTimeoutMs(
     model: AiModel,
-    timeoutMs: number | undefined,
+    timeoutMs: number | null | undefined,
   ): number | null {
+    if (timeoutMs === null) {
+      return null;
+    }
+
     /*
      * Local Ollama generation can be substantially slower than hosted model
      * calls, especially on CPU or limited-VRAM machines. Give it a dedicated
@@ -1861,7 +1865,7 @@ export class AiExecutionService {
       'estimatedOutputTokens',
     );
 
-    if (input.timeoutMs !== undefined) {
+    if (input.timeoutMs !== undefined && input.timeoutMs !== null) {
       this.validateOptionalPositiveInteger(input.timeoutMs, 'timeoutMs');
       if (
         input.timeoutMs < MIN_AI_REQUEST_TIMEOUT_MS ||

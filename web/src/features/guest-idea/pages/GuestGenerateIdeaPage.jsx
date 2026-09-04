@@ -872,6 +872,9 @@ export default function GuestGenerateIdeaPage() {
                         !generationFailed && !generationCompleted
                             ? 'guest-progress-card--creating'
                             : '',
+                        generationCompleted
+                            ? 'guest-progress-card--complete'
+                            : '',
                     ]
                         .filter(Boolean)
                         .join(' ')}

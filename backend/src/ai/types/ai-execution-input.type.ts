@@ -204,8 +204,14 @@ type AiExecutionBaseInput = {
    */
   readonly onTextDelta?: (delta: string) => void;
 
-  /** Optional per-operation provider timeout override in milliseconds. */
-  readonly timeoutMs?: number;
+  /**
+   * Optional per-operation provider timeout override in milliseconds.
+   *
+   * Pass null only for trusted background workflows that must not be aborted
+   * by the application-level provider deadline. Provider/network failures can
+   * still reject normally.
+   */
+  readonly timeoutMs?: number | null;
 
   /** Optional per-operation retry count override for the selected model. */
   readonly maxRetriesPerModel?: number;
