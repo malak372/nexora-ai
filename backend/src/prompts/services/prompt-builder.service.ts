@@ -248,7 +248,7 @@ export class PromptBuilderService {
     const analysis: IdeaGenerationNlpContext | typeof collectionJob.nlpAnalysis =
       input.purpose === 'IDEA_GENERATION' && input.analysisOverride
         ? input.analysisOverride
-        : collectionJob.nlpAnalysis;
+        : collectionJob.nlpAnalysis ?? input.analysisOverride ?? null;
 
     if (!analysis) {
       throw new BadRequestException('NLP analysis is not ready yet.');
@@ -1515,10 +1515,7 @@ export class PromptBuilderService {
       );
     }
 
-    if (
-      !collectionJob.nlpAnalysis &&
-      !(input.purpose === 'IDEA_GENERATION' && input.analysisOverride)
-    ) {
+    if (!collectionJob.nlpAnalysis && !input.analysisOverride) {
       throw new BadRequestException('NLP analysis is not ready yet.');
     }
 
