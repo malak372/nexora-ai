@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../../core/network/api_config.dart';
+import '../../../core/network/dio_browser_credentials.dart';
 import '../models/public_publication.dart';
 
 /// Public Home API used by the Voxidence mobile application.
@@ -14,7 +15,9 @@ import '../models/public_publication.dart';
 ///
 /// @author Eman
 class HomePublicApi {
-  HomePublicApi._();
+  HomePublicApi._() {
+    enableBrowserCredentials(_dio);
+  }
 
   static final HomePublicApi instance = HomePublicApi._();
 
@@ -31,9 +34,9 @@ class HomePublicApi {
   late final Dio _dio = Dio(
     BaseOptions(
       baseUrl: ApiConfig.baseUrl,
-      connectTimeout: const Duration(seconds: 12),
-      receiveTimeout: const Duration(seconds: 30),
-      sendTimeout: const Duration(seconds: 20),
+      connectTimeout: const Duration(seconds: 25),
+      receiveTimeout: const Duration(seconds: 60),
+      sendTimeout: const Duration(seconds: 30),
       headers: const {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

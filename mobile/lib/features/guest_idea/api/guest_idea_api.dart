@@ -17,9 +17,9 @@ class GuestIdeaApi {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConfig.baseUrl,
-        connectTimeout: const Duration(seconds: 12),
-        receiveTimeout: const Duration(seconds: 30),
-        sendTimeout: const Duration(seconds: 20),
+        connectTimeout: const Duration(seconds: 25),
+        receiveTimeout: const Duration(seconds: 60),
+        sendTimeout: const Duration(seconds: 30),
         headers: const <String, dynamic>{
           'Content-Type': 'application/json',
           'Accept': 'application/json',

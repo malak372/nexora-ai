@@ -12,6 +12,7 @@ import 'package:dio/dio.dart';
 import '../navigation/app_navigator.dart';
 import '../storage/session_store.dart';
 import 'api_config.dart';
+import 'dio_browser_credentials.dart';
 
 class ApiException implements Exception {
   const ApiException(this.message, {this.statusCode});
@@ -35,9 +36,9 @@ class ApiClient {
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 22),
-        sendTimeout: const Duration(seconds: 15),
+        connectTimeout: const Duration(seconds: 25),
+        receiveTimeout: const Duration(seconds: 60),
+        sendTimeout: const Duration(seconds: 30),
         headers: const {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
@@ -48,14 +49,17 @@ class ApiClient {
     _refreshDio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 15),
+        connectTimeout: const Duration(seconds: 25),
+        receiveTimeout: const Duration(seconds: 45),
         headers: const {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
       ),
     );
+
+    enableBrowserCredentials(_dio);
+    enableBrowserCredentials(_refreshDio);
 
     _dio.interceptors.add(
       InterceptorsWrapper(

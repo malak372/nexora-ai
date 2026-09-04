@@ -37,10 +37,22 @@ import { GUEST_SESSION_COOKIE_NAME } from './utilities/constants/guest-session.c
  */
 const DEFAULT_FRONTEND_URL = 'http://localhost:3001';
 
+const PUBLISHED_FRONTEND_URL = 'https://voxidence.web.app';
+
 /**
  * Default backend HTTP port.
  */
 const DEFAULT_BACKEND_PORT = 3000;
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Returns true when the origin points to a local development frontend.
@@ -91,16 +103,17 @@ async function bootstrap(): Promise<void> {
 
   app.use(cookieParser());
 
-  const configuredFrontendUrls =
-    configService.get<string>(
-      'FRONTEND_URL',
-      DEFAULT_FRONTEND_URL,
-    );
-
-  const allowedOrigins = configuredFrontendUrls
+  const configuredFrontendUrls = [
+    configService.get<string>('FRONTEND_URL', DEFAULT_FRONTEND_URL),
+    configService.get<string>('APP_FRONTEND_URL', ''),
+    PUBLISHED_FRONTEND_URL,
+  ]
+    .join(',')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+  const allowedOrigins = new Set(configuredFrontendUrls);
 
   const nodeEnvironment =
     configService.get<string>('NODE_ENV', 'development');
@@ -112,14 +125,15 @@ async function bootstrap(): Promise<void> {
         return;
       }
 
-      if (allowedOrigins.includes(origin)) {
+      if (allowedOrigins.has(origin)) {
         callback(null, true);
         return;
       }
 
       if (
-        nodeEnvironment !== 'production' &&
-        isLocalDevelopmentOrigin(origin)
+        isLoopbackOrigin(origin) ||
+        (nodeEnvironment !== 'production' &&
+          isLocalDevelopmentOrigin(origin))
       ) {
         callback(null, true);
         return;

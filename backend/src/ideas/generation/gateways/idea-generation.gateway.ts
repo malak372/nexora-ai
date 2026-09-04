@@ -50,10 +50,17 @@ type GenerationRunWatcher = {
   polling: boolean;
 };
 
-const configuredGenerationOrigins = (process.env.FRONTEND_URL ?? '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const configuredGenerationOrigins = new Set(
+  [
+    process.env.FRONTEND_URL ?? '',
+    process.env.APP_FRONTEND_URL ?? '',
+    'https://voxidence.web.app',
+  ]
+    .join(',')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
 
 /**
  * Durable fallback cadence for room snapshots.
@@ -64,6 +71,16 @@ const configuredGenerationOrigins = (process.env.FRONTEND_URL ?? '')
  * EventEmitter cannot cross the process boundary).
  */
 const GENERATION_ROOM_WATCH_INTERVAL_MS = 650;
+
+function isLoopbackGenerationOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
 
 function isLocalGenerationOrigin(origin: string): boolean {
   try {
@@ -100,14 +117,15 @@ function allowIdeaGenerationSocketOrigin(
     return;
   }
 
-  if (configuredGenerationOrigins.includes(origin)) {
+  if (configuredGenerationOrigins.has(origin)) {
     callback(null, true);
     return;
   }
 
   if (
-    process.env.NODE_ENV !== 'production' &&
-    isLocalGenerationOrigin(origin)
+    isLoopbackGenerationOrigin(origin) ||
+    (process.env.NODE_ENV !== 'production' &&
+      isLocalGenerationOrigin(origin))
   ) {
     callback(null, true);
     return;

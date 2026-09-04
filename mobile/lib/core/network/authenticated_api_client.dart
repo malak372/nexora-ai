@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import '../../features/auth/api/auth_api.dart';
 import '../../features/auth/session/auth_session_store.dart';
 import 'api_config.dart';
+import 'dio_browser_credentials.dart';
 
 /// Shared authenticated API client used for protected backend requests.
 ///
@@ -18,6 +19,8 @@ import 'api_config.dart';
 /// @author Eman
 class AuthenticatedApiClient {
   AuthenticatedApiClient._() {
+    enableBrowserCredentials(_dio);
+
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
@@ -88,8 +91,9 @@ class AuthenticatedApiClient {
   final Dio _dio = Dio(
     BaseOptions(
       baseUrl: ApiConfig.baseUrl,
-      connectTimeout: const Duration(seconds: 12),
-      receiveTimeout: const Duration(seconds: 25),
+      connectTimeout: const Duration(seconds: 25),
+      receiveTimeout: const Duration(seconds: 60),
+      sendTimeout: const Duration(seconds: 30),
       headers: const {'Content-Type': 'application/json'},
     ),
   );
