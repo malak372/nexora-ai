@@ -4,13 +4,16 @@ import 'dart:math' as math;
 import 'package:dio/dio.dart';
 
 import '../../../core/network/api_config.dart';
+import '../../../core/network/dio_browser_credentials.dart';
 import '../../../core/storage/platform_key_value_store.dart';
 import '../../../core/storage/session_store.dart';
 import '../../admin/api/admin_api.dart';
 import '../session/auth_session_store.dart';
 
 class AuthApi {
-  AuthApi._();
+  AuthApi._() {
+    enableBrowserCredentials(_dio);
+  }
 
   static final AuthApi instance = AuthApi._();
 
@@ -24,8 +27,9 @@ class AuthApi {
   late final Dio _dio = Dio(
     BaseOptions(
       baseUrl: ApiConfig.baseUrl,
-      connectTimeout: const Duration(seconds: 12),
-      receiveTimeout: const Duration(seconds: 20),
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 75),
+      sendTimeout: const Duration(seconds: 30),
       headers: const {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -39,10 +43,23 @@ class AuthApi {
     required bool rememberMe,
   }) async {
     try {
-      final response = await _dio.post<dynamic>(
-        '/auth/login',
-        data: {'email': email.trim().toLowerCase(), 'password': password},
-      );
+      final payload = <String, dynamic>{
+        'email': email.trim().toLowerCase(),
+        'password': password,
+      };
+
+      Response<dynamic> response;
+
+      try {
+        response = await _dio.post<dynamic>('/auth/login', data: payload);
+      } on DioException catch (error) {
+        if (!_shouldRetryLogin(error)) {
+          rethrow;
+        }
+
+        await Future<void>.delayed(const Duration(milliseconds: 1200));
+        response = await _dio.post<dynamic>('/auth/login', data: payload);
+      }
 
       final data = _asMap(_unwrap(response.data));
 
@@ -455,6 +472,17 @@ class AuthApi {
     }
 
     return null;
+  }
+
+  bool _shouldRetryLogin(DioException error) {
+    if (error.response != null) {
+      return false;
+    }
+
+    return error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout;
   }
 
   bool _isTimeout(DioException error) {
